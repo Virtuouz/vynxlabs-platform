@@ -105,14 +105,14 @@ function newColumn(type: string, values: string | undefined) {
   };
 }
 
-/** One value an enum column offers, with what people read and the colour it is drawn on. */
+/** One value an enum column offers, with what people read and the color it is drawn on. */
 interface ColumnValue {
   value: string;
   label?: string;
   color?: string;
 }
 
-/** A value of an enum column as a chip: its label on its colour. One the column no longer offers is plain. */
+/** A value of an enum column as a chip: its label on its color. One the column no longer offers is plain. */
 function ValueOf({ column, value }: { column: RowColumn; value: string }) {
   const found = column.values?.find((one) => one.value === value);
   return <ValueChip color={enumColor(found?.color)}>{found?.label ?? value}</ValueChip>;
@@ -417,7 +417,8 @@ function RowsBrowser(
                   <Code>{"..20"}</Code> leave one end open
                 </li>
                 <li>
-                  <Code>{"!x"}</Code> for rows that are not exactly x
+                  <Code>{"!x"}</Code> for rows that are not exactly x, <Code>{"!~x"}</Code> for text
+                  that does not hold x
                 </li>
                 <li>
                   <Code>{"a | b"}</Code> for rows that are a or b
@@ -1533,9 +1534,7 @@ export function Tables({ root, link }: { root: string; link: string }) {
         {
           header: "Managed in",
           priority: 3,
-          // A retired table has left its definition, and what it was managed in is not kept.
-          cell: (row) =>
-            row.status === "retired" ? "" : row.managedIn === "code" ? "Repository" : "Console",
+          cell: (row) => (row.managedIn === "code" ? "Repository" : "Console"),
         },
         { header: "Who sees rows", priority: 3, cell: (row) => policyText(row.policy) },
         { header: "Columns", priority: 2, cell: (row) => row.columnCount, align: "end" },
@@ -1723,7 +1722,7 @@ export function TableView({ root, name, link }: { root: string; name: string; li
       fill
       helpKey="table"
       title={data.name}
-      description={`${data.description ? `${data.description.replace(/\.?\s*$/, ".")} ` : ""}${count(data.rowCount)} ${data.rowCount === 1 ? "row" : "rows"}. ${policyText(data.policy)}.${retired ? "" : ` Managed in the ${data.managedIn === "code" ? "repository" : "console"}.`}`}
+      description={`${data.description ? `${data.description.replace(/\.?\s*$/, ".")} ` : ""}${count(data.rowCount)} ${data.rowCount === 1 ? "row" : "rows"}. ${policyText(data.policy)}.${retired ? ` Was managed in the ${data.managedIn === "code" ? "repository" : "console"}.` : ` Managed in the ${data.managedIn === "code" ? "repository" : "console"}.`}`}
     >
       <AttachedPages {...workspaceOf(root)} kind="table" path={data.name} />
       {retired ? (
@@ -1991,7 +1990,7 @@ interface EditedValue {
   was?: string;
 }
 
-/** The values of an enum column: what each is called, the colour it is drawn on, and their order. */
+/** The values of an enum column: what each is called, the color it is drawn on, and their order. */
 function ValuesDialog({
   column,
   open,
@@ -2917,7 +2916,8 @@ function Definition({
           <SeeItAs
             root={root}
             table={table.name}
-            usersPath={`${tenantBase}/end-users?limit=200`}
+            usersPath={`${tenantBase}/end-users`}
+            columns={table.columns}
             groupsPaths={{
               endUsers: `${tenantBase}/end-user-groups`,
               members: `${tenantBase}/groups`,

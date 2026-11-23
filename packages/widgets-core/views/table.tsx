@@ -90,7 +90,7 @@ type Shown = { spec: ColumnSpec; info: ColumnInfo | undefined }[];
 
 const VARIANT = { primary: "primary", default: "secondary", danger: "danger-solid" } as const;
 
-/** The buttons above the table: each runs its action, greyed with its reason when it may not be pressed. */
+/** The buttons above the table: each runs its action, grayed with its reason when it may not be pressed. */
 function TableButtons({
   buttons,
   props,

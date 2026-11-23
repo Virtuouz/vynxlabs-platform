@@ -9,7 +9,7 @@ import { badRequest, conflict, forbiddenBecause, HttpError, notFound } from "../
  * A tenant's access, released: its groups, service accounts, roles and what
  * they are given, changed as one reviewed set.
  *
- * The tables the rest of the platform reads stay the truth. A release is a
+ * The tables the rest of the platform reads stay the truth. An access change is a
  * change to them, worked out by setting what is asked for against what is
  * there, and it keeps what it asked for and what the set was once it applied.
  * So the console and a repository change the same things, and either can be
@@ -17,8 +17,8 @@ import { badRequest, conflict, forbiddenBecause, HttpError, notFound } from "../
  */
 
 /**
- * Releases that applied in a transaction that may not have committed yet, to be
- * committed to the tenant's branch once it has. Kept by release, so that one
+ * Access changes that applied in a transaction that may not have committed yet, to be
+ * committed to the tenant's branch once it has. Kept by access change, so that one
  * request never takes another's before it is there to see. One that was taken
  * back, such as a plan, is forgotten after a minute.
  */
@@ -27,7 +27,7 @@ const applied = new Map<
   { tenantId: string; number: number; message: string | null; at: number }
 >();
 
-/** The releases that have committed since they applied, each handed out once. */
+/** The access changes that have committed since they applied, each handed out once. */
 export async function takeReleased(db: Db) {
   const ready: { tenantId: string; number: number; message: string | null }[] = [];
   for (const [id, release] of applied) {
@@ -72,7 +72,7 @@ export interface AccessSummary {
   deleted: number;
   unchanged: number;
   changes: AccessChange[];
-  /** What the release went ahead with and whoever released should know. */
+  /** What the access change went ahead with and whoever released should know. */
   warnings: string[];
 }
 
@@ -153,7 +153,7 @@ const labelOf = (resource: TenantResource): string => {
 };
 
 /**
- * The tenant's access as it is now, as resources: what a release would be set
+ * The tenant's access as it is now, as resources: what an access change would be set
  * against, and what `volvel tenant pull` writes. Groups an identity provider
  * made are left out: they are the provider's to make and remove.
  */
@@ -212,7 +212,7 @@ export async function currentAccess(db: Db | Trx, tenantId: string): Promise<Ten
       },
     });
   }
-  // What a group or a service account is given, by hand or by a release. What a workspace's
+  // What a group or a service account is given, by hand or by an access change. What a workspace's
   // bundle gives is that bundle's, and what a person is given stays state.
   const bindings = await sql<{
     role: string;
@@ -439,7 +439,7 @@ async function applyStep(
         throw new HttpError(
           409,
           "principal_in_use",
-          `The ${what} ${key} is still given access by ${uses.slice(0, 5).join(", ")}${uses.length > 5 ? ` and ${uses.length - 5} more` : ""}. Remove it from the workspace's code and deploy, then release again.`,
+          `The ${what} ${key} is still given access by ${uses.slice(0, 5).join(", ")}${uses.length > 5 ? ` and ${uses.length - 5} more` : ""}. Remove it from the workspace's code and deploy, then ask again.`,
         );
       }
       if (kind === "group") {
@@ -459,7 +459,7 @@ async function applyStep(
           );
         }
       }
-      // What it was given by hand or by a release goes with it.
+      // What it was given by hand or by an access change goes with it.
       await trx
         .deleteFrom("binding")
         .where("tenant_id", "=", tenantId)
@@ -702,7 +702,7 @@ export async function setMembership(
 }
 
 /**
- * Gives a provider made after a release the group memberships that release
+ * Gives a provider made after an access change the group memberships that access change
  * asked for: a repository says them once, whenever the provider arrives.
  */
 export async function membershipForProvider(trx: Trx, tenantId: string): Promise<void> {
@@ -725,11 +725,11 @@ export interface ReleaseRequest {
   asks: AccessAsk[];
   message?: string | undefined;
   origin: "cli" | "console" | "api" | "rollback";
-  /** Kinds and keys a full release may remove, said one by one: `group/tech-desk`. */
+  /** Kinds and keys a full access change may remove, said one by one: `group/tech-desk`. */
   allowDelete?: readonly string[] | undefined;
   /** Set when a second person approved it, or when it is only being tried. */
   approved?: boolean;
-  /** What the person who asked is told, as the release's warnings: what was left out and why. */
+  /** What the person who asked is told, as the access change's warnings: what was left out and why. */
   notes?: readonly string[];
 }
 
@@ -745,8 +745,8 @@ async function keyMaker(trx: Trx, principal: Principal): Promise<string | null> 
 }
 
 /**
- * Releases a change to the tenant's access. When the tenant asks for a second
- * person, the release waits and nothing changes. Otherwise it applies at once,
+ * Applies a change to the tenant's access. When the tenant asks for a second
+ * person, the access change waits and nothing changes. Otherwise it applies at once,
  * in the caller's transaction.
  */
 export async function releaseAccess(
@@ -796,7 +796,7 @@ export async function releaseAccess(
   }
   const { steps, unchanged } = plan(current, request.asks, request.scope === "full", byProvider);
   if (request.scope === "partial" && steps.length === 0) {
-    // One change that changes nothing is not a release: none is recorded, and nothing waits.
+    // One change that changes nothing is not an access change: none is recorded, and nothing waits.
     await audit({
       action: "access.unchanged",
       targetType: "tenant",
@@ -820,7 +820,7 @@ export async function releaseAccess(
       throw new HttpError(
         409,
         "delete_not_allowed",
-        "This release would remove what the tenant has and the repository does not. If it was made in the console, pull it into the repository first. To remove it, release again allowing each by name.",
+        "This access change would remove what the tenant has and the repository does not. If it was made in the console, pull it into the repository first. To remove it, ask again allowing each by name.",
         unsaid.map((step) => ({
           path: `${step.kind}/${step.key}`,
           message: `the ${tenantName(step)} is not in what is being released (--allow-delete ${step.kind}/${step.key})`,
@@ -934,9 +934,9 @@ export async function releaseAccess(
 }
 
 /**
- * What a release of the whole set would put back that was changed one at a time since
- * the last such release: in the console or through the API, where the repository has not
- * heard of it. The release goes ahead. Whoever reads its plan is told which change it undoes.
+ * What an access change of the whole set would put back that was changed one at a time since
+ * the last such access change: in the console or through the API, where the repository has not
+ * heard of it. The access change goes ahead. Whoever reads its plan is told which change it undoes.
  */
 async function editsUndone(trx: Trx, tenantId: string, steps: readonly Step[]): Promise<string[]> {
   const releases = await trx
@@ -963,7 +963,7 @@ async function editsUndone(trx: Trx, tenantId: string, steps: readonly Step[]): 
     const number = edited.get(`${one.kind}/${one.key}`);
     if (number === undefined) continue;
     warnings.push(
-      `the ${tenantName(one)} was last changed in release ${number}, outside the repository. This ${
+      `the ${tenantName(one)} was last changed in access change ${number}, outside the repository. This ${
         step.op === "delete" ? "removes it" : "puts it back as the repository has it"
       }. To keep that change, pull the tenant's access into the repository first (volvel tenant pull).`,
     );
@@ -1000,7 +1000,7 @@ async function providerManaged(trx: Db | Trx, tenantId: string): Promise<TenantR
 /**
  * A change that waited was asked of the access as it was then. When another change applies and
  * the access is no longer that, the first can never be approved: it is marked so, with the
- * release that made it so, rather than left to say "waits" for ever.
+ * access change that made it so, rather than left to say "waits" for ever.
  */
 async function supersede(
   trx: Trx,
@@ -1026,7 +1026,7 @@ async function supersede(
       .set({
         status: "superseded",
         decided_at: new Date(),
-        comment: `Release ${number} changed the tenant's access after this was asked for. Ask for it again.`,
+        comment: `Access change ${number} changed the tenant's access after this was asked for. Ask for it again.`,
       })
       .where("id", "=", one.id)
       .execute();
@@ -1072,7 +1072,7 @@ function previewSteps(
   return summary;
 }
 
-/** A second person answers a release that waits. Approving applies it as the tenant is now. */
+/** A second person answers an access change that waits. Approving applies it as the tenant is now. */
 export async function decideRelease(
   trx: Trx,
   audit: Audit,
@@ -1089,9 +1089,9 @@ export async function decideRelease(
     .where("id", "=", releaseId)
     .forUpdate()
     .executeTakeFirst();
-  if (!release) throw notFound("The release");
+  if (!release) throw notFound("The access change");
   if (release.status !== "awaiting_approval") {
-    throw conflict(`This release was ${release.status.replaceAll("_", " ")} already.`);
+    throw conflict(`This access change was ${release.status.replaceAll("_", " ")} already.`);
   }
   // Asked by this person, or with a key of a service account that this person made.
   const own =
@@ -1104,7 +1104,7 @@ export async function decideRelease(
     );
   }
   if (decision === "withdraw" && !own)
-    throw conflict("Only whoever asked for a release can withdraw it.");
+    throw conflict("Only whoever asked for an access change can withdraw it.");
   if (decision === "approve" && own) {
     throw new HttpError(
       409,
@@ -1156,7 +1156,7 @@ export async function decideRelease(
     throw new HttpError(
       409,
       "release_stale",
-      "The tenant's access changed after this release was asked for, so it is no longer the change that was shown. Withdraw it and release again.",
+      "The tenant's access changed after this access change was asked for, so it is no longer the change that was shown. Withdraw it and ask again.",
     );
   }
   const summary: AccessSummary = {
@@ -1206,7 +1206,7 @@ export async function decideRelease(
   return { id: release.id, number: release.number, status: "applied", summary };
 }
 
-/** The whole set an earlier release left, asked for again: going back to it. */
+/** The whole set an earlier access change left, asked for again: going back to it. */
 export async function rollbackAsks(db: Db | Trx, tenantId: string, releaseId: string) {
   const release = await db
     .selectFrom("tenant_release")
@@ -1214,16 +1214,16 @@ export async function rollbackAsks(db: Db | Trx, tenantId: string, releaseId: st
     .where("tenant_id", "=", tenantId)
     .where("id", "=", releaseId)
     .executeTakeFirst();
-  if (!release) throw notFound("The release");
+  if (!release) throw notFound("The access change");
   if (release.status !== "applied" || !release.snapshot) {
-    throw conflict("Only a release that applied can be gone back to.");
+    throw conflict("Only an access change that applied can be gone back to.");
   }
   const current = await currentAccess(db, tenantId);
   // A snapshot made before bindings had keys of their own may hold two under one name: it is read
   // by what each binding gives, and given keys of today.
   const all = withUniqueBindingKeys(release.snapshot);
-  // What a release named may be gone since: a workspace, a role, a group an identity provider made.
-  // That is left out, and said, rather than making every release before it a way nobody can go.
+  // What an access change named may be gone since: a workspace, a role, a group an identity provider made.
+  // That is left out, and said, rather than making every access change before it a way nobody can go.
   const workspaces = new Set(
     (
       await db.selectFrom("workspace").select("slug").where("tenant_id", "=", tenantId).execute()
@@ -1301,7 +1301,7 @@ export async function freeKey(
 
 /**
  * One change to the tenant's access, made in the console or through the API: a
- * release of that change alone, with the same history, and the same wait when
+ * access change of that change alone, with the same history, and the same wait when
  * the tenant asks for a second person.
  */
 export function releaseOne(

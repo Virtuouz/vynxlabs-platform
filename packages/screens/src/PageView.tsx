@@ -140,7 +140,7 @@ export interface PageViewProps {
   device?: Device;
   /**
    * While building: draw the page as this group sees it (`key` is the group's key). A widget it
-   * may not see is faded and says so, an action it may not run is greyed with the reason, a
+   * may not see is faded and says so, an action it may not run is grayed with the reason, a
    * `showWhen` on the user is judged for it. Rows are not: they are read as the builder.
    */
   viewAs?: { key: string; name: string };

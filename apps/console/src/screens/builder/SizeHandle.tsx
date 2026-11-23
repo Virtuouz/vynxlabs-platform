@@ -29,7 +29,7 @@ export function SizeHandle({
   const named = shown ?? size;
   const move = (event: React.PointerEvent<HTMLElement>) => {
     if (!start.current) return;
-    // The frame is centred, so its edge travels half as far as the pointer does.
+    // The frame is centered, so its edge travels half as far as the pointer does.
     const pixels =
       (start.current.width + 2 * (event.clientX - start.current.x)) / start.current.scale;
     const next = snap(pixels);

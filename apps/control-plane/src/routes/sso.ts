@@ -39,8 +39,18 @@ import {
   updateProvider,
 } from "../kernel/sso/providers.js";
 import { samlMetadata } from "../kernel/sso/saml.js";
-import { listOf } from "../pagination.js";
-import { AnyObject, Id, iso, isoOrNull, NoContent, NullableId, NullableTime } from "./shared.js";
+import { listOf, PageQuery, pageOf } from "../pagination.js";
+import {
+  AnyObject,
+  Id,
+  iso,
+  isoOrNull,
+  NoContent,
+  NullableId,
+  NullableTime,
+  pageArgs,
+  toPage,
+} from "./shared.js";
 
 const NullableString = Type.Union([Type.String(), Type.Null()]);
 const ProviderView = Type.Object({
@@ -107,7 +117,7 @@ const GroupMapView = Type.Object({
   groupName: Type.String(),
   managedBy: Type.Union([Type.Literal("hand"), Type.Literal("release")], {
     description:
-      "`release` for a mapping a release of the tenant's access made: it is changed by another release, not here.",
+      "`release` for a mapping an access change made: it is changed by another access change, not here.",
   }),
 });
 const LinkView = Type.Object({
@@ -309,7 +319,7 @@ export function ssoRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               "the people the provider covers, and ends their open sessions at once, except the caller's; " +
               "the people who run the instance keep their passwords and sessions. Turning a " +
               "provider off does not stop a directory pushing people to it. " +
-              "Saving turns a paused provider back on.",
+              "Turning a paused provider on, or changing its settings, turns it back on; a rename does not.",
             tags,
             params: Params,
             body: Type.Object(Settings),
@@ -573,14 +583,17 @@ export function ssoRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           config: { access: read },
           schema: {
             summary: "The people tied to a provider",
-            description: "The people whose sign-in the provider has been used for.",
+            description:
+              "The people whose sign-in the provider has been used for, a page at a time.",
             tags,
             params: Params,
-            response: { 200: listOf(LinkView, 1000) },
+            querystring: PageQuery,
+            response: { 200: pageOf(LinkView) },
           },
         },
-        async ({ params }) => {
+        async ({ params, query }) => {
           const current = await provider(params as { p: string });
+          const args = pageArgs(query);
           const rows = await db
             .selectFrom("identity_link")
             .leftJoin("member", (join) =>
@@ -605,11 +618,17 @@ export function ssoRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               "end_user.name as end_user_name",
             ])
             .where("identity_link.provider_id", "=", current.id)
+            .$if(args.after !== undefined, (q) =>
+              q.where("identity_link.id", ">", args.after as string),
+            )
             .orderBy("identity_link.id")
-            .limit(1000)
+            .limit(args.limit + 1)
             .execute();
-          return {
-            items: rows.map((row) => ({
+          return toPage(
+            rows,
+            args,
+            (row) => row.id,
+            (row) => ({
               id: row.id,
               subject: row.subject,
               principalType: row.principal_type,
@@ -618,8 +637,8 @@ export function ssoRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               name: row.member_name ?? row.end_user_name ?? null,
               createdAt: iso(row.created_at),
               lastSignedInAt: isoOrNull(row.last_signed_in_at),
-            })),
-          };
+            }),
+          );
         },
       );
 
@@ -753,7 +772,7 @@ export function ssoRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                 `A group in the mapping is not a group of ${forMembers ? "members" : "end users"} of this tenant.`,
               );
             }
-            // What a release of the tenant's access mapped is that release's: it is neither
+            // What an access change mapped is that change's: it is neither
             // removed here nor written a second time. The list sent back includes it.
             await trx
               .deleteFrom("identity_group_map")

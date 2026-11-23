@@ -266,6 +266,14 @@ describe("the help panel", () => {
     await within(panel()).findByRole("heading", { name: "Concepts" });
   });
 
+  test("a term on the page that explains it does not offer to open that page (DOC-13)", async () => {
+    show(<Screen />);
+    act(() => openHelp("start/concepts"));
+    fireEvent.click(await within(panel()).findByRole("button", { name: "workspaces" }));
+    await screen.findByText(/A place where a tenant's resources live and run/);
+    expect(screen.queryByRole("button", { name: /More about/ })).toBeNull();
+  });
+
   test("is searched without leaving it", async () => {
     show(<Screen />);
     act(() => openHelp("index"));

@@ -1,5 +1,5 @@
 import { Button } from "@volvel/ui";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, useLoad } from "../api.ts";
 
 interface Page<T> {
@@ -135,9 +135,16 @@ export function usePagedList<T>(
     page.reload();
   }, [page.reload]);
 
+  // The same array until a page arrives, so what is made from it (a picker's options) is not
+  // taken for a new list on every render.
+  const items = useMemo(
+    () => (page.data ? [...(held?.head ?? page.data.items), ...(held?.rest ?? [])] : undefined),
+    [page.data, held],
+  );
+
   return {
     /** Every row loaded so far, or nothing before the first page. */
-    items: page.data ? [...(held?.head ?? page.data.items), ...(held?.rest ?? [])] : undefined,
+    items,
     error: page.error,
     moreError,
     /** The first page is coming, or a search just typed has not been answered. */

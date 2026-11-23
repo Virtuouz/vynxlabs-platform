@@ -84,7 +84,7 @@ const NUMERIC = new Set(["number", "integer", "decimal"]);
 
 /**
  * Whether a chart type can work with the data, and what it would need if not. The
- * drawer greys what does not fit and says what it needs.
+ * drawer grays what does not fit and says what it needs.
  */
 export function chartFits(
   kind: ChartKind,
@@ -512,9 +512,9 @@ export function chartFor(
     rows.length === 1 && (mark === "line" || mark === "area")
       ? (numberOf(rows[0]?.[y]) ?? 0)
       : undefined;
-  const colour = several ? "series" : seriesField;
+  const color = several ? "series" : seriesField;
   const value = several ? "value" : y;
-  const grouped = mark === "bar" && colour && config.bars === "grouped";
+  const grouped = mark === "bar" && color && config.bars === "grouped";
   const drawing = mark === "line" || mark === "area";
   const base = {
     mark: {
@@ -528,7 +528,7 @@ export function chartFor(
       ...(mark === "area"
         ? { line: true, point: config.points === true ? { ...RING, size: 44 } : false }
         : {}),
-      ...(palette && !colour ? { color: palette[0] } : {}),
+      ...(palette && !color ? { color: palette[0] } : {}),
     },
     encoding: {
       x: xEncoding,
@@ -541,20 +541,20 @@ export function chartFor(
         ...(lone && lone !== 0
           ? { scale: { domain: lone > 0 ? [0, lone * 1.4] : [lone * 1.4, 0] } }
           : {}),
-        ...(mark === "bar" && colour ? { stack: grouped ? null : true } : {}),
+        ...(mark === "bar" && color ? { stack: grouped ? null : true } : {}),
       },
-      ...(colour
+      ...(color
         ? {
             color: {
-              field: colour,
+              field: color,
               type: "nominal",
-              title: several ? "" : title(colour),
+              title: several ? "" : title(color),
               ...scale,
               ...legend,
             },
           }
         : {}),
-      ...(grouped ? { xOffset: { field: colour, type: "nominal" } } : {}),
+      ...(grouped ? { xOffset: { field: color, type: "nominal" } } : {}),
     },
     ...(several ? { transform: [{ fold: measured, as: ["series", "value"] }] } : {}),
   };
@@ -578,7 +578,7 @@ export function chartFor(
     : base;
 
   const layers: object[] = [];
-  if (mark === "line" && !colour && !lying) {
+  if (mark === "line" && !color && !lying) {
     // A soft area under a single line, as the boards draw it.
     const { color: _own, ...place } = drawn.encoding as Record<string, unknown>;
     layers.push({
@@ -613,7 +613,7 @@ export function chartFor(
     });
   }
   // The figures on the bars are written only where they fit: a bar narrower than its figure has none.
-  const seriesCount = grouped ? new Set(rows.map((row) => String(row[colour ?? ""]))).size : 1;
+  const seriesCount = grouped ? new Set(rows.map((row) => String(row[color ?? ""]))).size : 1;
   const barPx = lying ? 99 : (band / Math.max(1, seriesCount)) * (1 - spacing);
   const figure = wide(`${axis ? "$" : ""}${countText(Math.round(biggest))}`) + 4;
   if (config.values && mark === "bar" && barPx >= figure) {
@@ -623,7 +623,7 @@ export function chartFor(
       mark: {
         type: "text",
         fontSize: 10,
-        ...(colour
+        ...(color
           ? { baseline: "middle" }
           : lying
             ? { align: "left", dx: 4 }

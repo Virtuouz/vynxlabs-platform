@@ -1438,7 +1438,7 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         schema: {
           summary: "Cancel a flow run and the steps it has in progress",
           description:
-            "The steps that are going are cancelled with it. A flow run that has already ended answers 409. Audited.",
+            "The steps that are going are canceled with it. A flow run that has already ended answers 409. Audited.",
           tags: ["flows"],
           params: Type.Object({ t: Id, w: Id, id: Id }),
           response: { 200: FlowRun },

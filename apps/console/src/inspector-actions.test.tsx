@@ -190,9 +190,7 @@ test("WLK-11: a message added after the sheet closes is said before it closes", 
   );
   tab("Actions");
   add("Show a message");
-  expect((last().config?.onSet as { steps: { do: string }[] }).steps.map((one) => one.do)).toEqual([
-    "create",
-    "message",
-    "close",
-  ]);
+  expect(
+    (last().config?.onSet as { steps: { do: string }[] } | undefined)?.steps.map((one) => one.do),
+  ).toEqual(["create", "message", "close"]);
 });

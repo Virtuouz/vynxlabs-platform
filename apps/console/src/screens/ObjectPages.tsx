@@ -1,7 +1,7 @@
 import { Button, Closing, JsonView } from "@volvel/ui";
 import { FileCode2, ListChecks } from "lucide-react";
 import { useState } from "react";
-import { api, useLoad } from "../api.ts";
+import { api, useLoad, useMay } from "../api.ts";
 import { notify } from "../ask.tsx";
 import { CodeEditor } from "../editor/CodeEditor.tsx";
 import { AttachedPages, workspaceOf } from "../help/glossary.tsx";
@@ -61,6 +61,8 @@ function Gate<T>({
 export function ConnectionPage({ root, link, path }: { root: string; link: string; path: string }) {
   const found = useLoad<ConnectionRow>(`${root}/connection-bindings/${path}`);
   const uses = useReferences(root, "connection");
+  const may = useMay(root, "connection:write", "run:read");
+  const mayWrite = may("connection:write");
   // The same sheet the list opens, here on the page itself.
   const [editing, setEditing] = useState<ConnectionRow | null>(null);
   return (
@@ -73,21 +75,24 @@ export function ConnectionPage({ root, link, path }: { root: string; link: strin
             title={one.path}
             state={
               <>
-                <StatePill state={one.bound ? "bound" : "unbound"}>
-                  {one.bound ? "Set up here" : "Not set up here"}
-                </StatePill>
-                <ConnectionHealth root={root} row={one} />
+                <StatePill state={one.bound ? "bound" : "unbound"} />
+                <ConnectionHealth root={root} row={one} mayConnect={mayWrite} />
               </>
             }
             actions={
               <>
-                {one.bound && (!one.oauth || one.oauth.status === "connected") ? (
+                {one.bound &&
+                (!one.oauth || one.oauth.status === "connected") &&
+                may("run:read") &&
+                mayWrite ? (
                   <TestConnection root={root} path={one.path} onDone={() => found.reload?.()} />
                 ) : null}
-                <Button onClick={() => setEditing(one)}>
-                  {one.bound ? "Change where it points" : "Set up"}
-                </Button>
-                {one.bound ? (
+                {mayWrite ? (
+                  <Button onClick={() => setEditing(one)}>
+                    {one.bound ? "Change where it points" : "Set up"}
+                  </Button>
+                ) : null}
+                {one.bound && mayWrite ? (
                   <RemoveButton
                     label="Unbind"
                     confirm={`Unbind ${one.path}? Scripts that use it will fail until it is bound again.`}
@@ -177,6 +182,7 @@ interface Variable {
 export function VariablePage({ root, link, path }: { root: string; link: string; path: string }) {
   const found = useLoad<Variable>(`${root}/variable-values/${path}`);
   const [editing, setEditing] = useState<Variable | null>(null);
+  const mayWrite = useMay(root, "variable:write")("variable:write");
   return (
     <Gate found={found} list={`${link}/variables`} noun="variable">
       {(one) => (
@@ -186,9 +192,11 @@ export function VariablePage({ root, link, path }: { root: string; link: string;
             eyebrow="Variable"
             title={one.path}
             actions={
-              <Button onClick={() => setEditing(one)}>
-                {one.value !== null ? "Change value" : "Set value"}
-              </Button>
+              mayWrite ? (
+                <Button onClick={() => setEditing(one)}>
+                  {one.value !== null ? "Change value" : "Set value"}
+                </Button>
+              ) : null
             }
             meta={
               <KeyValues
@@ -197,9 +205,11 @@ export function VariablePage({ root, link, path }: { root: string; link: string;
                   {
                     label: "Value here",
                     value:
-                      one.value ??
-                      (one.default !== null ? `The default: ${one.default}` : "Not set"),
-                    mono: one.value !== null,
+                      one.value === ""
+                        ? "Empty"
+                        : (one.value ??
+                          (one.default !== null ? `The default: ${one.default}` : "Not set")),
+                    mono: one.value !== null && one.value !== "",
                   },
                   ...(one.default !== null
                     ? [{ label: "Default", value: one.default, mono: true }]
@@ -253,6 +263,15 @@ function ReplaceSecret({
 }) {
   const [value, setValue] = useState("");
   const [busy, setBusy] = useState(false);
+  const mayReplace = useMay(root, "secret:write")("secret:write");
+  if (!mayReplace) {
+    return (
+      <p className="m-0 max-w-xl text-ink-muted">
+        Replacing the value needs the secret:write permission: ask an administrator of this
+        workspace.
+      </p>
+    );
+  }
   return (
     <form
       className="flex max-w-xl flex-col gap-3"

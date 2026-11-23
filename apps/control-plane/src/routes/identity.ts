@@ -1,3 +1,4 @@
+import { Readable } from "node:stream";
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import { newId, sql } from "@volvel/db";
 import { PERMISSION_KINDS } from "@volvel/manifest";
@@ -16,6 +17,7 @@ import { effectivePolicy } from "../kernel/retention.js";
 import { nameOwnedBy } from "../kernel/sso/people.js";
 import { makeRecoveryCodes, ownsATenant } from "../kernel/sso/recovery.js";
 import { likeTerm, listOf, PageQuery, pageOf, SearchPageQuery } from "../pagination.js";
+import { csvCell } from "./data.js";
 import {
   AnyObject,
   Id,
@@ -214,7 +216,8 @@ export const AuditQuery = Type.Object({
     Type.String({
       minLength: 1,
       maxLength: 200,
-      description: "Entries whose action, target or kind of target holds this text.",
+      description:
+        "Entries whose action, target, kind of target, or the name now given to the target or actor (an email, a hostname) holds this text.",
     }),
   ),
   from: Type.Optional(
@@ -258,9 +261,23 @@ export interface AuditFilters {
  */
 async function auditSelect(kernel: Kernel, tenantId: string | null, query: AuditFilters) {
   let select = kernel.db.selectFrom("audit_entry");
+  // The instance's log is its own entries and those of tenants that are gone: a deleted tenant
+  // has no log to read, and what was done in it is read here (D47).
   select =
     tenantId === null
-      ? select.where("tenant_id", "is", null)
+      ? select.where((eb) =>
+          eb.or([
+            eb("tenant_id", "is", null),
+            eb.not(
+              eb.exists(
+                eb
+                  .selectFrom("tenant")
+                  .select(sql<number>`1`.as("one"))
+                  .whereRef("tenant.id", "=", "audit_entry.tenant_id"),
+              ),
+            ),
+          ]),
+        )
       : select.where("tenant_id", "=", tenantId);
   if (query.action) select = select.where("action", "=", query.action);
   // The pattern on `area` allows no wildcard character, so it is safe inside `like`.
@@ -276,6 +293,15 @@ async function auditSelect(kernel: Kernel, tenantId: string | null, query: Audit
         eb("action", "ilike", like),
         eb("target_id", "ilike", like),
         eb("target_type", "ilike", like),
+        // What a target or an actor is called now: an email, a hostname, a name (GOV-32).
+        // Entries hold IDs, so the text is resolved to the IDs of what is so called.
+        ...Object.entries(TARGET_NAMES).flatMap(([type, { table, column }]) => {
+          const called = sql<string>`(select id::text from ${sql.table(table)} where ${sql.ref(column)}::text ilike ${like})`;
+          return [
+            eb.and([eb("target_type", "=", type), sql<boolean>`target_id in ${called}`]),
+            eb.and([eb("actor_type", "=", type), sql<boolean>`actor_id::text in ${called}`]),
+          ];
+        }),
       ]),
     );
   }
@@ -402,7 +428,7 @@ export async function auditPage(
 }
 
 /** One entry, for a link to it. Undefined when there is none, or it is older than the log keeps. */
-export async function auditEntry(kernel: Kernel, tenantId: string, id: string) {
+export async function auditEntry(kernel: Kernel, tenantId: string | null, id: string) {
   const row = await (await auditSelect(kernel, tenantId, {}))
     .selectAll()
     .where("id", "=", id)
@@ -453,7 +479,7 @@ export async function auditFacets(kernel: Kernel, tenantId: string | null, query
 /** Every entry for `filters`, newest first, a thousand at a time, for an export. */
 export async function* auditEntries(
   kernel: Kernel,
-  tenantId: string,
+  tenantId: string | null,
   query: AuditFilters,
   cap: number,
 ) {
@@ -473,6 +499,35 @@ export async function* auditEntries(
     after = rows.at(-1)?.id;
     if (rows.length < 1000) return;
   }
+}
+
+/** How many entries one audit export holds at most. */
+export const AUDIT_CSV_CAP = 100_000;
+const AUDIT_CSV_COLUMNS = [
+  "occurredAt",
+  "action",
+  "actorType",
+  "actorLabel",
+  "actorId",
+  "targetType",
+  "targetLabel",
+  "targetId",
+  "workspaceId",
+  "accessGrantId",
+  "requestId",
+  "ipAddress",
+  "details",
+] as const;
+
+/** A log's entries as CSV lines: the one file a tenant's log and the instance's both give. */
+export function auditCsv(kernel: Kernel, tenantId: string | null, query: AuditFilters) {
+  async function* lines() {
+    yield `${AUDIT_CSV_COLUMNS.join(",")}\r\n`;
+    for await (const entry of auditEntries(kernel, tenantId, query, AUDIT_CSV_CAP)) {
+      yield `${AUDIT_CSV_COLUMNS.map((column) => csvCell(entry[column])).join(",")}\r\n`;
+    }
+  }
+  return Readable.from(lines());
 }
 
 const DisabledMember = Type.Object({
@@ -1038,6 +1093,17 @@ export function identityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         if (body.disabled && ctx.principal.id === params.id) {
           throw badRequest("You cannot disable your own account.");
         }
+        // Already as asked: nothing changes, so nothing is written and nothing is audited.
+        const now = await kernel.db
+          .selectFrom("member")
+          .select(["id", "name", "email", "created_at", "disabled_at"])
+          .where("id", "=", params.id)
+          .executeTakeFirst();
+        if (!now) throw notFound("The member");
+        if ((now.disabled_at !== null) === body.disabled) {
+          ctx.mutated = true;
+          return { ...toMember(now), tenantsWithoutAdmin: [] };
+        }
         return ctx.mutate(async (trx, audit) => {
           const done = await setMemberDisabled(
             trx,
@@ -1221,7 +1287,8 @@ export function identityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.instance("audit:read") },
         schema: {
           summary: "Instance-level audit entries, newest first",
-          description: "Entries that belong to no tenant. A tenant's entries are under the tenant.",
+          description:
+            "Entries that belong to no tenant, and the entries of tenants that were deleted: a deleted tenant has no log of its own, and its `tenantId` says whose they were. A tenant's entries are under the tenant.",
           tags: ["audit"],
           querystring: AuditQuery,
           response: { 200: pageOf(AuditEntry) },
@@ -1245,6 +1312,46 @@ export function identityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         },
       },
       async ({ query }) => auditFacets(kernel, null, query),
+    );
+
+    app.get(
+      "/audit/:id",
+      {
+        config: { access: access.instance("audit:read") },
+        schema: {
+          summary: "One instance-level audit entry",
+          description: "For a link to an entry. 404 once the log no longer keeps it.",
+          tags: ["audit"],
+          params: Type.Object({ id: Id }),
+          response: { 200: AuditEntry },
+        },
+      },
+      async ({ params }) => {
+        const entry = await auditEntry(kernel, null, params.id);
+        if (!entry) throw notFound("The audit entry");
+        return entry;
+      },
+    );
+
+    app.get(
+      "/audit-export",
+      {
+        config: { access: access.instance("audit:read") },
+        schema: {
+          summary: "The instance's audit entries, as CSV",
+          description: `The instance-level entries the filters keep, newest first, at most ${AUDIT_CSV_CAP.toLocaleString("en-US")}.`,
+          tags: ["audit"],
+          querystring: AuditFilterQuery,
+          produces: ["text/csv"],
+          response: { 200: Type.Unknown({ description: "The entries, as CSV." }) },
+        },
+      },
+      async ({ query }, reply) => {
+        reply
+          .header("content-type", "text/csv; charset=utf-8")
+          .header("content-disposition", `attachment; filename="audit-log.csv"`);
+        return reply.send(auditCsv(kernel, null, query));
+      },
     );
   };
 }

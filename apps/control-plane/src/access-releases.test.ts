@@ -276,7 +276,7 @@ describe("what the console made, and what a workspace still uses", () => {
     // The repository never heard of the group. Whoever releases is told which change this undoes.
     expect(allowed.body.summary.warnings).toEqual([
       expect.stringMatching(
-        /^the group finance-billing was last changed in release \d+, outside the repository\. This removes it\. /,
+        /^the group finance-billing was last changed in access change \d+, outside the repository\. This removes it\. /,
       ),
     ]);
     // Said once: the next release of the whole set starts from this one.
@@ -518,7 +518,7 @@ describe("going back, and asking a second person", () => {
       { change: "updated", kind: "group", key: "tech-desk", label: "Tech Desk" },
     ]);
     const latest = ((await alice.get(`${at()}/releases`)).body.items as Any[])[0];
-    expect(latest).toMatchObject({ origin: "rollback", message: "Back to release 1" });
+    expect(latest).toMatchObject({ origin: "rollback", message: "Back to access change 1" });
   });
 
   test("going back says first what it would remove, by name, and removes it only when asked", async () => {

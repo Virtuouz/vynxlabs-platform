@@ -85,9 +85,15 @@ describe("a flow's choice of flow, tags and layout", () => {
   });
 
   test("triggers carry tags", () => {
-    expect((body.nodes.at?.trigger as { tags?: string[] }).tags).toEqual(["trigger.cron"]);
-    expect((body.nodes.hook?.trigger as { tags?: string[] }).tags).toEqual(["trigger.body.kind"]);
-    expect((body.nodes.ev?.trigger as { tags?: string[] }).tags).toEqual(["event.payload.id"]);
+    expect((body.nodes.at?.trigger as { tags?: string[] } | undefined)?.tags).toEqual([
+      "trigger.cron",
+    ]);
+    expect((body.nodes.hook?.trigger as { tags?: string[] } | undefined)?.tags).toEqual([
+      "trigger.body.kind",
+    ]);
+    expect((body.nodes.ev?.trigger as { tags?: string[] } | undefined)?.tags).toEqual([
+      "event.payload.id",
+    ]);
   });
 
   test("positions are kept", () => {

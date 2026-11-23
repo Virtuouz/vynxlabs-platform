@@ -246,7 +246,7 @@ const COUNT_LINE = {
 /** Marking an invoice paid, on the record the page was opened on (the sheet) or the row (the table). */
 const markPaid = (record: "this" | "event") => ({
   when: [{ field: "status", of: record, test: "is" as const, value: "unpaid" }],
-  // Only practice managers and Billing run it, on the server too: others see it greyed.
+  // Only practice managers and Billing run it, on the server too: others see it grayed.
   runBy: { groups: BILLING },
   confirm: {
     title: "Mark as paid?",
@@ -706,7 +706,7 @@ export const performance = defineInterface({
         {
           // The reorder flow's approval step, decided here: a manager reads the order, approves or
           // rejects it, and the next is there. Who may decide is set on the flow's step, not here:
-          // others who may read approvals see the orders, with the buttons greyed and why.
+          // others who may read approvals see the orders, with the buttons grayed and why.
           id: "waiting",
           type: "core/approvals",
           title: "Orders waiting for a manager",

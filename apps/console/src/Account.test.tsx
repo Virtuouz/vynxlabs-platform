@@ -567,3 +567,61 @@ test("an operator who is disabled says so on the Operators list, and cannot be m
   const other = screen.getByText("ada@ops.example").closest("tr") as HTMLElement;
   expect(within(other).queryByText("Disabled")).toBeNull();
 });
+
+const me = (id: string, email: string) => ({
+  principal: { type: "member", id, name: "Ada", email },
+  instancePermissions: ["*:*"],
+  tenants: [],
+});
+
+test("your own row on All members offers no Disable and says why (INS-27)", async () => {
+  routes["GET /api/v1/me"] = () => [200, me("m1", "ada@ops.example")];
+  routes["GET /api/v1/members?limit=50"] = () => [
+    200,
+    {
+      items: [
+        { id: "m1", name: "Ada", email: "ada@ops.example", createdAt: "2026-11-11T00:00:00.000Z" },
+        { id: "m2", name: "Bob", email: "bob@acme.example", createdAt: "2026-11-11T00:00:00.000Z" },
+      ],
+    },
+  ];
+  show(<InstanceMembers />);
+  const mine = (await screen.findAllByText("ada@ops.example"))[0]?.closest("tr") as HTMLElement;
+  const theirs = screen.getAllByText("bob@acme.example")[0]?.closest("tr") as HTMLElement;
+  await within(theirs).findByRole("button", { name: "Disable" });
+  expect(within(mine).queryByRole("button", { name: "Disable" })).toBeNull();
+  expect(within(mine).getByText(/You cannot disable your own account/)).toBeTruthy();
+});
+
+test("removing yourself as an operator says it is you (INS-27)", async () => {
+  routes["GET /api/v1/me"] = () => [200, me("m1", "ada@ops.example")];
+  routes["GET /api/v1/bindings"] = () => [
+    200,
+    {
+      items: [
+        {
+          id: "b1",
+          memberEmail: "ada@ops.example",
+          roleName: "operator_admin",
+          createdAt: "2026-11-01T00:00:00Z",
+        },
+        {
+          id: "b2",
+          memberEmail: "bo@ops.example",
+          roleName: "operator_admin",
+          createdAt: "2026-11-01T00:00:00Z",
+        },
+      ],
+      nextCursor: null,
+    },
+  ];
+  show(<Operators />);
+  const mine = (await screen.findByText("ada@ops.example")).closest("tr") as HTMLElement;
+  const theirs = screen.getByText("bo@ops.example").closest("tr") as HTMLElement;
+  await waitFor(() =>
+    expect(within(mine).getByRole("button", { name: "Remove yourself" })).toBeTruthy(),
+  );
+  expect(within(theirs).getByRole("button", { name: "Remove" })).toBeTruthy();
+  fireEvent.click(within(mine).getByRole("button", { name: "Remove yourself" }));
+  expect(await screen.findByText(/Remove yourself as an operator\?/)).toBeTruthy();
+});

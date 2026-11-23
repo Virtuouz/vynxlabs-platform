@@ -362,7 +362,7 @@ test("Ready to publish: checks, what changes, Try as, and a blocking problem", a
   fireEvent.click(screen.getAllByRole("button", { name: "Publish" })[0] as HTMLElement);
   expect(await screen.findByRole("heading", { name: "Ready to publish" })).toBeTruthy();
   expect(
-    screen.getByText("Publishes to Sandbox. The live app keeps working until then."),
+    screen.getByText("Deploys to Sandbox. The live app keeps working until then."),
   ).toBeTruthy();
   expect(await screen.findByText("Phone layout hides 1 widget")).toBeTruthy();
   expect(screen.getByText("By clinic, on Money")).toBeTruthy();

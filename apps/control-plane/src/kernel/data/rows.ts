@@ -243,9 +243,9 @@ export async function withData<T>(
         throw translate(error, timeoutMs);
       }
     });
-  // On the shared database each tenant has a share of the connections, so one tenant's
-  // slow requests leave the others room.
-  return store.shared ? kernel.data.gate.run(tenantId, work) : work();
+  // Each tenant has a share of the connections, on the platform database and on a dedicated one
+  // (several tenants may name one location), so one tenant's slow requests leave the others room.
+  return kernel.data.gate.run(tenantId, work);
 }
 
 /** Database refusals that are the caller's doing, in words they can act on. */
@@ -576,11 +576,14 @@ function compileFilter(
     throw invalid(`a list of values can only be tested with has or is_null`);
   // An enum is compared with any text, so a filter can still find rows that hold a retired value.
   const compared = meta.type === "enum" ? { ...meta, type: "text" } : meta;
-  if (op === "contains") {
+  if (op === "contains" || op === "not_contains") {
     if (meta.type !== "text" || typeof node.value !== "string")
-      throw invalid(`"contains" works on text columns, with text to look for`);
+      throw invalid(`"${op}" works on text columns, with text to look for`);
     const pattern = `%${node.value.replace(/[\\%_]/g, "\\$&")}%`;
-    return sql`${reference} ilike ${pattern}`;
+    // A row with no text does not contain it, so it is among those that do not.
+    return op === "contains"
+      ? sql`${reference} ilike ${pattern}`
+      : sql`not coalesce(${reference} ilike ${pattern}, false)`;
   }
   if (op === "in") {
     if (!Array.isArray(node.value) || node.value.length === 0 || node.value.length > 200)
@@ -595,7 +598,7 @@ function compileFilter(
   const operator = COMPARE[op];
   if (!operator)
     throw invalid(
-      `there is no operator "${op}". Use eq, ne, gt, gte, lt, lte, in, has, contains or is_null`,
+      `there is no operator "${op}". Use eq, ne, gt, gte, lt, lte, in, has, contains, not_contains or is_null`,
     );
   if (node.value === null || node.value === undefined) {
     if (op === "eq") return sql`${reference} is null`;
@@ -650,6 +653,25 @@ export async function findRows(db: AnyDb, target: RowTarget, query: FindQuery = 
   );
   // The key breaks ties, so paging never repeats or skips a row.
   if (target.key) order.push(sql`${sql.ref(target.key)} asc`);
+  else {
+    // With no key, every column breaks the tie, so the same rows come in the same order each time
+    // (a page by count would otherwise repeat or skip rows). A type with no order of its own is ordered as text.
+    const named = new Set(sorted.map(({ meta }) => meta.physicalName));
+    for (const meta of target.columns) {
+      if (named.has(meta.physicalName)) continue;
+      const ref = sql.ref(meta.physicalName);
+      const orderable = [
+        "text",
+        "integer",
+        "number",
+        "boolean",
+        "date",
+        "timestamp",
+        "enum",
+      ].includes(meta.type);
+      order.push(orderable ? sql`${ref} asc nulls last` : sql`${ref}::text asc nulls last`);
+    }
+  }
   const keyMeta = target.columns.find((one) => one.physicalName === target.key);
   // A key of type number is not exact in a double: such a table is paged by count, not after a row.
   const byKeyset = keyset(target, sort) && keyMeta !== undefined && keyMeta.type !== "number";

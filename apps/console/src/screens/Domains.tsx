@@ -2,6 +2,7 @@ import { Button, EmptyState, Notice, SelectField, SideSheet, TextField } from "@
 import { useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask } from "../ask.tsx";
+import { NotAllowed, useCan } from "../kit/Can.tsx";
 import { DataTable } from "../kit/DataTable.tsx";
 import { Loading } from "../kit/LoadState.tsx";
 import { SectionLabel } from "../kit/layout.tsx";
@@ -280,6 +281,7 @@ function DetailsDialog({
 }) {
   const [problem, setProblem] = useState<string>();
   const [busy, setBusy] = useState(false);
+  const can = useCan(base, "domain:write");
   const close = () => {
     setProblem(undefined);
     onClose();
@@ -346,7 +348,7 @@ function DetailsDialog({
           <div className="flex w-full flex-wrap justify-between gap-2">
             <Button
               variant="danger"
-              disabled={busy}
+              disabled={busy || !can}
               onClick={async () => {
                 const sure = await ask.confirm({
                   title: `Remove ${domain.hostname}?`,
@@ -365,22 +367,33 @@ function DetailsDialog({
             </Button>
             <span className="flex flex-wrap gap-2">
               <Button
-                disabled={busy}
-                onClick={() =>
-                  run(async () =>
+                disabled={busy || !can}
+                onClick={async () => {
+                  // Turning a hostname off stops it answering on one press: said first.
+                  if (domain.enabled) {
+                    const sure = await ask.confirm({
+                      title: `Turn off ${domain.hostname}?`,
+                      text: "The hostname stops answering, so the app is no longer served there and sign-ins made at that hostname end. The record stays; turn it on again to serve it.",
+                      action: "Turn off",
+                      danger: true,
+                    });
+                    if (!sure) return;
+                  }
+                  return run(async () =>
                     onChanged(
                       await api.patch<Domain>(`${base}/domains/${domain.id}`, {
                         enabled: !domain.enabled,
                       }),
                     ),
-                  )
-                }
+                  );
+                }}
               >
                 {domain.enabled ? "Disable" : "Enable"}
               </Button>
               <Button
                 variant="primary"
                 loading={busy}
+                disabled={!can}
                 onClick={() =>
                   run(async () =>
                     onChanged(await api.post<Domain>(`${base}/domains/${domain.id}/checks`)),
@@ -454,14 +467,16 @@ export function Domains({ base }: { base: string }) {
   const workspaceName = (id: string) =>
     workspaces.data?.items.find((workspace) => workspace.id === id)?.name ?? "";
 
+  const can = useCan(base, "domain:write");
   const addButton = (
-    <Button variant="primary" onClick={() => setAdding(true)}>
+    <Button variant="primary" disabled={!can} onClick={() => setAdding(true)}>
       Add a hostname
     </Button>
   );
 
   return (
     <Page title="Domains" action={addButton}>
+      {can ? null : <NotAllowed permission="domain:write" what="this tenant's hostnames" />}
       <div className="flex max-w-measure flex-col gap-2 text-ink-muted">
         <p className="m-0">
           A hostname of the client's own, public or internal to their network, serves one app at its

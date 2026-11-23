@@ -66,13 +66,16 @@ export function stepState(step: {
  * The same for a script run, in SQL, for a column such as `r.status`. With the run's
  * `scheduled_for` column, a queued run set to start later is `waiting_time`.
  */
-export const runStateSql = (status: string, scheduledFor?: string) =>
-  scheduledFor
-    ? sql<RunState>`case
-        when ${sql.ref(status)} = 'queued' and ${sql.ref(scheduledFor)} > now() then 'waiting_time'
-        when ${sql.ref(status)} = 'cancelled' then 'canceled'
-        else ${sql.ref(status)}::text end`
-    : sql<RunState>`case when ${sql.ref(status)} = 'cancelled' then 'canceled' else ${sql.ref(status)}::text end`;
+export const runStateSql = (status: string, scheduledFor?: string) => {
+  // british-ok: `cancelled` is the stored value, said as `canceled`.
+  const stored = sql<RunState>`case when ${sql.ref(status)} = 'cancelled' then 'canceled' else ${sql.ref(status)}::text end`;
+  if (!scheduledFor) return stored;
+  // british-ok: `cancelled` is the stored value, said as `canceled`.
+  return sql<RunState>`case
+    when ${sql.ref(status)} = 'queued' and ${sql.ref(scheduledFor)} > now() then 'waiting_time'
+    when ${sql.ref(status)} = 'cancelled' then 'canceled'
+    else ${sql.ref(status)}::text end`;
+};
 
 /**
  * A flow run's state, in SQL, for the flow run aliased `alias`. A running flow

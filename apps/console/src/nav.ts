@@ -104,6 +104,15 @@ export interface Section {
   help: string;
 }
 
+/**
+ * What a section is called in a workspace of this type. The release screen deploys in a dev
+ * workspace and shows versions in production, and says so in the navigation, the palette and
+ * its own title (D54).
+ */
+export function sectionLabel(section: Section, workspaceType: string | undefined): string {
+  return section.slug === "release" && workspaceType === "production" ? "Versions" : section.label;
+}
+
 /** A workspace's screens, by area. */
 export const WORKSPACE_SECTIONS: Record<
   "overview" | "build" | "operate" | "data" | "configure",
@@ -114,7 +123,7 @@ export const WORKSPACE_SECTIONS: Record<
     { slug: "flows", label: "Flows", icon: Workflow, help: "build-flows" },
     { slug: "scripts", label: "Scripts", icon: FileCode2, help: "build-scripts" },
     { slug: "screens", label: "App Builder", icon: LayoutDashboard, help: "build-screens" },
-    { slug: "apps", label: "Published apps", icon: AppWindow, help: "build-apps" },
+    { slug: "apps", label: "Apps", icon: AppWindow, help: "build-apps" },
     { slug: "extensions", label: "Extensions", icon: Shapes, help: "build-extensions" },
     { slug: "docs", label: "Documentation", icon: BookOpen, help: "build-docs" },
     { slug: "resources", label: "All resources", icon: Boxes, help: "build-resources" },
@@ -124,7 +133,7 @@ export const WORKSPACE_SECTIONS: Record<
     { slug: "events", label: "Events", icon: Radio, help: "operate-events" },
     { slug: "triggers", label: "Triggers", icon: Zap, help: "operate-triggers" },
     { slug: "approvals", label: "Approvals", icon: CircleCheck, help: "operate-approvals" },
-    { slug: "release", label: "Releases", icon: Rocket, help: "operate-release" },
+    { slug: "release", label: "Deploy", icon: Rocket, help: "operate-release" },
     { slug: "git", label: "Git sync", icon: GitCompareArrows, help: "operate-git" },
   ],
   data: [
@@ -344,7 +353,7 @@ const INSTANCE_WORKBENCHES = new Set([
 
 /**
  * A tenant's addresses that belong to another entry in the navigation: groups,
- * roles, access and releases are tabs of Members & access, groups of end users
+ * roles, access and access changes are tabs of Members & access, groups of end users
  * are a tab of End users, and the tenant itself opens on its overview.
  */
 export const TENANT_ALIASES: Record<string, string> = {

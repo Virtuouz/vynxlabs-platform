@@ -43,7 +43,7 @@ beforeEach(() => {
       return new Response(null, { status: 204 });
     }
     if (method === "PUT") state = { ...state, settings: body };
-    if (address.endsWith("/pushed")) {
+    if (address.includes("/pushed")) {
       return json({
         people: [
           {
@@ -106,10 +106,11 @@ test("the address, the tokens and what was pushed are shown, and a new token onc
   );
 });
 
-test("how pushes are taken is chosen and saved together", async () => {
+test("how pushes are taken is chosen and saved together, from the save bar (GOV-33)", async () => {
   show(<Provisioning root={root} instance={false} audience="end_users" />);
-  const save = (await screen.findByRole("button", { name: "Save" })) as HTMLButtonElement;
-  expect(save.disabled).toBe(true);
+  await screen.findByLabelText("A person's groups come from");
+  // Nothing is changed: no bar, and nothing to save.
+  expect(screen.queryByRole("region", { name: "Unsaved changes" })).toBeNull();
   expect(screen.getByText(/is disabled, and whatever they were signed in to ends/)).toBeTruthy();
   // Making groups is offered only once pushed groups decide.
   expect(screen.queryByLabelText(/Make a group here/)).toBeNull();
@@ -121,8 +122,27 @@ test("how pushes are taken is chosen and saved together", async () => {
     screen.getByLabelText("The name the provider signs a person in by is pushed as"),
     { target: { value: "externalId" } },
   );
-  expect(save.disabled).toBe(false);
-  fireEvent.click(save);
+  const bar = await screen.findByRole("region", { name: "Unsaved changes" });
+  expect(bar.textContent).toContain("how pushes are taken");
+  // Discard puts back what was saved.
+  fireEvent.click(within(bar).getByRole("button", { name: "Discard" }));
+  expect(screen.queryByRole("region", { name: "Unsaved changes" })).toBeNull();
+  expect((screen.getByLabelText("A person's groups come from") as HTMLSelectElement).value).toBe(
+    "sign_in",
+  );
+  fireEvent.change(screen.getByLabelText("A person's groups come from"), {
+    target: { value: "scim" },
+  });
+  fireEvent.click(screen.getByLabelText(/Make a group here/));
+  fireEvent.change(
+    screen.getByLabelText("The name the provider signs a person in by is pushed as"),
+    { target: { value: "externalId" } },
+  );
+  fireEvent.click(
+    within(await screen.findByRole("region", { name: "Unsaved changes" })).getByRole("button", {
+      name: "Save",
+    }),
+  );
   await waitFor(() => expect(calls.some((call) => call.method === "PUT")).toBe(true));
   expect(calls.find((call) => call.method === "PUT")?.body).toEqual({
     subjectFrom: "externalId",
@@ -185,6 +205,33 @@ test("a token says when it expires, and an expired one does not look live (GOV-2
   expect(rowOf("Old").textContent).toContain("Expired");
   expect(rowOf("Fresh").textContent).toContain("Active");
   expect(rowOf("Forever").textContent).toContain("Never");
+});
+
+test("people pushed past the first page say so and load on (GOV-34)", async () => {
+  const person = (n: number) => ({
+    userName: `u${n}@acme.example`,
+    email: `u${n}@acme.example`,
+    displayName: `Person ${n}`,
+    active: true,
+    updatedAt: "2026-11-12T10:00:00Z",
+  });
+  const fetched = globalThis.fetch;
+  vi.stubGlobal("fetch", async (address: string, init?: RequestInit) => {
+    if (address.endsWith("/pushed?limit=200"))
+      return new Response(JSON.stringify({ people: [person(1)], refusals: [], nextCursor: "c1" }), {
+        status: 200,
+      });
+    if (address.endsWith("/pushed?limit=200&cursor=c1"))
+      return new Response(JSON.stringify({ people: [person(2)], refusals: [], nextCursor: null }), {
+        status: 200,
+      });
+    return fetched(address, init);
+  });
+  show(<Provisioning root={root} instance={false} audience="members" />);
+  await screen.findByText("Person 1");
+  await screen.findByText("Showing the first 1 people.");
+  fireEvent.click(screen.getByRole("button", { name: "Load more" }));
+  await screen.findByText("Person 2");
 });
 
 test("a token is made with a length of life, and the list says when it ends (GOV-P1)", async () => {

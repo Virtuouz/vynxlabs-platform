@@ -168,7 +168,7 @@ export const loans = defineTable({
 
 - Take a value out and the rows that hold it keep it; nobody is offered it again.
 - Spell a value anew with `renamedFrom` and every row is rewritten in the deploy.
-- A colour is `gray`, `red`, `orange`, `amber`, `green`, `teal`, `blue`, `violet` or `pink`, or any `#rrggbb`. The text over it is black or white, whichever reads better.
+- A color is `gray`, `red`, `orange`, `amber`, `green`, `teal`, `blue`, `violet` or `pink`, or any `#rrggbb`. The text over it is black or white, whichever reads better.
 - `onDelete` is `restrict` (the default: deleting a row that is pointed to is refused), `set_null` or `cascade`.
 - `display` is the column shown where another table points to a row of this one.
 
@@ -341,7 +341,7 @@ flowchart LR
 ```
 ````
 
-It is drawn in the site's own colours, again when the reader's theme changes, and the reader can move and zoom it: drag, ⌘ or Ctrl and scroll, two fingers, or the keys + − 0 and the arrows. Without script it is its source. Mermaid is served by the instance, and fetched only by a page that has a diagram.
+It is drawn in the site's own colors, again when the reader's theme changes, and the reader can move and zoom it: drag, ⌘ or Ctrl and scroll, two fingers, or the keys + − 0 and the arrows. Without script it is its source. Mermaid is served by the instance, and fetched only by a page that has a diagram.
 
 ### What columns and resources are for
 

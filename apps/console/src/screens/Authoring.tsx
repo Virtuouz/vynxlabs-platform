@@ -1051,9 +1051,10 @@ export function ScriptEditor({
     </div>
   );
 
+  // The server names a build error by the file the code is in: `<path>.<kind>.ts`.
+  const ownIssues = buildIssues.filter((issue) => issue.file === `${path}.${kind}.ts`);
   const problemCount =
-    markers.filter((marker) => marker.severity === "error").length +
-    buildIssues.filter((issue) => issue.file === `${path}.${kind}.ts`).length;
+    markers.filter((marker) => marker.severity === "error").length + ownIssues.length;
   const codeArea = (height: string) =>
     fromRepository ? (
       <RepositorySource root={root} path={path} />
@@ -1232,7 +1233,7 @@ export function ScriptEditor({
       ) : !editable ? (
         <ProductionNotice
           root={root}
-          noun="Code"
+          noun={`${about.noun.charAt(0).toUpperCase()}${about.noun.slice(1)}`}
           edit={opened ? `${about.edit}/${opened}` : undefined}
         />
       ) : fromRepository ? (
@@ -1357,7 +1358,7 @@ export function ScriptEditor({
                     content: (
                       <ProblemList
                         markers={markers}
-                        build={buildIssues.filter((issue) => issue.file === `${path}.${kind}.ts`)}
+                        build={ownIssues}
                         onShow={(line, column) => setReveal({ line, column, at: Date.now() })}
                       />
                     ),
@@ -1388,7 +1389,7 @@ export function ScriptEditor({
               </h2>
               <ProblemList
                 markers={markers}
-                build={buildIssues.filter((issue) => issue.file === `${path}.${kind}.ts`)}
+                build={ownIssues}
                 onShow={(line, column) => setReveal({ line, column, at: Date.now() })}
               />
             </section>

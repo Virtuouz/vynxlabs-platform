@@ -133,3 +133,25 @@ test("GOV-26: the audit log is said apart: entries hide at once, leave with thei
   expect(both).toContain("Runs older than that are removed within minutes of saving");
   expect(both).toContain("stop showing at once");
 });
+
+test("a member who may not change retention sees it, told so, and cannot edit it (GOV-37)", async () => {
+  vi.stubGlobal("fetch", async (address: string) => {
+    if (address.endsWith("/me"))
+      return Response.json({
+        principal: { type: "member", id: "m1", name: "Rae", email: null },
+        instancePermissions: [],
+        tenants: [],
+      });
+    if (address.includes("/access/member/m1"))
+      return Response.json({
+        principal: {},
+        sources: [],
+        permissions: [{ permission: "tenant:read" }],
+      });
+    return Response.json(policy(null));
+  });
+  show(<RetentionSettings base={base} />);
+  await screen.findByText(/You can see how long this tenant's history is kept, not change it/);
+  const runs = screen.getByLabelText(/Runs \(days\)/) as HTMLInputElement;
+  expect((runs.closest("fieldset") as HTMLFieldSetElement).disabled).toBe(true);
+});

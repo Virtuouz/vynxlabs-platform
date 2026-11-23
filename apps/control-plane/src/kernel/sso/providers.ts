@@ -471,7 +471,7 @@ export async function checkRole(trx: Trx, tenantId: string | null, roleId: strin
 
 /** What must hold before a provider signs anyone in. */
 async function checkCanEnable(trx: Trx, provider: Provider) {
-  if (!provider.enabled) return;
+  if (!provider.enabled || provider.paused) return;
   if (provider.audience === "members") {
     const proved = await trx
       .selectFrom("identity_domain")
@@ -592,6 +592,9 @@ export async function updateProvider(
   if (enforce && !enabled) {
     throw badRequest("Single sign-on can only be required through a provider that is on.");
   }
+  const resumes =
+    input.enabled === true ||
+    (input.config !== undefined && JSON.stringify(config) !== JSON.stringify(current.config));
   const row = await trx
     .updateTable("identity_provider")
     .set({
@@ -602,8 +605,9 @@ export async function updateProvider(
       enforce,
       ...(input.provision !== undefined ? { provision: input.provision } : {}),
       ...(input.defaultRoleId !== undefined ? { default_role_id: input.defaultRoleId } : {}),
-      // Saving is how someone says the provider has this instance's addresses.
-      paused: false,
+      // Turning it on, or changing its settings, is how someone says the provider has this
+      // instance's addresses. A rename or a role change does not (GOV-31).
+      ...(resumes ? { paused: false } : {}),
       updated_at: new Date(),
     })
     .where("id", "=", current.id)

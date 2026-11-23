@@ -427,6 +427,12 @@ describe("the data API", () => {
         "&sort=count",
       ),
     ).toEqual([1, 20, 21, 22, 23, 24]);
+    // Text that does not hold a word is the rest of the rows (not the rows that hold it).
+    const holding = await find({ column: "label", op: "contains", value: "ITEM 2" });
+    const lacking = await find({ column: "label", op: "not_contains", value: "ITEM 2" });
+    expect(holding.length).toBeGreaterThan(0);
+    expect(lacking.length).toBeGreaterThan(0);
+    expect(lacking.filter((count) => holding.includes(count))).toEqual([]);
     expect(await find({ column: "count", op: "in", value: [3, 5, 99] }, "&sort=count")).toEqual([
       3, 5,
     ]);
@@ -1655,6 +1661,24 @@ describe("tables made in the console, isolation and guards", () => {
       (await alice.get(`${ws()}/tables`)).body.items.find((item: Any) => item.name === "notes")
         .status,
     ).toBe("retired");
+  });
+
+  test("a retired table keeps where it was managed, in the list and on its own page", async () => {
+    const mine = (path: string, ownership: string) =>
+      alice.put(`${ws()}/resources/${path}`, {
+        kind: "table",
+        schemaVersion: 1,
+        ownership,
+        body: { columns: { title: { type: "text", required: true } } },
+      });
+    expect((await mine("kept-in-console", "ui")).status).toBe(201);
+    expect((await alice.delete(`${ws()}/resources/kept-in-console`)).status).toBe(204);
+    const listed = (await alice.get(`${ws()}/tables`)).body.items.find(
+      (item: Any) => item.name === "kept-in-console",
+    );
+    expect(listed).toMatchObject({ status: "retired", managedIn: "ui" });
+    const described = await alice.get(`${ws()}/tables/kept-in-console?id=${listed.id}`);
+    expect(described.body).toMatchObject({ status: "retired", managedIn: "ui" });
   });
 
   test("a required column that was removed comes back even when rows were written without it", async () => {

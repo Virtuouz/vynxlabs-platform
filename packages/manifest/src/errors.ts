@@ -186,8 +186,8 @@ export const ERROR_CODES = {
   ),
   delete_not_allowed: code(
     409,
-    "This release would remove what the repository does not have",
-    "If it was made in the console, pull it into the repository first. To remove it, release again saying so.",
+    "This access change would remove what the repository does not have",
+    "If it was made in the console, pull it into the repository first. To remove it, ask again saying so.",
   ),
   principal_in_use: code(
     409,
@@ -209,7 +209,7 @@ export const ERROR_CODES = {
   own_release: code(
     409,
     "A change to access is approved by someone else",
-    "Whoever made the change cannot approve it. Ask a second person who may release the tenant's access.",
+    "Whoever made the change cannot approve it. Ask a second person who may change the tenant's access.",
   ),
   approval_needs_two: code(
     409,
@@ -218,8 +218,8 @@ export const ERROR_CODES = {
   ),
   release_stale: code(
     409,
-    "The tenant's access changed after this release was asked for",
-    "It is no longer the change that was shown. Withdraw it and release again.",
+    "The tenant's access changed after this access change was asked for",
+    "It is no longer the change that was shown. Withdraw it and ask again.",
   ),
   link_expired: code(410, "The link has been used or has run out", "Ask for a new one."),
 

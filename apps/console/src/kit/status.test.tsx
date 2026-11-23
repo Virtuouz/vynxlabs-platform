@@ -22,10 +22,11 @@ const EXPECTED: [state: string, word: string, icon: string, tone: string][] = [
   ["suspended", "Suspended", "CirclePause", "text-attention"],
   ["revoked", "Revoked", "Ban", "text-danger"],
   ["expired", "Expired", "Clock", "text-ink-subtle"],
+  ["unchecked", "Not tested", "CircleDashed", "text-ink-subtle"],
+  ["bound", "Set up here", "CircleCheck", "text-success"],
+  ["unbound", "Not set up here", "Unlink", "text-attention"],
   ["on", "On", "ToggleRight", "text-success"],
   ["off", "Off", "CircleOff", "text-ink-subtle"],
-  ["reachable", "Reachable", "CircleCheck", "text-success"],
-  ["unreachable", "Not reachable", "CircleX", "text-danger"],
 ];
 
 test.each(EXPECTED)("%s reads %s, with %s, in %s", (state, word, icon, tone) => {

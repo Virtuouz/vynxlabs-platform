@@ -59,7 +59,18 @@ In the compose file, the bundled database and object store are the profiles `pos
 
 The Postgres user must own its database and be allowed to create roles (`CREATEROLE`). It does not need to be a superuser. The platform makes one extra role per database, which it signs in as for every request for a tenant's rows. That role owns nothing, so row policies apply to it, and nothing run under it can become the owner. Its password is derived from a secret sealed in the database (the first master key the instance had) and is never stored.
 
+The object store is asked four things: `HeadBucket` (at start and by the readiness check), `PutObject`, `GetObject` and `DeleteObject`, all on the one bucket in `S3_BUCKET`. `CreateBucket` is asked only when `HeadBucket` answers 404, so an account that may not create buckets works once the bucket exists. Any other answer to `HeadBucket`, such as 403 for a bucket that is not yours, stops the instance at start and says so in its log. It lists nothing, and needs no bucket policy, versioning or lifecycle rule of its own.
+
 A managed Postgres with point-in-time recovery is the better choice for anything that matters.
+
+### Installing where there is no internet
+
+The platform asks nothing of the internet when it runs. Installing it does: images are pulled or built, and a build fetches packages. Do both on a machine that is online, and carry the images across:
+
+1. On the online machine: `docker compose -f deploy/compose/compose.yaml build`, and `docker compose -f deploy/compose/compose.yaml pull` for the bundled Postgres and object store (skip those you do not use).
+2. `docker save` each image (`volvel/volvel:local`, or what `VOLVEL_IMAGE` names, `postgres:18`, the object store's) into one archive, and carry it over.
+3. On the other machine: `docker load < archive`, copy `deploy/compose/` with your `.env`, and start with `docker compose -f deploy/compose/compose.yaml up -d --wait`, without `--build`.
+4. Upgrades are the same: build and save on the online machine, load, and run `up -d --wait`.
 
 ## It never calls home
 
@@ -74,6 +85,36 @@ The platform makes no network call you did not configure: no telemetry, no updat
 Take the Postgres and object store backups close together. A database that names a file the store does not have will say so when the file is asked for, and not before.
 
 A tenant can also be backed up by itself, as an export. See below.
+
+## Restoring an instance
+
+A restore brings back the database, the object store and the keys together. Do it with every replica of the control plane stopped (`docker compose stop control-plane worker-host`).
+
+1. Restore Postgres from a backup, and the object store from one taken at about the same time. A database that names a file the store does not have says so when the file is asked for, not before. If tenants use dedicated databases ("A database of a tenant's own"), restore those from the same moment too: the platform database holds only their addresses.
+2. Put back the `MASTER_KEY` the backup was sealed with. If a rotation happened after the backup, set that older key as `MASTER_KEY_SECONDARY` and the current one as `MASTER_KEY`: the instance opens values sealed by either, and seals again with the current one. See "Rotating the master key".
+3. Keep `AUTH_SECRET` as it was. A different one works, and signs everyone out: see "Changing `AUTH_SECRET`".
+4. Start it. Migrations run on start; a restore is a database of an earlier level, and it moves forward.
+5. Check `GET /api/v1/readyz` answers 200, and open **Instance → Health**: the database and the object store answer, and **Master key** lists no value that opened with neither key. The data role's password is made again from the secret kept in the database as each replica starts, so tenants' tables answer without a step of yours.
+6. Open a tenant that holds a file and read the file: that shows the two backups agree.
+
+### Changing `AUTH_SECRET`
+
+`AUTH_SECRET` signs sign-in cookies, and the records a hostname or a single sign-on domain is proven with (`_vx-challenge`) are made from it. Set the new value on every replica at once, and restart them together: a replica with the old one does not accept a cookie made by one with the new.
+
+- Everyone signs in again, operators, tenants' members and end users. API keys, bundles, secrets and runs are not affected: `MASTER_KEY` seals stored secrets, not `AUTH_SECRET`.
+- The record shown for a hostname or an email domain that is not yet verified is a new value. Publish the new one. Look at **Domains** of each tenant before you change it.
+- Do it at a quiet time, and tell people they will be asked to sign in.
+
+### Upgrading Postgres to a newer major version
+
+The instance does not care which major version it runs on, only that the version holds what a tenant keeps. Moving to a newer one is a restore into a new server:
+
+1. Take a backup (see "Backups"), and stop every replica of the control plane and the worker host.
+2. Dump the platform database with the new version's `pg_dump`, and restore it into the new server with `pg_restore` into a database owned by the same user, which must be allowed `CREATEROLE`. Do the same for every dedicated database. `pg_upgrade` in place does the same for a server you manage yourself.
+3. Point `DATABASE_URL` at the new server, and start the control plane. It makes the roles it signs in as for tenants' rows again from the secret kept in the database, so roles of the old server need not be carried over.
+4. Check `GET /api/v1/readyz` and **Instance → Health**, then open a tenant's table.
+
+With the bundled Postgres in compose, the data lives in a volume of its own: dump from the old container, change the image tag, remove the volume and restore. Keep the dump until the new server has run for a while.
 
 ## Rotating the master key
 
@@ -241,7 +282,7 @@ Plan on 2 GB for a machine that runs the control plane and scripts together. Giv
 
 ### Sizing: the database
 
-Every tenant's table requests on the platform database share one pool of connections per replica. Each tenant has a share of it:
+Every tenant's table requests share one pool of connections per replica, on the platform database and on each dedicated database. Each tenant has a share of it:
 - A tenant's requests past its share wait their turn, so one tenant's slow searches leave the others room.
 - After 5 seconds of waiting, a request is answered 503 with `Retry-After`, never 500. Nothing was done, so it is safe to try again.
 - `@volvel/app` and scripts try again by themselves, twice.
@@ -256,7 +297,7 @@ Every data request has a time limit. Past it, the statement is stopped and the r
 | `DATA_STATEMENT_TIMEOUT_MS` | 15000 | How long one data request may take |
 | `SQL_STATEMENT_TIMEOUT_MS` | 15000 | How long one query written in SQL may run before it is stopped |
 
-Each replica opens up to `DATABASE_POOL_SIZE + DATA_POOL_SIZE + 3` connections (2 more for the queue, 1 to listen for changes to runs), and a tenant on a dedicated database or a data source adds its own: 5 and 5 for each replica for a dedicated database, 4 for a data source; keep their total across replicas under the database's `max_connections`. A tenant on a dedicated database has that database's connections to itself and no share. `volvel_db_pool{pool,state}` in the metrics shows each pool's open, idle and waiting connections: a `waiting` above 0 that does not go away means a pool too small, or a database too slow.
+Each replica opens up to `DATABASE_POOL_SIZE + DATA_POOL_SIZE + 3` connections (2 more for the queue, 1 to listen for changes to runs), and a tenant on a dedicated database or a data source adds its own: 5 and 5 for each replica for a dedicated database, 4 for a data source; keep their total across replicas under the database's `max_connections`. Tenants on a dedicated database have the same share of its connections: several tenants may use one database. `volvel_db_pool{pool,state}` in the metrics shows each pool's open, idle and waiting connections: a `waiting` above 0 that does not go away means a pool too small, or a database too slow.
 
 ### When the database takes no writes
 
@@ -553,7 +594,7 @@ What happened, counted by the replica that saw it. Each replica answers for its 
 
 | Series | What it is |
 | --- | --- |
-| `volvel_runs_finished_total{tenant,workspace,state}` | Script runs that ended: `succeeded`, `failed`, `cancelled` |
+| `volvel_runs_finished_total{tenant,workspace,state}` | Script runs that ended: `succeeded`, `failed`, or canceled (the label reads `cancelled`) |
 | `volvel_run_duration_seconds{tenant,workspace}` | A histogram of how long runs took |
 | `volvel_run_queue_wait_seconds{tenant,workspace}` | A histogram of how long runs waited for a worker, from when they were due |
 | `volvel_flow_runs_finished_total{state}` | Flow runs that ended |

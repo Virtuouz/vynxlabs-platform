@@ -418,6 +418,20 @@ export function FlowView({
   const manualInput = (manualNode?.trigger as { input?: Record<string, unknown> } | undefined)
     ?.input;
 
+  const arrange = async (positions: Positions) => {
+    setSaved("saving");
+    try {
+      await api.put(`${root}/flow-layouts/${data.path}`, { positions });
+      setSaved("saved");
+    } catch (error) {
+      setSaved(
+        (error as ApiError).status === 403
+          ? "You can arrange the graph, but only someone who manages flows can save it."
+          : (error as Error).message,
+      );
+    }
+  };
+
   return (
     <Page
       title={data.path}
@@ -499,23 +513,7 @@ export function FlowView({
         nodes={data.nodes}
         edges={data.edges}
         layout={data.layout}
-        onMove={
-          may("flow:write")
-            ? async (positions) => {
-                setSaved("saving");
-                try {
-                  await api.put(`${root}/flow-layouts/${data.path}`, { positions });
-                  setSaved("saved");
-                } catch (error) {
-                  setSaved(
-                    (error as ApiError).status === 403
-                      ? "You can arrange the graph, but only someone who manages flows can save it."
-                      : (error as Error).message,
-                  );
-                }
-              }
-            : undefined
-        }
+        {...(may("flow:write") ? { onMove: arrange } : {})}
       />
       <p className="m-0 text-body-sm text-ink-muted" aria-live="polite">
         {!may("flow:write")

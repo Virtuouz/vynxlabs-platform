@@ -129,7 +129,7 @@ export async function buildApp(options: AppOptions) {
     app.log,
   );
   app.decorate("kernel", kernel);
-  // A release of a tenant's access is committed to the tenant's branch once it is in the
+  // An access change is committed to the tenant's branch once it is in the
   // database. It has applied already: a push that fails is logged, and the next one carries it.
   app.addHook("onResponse", async (request) => {
     if (request.method === "GET") return;

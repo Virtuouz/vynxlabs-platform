@@ -14,14 +14,17 @@ import {
   TextField,
 } from "@volvel/ui";
 import { Plus, Trash2 } from "lucide-react";
-import { useState } from "react";
+import { type ReactNode, useMemo, useRef, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, failureText, notify } from "../ask.tsx";
+import { Can, useCan } from "../kit/Can.tsx";
 import { DataTable } from "../kit/DataTable.tsx";
 import { listOf } from "../kit/format.ts";
 import { ErrorState, Loading } from "../kit/LoadState.tsx";
 import { Stepper } from "../kit/layout.tsx";
 import { PageHeader } from "../kit/PageHeader.tsx";
+import { LoadMore, usePagedList } from "../kit/paged.tsx";
+import { SaveBar } from "../kit/SaveBar.tsx";
 import { SecretField } from "../kit/SecretField.tsx";
 import { Mono, StatePill, Tag } from "../kit/status.tsx";
 import { useOpenRow } from "../kit/useOpenRow.ts";
@@ -107,7 +110,7 @@ interface GroupMap {
   value: string;
   groupId: string;
   groupName?: string;
-  /** `release` for one an access release made: it is changed by a release, not here. */
+  /** `release` for one an access change made: it is changed by another access change, not here. */
   managedBy?: "hand" | "release";
 }
 interface Link {
@@ -563,8 +566,11 @@ function Domains({ root, instance }: { root: string; instance: boolean }) {
 }
 
 function Groups({ base, root, audience }: { base: string; root: string; audience: Audience }) {
-  const groups = useLoad<{ items: { id: string; name: string }[] }>(
-    `${base}/${audience === "members" ? "groups" : "end-user-groups"}?limit=200`,
+  // The picker is searched on the server, so a group past the first page can still be chosen.
+  const [typed, setTyped] = useState("");
+  const groups = usePagedList<{ id: string; name: string }>(
+    `${base}/${audience === "members" ? "groups" : "end-user-groups"}`,
+    { search: typed, limit: 200 },
   );
   const stored = useLoad<{ items: GroupMap[] }>(`${root}/group-maps`);
   const [edited, setEdited] = useState<GroupMap[]>();
@@ -576,10 +582,51 @@ function Groups({ base, root, audience }: { base: string; root: string; audience
   const tenantId = base.split("/").pop();
   const change = (index: number, patch: Partial<GroupMap>) =>
     setEdited(rows.map((row, at) => (at === index ? { ...row, ...patch } : row)));
-  const options = (groups.data?.items ?? []).map((group) => ({
-    value: group.id,
-    label: group.name,
-  }));
+  // A group already chosen stays an option when a search leaves it out of the list. The same
+  // list until something changes: a list that changes under the box resets what is typed in it.
+  const chosenKey = JSON.stringify([
+    (groups.items ?? []).map((group) => [group.id, group.name]),
+    rows.map((row) => [row.groupId, row.groupName ?? null]),
+  ]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: chosenKey stands for both lists
+  const options = useMemo(() => {
+    const listed = groups.items ?? [];
+    return [
+      ...listed.map((group) => ({ value: group.id, label: group.name })),
+      ...rows
+        .filter((row) => row.groupId && !listed.some((one) => one.id === row.groupId))
+        .map((row) => ({ value: row.groupId, label: row.groupName ?? row.groupId })),
+    ];
+  }, [chosenKey]);
+  const saveMapping = async () => {
+    // A row left empty is nothing; one half filled in is not saved quietly without its half.
+    const half = rows.findIndex((row) => !!row.value.trim() !== !!row.groupId);
+    if (half >= 0) {
+      setProblem(
+        `Row ${half + 1} is not complete. ${
+          rows[half]?.value.trim()
+            ? "Choose the group here for it"
+            : "Write the group at the provider for it"
+        }, or remove the row.`,
+      );
+      return;
+    }
+    setProblem(undefined);
+    const items = rows.filter((row) => row.value.trim() && row.groupId);
+    setBusy(true);
+    try {
+      await api.put(`${root}/group-maps`, {
+        items: items.map((row) => ({ value: row.value.trim(), groupId: row.groupId })),
+      });
+      setEdited(undefined);
+      stored.reload();
+      notify.success("The group mapping was saved.");
+    } catch (error) {
+      notify.error(error);
+    } finally {
+      setBusy(false);
+    }
+  };
   return (
     <div className="flex max-w-measure flex-col gap-4">
       <p className="m-0 text-ink-muted">
@@ -591,9 +638,9 @@ function Groups({ base, root, audience }: { base: string; root: string; audience
       {released.length > 0 ? (
         <div className="flex flex-col gap-2">
           <p className="m-0 text-ink-muted">
-            These come from a{" "}
+            These come from an{" "}
             <RouteLink to={`/t/${tenantId}/releases`} className="text-action">
-              release of the tenant's access
+              access change
             </RouteLink>
             . Change them there.
           </p>
@@ -605,7 +652,7 @@ function Groups({ base, root, audience }: { base: string; root: string; audience
               <Mono>{row.value}</Mono>
               <span className="text-ink-muted">goes to</span>
               <strong>{row.groupName ?? row.groupId}</strong>
-              <Tag tone="neutral">Release</Tag>
+              <Tag tone="neutral">Access change</Tag>
             </div>
           ))}
         </div>
@@ -627,7 +674,13 @@ function Groups({ base, root, audience }: { base: string; root: string; audience
               label="Group here"
               options={options}
               value={row.groupId || undefined}
-              onChange={(value) => change(index, { groupId: value ?? "" })}
+              onSearch={setTyped}
+              onChange={(value) =>
+                change(index, {
+                  groupId: value ?? "",
+                  groupName: options.find((option) => option.value === value)?.label ?? "",
+                })
+              }
             />
           </div>
           <Button
@@ -638,49 +691,31 @@ function Groups({ base, root, audience }: { base: string; root: string; audience
           </Button>
         </div>
       ))}
+      <LoadMore
+        shown={groups.items?.length ?? 0}
+        hasMore={groups.hasMore}
+        loading={groups.loadingMore}
+        error={groups.moreError}
+        noun="groups"
+        onMore={groups.loadMore}
+      />
       <div className="flex flex-wrap gap-2">
         <Button onClick={() => setEdited([...rows, { value: "", groupId: "" }])}>
           <Plus size={16} aria-hidden="true" /> Add a mapping
         </Button>
-        <Button
-          variant="primary"
-          loading={busy}
-          disabled={edited === undefined}
-          onClick={async () => {
-            // A row left empty is nothing; one half filled in is not saved quietly without its half.
-            const half = rows.findIndex((row) => !!row.value.trim() !== !!row.groupId);
-            if (half >= 0) {
-              setProblem(
-                `Row ${half + 1} is not complete. ${
-                  rows[half]?.value.trim()
-                    ? "Choose the group here for it"
-                    : "Write the group at the provider for it"
-                }, or remove the row.`,
-              );
-              return;
-            }
-            setProblem(undefined);
-            const items = rows.filter((row) => row.value.trim() && row.groupId);
-            setBusy(true);
-            try {
-              await api.put(`${root}/group-maps`, {
-                items: items.map((row) => ({ value: row.value.trim(), groupId: row.groupId })),
-              });
-              setEdited(undefined);
-              stored.reload();
-              notify.success("The group mapping was saved.");
-            } catch (error) {
-              notify.error(error);
-            } finally {
-              setBusy(false);
-            }
-          }}
-        >
-          Save mapping
-        </Button>
       </div>
       {problem ? <Notice tone="danger">{problem}</Notice> : null}
-      {groups.data && options.length === 0 ? (
+      <SaveBar
+        dirty={edited !== undefined}
+        saving={busy}
+        onSave={() => void saveMapping()}
+        onDiscard={() => {
+          setEdited(undefined);
+          setProblem(undefined);
+        }}
+        what="this group mapping"
+      />
+      {groups.items && options.length === 0 && !typed ? (
         <Notice tone="attention">
           {audience === "members"
             ? "This tenant has no groups yet. Create one under Groups."
@@ -752,6 +787,38 @@ function Settings({
     />
   );
   const saml = provider.protocol === "saml";
+  // What is on the screen, to tell whether it differs from what was last saved.
+  const snapshotOf = (values: { config: Config; certificates: string }) =>
+    JSON.stringify([
+      name,
+      values.config,
+      values.certificates,
+      attributes,
+      clientSecret,
+      removeSecret,
+      scopes,
+      provision,
+      roleId ?? null,
+    ]);
+  const [saved, setSaved] = useState(() => snapshotOf({ config, certificates }));
+  const dirty = snapshotOf({ config, certificates }) !== saved;
+  const form = useRef<HTMLFormElement>(null);
+  const discard = () => {
+    setName(provider.name);
+    setConfig(provider.config);
+    setCertificates((provider.config.certificates ?? []).join("\n"));
+    setAttributes(
+      Object.entries(provider.config.attributes ?? {})
+        .map(([attribute, claim]) => `${attribute} = ${claim}`)
+        .join("\n"),
+    );
+    setClientSecret("");
+    setRemoveSecret(false);
+    setScopes((provider.config.scopes ?? []).join(" "));
+    setProvision(provider.provision);
+    setRoleId(provider.defaultRoleId ?? undefined);
+    setError(undefined);
+  };
   const [metadataUrl, setMetadataUrl] = useState("");
   const [metadataXml, setMetadataXml] = useState("");
   const [reading, setReading] = useState(false);
@@ -767,16 +834,22 @@ function Settings({
     setReading(true);
     try {
       // Only the metadata is sent: the three values it describes would win over it if sent too.
-      const saved = await api.patch<IdentityProvider>(root, {
+      const read = await api.patch<IdentityProvider>(root, {
         config: metadataXml.trim()
           ? { metadataXml: metadataXml.trim() }
           : { metadataUrl: metadataUrl.trim() },
       });
-      setConfig(saved.config);
-      setCertificates((saved.config.certificates ?? []).join("\n"));
+      setConfig(read.config);
+      setCertificates((read.config.certificates ?? []).join("\n"));
+      setSaved(
+        snapshotOf({
+          config: read.config,
+          certificates: (read.config.certificates ?? []).join("\n"),
+        }),
+      );
       setMetadataUrl("");
       setMetadataXml("");
-      onChanged(saved);
+      onChanged(read);
       notify.success("The metadata was read. The sign-in address and certificates are as it says.");
     } catch (caught) {
       setReadError(caught as ApiError);
@@ -825,6 +898,7 @@ function Settings({
         </section>
       ) : null}
       <form
+        ref={form}
         className="flex flex-col gap-3"
         onSubmit={async (event) => {
           event.preventDefault();
@@ -867,7 +941,7 @@ function Settings({
           setBusy(true);
           try {
             const { spCertificate: _ours, ...sent } = config;
-            const saved = await api.patch<IdentityProvider>(root, {
+            const updated = await api.patch<IdentityProvider>(root, {
               name: name.trim(),
               config: {
                 ...sent,
@@ -890,9 +964,23 @@ function Settings({
             });
             setClientSecret("");
             setRemoveSecret(false);
-            onChanged(saved);
+            // What was typed is now what is saved; the secret is never kept on the screen.
+            setSaved(
+              JSON.stringify([
+                name,
+                config,
+                certificates,
+                attributes,
+                "",
+                false,
+                scopes,
+                provision,
+                roleId ?? null,
+              ]),
+            );
+            onChanged(updated);
             // A secret stored for the old issuer is not sent to a new one: said, not lost in silence.
-            if (provider.hasSecret && !saved.hasSecret)
+            if (provider.hasSecret && !updated.hasSecret)
               notify.info(
                 "The provider was saved. Its client secret was dropped because the issuer changed: give it again in Settings.",
               );
@@ -1091,70 +1179,82 @@ function Settings({
           />
         ) : null}
         {error ? <Notice tone="danger">{failureText(error)}</Notice> : null}
-        <div className="mt-1 flex justify-end">
-          <Button type="submit" variant="primary" loading={busy}>
-            Save
-          </Button>
-        </div>
+        <SaveBar
+          dirty={dirty}
+          saving={busy}
+          onSave={() => form.current?.requestSubmit()}
+          onDiscard={discard}
+          what="this provider's settings"
+        />
       </form>
     </div>
   );
 }
 
 function People({ root }: { root: string }) {
-  const list = useLoad<{ items: Link[] }>(`${root}/links`);
+  const list = usePagedList<Link>(`${root}/links`, { limit: 200 });
   return list.error ? (
     <ErrorState error={list.error} onRetry={list.reload} />
   ) : (
-    <DataTable<Link>
-      variant="static"
-      framed
-      label="People who signed in"
-      rows={list.data?.items ?? []}
-      rowKey={(row) => row.id}
-      empty={
-        <EmptyState title="Nobody yet">
-          People appear here the first time they sign in through this provider.
-        </EmptyState>
-      }
-      columns={[
-        { header: "Person", cell: (row) => row.name || row.email || "Unknown" },
-        { header: "Email at the provider", cell: (row) => row.email ?? "" },
-        {
-          header: "Subject",
-          cell: (row) => <code className="font-mono text-code break-all">{row.subject}</code>,
-        },
-        {
-          header: "Last signed in",
-          cell: (row) => (row.lastSignedInAt ? when(row.lastSignedInAt) : "Never"),
-        },
-        {
-          header: "",
-          cell: (row) => (
-            <Button
-              onClick={async () => {
-                const sure = await ask.confirm({
-                  title: `Untie ${row.email ?? row.subject}?`,
-                  text: "For when this person's identity at the provider was replaced. Their next sign-in ties them again by email, under the rules of a first sign-in.",
-                  action: "Untie",
-                  danger: true,
-                });
-                if (!sure) return;
-                try {
-                  await api.delete(`${root}/links/${row.id}`);
-                  notify.success("Untied. Their next sign-in ties them again by email.");
-                  list.reload();
-                } catch (error) {
-                  notify.error(error);
-                }
-              }}
-            >
-              Untie
-            </Button>
-          ),
-        },
-      ]}
-    />
+    <div className="flex flex-col gap-3">
+      <DataTable<Link>
+        variant="static"
+        framed
+        label="People who signed in"
+        rows={list.items ?? []}
+        rowKey={(row) => row.id}
+        empty={
+          <EmptyState title="Nobody yet">
+            People appear here the first time they sign in through this provider.
+          </EmptyState>
+        }
+        columns={[
+          { header: "Person", cell: (row) => row.name || row.email || "Unknown" },
+          { header: "Email at the provider", cell: (row) => row.email ?? "" },
+          {
+            header: "Subject",
+            cell: (row) => <code className="font-mono text-code break-all">{row.subject}</code>,
+          },
+          {
+            header: "Last signed in",
+            cell: (row) => (row.lastSignedInAt ? when(row.lastSignedInAt) : "Never"),
+          },
+          {
+            header: "",
+            cell: (row) => (
+              <Button
+                onClick={async () => {
+                  const sure = await ask.confirm({
+                    title: `Untie ${row.email ?? row.subject}?`,
+                    text: "For when this person's identity at the provider was replaced. Their next sign-in ties them again by email, under the rules of a first sign-in.",
+                    action: "Untie",
+                    danger: true,
+                  });
+                  if (!sure) return;
+                  try {
+                    await api.delete(`${root}/links/${row.id}`);
+                    notify.success("Untied. Their next sign-in ties them again by email.");
+                    list.reload();
+                  } catch (error) {
+                    notify.error(error);
+                  }
+                }}
+              >
+                Untie
+              </Button>
+            ),
+          },
+        ]}
+      />
+      <LoadMore
+        shown={list.items?.length ?? 0}
+        hasMore={list.hasMore}
+        loading={list.loadingMore}
+        error={list.moreError}
+        noun="people"
+        onMore={list.loadMore}
+      />
+    </div>
   );
 }
 
@@ -1226,6 +1326,17 @@ function ProviderDetail({
     }
   };
   const who = provider.audience === "members" ? "members" : "end users";
+  // What changes a provider needs: switched off for a member who may only read.
+  const gate = {
+    base: instance ? "/instance" : base,
+    permission: instance ? "instance:write" : "sso:write",
+  };
+  const can = useCan(gate.base, gate.permission);
+  const guarded = (content: ReactNode) => (
+    <Can {...gate} what="this provider">
+      {content}
+    </Can>
+  );
 
   return (
     <section className="flex flex-col gap-4">
@@ -1241,7 +1352,7 @@ function ProviderDetail({
           <>
             <Button
               variant="danger"
-              disabled={busy}
+              disabled={busy || !can}
               onClick={async () => {
                 const sure = await ask.typeToConfirm({
                   title: `Remove ${provider.name}?`,
@@ -1262,7 +1373,7 @@ function ProviderDetail({
             </Button>
             {provider.enabled && !provider.paused ? (
               <Button
-                disabled={busy}
+                disabled={busy || !can}
                 onClick={async () => {
                   const sure = await ask.confirm(
                     provider.enforce
@@ -1297,6 +1408,7 @@ function ProviderDetail({
             <Button
               variant="primary"
               loading={busy}
+              disabled={!can}
               onClick={async () => {
                 if (on) {
                   // Turning it off ends sign-in through it for everyone it covers: that is said first.
@@ -1357,22 +1469,26 @@ function ProviderDetail({
           {
             id: "setup",
             label: "Set up",
-            content: <SetUp root={root} provider={provider} onChanged={onChanged} />,
+            content: guarded(<SetUp root={root} provider={provider} onChanged={onChanged} />),
           },
-          { id: "domains", label: "Domains", content: <Domains root={root} instance={instance} /> },
+          {
+            id: "domains",
+            label: "Domains",
+            content: guarded(<Domains root={root} instance={instance} />),
+          },
           ...(instance
             ? []
             : [
                 {
                   id: "groups",
                   label: "Groups",
-                  content: <Groups base={base} root={root} audience={provider.audience} />,
+                  content: guarded(<Groups base={base} root={root} audience={provider.audience} />),
                 },
               ]),
           {
             id: "settings",
             label: "Settings",
-            content: (
+            content: guarded(
               <Settings
                 key={provider.id}
                 base={base}
@@ -1380,19 +1496,19 @@ function ProviderDetail({
                 instance={instance}
                 provider={provider}
                 onChanged={onChanged}
-              />
+              />,
             ),
           },
-          { id: "people", label: "People", content: <People root={root} /> },
+          { id: "people", label: "People", content: guarded(<People root={root} />) },
           {
             id: "provisioning",
             label: "Provisioning",
-            content: (
+            content: guarded(
               <Provisioning
                 root={`${base}/provisioning/${provider.id}`}
                 instance={instance}
                 audience={provider.audience}
-              />
+              />,
             ),
           },
         ]}
@@ -1406,6 +1522,7 @@ export function SingleSignOn({ base }: { base: string }) {
   const instance = base === "/instance";
   const list = useLoad<{ items: IdentityProvider[] }>(`${base}/identity-providers`);
   const [connecting, setConnecting] = useState(false);
+  const canConnect = useCan(base, instance ? "instance:write" : "sso:write");
   // The provider open is in the address: a link opens it, and the breadcrumb leads back.
   const [open, setOpen] = useUrlParam("provider", undefined, { push: true });
   const [shown, setFresh] = useOpenRow(list, open);
@@ -1435,7 +1552,7 @@ export function SingleSignOn({ base }: { base: string }) {
     );
   }
   const connect = (
-    <Button variant="primary" onClick={() => setConnecting(true)}>
+    <Button variant="primary" disabled={!canConnect} onClick={() => setConnecting(true)}>
       Connect a provider
     </Button>
   );

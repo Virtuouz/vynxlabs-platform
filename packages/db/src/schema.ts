@@ -514,6 +514,8 @@ export interface ConnectionBindingTable {
   oauth_tokens: Buffer | null;
   /** Where an OAuth connection's authorization stands. No secret. */
   oauth: Json<ConnectionOAuth> | null;
+  /** The kind of connector it was bound or deployed as. Null for a binding older than this. */
+  connector: string | null;
   created_at: Generated<Date>;
   updated_at: Timestamp;
   /** When the sealed credential was last set, and by whom. Stamped by a trigger. */
@@ -810,11 +812,13 @@ export interface DataTableTable {
   created_at: Generated<Date>;
   /** The column that stands for a row where another table refers to it. */
   display_column: string | null;
+  /** Where the table was managed (`code` or `ui`) when it was retired. Null while it is active. */
+  managed_in: string | null;
 }
 
 /** What a column keeps beside its type. */
 export interface DataColumnOptions {
-  /** An enum's values, in order, each with its label and colour. */
+  /** An enum's values, in order, each with its label and color. */
   values?: { value: string; label?: string; color?: string }[];
   /** Values the column had and no longer offers. Rows may still hold them. */
   retired?: string[];

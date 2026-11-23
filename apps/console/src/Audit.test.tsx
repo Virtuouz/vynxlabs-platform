@@ -145,6 +145,31 @@ test("an entry linked to is opened, even when it is not among those loaded", asy
   history.replaceState(null, "", "/");
 });
 
+test("an entry the instance's log keeps for a deleted tenant says whose it was (INS-28)", async () => {
+  vi.stubGlobal("fetch", async (address: string) => {
+    if (address.includes("/audit-facets")) {
+      return new Response(JSON.stringify({ actions: [], actors: [], targetTypes: [] }), {
+        status: 200,
+      });
+    }
+    return new Response(
+      JSON.stringify({
+        items: [
+          entry("own", "instance.updated", { tenantId: null }),
+          entry("gone", "workspace.created", { tenantId: "00000000-0000-7000-8000-0000000000de" }),
+        ],
+        nextCursor: null,
+      }),
+      { status: 200 },
+    );
+  });
+  show(<AuditTable title="Instance log" description="" path="/audit" />);
+  const gone = (await screen.findAllByText("workspace.created"))[0]?.closest("tr") as HTMLElement;
+  expect(within(gone).getByText("Deleted tenant")).toBeTruthy();
+  const own = screen.getAllByText("instance.updated")[0]?.closest("tr") as HTMLElement;
+  expect(within(own).queryByText("Deleted tenant")).toBeNull();
+});
+
 test("an operator's access is said as the tenant's API, and empty details are not drawn as braces", async () => {
   expect(
     targetName({
@@ -303,6 +328,10 @@ test("the instance's log is narrowed by who, what, to what and until when (GOV-P
   await screen.findByRole("option", { name: "jane@acme.test (6)" });
   expect(asked.some((one) => one === "/api/v1/audit-facets?")).toBe(true);
   expect(screen.queryByLabelText("Workspace")).toBeNull();
+  // The instance's log is a file too, from the server's own route.
+  expect(screen.getByRole("link", { name: /CSV/ }).getAttribute("href")).toContain(
+    "/api/v1/audit-export?",
+  );
   fireEvent.change(screen.getByLabelText("Who"), {
     target: { value: "00000000-0000-7000-8000-00000000aaaa" },
   });
@@ -323,6 +352,4 @@ test("the instance's log is narrowed by who, what, to what and until when (GOV-P
     ),
   );
   await waitFor(() => expect(lastList()).toContain("target=target-"));
-  // Only a tenant's log is a file.
-  expect(screen.queryByRole("link", { name: /CSV/ })).toBeNull();
 });

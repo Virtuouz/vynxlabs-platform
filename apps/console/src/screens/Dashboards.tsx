@@ -24,6 +24,7 @@ import { ask, failureText, notify, takenText } from "../ask.tsx";
 import { useHelpTopic } from "../help/store.ts";
 import { DataTable } from "../kit/DataTable.tsx";
 import { putDraft, readDraft } from "../kit/draftApi.ts";
+import { useEvery } from "../kit/every.ts";
 import { useHistory } from "../kit/history.ts";
 import { useShortcut } from "../kit/keys.ts";
 import { ErrorState, Loading } from "../kit/LoadState.tsx";
@@ -36,10 +37,13 @@ import { Page } from "../ListScreen.tsx";
 import { Link, navigate, useUrlParam } from "../router.tsx";
 import { useViewer } from "../viewer.ts";
 import { pageClient } from "./builder/client.ts";
+import { NAME_MAX } from "./builder/names.ts";
 import { PageEditor } from "./builder/PageEditor.tsx";
 import { definitionOf, views } from "./builder/registry.ts";
 import { type FilterValues, PageView } from "./builder/renderer.ts";
 import { ResourceIdentity } from "./ResourceIdentity.tsx";
+
+const NAME_TOO_LONG = `Use at most ${NAME_MAX} characters.`;
 
 const REFRESH_WORDS: Record<Exclude<DashboardRefresh, "off">, string> = {
   1: "minute",
@@ -70,6 +74,8 @@ type Stand = "deployed" | "draft" | "new" | "removed" | "repository";
 
 interface Dashboard extends Summary {
   body: DashboardBody;
+  /** What it names that the workspace does not have. It is kept as it is. */
+  problems?: { path: string; message: string }[];
   /** For a resource, in a dev workspace: its draft is read with it. */
   stand?: Stand;
 }
@@ -131,34 +137,42 @@ function withDrafts(items: Summary[], drafts: DraftRow[]): ListRow[] {
 
 /** Dashboards in a workspace: the reader's own, those shared with them, and those the workspace keeps. */
 export function Dashboards({ root, link }: { root: string; link: string }) {
-  const list = useLoad<{ items: Summary[] }>(`${root}/dashboards`);
+  const list = useLoad<{ items: Summary[]; mayCreate?: boolean }>(`${root}/dashboards`);
+  // An older server does not say, and then it is offered, as it always was.
+  const mayCreate = list.data?.mayCreate !== false;
   // Someone who may not read drafts sees the dashboards as deployed.
   const drafts = useLoad<{ items: DraftRow[] }>(`${root}/drafts`);
   const create = async () => {
-    const title = await ask.prompt({
+    let made: Dashboard | undefined;
+    // The refusal of a name is said on the field, which keeps what was typed.
+    await ask.prompt({
       title: "New dashboard",
       text: "It is yours alone until you choose to share it.",
       label: "Name",
       action: "Make the dashboard",
+      maxLength: NAME_MAX,
+      submit: async (value) => {
+        if (value.trim().length > NAME_MAX) return NAME_TOO_LONG;
+        try {
+          made = await api.post<Dashboard>(`${root}/dashboards`, { title: value.trim() });
+          return undefined;
+        } catch (error) {
+          return takenText(error) ?? failureText(error);
+        }
+      },
     });
-    if (!title) return;
-    try {
-      const made = await api.post<Dashboard>(`${root}/dashboards`, { title });
-      navigate(`${link}/dashboards/${made.id}?edit=1`);
-    } catch (error) {
-      notify.error(error);
-    }
+    if (made) navigate(`${link}/dashboards/${made.id}?edit=1`);
   };
-  const action = (
+  const action = mayCreate ? (
     <Button variant="primary" onClick={create}>
       New dashboard
     </Button>
-  );
+  ) : undefined;
   return (
     <Page
       title="Dashboards"
       description="Questions asked of this workspace's tables, and their answers drawn: figures, charts, tables and pivots. Build a question from menus, use a query the workspace keeps, or write SQL. Everyone who looks at a dashboard sees the rows they may read."
-      action={action}
+      {...(action ? { action } : {})}
     >
       {list.error ? (
         <ErrorState what="dashboards" error={list.error} onRetry={list.reload} />
@@ -173,7 +187,9 @@ export function Dashboards({ root, link }: { root: string; link: string }) {
           rowKey={(row) => row.id}
           empty={
             <EmptyState title="No dashboards yet" action={action}>
-              Make one to keep an eye on the tables you care about.
+              {mayCreate
+                ? "Make one to keep an eye on the tables you care about."
+                : "Making one takes the dashboard:write permission, which your role does not have here. Ask whoever manages roles in this tenant."}
             </EmptyState>
           }
           columns={[
@@ -411,11 +427,8 @@ export function DashboardView({
   const refresh = body?.refresh ?? DEFAULT_DASHBOARD_REFRESH;
   // Nothing asks again under someone who is changing it.
   const every = refresh === "off" || editingNow ? undefined : refresh * 60_000;
-  useEffect(() => {
-    if (!every) return;
-    const timer = setInterval(() => setRefreshKey((n) => n + 1), every);
-    return () => clearInterval(timer);
-  }, [every]);
+  // A tab that is hidden is not read for: it is read once when it is shown again, if one was due.
+  useEvery(() => setRefreshKey((n) => n + 1), every);
 
   if (missing) {
     return (
@@ -614,6 +627,7 @@ export function DashboardView({
           <SharedWith
             root={root}
             chosen={(loaded.sharedWith ?? []).map((group) => group.id)}
+            named={(loaded.sharedWith ?? []).map((group) => group.name)}
             onChange={(sharedWith) => void save({ sharedWith })}
           />
         )}
@@ -777,6 +791,19 @@ export function DashboardView({
       }
     >
       {body.description ? <p className="-mt-3 m-0 text-body-sm text-ink-muted">{whose}</p> : null}
+      {loaded.problems && loaded.problems.length > 0 ? (
+        <Notice tone="attention">
+          <p className="m-0">
+            It reads what this workspace does not have. It is kept as it is, and what reads it
+            waits:
+          </p>
+          <ul className="m-0 list-disc pl-5">
+            {loaded.problems.map((one) => (
+              <li key={`${one.path}:${one.message}`}>{one.message}</li>
+            ))}
+          </ul>
+        </Notice>
+      ) : null}
       {resource && editable && stand === "repository" ? (
         <Notice tone="attention">
           This dashboard is defined by the code in the tenant's repository. Changing it here saves a
@@ -936,17 +963,42 @@ function DescribeDialog({
 function SharedWith({
   root,
   chosen,
+  named,
   onChange,
 }: {
   root: string;
   chosen: string[];
+  /** The names of the groups it is shown to now, for when the list of groups cannot be read. */
+  named: string[];
   onChange: (groups: string[]) => void;
 }) {
   const tenantBase = root.split("/workspaces/")[0] ?? "";
-  const groups = useLoad<{ items: { id: string; name: string }[] }>(
-    `${tenantBase}/groups?limit=200`,
-  );
-  if (!groups.data || groups.data.items.length === 0) return null;
+  const groups = useLoad<{ items: { id: string; name: string }[] }>(`${tenantBase}/groups`);
+  const now = named.length > 0 ? ` It stays shown to ${named.join(", ")}.` : "";
+  if (groups.error) {
+    const refused = (groups.error as ApiError).status === 403;
+    return (
+      <Notice tone={refused ? "plain" : "danger"}>
+        {refused
+          ? `You can't list the groups here: that takes the group:read permission. It can be shown to everyone in the workspace, or kept to you.${now}`
+          : `The groups could not be read: ${groups.error.message}.${now}`}{" "}
+        {refused ? null : (
+          <Button size="small" onClick={groups.reload}>
+            Try again
+          </Button>
+        )}
+      </Notice>
+    );
+  }
+  if (!groups.data) return <p className="m-0 text-ink-muted">Loading the groups…</p>;
+  if (groups.data.items.length === 0) {
+    return (
+      <p className="m-0 text-ink-muted">
+        This tenant has no groups yet, so it can be shown to everyone in the workspace or kept to
+        you.
+      </p>
+    );
+  }
   return (
     <MultiSelectField
       label="Or show it to these groups"

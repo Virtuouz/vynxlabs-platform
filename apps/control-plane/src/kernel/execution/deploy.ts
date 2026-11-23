@@ -510,6 +510,18 @@ export async function deployBundle(
     }
   }
 
+  // A binding keeps the kind of connector its declaration gave it, for when the declaration goes.
+  for (const manifest of content.manifests) {
+    const connector = (manifest.body as { connector?: string }).connector;
+    if (manifest.kind !== "connection" || typeof connector !== "string") continue;
+    await trx
+      .updateTable("connection_binding")
+      .set({ connector })
+      .where("workspace_id", "=", workspace.id)
+      .where("path", "=", manifest.path)
+      .execute();
+  }
+
   // What each dashboard widget names, by key: now that every query it may name is there.
   await recordWidgetQueries(trx, workspace);
 

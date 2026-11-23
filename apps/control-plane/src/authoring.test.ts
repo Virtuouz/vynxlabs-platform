@@ -1296,3 +1296,20 @@ describe("schemas read from code", () => {
     await alice.delete(`${ws()}/drafts/orders/on-site`);
   });
 });
+
+describe("the title of a kept dashboard's draft (P31)", () => {
+  test("the list of drafts gives the title the dashboard's body has, until one is set", async () => {
+    const body = { title: "Lending", widgets: [] };
+    const made = await alice.put(`${ws()}/drafts/boards/lending`, {
+      kind: "dashboard",
+      schemaVersion: 3,
+      body,
+      first: true,
+    });
+    expect(made.status, JSON.stringify(made.body)).toBe(200);
+    const listed = await alice.get(`${ws()}/drafts`);
+    const one = listed.body.items.find((item: { path: string }) => item.path === "boards/lending");
+    expect(one.title).toBe("Lending");
+    await alice.delete(`${ws()}/drafts/boards/lending`);
+  });
+});

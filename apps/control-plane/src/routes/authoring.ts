@@ -355,6 +355,13 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         return {
           items: rows.map((row) => ({
             ...summarize(row, owned.get(row.key)),
+            // A dashboard is named in its body until a title is set apart from it.
+            ...(row.kind === "dashboard" &&
+            !row.deleted &&
+            row.title === null &&
+            typeof (row.body as { title?: unknown }).title === "string"
+              ? { title: (row.body as { title: string }).title }
+              : {}),
             ...(row.kind === "trigger_source" &&
             !row.deleted &&
             ((row.body as { mode?: unknown }).mode === "poll" ||

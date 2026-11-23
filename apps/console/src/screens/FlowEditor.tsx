@@ -406,6 +406,13 @@ export function followCases(
   });
 }
 
+/** Whether a step is a start with an address of its own, and no key to keep it by yet. */
+export const keepsAddress = (node: FlowNode): boolean => {
+  if (node.type !== "trigger" || node.key) return false;
+  const type = (node.trigger as { type?: string } | undefined)?.type;
+  return type === "webhook" || type === "form";
+};
+
 /** The ids that were added from the palette, with a step's new name added when it is renamed. */
 export const carryName = (ids: ReadonlySet<string>, from: string, to: string): Set<string> =>
   new Set(ids.has(from) ? [...ids, to] : ids);
@@ -857,6 +864,7 @@ export function FlowEditor({
     history.record(`Rename ${from}`);
     // Every expression that reads the step reads it by its new name.
     let updated = 0;
+    let addressKept = false;
     const renamed = nodes.map((node) => {
       const { node: changed, count } = renameInNode(
         node.data.node as unknown as Record<string, unknown>,
@@ -865,13 +873,30 @@ export function FlowEditor({
       );
       updated += count;
       const id = node.id === from ? to : node.id;
-      return { ...node, id, data: { id, node: changed as unknown as FlowNode } };
+      const start = node.data.node;
+      // A start with an address keeps it through the rename: the old name becomes its key.
+      const keeps = node.id === from && keepsAddress(start) && state !== "new";
+      if (keeps) addressKept = true;
+      return {
+        ...node,
+        id,
+        data: {
+          id,
+          node: (keeps ? { ...changed, key: from } : changed) as unknown as FlowNode,
+        },
+      };
     });
     setNodes(renamed);
     addedIds.current = carryName(addedIds.current, from, to);
     if (updated > 0) {
       notify.success(
-        `Renamed ${from} to ${to}, and updated ${updated} reference${updated === 1 ? "" : "s"} to it.`,
+        `Renamed ${from} to ${to}, and updated ${updated} reference${updated === 1 ? "" : "s"} to it.${
+          addressKept ? ` Its address stays: the step keeps the key ${from}.` : ""
+        }`,
+      );
+    } else if (addressKept) {
+      notify.success(
+        `Renamed ${from} to ${to}. Its address stays: the step keeps the key ${from}.`,
       );
     }
     setEdges((before) =>

@@ -4,6 +4,7 @@ import {
   carryName,
   followCases,
   insertAfter,
+  keepsAddress,
   problemsOf,
   rowsToValues,
   stepOrder,
@@ -179,4 +180,13 @@ test("rows with a taken or bad name are flagged and not saved over another value
   expect(valueRowProblem([{ name: "Set-Cookie", value: "''" }], 0, true)).toMatch(/may not set/);
   expect(valueRowProblem([{ name: "value_1", value: "''" }], 0, true)).toMatch(/hyphens/);
   expect(valueRowProblem([{ name: "x-header", value: "''" }], 0, true)).toBeUndefined();
+});
+
+test("a webhook or form start with no key keeps its address by taking its old name as its key (FLW-04)", () => {
+  expect(keepsAddress({ type: "trigger", trigger: { type: "webhook" } } as never)).toBe(true);
+  expect(keepsAddress({ type: "trigger", trigger: { type: "form" } } as never)).toBe(true);
+  expect(keepsAddress({ type: "trigger", key: "old", trigger: { type: "webhook" } } as never)).toBe(
+    false,
+  );
+  expect(keepsAddress({ type: "trigger", trigger: { type: "manual" } } as never)).toBe(false);
 });

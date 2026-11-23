@@ -386,3 +386,18 @@ test("WLK-17h: a Set up link for a variable shows the variable chosen, not a bla
     expect((within(dialog).getByRole("combobox") as HTMLInputElement).value).toBe("region"),
   );
 });
+
+test("WLK-cfg2: a connection's page can unbind it, after saying what that does", async () => {
+  routes[`GET ${root}/connection-bindings/drive`] = () => [200, needsReconnect];
+  routes[`GET ${root}/connectors`] = () => [200, { items: [] }];
+  routes[`GET ${root}/references`] = () => [200, { items: [] }];
+  routes[`DELETE ${root}/connection-bindings/drive`] = () => [204, null];
+  show(<ConnectionPage root={root} link={link} path="drive" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Unbind" }));
+  const dialog = await screen.findByRole("dialog");
+  expect(within(dialog).getByText(/Scripts that use it will fail/)).toBeTruthy();
+  fireEvent.click(within(dialog).getByRole("button", { name: "Unbind" }));
+  await waitFor(() =>
+    expect(calls.some((one) => one.method === "DELETE" && one.url.endsWith("/drive"))).toBe(true),
+  );
+});

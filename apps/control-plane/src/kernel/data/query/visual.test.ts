@@ -99,8 +99,12 @@ describe("the operators `last` and `between` as SQL", () => {
       [{ column: "device.bought", op: "last", value: { count: 1, unit: "week" } }],
       ["device"],
     );
-    expect(written.sql).toContain('"j_device"."bought" >= $1::date');
-    expect(written.parameters).toEqual(["2026-11-15", "2026-11-22"]);
+    // A time column is bounded at midnight in the reader's zone (D21): the zone, then the day.
+    expect(written.sql).toContain('"j_device"."bought" >= timezone($1::text, $2::date::timestamp)');
+    expect(written.parameters.filter((one) => /^\d{4}-/.test(String(one)))).toEqual([
+      "2026-11-15",
+      "2026-11-22",
+    ]);
   });
 
   test("a value that is not what the operator takes, or a column it does not fit, is refused saying where", () => {

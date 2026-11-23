@@ -3,8 +3,7 @@
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import type { PageFilter, PageWidget } from "@volvel/manifest";
 import type { WidgetDefinition } from "@volvel/widgets";
-import { chart, pivot, stat } from "@volvel/widgets-core";
-import { goal } from "@volvel/widgets-labs";
+import { chart, goal, pivot, stat } from "@volvel/widgets-core";
 import { useState } from "react";
 import { afterEach, beforeEach, expect, test } from "vitest";
 import { show } from "../../../testing.tsx";
@@ -132,9 +131,9 @@ beforeEach(() => {
 afterEach(cleanup);
 
 test("the registry knows the four widgets and nothing else", () => {
-  for (const type of ["core/chart", "core/stat", "core/pivot", "labs/goal"]) {
+  for (const type of ["core/chart", "core/stat", "core/pivot", "core/goal"]) {
     // The goal previews its bar above everything, as a section of its own.
-    expect(drawerSections(type, "data")).toHaveLength(type === "labs/goal" ? 2 : 1);
+    expect(drawerSections(type, "data")).toHaveLength(type === "core/goal" ? 2 : 1);
     expect(drawerSections(type, "display")).toHaveLength(1);
     expect(drawerSections(type, "rules")).toHaveLength(0);
   }
@@ -400,7 +399,7 @@ test("stat display: the caption is the stat's own, and numbers have their picker
 
 const thisMonth = (config?: Record<string, unknown>) =>
   widgetOf(
-    "labs/goal",
+    "core/goal",
     "value",
     { measures: [{ fn: "sum", column: "total", as: "sum_total" }] },
     { format: { style: "currency" }, target: 200000, ...config },

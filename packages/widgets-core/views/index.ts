@@ -13,6 +13,7 @@ import { ChartView } from "./chart.tsx";
 import { DetailView } from "./detail.tsx";
 import { FilterView } from "./filter.tsx";
 import { FormView } from "./form.tsx";
+import { GoalView } from "./goal.tsx";
 import { ListView } from "./list.tsx";
 import { PivotView } from "./pivot.tsx";
 import { SectionView } from "./section.tsx";
@@ -46,6 +47,7 @@ export const corePack: CorePack = {
     "core/filter": FilterView,
     "core/actions": ActionsView,
     "core/approvals": ApprovalsView,
+    "core/goal": GoalView,
   },
 };
 
@@ -85,6 +87,7 @@ export {
   DetailView,
   FilterView,
   FormView,
+  GoalView,
   ListView,
   PivotView,
   SectionView,

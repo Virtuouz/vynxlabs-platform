@@ -12,7 +12,7 @@ import {
   SelectField,
 } from "@volvel/ui";
 import { formatNumber, type SummaryData } from "@volvel/widgets";
-import { labsPack } from "@volvel/widgets-labs/views";
+import { GoalView } from "@volvel/widgets-core/views";
 import { Calendar, Target } from "lucide-react";
 import { HeadingGroup } from "../heading.tsx";
 import { MeasureRow } from "../measureControls.tsx";
@@ -29,8 +29,6 @@ import {
   sampleSummary,
   setter,
 } from "./chartShared.tsx";
-
-const GoalView = labsPack.views["labs/goal"];
 
 /** The figures the bar is drawn from: the real ones, else a sample a quarter of the way to the goal. */
 function figures(env: SectionProps["env"], data: DrawerData | undefined): SummaryData {

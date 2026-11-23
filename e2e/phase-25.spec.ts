@@ -296,7 +296,7 @@ test("POLISH-002: the labs Goal is added from Add to page, marked with its pack,
   await expect
     .poll(
       async () =>
-        (await money()).widgets.filter((one: { type: string }) => one.type === "labs/goal").at(-1)
+        (await money()).widgets.filter((one: { type: string }) => one.type === "core/goal").at(-1)
           ?.config?.target,
     )
     .toBe(20000000);

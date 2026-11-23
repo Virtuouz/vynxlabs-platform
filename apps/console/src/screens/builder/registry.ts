@@ -5,24 +5,12 @@
  * view registry made from the same packs, so what can be added is what can be
  * drawn.
  *
- * INTEGRATOR: `corePack` and `labsPack` come through `stand-in.tsx` until
- * streams B and D land. When they do, import them here directly:
- *
- *   import { corePack } from "@volvel/widgets-core/views";
- *   import { labsPack } from "@volvel/widgets-labs/views";
- *   import { viewRegistry, type WidgetPack } from "@volvel/screens";
  */
 import type { Surface, WidgetDefinition } from "@volvel/widgets";
-import {
-  corePack,
-  labsPack,
-  type ViewRegistry,
-  viewRegistry,
-  type WidgetPack,
-} from "./renderer.ts";
+import { corePack, type ViewRegistry, viewRegistry, type WidgetPack } from "./renderer.ts";
 
 /** Every pack this console draws, the platform's own first. */
-export const PACKS: readonly WidgetPack[] = [corePack, labsPack];
+export const PACKS: readonly WidgetPack[] = [corePack];
 
 /** The registry the page's renderer draws from. */
 export const views: ViewRegistry = viewRegistry(...PACKS);

@@ -24,7 +24,6 @@ import {
   type VisualCondition,
 } from "@volvel/widgets/page";
 import { CORE_WIDGETS } from "@volvel/widgets-core";
-import { LABS_WIDGETS } from "@volvel/widgets-labs";
 import { Ajv2020 } from "ajv/dist/2020.js";
 import {
   type Action,
@@ -598,8 +597,8 @@ export const dashboardKind: KindDefinition = {
 // ---------------------------------------------------------------------------
 // Checks beyond the schema
 
-/** The widgets the platform knows: the core pack and the platform's other packs (labs). */
-const platformPacks = (): WidgetRegistry => new WidgetRegistry([...CORE_WIDGETS, ...LABS_WIDGETS]);
+/** The widgets the platform knows: the core pack, and any pack the platform ships beside it. */
+const platformPacks = (): WidgetRegistry => new WidgetRegistry(CORE_WIDGETS);
 let platformWidgets: WidgetRegistry = platformPacks();
 
 /** The registry pages are checked against. A pack the platform ships is added once, at start. */

@@ -11,7 +11,6 @@ import {
   ToastProvider,
 } from "@volvel/ui";
 import { corePack } from "@volvel/widgets-core/views";
-import { labsPack } from "@volvel/widgets-labs/views";
 import { StrictMode, useCallback, useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
@@ -34,7 +33,7 @@ interface InterfaceView {
 }
 
 /** The platform's packs: what a page made in the console may hold. */
-const registry = viewRegistry(corePack, labsPack);
+const registry = viewRegistry(corePack);
 
 function workspaceApi() {
   const context = appContext();

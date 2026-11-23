@@ -22,6 +22,7 @@ test("the registry holds each type with its definition and its view", () => {
     "core/tabs",
     "core/filter",
     "core/text",
+    "core/goal",
   ]);
   expect(registry.get("core/chart")?.definition.title).toBe("Chart");
   expect(registry.get("labs/orbit")).toBeUndefined();

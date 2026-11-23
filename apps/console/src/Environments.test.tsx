@@ -482,6 +482,23 @@ test("a workspace's run limit is set from its settings, from 1 to 1000, saved wi
   await waitFor(() => expect(sent("PATCH")[0]?.body).toEqual({ concurrencyLimit: 5 }));
 });
 
+test("a run limit left empty is saved with the other settings, and says it stays as it is (P31)", async () => {
+  routes[`GET /api/v1${base}/workspaces/w-dev`] = () => [
+    200,
+    { timeZone: "UTC", concurrencyLimit: 20 },
+  ];
+  routes[`PATCH /api/v1${base}/workspaces/w-dev`] = () => [200, {}];
+  show(<WorkspaceSettings base={base} tenantId="t1" workspace={dev} reload={() => {}} />);
+  const field = (await screen.findByLabelText("Runs at once")) as HTMLInputElement;
+  await waitFor(() => expect(field.value).toBe("20"));
+  fireEvent.input(field, { target: { value: "" } });
+  expect(await screen.findByText("Left empty, it stays at 20.")).toBeTruthy();
+  expect(screen.queryByText("A whole number from 1 to 1000.")).toBeNull();
+  fireEvent.input(screen.getByLabelText("Workspace name"), { target: { value: "Dev 2" } });
+  fireEvent.click(await screen.findByRole("button", { name: "Save" }));
+  await waitFor(() => expect(sent("PATCH")[0]?.body).toEqual({ name: "Dev 2" }));
+});
+
 test("an upload that waits is listed after a reload, opened again, and thrown away (INS-MP11)", async () => {
   const waiting = {
     id: "s9",

@@ -230,10 +230,12 @@ export function WorkspaceSettings({
     linkedWorkspaceId: linked !== undefined ? linked : workspace.linkedWorkspaceId,
   };
   const shownLimit = limit === null ? storedLimit : limit;
+  // Emptied, the field means the limit stays as it is: there is no workspace without one.
   const limitBad =
     limit !== null &&
-    (limit === undefined || !Number.isInteger(limit) || limit < 1 || limit > 1000);
-  const limitChanged = limit !== null && limit !== storedLimit;
+    limit !== undefined &&
+    (!Number.isInteger(limit) || limit < 1 || limit > 1000);
+  const limitChanged = limit !== null && limit !== undefined && limit !== storedLimit;
   const blank = draft.name.trim() === "" || limitBad;
   const dirty =
     limitChanged ||
@@ -263,9 +265,7 @@ export function WorkspaceSettings({
       await api.patch(root, {
         ...(draft.name.trim() !== workspace.name ? { name: draft.name.trim() } : {}),
         ...(draft.timeZone !== storedZone ? { timeZone: draft.timeZone } : {}),
-        ...(limitChanged && limit !== null && limit !== undefined
-          ? { concurrencyLimit: limit }
-          : {}),
+        ...(limitChanged ? { concurrencyLimit: limit } : {}),
         ...(draft.linkedWorkspaceId !== workspace.linkedWorkspaceId
           ? { linkedWorkspaceId: draft.linkedWorkspaceId }
           : {}),
@@ -339,7 +339,11 @@ export function WorkspaceSettings({
                 max={1000}
                 step={1}
                 onChange={setLimit}
-                hint="1 to 1000."
+                hint={
+                  limit === undefined && storedLimit !== undefined
+                    ? `Left empty, it stays at ${storedLimit}.`
+                    : "1 to 1000."
+                }
                 {...(limitBad ? { error: "A whole number from 1 to 1000." } : {})}
               />
             </div>

@@ -39,7 +39,7 @@ import { HealthCell } from "../kit/health.tsx";
 import { useHistory } from "../kit/history.ts";
 import { useShortcut } from "../kit/keys.ts";
 import { ErrorState, Loading, Pending } from "../kit/LoadState.tsx";
-import { Inspector } from "../kit/layout.tsx";
+import { Inspector, useWide } from "../kit/layout.tsx";
 import { UsedBy, useReferences } from "../kit/references.tsx";
 import { Code, StatePill, Tag } from "../kit/status.tsx";
 import { UndoRedo } from "../kit/UndoRedo.tsx";
@@ -2470,6 +2470,139 @@ function sameJson(value: unknown): string {
   );
 }
 
+/**
+ * A table's columns. From a tablet up each is a row of cells with its actions as buttons in the last
+ * one. On a phone the Rules and "When not given" cells are hidden by priority, and a last column
+ * would sit past the right edge, so the rules and the default stand under the name and the actions
+ * are one menu there, both seen at first view and reached with no sideways scroll.
+ */
+export function ColumnsTable({
+  rows,
+  actionsOf,
+}: {
+  rows: TableColumn[];
+  actionsOf: ((row: TableColumn) => ColumnAction[]) | undefined;
+}) {
+  const roomy = useWide(640);
+  const rulesOf = (row: TableColumn) =>
+    [row.required ? "Required" : "", row.unique ? "No two rows alike" : ""]
+      .filter(Boolean)
+      .join(", ");
+  const defaultOf = (row: TableColumn) =>
+    row.default === null || row.default === undefined ? (
+      ""
+    ) : (
+      <Code>{showValue(row.type, row.default)}</Code>
+    );
+  return (
+    <DataTable<TableColumn>
+      variant="static"
+      framed
+      label="Columns"
+      rows={rows}
+      rowKey={(row) => row.name}
+      empty={<p className="m-0 text-ink-muted">No columns.</p>}
+      columns={[
+        {
+          header: "Column",
+          cell: (row) => (
+            <span className="flex flex-col gap-0.5">
+              <Code>{row.name}</Code>
+              {row.description ? (
+                <span className="max-w-measure text-meta text-ink-muted">{row.description}</span>
+              ) : null}
+              {roomy ? null : (
+                <span data-column-stack className="flex flex-col gap-1 text-meta">
+                  {rulesOf(row) ? <span>{rulesOf(row)}</span> : null}
+                  {row.default === null || row.default === undefined ? null : (
+                    <span>When not given: {defaultOf(row)}</span>
+                  )}
+                  {actionsOf ? (
+                    <span>
+                      <Menu
+                        ariaLabel={`Actions for ${row.name}`}
+                        triggerClassName="inline-flex size-9 items-center justify-center rounded-control text-ink-muted hover:bg-sunken hover:text-ink"
+                        label={<Ellipsis aria-hidden="true" size={16} />}
+                        items={actionsOf(row).filter((one) => !one.disabled)}
+                      />
+                    </span>
+                  ) : null}
+                </span>
+              )}
+            </span>
+          ),
+        },
+        {
+          header: "Holds",
+          cell: (row) =>
+            row.references ? (
+              <span className="flex flex-col">
+                <span>A row of {row.references}</span>
+                <span className="text-meta text-ink-muted">
+                  {ON_DELETE.find((one) => one.value === (row.onDelete ?? "restrict"))?.short}
+                </span>
+              </span>
+            ) : row.values ? (
+              <span className="flex flex-col gap-1">
+                <span>{typeLabel(row.type)}</span>
+                <span className="inline-flex flex-wrap gap-1">
+                  {row.values.map((one) => (
+                    <ValueChip key={one.value} color={enumColor(one.color)}>
+                      {one.label ?? one.value}
+                    </ValueChip>
+                  ))}
+                </span>
+                {row.retiredValues && row.retiredValues.length > 0 ? (
+                  <span className="text-meta text-ink-muted">
+                    No longer offered, kept on the rows that hold them:{" "}
+                    {row.retiredValues.join(", ")}
+                  </span>
+                ) : null}
+              </span>
+            ) : (
+              typeLabel(row.type)
+            ),
+        },
+        {
+          header: "Rules",
+          priority: 2,
+          cell: rulesOf,
+        },
+        {
+          header: "When not given",
+          priority: 3,
+          cell: defaultOf,
+        },
+        ...(actionsOf && roomy
+          ? [
+              {
+                header: "",
+                align: "end" as const,
+                // Up to five buttons: they wrap inside the column, and it keeps room for two rows of them.
+                wide: true,
+                cell: (row: TableColumn) => (
+                  <span className="flex flex-wrap justify-end gap-1">
+                    {actionsOf(row).map((one) => (
+                      <Button
+                        key={one.label}
+                        size="small"
+                        variant={one.danger ? "danger" : "quiet"}
+                        {...(one.disabled ? { disabled: true } : {})}
+                        onClick={one.onSelect}
+                      >
+                        {one.label}
+                      </Button>
+                    ))}
+                  </span>
+                ),
+              },
+            ]
+          : []),
+      ]}
+    />
+  );
+}
+
 function Definition({
   root,
   link,
@@ -2756,118 +2889,7 @@ function Definition({
           <h2 className="m-0 text-title font-semibold">Columns</h2>
           {editable ? <Button onClick={() => setAdding(true)}>Add column</Button> : null}
         </div>
-        <DataTable<TableColumn>
-          variant="static"
-          framed
-          label="Columns"
-          rows={active}
-          rowKey={(row) => row.name}
-          empty={<p className="m-0 text-ink-muted">No columns.</p>}
-          columns={[
-            {
-              header: "Column",
-              cell: (row) => (
-                <span className="flex flex-col gap-0.5">
-                  <Code>{row.name}</Code>
-                  {row.description ? (
-                    <span className="max-w-measure text-meta text-ink-muted">
-                      {row.description}
-                    </span>
-                  ) : null}
-                </span>
-              ),
-            },
-            {
-              header: "Holds",
-              cell: (row) =>
-                row.references ? (
-                  <span className="flex flex-col">
-                    <span>A row of {row.references}</span>
-                    <span className="text-meta text-ink-muted">
-                      {ON_DELETE.find((one) => one.value === (row.onDelete ?? "restrict"))?.short}
-                    </span>
-                  </span>
-                ) : row.values ? (
-                  <span className="flex flex-col gap-1">
-                    <span>{typeLabel(row.type)}</span>
-                    <span className="inline-flex flex-wrap gap-1">
-                      {row.values.map((one) => (
-                        <ValueChip key={one.value} color={enumColor(one.color)}>
-                          {one.label ?? one.value}
-                        </ValueChip>
-                      ))}
-                    </span>
-                    {row.retiredValues && row.retiredValues.length > 0 ? (
-                      <span className="text-meta text-ink-muted">
-                        No longer offered, kept on the rows that hold them:{" "}
-                        {row.retiredValues.join(", ")}
-                      </span>
-                    ) : null}
-                  </span>
-                ) : (
-                  typeLabel(row.type)
-                ),
-            },
-            {
-              header: "Rules",
-              priority: 2,
-              cell: (row) =>
-                [row.required ? "Required" : "", row.unique ? "No two rows alike" : ""]
-                  .filter(Boolean)
-                  .join(", "),
-            },
-            {
-              header: "When not given",
-              priority: 3,
-              cell: (row) =>
-                row.default === null || row.default === undefined ? (
-                  ""
-                ) : (
-                  <Code>{showValue(row.type, row.default)}</Code>
-                ),
-            },
-            ...(editable
-              ? [
-                  {
-                    header: "",
-                    align: "end" as const,
-                    // Up to five buttons: they wrap inside the column, and it keeps room for two rows of them.
-                    wide: true,
-                    cell: (row: TableColumn) => {
-                      const actions = columnActions(row);
-                      return (
-                        <>
-                          <span className="hidden flex-wrap justify-end gap-1 sm:inline-flex">
-                            {actions.map((one) => (
-                              <Button
-                                key={one.label}
-                                size="small"
-                                variant={one.danger ? "danger" : "quiet"}
-                                {...(one.disabled ? { disabled: true } : {})}
-                                onClick={one.onSelect}
-                              >
-                                {one.label}
-                              </Button>
-                            ))}
-                          </span>
-                          {/* A phone has no room for four buttons: one menu holds them. */}
-                          <span className="sm:hidden">
-                            <Menu
-                              ariaLabel={`Actions for ${row.name}`}
-                              align="end"
-                              triggerClassName="inline-flex size-9 items-center justify-center rounded-control text-ink-muted hover:bg-sunken hover:text-ink"
-                              label={<Ellipsis aria-hidden="true" size={16} />}
-                              items={actions.filter((one) => !one.disabled)}
-                            />
-                          </span>
-                        </>
-                      );
-                    },
-                  },
-                ]
-              : []),
-          ]}
-        />
+        <ColumnsTable rows={active} actionsOf={editable ? columnActions : undefined} />
         <p className="m-0 text-body-sm text-ink-muted">
           Every table also has <Code>{"id"}</Code>, <Code>{"created_at"}</Code> and{" "}
           <Code>{"updated_at"}</Code>, which the platform fills in.

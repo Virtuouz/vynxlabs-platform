@@ -1767,11 +1767,11 @@ describe("managed workers", () => {
 
 describe("what a run was given stays out of what is shown", () => {
   /** A claimed `use-all` run: it declares the secret TOKEN and the connection `api`. */
-  async function held() {
+  async function held(scriptPath = "use-all") {
     const token = (await alice.post(`/tenants/${tenant}/worker-credentials`, { name: "masking" }))
       .body.token;
     const worker = protocol(token);
-    const id = await start("use-all");
+    const id = await start(scriptPath);
     const job = await until(
       async () => (await worker.claim()).body.job,
       (found) => found?.runId === id,
@@ -1871,5 +1871,28 @@ describe("what a run was given stays out of what is shown", () => {
         })
       ).status,
     ).toBe(413);
+  });
+
+  test("an output refused for its size is not retried: the work was done", async () => {
+    // `flaky` has two retries.
+    const { worker, id, attempt } = await held("flaky");
+    const failed = await worker.post(`/runs/${id}/fail`, {
+      attempt,
+      retry: false,
+      error: { message: "The output is larger than 10 MB. The script's work was done." },
+    });
+    expect(failed.body).toEqual({ final: true });
+    const run = (await alice.get(`${ws()}/runs/${id}`)).body;
+    expect(run).toMatchObject({ status: "failed", attempt: 1 });
+    // Without the field, as an older worker reports, it is retried as before.
+    const again = await held("flaky");
+    expect(
+      (
+        await again.worker.post(`/runs/${again.id}/fail`, {
+          attempt: again.attempt,
+          error: { message: "x" },
+        })
+      ).body,
+    ).toEqual({ final: false });
   });
 });

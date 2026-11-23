@@ -1108,16 +1108,29 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               message: Type.String({ maxLength: 8000 }),
               stack: Type.Optional(Type.String({ maxLength: 32000 })),
             }),
+            retry: Type.Optional(
+              Type.Boolean({
+                description:
+                  "False when running the script again would repeat work it already did, as when its output was too large to report: the run fails now, whatever attempts it has left. Absent from an older worker, and then the run is retried as its script says.",
+              }),
+            ),
             logsLost: LogsLost,
           }),
           response: { 200: Type.Object({ final: Type.Boolean() }) },
         },
       },
       async ({ worker, params, body }) => {
-        const result = await failRun(kernel, worker, params.id, body.attempt, {
-          message: body.error.message,
-          ...(body.error.stack ? { stack: body.error.stack } : {}),
-        });
+        const result = await failRun(
+          kernel,
+          worker,
+          params.id,
+          body.attempt,
+          {
+            message: body.error.message,
+            ...(body.error.stack ? { stack: body.error.stack } : {}),
+          },
+          body.retry !== false,
+        );
         await recordLostLogs(params.id, body.attempt, body.logsLost);
         return result;
       },

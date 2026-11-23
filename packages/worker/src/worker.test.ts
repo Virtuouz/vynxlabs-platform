@@ -343,6 +343,8 @@ describe("log lines of any size", () => {
     const state = await platform([{ entry: "bulky" }]);
     await work(state, () => state.ended.length === 1);
     expect(state.ended[0]?.kind).toBe("fail");
+    // The work was done: the control plane is told not to run it again.
+    expect(state.ended[0]?.body.retry).toBe(false);
     expect(((state.ended[0]?.body ?? {}).error as { message: string }).message).toContain(
       "The output is larger than 10 MB",
     );

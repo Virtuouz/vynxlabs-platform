@@ -580,17 +580,20 @@ export async function failRun(
   runId: string,
   attempt: number,
   reported: RunFailure,
+  /** False when another attempt would repeat work that was done: the run ends here. */
+  retry = true,
 ) {
   const run = await activeRun(kernel.db, scope, runId, attempt);
   // What the script was given never reaches the record, the alerts or the handler: an error
   // that quotes a URL with its key, or a header, is stored without it.
   const error = redactError(reported, await servedValues(kernel, kernel.db, run));
   const queue = queueName(run.workspace_id, run.pool);
-  const taken = await kernel.queue.fail(queue, run.queue_job_id as string, {
-    message: error.message,
-  });
+  // A failure that must not be retried ends the job as done, and the run as failed.
+  const taken = retry
+    ? await kernel.queue.fail(queue, run.queue_job_id as string, { message: error.message })
+    : await kernel.queue.complete(queue, run.queue_job_id as string);
   if (!taken) throw conflict("This attempt is no longer in progress. Its result is not recorded.");
-  const state = await kernel.queue.state(queue, run.queue_job_id as string);
+  const state = retry ? await kernel.queue.state(queue, run.queue_job_id as string) : "failed";
   if (state === "retry" || state === "created") {
     await kernel.db
       .updateTable("run")

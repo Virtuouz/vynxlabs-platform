@@ -18,12 +18,13 @@ Rows: SCR-01, SCR-02, SCR-03, OPS-01, OPS-02, OPS-03, FLW-01. Decisions: D13, D4
 - Control plane: `/logs` bodyLimit 4 MB and fields cap 32 KB; `/complete` accepts 10 MB (`MAX_OUTPUT_BYTES`), `/data` 8 MB, task `/complete` 2 MB so its own 400 words show. The worker refuses an output over 10 MB before reporting done, with "The output is larger than 10 MB". An older worker keeps working: its 1.5 MB batches now fit.
 - Contract updated: `docs/contracts/worker-protocol.md`. No schema change in `schemas/`.
 - Tests: `execution.test.ts` "a batch over 1 MiB is taken", "an output of 2 MB is kept..."; `worker.test.ts` "log lines of any size" (4 tests). Failed before.
-- Left out: `diagnose` text for the 413 (not touched). A run that fails for an oversized output is still retried by its retry policy: the protocol has no "do not retry".
+- A run whose output is refused for its size is not retried: `/fail` takes an optional `retry: false` (`routes/worker.ts`, `failRun` in `kernel/execution/runs.ts` ends the job and fails the run); the worker sends it with "The script's work was done and is not repeated." Old workers omit it and old control planes ignore it. Test: `execution.test.ts` "an output refused for its size is not retried" (failed before). Contract updated.
+- Left out: `diagnose` text for the 413 (not touched).
 
 ## OPS-01, OPS-02, OPS-03, FLW-01
 - OPS-01: mail text and link page use `approvalDetail` (`kernel/flows/approval-links.ts`, `routes/approval-links.ts`), as the queue (`routes/flows.ts`) and widget (`kernel/pages/approvals.ts`). Test `approval-links.test.ts` "shows what the queue shows".
 - OPS-02 (D13): `list_approvals` masked; `get_run` and `get_flow_run` masked when the run is not the caller's, the caller's own are given as they are (`routes/mcp.ts`). Test `mcp.test.ts` "what an agent is shown of another's work".
-- OPS-03: events list masks the payload with the event's schema (`eventSchema` in `kernel/flows/events.ts`); a run started by an event masks its input by that schema too (`routes/execution.ts`). Test `flows.test.ts` "an event is listed as the run it started shows it". Left out: only key-name masking is tested, not `x-secret`.
+- OPS-03: events list masks the payload with the event's schema (`eventSchema` in `kernel/flows/events.ts`); a run started by an event masks its input by that schema too (`routes/execution.ts`). Test `flows.test.ts` "an event is listed as the run it started shows it". The flow run page masks its input and trigger step output by the event's schema too (`routes/flows.ts`); test `flows.test.ts` "the flow run an event started shows its input..." with an `x-secret` field (failed with the schema off).
 - FLW-01: the preview's context is masked before evaluation (`expressionContext` takes a `shield`, `routes/flows.ts`), by script output schema, event schema and key names. Test `flow-editor.test.ts` "shows what the run page shows". Other readers of `expressionContext`: none.
 
 ## Screens to walk
@@ -31,7 +32,6 @@ No screen layout changed. Walk: run detail and its log (a run that logs a secret
 
 ## Found
 - `routes/worker.ts` imports `forbidden` unused (pre-existing lint warning).
-- Flow run page masks a trigger's input by key names only, not by the event's schema.
 
 ## Lines for packages/docs/content and CHANGELOG
 - Run logs, errors, alerts and approval mail now mask the secrets and credentials a run was given. `console.log` goes to the run's log. Worker route limits: logs 4 MB, output 10 MB.

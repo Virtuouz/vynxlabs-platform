@@ -82,6 +82,9 @@ const BUSY_RETRIES = 2;
 /** The longest a script's call waits before trying again, in seconds. */
 const BUSY_WAIT_LIMIT = 5;
 
+/** A failure after the script's work was done: running it again would only repeat that work. */
+class NoRetry extends Error {}
+
 /** A log line with fields past the limit keeps a note in their place, so one line cannot hold the rest back. */
 function capped(entry: LogEntry): LogEntry {
   if (!entry.fields) return entry;
@@ -597,8 +600,8 @@ export class Worker {
       const output = await Promise.race([outcome, aborted]);
       const size = Buffer.byteLength(JSON.stringify(output ?? null));
       if (size > MAX_OUTPUT_BYTES) {
-        throw new Error(
-          `The output is larger than ${MAX_OUTPUT_BYTES / 1024 / 1024} MB (it is ${(size / 1024 / 1024).toFixed(1)} MB). Return less, or store it as a file and return its name.`,
+        throw new NoRetry(
+          `The output is larger than ${MAX_OUTPUT_BYTES / 1024 / 1024} MB (it is ${(size / 1024 / 1024).toFixed(1)} MB). The script's work was done and is not repeated. Return less, or store it as a file and return its name.`,
         );
       }
       const logs = await settle();
@@ -614,6 +617,7 @@ export class Worker {
       failed = failure.message;
       await this.#call("POST", `${runPath}/fail`, {
         attempt: job.attempt,
+        ...(error instanceof NoRetry ? { retry: false } : {}),
         ...logs,
         error: {
           message: failure.message.slice(0, 8000),

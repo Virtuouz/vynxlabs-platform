@@ -166,7 +166,7 @@ Request: `attempt`, `output`, and optionally `logsLost`: how many log lines the 
 
 ### `POST /runs/{runId}/fail`
 
-Request: `attempt`, `error`: `{message, stack}`, and optionally `logsLost`, as for `complete`.
+Request: `attempt`, `error`: `{message, stack}`, optionally `retry`, and optionally `logsLost`, as for `complete`. `retry: false` says that running the script again would repeat work it already did (its output was too large to report): the run fails now, whatever attempts it has left. A control plane that predates it ignores it and retries as the script says; a worker that omits it is retried as before.
 
 Response: `{"final": false}` when the run will be retried, `{"final": true}` when it has no attempts left.
 

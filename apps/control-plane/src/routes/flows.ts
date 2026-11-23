@@ -1239,9 +1239,16 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         )) {
           scriptSchemas.set(script, await payloadSchemas(kernel, run.bundle_id, script));
         }
+        // What an event started the flow with is held to the event's schema, as the events list is.
+        const eventName = (run.trigger_detail as { event?: unknown } | null)?.event;
+        const triggerSchema =
+          typeof eventName === "string" ? await eventSchema(db, params.w, eventName) : undefined;
         return {
           ...toFlowRun(run),
-          input: redact(run.input_ref ? { stored: run.input_ref } : (run.input ?? null)),
+          input: redact(
+            run.input_ref ? { stored: run.input_ref } : (run.input ?? null),
+            triggerSchema,
+          ),
           output: redact(run.output ?? null),
           retries: retries.map((one) => ({
             id: one.id,
@@ -1267,7 +1274,10 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                   )
               : step.output_ref
                 ? { stored: step.output_ref }
-                : redact(step.output ?? null),
+                : redact(
+                    step.output ?? null,
+                    step.node_id === run.trigger_node ? triggerSchema : undefined,
+                  ),
             error: step.error ? { message: step.error.message } : null,
             handled: step.handled,
             runId: step.run_id,

@@ -190,6 +190,8 @@ test("a provider is connected, tried out, given a domain, turned on and required
   expect(off).toContain("Turn off Acme Login?");
   expect(off).toContain("It signs in members with an email in acme.example.");
   expect(off).toContain("those members can use a password again");
+  // D12: turning it off does not stop a directory from pushing, and says so.
+  expect(off).toContain("keeps pushing while it is off");
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   expect(sent("PATCH")).toHaveLength(2);
   fireEvent.click(screen.getByRole("button", { name: "Turn off" }));

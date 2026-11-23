@@ -948,7 +948,9 @@ export function Variables({ root }: { root: string }) {
         {
           header: "Value here",
           cell: (row) =>
-            row.value !== null ? (
+            row.value === "" ? (
+              <span className="text-ink-muted">Empty</span>
+            ) : row.value !== null ? (
               <Code>{row.value}</Code>
             ) : (
               <span className="text-ink-muted">Default: {row.default ?? "none"}</span>
@@ -971,9 +973,20 @@ export function Variables({ root }: { root: string }) {
               }),
             },
           },
-          { name: "value", label: "Value" },
+          // An empty value is a value: a script that reads it gets "", not the default.
+          {
+            name: "value",
+            label: "Value",
+            required: false,
+            hint: "Leave it empty to give the variable an empty value.",
+          },
         ],
-        submit: ({ path = "", value }) => api.put(`${root}/variable-values/${path}`, { value }),
+        submit: ({ path = "", value = "" }) =>
+          api.put(`${root}/variable-values/${path}`, { value }),
+        done: (_, { path = "", value = "" }) =>
+          value === ""
+            ? `Set ${path} to an empty value in this workspace.`
+            : `Set ${path} in this workspace.`,
       }}
       rowActions={(row, reload) =>
         row.value !== null ? (

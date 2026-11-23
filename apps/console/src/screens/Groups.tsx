@@ -218,7 +218,7 @@ export function Groups({ base, framed }: { base: string; framed?: Framed }) {
             header: "",
             align: "end",
             cell: (row) => (
-              <span className="inline-flex gap-1">
+              <span className="inline-flex flex-wrap justify-end gap-1">
                 <Button size="small" onClick={() => setOpenId(row.id)}>
                   Members
                 </Button>
@@ -335,7 +335,7 @@ export function EndUserGroups({ base, framed }: { base: string; framed?: Framed 
             header: "",
             align: "end",
             cell: (row) => (
-              <span className="inline-flex gap-1">
+              <span className="inline-flex flex-wrap justify-end gap-1">
                 <Button size="small" onClick={() => setOpenId(row.id)}>
                   People
                 </Button>

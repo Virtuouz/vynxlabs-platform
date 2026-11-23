@@ -68,4 +68,16 @@ describe("the components of a widget's text", () => {
     expect(screen.getByText("table.columns.*.type").tagName).toBe("CODE");
     expect(document.body.textContent).not.toContain("::field");
   });
+
+  test("DOC-02 a glossary the screen passes is drawn, not left blank", () => {
+    render(
+      <Doc
+        tree={parse("::glossary")}
+        profile="docs"
+        glossary={() => [{ id: "rma", term: "RMA", short: "A return." }]}
+      />,
+    );
+    expect(document.querySelector(".vd-glossary")).not.toBeNull();
+    expect(document.body.textContent).toContain("A return.");
+  });
 });

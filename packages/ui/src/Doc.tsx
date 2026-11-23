@@ -1,7 +1,7 @@
 import { DOC_CSS, type Root } from "@volvel/markup";
 import { type Components, type ReactOptions, renderReact } from "@volvel/markup/react";
 import { CircleCheck, Info, OctagonAlert, TriangleAlert } from "lucide-react";
-import { type ReactNode, useMemo, useState } from "react";
+import { type ReactNode, useMemo, useRef, useState } from "react";
 import { Details } from "./Details.tsx";
 import { servedComponents } from "./DocServed.tsx";
 import { Tabs } from "./Tabs.tsx";
@@ -135,42 +135,25 @@ export interface DocProps extends Omit<ReactOptions, "components"> {
  * same stylesheet a served site uses. Alerts, tabs, folded sections, keys and
  * terms are the kit's own, so they look and behave as they do everywhere else.
  */
-export function Doc({
-  tree,
-  more,
-  asServed,
-  components,
-  profile,
-  productName,
-  link,
-  image,
-  term,
-  field,
-  screenshot,
-  headingShift,
-  idPrefix,
-  learnMore,
-  folder,
-  lines,
-}: DocProps) {
+export function Doc({ tree, more, asServed, components, ...given }: DocProps) {
+  // Every other prop is a render option: taken whole, so an option added to the renderer is never dropped here.
+  const last = useRef<ReactOptions>({});
+  const options: ReactOptions = {};
+  for (const [name, value] of Object.entries(given)) {
+    if (value !== undefined) (options as Record<string, unknown>)[name] = value;
+  }
+  // The same object while no option has changed, so the page is not drawn again for nothing.
+  const same =
+    Object.keys(options).length === Object.keys(last.current).length &&
+    Object.entries(options).every(
+      ([name, value]) => (last.current as Record<string, unknown>)[name] === value,
+    );
+  if (!same) last.current = options;
+  const kept = last.current;
   const drawn = useMemo(() => {
-    const options: ReactOptions = {
-      ...(profile === undefined ? {} : { profile }),
-      ...(productName === undefined ? {} : { productName }),
-      ...(link === undefined ? {} : { link }),
-      ...(image === undefined ? {} : { image }),
-      ...(term === undefined ? {} : { term }),
-      ...(field === undefined ? {} : { field }),
-      ...(screenshot === undefined ? {} : { screenshot }),
-      ...(headingShift === undefined ? {} : { headingShift }),
-      ...(idPrefix === undefined ? {} : { idPrefix }),
-      ...(learnMore === undefined ? {} : { learnMore }),
-      ...(folder === undefined ? {} : { folder }),
-      ...(lines === undefined ? {} : { lines }),
-    };
     if (asServed) {
       return renderReact(tree, {
-        ...options,
+        ...kept,
         components: { ...servedComponents(more), ...components },
       });
     }
@@ -196,27 +179,10 @@ export function Doc({
       );
     };
     return renderReact(tree, {
-      ...options,
+      ...kept,
       components: { ...KIT, term: drawTerm, ...components },
     });
-  }, [
-    tree,
-    more,
-    asServed,
-    components,
-    profile,
-    productName,
-    link,
-    image,
-    term,
-    field,
-    screenshot,
-    headingShift,
-    idPrefix,
-    learnMore,
-    folder,
-    lines,
-  ]);
+  }, [tree, more, asServed, components, kept]);
   return (
     <div className={asServed ? "vd-doc vd-served" : "vd-doc"}>
       <style href="volvel-doc" precedence="default">

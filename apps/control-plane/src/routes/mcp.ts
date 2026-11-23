@@ -594,6 +594,23 @@ async function toolsFor(kernel: Kernel, ctx: Caller, workspace: WorkspaceRef): P
   return tools;
 }
 
+/**
+ * Whether the caller may start scripts or flows across the workspace, as the `agent_runner`
+ * role given for the whole workspace lets it. That is enough to connect: the tools offered
+ * are the ones it may start, and nothing of the workspace is read.
+ */
+async function mayStartHere(
+  allowed: (
+    permission: string,
+    target: { tenantId: string; workspaceId: string },
+  ) => Promise<boolean>,
+  tenantId: string,
+  workspaceId: string,
+): Promise<boolean> {
+  const target = { tenantId, workspaceId };
+  return (await allowed("run:write", target)) || (await allowed("flow_run:write", target));
+}
+
 export function mcpRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
   return async (app) => {
     app.get(
@@ -652,7 +669,8 @@ export function mcpRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         };
         const reachable =
           (await allowed("workspace:read", { tenantId: params.t, workspaceId: workspace.id })) ||
-          (await boundInside(kernel.db, principal, params.t, workspace.id));
+          (await boundInside(kernel.db, principal, params.t, workspace.id)) ||
+          (await mayStartHere(allowed, params.t, workspace.id));
         const tools = reachable
           ? await toolsFor(
               kernel,
@@ -750,7 +768,8 @@ export function mcpRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         };
         const reachable =
           (await allowed("workspace:read", { tenantId: params.t, workspaceId: workspace.id })) ||
-          (await boundInside(kernel.db, principal, params.t, workspace.id));
+          (await boundInside(kernel.db, principal, params.t, workspace.id)) ||
+          (await mayStartHere(allowed, params.t, workspace.id));
         const tool = reachable
           ? (await toolsFor(kernel, caller, workspace)).find((one) => one.name === body.tool)
           : undefined;
@@ -821,7 +840,14 @@ export function mcpRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         }
         // Someone with nothing in this workspace is told nothing about it. Someone bound to
         // single scripts or flows in it, as an agent offered them, reaches those.
-        if (!(await boundInside(kernel.db, ctx.principal, params.t, params.w))) {
+        if (
+          !(await boundInside(kernel.db, ctx.principal, params.t, params.w)) &&
+          !(await mayStartHere(
+            (permission, target) => ctx.allowed(permission, target),
+            params.t,
+            params.w,
+          ))
+        ) {
           await ctx.authorize("workspace:read", { tenantId: params.t, workspaceId: params.w });
         }
 

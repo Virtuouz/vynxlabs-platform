@@ -930,3 +930,41 @@ describe("a script offered to an agent", () => {
     expect(asAgent.status).toBe(403);
   });
 });
+
+describe("the agent_runner role given for the whole workspace", () => {
+  test("lets the account connect, and offers the scripts it may start", async () => {
+    const role = await t.db
+      .selectFrom("role")
+      .select("id")
+      .where("name", "=", "agent_runner")
+      .where("builtin", "=", true)
+      .executeTakeFirstOrThrow();
+    const created = await alice.post(`/tenants/${tenant}/service-accounts`, { name: "whole-ws" });
+    const key = await alice.post(
+      `/tenants/${tenant}/service-accounts/${created.body.id}/api-keys`,
+      { name: "agent" },
+    );
+    const bound = await alice.post(`/tenants/${tenant}/bindings`, {
+      workspaceId: workspace,
+      principalType: "service_account",
+      principalId: created.body.id,
+      roleId: role.id,
+    });
+    expect(bound.status, JSON.stringify(bound.body)).toBe(201);
+    const listed = await alice.get(
+      `/tenants/${tenant}/service-accounts/${created.body.id}/tools?workspace=${workspace}`,
+    );
+    expect(listed.body).toMatchObject({ reachable: true });
+    expect(listed.body.tools.map((tool: { name: string }) => tool.name)).toContain(
+      "run_orders__greet",
+    );
+    const agent = await connect(key.body.token);
+    try {
+      expect((await agent.listTools()).tools.map((tool) => tool.name)).toContain(
+        "run_orders__greet",
+      );
+    } finally {
+      await agent.close();
+    }
+  });
+});

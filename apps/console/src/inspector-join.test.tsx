@@ -87,7 +87,8 @@ test("a chart's Data tab: its own sections, and the data parts they draw are not
   expect(headings()).toEqual(["Rows it uses", "What to chart", "Order"]);
   const panel = within(screen.getByRole("tabpanel"));
   expect(panel.getAllByRole("button", { name: /^Measure/ })).toHaveLength(1);
-  expect(panel.queryByRole("button", { name: /^Sorted by/ })).toBeNull();
+  // The chart chooses its order once, in "Order" (WID-M6), not again in "Rows it uses".
+  expect(panel.getAllByRole("button", { name: /^Sorted by/ })).toHaveLength(1);
 });
 
 test("the Heading group: first for a stat after its preview, last for a table, none for a button", () => {

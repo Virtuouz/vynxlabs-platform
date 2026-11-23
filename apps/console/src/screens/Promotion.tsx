@@ -63,7 +63,9 @@ export function RequestPromotion({
       setBusy(false);
     }
   };
-  const waiting = request?.status === "pending";
+  // Only the one who asked may withdraw it. Anyone else sees who did, and may ask again,
+  // which replaces it.
+  const waiting = request?.status === "pending" && request.mine;
   return (
     <section className="flex flex-col gap-2" aria-label="Request promotion">
       <SectionLabel>Promoting to {targetName}</SectionLabel>

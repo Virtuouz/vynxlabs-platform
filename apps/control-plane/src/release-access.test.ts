@@ -104,6 +104,28 @@ describe("asking for a promotion", () => {
       id: asked,
       status: "pending",
     });
+    // A second developer, who may not decide, sees neither the request nor its note (REL-02).
+    const eve = await alice.post(`/tenants/${tenant}/members`, {
+      email: "eve@acme.example",
+      name: "eve",
+      password: PASSWORD,
+    });
+    await alice.post(`/tenants/${tenant}/bindings`, {
+      principalType: "member",
+      principalId: eve.body.id,
+      roleId: roles.developer,
+    });
+    const eveClient = await t.signIn("eve@acme.example", PASSWORD);
+    expect((await eveClient.get(`${ws()}/promotion-preview`)).body).toMatchObject({
+      canPromote: false,
+      request: null,
+    });
+    expect((await eveClient.get(`/tenants/${tenant}/promotion-requests`)).body.items).toEqual([]);
+    // The one who may decide sees it, as someone else's.
+    expect((await alice.get(`${ws()}/promotion-preview`)).body.request).toMatchObject({
+      id: asked,
+      mine: false,
+    });
     // The promoter's summary counts it, and their list has it to decide.
     expect((await alice.get(`/tenants/${tenant}/summary`)).body.promotionRequests).toBe(1);
     expect((await dave.get(`/tenants/${tenant}/summary`)).body.promotionRequests).toBeNull();

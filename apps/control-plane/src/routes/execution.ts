@@ -59,7 +59,7 @@ import { access, findWorkspace, guestLimit, type WorkspaceRef } from "../kernel/
 import type { Kernel } from "../kernel/kernel.js";
 import { labelText } from "../kernel/metrics.js";
 import { PageQuery, pageOf } from "../pagination.js";
-import { describeRequests, PromotionRequest } from "./promotion-requests.js";
+import { describeRequests, PromotionRequest, visibleRequests } from "./promotion-requests.js";
 import {
   AnyObject,
   Id,
@@ -848,7 +848,8 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               .orderBy("created_at", "desc")
               .limit(1)
               .execute();
-            return (await describeRequests(kernel, ctx, latest))[0] ?? null;
+            const [mine] = await describeRequests(kernel, ctx, await visibleRequests(ctx, latest));
+            return mine ?? null;
           })(),
         };
       },

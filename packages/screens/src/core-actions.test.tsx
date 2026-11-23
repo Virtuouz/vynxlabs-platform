@@ -260,6 +260,69 @@ describe("record detail", () => {
     expect(screen.queryByRole("button", { name: "Edit Internal code" })).toBeNull();
   });
 
+  test("a several-choice field is edited by ticking choices, and a file is not edited in place (WID-10)", async () => {
+    const act = vi.fn(async () => ({ ok: true as const }));
+    const withLists = {
+      ...recordInput,
+      columns: [
+        ...invoiceColumns,
+        {
+          ...col("tags", "enum_list", "Tags"),
+          values: [{ value: "late" }, { value: "vip" }, { value: "export" }],
+        },
+        col("attachment", "file", "Attachment"),
+      ],
+      record: { ...(recordInput as { record: object }).record, tags: ["late"], attachment: "f1" },
+    } as unknown as WireData;
+    render(
+      <Page
+        client={clientOf({ record: withLists })}
+        widgets={[detail({ edit: true, fields: [{ column: "tags" }, { column: "attachment" }] })]}
+        registry={registryWith({ act, can: () => true })}
+      />,
+    );
+    await screen.findByRole("button", { name: "Edit Tags" });
+    expect(screen.queryByRole("button", { name: "Edit Attachment" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Edit Tags" }));
+    const group = await screen.findByRole("group", { name: "Tags" });
+    expect((within(group).getByLabelText("late") as HTMLInputElement).checked).toBe(true);
+    fireEvent.click(within(group).getByLabelText("vip"));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(act).toHaveBeenCalledWith("config/edit", {
+        record: "a",
+        inputs: { tags: ["late", "vip"] },
+      }),
+    );
+  });
+
+  test("editing in place is limited to the groups that may, and the others read it with the reason (WID-19)", async () => {
+    const config = {
+      edit: true,
+      editBy: { groups: ["groups/billing"] },
+      fields: [{ column: "total" }],
+    };
+    const draw = (groups: string[]) =>
+      render(
+        <Page
+          client={{
+            ...clientOf({ record: recordInput }),
+            act: vi.fn(async () => ({ client: [] })),
+          }}
+          widgets={[detail(config)]}
+          registry={viewRegistry(corePack)}
+          user={{ id: "u1", groups }}
+        />,
+      );
+    draw(["billing"]);
+    expect(await screen.findByRole("button", { name: "Edit Total" })).toBeTruthy();
+    cleanup();
+    draw(["sales"]);
+    await screen.findByText("INV-1", { exact: false });
+    expect(screen.queryByRole("button", { name: "Edit Total" })).toBeNull();
+    expect(screen.getByText("Only Billing can edit this.")).toBeTruthy();
+  });
+
   test("actions are buttons: disabled by can, run with the record, in their tone", async () => {
     const act = vi.fn(async () => ({ ok: true as const }));
     const can = vi.fn((at: string) => at !== "config/actions/1/action");

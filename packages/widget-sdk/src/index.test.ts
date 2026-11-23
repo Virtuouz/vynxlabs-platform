@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  countText,
   defineWidget,
   definitionProblems,
+  formatValue,
   type WidgetDefinition,
   WidgetRegistry,
 } from "./index.js";
@@ -79,5 +81,30 @@ describe("the widget contract", () => {
     expect(registry.list("dashboard")).toEqual([]);
     expect(registry.list("app")).toEqual([base]);
     expect(WidgetRegistry.packOf("labs/goal")).toBe("labs");
+  });
+});
+
+describe("numbers are written in the reader's locale (D38)", () => {
+  it("a number, a count and money follow the browser's language", () => {
+    const was = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+    const use = (language: string) =>
+      Object.defineProperty(globalThis, "navigator", {
+        value: { languages: [language], language },
+        configurable: true,
+      });
+    try {
+      use("de-DE");
+      expect(formatValue(1234.5, undefined)).toBe("1.234,5");
+      expect(countText(1204)).toBe("1.204");
+      expect(formatValue(120000, { style: "currency", currency: "EUR", minorUnits: true })).toMatch(
+        /1\.200,00\s*€/,
+      );
+      use("en-US");
+      expect(formatValue(1234.5, undefined)).toBe("1,234.5");
+      expect(countText(1204)).toBe("1,204");
+    } finally {
+      if (was) Object.defineProperty(globalThis, "navigator", was);
+      else Reflect.deleteProperty(globalThis, "navigator");
+    }
   });
 });

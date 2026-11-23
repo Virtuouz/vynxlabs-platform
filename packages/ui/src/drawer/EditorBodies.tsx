@@ -1,6 +1,7 @@
 import { X } from "lucide-react";
 import { useEffect, useId, useRef } from "react";
 import { DateInput } from "../DateInput.tsx";
+import { localeOf } from "../dates.ts";
 import { SegmentedControl } from "../Pickers.tsx";
 import { DashedAdd, type DrawerIcon } from "./Drawer.tsx";
 
@@ -186,7 +187,7 @@ export function ConditionEditor({
                 <span className="flex-1">{choice.label ?? choice.value}</span>
                 {choice.count !== undefined ? (
                   <span className="font-mono text-meta text-ink-muted tabular-nums">
-                    {choice.count.toLocaleString("en-US")} {choice.count === 1 ? "row" : "rows"}
+                    {choice.count.toLocaleString(localeOf())} {choice.count === 1 ? "row" : "rows"}
                   </span>
                 ) : null}
               </label>

@@ -1339,7 +1339,7 @@ export const appKind: KindDefinition = {
   body: {
     type: "object",
     properties: {
-      title: { type: "string", minLength: 1, maxLength: 200 },
+      title: { type: "string", minLength: 1, maxLength: 100 },
       description: { type: "string", maxLength: 500 },
       entry: {
         type: "string",

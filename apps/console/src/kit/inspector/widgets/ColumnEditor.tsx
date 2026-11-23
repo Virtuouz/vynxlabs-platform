@@ -50,6 +50,73 @@ export function ToneChip({ tone, children }: { tone: Tone; children: ReactNode }
   );
 }
 
+/**
+ * The colors of a choice's values, each a badge as it will look that opens a small menu of tones.
+ * Used by a table's column, a detail's field and a detail's status chip.
+ */
+export function BadgeColors({
+  values,
+  badges,
+  words,
+  onChange,
+}: {
+  values: readonly string[];
+  badges: Record<string, Tone> | undefined;
+  /** What a value is called. */
+  words: (value: string) => string;
+  onChange: (badges: Record<string, Tone>) => void;
+}) {
+  return (
+    <section aria-label="Badge colors" className="flex flex-col gap-1.5">
+      <h4 className="m-0 text-body-sm text-ink-muted">Badge colors</h4>
+      {/* panel-allowed: the drawer's own rows, as DrawerGroup draws them */}
+      {values.length ? (
+        <ul className="m-0 list-none divide-y divide-line overflow-hidden rounded-panel border border-line bg-surface p-0">
+          {values.map((value) => {
+            const tone = badges?.[value];
+            return (
+              <li key={value} className="flex min-h-10 items-center justify-between gap-3 px-3">
+                <span className="min-w-0 truncate text-body-sm text-ink">{words(value)}</span>
+                {/* The badge as it will look, with a chevron: it opens a small menu of tones. */}
+                <Menu
+                  ariaLabel={`Color of ${value}`}
+                  align="end"
+                  triggerClassName="inline-flex h-7 cursor-pointer items-center gap-1 rounded-control px-1 text-ink-muted outline-offset-2 hover:bg-selected focus-visible:outline-2 focus-visible:outline-focus"
+                  label={
+                    <span className="inline-flex items-center gap-1.5">
+                      <ToneChip tone={tone ?? "neutral"}>{words(value)}</ToneChip>
+                      <ChevronDown aria-hidden="true" size={14} />
+                    </span>
+                  }
+                  items={[
+                    {
+                      label: "Automatic",
+                      onSelect: () => {
+                        const next = { ...(badges ?? {}) };
+                        delete next[value];
+                        onChange(next);
+                      },
+                    },
+                    ...TONES.map((one) => ({
+                      label: TONE_WORDS[one],
+                      onSelect: () => onChange({ ...(badges ?? {}), [value]: one }),
+                    })),
+                  ]}
+                />
+              </li>
+            );
+          })}
+        </ul>
+      ) : (
+        <p className="m-0 text-body-sm text-ink-muted">This column has no values yet.</p>
+      )}
+      <p className="m-0 text-meta text-ink-muted">
+        Values come from the column's choices, so new ones appear here on their own.
+      </p>
+    </section>
+  );
+}
+
 const asNumberFormat = (format: ValueFormat | undefined): NumberFormat | undefined =>
   format as NumberFormat | undefined;
 
@@ -174,54 +241,12 @@ export function ColumnEditorBody({
         />
       </div>
       {badge ? (
-        <section aria-label="Badge colors" className="flex flex-col gap-1.5">
-          <h4 className="m-0 text-body-sm text-ink-muted">Badge colors</h4>
-          {/* panel-allowed: the drawer's own rows, as DrawerGroup draws them */}
-          {values.length ? (
-            <ul className="m-0 list-none divide-y divide-line overflow-hidden rounded-panel border border-line bg-surface p-0">
-              {values.map((value) => {
-                const tone = spec.badges?.[value];
-                return (
-                  <li key={value} className="flex min-h-10 items-center justify-between gap-3 px-3">
-                    <span className="min-w-0 truncate text-body-sm text-ink">{words(value)}</span>
-                    {/* The badge as it will look, with a chevron: it opens a small menu of tones. */}
-                    <Menu
-                      ariaLabel={`Color of ${value}`}
-                      align="end"
-                      triggerClassName="inline-flex h-7 cursor-pointer items-center gap-1 rounded-control px-1 text-ink-muted outline-offset-2 hover:bg-selected focus-visible:outline-2 focus-visible:outline-focus"
-                      label={
-                        <span className="inline-flex items-center gap-1.5">
-                          <ToneChip tone={tone ?? "neutral"}>{words(value)}</ToneChip>
-                          <ChevronDown aria-hidden="true" size={14} />
-                        </span>
-                      }
-                      items={[
-                        {
-                          label: "Automatic",
-                          onSelect: () => {
-                            const next = { ...(spec.badges ?? {}) };
-                            delete next[value];
-                            onChange({ badges: next });
-                          },
-                        },
-                        ...TONES.map((one) => ({
-                          label: TONE_WORDS[one],
-                          onSelect: () =>
-                            onChange({ badges: { ...(spec.badges ?? {}), [value]: one } }),
-                        })),
-                      ]}
-                    />
-                  </li>
-                );
-              })}
-            </ul>
-          ) : (
-            <p className="m-0 text-body-sm text-ink-muted">This column has no values yet.</p>
-          )}
-          <p className="m-0 text-meta text-ink-muted">
-            Values come from the column's choices, so new ones appear here on their own.
-          </p>
-        </section>
+        <BadgeColors
+          values={values}
+          badges={spec.badges}
+          words={words}
+          onChange={(badges) => onChange({ badges })}
+        />
       ) : null}
     </div>
   );

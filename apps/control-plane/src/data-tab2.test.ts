@@ -274,6 +274,58 @@ describe("what a table refuses, and how it says so", () => {
     );
   });
 
+  test("TAB2: of two retired tables with one name, the one asked for by its ID is shown", async () => {
+    const own = await fresh();
+    const made = await put(own, "memo", { columns: { first: { type: "text" } } }, { create: true });
+    expect(made.status, JSON.stringify(made.body)).toBe(201);
+    expect((await alice.delete(`${ws(own)}/resources/memo`)).status).toBe(204);
+    // A second table that once had this name, retired too (how one gets here is a rename and a
+    // restore in older deploys): its own stored table, with one column of its own.
+    const [one] = await data
+      .selectFrom("data_table")
+      .selectAll()
+      .where("workspace_id", "=", own)
+      .where("name", "=", "memo")
+      .execute();
+    const schema = workspaceSchema(own);
+    await sql
+      .raw(
+        `create table "${schema}"."t_memo_two" (like "${schema}"."${one?.physical_name}" including all)`,
+      )
+      .execute(data);
+    await sql.raw(`alter table "${schema}"."t_memo_two" add column "c_other" text`).execute(data);
+    const { id: _id, physical_name: _physical, ...rest } = one as Any;
+    const second = await data
+      .insertInto("data_table")
+      .values({ ...rest, id: crypto.randomUUID(), physical_name: "t_memo_two" })
+      .returning("id")
+      .executeTakeFirstOrThrow();
+    await data
+      .insertInto("data_column")
+      .values({
+        id: crypto.randomUUID(),
+        table_id: second.id,
+        name: "other",
+        physical_name: "c_other",
+        type: "text",
+        status: "retired",
+      } as Any)
+      .execute();
+    const listed = (await alice.get(`${ws(own)}/tables`)).body.items.filter(
+      (item: Any) => item.name === "memo",
+    );
+    expect(listed).toHaveLength(2);
+    const names = async (id: string) => {
+      const read = await alice.get(`${ws(own)}/tables/memo?id=${id}`);
+      expect(read.status, JSON.stringify(read.body)).toBe(200);
+      expect(read.body.id).toBe(id);
+      return read.body.columns.map((column: Any) => column.name);
+    };
+    const [first, other] = [await names(listed[0].id), await names(listed[1].id)];
+    expect(first).not.toEqual(other);
+    expect((await alice.get(`${ws(own)}/tables/memo?id=nope`)).status).toBe(404);
+  });
+
   test("TAB-15: a definition Postgres would refuse is refused in words, at the column", async () => {
     const own = await fresh();
     const bad = async (columns: Record<string, object>, field: string) => {

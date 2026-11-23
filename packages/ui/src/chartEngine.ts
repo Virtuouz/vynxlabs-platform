@@ -1,6 +1,6 @@
 import type { View } from "vega";
-import { localeOf } from "./dates.ts";
 import type { Config, TopLevelSpec } from "vega-lite";
+import { localeOf } from "./dates.ts";
 
 /** The three libraries that draw a chart. */
 export interface ChartEngine {

@@ -86,12 +86,17 @@ export function PublishCheck({
 
   const known = useMemo(
     () => ({
-      tables: loading || catalogError
-        ? undefined
-        : new Map(
-            catalog.tables.map((table) => [table.name, new Set(table.columns.map((c) => c.name))]),
-          ),
-      queries: loading || catalogError ? undefined : new Set(catalog.queries.map((query) => query.path)),
+      tables:
+        loading || catalogError
+          ? undefined
+          : new Map(
+              catalog.tables.map((table) => [
+                table.name,
+                new Set(table.columns.map((c) => c.name)),
+              ]),
+            ),
+      queries:
+        loading || catalogError ? undefined : new Set(catalog.queries.map((query) => query.path)),
       flows: new Set(lists.flows.map((flow) => flow.path)),
       scripts: new Set(lists.scripts.map((script) => script.path)),
       inputsNeeded: inputsNeededOf(lists.flows, lists.scripts),
@@ -127,23 +132,23 @@ export function PublishCheck({
       ...(keyed.error ? [`the groups (${keyed.error})`] : []),
     ];
     const found = checksFor({
-        body,
-        known,
-        definitionOf,
-        problems: problems.map((one) => ({
-          text: `${problemWords(one, body)}.`.replace(/\.\.$/, "."),
-          at: problemAt(one, body),
-        })),
-        refusal: asked?.refusal
-          ? asked.refusal.errors.length > 0
-            ? asked.refusal.errors.map((one) => ({
-                // The same words as a saved problem's, so that one failure is one line.
-                text: `${problemWords(one, body)}.`.replace(/\.\.$/, "."),
-                at: problemAt(one, body),
-              }))
-            : [{ text: asked.refusal.detail }]
-          : [],
-        warnings: (asked?.summary?.warnings ?? []).map((one) => one.message),
+      body,
+      known,
+      definitionOf,
+      problems: problems.map((one) => ({
+        text: `${problemWords(one, body)}.`.replace(/\.\.$/, "."),
+        at: problemAt(one, body),
+      })),
+      refusal: asked?.refusal
+        ? asked.refusal.errors.length > 0
+          ? asked.refusal.errors.map((one) => ({
+              // The same words as a saved problem's, so that one failure is one line.
+              text: `${problemWords(one, body)}.`.replace(/\.\.$/, "."),
+              at: problemAt(one, body),
+            }))
+          : [{ text: asked.refusal.detail }]
+        : [],
+      warnings: (asked?.summary?.warnings ?? []).map((one) => one.message),
     });
     return unread.length === 0
       ? found

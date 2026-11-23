@@ -199,7 +199,7 @@ test("a value is changed in place, and a row is added and deleted", async () => 
     target: { value: "7" },
   });
   fireEvent.submit(dialog.querySelector("form") as HTMLFormElement);
-  expect(await screen.findByText("is required")).toBeTruthy();
+  expect(await screen.findByText("number needs a value.")).toBeTruthy();
   fireEvent.input(screen.getByLabelText("number", { selector: "input[name=number]" }), {
     target: { value: "A-3" },
   });
@@ -1908,4 +1908,18 @@ test("w-data 7: a text default is shown as a number's is, and 'optional' is said
   const dialog = await screen.findByRole("dialog");
   within(dialog).getByLabelText("Value when none is given");
   expect(within(dialog).queryByText("Optional.")).toBeNull();
+});
+
+test("w-limits 2: the add-row dialog marks a required column required, and an optional one optional", async () => {
+  show(<TableView root={root} name="orders" link="/t/t1/workspaces/w1" />);
+  await screen.findByText("A-1");
+  fireEvent.click(screen.getByRole("button", { name: "Add row" }));
+  const dialog = await screen.findByRole("dialog");
+  const mark = (name: string) =>
+    (within(dialog).getByLabelText(name, { selector: `input[name=${name}]` }) as HTMLElement)
+      .closest("[class*=flex-col]")
+      ?.querySelector("label")?.parentElement?.textContent;
+  expect(mark("number")).toContain("*");
+  expect(mark("number")).not.toContain("optional");
+  expect(mark("total")).toContain("optional");
 });

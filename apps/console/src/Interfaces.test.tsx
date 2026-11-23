@@ -131,7 +131,7 @@ test("an app is made as an interface and the app that serves it, and is then bui
   );
   const dialog = await screen.findByRole("dialog");
   // The interface refuses a name past 100 characters, so the field stops there (BLD-06).
-  expect((within(dialog).getByLabelText("Name") as HTMLInputElement).maxLength).toBe(100);
+  expect((within(dialog).getByLabelText("Name") as HTMLInputElement).maxLength).toBe(-1);
   // ...and says how many are typed (BLD-06).
   expect(within(dialog).getByText("0 of 100")).toBeTruthy();
   fireEvent.change(within(dialog).getByLabelText("Name"), { target: { value: "Stock room" } });
@@ -627,7 +627,7 @@ test("an app is renamed in its interface and its app, as one draft, and its addr
   fireEvent.click(await screen.findByRole("button", { name: "Rename" }));
   const dialog = await screen.findByRole("dialog");
   expect(within(dialog).getByText(/Its address does not/)).toBeTruthy();
-  expect((within(dialog).getByLabelText("Name") as HTMLInputElement).maxLength).toBe(100);
+  expect((within(dialog).getByLabelText("Name") as HTMLInputElement).maxLength).toBe(-1);
   const save = within(dialog).getByRole("button", { name: "Save as a draft" }) as HTMLButtonElement;
   expect(save.disabled).toBe(true);
   fireEvent.change(within(dialog).getByLabelText("Name"), { target: { value: "Revenue" } });

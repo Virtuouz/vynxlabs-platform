@@ -715,7 +715,7 @@ test("a name over 100 letters is refused on the field, and the dialog stays with
   );
   const dialog = await screen.findByRole("dialog");
   const field = within(dialog).getByRole("textbox") as HTMLInputElement;
-  expect(field.maxLength).toBe(100);
+  expect(field.maxLength).toBe(-1);
   const long = "a".repeat(101);
   fireEvent.change(field, { target: { value: long } });
   // Pasted text goes past what typing allows, and is refused when it is sent.

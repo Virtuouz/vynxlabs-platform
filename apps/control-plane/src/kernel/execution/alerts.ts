@@ -185,7 +185,8 @@ async function alert(
         workspaceId: failure.workspaceId,
         path: wanted.notify,
       });
-      if (!connection) throw new Error(`The connection "${wanted.notify}" is not set up in this workspace.`);
+      if (!connection)
+        throw new Error(`The connection "${wanted.notify}" is not set up in this workspace.`);
       await queueTask(kernel.db, {
         tenantId: failure.tenantId,
         workspaceId: failure.workspaceId,

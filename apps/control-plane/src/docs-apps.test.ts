@@ -833,6 +833,7 @@ describe("someone who writes documentation in the console, and is not a develope
     ).toBe(200);
     expect((await wren.get(`${devWs()}/docs`)).body).toEqual({
       apps: [],
+      removedApps: [],
       pages: [],
       issues: [],
       tables: [],
@@ -1341,6 +1342,31 @@ describe("someone who writes documentation in the console, and is not a develope
     });
     expect(answer.status).toBe(409);
     expect(answer.body.code).toBe("production_workspace");
+  });
+
+  test("an app a draft removes is listed, so that a deploy of the removal carries it", async () => {
+    expect((await save(wren, "solo/index", text("title: Solo"))).status).toBe(200);
+    const site = await wren.put(`${devWs()}/drafts/solo-site`, {
+      kind: "app",
+      schemaVersion: 1,
+      body: { title: "Solo", docs: "solo" },
+    });
+    expect(site.status, JSON.stringify(site.body)).toBe(200);
+    const deployed = await wren.post(`${devWs()}/changes/deploy`, {
+      paths: ["solo/index", "solo-site"],
+      message: "Documentation",
+    });
+    expect(deployed.status, JSON.stringify(deployed.body)).toBeLessThan(300);
+    const gone = await wren.put(`${devWs()}/drafts/solo-site`, {
+      kind: "app",
+      schemaVersion: 1,
+      body: {},
+      deleted: true,
+    });
+    expect(gone.status, JSON.stringify(gone.body)).toBe(200);
+    const listed = (await wren.get(`${devWs()}/docs`)).body;
+    expect(listed.apps.map((one: Any) => one.path)).not.toContain("solo-site");
+    expect(listed.removedApps).toEqual(["solo-site"]);
   });
 });
 

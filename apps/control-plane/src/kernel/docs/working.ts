@@ -17,6 +17,8 @@ export interface Working {
   resources: WorkingResource[];
   /** `deployed` is false for an app that is only a draft. `drafted` is true while a draft changes it. */
   apps: (DocsApp & { deployed: boolean; drafted: boolean })[];
+  /** The deployed apps a draft removes: they are no part of what is built, and the next deploy removes them. */
+  removedApps: string[];
 }
 
 /**
@@ -78,6 +80,9 @@ export async function workingDocs(db: Db, workspaceId: string): Promise<Working>
   );
   return {
     resources,
+    removedApps: resources
+      .filter((one) => one.kind === "app" && one.state === "removed")
+      .map((one) => one.path),
     apps: docsApps(kept).map((one) => ({
       ...one,
       deployed: deployedApps.has(one.path),

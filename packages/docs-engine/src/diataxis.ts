@@ -145,7 +145,7 @@ export function diataxisIssues(entry: DocEntry, context: DiataxisContext): DocIs
   if (isDocType(written) && context.folderTyped === false) {
     warn(
       "type_folder",
-      `This page says it is a ${type}, in a folder whose index says no type. Put type: ${type} on the folder's index.md so that every page in it has it.`,
+      `This page says it is ${/^[aeiou]/i.test(type) ? "an" : "a"} ${type}, in a folder whose index says no type. Put type: ${type} on the folder's index.md so that every page in it has it.`,
     );
   }
   const steps = hasSteps(entry);

@@ -422,6 +422,7 @@ export async function advance(kernel: Kernel, flowRunId: string): Promise<void> 
   const started: string[] = [];
   const asking: string[] = [];
   let canceled: ReturnType<typeof takeCanceled> = [];
+  let canceledFlowRuns: Finished["flowRun"][] = [];
   const finished = await kernel.db.transaction().execute(async (trx) => {
     await sql`select pg_advisory_xact_lock(hashtextextended(${flowRunId}, 1))`.execute(trx);
     const flowRun = await trx
@@ -442,9 +443,11 @@ export async function advance(kernel: Kernel, flowRunId: string): Promise<void> 
     started.push(...pass.started);
     asking.push(...pass.asking);
     canceled = takeCanceled(trx);
+    canceledFlowRuns = takeCanceledFlows(trx);
     return result;
   });
   await announceCanceled(kernel, canceled);
+  await announceCanceledFlows(kernel, canceledFlowRuns);
   // Flow runs started as steps take their own first step now that they are committed.
   for (const child of started) kickFlow(kernel, child);
   // Approvers are told of a step that waits for them once it is committed, and never twice.
@@ -458,18 +461,42 @@ export async function advance(kernel: Kernel, flowRunId: string): Promise<void> 
   if (finished) await afterFlowRun(kernel, finished);
 }
 
-async function afterFlowRun(kernel: Kernel, finished: Finished) {
-  const { flowRun } = finished;
-  if (flowRun.parent_flow_run_id) kickFlow(kernel, flowRun.parent_flow_run_id);
+/** Says how a flow run ended, however it ended: `platform/flow-run-finished`. */
+async function publishFlowRunFinished(
+  kernel: Kernel,
+  flowRun: Finished["flowRun"],
+  status: Finished["status"],
+) {
   const { publishPlatformEvent } = await import("./events.js");
   await publishPlatformEvent(kernel, {
     tenantId: flowRun.tenant_id,
     workspaceId: flowRun.workspace_id,
     name: "platform/flow-run-finished",
-    payload: { flowRunId: flowRun.id, flow: flowRun.flow_path, status: finished.status },
+    payload: { flowRunId: flowRun.id, flow: flowRun.flow_path, status },
     sourceId: flowRun.id,
     depth: Number(flowRun.trigger_detail.depth ?? 0),
   }).catch((error) => kernel.log.error({ err: error }, "a platform event could not be published"));
+}
+
+/** The flow runs a transaction canceled, to be announced once it has committed. */
+const canceledFlows = new WeakMap<object, Finished["flowRun"][]>();
+
+/** The flow runs this transaction canceled so far, handed over once. */
+export function takeCanceledFlows(trx: Trx): Finished["flowRun"][] {
+  const flowRuns = canceledFlows.get(trx) ?? [];
+  canceledFlows.delete(trx);
+  return flowRuns;
+}
+
+/** Says that flow runs ended as canceled, as a canceled script run is said to have (`platform/run-finished`). */
+export async function announceCanceledFlows(kernel: Kernel, flowRuns: Finished["flowRun"][]) {
+  for (const flowRun of flowRuns) await publishFlowRunFinished(kernel, flowRun, "cancelled");
+}
+
+async function afterFlowRun(kernel: Kernel, finished: Finished) {
+  const { flowRun } = finished;
+  if (flowRun.parent_flow_run_id) kickFlow(kernel, flowRun.parent_flow_run_id);
+  await publishFlowRunFinished(kernel, flowRun, finished.status);
   // A sub-flow's failure is reported by the flow that started it.
   if (finished.status === "failed" && !flowRun.parent_flow_run_id) {
     const { alertFlowFailure } = await import("../execution/alerts.js");
@@ -1208,6 +1235,7 @@ async function cancelFlowTree(kernel: Kernel, trx: Trx, flowRunId: string): Prom
     .returningAll()
     .executeTakeFirst();
   if (!flowRun) return;
+  canceledFlows.set(trx, [...(canceledFlows.get(trx) ?? []), flowRun]);
   observe.flowRunEnded(kernel.metrics, "cancelled");
   const active = await trx
     .selectFrom("step_run")

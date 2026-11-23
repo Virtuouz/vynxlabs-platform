@@ -260,3 +260,10 @@ describe("search", () => {
     expect(index.grouped("refund", { type: "how-to" }).map((hit) => hit.path)).toEqual(["g/a"]);
   });
 });
+
+test("a page's type is said with a or an by the word", () => {
+  const { issues } = set([["free/typed", "title: Typed alone\ntype: explanation", "Words."]]);
+  const text = JSON.stringify(issues);
+  expect(text).toContain("says it is an explanation");
+  expect(text).not.toContain("a explanation");
+});

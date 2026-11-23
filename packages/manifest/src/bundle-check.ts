@@ -76,7 +76,7 @@ const EVENT_LIST = [
   },
   {
     name: "platform/flow-run-finished",
-    description: "A flow run ended, however it ended.",
+    description: "A flow run ended, however it ended, including a flow run that was canceled.",
     payload: [
       { name: "flowRunId", type: "string", description: "The flow run." },
       { name: "flow", type: "string", description: "The flow's path." },

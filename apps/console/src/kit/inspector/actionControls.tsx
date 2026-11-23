@@ -69,6 +69,7 @@ import {
 } from "./actionModel.ts";
 import { ConfirmPreview } from "./confirmPreview.tsx";
 import type { Env } from "./controls.tsx";
+import { useChosenGroups } from "./groupChoices.tsx";
 import { type ConfigSetting, heading, resultNames, visualOf, withSystemColumns } from "./model.ts";
 import { StepTimeline, type TimelineItem } from "./stepTimeline.tsx";
 import { TokenText } from "./TokenText.tsx";
@@ -1048,6 +1049,7 @@ export function ActionEditor({
   /** Left of the trigger line. Default: a bolt. */
   trigger?: ReactNode;
 }) {
+  const chosen = useChosenGroups();
   const ctx = actionContext(env);
   const current: Action = action ?? { steps: [] };
   const asked = current.confirm?.ask ?? [];
@@ -1217,7 +1219,9 @@ export function ActionEditor({
         </p>
       ) : null}
       {current.steps.length > 0 ? (
-        <p className="m-0 text-body-sm text-ink-muted">{grantWords(current, ctx)}</p>
+        <p className="m-0 text-body-sm text-ink-muted">
+          {grantWords(current, ctx, Object.fromEntries(chosen.map((one) => [one.path, one.name])))}
+        </p>
       ) : null}
     </div>
   );

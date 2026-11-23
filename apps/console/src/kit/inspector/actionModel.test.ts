@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { stepKindsFor, typedConstant } from "./actionModel.ts";
+import { grantWords, stepKindsFor, typedConstant } from "./actionModel.ts";
 
 test("a value typed for a column is stored as that column's type, not as it looks", () => {
   expect(typedConstant("007", "text")).toBe("007");
@@ -23,4 +23,25 @@ test("a dashboard offers narrowing and the rows behind only where the event give
   expect(stepKindsFor(ctx(true, true))).toEqual(["narrow", "message", "rows"]);
   expect(stepKindsFor(ctx(false, true))).toEqual(["message", "rows"]);
   expect(stepKindsFor(ctx(false, false))).toEqual(["message"]);
+});
+
+test("who can do it is the groups the action names, not everyone who can open the app (WID-22)", () => {
+  const ctx = {
+    surface: "app",
+    defaultRef: "this",
+    thisTable: "invoices",
+    columnsOf: () => [],
+  } as never;
+  const steps = [{ do: "update", record: "this", set: { status: { value: "paid" } } }] as never;
+  expect(grantWords({ steps }, ctx)).toContain("People who can open the app can do this");
+  const limited = grantWords(
+    { steps, runBy: { groups: ["groups/billing", "groups/managers"] } },
+    ctx,
+  );
+  expect(limited).not.toContain("People who can open the app");
+  expect(limited).toContain("Only Billing and Managers can do this");
+  const named = grantWords({ steps, runBy: { groups: ["groups/billing"] } }, ctx, {
+    "groups/billing": "Practice billing",
+  });
+  expect(named).toContain("Only Practice billing can do this");
 });

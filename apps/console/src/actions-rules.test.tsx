@@ -322,6 +322,10 @@ test("Rules: who can see it limits to groups, and says hiding is not security", 
   show(<Rules />);
   expect(screen.getByText("Everyone who can open the app")).toBeTruthy();
   expect(screen.getByText(/Hiding a widget isn’t security/)).toBeTruthy();
+  // WID-22: a condition can read the user and the open record; there is no condition on the page's filters.
+  expect(
+    screen.getByText(/Conditions can use the current user or the record that is open\./),
+  ).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Limit to a group" }));
   fireEvent.click(await screen.findByRole("checkbox", { name: /Managers/ }));
   expect(last().rules).toEqual({ seenBy: { groups: ["groups/managers"] } });

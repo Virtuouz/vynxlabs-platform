@@ -308,7 +308,7 @@ export function RulesTab({
     <div className="flex flex-col gap-5">
       <DrawerGroup
         label={`Show this ${kind}`}
-        note="Conditions can use the current user, the page filters or the record that is open."
+        note="Conditions can use the current user or the record that is open."
       >
         <DrawerBlock className="[&_fieldset]:w-full [&_fieldset]:flex-nowrap [&_label]:flex-1 [&_label]:justify-center">
           <SegmentedControl

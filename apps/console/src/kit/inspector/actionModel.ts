@@ -240,7 +240,12 @@ export function settableColumns(columns: readonly CatalogColumn[]): CatalogColum
 // What an action grants
 
 /** "Changes Status and Paid on of an invoice." and the sentence that says who may do it, where it acts. */
-export function grantWords(action: Action, ctx: ActionContext): string {
+export function grantWords(
+  action: Action,
+  ctx: ActionContext,
+  /** What each group the action names is called now, by its path. */
+  groupNames: Readonly<Record<string, string>> = {},
+): string {
   const parts: string[] = [];
   const list = (names: string[]) => {
     const words = names.map(heading);
@@ -282,7 +287,12 @@ export function grantWords(action: Action, ctx: ActionContext): string {
   const seen = tables.length
     ? `, on ${tables.map((table) => (table.split("/").pop() ?? table).replace(/_/g, " ")).join(" and ")} they can see`
     : "";
-  return `${parts.join(". ")}. People who can open the ${noun} can do this${seen}.`;
+  const groups = action.runBy?.groups ?? [];
+  const who =
+    groups.length > 0
+      ? `Only ${list(groups.map((path) => groupNames[path] ?? path.split("/").pop() ?? path))} can do this`
+      : `People who can open the ${noun} can do this`;
+  return `${parts.join(". ")}. ${who}${seen}.`;
 }
 
 /** What an input of a flow or script is given, in a line: "Gets this invoice as its input". */

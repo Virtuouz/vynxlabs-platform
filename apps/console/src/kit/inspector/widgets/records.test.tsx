@@ -282,6 +282,10 @@ test("a form says what Submit says, and what happens after saving", () => {
     FormDisplaySection,
   );
   expect(screen.getByText("Required · picker")).toBeTruthy();
+  // WID-22: there is no setting for when a field shows, so the note does not offer one.
+  expect(screen.getByText(/Required and checks come from the table/).textContent).not.toMatch(
+    /when to show/,
+  );
   fireEvent.click(screen.getByRole("button", { name: /Submit says/ }));
   fireEvent.change(screen.getByLabelText("Submit says"), { target: { value: "Create invoice" } });
   expect(mine(seen).config.submitLabel).toBe("Create invoice");

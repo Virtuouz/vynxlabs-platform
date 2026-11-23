@@ -568,6 +568,21 @@ describe("deciding", () => {
     expect((await waitingOf(bob)).map((one) => one.id)).not.toContain(step.id);
   });
 
+  test("WLK-16: a decision a service account made is listed as decided, with its name", async () => {
+    const step = await ask("orders/reorder");
+    expect((await decide(bob, step.id, "approve", { comment: "ok" })).status).toBe(200);
+    const made = await alice.post(`/tenants/${tenant}/service-accounts`, { name: "Nightly bot" });
+    expect(made.status, JSON.stringify(made.body)).toBe(201);
+    await t.db
+      .updateTable("step_run")
+      .set({ decided_by: made.body.id, decided_by_type: "service_account" })
+      .where("flow_run_id", "=", step.run)
+      .where("node_id", "=", "ask")
+      .execute();
+    const decided = (await read(bob, "queue")).body.inputs.requests.decided;
+    expect(decided.find((one: Any) => one.id === step.id)?.decision.by).toBe("Nightly bot");
+  });
+
   test("rejecting fails the flow's step, with the reason, and the widget's rule needs one", async () => {
     const step = await ask("orders/reorder");
     const noReason = await decide(bob, step.id, "reject");

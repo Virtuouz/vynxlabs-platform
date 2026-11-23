@@ -325,7 +325,11 @@ export function RunsWorkbench({
   const stepRun = useLoad<{ trigger: { type: string; flowRunId?: string; node?: string } }>(
     notListed ? `${root}/runs/${selected}` : null,
   );
-  const missing = notListed && Boolean(stepRun.error);
+  // A child flow's run, and one older than the list's window, are no row here but are runs.
+  const flowRun = useLoad<{ flow?: string }>(
+    notListed && stepRun.error ? `${root}/flow-runs/${selected}` : null,
+  );
+  const missing = notListed && Boolean(stepRun.error) && Boolean(flowRun.error);
   useTitleObject(selected ? (picked ? `Run of ${picked.target}` : "Run") : undefined);
   const counts = list.data?.stateCounts ?? {};
   const total = Object.values(counts).reduce((a, b) => a + b, 0);
@@ -813,6 +817,12 @@ export function RunsWorkbench({
                 </p>
               ) : looked.error && !picked ? (
                 <ErrorState error={looked.error} onRetry={looked.reload} />
+              ) : !picked && flowRun.data ? (
+                <Notice tone="info">
+                  This flow run is not in the list: it may have started before the time shown, or be
+                  one that another flow started.{" "}
+                  <Link to={`${link}/runs/${selected}`}>Open the flow run</Link>
+                </Notice>
               ) : !picked && stepRun.data ? (
                 <div className="flex flex-col gap-3">
                   {stepRun.data.trigger.type === "flow" && stepRun.data.trigger.flowRunId ? (

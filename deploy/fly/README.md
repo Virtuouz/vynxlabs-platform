@@ -53,6 +53,10 @@ and add the group to `fly.toml`:
   workers = "volvel-worker-host --url http://<app>.internal:8080"
 ```
 
+`fly.toml` sets `HOST = "::"`, because `<app>.internal` is an IPv6 address and the control plane would otherwise listen on IPv4 only, and names the `app` group for its service (`processes = ["app"]`), so the `workers` group has none. The worker host's rules let a worker reach the control plane at that address and the machine's name servers (IPv6 too), and nothing private else. `WORKER_EGRESS_ALLOW` lists, comma separated, networks and names that workers may also reach, such as an internal API. It is empty unless set, and it is not `EGRESS_ALLOW`, which is what the instance itself may reach for a tenant.
+
+The `workers` group must run as root. If its log says "not running as root" or "a worker could not be started", it does not, and no worker will start: the log names the error. The control plane's `kill_timeout` is in `fly.toml`; give the `workers` machines the same.
+
 Size the `workers` machines for the scripts they will run. The worker host runs as root, to start each worker as a user of its own. Set `MANAGED_WORKERS=false` instead if every tenant is served by standalone workers.
 
 `APPS_URL` gives apps written as code an address of their own: `fly certs add apps.<your domain>`. Without it they are not served.

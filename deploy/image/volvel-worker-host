@@ -18,29 +18,75 @@ log() {
   printf '{"time":"%s","level":"%s","message":"%s"}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" "$2"
 }
 
-if command -v iptables >/dev/null 2>&1 && iptables -n -L OUTPUT >/dev/null 2>&1; then
-  plane_host=$(printf '%s' "${VOLVEL_URL:-}" | sed -E 's#^[a-z]+://(\[[^]]+\]|[^/:]+).*#\1#')
-  for address in $(getent ahostsv4 "$plane_host" 2>/dev/null | awk '{print $1}' | sort -u); do
-    iptables -A OUTPUT -m owner --uid-owner "$owners" -d "$address" -j ACCEPT
+# The control plane's address: --url, as `fly.toml` gives it, or VOLVEL_URL.
+plane_url="${VOLVEL_URL:-}"
+previous=""
+for argument in "$@"; do
+  case "$previous" in --url) plane_url="$argument" ;; esac
+  case "$argument" in --url=*) plane_url="${argument#--url=}" ;; esac
+  previous="$argument"
+done
+plane_host=$(printf '%s' "$plane_url" | sed -E 's#^[a-z]+://(\[[^]]+\]|[^/:]+).*#\1#; s#^\[(.*)\]$#\1#')
+resolv="${VOLVEL_RESOLV_CONF:-/etc/resolv.conf}"
+
+# Lets a worker's user reach `$2`, an address or a network, through the tool `$1`.
+allow() {
+  "$1" -A OUTPUT -m owner --uid-owner "$owners" -d "$2" -j ACCEPT
+}
+# The same, for what may be a name: every address it has, in both families.
+allow_name() {
+  case "$1" in
+    *:*) [ "$have6" = 1 ] && allow ip6tables "$1"; return 0 ;;
+    *[!0-9./]*) ;;
+    *) allow iptables "$1"; return 0 ;;
+  esac
+  for address in $(getent ahostsv4 "$1" 2>/dev/null | awk '{print $1}' | sort -u); do
+    allow iptables "$address"
   done
+  if [ "$have6" = 1 ]; then
+    for address in $(getent ahostsv6 "$1" 2>/dev/null | awk '{print $1}' | sort -u); do
+      allow ip6tables "$address"
+    done
+  fi
+  return 0
+}
+
+if command -v iptables >/dev/null 2>&1 && iptables -n -L OUTPUT >/dev/null 2>&1; then
+  have6=0
+  if command -v ip6tables >/dev/null 2>&1 && ip6tables -n -L OUTPUT >/dev/null 2>&1; then
+    have6=1
+  fi
+  # The control plane: whatever its name answers, in IPv4 and IPv6 (Fly's `.internal` is IPv6).
+  [ -n "$plane_host" ] && allow_name "$plane_host"
   # Any port: Docker's name server at 127.0.0.11 is reached on a port it rewrites 53 to,
   # before these rules see the packet.
-  for server in $(awk '/^nameserver/ {print $2}' /etc/resolv.conf); do
-    case "$server" in *:*) continue ;; esac
-    iptables -A OUTPUT -m owner --uid-owner "$owners" -d "$server" -j ACCEPT
+  for server in $(awk '/^nameserver/ {print $2}' "$resolv"); do
+    case "$server" in
+      *:*) [ "$have6" = 1 ] && allow ip6tables "$server" ;;
+      *) allow iptables "$server" ;;
+    esac
   done
+  # What the operator lists, for workers to reach, such as an internal API: networks and
+  # names, comma separated. Nothing by default. The instance's own EGRESS_ALLOW is not this.
+  old_ifs="$IFS"
+  IFS=','
+  for entry in ${WORKER_EGRESS_ALLOW:-}; do
+    entry=$(printf '%s' "$entry" | tr -d ' ')
+    [ -n "$entry" ] && allow_name "$entry"
+  done
+  IFS="$old_ifs"
   for network in 0.0.0.0/8 10.0.0.0/8 100.64.0.0/10 127.0.0.0/8 169.254.0.0/16 \
     172.16.0.0/12 192.0.0.0/24 192.168.0.0/16 198.18.0.0/15 224.0.0.0/4 240.0.0.0/4; do
     iptables -A OUTPUT -m owner --uid-owner "$owners" -d "$network" -j REJECT
   done
-  if command -v ip6tables >/dev/null 2>&1 && ip6tables -n -L OUTPUT >/dev/null 2>&1; then
+  if [ "$have6" = 1 ]; then
     # Mapped, NAT64, 6to4 and Teredo forms carry an IPv4 address; site-local is retired.
     for network in ::1/128 fc00::/7 fe80::/10 fec0::/10 ::ffff:0:0/96 64:ff9b::/96 64:ff9b:1::/48 \
       2002::/16 2001::/32; do
       ip6tables -A OUTPUT -m owner --uid-owner "$owners" -d "$network" -j REJECT
     done
   fi
-  log info "workers may not reach private, loopback or link-local addresses, other than the control plane"
+  log info "workers may not reach private, loopback or link-local addresses, other than the control plane, the name servers and WORKER_EGRESS_ALLOW"
 else
   log warn "no NET_ADMIN: workers are kept from the instance's services by the container network alone, and may reach link-local addresses such as cloud metadata"
 fi

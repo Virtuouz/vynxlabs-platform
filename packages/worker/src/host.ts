@@ -1,5 +1,5 @@
 import { type ChildProcess, spawn } from "node:child_process";
-import { chown, mkdir, rm } from "node:fs/promises";
+import { chown, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
@@ -43,6 +43,10 @@ export interface WorkerHostOptions {
   scratchRoot?: string;
   /** Starts a worker. Replaced in tests, which cannot switch users. */
   spawn?: typeof spawn;
+  /** How long to wait after a worker could not be started, before asking for the next lease. */
+  startFailurePauseMs?: number;
+  /** Touched each time the control plane answers a request for work: what the container's health check reads. */
+  heartbeatFile?: string;
   /** Workers alive at once. Default: twice the machine's run slots, as each costs memory too. */
   maxWorkers?: number;
   /** Scripts running at once on this machine, across all its workers. Default: from its memory. */
@@ -145,7 +149,10 @@ export class WorkerHost {
       }
       try {
         const lease = await this.#lease();
-        if (lease) await this.#start(lease);
+        if (lease && !(await this.#start(lease))) {
+          // A start that fails would fail again at once: ask again after a pause, not in a loop.
+          await sleep(this.#options.startFailurePauseMs ?? 5000);
+        }
       } catch (error) {
         if (error instanceof HostTokenRefused) {
           this.#log("error", "The control plane refused the worker host token.");
@@ -224,7 +231,11 @@ export class WorkerHost {
         { waitSeconds: this.#options.leaseWaitSeconds ?? 20 },
         this.#asking.signal,
       );
-      return ((await response.json()) as { lease: Lease | null }).lease;
+      const lease = ((await response.json()) as { lease: Lease | null }).lease;
+      // The control plane answered: the host is well, whether or not there is work.
+      const beat = this.#options.heartbeatFile ?? join(tmpdir(), "volvel-host-alive");
+      await writeFile(beat, `${new Date().toISOString()}\n`).catch(() => {});
+      return lease;
     } catch (error) {
       if (this.#stopping) return null;
       throw error;
@@ -241,7 +252,8 @@ export class WorkerHost {
     return slot;
   }
 
-  async #start(lease: Lease) {
+  /** Whether the worker was started. A lease that could not be served is ended at once. */
+  async #start(lease: Lease): Promise<boolean> {
     const env: Record<string, string> = {};
     for (const name of PASSED_THROUGH) {
       const value = process.env[name];
@@ -265,22 +277,40 @@ export class WorkerHost {
         error: (error as Error).message,
       });
       void this.#ended(lease);
-      return;
+      return false;
     }
-    const child = (this.#options.spawn ?? spawn)(process.execPath, [this.#bin, "--token-stdin"], {
-      env: {
-        ...env,
-        HOME: home,
-        TMPDIR: home,
-        VOLVEL_URL: this.#url,
-        VOLVEL_WORKER_IDLE_EXIT: String(lease.idleExitSeconds),
-        VOLVEL_WORKER_MACHINE: formatMachine(this.machine),
-      },
-      stdio: ["pipe", "pipe", "pipe"],
-      cwd: home,
-      uid,
-      gid,
-    });
+    let child: ChildProcess;
+    try {
+      child = (this.#options.spawn ?? spawn)(process.execPath, [this.#bin, "--token-stdin"], {
+        env: {
+          ...env,
+          HOME: home,
+          TMPDIR: home,
+          VOLVEL_URL: this.#url,
+          VOLVEL_WORKER_IDLE_EXIT: String(lease.idleExitSeconds),
+          VOLVEL_WORKER_MACHINE: formatMachine(this.machine),
+        },
+        stdio: ["pipe", "pipe", "pipe"],
+        cwd: home,
+        uid,
+        gid,
+      });
+    } catch (error) {
+      // Node throws at once when it may not switch to the worker's user: this is not an
+      // unreachable control plane, and the lease is over.
+      this.#slots.delete(lease.id);
+      const root = process.getuid?.() === 0;
+      this.#log("error", "a worker could not be started", {
+        tenantId: lease.tenantId,
+        error: (error as Error).message,
+        hint: root
+          ? "the process needs CAP_SETUID and CAP_SETGID to start a worker as another user"
+          : "the process is not root: run the worker host as root, with CAP_SETUID and CAP_SETGID",
+      });
+      void rm(home, { recursive: true, force: true }).catch(() => {});
+      void this.#ended(lease);
+      return false;
+    }
     // Handed over once, on a pipe, and kept out of the worker's environment and command line.
     child.stdin?.end(`${lease.token}\n`);
     this.#workers.set(lease.id, child);
@@ -322,6 +352,7 @@ export class WorkerHost {
       });
       end(null);
     });
+    return true;
   }
 
   /** Says the lease is over, so its credential is revoked now rather than when it expires. */

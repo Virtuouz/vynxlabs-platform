@@ -163,6 +163,38 @@ describe("the worker host", () => {
     expect(ended.sort()).toEqual(["a", "b", "c"]);
   });
 
+  test("a worker that cannot be started ends its lease and is not called unreachable (HOST-06)", async () => {
+    const logged: {
+      level: string;
+      message: string;
+      fields?: Record<string, unknown> | undefined;
+    }[] = [];
+    const refusing = (() => {
+      throw Object.assign(new Error("spawn EPERM"), { code: "EPERM" });
+    }) as unknown as typeof Spawn;
+    const host = new WorkerHost({
+      url,
+      token: TOKEN,
+      user: { uid: 20000, gid: 30000, count: 2 },
+      scratchRoot: scratch,
+      spawn: refusing,
+      leaseWaitSeconds: 0,
+      startFailurePauseMs: 20,
+      log: (level, message, fields) => logged.push({ level, message, fields }),
+    });
+    const running = host.run();
+    for (let i = 0; i < 100 && ended.length === 0; i++) await sleep(50);
+    await host.stop(1);
+    await running;
+    expect(ended).toEqual(["lease-1"]);
+    expect(host.running).toBe(0);
+    expect(logged.map((one) => one.message).join("\n")).not.toContain("could not be reached");
+    const failed = logged.find((one) => one.message === "a worker could not be started");
+    expect(failed?.fields?.error).toContain("EPERM");
+    // The host, not running as root here, says what that means.
+    expect(JSON.stringify(failed?.fields)).toMatch(/root|CAP_SETUID/);
+  });
+
   test("a worker that cannot be signalled keeps its lease, and stopping does not end the host (HOST-04)", async () => {
     const bin = join(scratch, "stay.mjs");
     await writeFile(

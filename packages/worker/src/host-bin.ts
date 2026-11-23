@@ -27,6 +27,7 @@ Options:
                       memory than this. Default: a tenth of it, at least 128 MB.
                       RUN_MEMORY_FLOOR_MB also sets it.
   --max-workers <n>   Workers alive at once. Default: twice the run slots.
+                      MANAGED_WORKERS_MAX also sets it.
 
 WORKER_HOST_TOKEN is the token the control plane was given. VOLVEL_URL can be
 used instead of --url. Each worker runs as a user of its own: the next free one of
@@ -94,11 +95,16 @@ const floor = positive(
   true,
 );
 
+const maxWorkers = positive(
+  values["max-workers"] ?? process.env.MANAGED_WORKERS_MAX,
+  "--max-workers",
+);
+
 const host = new WorkerHost({
   url,
   token,
   user,
-  ...(values["max-workers"] ? { maxWorkers: Number(values["max-workers"]) } : {}),
+  ...(maxWorkers ? { maxWorkers } : {}),
   ...(slots ? { runSlots: slots } : {}),
   ...(floor !== undefined ? { memoryFloorMb: floor } : {}),
   log,

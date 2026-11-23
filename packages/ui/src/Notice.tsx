@@ -86,7 +86,7 @@ export function Notice({
         </Button>
       ) : null}
       {inline && open ? (
-        <div id={region} role="region" aria-label="What this means" className="basis-full">
+        <section id={region} aria-label="What this means" className="basis-full">
           <div className="text-ink-muted">{inline.body()}</div>
           <a
             href={inline.href}

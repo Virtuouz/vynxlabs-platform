@@ -634,7 +634,7 @@ describe("what an error means", () => {
       <>
         <Topic />
         <Dialog open onClose={onClose} title="Create table">
-          <TextField label="Name" value="" onChange={() => {}} />
+          <TextField name="name" label="Name" value="" onChange={() => {}} />
           <Notice tone="danger">{failureText(err)}</Notice>
         </Dialog>
         <HelpDock />

@@ -120,6 +120,7 @@ export async function insertApiKey(
   trx: Trx,
   owner: { type: "member" | "service_account"; id: string },
   input: { name: string; expiresAt?: string | undefined },
+  madeBy?: string | null,
 ) {
   const expiresAt = input.expiresAt ? new Date(input.expiresAt) : null;
   if (expiresAt && expiresAt <= new Date()) throw badRequest("expiresAt must be in the future.");
@@ -137,6 +138,7 @@ export async function insertApiKey(
       expires_at: expiresAt,
       last_used_at: null,
       revoked_at: null,
+      created_by: madeBy ?? null,
     })
     .returningAll()
     .executeTakeFirstOrThrow();
@@ -438,6 +440,13 @@ export async function* auditEntries(
     if (rows.length < 1000) return;
   }
 }
+
+const DisabledMember = Type.Object({
+  ...Member.properties,
+  tenantsWithoutAdmin: Type.Array(Type.Object({ id: Id, name: Type.String() }), {
+    description: "Tenants this account was the last admin of. An operator can open access to each.",
+  }),
+});
 
 const InstanceBinding = Type.Object({
   id: Id,
@@ -963,20 +972,29 @@ export function identityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             "A disabled member can sign in nowhere, by password, single sign-on or API key, and " +
             "every session they have ends. The account and what it holds are kept. The " +
             "instance's identity provider does this when it says someone has left. Nobody " +
-            "disables their own account.",
+            "disables their own account, and the instance keeps an operator who can sign in. " +
+            "The answer lists the tenants left with nobody who can administer them: an " +
+            "operator can open access to each.",
           tags: ["identity"],
           params: Type.Object({ id: Id }),
           body: Type.Object({ disabled: Type.Boolean() }),
-          response: { 200: Member },
+          response: { 200: DisabledMember },
         },
       },
       async ({ ctx, params, body }) => {
         if (body.disabled && ctx.principal.id === params.id) {
           throw badRequest("You cannot disable your own account.");
         }
-        return ctx.mutate(async (trx, audit) =>
-          toMember(await setMemberDisabled(trx, audit, params.id, body.disabled, ctx.principal.id)),
-        );
+        return ctx.mutate(async (trx, audit) => {
+          const done = await setMemberDisabled(
+            trx,
+            audit,
+            params.id,
+            body.disabled,
+            ctx.principal.id,
+          );
+          return { ...toMember(done.member), tenantsWithoutAdmin: done.tenantsWithoutAdmin };
+        });
       },
     );
 

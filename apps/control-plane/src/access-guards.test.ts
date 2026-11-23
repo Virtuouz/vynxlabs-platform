@@ -92,6 +92,19 @@ describe("a binding to anyone holds only what apps use (ACC-01)", () => {
     ).toBeGreaterThanOrEqual(401);
   });
 
+  test("the explanation of someone's access does not credit a binding to anyone with what it cannot give", async () => {
+    const a = await tenantWith("explain", ["ann"]);
+    const ann = a.clients.ann as Client;
+    await ann.post(`/tenants/${a.id}/bindings`, {
+      principalType: "anonymous",
+      roleId: roles.viewer,
+    });
+    const shown = (await ann.get(`/tenants/${a.id}/access/member/${a.members.ann}`)).body;
+    const anyone = shown.sources.find((one: Any) => one.through.type === "anyone");
+    const members = shown.permissions.find((one: Any) => one.permission === "member:read");
+    expect(members.sources).not.toContain(anyone.id);
+  });
+
   test("a role that gives nothing an app uses is refused for anyone and for end users", async () => {
     const a = await tenantWith("anyone2", ["ann"]);
     const role = await a.clients.ann?.post(`/tenants/${a.id}/roles`, {
@@ -258,6 +271,39 @@ describe("a service account's key does not answer for a person (ACC-08, API-19)"
     ).toBe(200);
   });
 
+  test("whoever made the key a change was asked with does not approve it", async () => {
+    const a = await tenantWith("keymaker", ["ann", "bob"]);
+    const ann = a.clients.ann as Client;
+    const account = await ann.post(`/tenants/${a.id}/service-accounts`, { name: "Robot" });
+    await ann.post(`/tenants/${a.id}/bindings`, {
+      principalType: "service_account",
+      principalId: account.body.id,
+      roleId: roles.tenant_admin,
+    });
+    const key = await ann.post(`/tenants/${a.id}/service-accounts/${account.body.id}/api-keys`, {
+      name: "robot",
+    });
+    const robot = t.withKey(key.body.token);
+    expect((await ann.put(`/tenants/${a.id}/access/approval`, { required: true })).status).toBe(
+      200,
+    );
+    const now = (await robot.get(`/tenants/${a.id}/access`)).body.resources as Any[];
+    const asked = await robot.post(`/tenants/${a.id}/access/releases`, {
+      resources: [...now, { kind: "group", key: "ops", body: { title: "Ops" } }],
+    });
+    expect(asked.status, JSON.stringify(asked.body)).toBe(202);
+    const own = await ann.post(`/tenants/${a.id}/access/releases/${asked.body.id}/decision`, {
+      decision: "approve",
+    });
+    expect(own.status, JSON.stringify(own.body)).toBe(409);
+    expect(own.body.code).toBe("own_release");
+    const other = await (a.clients.bob as Client).post(
+      `/tenants/${a.id}/access/releases/${asked.body.id}/decision`,
+      { decision: "approve" },
+    );
+    expect(other.status, JSON.stringify(other.body)).toBe(200);
+  });
+
   test("a route about a person's own account refuses a service account's key", async () => {
     const a = await tenantWith("keys", ["ann"]);
     const ann = a.clients.ann as Client;
@@ -273,6 +319,40 @@ describe("a service account's key does not answer for a person (ACC-08, API-19)"
     const robot = t.withKey(key.body.token);
     expect((await robot.get("/api-keys")).status).toBe(403);
     expect((await ann.get("/api-keys")).status).toBe(200);
+  });
+});
+
+describe("disabling an account at the instance says which tenants it leaves without an admin", () => {
+  test("it is allowed, and the answer and the audit entry name the tenants", async () => {
+    const a = await tenantWith("compromised", ["cam"]);
+    const done = await t.admin.patch(`/members/${a.members.cam}`, { disabled: true });
+    expect(done.status, JSON.stringify(done.body)).toBe(200);
+    expect(done.body.tenantsWithoutAdmin).toEqual([{ id: a.id, name: "compromised" }]);
+    const entry = await t.db
+      .selectFrom("audit_entry")
+      .select("details")
+      .where("action", "=", "member.disabled")
+      .where("target_id", "=", a.members.cam as string)
+      .executeTakeFirstOrThrow();
+    expect(JSON.stringify(entry.details)).toContain(a.id);
+  });
+
+  test("their open event streams and unfinished sign-ins end with it", async () => {
+    const a = await tenantWith("streams", ["sam"]);
+    let closed = 0;
+    const principal = `member:${a.members.sam}`;
+    const unsubscribe = await t.kernel.stream.subscribe({
+      tenantId: a.id,
+      may: new Map(),
+      principal,
+      send: () => undefined,
+      close: () => {
+        closed += 1;
+      },
+    });
+    expect(unsubscribe).not.toBe(false);
+    await t.admin.patch(`/members/${a.members.sam}`, { disabled: true });
+    expect(closed).toBe(1);
   });
 });
 

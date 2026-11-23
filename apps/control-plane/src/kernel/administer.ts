@@ -3,6 +3,7 @@ import type { Audit, Db, Trx } from "./audit.js";
 import { grants } from "./authorize.js";
 import { conflict } from "./errors.js";
 import { INSTANCE_ONLY_ROLE } from "./kinds.js";
+import { endStreamsOf } from "./stream.js";
 
 /**
  * The guard for "someone can still administer". A change that would leave a tenant
@@ -130,6 +131,15 @@ export async function endSessions(
   }
   await sessions.execute();
   await handoffs.execute();
+  if (scope.tenantId === undefined) {
+    // A sign-in through a provider that was started and not finished must not finish.
+    await trx
+      .deleteFrom("sso_state")
+      .where("principal_id", "=", memberId)
+      .where("finished_at", "is", null)
+      .execute();
+  }
+  endStreamsOf(`member:${memberId}`, scope.tenantId);
 }
 
 /**

@@ -1183,7 +1183,12 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             .where("tenant_id", "=", params.t)
             .executeTakeFirst();
           if (!account) throw notFound("The service account");
-          const key = await insertApiKey(trx, { type: "service_account", id: params.id }, body);
+          const key = await insertApiKey(
+            trx,
+            { type: "service_account", id: params.id },
+            body,
+            ctx.principal.type === "member" ? ctx.principal.id : null,
+          );
           await audit({
             action: "api_key.created",
             targetType: "api_key",

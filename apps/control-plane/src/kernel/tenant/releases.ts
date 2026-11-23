@@ -705,6 +705,17 @@ export interface ReleaseRequest {
   approved?: boolean;
 }
 
+/** When the change is asked with a service account's key: the member who made that key. */
+async function keyMaker(trx: Trx, principal: Principal): Promise<string | null> {
+  if (principal.type !== "service_account" || !principal.apiKeyId) return null;
+  const key = await trx
+    .selectFrom("api_key")
+    .select("created_by")
+    .where("id", "=", principal.apiKeyId)
+    .executeTakeFirst();
+  return key?.created_by ?? null;
+}
+
 /**
  * Releases a change to the tenant's access. When the tenant asks for a second
  * person, the release waits and nothing changes. Otherwise it applies at once,
@@ -724,6 +735,7 @@ export async function releaseAccess(
     .forUpdate()
     .executeTakeFirst();
   if (!tenant) throw notFound("The tenant");
+  const askedThrough = await keyMaker(trx, principal);
   const current = await currentAccess(trx, tenantId);
   const puts = request.asks.flatMap((ask) => (ask.op === "put" ? [ask.resource] : []));
   const known = [...current, ...(await providerManaged(trx, tenantId))].filter(
@@ -801,6 +813,7 @@ export async function releaseAccess(
         origin: request.origin,
         created_by_type: principal.type,
         created_by_id: principal.id,
+        asked_through: askedThrough,
       })
       .execute();
     await audit({
@@ -839,6 +852,7 @@ export async function releaseAccess(
       origin: request.origin,
       created_by_type: principal.type,
       created_by_id: principal.id,
+      asked_through: askedThrough,
       applied_at: new Date(),
     })
     .execute();
@@ -968,7 +982,10 @@ export async function decideRelease(
   if (release.status !== "awaiting_approval") {
     throw conflict(`This release was ${release.status.replaceAll("_", " ")} already.`);
   }
-  const own = release.created_by_type === principal.type && release.created_by_id === principal.id;
+  // Asked by this person, or with a key of a service account that this person made.
+  const own =
+    (release.created_by_type === principal.type && release.created_by_id === principal.id) ||
+    (principal.type === "member" && release.asked_through === principal.id);
   // A second person is a person: a key of a service account does not answer for one.
   if (decision !== "withdraw" && principal.type !== "member") {
     throw forbiddenBecause(

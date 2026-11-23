@@ -83,6 +83,7 @@ export function streamRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           principal: `${ctx.principal.type}:${ctx.principal.id}`,
           ...(own ? { own } : {}),
           send,
+          close: () => raw.end(),
         });
         if (!unsubscribe) {
           throw new HttpError(

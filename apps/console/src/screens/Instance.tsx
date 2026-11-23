@@ -28,15 +28,25 @@ function ToggleMember({ row, onDone }: { row: MemberRow; onDone: () => void }) {
         if (!row.disabled) {
           const sure = await ask.confirm({
             title: `Disable ${row.email}?`,
-            text: "They can sign in nowhere, in any tenant: their sessions end now and their API keys stop working. The account and what it holds are kept.",
+            text: "They can sign in nowhere, in any tenant: their sessions end now and their API keys stop working. The account and what it holds are kept. A tenant where they are the only admin is left with none until an operator opens access to it: the next message names those tenants.",
             action: "Disable",
             danger: true,
           });
           if (!sure) return;
         }
         await api
-          .patch(`/members/${row.id}`, { disabled: !row.disabled })
-          .then(onDone, notify.error);
+          .patch<{ tenantsWithoutAdmin?: { id: string; name: string }[] }>(`/members/${row.id}`, {
+            disabled: !row.disabled,
+          })
+          .then((done) => {
+            const left = done?.tenantsWithoutAdmin ?? [];
+            if (left.length > 0) {
+              notify.success(
+                `${row.email} is disabled. These tenants now have no admin: ${left.map((one) => one.name).join(", ")}. An operator can open access to each from its page.`,
+              );
+            }
+            onDone();
+          }, notify.error);
       }}
     >
       {row.disabled ? "Enable" : "Disable"}

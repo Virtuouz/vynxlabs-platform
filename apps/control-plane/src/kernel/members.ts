@@ -2,8 +2,8 @@ import { newId } from "@volvel/db";
 import {
   endOperatorGrantsIfNoLonger,
   endSessions,
-  keepingAnAdmin,
   keepingAnOperator,
+  tenantAdmins,
 } from "./administer.js";
 import type { Audit, Trx } from "./audit.js";
 import { conflict, notFound } from "./errors.js";
@@ -52,8 +52,12 @@ export async function createMember(kernel: Kernel, trx: Trx, audit: Audit, input
 /**
  * Turns a member's account off, or on again. Off, it ends every sign-in they have (the console's
  * and the tenants' apps'), and their open operator access grants, and it is refused when it would
- * leave the instance with no operator who can sign in, or a tenant with nobody who can administer.
- * One place, for the route and for the instance's identity provider.
+ * leave the instance with no operator who can sign in. One place, for the route and for the
+ * instance's identity provider.
+ *
+ * It is not refused for a tenant's sake: an account may be compromised, and an operator can
+ * always open access to a tenant. Instead it says which tenants are left with nobody who can
+ * administer them, in the answer and in the audit entry.
  */
 export async function setMemberDisabled(
   trx: Trx,
@@ -62,7 +66,20 @@ export async function setMemberDisabled(
   disabled: boolean,
   revokedBy: string | null,
 ) {
-  const change = async () => {
+  return keepingAnOperator(trx, async () => {
+    const was = disabled
+      ? await trx
+          .selectFrom("tenant_member")
+          .innerJoin("tenant", "tenant.id", "tenant_member.tenant_id")
+          .select(["tenant.id", "tenant.name"])
+          .where("tenant_member.member_id", "=", memberId)
+          .orderBy("tenant.name")
+          .execute()
+      : [];
+    const adminOf: { id: string; name: string }[] = [];
+    for (const tenant of was) {
+      if ((await tenantAdmins(trx, tenant.id)).includes(memberId)) adminOf.push(tenant);
+    }
     const member = await trx
       .updateTable("member")
       .set({ disabled_at: disabled ? new Date() : null })
@@ -70,38 +87,20 @@ export async function setMemberDisabled(
       .returning(["id", "name", "email", "created_at", "disabled_at"])
       .executeTakeFirst();
     if (!member) throw notFound("The member");
+    const left: { id: string; name: string }[] = [];
     if (disabled) {
       await endSessions(trx, member.id);
       await endOperatorGrantsIfNoLonger(trx, audit, member.id, revokedBy);
+      for (const tenant of adminOf) {
+        if ((await tenantAdmins(trx, tenant.id)).length === 0) left.push(tenant);
+      }
     }
     await audit({
       action: disabled ? "member.disabled" : "member.enabled",
       targetType: "member",
       targetId: member.id,
-      details: { email: member.email },
+      details: { email: member.email, ...(left.length > 0 ? { tenantsWithoutAdmin: left } : {}) },
     });
-    return member;
-  };
-  // Every tenant where they may administer must keep another who can.
-  const tenants = disabled
-    ? (
-        await trx
-          .selectFrom("tenant_member")
-          .select("tenant_id")
-          .where("member_id", "=", memberId)
-          .orderBy("tenant_id")
-          .execute()
-      ).map((row) => row.tenant_id)
-    : [];
-  const inTenants = tenants.reduceRight<() => ReturnType<typeof change>>(
-    (next, tenantId) => () =>
-      keepingAnAdmin(
-        trx,
-        tenantId,
-        next,
-        "That account is the only one who can administer a tenant. Give someone else the tenant admin role there first.",
-      ),
-    change,
-  );
-  return keepingAnOperator(trx, inTenants);
+    return { member, tenantsWithoutAdmin: left };
+  });
 }

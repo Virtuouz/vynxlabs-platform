@@ -40,6 +40,16 @@ export interface Subscriber {
    */
   own?: string;
   send(event: string, data: unknown): void;
+  /** Ends the stream from this side. */
+  close?(): void;
+}
+
+/** Every hub in this process, so that ending someone's sign-in can end their open streams. */
+const hubs = new Set<StreamHub>();
+
+/** Closes the open streams of `principal` (`member:<id>`), in one tenant or in all. This replica only. */
+export function endStreamsOf(principal: string, tenantId?: string) {
+  for (const hub of hubs) hub.endFor(principal, tenantId);
 }
 
 /** Streams one principal may hold open at once, on one replica. */
@@ -69,6 +79,17 @@ export class StreamHub {
   constructor(database: Database, log: FastifyBaseLogger) {
     this.#database = database;
     this.#log = log;
+    hubs.add(this);
+  }
+
+  /** Closes the streams a principal holds open. */
+  endFor(principal: string, tenantId?: string) {
+    for (const [tenant, set] of this.#subscribers) {
+      if (tenantId !== undefined && tenant !== tenantId) continue;
+      for (const subscriber of [...set]) {
+        if (subscriber.principal === principal) subscriber.close?.();
+      }
+    }
   }
 
   /** The listening connection's server process. For tests. */
@@ -216,6 +237,7 @@ export class StreamHub {
 
   async close() {
     this.#closed = true;
+    hubs.delete(this);
     for (const entry of this.#pings.values()) if (entry.timer) clearTimeout(entry.timer);
     const listener = this.#listener;
     this.#listener = undefined;

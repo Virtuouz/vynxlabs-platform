@@ -151,6 +151,20 @@ export function isIsoTime(value: unknown): value is string {
   );
 }
 
+/** A day, or a day and time with no zone, that exists: what a column default has always been allowed to say. */
+function isLooseDefaultTime(value: unknown): boolean {
+  if (typeof value !== "string") return false;
+  if (isCalendarDate(value)) return true;
+  const found = /^(\d{4}-\d{2}-\d{2})[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.\d{1,9})?)?$/.exec(value);
+  return (
+    found !== null &&
+    isCalendarDate(found[1]) &&
+    Number(found[2]) < 24 &&
+    Number(found[3]) < 60 &&
+    Number(found[4] ?? 0) < 60
+  );
+}
+
 /** Whether text is an ID, such as a column of type uuid holds. */
 export const isUuid = (value: unknown): value is string =>
   typeof value === "string" && UUID_TEXT.test(value);
@@ -180,7 +194,9 @@ function defaultFits(type: ColumnType, value: unknown, values: string[] = []): b
     case "uuid":
       return isUuid(value);
     case "timestamp":
-      return isIsoTime(value);
+      // A default is read by the database, so a bundle written with a day, or a time with no
+      // zone, keeps working. One that does not exist (31 February) or reads as nothing is refused.
+      return isIsoTime(value) || isLooseDefaultTime(value);
     case "date":
       return isCalendarDate(value);
     case "integer":

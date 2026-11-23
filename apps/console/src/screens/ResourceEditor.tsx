@@ -23,7 +23,7 @@ import { PageHeader } from "../kit/PageHeader.tsx";
 import { RemoveDraftButton } from "../kit/RemoveDraftButton.tsx";
 import { clearRecovery, useKeptCopy, useRecoveryCopy } from "../kit/recovery.ts";
 import { StatePill, Tag } from "../kit/status.tsx";
-import { navigate, useNavigationGuard, useQueryValue } from "../router.tsx";
+import { Link, navigate, useNavigationGuard, useQueryValue } from "../router.tsx";
 import {
   FormDesigner,
   type FormTrigger,
@@ -77,6 +77,12 @@ const ABOUT: Record<EditedKind, { noun: string; example: string; says: string; f
     example: "orders/nightly",
     says: "Starts a script or a flow at times given as a cron line.",
     fresh: { script: "", cron: "0 8 * * *" },
+  },
+  data_source: {
+    noun: "data source",
+    example: "erp/orders",
+    says: "A Postgres database outside the platform that scripts, queries and pages in this workspace read and write. This declares its name and what it is for. Its address and password are set under Data sources, in each workspace, so that dev and production can point at different databases.",
+    fresh: { connector: "postgres" },
   },
   trigger: {
     noun: "trigger",
@@ -557,6 +563,18 @@ export function ResourceEditor({
               onChange={(value) => change({ connector: value ?? "" })}
             />
             {description}
+          </>
+        ) : null}
+        {kind === "data_source" ? (
+          <>
+            {description}
+            <p className="m-0 text-body-sm text-ink-muted">
+              It is a Postgres database. After it is deployed, connect it under{" "}
+              <Link to={`${link}/sources`} className="text-action">
+                Data sources
+              </Link>
+              .
+            </p>
           </>
         ) : null}
         {kind === "variable" ? (

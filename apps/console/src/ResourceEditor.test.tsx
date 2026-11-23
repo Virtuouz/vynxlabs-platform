@@ -268,3 +268,26 @@ test("a production workspace shows a resource and offers no way to change it", a
   expect(screen.queryByRole("button", { name: "Save draft" })).toBeNull();
   expect((screen.getByLabelText("When, as a cron line") as HTMLInputElement).disabled).toBe(true);
 });
+
+test("a data source is declared with a path and a purpose, and saved as a draft (QSD-MP1)", async () => {
+  show(<ResourceEditor root={root} link={link} kind="data_source" path={undefined} editable />);
+  fireEvent.change(await screen.findByLabelText("Path of the new data source"), {
+    target: { value: "erp/orders" },
+  });
+  fireEvent.change(screen.getByLabelText("What it is for"), {
+    target: { value: "The order database." },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Save draft" }));
+  await waitFor(() => expect(saved()).toBeTruthy());
+  expect(saved()).toEqual({
+    method: "PUT",
+    url: `/api/v1${root}/drafts/erp/orders`,
+    body: {
+      kind: "data_source",
+      schemaVersion: 1,
+      body: { connector: "postgres", description: "The order database." },
+      create: true,
+    },
+  });
+  await screen.findByText("Draft");
+});

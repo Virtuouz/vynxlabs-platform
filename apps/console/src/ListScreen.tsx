@@ -129,7 +129,10 @@ export interface ListScreenProps<Row> {
   setupField?: string;
   /** Adds a last column of actions per row. */
   rowActions?: (row: Row, reload: () => void) => ReactNode;
-  /** A button beside the title, for a screen whose way to add something is not a dialog. */
+  /**
+   * A button beside the title, for a screen whose way to add something is not a dialog. With
+   * `create`, it stands beside that button, for a second way in.
+   */
   action?: ReactNode;
 }
 
@@ -358,9 +361,12 @@ export function ListScreen<Row>(props: ListScreenProps<Row>) {
       ]
     : props.columns;
   const createButton = create ? (
-    <Button variant="primary" onClick={() => setCreating(true)}>
-      {create.action}
-    </Button>
+    <span className="inline-flex flex-wrap items-center gap-2">
+      {props.action}
+      <Button variant="primary" onClick={() => setCreating(true)}>
+        {create.action}
+      </Button>
+    </span>
   ) : (
     props.action
   );

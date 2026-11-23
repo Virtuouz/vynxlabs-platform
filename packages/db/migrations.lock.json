@@ -94,5 +94,6 @@
   "0093_gov2_record_gone.sql": "6a2c33acd144590f1cd929be0a1a732b0fb151d104f70d4955df018927301a0c",
   "0094_acc2_binding_source_and_workspace_admin.sql": "6b2cf564813782fec3699ba6f3f6e56b5fe784cb07fea7b49a41eca0c1df2bee",
   "0095_t3_account_recent_kinds.sql": "a6d47e0d6478628219a55e94f2fb5867ed1ef3102b72ced57ab34d18fe35e706",
-  "0096_sweep_cols_kept_kinds.sql": "3aede979120ea9fe0ca1fbd1cf5c5dc6d0a56cdfaecadee06ab9472bcfdd90bb"
+  "0096_sweep_cols_kept_kinds.sql": "3aede979120ea9fe0ca1fbd1cf5c5dc6d0a56cdfaecadee06ab9472bcfdd90bb",
+  "0097_yaml_folder_in_force.sql": "20ae6305769f4eb52a9dfc95d72cf29d1dd3cfba746ea572e01c6bd2ac12d7bf"
 }

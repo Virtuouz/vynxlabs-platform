@@ -1156,6 +1156,13 @@ function FileField({
 /** Text longer than this is edited in a text area, as the kit's forms do. */
 const LONG_TEXT = 200;
 
+/** What a refused save says of each field it names, by the column's name: for the field itself. */
+function fieldMessages(error: unknown): Record<string, string> {
+  return Object.fromEntries(
+    ((error as ApiError).fields ?? []).map((field) => [field.path.slice(1), field.message]),
+  );
+}
+
 function RowEditor({
   row,
   columns,
@@ -1225,7 +1232,11 @@ function RowEditor({
           notify.success("Row saved.");
           setText({});
         } catch (error) {
-          notify.error(error);
+          // A refusal that names fields says so under each; one that names none is a toast.
+          const named = fieldMessages(error);
+          setErrors(named);
+          if (Object.keys(named).length === 0) notify.error(error);
+          else notify.error(new Error((error as Error).message));
         } finally {
           setBusy(false);
         }
@@ -1365,6 +1376,15 @@ function AddRow({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [failure, setFailure] = useState<string>();
   const [busy, setBusy] = useState(false);
+  // The files this form has stored, by column, so a try that is refused does not store them again.
+  const uploaded = useRef<Record<string, { file: File; id: string }>>({});
+  // Opened again, it does not still hold what the last try was refused for.
+  useEffect(() => {
+    if (open) {
+      setErrors({});
+      setFailure(undefined);
+    }
+  }, [open]);
 
   const submit = async () => {
     const row: DataRow = {};
@@ -1388,25 +1408,28 @@ function AddRow({
     setBusy(true);
     try {
       for (const [column, file] of Object.entries(files)) {
-        const stored = await api.upload<{ id: string }>(
-          `${filesPath}?name=${encodeURIComponent(file.name)}`,
-          file,
-        );
+        // A file already stored for this form is kept between tries: a refused row does not
+        // upload it again and leave one that no row names.
+        let stored = uploaded.current[column];
+        if (stored?.file !== file) {
+          const made = await api.upload<{ id: string }>(
+            `${filesPath}?name=${encodeURIComponent(file.name)}`,
+            file,
+          );
+          stored = { file, id: made.id };
+          uploaded.current[column] = stored;
+        }
         row[column] = stored.id;
       }
       await api.post(rowsPath, row);
       notify.success("Row added.");
       setValues({});
       setFiles({});
+      uploaded.current = {};
       onAdded();
     } catch (caught) {
-      const error = caught as ApiError;
-      setErrors(
-        Object.fromEntries(
-          (error.fields ?? []).map((field) => [field.path.slice(1), field.message]),
-        ),
-      );
-      setFailure(error.message);
+      setErrors(fieldMessages(caught));
+      setFailure((caught as Error).message);
     } finally {
       setBusy(false);
     }

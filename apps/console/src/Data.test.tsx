@@ -2052,3 +2052,50 @@ test("TAB-34: Previous survives a reload, and a link to a row opens it when its 
   expect(await screen.findByText(/That row is gone/)).toBeTruthy();
   navigate("/t/t1/workspaces/w1/tables/orders");
 });
+
+test("TAB-37: a refused row save names the field, and a refused Add row keeps the file it uploaded", async () => {
+  const refused = {
+    status: 400,
+    detail: "The row is not valid.",
+    errors: [{ path: "/number", message: "is already used" }],
+  };
+  routes[`PATCH /api/v1${root}/row/r1/orders`] = () => [400, refused];
+  openOrderWithCustomerAndFile({});
+  const number = await screen.findByLabelText("number", { selector: "input[name=number]" });
+  fireEvent.input(number, { target: { value: "A-2" } });
+  fireEvent.click(await screen.findByRole("button", { name: "Save row" }));
+  // The message is under the field, not only in a toast.
+  await waitFor(() =>
+    expect(number.closest("div")?.textContent ?? "").toMatch(
+      /number is already used|is already used/,
+    ),
+  );
+  cleanup();
+  history.replaceState(history.state, "", location.pathname);
+
+  // Add row: the file is uploaded once, whatever the number of tries.
+  const files: string[] = [];
+  routes[`POST /api/v1${root}/files`] = () => {
+    files.push("up");
+    return [201, { id: "f1", name: "a.txt" }];
+  };
+  routes[`POST /api/v1${root}/rows/orders`] = () => [400, refused];
+  openOrderWithCustomerAndFile({});
+  history.replaceState(history.state, "", location.pathname);
+  fireEvent.click(await screen.findByRole("button", { name: "Add row" }));
+  const dialog = await screen.findByRole("dialog");
+  fireEvent.input(screen.getByLabelText("number", { selector: "input[name=number]" }), {
+    target: { value: "A-9" },
+  });
+  const input = dialog.querySelector("input[type=file]") as HTMLInputElement;
+  fireEvent.change(input, { target: { files: [new File(["x"], "a.txt")] } });
+  fireEvent.submit(dialog.querySelector("form") as HTMLFormElement);
+  await screen.findByText("The row is not valid.");
+  fireEvent.submit(dialog.querySelector("form") as HTMLFormElement);
+  await waitFor(() =>
+    expect(
+      calls.filter((call) => call.method === "POST" && call.url.endsWith("/rows/orders")),
+    ).toHaveLength(2),
+  );
+  expect(files).toHaveLength(1);
+});

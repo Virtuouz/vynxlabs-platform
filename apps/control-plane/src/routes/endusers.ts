@@ -29,7 +29,7 @@ import { access, guestLimit } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
 import { requireEndUserPasswordAllowed } from "../kernel/sso/people.js";
 import { accessResource, freeKey, releaseOne } from "../kernel/tenant/releases.js";
-import { PageQuery, pageOf } from "../pagination.js";
+import { listOf, PageQuery, pageOf } from "../pagination.js";
 import {
   Id,
   iso,
@@ -187,6 +187,7 @@ export function endUserRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.tenant("end_user:read") },
         schema: {
           summary: "List a tenant's end users",
+          description: "The people who use the tenant's apps. Page through them with `cursor`.",
           tags: ["end users"],
           params: TenantParams,
           querystring: Type.Object({
@@ -499,9 +500,10 @@ export function endUserRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.tenant("end_user_group:read") },
         schema: {
           summary: "The tenant's groups of end users",
+          description: "Each group of end users in the tenant.",
           tags: ["end users"],
           params: TenantParams,
-          response: { 200: Type.Object({ items: Type.Array(Group) }) },
+          response: { 200: listOf(Group) },
         },
       },
       async ({ params }) => {
@@ -602,6 +604,7 @@ export function endUserRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.tenant("end_user_group:read") },
         schema: {
           summary: "One group of end users, with who is in it",
+          description: "The group and the end users in it.",
           tags: ["end users"],
           params: GroupParams,
           response: {
@@ -783,6 +786,7 @@ export function endUserRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.tenant("end_user_group:write") },
         schema: {
           summary: "Take an end user out of a group",
+          description: "The person loses what the group's bindings gave them. Audited.",
           tags: ["end users"],
           params: MembershipParams,
           response: { 204: NoContent },
@@ -815,7 +819,12 @@ export function endUserRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       "/tenants/:t/session",
       {
-        config: { access: access.custom, rateLimit: guestLimit },
+        config: {
+          access: access.custom(
+            "Answers for anyone, signed in or not, and says who is calling as the tenant's apps see them.",
+          ),
+          rateLimit: guestLimit,
+        },
         schema: {
           summary: "Who is calling, as this tenant's apps see them",
           description:
@@ -878,9 +887,14 @@ export function endUserRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.post(
       "/tenants/:t/end-user-auth/sign-out",
       {
-        config: { access: access.custom },
+        config: {
+          access: access.custom(
+            "Needs the end user's own session in this tenant. With none there is nothing to end.",
+          ),
+        },
         schema: {
           summary: "End the calling end user's session",
+          description: "Their sign-in to this tenant's apps ends.",
           tags: ["end users"],
           params: TenantParams,
           response: { 204: NoContent },
@@ -1015,7 +1029,12 @@ export function endUserRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.post(
       "/tenants/:t/end-user-auth/passwords",
       {
-        config: { access: access.public, rateLimit: SIGN_IN_LIMIT },
+        config: {
+          access: access.publicWith(
+            "Needs the token of the invitation or reset link, in the body.",
+          ),
+          rateLimit: SIGN_IN_LIMIT,
+        },
         schema: {
           summary: "Set a password with an invitation or reset link's token",
           description: "The token works once. Signs the account in.",
@@ -1065,7 +1084,12 @@ export function endUserRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.put(
       "/tenants/:t/end-user-auth/password",
       {
-        config: { access: access.custom, rateLimit: SIGN_IN_LIMIT },
+        config: {
+          access: access.custom(
+            "Needs the end user's own sign-in to this tenant. A member or an API key is refused.",
+          ),
+          rateLimit: SIGN_IN_LIMIT,
+        },
         schema: {
           summary: "Change the calling end user's password",
           description: "Ends the person's other sign-ins.",

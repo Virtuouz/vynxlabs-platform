@@ -44,6 +44,9 @@ const columns = [
   col("sent", "timestamp", "Sent"),
   col("paid", "boolean", "Paid in full"),
   col("notes", "text", "Notes", { maxLength: 5000 }),
+  col("tags", "enum_list", "Tags", {
+    values: [{ value: "late" }, { value: "vip", label: "VIP" }],
+  }),
 ];
 
 const wire = (record: Record<string, unknown> | null): WireData =>
@@ -159,6 +162,9 @@ describe("controls by column type", () => {
     expect(status.tagName).toBe("SELECT");
     expect([...status.options].map((one) => one.text)).toEqual(["None", "Unpaid", "Paid"]);
     expect(screen.getByPlaceholderText("Search client")).toBeTruthy();
+    // A several-choice column is a list to choose from, not a box to type "a,b" in (WID-10).
+    expect(screen.queryByRole("textbox", { name: /Tags/ })).toBeNull();
+    expect(screen.getByText("Tags")).toBeTruthy();
   });
 
   test("money is typed as dollars and sent as cents", async () => {
@@ -569,6 +575,24 @@ describe("what a field starts with", () => {
     fireEvent.click(screen.getByRole("button", { name: "Create invoice" }));
     await waitFor(() => expect(act).toHaveBeenCalled());
     expect(act.mock.calls[0]?.[1]?.inputs).toEqual({ issued: todayText() });
+  });
+
+  test("a time is typed on the reader's clock and sent as the moment it is, with its zone (D21)", async () => {
+    const was = process.env.TZ;
+    process.env.TZ = "America/Los_Angeles";
+    try {
+      const { act } = draw(null, starts([{ column: "number" }, { column: "sent" }]));
+      await ready();
+      type(/Number/, "INV-7");
+      fireEvent.change(screen.getByLabelText(/Sent/), { target: { value: "2026-11-21T19:30" } });
+      fireEvent.click(screen.getByRole("button", { name: "Create invoice" }));
+      await waitFor(() => expect(act).toHaveBeenCalled());
+      // 19:30 in Los Angeles is 03:30 UTC the next day.
+      expect(act.mock.calls[0]?.[1]?.inputs).toMatchObject({ sent: "2026-11-22T03:30:00.000Z" });
+    } finally {
+      if (was === undefined) Reflect.deleteProperty(process.env, "TZ");
+      else process.env.TZ = was;
+    }
   });
 
   test("a fixed value starts the field", async () => {

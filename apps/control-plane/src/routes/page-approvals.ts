@@ -15,7 +15,12 @@ export function pageApprovalRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.post(
       "/tenants/:t/workspaces/:w/page-approvals",
       {
-        config: { access: access.custom, rateLimit: guestLimit },
+        config: {
+          access: access.custom(
+            "Needs a member who holds `approval:read` and `approval:write` of their own, and who is among the step's named approvers if it names any. An end user, a guest and a service account are refused.",
+          ),
+          rateLimit: guestLimit,
+        },
         schema: {
           summary: "Approve or reject a waiting approval from an app's page",
           description:

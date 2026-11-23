@@ -4,6 +4,7 @@ import { Type } from "typebox";
 import { badRequest, conflict, forbidden, forbiddenBecause, notFound } from "../kernel/errors.js";
 import { access, type RequestContext } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
+import { listOf } from "../pagination.js";
 import { AnyObject, Id, iso, NoContent, Time } from "./shared.js";
 
 /**
@@ -60,7 +61,7 @@ export function preferenceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           description:
             "What the console keeps for a member between browsers: density, panes and the like.",
           tags: ["identity"],
-          response: { 200: Type.Object({ items: Type.Array(Preference) }) },
+          response: { 200: listOf(Preference) },
         },
       },
       async ({ ctx }) => {
@@ -211,7 +212,7 @@ export function preferenceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             workspace: Type.Optional(Id),
             list: ListName,
           }),
-          response: { 200: Type.Object({ items: Type.Array(View) }) },
+          response: { 200: listOf(View) },
         },
       },
       async ({ ctx, query }) => {

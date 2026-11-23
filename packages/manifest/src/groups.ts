@@ -61,6 +61,13 @@ function widgetGroups(widget: PageWidget): { at: string; group: string }[] {
   }
   runBys(widget.config ?? {}, "config", found);
   for (const one of found) for (const group of one.groups) out.push({ at: one.at, group });
+  // Who may edit a record in place is named like an action's `runBy`.
+  const editBy = (widget.config as { editBy?: { groups?: unknown } } | undefined)?.editBy;
+  if (Array.isArray(editBy?.groups)) {
+    for (const group of editBy.groups) {
+      if (typeof group === "string") out.push({ at: "config/editBy", group });
+    }
+  }
   for (const group of widget.rules?.seenBy?.groups ?? []) out.push({ at: "rules/seenBy", group });
   return out;
 }

@@ -87,3 +87,9 @@ Commits are named by the row in their subject: `git log --grep "(WID-01)"`.
 - **Siblings looked at:** the one `FieldsList` is shared by Detail and Form, so both are fixed; the "new section" box on add is separate and unchanged.
 - **A person sees:** the Format row on a money field; a section can be retyped without its fields dropping out.
 - **Walk:** Detail and Form drawers, a section renamed, a money field's format; 1440/390, keyboard, reload. Not run in a browser.
+
+## WID-17 Setting "After saving" moved steps and dropped messages
+- **Test:** `apps/console/src/kit/inspector/widgets/records.test.tsx` > "setting After saving changes the close and the message in place, and does not move them past an open" (the old code gave `create, open, close, message(success)`).
+- **Changed:** `kit/inspector/widgets/formDrawer.tsx` (`withAfterSaving`): the first message and the close are changed or removed in place; ones not there yet are added before the first `open` step, else at the end; the message's tone and every other message are kept.
+- **Siblings looked at:** `afterSaving`/`afterWords` read the first message and any close, unchanged; the existing records test (create only) still gives `create, message, close`.
+- **A person sees:** setting "After saving" no longer reorders the Actions tab's steps.

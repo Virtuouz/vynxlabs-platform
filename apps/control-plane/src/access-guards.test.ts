@@ -373,6 +373,54 @@ describe("disabling an account at the instance says which tenants it leaves with
     expect(JSON.stringify(entry.details)).toContain(a.id);
   });
 
+  test("disabling a disabled account, or enabling an enabled one, changes and writes nothing (INS-27)", async () => {
+    const a = await tenantWith("twice", ["tom"]);
+    const count = async (action: string) =>
+      Number(
+        (
+          await t.db
+            .selectFrom("audit_entry")
+            .select((eb) => eb.fn.countAll().as("n"))
+            .where("action", "=", action)
+            .where("target_id", "=", a.members.tom as string)
+            .executeTakeFirstOrThrow()
+        ).n,
+      );
+    expect((await t.admin.patch(`/members/${a.members.tom}`, { disabled: false })).status).toBe(
+      200,
+    );
+    expect(await count("member.enabled")).toBe(0);
+    await t.admin.patch(`/members/${a.members.tom}`, { disabled: true });
+    const again = await t.admin.patch(`/members/${a.members.tom}`, { disabled: true });
+    expect(again.status).toBe(200);
+    expect(again.body.tenantsWithoutAdmin).toEqual([]);
+    expect(await count("member.disabled")).toBe(1);
+    await t.admin.patch(`/members/${a.members.tom}`, { disabled: false });
+    await t.admin.patch(`/members/${a.members.tom}`, { disabled: false });
+    expect(await count("member.enabled")).toBe(1);
+  });
+
+  test("ending an access grant that has ended writes no second entry (INS-27)", async () => {
+    const a = await tenantWith("regrant", ["rae"]);
+    const grant = await t.admin.post(`/tenants/${a.id}/access-grants`, {
+      reason: "look at the logs",
+    });
+    expect(grant.status, JSON.stringify(grant.body)).toBe(201);
+    expect((await t.admin.delete(`/tenants/${a.id}/access-grants/${grant.body.id}`)).status).toBe(
+      204,
+    );
+    expect((await t.admin.delete(`/tenants/${a.id}/access-grants/${grant.body.id}`)).status).toBe(
+      204,
+    );
+    const entries = await t.db
+      .selectFrom("audit_entry")
+      .select("id")
+      .where("action", "=", "access_grant.revoked")
+      .where("target_id", "=", grant.body.id)
+      .execute();
+    expect(entries).toHaveLength(1);
+  });
+
   test("their open event streams and unfinished sign-ins end with it", async () => {
     const a = await tenantWith("streams", ["sam"]);
     let closed = 0;

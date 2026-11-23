@@ -771,6 +771,47 @@ describe("deleting a tenant", () => {
   });
 });
 
+describe("the log of a tenant that was deleted", () => {
+  test("is read at the instance, with the tenant it was of (INS-28)", async () => {
+    const made = await t.admin.post("/tenants", { slug: "vanishing", name: "Vanishing" });
+    const id = made.body.id as string;
+    const admin = (
+      await t.db
+        .selectFrom("role")
+        .select("id")
+        .where("name", "=", "tenant_admin")
+        .where("builtin", "=", true)
+        .executeTakeFirstOrThrow()
+    ).id;
+    await t.admin.post(`/tenants/${id}/access-grants`, {
+      reason: "set up a ledger",
+      roleId: admin,
+    });
+    expect(
+      (
+        await t.admin.post(`/tenants/${id}/workspaces`, {
+          slug: "main",
+          name: "Ledger",
+          type: "production",
+        })
+      ).status,
+    ).toBe(201);
+    const before = (await t.admin.get(`/tenants/${id}/audit`)).body.items as Any[];
+    expect(before.length).toBeGreaterThan(0);
+    const mine = new Set(before.map((entry) => entry.id as string));
+    expect((await t.admin.post(`/tenants/${id}/deletion`, { confirm: "vanishing" })).status).toBe(
+      204,
+    );
+    expect((await t.admin.get(`/tenants/${id}/audit`)).status).toBe(404);
+    const atInstance = (await t.admin.get("/audit?limit=200")).body.items as Any[];
+    const kept = atInstance.filter((entry) => mine.has(entry.id));
+    expect(kept.length).toBe(mine.size);
+    expect(kept.every((entry) => entry.tenantId === id)).toBe(true);
+    // A tenant that is still here keeps its entries in its own log only.
+    expect(atInstance.some((entry) => entry.tenantId === tenant)).toBe(false);
+  });
+});
+
 describe("worker pools", () => {
   let plant: string;
   const worker = (token: string, workerId: string) =>
@@ -1029,6 +1070,48 @@ describe("database locations", () => {
         .where("name", "in", ["gone", "sealed-by-another-key"])
         .execute();
       await t.admin.delete("/instance/database-locations/good");
+    } finally {
+      await extra.drop();
+    }
+  });
+
+  test("the platform's own database is not a dedicated location, nor is one database under two names (INS-15)", async () => {
+    const own = (await sql<{ name: string }>`select current_database() as name`.execute(t.db))
+      .rows[0]?.name;
+    const extra = await createTestDatabase();
+    try {
+      const platformUrl = new URL(extra.connectionString);
+      platformUrl.pathname = `/${own}`;
+      const itself = await t.admin.put("/instance/database-locations/itself", {
+        connectionString: platformUrl.toString(),
+      });
+      expect(itself.status, JSON.stringify(itself.body)).toBe(400);
+      expect(itself.body.detail).toMatch(/platform's own database/i);
+      expect(
+        (await t.admin.get("/instance/database-locations/names")).body.items,
+      ).not.toContainEqual(expect.objectContaining({ name: "itself" }));
+
+      expect(
+        (
+          await t.admin.put("/instance/database-locations/first-name", {
+            connectionString: extra.connectionString,
+          })
+        ).status,
+      ).toBe(204);
+      // The same address again under its own name is a change of address, and is allowed.
+      expect(
+        (
+          await t.admin.put("/instance/database-locations/first-name", {
+            connectionString: extra.connectionString,
+          })
+        ).status,
+      ).toBe(204);
+      const twice = await t.admin.put("/instance/database-locations/second-name", {
+        connectionString: extra.connectionString,
+      });
+      expect(twice.status, JSON.stringify(twice.body)).toBe(400);
+      expect(twice.body.detail).toMatch(/first-name/);
+      await t.admin.delete("/instance/database-locations/first-name");
     } finally {
       await extra.drop();
     }

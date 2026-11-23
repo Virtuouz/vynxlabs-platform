@@ -355,7 +355,7 @@ const toRun = (row: RunRow, bundleVersion: number) => ({
   id: row.id,
   script: row.script_path,
   status: row.status,
-  state: runState(row.status),
+  state: runState(row.status, row.scheduled_for),
   attempt: row.attempt,
   maxAttempts: row.max_attempts,
   trigger: { type: row.trigger_type, ...row.trigger_detail },

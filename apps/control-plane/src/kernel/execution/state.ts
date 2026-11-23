@@ -36,9 +36,16 @@ export const RunStateSchema = Type.Union(
   },
 );
 
-/** A script run's state from its status. */
-export const runState = (status: string): RunState =>
-  status === "cancelled" ? "canceled" : (status as RunState);
+/**
+ * A script run's state from its status. A queued run set to start later is waiting for its
+ * time, not queued: nothing is holding it up (OPS-25).
+ */
+export const runState = (status: string, scheduledFor?: Date | null): RunState =>
+  status === "queued" && scheduledFor && scheduledFor.getTime() > Date.now()
+    ? "waiting_time"
+    : status === "cancelled"
+      ? "canceled"
+      : (status as RunState);
 
 /** A step's state: a waiting step is an approval when it has a title, a delay when it has a time. */
 export function stepState(step: {
@@ -55,9 +62,17 @@ export function stepState(step: {
   return runState(step.status);
 }
 
-/** The same for a script run, in SQL, for a column such as `r.status`. */
-export const runStateSql = (status: string) =>
-  sql<RunState>`case when ${sql.ref(status)} = 'cancelled' then 'canceled' else ${sql.ref(status)}::text end`;
+/**
+ * The same for a script run, in SQL, for a column such as `r.status`. With the run's
+ * `scheduled_for` column, a queued run set to start later is `waiting_time`.
+ */
+export const runStateSql = (status: string, scheduledFor?: string) =>
+  scheduledFor
+    ? sql<RunState>`case
+        when ${sql.ref(status)} = 'queued' and ${sql.ref(scheduledFor)} > now() then 'waiting_time'
+        when ${sql.ref(status)} = 'cancelled' then 'canceled'
+        else ${sql.ref(status)}::text end`
+    : sql<RunState>`case when ${sql.ref(status)} = 'cancelled' then 'canceled' else ${sql.ref(status)}::text end`;
 
 /**
  * A flow run's state, in SQL, for the flow run aliased `alias`. A running flow

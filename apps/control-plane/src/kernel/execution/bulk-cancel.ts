@@ -52,6 +52,9 @@ export async function cancelRuns(kernel: Kernel, request: BulkCancel): Promise<B
       .select("id")
       .where("workspace_id", "=", request.workspaceId)
       .where("status", "in", statuses as ("queued" | "running")[]);
+    // "Queued" is what is waiting for a worker: a run set to start later is not (OPS-25).
+    if (request.include !== "all")
+      query = query.where(sql<boolean>`coalesce(scheduled_for, created_at) <= now()`);
     if (passed.length > 0) query = query.where("id", "not in", passed);
     if (request.olderThanSeconds) {
       query = query.where("created_at", "<=", before(request.olderThanSeconds));

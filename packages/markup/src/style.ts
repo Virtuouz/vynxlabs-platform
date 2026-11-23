@@ -384,17 +384,18 @@ export const DOC_CSS = `
 }
 /* Highlighted code: Prism's classes, drawn by the server, colored here. Light values; DOC_DARK_CSS has the dark ones. */
 .vd-doc .token.keyword, .vd-doc .token.atrule, .vd-doc .token.important { color: var(--vd-tok-keyword, #a21caf); }
-.vd-doc .token.boolean, .vd-doc .token.constant, .vd-doc .token.symbol { color: var(--vd-tok-literal, #0e7490); }
-.vd-doc .token.string, .vd-doc .token.char, .vd-doc .token.attr-value, .vd-doc .token.inserted, .vd-doc .token.regex { color: var(--vd-tok-string, #15803d); }
+.vd-doc .token.boolean, .vd-doc .token.constant, .vd-doc .token.symbol { color: var(--vd-tok-literal, #155e75); }
+.vd-doc .token.string, .vd-doc .token.char, .vd-doc .token.attr-value, .vd-doc .token.inserted, .vd-doc .token.regex { color: var(--vd-tok-string, #166534); }
 .vd-doc .token.number, .vd-doc .token.unit, .vd-doc .token.hexcode { color: var(--vd-tok-number, #9a3412); }
 .vd-doc .token.comment, .vd-doc .token.prolog, .vd-doc .token.doctype, .vd-doc .token.cdata { color: var(--vd-tok-comment, #5c5c5c); font-style: italic; }
 .vd-doc .token.property, .vd-doc .token.attr-name, .vd-doc .token.key, .vd-doc .token.selector, .vd-doc .token.tag { color: var(--vd-tok-attr, #1d4ed8); }
-.vd-doc .token.function, .vd-doc .token.class-name, .vd-doc .token.builtin, .vd-doc .token.variable, .vd-doc .token.title { color: var(--vd-tok-name, #0e7490); }
+.vd-doc .token.function, .vd-doc .token.class-name, .vd-doc .token.builtin, .vd-doc .token.variable, .vd-doc .token.title { color: var(--vd-tok-name, #155e75); }
 .vd-doc .token.deleted { color: var(--vd-tok-deleted, #b91c1c); }
 .vd-doc .token.bold, .vd-doc .token.title { font-weight: 600; }
 .vd-doc .token.italic { font-style: italic; }
 .vd-doc .token.operator, .vd-doc .token.punctuation { color: inherit; }
-.vd-doc pre code mark.vd-line-mark { display: inline-block; min-width: 100%; color: inherit; background: color-mix(in srgb, var(--vd-tok-attr, #1d4ed8) 14%, transparent); box-shadow: inset 2px 0 0 var(--vd-tok-attr, #1d4ed8); }
+/* A marked line: a band the full width of the block, its bar in the gutter, with no gap between marked lines. Light enough that every token keeps 4.5:1 on it. */
+.vd-doc pre code mark.vd-line-mark { display: inline-block; vertical-align: top; min-width: calc(100% + 0.75em); margin-inline-start: -0.75em; padding-inline-start: calc(0.75em - 3px); color: inherit; background: color-mix(in srgb, var(--vd-tok-attr, #1d4ed8) 8%, transparent); border-inline-start: 3px solid var(--vd-tok-attr, #1d4ed8); }
 `;
 
 /**

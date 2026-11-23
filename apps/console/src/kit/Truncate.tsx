@@ -53,6 +53,8 @@ export function Truncate({
   return (
     <span
       data-full={children}
+      // A long one is cut on a phone, where there is no hover: its whole is the title from the start.
+      {...(children.length > 24 ? { title: children } : {})}
       onPointerEnter={fullOnHover}
       className={`flex min-w-0 max-w-full whitespace-nowrap ${className}`}
     >

@@ -214,10 +214,11 @@ async function describeGroup(
     action: "Save",
     required: false,
     multiline: true,
+    maxLength: 500,
   });
   if (next === null || next.trim() === row.description) return;
   try {
-    await api.patch(route, { description: next.trim().slice(0, 500) });
+    await api.patch(route, { description: next.trim() });
     reload();
   } catch (error) {
     notify.error(error);

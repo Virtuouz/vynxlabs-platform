@@ -2214,3 +2214,35 @@ test("m1fix: Who sees rows says it is saved in rules mode as in owner mode, when
   await new Promise((done) => setTimeout(done, 300));
   expect(screen.getByText("Saved. It applies from the next request.")).toBeTruthy();
 }, 15000);
+
+test("m1fix: a table's description past 500 characters is refused at the field, in Create table and when it is edited, and is never cut", async () => {
+  const long = "x".repeat(501);
+  // Create table.
+  routes[`GET /api/v1${root}/tables`] = () => [200, { items: [] }];
+  routes[`PUT /api/v1${root}/resources/visits`] = () => [201, {}];
+  show(<Tables root={root} link="/t/t1/workspaces/w1" />);
+  fireEvent.click(
+    (await screen.findAllByRole("button", { name: "Create table" }))[0] as HTMLElement,
+  );
+  const dialog = await screen.findByRole("dialog");
+  fireEvent.input(within(dialog).getByLabelText("Name"), { target: { value: "visits" } });
+  fireEvent.input(within(dialog).getByLabelText("What it holds"), { target: { value: long } });
+  fireEvent.input(within(dialog).getByLabelText("First column"), { target: { value: "title" } });
+  fireEvent.submit(dialog.querySelector("form") as HTMLFormElement);
+  expect(await within(dialog).findByText("Use at most 500 characters. This is 501.")).toBeTruthy();
+  expect(calls.some((call) => call.method === "PUT")).toBe(false);
+  cleanup();
+
+  // Editing it from Definition.
+  const saved = editable();
+  show(<TableView root={root} name="orders" link="/t/t1/workspaces/w1" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Definition" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Describe the table" }));
+  const asked = await screen.findByRole("dialog");
+  fireEvent.change(within(asked).getByRole("textbox"), { target: { value: long } });
+  expect(await within(asked).findByText("Use at most 500 characters. This is 501.")).toBeTruthy();
+  expect((within(asked).getByRole("button", { name: "Save" }) as HTMLButtonElement).disabled).toBe(
+    true,
+  );
+  expect(saved()).toBeUndefined();
+}, 20000);

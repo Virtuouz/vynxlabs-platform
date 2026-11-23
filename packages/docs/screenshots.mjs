@@ -38,6 +38,9 @@ const TIMES = [
   // What the console itself marks as changing from one look to the next (the connection's state).
   "[data-volatile]",
   { role: "gridcell", hasText: "\\d{4}, \\d+:\\d\\d\\s[AP]M" },
+  // What the server chose, and so is not the same in each run: a row's ID, and the schema a table is stored in.
+  { role: "gridcell", hasText: "^[0-9a-f]{8}-[0-9a-f]{4}-" },
+  { role: "code", hasText: "^ws_" },
 ];
 
 export const SHOTS = [
@@ -80,11 +83,12 @@ export const SHOTS = [
   },
   {
     name: "console/table-definition",
-    address: "tables/orders?view=definition",
+    address: "tables/customers?view=definition",
     as: "admin",
     setup: "handbook",
     themes: THEMES,
-    viewport: VIEW,
+    // Tall: the page shows its columns, then what stands for a row, the indexes and who sees rows.
+    viewport: { width: 1440, height: 1500 },
     ready: [{ role: "heading", level: 2, name: "Columns" }],
     steps: [],
     mask: TIMES,

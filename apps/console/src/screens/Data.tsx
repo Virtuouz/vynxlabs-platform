@@ -1701,6 +1701,7 @@ export function Tables({ root, link }: { root: string; link: string }) {
             required: false,
             placeholder: "Notes taken in meetings",
             hint: "In plain words. Shown under the table's name.",
+            maxLength: 500,
           },
           { name: "column", label: "First column", placeholder: "title" },
           { name: "type", label: "It holds", options: TYPES },
@@ -1766,7 +1767,7 @@ export function Tables({ root, link }: { root: string; link: string }) {
             schemaVersion: 1,
             ownership: "ui",
             body: {
-              ...(description.trim() ? { description: description.trim().slice(0, 500) } : {}),
+              ...(description.trim() ? { description: description.trim() } : {}),
               columns: made,
               ...(policy === "owner" ? { policy: { type: "owner", column: "owner_id" } } : {}),
             },
@@ -2567,9 +2568,10 @@ function Definition({
       action: "Save",
       required: false,
       multiline: true,
+      maxLength: 500,
     });
     if (next === null) return;
-    const said = next.trim().slice(0, 500);
+    const said = next.trim();
     if (said === (table.description ?? "")) return;
     await change(
       (body) => {
@@ -2657,9 +2659,10 @@ function Definition({
           action: "Save",
           required: false,
           multiline: true,
+          maxLength: 500,
         });
         if (next === null) return;
-        const said = next.trim().slice(0, 500);
+        const said = next.trim();
         if (said === (row.description ?? "")) return;
         void quietly(
           change(

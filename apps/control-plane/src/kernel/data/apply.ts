@@ -852,8 +852,11 @@ export async function reconcileReferences(trx: Trx, workspaceId: string, final: 
       await sql`alter table ${own} drop constraint ${sql.id(name)}`.execute(trx);
     }
     // Rows that came back with a table may name a row that is gone. They are left as they are,
-    // and every row written from now on is held to the key.
-    const dangling = await sql`
+    // and every row written from now on is held to the key. A key pointed at another table is
+    // still refused while a row would point nowhere.
+    const dangling = there
+      ? { rows: [] }
+      : await sql`
       select 1 from ${own} as r
       where r.${sql.id(reference.physical_name)} is not null and not exists (
         select 1 from ${sql.id(schema, target.physical_name)} as t where t.id = r.${sql.id(reference.physical_name)}
@@ -1049,7 +1052,8 @@ export async function purgeRetired(
       .where("data_table.name", "=", request.table)
       .where("data_column.status", "=", "retired");
     if (request.column !== undefined) found = found.where("data_column.name", "=", request.column);
-    if (request.columnId !== undefined) found = found.where("data_column.id", "=", request.columnId);
+    if (request.columnId !== undefined)
+      found = found.where("data_column.id", "=", request.columnId);
     // Two retired columns may have had one name: a name alone drops neither, and says which.
     const matches = await found.limit(2).execute();
     const column = matches[0];

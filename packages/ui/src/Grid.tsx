@@ -366,6 +366,8 @@ function NavigableGrid<Row extends Record<string, unknown>>(props: GridProps<Row
   const lockFirst = props.lockFirst ?? true;
   const head = `border-b border-line-strong bg-sunken px-3 text-meta font-medium text-ink-subtle`;
   const all = rows.map((row) => props.rowKey(row));
+  // The heading's box is checked when every row shown is, whatever else is checked.
+  const everyChecked = checking && all.length > 0 && all.every((key) => checked.has(key));
   const toggle = (key: string) => {
     if (!checking) return;
     const next = new Set(checked);
@@ -415,7 +417,7 @@ function NavigableGrid<Row extends Record<string, unknown>>(props: GridProps<Row
     event.preventDefault();
     if (r === 0) {
       if (column?.sortable) props.onSort?.(column.name);
-      else if (c === 0 && checking) onCheck(checked.size === all.length ? new Set() : new Set(all));
+      else if (c === 0 && checking) onCheck(everyChecked ? new Set() : new Set(all));
       return;
     }
     if (!row) return;
@@ -460,8 +462,8 @@ function NavigableGrid<Row extends Record<string, unknown>>(props: GridProps<Row
                   aria-label="Check every row on this page"
                   // Centred on the line, not set on its baseline: the heading row is as tall as its words, not as a box standing on their baseline.
                   className="align-middle size-4 accent-(--vx-action)"
-                  checked={all.length > 0 && checked.size === all.length}
-                  onChange={() => onCheck(checked.size === all.length ? new Set() : new Set(all))}
+                  checked={everyChecked}
+                  onChange={() => onCheck(everyChecked ? new Set() : new Set(all))}
                 />
               </th>
             ) : null}

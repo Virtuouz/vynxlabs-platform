@@ -4,8 +4,6 @@ import { type Bundle, type BundleManifest, bundleDigest } from "@volvel/manifest
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { upgradePolicies, workspaceSchema } from "./kernel/data/apply.js";
 import { describeTable, findRows, withData } from "./kernel/data/rows.js";
-import { commitDataTransactions } from "./kernel/data/stores.js";
-import { deployBundle } from "./kernel/execution/deploy.js";
 import { type Client, startTestApp, type TestApp } from "./testing.js";
 
 const PASSWORD = "a-good-long-password";
@@ -23,13 +21,13 @@ let data: Kysely<PlatformSchema>;
 let dedicatedDb: TestDatabase | undefined;
 let tenant: string;
 let dev: string;
-let prod: string;
+let _prod: string;
 let alice: Client; // tenant admin
 let carol: { id: string; client: Client }; // may read and write rows, subject to policy
-let dave: { id: string; client: Client };
-let erin: { id: string; client: Client }; // bound at one table only
-let viewer: Client;
-let other: Client;
+let _dave: { id: string; client: Client };
+let _erin: { id: string; client: Client }; // bound at one table only
+let _viewer: Client;
+let _other: Client;
 let roles: Record<string, string>;
 
 // biome-ignore lint/suspicious/noExplicitAny: row bodies are inspected freely
@@ -47,11 +45,11 @@ const table = (
   extra: Record<string, unknown> = {},
 ) => manifest("table", path, { columns, ...extra });
 
-const customers = table("customers", {
+const _customers = table("customers", {
   name: { type: "text", required: true },
   email: { type: "text", unique: true },
 });
-const ordersV1 = table(
+const _ordersV1 = table(
   "orders",
   {
     number: { type: "text", required: true, unique: true },
@@ -65,7 +63,7 @@ const ordersV1 = table(
     indexes: [["total"], ["owner_id", "created_at"]],
   },
 );
-const ordersV2 = table(
+const _ordersV2 = table(
   "orders",
   {
     number: { type: "text", required: true, unique: true },
@@ -76,7 +74,7 @@ const ordersV2 = table(
   },
   { policy: { type: "owner", column: "owner_id" }, indexes: [["amount"]] },
 );
-const samples = table("lab/samples", {
+const _samples = table("lab/samples", {
   label: { type: "text" },
   count: { type: "integer" },
   ratio: { type: "number" },
@@ -161,7 +159,7 @@ beforeAll(async () => {
   const acme = await seed("acme", "alice@acme.example");
   tenant = acme.id;
   alice = acme.client;
-  other = (await seed("globex", "gina@globex.example")).client;
+  _other = (await seed("globex", "gina@globex.example")).client;
   dev = (
     await alice.post(`/tenants/${tenant}/workspaces`, {
       slug: "main-dev",
@@ -169,7 +167,7 @@ beforeAll(async () => {
       type: "dev",
     })
   ).body.id;
-  prod = (
+  _prod = (
     await alice.post(`/tenants/${tenant}/workspaces`, {
       slug: "main",
       name: "Main",
@@ -202,9 +200,9 @@ beforeAll(async () => {
     };
   };
   carol = await member("carol", { roleId: rowsOnly });
-  dave = await member("dave", { roleId: rowsOnly });
-  erin = await member("erin", null);
-  viewer = (await member("vera", { roleId: roles.viewer })).client;
+  _dave = await member("dave", { roleId: rowsOnly });
+  _erin = await member("erin", null);
+  _viewer = (await member("vera", { roleId: roles.viewer })).client;
   roles.rows_only = rowsOnly;
   data = (await t.kernel.data.forTenant(tenant)).owner;
 }, 60_000);
@@ -326,13 +324,20 @@ describe("tables and their names", () => {
   test("TAB-04: a new table with a name another table used to have does not take that table's rows", async () => {
     const columns = { label: { type: "text" } };
     const own = (
-      await alice.post(`/tenants/${tenant}/workspaces`, { slug: "tab-04", name: "Names", type: "dev" })
+      await alice.post(`/tenants/${tenant}/workspaces`, {
+        slug: "tab-04",
+        name: "Names",
+        type: "dev",
+      })
     ).body.id as string;
 
     const first = await deploy(bundle([table("alpha", columns)], "a1"), own);
     expect(first.status, JSON.stringify(first.body)).toBe(201);
     await alice.post(`${ws(own)}/rows/alpha`, { label: "from alpha" });
-    const renamed = await deploy(bundle([table("beta", columns, { renamedFrom: "alpha" })], "a2"), own);
+    const renamed = await deploy(
+      bundle([table("beta", columns, { renamedFrom: "alpha" })], "a2"),
+      own,
+    );
     expect(renamed.status, JSON.stringify(renamed.body)).toBe(201);
     const both = await deploy(bundle([table("beta", columns), table("alpha", columns)], "a3"), own);
     expect(both.status, JSON.stringify(both.body)).toBe(201);
@@ -343,7 +348,11 @@ describe("tables and their names", () => {
 
   test("TAB-07: of two retired columns with one name, the one asked for is dropped", async () => {
     const own = (
-      await alice.post(`/tenants/${tenant}/workspaces`, { slug: "tab-07", name: "Purge", type: "dev" })
+      await alice.post(`/tenants/${tenant}/workspaces`, {
+        slug: "tab-07",
+        name: "Purge",
+        type: "dev",
+      })
     ).body.id as string;
     const withX = (type: string, marker: string) =>
       deploy(bundle([table("things", { x: { type }, keep: { type: "text" } })], marker), own);
@@ -380,7 +389,11 @@ describe("tables and their names", () => {
 
   test("TAB-08: a retired table's rows are not deleted or held by the rows it referred to", async () => {
     const own = (
-      await alice.post(`/tenants/${tenant}/workspaces`, { slug: "tab-08", name: "Keys", type: "dev" })
+      await alice.post(`/tenants/${tenant}/workspaces`, {
+        slug: "tab-08",
+        name: "Keys",
+        type: "dev",
+      })
     ).body.id as string;
     const parent = table("parents", { name: { type: "text" } });
     const child = (rule: string) =>
@@ -400,5 +413,66 @@ describe("tables and their names", () => {
       expect(await stored(own, "t_children", "parent")).toHaveLength(1);
       await sql`delete from ${sql.id(workspaceSchema(own), "t_children")}`.execute(data);
     }
+  });
+
+  test("TAB-05: a table made as new does not replace the one at that path", async () => {
+    const own = (
+      await alice.post(`/tenants/${tenant}/workspaces`, {
+        slug: "tab-05",
+        name: "Create",
+        type: "dev",
+      })
+    ).body.id as string;
+    const put = (columns: object, create?: boolean) =>
+      alice.put(`${ws(own)}/resources/codes`, {
+        kind: "table",
+        schemaVersion: 1,
+        ownership: "ui",
+        body: { columns },
+        ...(create ? { create } : {}),
+      });
+    const first = await put({ a: { type: "text" }, b: { type: "text" } }, true);
+    expect(first.status).toBe(201);
+    const again = await put({ title: { type: "text" } }, true);
+    expect(again.status).toBe(409);
+    expect(again.body.code).toBe("path_taken");
+    const kept = (await alice.get(`${ws(own)}/tables/codes`)).body.columns;
+    expect(kept.map((column: Any) => [column.name, column.status])).toEqual([
+      ["a", "active"],
+      ["b", "active"],
+    ]);
+    // Without it, a save is still an update.
+    expect((await put({ a: { type: "text" } })).status).toBe(200);
+  });
+
+  test("TAB-12: a save that names the version it read is refused when someone has saved since", async () => {
+    const own = (
+      await alice.post(`/tenants/${tenant}/workspaces`, {
+        slug: "tab-12",
+        name: "Undo",
+        type: "dev",
+      })
+    ).body.id as string;
+    const put = (columns: object, version?: number) =>
+      alice.put(`${ws(own)}/resources/versions`, {
+        kind: "table",
+        schemaVersion: 1,
+        ownership: "ui",
+        body: { columns },
+        ...(version !== undefined ? { version } : {}),
+      });
+    const first = await put({ a: { type: "text" } });
+    expect(first.body.version).toBe(1);
+    const theirs = await put({ a: { type: "text" }, theirs: { type: "text" } }, 1);
+    expect(theirs.status).toBe(200);
+    // Mine was read at version 1: it would retire their column.
+    const mine = await put({ a: { type: "text" } }, 1);
+    expect(mine.status).toBe(409);
+    expect(mine.body.code).toBe("draft_changed");
+    const now = (await alice.get(`${ws(own)}/tables/versions`)).body.columns;
+    expect(now.map((column: Any) => [column.name, column.status])).toEqual([
+      ["a", "active"],
+      ["theirs", "active"],
+    ]);
   });
 });

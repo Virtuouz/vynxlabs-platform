@@ -407,6 +407,7 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           params: WildParams,
           response: {
             200: Type.Object({
+              id: Type.Optional(Type.String()),
               name: Type.String(),
               description: Type.Optional(
                 Type.String({ description: "What the table is for, when its definition says." }),
@@ -463,6 +464,7 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           held.set(column.id, Number(kept.rows[0]?.n ?? 0));
         }
         return {
+          id: table.id,
           name,
           ...(defined.description ? { description: defined.description } : {}),
           status: table.status,

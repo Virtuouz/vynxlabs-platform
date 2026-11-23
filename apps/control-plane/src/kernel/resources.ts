@@ -25,6 +25,11 @@ export interface ResourceInput {
   /** Move the resource at this path to `path`, keeping its ID. */
   renameFrom?: string | undefined;
   /**
+   * The version the caller read. When it is not the one there now, someone has saved since,
+   * and nothing is replaced.
+   */
+  expectedVersion?: number | undefined;
+  /**
    * The resource this is, when the caller has matched it already, as a deploy does by
    * key. Its path may be another: that is a rename.
    */
@@ -96,6 +101,17 @@ export async function putResource(
         `${renamedFrom} cannot be renamed to ${input.path}: that is the path of ${/^[aeiou]/.test(occupant.kind) ? "an" : "a"} ${occupant.kind.replaceAll("_", " ")}${occupant.key === input.path ? "" : ` (key ${occupant.key})`}. Rename or remove that one first.`,
       );
     }
+  }
+  if (
+    existing &&
+    input.expectedVersion !== undefined &&
+    existing.version !== input.expectedVersion
+  ) {
+    throw new HttpError(
+      409,
+      "draft_changed",
+      `Someone else saved ${existing.path} after you opened it. Reload it, then make your change again.`,
+    );
   }
   if (existing && existing.kind !== input.kind) {
     throw conflict(`${existing.path} is a ${existing.kind}. A resource cannot change kind.`);

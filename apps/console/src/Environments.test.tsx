@@ -1,5 +1,13 @@
 // @vitest-environment happy-dom
-import { cleanup, configure, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  configure,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import {
   DeleteTenantButton,
@@ -180,6 +188,16 @@ test("an export needs the passphrase typed twice the same", async () => {
   expect(sent("POST")).toHaveLength(0);
 });
 
+test("a short export passphrase is refused in words, not by the browser's bubble", async () => {
+  show(<TenantExport base={base} slug="acme" />);
+  fireEvent.input(screen.getByLabelText("Passphrase"), { target: { value: "too short" } });
+  fireEvent.input(screen.getByLabelText("Passphrase again"), { target: { value: "too short" } });
+  expect(screen.getByRole("alert").textContent).toBe("Use at least 12 characters.");
+  fireEvent.click(screen.getByRole("button", { name: "Export tenant" }));
+  expect(sent("POST")).toHaveLength(0);
+  expect(screen.getByRole("alert").textContent).toBe("Use at least 12 characters.");
+});
+
 const inspection = {
   problem: null,
   tenant: { id: "t9", slug: "acme", name: "Acme Corp" },
@@ -249,7 +267,9 @@ test("an import is uploaded and checked first, then imported with its passphrase
   fireEvent.input(screen.getByLabelText("Slug on this instance"), { target: { value: "acme-2" } });
   fireEvent.click(screen.getByRole("button", { name: "Check again" }));
   await screen.findByText("The passphrase opens it");
-  const check = sent("GET").find((call) => call.url.startsWith("/api/v1/instance/tenant-imports"));
+  const check = sent("GET").find((call) =>
+    call.url.startsWith("/api/v1/instance/tenant-imports/staged/"),
+  );
   expect(check?.url).toBe("/api/v1/instance/tenant-imports/staged/s1?slug=acme-2");
   expect(check?.headers["x-export-passphrase"]).toBe("the passphrase");
   await screen.findByRole("option", { name: "acme-db" });
@@ -396,4 +416,71 @@ test("a tenant whose database does not answer is deleted only after a second con
   fireEvent.click(anyway);
   await waitFor(() => expect(done).toHaveBeenCalled());
   expect(sentBodies).toEqual([{ confirm: "acme" }, { confirm: "acme", tablesLeftBehind: true }]);
+});
+
+test("an upload that waits is listed after a reload, opened again, and thrown away (INS-MP11)", async () => {
+  const waiting = {
+    id: "s9",
+    fileName: "globex.tar",
+    sizeBytes: 4096,
+    expiresAt: "2026-11-22T21:00:00.000Z",
+    here: true,
+    inspection: {
+      problem: null,
+      tenant: { id: "t9", slug: "globex", name: "Globex" },
+      exportedAt: null,
+      coreVersion: "1.0.0",
+      migrationLevel: 5,
+      levelMatches: true,
+      history: false,
+      workspaces: [],
+      rows: 0,
+      members: 0,
+      pendingRuns: 0,
+      notCarried: [],
+      passphraseOk: null,
+      tenantPresent: false,
+      slugTaken: false,
+    },
+  };
+  let gone = false;
+  routes["GET /api/v1/instance/tenant-imports/staged"] = () => [
+    200,
+    {
+      items: gone
+        ? [waiting]
+        : [waiting, { ...waiting, id: "s8", fileName: "far.tar", here: false }],
+    },
+  ];
+  routes["DELETE /api/v1/instance/tenant-imports/staged/s8"] = () => {
+    gone = true;
+    return [204, null];
+  };
+  show(<TenantImport />);
+  const list = await screen.findByRole("region", { name: "Uploads that wait" });
+  expect(list.textContent).toContain("Globex");
+  expect(list.textContent).toContain("Another replica keeps the file: upload it again");
+  fireEvent.click(within(list).getAllByRole("button", { name: "Throw away" })[1] as HTMLElement);
+  await answer("Throw away");
+  await waitFor(() =>
+    expect(sent("DELETE")[0]?.url).toBe("/api/v1/instance/tenant-imports/staged/s8"),
+  );
+  fireEvent.click(await screen.findByRole("button", { name: "Open" }));
+  expect(await screen.findByRole("button", { name: "Throw it away" })).toBeTruthy();
+  expect(screen.getByLabelText("Its passphrase")).toBeTruthy();
+});
+
+test("WLK-17f: a file with no signature is a note, not a failure, and its long line wraps", async () => {
+  routes["GET /api/v1/instance/database-locations/names"] = () => [200, { items: [] }];
+  routes["POST /api/v1/instance/tenant-imports/staged"] = () => [
+    201,
+    staged({ authenticated: false, formatVersion: 1 } as never),
+  ];
+  show(<TenantImport />);
+  const file = new File(["tar bytes"], "acme.tar", { type: "application/x-tar" });
+  fireEvent.change(screen.getByLabelText("Export file"), { target: { files: [file] } });
+  fireEvent.submit(screen.getByLabelText("Export file").closest("form") as HTMLFormElement);
+  const line = (await screen.findByText(/Format 1 has no signature/)).closest("li");
+  expect(line?.getAttribute("data-check")).toBe("note");
+  expect(line?.querySelector("span")?.className).toContain("break-words");
 });

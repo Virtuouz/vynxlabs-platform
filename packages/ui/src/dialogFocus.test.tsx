@@ -132,3 +132,63 @@ test("WLK-10: a side sheet that asks for something to type opens in the first fi
   );
   await waitFor(() => expect(document.activeElement).toBe(screen.getByLabelText("Host")));
 });
+
+test("WLK-17i: closing a question puts the focus back where it was, even when the button that asked is gone", async () => {
+  function Page() {
+    const dialogs = useDialogs();
+    const [gone, setGone] = useState(false);
+    return (
+      <section aria-label="Draft">
+        {gone ? (
+          <p>Discarded.</p>
+        ) : (
+          <button
+            type="button"
+            onClick={async () => {
+              if (await dialogs.confirm({ title: "Discard it?", action: "Discard" })) setGone(true);
+            }}
+          >
+            Discard
+          </button>
+        )}
+      </section>
+    );
+  }
+  render(
+    <DialogsProvider>
+      <Page />
+    </DialogsProvider>,
+  );
+  const opener = screen.getByRole("button", { name: "Discard" });
+  opener.focus();
+  fireEvent.click(opener);
+  await screen.findByRole("dialog");
+  // The question has two Discard buttons for a moment: the dialog's is the last.
+  const all = screen.getAllByRole("button", { name: "Discard" });
+  fireEvent.click(all[all.length - 1] as HTMLElement);
+  await screen.findByText("Discarded.");
+  await waitFor(() =>
+    expect(document.activeElement).toBe(document.querySelector("section[aria-label=Draft]")),
+  );
+});
+
+test("WLK-17i: a question that is canceled returns the focus to the button that asked", async () => {
+  function Page() {
+    const dialogs = useDialogs();
+    return (
+      <button type="button" onClick={() => void dialogs.confirm({ title: "Sure?", action: "Go" })}>
+        Ask
+      </button>
+    );
+  }
+  render(
+    <DialogsProvider>
+      <Page />
+    </DialogsProvider>,
+  );
+  const opener = screen.getByRole("button", { name: "Ask" });
+  opener.focus();
+  fireEvent.click(opener);
+  fireEvent.click(await screen.findByRole("button", { name: "Cancel" }));
+  await waitFor(() => expect(document.activeElement).toBe(opener));
+});

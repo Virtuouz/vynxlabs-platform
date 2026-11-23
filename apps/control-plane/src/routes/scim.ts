@@ -262,6 +262,7 @@ export function scimRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           config: { access: write },
           schema: {
             summary: "Say how a provider's pushes are taken",
+            description: "How pushes from the provider's directory are applied here. Audited.",
             tags,
             params: Params,
             body: Settings,
@@ -475,6 +476,8 @@ export function scimRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           config,
           schema: {
             summary: "What this SCIM service supports",
+            description:
+              "The service provider configuration of RFC 7643: patch and filter are supported, bulk is not.",
             tags,
             params: ProviderParam,
             response: { 200: AnyObject },
@@ -483,7 +486,6 @@ export function scimRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         async (request, reply) =>
           send(reply, 200, {
             schemas: ["urn:ietf:params:scim:schemas:core:2.0:ServiceProviderConfig"],
-            documentationUri: `${kernel.config.publicUrl}/api/v1/docs`,
             patch: { supported: true },
             bulk: { supported: false, maxOperations: 0, maxPayloadSize: 0 },
             filter: { supported: true, maxResults: MAX_PAGE },
@@ -526,6 +528,7 @@ export function scimRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           config,
           schema: {
             summary: "The kinds of thing that can be pushed",
+            description: "Two resource types: User and Group.",
             tags,
             params: ProviderParam,
             response: { 200: AnyObject },
@@ -605,6 +608,7 @@ export function scimRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           config,
           schema: {
             summary: "The attributes of a user and a group that are kept",
+            description: "The schemas of both, as RFC 7643 describes them.",
             tags,
             params: ProviderParam,
             response: { 200: AnyObject },
@@ -693,6 +697,7 @@ export function scimRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           config,
           schema: {
             summary: "One pushed person",
+            description: "The person the id names, in SCIM's shape.",
             tags,
             params: ResourceParam,
             response: { 200: AnyObject },
@@ -888,6 +893,7 @@ export function scimRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           config,
           schema: {
             summary: "One pushed group",
+            description: "The group the id names, with its members, in SCIM's shape.",
             tags,
             params: ResourceParam,
             querystring: ListQuery,

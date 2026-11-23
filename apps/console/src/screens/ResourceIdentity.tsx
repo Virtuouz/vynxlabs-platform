@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { ApiError, api } from "../api.ts";
 import { failureText, notify } from "../ask.tsx";
 import { putDraft } from "../kit/draftApi.ts";
+import { keepPlace } from "../kit/focus.ts";
 import { Loading } from "../kit/LoadState.tsx";
 import { navigate } from "../router.tsx";
 
@@ -107,6 +108,7 @@ export function ResourceIdentity({
   onDone,
   label = "Rename",
   unsaved = false,
+  removing = false,
 }: {
   root: string;
   /** The workspace's address in the console, for the way to the Releases screen. */
@@ -118,15 +120,31 @@ export function ResourceIdentity({
   label?: string;
   /** An editor with changes it has not saved: the draft renamed would not have them. */
   unsaved?: boolean;
+  /** The resource is removed in the person's drafts: a name given to it would be given to nothing. */
+  removing?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   // A rename is told to the screen once the dialog has gone, so the screen it opens does not
   // take the dialog away mid-motion (found by the phase 23 walk, on Queries).
   const renamed = useRef<string | undefined>(undefined);
-  const why = cannotRename(row) ?? (unsaved ? "Save the draft first." : undefined);
+  const opener = useRef<HTMLElement | null>(null);
+  const why =
+    cannotRename(row) ??
+    (removing
+      ? `The ${row.kind.replaceAll("_", " ")} is removed in your drafts. Keep it to give it another name.`
+      : undefined) ??
+    (unsaved ? "Save the draft first." : undefined);
   return (
     <>
-      <Button size="small" disabled={why !== undefined} title={why} onClick={() => setOpen(true)}>
+      <Button
+        size="small"
+        disabled={why !== undefined}
+        title={why}
+        onClick={(event) => {
+          opener.current = event.currentTarget;
+          setOpen(true);
+        }}
+      >
         {label}
       </Button>
       <Dialog
@@ -135,7 +153,12 @@ export function ResourceIdentity({
         onClosed={() => {
           const path = renamed.current;
           renamed.current = undefined;
-          if (path !== undefined) onDone(path);
+          if (path !== undefined) {
+            // The screen may draw itself again at the new path: the keyboard stays where it was.
+            const settle = keepPlace(opener.current);
+            onDone(path);
+            settle();
+          }
         }}
         title={`Name and path of ${row.path}`}
         description={`It stays the same ${row.kind.replaceAll("_", " ")}: its history, its data and what is bound to it come along, and ${row.path} keeps answering for 90 days. Nothing changes until the draft is deployed.`}

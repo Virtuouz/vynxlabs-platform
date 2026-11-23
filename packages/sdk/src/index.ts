@@ -767,12 +767,15 @@ export const trigger = {
        * trigger is still going. `allow` starts another beside it.
        */
       overlap?: "allow" | "skip";
+      /** CEL expressions over `trigger` that tag each run it starts. */
+      tags?: string[];
     } = {},
   ): FlowNode => ({
     type: "trigger",
     ...keyed(options.key),
     trigger: compact({
       type: "schedule",
+      tags: options.tags,
       cron,
       timezone: options.timezone,
       source: options.source ? pathOf(options.source) : undefined,
@@ -790,6 +793,8 @@ export const trigger = {
       source?: Target;
       /** `flow` holds the request open, for up to 25 seconds, for a respond step to answer. */
       respond?: "now" | "flow";
+      /** CEL expressions over `trigger` that tag each run it starts. */
+      tags?: string[];
       /**
        * What names this start for as long as the flow lives. Its address, its pause and
        * when it last fired follow the key when the step is renamed. Left out, the step's
@@ -802,6 +807,7 @@ export const trigger = {
     ...keyed(options.key),
     trigger: compact({
       type: "webhook",
+      tags: options.tags,
       input: options.input,
       verify: options.verify,
       source: options.source ? pathOf(options.source) : undefined,
@@ -815,10 +821,18 @@ export const trigger = {
     trigger: compact({ type: "form", ...options }),
   }),
   /** Started when an event is published. `filter` is CEL over `event.payload`. */
-  event: (event: Target, options: { filter?: string; key?: string } = {}): FlowNode => ({
+  event: (
+    event: Target,
+    options: { filter?: string; key?: string; tags?: string[] } = {},
+  ): FlowNode => ({
     type: "trigger",
     ...keyed(options.key),
-    trigger: compact({ type: "event", event: pathOf(event), filter: options.filter }),
+    trigger: compact({
+      type: "event",
+      event: pathOf(event),
+      filter: options.filter,
+      tags: options.tags,
+    }),
   }),
 };
 
@@ -877,19 +891,23 @@ export const step = {
   foreach: (
     items: string,
     options: {
-      script?: Target;
-      flow?: Target;
       input?: string;
       concurrency?: number;
       continueOnError?: boolean;
       with?: StepGrants;
-    },
+    } & (
+      | { script: Target; flow?: undefined; flowFrom?: undefined; allow?: undefined }
+      | { flow: Target; script?: undefined; flowFrom?: undefined; allow?: undefined }
+      | { flowFrom: string; allow: Target[]; script?: undefined; flow?: undefined }
+    ),
   ): FlowNode =>
     compact({
       type: "foreach",
       items,
       script: options.script ? pathOf(options.script) : undefined,
       flow: options.flow ? pathOf(options.flow) : undefined,
+      flowFrom: options.flowFrom,
+      allow: options.allow?.map(pathOf),
       input: options.input,
       concurrency: options.concurrency,
       continueOnError: options.continueOnError,
@@ -923,9 +941,24 @@ export const step = {
       approvers: options.approvers,
       surface: options.surface,
     }) as FlowNode,
-  /** Runs another flow from its manual trigger and waits for it. */
-  subflow: (flow: Target, options: { input?: string } = {}): FlowNode =>
-    compact({ type: "subflow", flow: pathOf(flow), input: options.input }) as FlowNode,
+  /**
+   * Runs another flow from its manual trigger and waits for it. Name it, or give
+   * `flowFrom`, an expression that chooses one of the flows in `allow`.
+   */
+  subflow: (
+    flow: Target | { flowFrom: string; allow: Target[]; input?: string },
+    options: { input?: string } = {},
+  ): FlowNode => {
+    const chosen =
+      typeof flow === "object" && "flowFrom" in flow
+        ? { flowFrom: flow.flowFrom, allow: flow.allow.map(pathOf), input: flow.input }
+        : { flow: pathOf(flow) };
+    return compact({
+      type: "subflow",
+      ...chosen,
+      input: options.input ?? ("input" in chosen ? chosen.input : undefined),
+    }) as FlowNode;
+  },
   /**
    * Answers the request that started the flow, for a webhook trigger with
    * `respond: "flow"`. `body` and each header are expressions. The first
@@ -951,6 +984,8 @@ export interface FlowOptions<Nodes extends Record<string, FlowNode>> extends Res
   nodes: Nodes;
   /** Each edge names two of the nodes above. */
   edges: FlowEdge<Extract<keyof Nodes, string>>[];
+  /** Where each node sits in the editor, so positions survive a pull and a deploy. */
+  layout?: Partial<Record<Extract<keyof Nodes, string>, { x: number; y: number }>>;
 }
 
 /**
@@ -964,6 +999,7 @@ export function defineFlow<Nodes extends Record<string, FlowNode>>(
     compact({
       description: options.description,
       nodes: options.nodes,
+      layout: options.layout,
       edges: options.edges.map(([from, to, edge]) =>
         compact({ from, to, output: edge?.when, error: edge?.error ? true : undefined }),
       ),

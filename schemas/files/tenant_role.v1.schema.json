@@ -23,7 +23,7 @@
       "properties": {
         "description": {
           "type": "string",
-          "maxLength": 300
+          "maxLength": 500
         },
         "permissions": {
           "type": "array",

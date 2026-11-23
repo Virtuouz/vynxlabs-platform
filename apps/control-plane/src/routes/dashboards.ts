@@ -8,6 +8,7 @@ import { access, type RequestContext, type WorkspaceRef } from "../kernel/http.j
 import type { Kernel } from "../kernel/kernel.js";
 import { requireStanding } from "../kernel/pages/standing.js";
 import { workspaceTables } from "../kernel/pages.js";
+import { listOf } from "../pagination.js";
 import { AnyObject, Id, iso, NoContent, NullableString, Time, WorkspaceParams } from "./shared.js";
 
 /** The most dashboards one member may keep in one workspace. */
@@ -220,9 +221,10 @@ export function dashboardRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.workspace("dashboard:read") },
         schema: {
           summary: "The caller's dashboards in a workspace, and those shared with them",
+          description: "Each dashboard the caller may open, with its title.",
           tags: ["dashboards"],
           params: WorkspaceParams,
-          response: { 200: Type.Object({ items: Type.Array(Summary) }) },
+          response: { 200: listOf(Summary) },
         },
       },
       async ({ ctx }) => {

@@ -104,7 +104,7 @@ export function summaryRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             "Drafts, failed runs over the last 24 hours, connections with nothing bound, " +
             "approvals waiting, git state and the version that runs here and where it promotes to. " +
             "A count the caller may not read is null.",
-          tags: ["workspaces"],
+          tags: ["tenancy"],
           params: WorkspaceParams,
           response: { 200: WorkspaceSummary },
         },
@@ -325,7 +325,7 @@ export function summaryRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             "Counts for the tenant's navigation: workspaces, approvals waiting, hostnames not " +
             "yet working, workers online, operator access open now and members. A count the " +
             "caller may not read is null.",
-          tags: ["tenants"],
+          tags: ["tenancy"],
           params: TenantParams,
           response: { 200: TenantSummary },
         },
@@ -471,7 +471,7 @@ export function summaryRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             "Worked out from what is deployed: the connections, secrets, variables and tables " +
             "scripts declare, the scripts and flows that flows and triggers start, the events " +
             "flows listen for, and the interfaces apps serve. Narrow it with `kind` and `name`.",
-          tags: ["workspaces"],
+          tags: ["tenancy"],
           params: WorkspaceParams,
           querystring: Type.Object({
             kind: Type.Optional(Type.String({ maxLength: 40 })),

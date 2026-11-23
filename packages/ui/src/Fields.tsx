@@ -167,6 +167,8 @@ export interface TextFieldProps extends Common {
   required?: boolean;
   minLength?: number;
   maxLength?: number;
+  /** With a `maxLength`: says how many letters are typed of how many, under the box. */
+  showCount?: boolean;
   autoComplete?: string;
   disabled?: boolean;
   onChange?: (value: string) => void;
@@ -179,6 +181,7 @@ export function TextField({
   onChange,
   labelHidden = false,
   inline = false,
+  showCount = false,
   ...input
 }: TextFieldProps) {
   if (labelHidden && input.placeholder === undefined) input.placeholder = label;
@@ -206,6 +209,11 @@ export function TextField({
         className={control}
         onChange={(event: ChangeEvent<HTMLInputElement>) => onChange?.(event.currentTarget.value)}
       />
+      {showCount && input.maxLength !== undefined ? (
+        <span data-field-count="" className="text-right text-meta text-ink-muted tabular-nums">
+          {(input.value ?? "").length} of {input.maxLength}
+        </span>
+      ) : null}
     </FieldFrame>
   );
 }

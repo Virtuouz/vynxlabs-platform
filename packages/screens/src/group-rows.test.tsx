@@ -174,7 +174,7 @@ describe("a list", () => {
   });
 });
 
-test("the reader's time zone is sent with a grouped widget's read, and with no other", async () => {
+test("the reader's time zone is sent with every widget's read (D21)", async () => {
   const wire: WireData = { shape: "rows", columns, rows: visits };
   const client: PageDataClient = {
     read: vi.fn(async () => ({ inputs: { rows: wire } })),
@@ -204,6 +204,6 @@ test("the reader's time zone is sent with a grouped widget's read, and with no o
   );
   expect(asked).toEqual({
     grouped: Intl.DateTimeFormat().resolvedOptions().timeZone,
-    plain: undefined,
+    plain: Intl.DateTimeFormat().resolvedOptions().timeZone,
   });
 });

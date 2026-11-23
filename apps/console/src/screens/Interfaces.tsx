@@ -10,6 +10,7 @@ import { Mono, StatePill, Tag } from "../kit/status.tsx";
 import { Page } from "../ListScreen.tsx";
 import { Link, navigate } from "../router.tsx";
 import { type Listed, slug, slugTyping } from "./builder/data.ts";
+import { NAME_MAX } from "./builder/names.ts";
 import { cannotRename } from "./ResourceIdentity.tsx";
 
 /** The apps made in the console: each an interface, and the app that serves it. */
@@ -251,7 +252,8 @@ export function Interfaces({
             name="title"
             value={title}
             required
-            maxLength={200}
+            maxLength={NAME_MAX}
+            showCount
             onChange={(value) => {
               setTaken(undefined);
               setTitle(value);
@@ -387,7 +389,8 @@ function RenameApp({
           name="title"
           value={title}
           required
-          maxLength={200}
+          maxLength={NAME_MAX}
+          showCount
           onChange={setTitle}
         />
         {row ? (

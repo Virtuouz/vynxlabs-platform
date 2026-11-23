@@ -26,6 +26,7 @@ export const COMMAND_GROUPS = [
   "A tenant's access: its groups, service accounts, roles and what they are given",
   "Move a tenant",
   "See what ran",
+  "Run the instance",
 ] as const;
 
 const entry = <Name extends string>(
@@ -47,6 +48,13 @@ export const COMMANDS = [
   ),
   entry("whoami", "Sign in", "whoami", "Show who the saved key acts as."),
   entry("status", "Sign in", "status", "Show the instance's version and readiness."),
+
+  entry(
+    "instance",
+    "Run the instance",
+    "instance triggers [pause [--reason <text>]|resume]",
+    "Show whether every trigger in every tenant is paused, or pause or resume them all. Operators only.",
+  ),
 
   entry("init", REPOSITORY, "init [directory]", "Write a starter repository."),
   entry("build", REPOSITORY, "build", "Build the bundle and list what it contains."),
@@ -163,7 +171,7 @@ export type CommandName = (typeof COMMANDS)[number]["command"];
 
 /** What is true of several commands, said once under the list. */
 export const COMMAND_NOTES = [
-  "build, run, dev, deploy and pull read the repository in the current directory, or --dir <path>.",
+  "build, schemas, run, dev, deploy, pull, tenant plan and tenant release read the repository in the current directory, or --dir <path>.",
   "Create an API key in the console under your account menu.",
   "VOLVEL_URL and VOLVEL_TOKEN override the saved settings.",
   "volvel --version prints the version. volvel <command> --help shows that command's lines.",

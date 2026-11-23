@@ -19,6 +19,7 @@ import {
   GitBranch,
   GitCompareArrows,
   Globe,
+  HeartPulse,
   History,
   KeyRound,
   LayoutDashboard,
@@ -251,6 +252,13 @@ export const INSTANCE_SECTIONS: readonly (Section & { to: string })[] = [
     label: "Triggers",
     icon: CirclePause,
     help: "instance-triggers",
+  },
+  {
+    slug: "health",
+    to: "/instance/health",
+    label: "Health",
+    icon: HeartPulse,
+    help: "instance-databases",
   },
   {
     slug: "audit",

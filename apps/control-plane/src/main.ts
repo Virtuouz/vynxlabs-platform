@@ -1,5 +1,6 @@
 import { Database } from "@volvel/db";
 import { buildApp } from "./app.js";
+import { commandOf, USAGE } from "./commands.js";
 import { ConfigError, loadConfig } from "./config.js";
 import { bootstrapAdmin, recoverOperator } from "./kernel/bootstrap.js";
 import { setWorkerUserMode } from "./kernel/execution/isolation.js";
@@ -7,6 +8,18 @@ import { rekey, rekeyDataRole, rekeyIfRotating } from "./kernel/rekey.js";
 import { S3ObjectStore } from "./storage.js";
 import { version } from "./version.js";
 import { createWriter } from "./writer.js";
+
+// What was asked for, before anything is read or opened. `--help` and a word that is not a
+// command stop here: an unknown word never starts the instance.
+const command = commandOf(process.argv.slice(2));
+if (command.run === "help") {
+  console.log(USAGE);
+  process.exit(0);
+}
+if (command.run === "unknown") {
+  console.error(`${command.word} is not a command.\n\n${USAGE}`);
+  process.exit(2);
+}
 
 function loadConfigOrExit() {
   try {
@@ -21,6 +34,10 @@ function loadConfigOrExit() {
 }
 
 const config = loadConfigOrExit();
+if (command.run === "check-config") {
+  console.log("The settings are valid.");
+  process.exit(0);
+}
 const storage = new S3ObjectStore(config.s3);
 const database = new Database({
   connectionString: config.databaseUrl,
@@ -37,6 +54,15 @@ const migrations = await database.migrate().catch(async (error) => {
   await database.close();
   process.exit(1);
 });
+if (command.run === "migrate") {
+  console.log(
+    migrations.applied.length > 0
+      ? `Migrations applied: ${migrations.applied.length}. The database is at level ${migrations.level}.`
+      : `The database is up to date, at level ${migrations.level}.`,
+  );
+  await database.close();
+  process.exit(0);
+}
 // A database taking no writes, such as one whose disk is full, still lets the instance
 // start: it serves what reads alone can, and starts the rest once writes come back.
 const readOnlyAtStart = await database.readOnly().catch(() => false);
@@ -54,8 +80,8 @@ const startWriting = writer.start;
 // MASTER_KEY_SECONDARY, says what it did, and exits. 1 when a value opens with neither.
 // With `--data-role` it also changes the seed of the data role's password: stop every replica
 // first, and start them again after.
-if (process.argv[2] === "rekey") {
-  const dataRole = process.argv.slice(3).includes("--data-role");
+if (command.run === "rekey") {
+  const { dataRole } = command;
   const result = await (async () => {
     if (dataRole) await rekeyDataRole(app.kernel);
     return rekey(app.kernel);
@@ -86,8 +112,8 @@ if (process.argv[2] === "rekey") {
 
 // `node dist/main.js recover-operator <email>`: the way back for an instance with no operator who
 // can sign in. Enables that account, makes it an operator admin, and prints a new password once.
-if (process.argv[2] === "recover-operator") {
-  const email = process.argv[3];
+if (command.run === "recover-operator") {
+  const { email } = command;
   if (!email) {
     console.error("Say whose account: node dist/main.js recover-operator <email>");
     await app.close();

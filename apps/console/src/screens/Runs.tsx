@@ -9,12 +9,12 @@ import {
   Workflow,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { ask, copyText, notify } from "../ask.tsx";
 import { StateAnnouncer } from "../kit/Announce.tsx";
 import { useArrivals } from "../kit/arrivals.ts";
-import { type BatchAnswer, useBatch } from "../kit/BatchResult.tsx";
+import { type BatchAnswer, inSlices, useBatch } from "../kit/BatchResult.tsx";
 import { CopyIcon, curlFor, Identifier } from "../kit/copy.tsx";
 import {
   type DataColumn,
@@ -34,10 +34,11 @@ import { Mono, type RunState, StatePill, Tag } from "../kit/status.tsx";
 import { Time } from "../kit/Time.tsx";
 import { Truncate } from "../kit/Truncate.tsx";
 import { useTitleObject } from "../kit/title.ts";
+import { useSearchParam } from "../kit/useSearchParam.ts";
 import { ColumnsMenu, ViewsMenu } from "../kit/views.tsx";
 import { Link, navigate, useUrlState } from "../router.tsx";
 import { useStreamConnected } from "../stream.ts";
-import { LogWindowNote, TRIGGER, useLiveRun, wholeLogDownload } from "./Execution.tsx";
+import { LogWindowNote, startedBy, TRIGGER, useLiveRun, wholeLogDownload } from "./Execution.tsx";
 import { flowFromFailed, flowFromStart, scriptAgain } from "./runAgain.ts";
 
 /** What the list can be narrowed to: a state. `waiting`, from older addresses, is either kind. */
@@ -187,18 +188,10 @@ export function RunsWorkbench({
       ? { key: url.sort, dir: url.dir === "asc" ? "asc" : "desc" }
       : undefined;
   const selected = url.run;
-  const [typed, setTyped] = useState(search ?? "");
+  const [typed, setTyped] = useSearchParam(search, (q) => setUrl({ q }));
   const [tick, setTick] = useState(0);
   // Compact by default: a run is one line, and twenty fit a laptop's screen.
   const [density, setDensity] = useDensity("runs", "compact");
-
-  // What is typed reaches the address, and the list, once typing pauses.
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      if ((search ?? "") !== typed.trim()) setUrl({ q: typed.trim() || undefined });
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [typed, search, setUrl]);
 
   const from = windowStart(hours, tick);
   const query = new URLSearchParams({ limit: "100" });
@@ -222,10 +215,12 @@ export function RunsWorkbench({
     setLater(laterPages.get(base));
     setMoreError(undefined);
   }, [base]);
-  const items = useMemo(
-    () => [...(list.data?.items ?? []), ...(later?.items ?? [])],
-    [list.data, later],
-  );
+  const items = useMemo(() => {
+    const head = list.data?.items ?? [];
+    // While the later pages are read again behind a first page that moved, a row may be in both.
+    const have = new Set(head.map((one) => one.id));
+    return [...head, ...(later?.items ?? []).filter((one) => !have.has(one.id))];
+  }, [list.data, later]);
   const next = later ? later.next : (list.data?.nextCursor ?? null);
   const loadMore = async () => {
     if (!next) return;
@@ -242,6 +237,45 @@ export function RunsWorkbench({
       setLoadingMore(false);
     }
   };
+  // When the first page is read again, so that new runs and changed states show, the pages the
+  // reader loaded are read again from it: its rows have shifted, and pages that kept the cursor
+  // of the old first page would leave a gap, and states that went stale.
+  const lastHead = useRef(list.data);
+  const laterRef = useRef(later);
+  laterRef.current = later;
+  useEffect(() => {
+    const head = list.data;
+    if (!head || head === lastHead.current) return;
+    lastHead.current = head;
+    const kept = laterRef.current;
+    if (!kept || kept.items.length === 0) return;
+    const wanted = head.items.length + kept.items.length;
+    let cancelled = false;
+    void (async () => {
+      let rows = head.items.length;
+      let cursor = head.nextCursor;
+      const pages: Activity[] = [];
+      try {
+        while (cursor && rows < wanted) {
+          const page = await api.get<Page>(`${base}&cursor=${encodeURIComponent(cursor)}`);
+          pages.push(...page.items);
+          rows += page.items.length;
+          cursor = page.nextCursor;
+        }
+      } catch {
+        // The first page shows; the others are asked for again by "Load more".
+        pages.length = 0;
+        cursor = head.nextCursor;
+      }
+      if (cancelled) return;
+      const again = { items: pages, next: cursor };
+      laterPages.set(base, again);
+      setLater(again);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [list.data, base]);
   const refresh = () => {
     laterPages.delete(base);
     setLater(undefined);
@@ -288,7 +322,7 @@ export function RunsWorkbench({
   const cancelQueued = async () => {
     const sure = await ask.confirm({
       title: `Cancel ${queued} queued run${queued === 1 ? "" : "s"}?`,
-      text: `Every queued run this list shows${scope ? ` (${scope})` : ""} is cancelled. Runs already going carry on, and a flow's steps are left to their flow.`,
+      text: `Every queued script run${scope ? ` ${scope}` : ""} is canceled, whether or not this page has loaded it. Runs already going carry on, and a flow's steps are left to their flow.`,
       action: "Cancel queued runs",
       cancel: "Keep them",
       danger: true,
@@ -305,7 +339,7 @@ export function RunsWorkbench({
         },
       });
       notify.success(
-        `${done.cancelled} queued run${done.cancelled === 1 ? "" : "s"} cancelled${done.more ? ". More are left: cancel again." : "."}`,
+        `${done.cancelled} queued run${done.cancelled === 1 ? "" : "s"} canceled${done.more ? ". More are left: cancel again." : "."}`,
       );
       refresh();
     } catch (error) {
@@ -339,11 +373,15 @@ export function RunsWorkbench({
     const answers: BatchAnswer[] = [];
     if (script && scripts.length > 0)
       answers.push(
-        await api.post<BatchAnswer>(`${root}/runs/batch`, { action: script, ids: scripts }),
+        await inSlices(scripts, (ids) =>
+          api.post<BatchAnswer>(`${root}/runs/batch`, { action: script, ids }),
+        ),
       );
     if (flow && flows.length > 0)
       answers.push(
-        await api.post<BatchAnswer>(`${root}/flow-runs/batch`, { action: flow, ids: flows }),
+        await inSlices(flows, (ids) =>
+          api.post<BatchAnswer>(`${root}/flow-runs/batch`, { action: flow, ids }),
+        ),
       );
     return {
       results: answers.flatMap((one) => one.results),
@@ -703,7 +741,8 @@ export function RunsWorkbench({
             </button>
           ))}
           <span className="ml-auto flex items-center gap-2">
-            {queued > 0 ? (
+            {/* It cancels queued script runs: under another state or kind it would act on rows not shown. */}
+            {queued > 0 && (status === "all" || status === "queued") && kind !== "flow" ? (
               <Button size="small" onClick={cancelQueued}>
                 Cancel {queued} queued
               </Button>
@@ -1076,15 +1115,9 @@ export function ScriptRunPanel({
                     {
                       label: "Started by",
                       value:
-                        typeof run.trigger.trigger === "string" ? (
-                          <Link
-                            to={`${link}/triggers?trigger=${encodeURIComponent(run.trigger.trigger)}`}
-                          >
-                            {TRIGGER[run.trigger.type] ?? run.trigger.type} {run.trigger.trigger}
-                          </Link>
-                        ) : (
-                          (TRIGGER[run.trigger.type] ?? run.trigger.type)
-                        ),
+                        startedBy(link, run.trigger) ??
+                        TRIGGER[run.trigger.type] ??
+                        run.trigger.type,
                     },
                     {
                       label: "Version",

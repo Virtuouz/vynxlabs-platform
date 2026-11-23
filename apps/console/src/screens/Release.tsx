@@ -3,7 +3,7 @@ import { ArrowRight, History, Rocket, TriangleAlert } from "lucide-react";
 import { useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { ask, failureText, notify } from "../ask.tsx";
-import { type BatchAnswer, useBatch } from "../kit/BatchResult.tsx";
+import { type BatchAnswer, inSlices, useBatch } from "../kit/BatchResult.tsx";
 import { Current } from "../kit/current.ts";
 import { ago } from "../kit/format.ts";
 import { ErrorState, Loading } from "../kit/LoadState.tsx";
@@ -258,8 +258,10 @@ function ReviewStep({
       danger: true,
     });
     if (!sure) return;
-    const send = (paths: string[]) =>
-      api.post<BatchAnswer>(`${root}/drafts/batch-discard`, { paths });
+    const send = (some: string[]) =>
+      inSlices(some, (slice) =>
+        api.post<BatchAnswer>(`${root}/drafts/batch-discard`, { paths: slice }),
+      );
     await batch.run(() => send(picked), {
       title: "Setting drafts aside",
       done: (n) => `${n} draft${n === 1 ? "" : "s"} set aside.`,

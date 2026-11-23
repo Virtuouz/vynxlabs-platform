@@ -17,6 +17,28 @@ export interface BatchAnswer {
   failed: number;
 }
 
+/** The most items the server does in one batch (`apps/control-plane/src/routes/batch.ts`). */
+export const BATCH_LIMIT = 100;
+
+/**
+ * Sends a batch in slices the server accepts, one after the other, and adds up the answers, so
+ * that a hundred and one checked rows are not refused whole.
+ */
+export async function inSlices<T>(
+  items: T[],
+  send: (slice: T[]) => Promise<BatchAnswer>,
+): Promise<BatchAnswer> {
+  const answers: BatchAnswer[] = [];
+  for (let at = 0; at < items.length; at += BATCH_LIMIT) {
+    answers.push(await send(items.slice(at, at + BATCH_LIMIT)));
+  }
+  return {
+    results: answers.flatMap((one) => one.results),
+    done: answers.reduce((sum, one) => sum + one.done, 0),
+    failed: answers.reduce((sum, one) => sum + one.failed, 0),
+  };
+}
+
 interface Shown {
   title: string;
   answer: BatchAnswer;

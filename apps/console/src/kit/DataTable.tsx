@@ -198,6 +198,20 @@ export function DataTable<Row>(props: DataTableProps<Row>) {
   const checking = checked !== undefined && onCheck !== undefined;
 
   const shown = rows && variant === "inset" && !all ? rows.slice(0, 10) : (rows ?? []);
+
+  // A checked row that the table no longer has (a search or filter took it away) is not checked:
+  // what a batch names is what the reader can see.
+  const rowKeyRef = useRef(rowKey);
+  rowKeyRef.current = rowKey;
+  const kept = useMemo(() => {
+    if (!checked || !rows) return checked;
+    const have = new Set(rows.map((row) => rowKeyRef.current(row)));
+    const stay = [...checked].filter((key) => have.has(key));
+    return stay.length === checked.size ? checked : new Set(stay);
+  }, [checked, rows]);
+  useEffect(() => {
+    if (checked && kept && kept !== checked) onCheck?.(new Set(kept));
+  }, [checked, kept, onCheck]);
   const virtual = fill && shown.length > VIRTUAL_AFTER;
   const virtualizer = useVirtualizer({
     count: virtual ? shown.length : 0,
@@ -239,7 +253,7 @@ export function DataTable<Row>(props: DataTableProps<Row>) {
 
   const toggle = (keys: string[], on: boolean) => {
     if (!onCheck) return;
-    const next = new Set(checked);
+    const next = new Set(kept);
     for (const key of keys) {
       if (on) next.add(key);
       else next.delete(key);
@@ -317,7 +331,7 @@ export function DataTable<Row>(props: DataTableProps<Row>) {
       case "x":
         if (!checking || key === undefined || target.closest("a,button")) return;
         event.preventDefault();
-        toggle([key], !checked?.has(key));
+        toggle([key], !kept?.has(key));
         setAnchor(row);
         return;
       case "a":
@@ -326,7 +340,7 @@ export function DataTable<Row>(props: DataTableProps<Row>) {
         toggle(shown.map(rowKey), true);
         return;
       case "Escape":
-        if (checking && checked && checked.size > 0) {
+        if (checking && kept && kept.size > 0) {
           event.preventDefault();
           onCheck?.(new Set());
         }
@@ -388,9 +402,8 @@ export function DataTable<Row>(props: DataTableProps<Row>) {
     const after = virtual
       ? virtualizer.getTotalSize() - ((items.at(-1)?.start ?? 0) + (items.at(-1)?.size ?? 0))
       : 0;
-    const anyChecked = checking && (checked?.size ?? 0) > 0;
-    const allChecked =
-      checking && shown.length > 0 && shown.every((row) => checked?.has(rowKey(row)));
+    const anyChecked = checking && (kept?.size ?? 0) > 0;
+    const allChecked = checking && shown.length > 0 && shown.every((row) => kept?.has(rowKey(row)));
     body = (
       <>
         {anyChecked && batch ? (
@@ -399,8 +412,8 @@ export function DataTable<Row>(props: DataTableProps<Row>) {
             aria-label="Batch actions"
             className="sticky top-0 layer-sticky flex flex-wrap items-center gap-2 border-line border-b bg-action-soft px-4 py-1.5 md:px-6"
           >
-            <span className="text-meta font-medium">{checked?.size} selected</span>
-            {batch(new Set(checked))}
+            <span className="text-meta font-medium">{kept?.size} selected</span>
+            {batch(new Set(kept))}
             <Button size="small" variant="quiet" onClick={() => onCheck?.(new Set())}>
               Clear
             </Button>
@@ -492,7 +505,7 @@ export function DataTable<Row>(props: DataTableProps<Row>) {
               const row = shown[index] as Row;
               const key = rowKey(row);
               const on = key === selected;
-              const ticked = checked?.has(key) ?? false;
+              const ticked = kept?.has(key) ?? false;
               const extra = detail?.(row);
               return (
                 <tr

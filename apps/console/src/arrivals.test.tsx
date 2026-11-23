@@ -35,3 +35,15 @@ test("a row that arrives fades in; while the reader is away it waits, and comes 
   expect(result.current.waiting).toBe(0);
   expect(result.current.shown?.map(key)).toEqual(["x"]);
 });
+
+test("a page added at the end is shown at once, even while the reader is away (OPS-10)", () => {
+  const { result, rerender } = renderHook(({ rows }) => useArrivals(rows, key, "all", () => true), {
+    initialProps: { rows: [{ id: "a" }, { id: "b" }] },
+  });
+  rerender({ rows: [{ id: "a" }, { id: "b" }, { id: "c" }, { id: "d" }] });
+  expect(result.current.waiting).toBe(0);
+  expect(result.current.shown?.map(key)).toEqual(["a", "b", "c", "d"]);
+  // What comes before the first known row is still news, and waits.
+  rerender({ rows: [{ id: "z" }, { id: "a" }, { id: "b" }, { id: "c" }, { id: "d" }] });
+  expect(result.current.waiting).toBe(1);
+});

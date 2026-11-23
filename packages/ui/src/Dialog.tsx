@@ -32,6 +32,11 @@ export interface DialogProps {
    * stays for a screen reader, with no bar and no close button, and the children fill the panel.
    */
   bare?: boolean;
+  /**
+   * `false` for a dialog that cannot be set aside, such as the one that asks for a new sign-in:
+   * it draws no close button, and Esc and a press on the backdrop leave it open.
+   */
+  dismissible?: boolean;
   children: ReactNode;
 }
 
@@ -44,7 +49,7 @@ const TEXT_FIELD =
  * the one to start on: that would open its calendar (or a phone's picker) before anything was
  * asked, so it is passed over.
  */
-function firstField(root: HTMLElement | null): HTMLElement | undefined {
+export function firstField(root: HTMLElement | null): HTMLElement | undefined {
   return Array.from(root?.querySelectorAll<HTMLElement>(TEXT_FIELD) ?? []).find(
     (field) => !(field.hasAttribute("data-date-input") && !field.hasAttribute("required")),
   );
@@ -61,6 +66,7 @@ export function Dialog({
   width,
   onClosed,
   bare = false,
+  dismissible = true,
   children,
 }: DialogProps) {
   const shown = useOpening(open);
@@ -115,7 +121,7 @@ export function Dialog({
   return (
     <Base.Root
       open={shown}
-      onOpenChange={(next: boolean) => !next && onClose()}
+      onOpenChange={(next: boolean) => !next && dismissible && onClose()}
       onOpenChangeComplete={(now: boolean) => {
         if (!now) onClosed?.();
       }}
@@ -171,12 +177,14 @@ export function Dialog({
                 </Base.Title>
               </div>
               {/* A way out that can be seen and pressed, beside Esc and the backdrop. */}
-              <Base.Close
-                aria-label="Close"
-                className="-mr-1 flex size-8 shrink-0 items-center justify-center rounded-control text-ink-muted hover:bg-hover hover:text-ink"
-              >
-                <X aria-hidden="true" size={16} />
-              </Base.Close>
+              {dismissible ? (
+                <Base.Close
+                  aria-label="Close"
+                  className="-mr-1 flex size-8 shrink-0 items-center justify-center rounded-control text-ink-muted hover:bg-hover hover:text-ink"
+                >
+                  <X aria-hidden="true" size={16} />
+                </Base.Close>
+              ) : null}
             </div>
           )}
           <div

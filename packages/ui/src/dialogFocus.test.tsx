@@ -1,9 +1,11 @@
 // @vitest-environment happy-dom
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useEffect, useState } from "react";
 import { afterEach, expect, test } from "vitest";
 import { Dialog } from "./Dialog.tsx";
+import { DialogsProvider, useDialogs } from "./Dialogs.tsx";
 import { SelectField } from "./Fields.tsx";
+import { SideSheet } from "./SideSheet.tsx";
 
 afterEach(cleanup);
 
@@ -85,4 +87,48 @@ test("a form that arrives after the dialog opened takes the focus, but not on an
   };
   render(<Later />);
   await waitFor(() => expect(document.activeElement).toBe(screen.getByLabelText("Clinic")));
+});
+
+function Asker({ danger }: { danger: boolean }) {
+  const dialogs = useDialogs();
+  return (
+    <button
+      type="button"
+      onClick={() => void dialogs.confirm({ title: "Go on?", action: "Go on", danger })}
+    >
+      Ask
+    </button>
+  );
+}
+
+test("WLK-10: a confirmation starts on its main button, and on Cancel when the answer destroys", async () => {
+  const view = render(
+    <DialogsProvider>
+      <Asker danger={false} />
+    </DialogsProvider>,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Ask" }));
+  await waitFor(() =>
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Go on" })),
+  );
+  view.unmount();
+  render(
+    <DialogsProvider>
+      <Asker danger />
+    </DialogsProvider>,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Ask" }));
+  await waitFor(() =>
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Cancel" })),
+  );
+});
+
+test("WLK-10: a side sheet that asks for something to type opens in the first field, not on Close", async () => {
+  render(
+    <SideSheet open onClose={() => undefined} title="Change source">
+      <input aria-label="Host" />
+      <input aria-label="Port" />
+    </SideSheet>,
+  );
+  await waitFor(() => expect(document.activeElement).toBe(screen.getByLabelText("Host")));
 });

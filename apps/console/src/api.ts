@@ -81,7 +81,8 @@ async function read<T>(response: Response): Promise<T> {
 /**
  * Reads asked for before the screen that needs them was drawn: `index.html` starts the ones that
  * follow from the address alone while the scripts are still arriving (`window.__vxEarly`, by path).
- * A screen's own read of the same path takes the answer once; a read that failed is asked again.
+ * A screen's own read of the same path takes the answer once; a read that failed, or that
+ * answered 401 before anyone had signed in, is asked again.
  */
 declare global {
   interface Window {
@@ -111,7 +112,10 @@ export async function apiFetch(path: string, init: RequestInit = {}): Promise<Re
 
 async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
   const early = method === "GET" ? takeEarly(path) : undefined;
-  const response = await (early?.catch(() => undefined) ?? Promise.resolve(undefined)).then(
+  const response = await (
+    early?.then((kept) => (kept.status === 401 ? undefined : kept)).catch(() => undefined) ??
+    Promise.resolve(undefined)
+  ).then(
     (kept) =>
       kept ??
       apiFetch(path, {

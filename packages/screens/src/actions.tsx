@@ -611,7 +611,7 @@ function Confirmation({
           <Button variant="secondary" onClick={onCancel} disabled={busy}>
             {words.dismiss}
           </Button>
-          <Button variant="primary" loading={busy} onClick={() => go({})}>
+          <Button variant="primary" loading={busy} data-autofocus="" onClick={() => go({})}>
             {button}
           </Button>
         </div>

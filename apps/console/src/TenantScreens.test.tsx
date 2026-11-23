@@ -339,3 +339,20 @@ test("Rename is offered on the overview only to someone who may rename the tenan
   show(<TenantOverview base={base} tenantId="t1" />);
   await screen.findByRole("button", { name: "Rename" });
 });
+
+test("WLK-03: when the counts are refused, the attention panel says so and does not shimmer for ever", async () => {
+  routes[`GET ${base}/summary`] = () =>
+    new Response(JSON.stringify({ status: 403, code: "forbidden", detail: "Not yours to read." }), {
+      status: 403,
+      headers: { "content-type": "application/json" },
+    });
+  routes[`GET ${base}`] = () => ({ name: "Acme", slug: "acme" });
+  routes[`GET ${base}/workspaces`] = () => ({ items: [] });
+  routes[`GET ${base}/audit`] = () => ({ items: [] });
+  show(<TenantOverview base={base} tenantId="t1" />);
+  await screen.findByText(/Not yours to read/);
+  await screen.findByText("No workspaces yet.");
+  const section = screen.getByText("Needs attention").closest("section") as HTMLElement;
+  expect(section.querySelector("[aria-busy='true'], [role='status']")).toBeNull();
+  expect(within(section).queryByText(/Loading/i)).toBeNull();
+});

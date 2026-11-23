@@ -170,9 +170,16 @@ export function DialogsProvider({ children }: { children: ReactNode }) {
               />
             ) : null}
             <div className="flex justify-end gap-2">
-              <Button onClick={() => close(false)}>{options?.cancel ?? "Cancel"}</Button>
+              {/* A question with nothing to type starts on the safe answer: the main button, or Cancel when it destroys. */}
+              <Button
+                onClick={() => close(false)}
+                {...(asked.kind === "confirm" && options?.danger ? { "data-autofocus": "" } : {})}
+              >
+                {options?.cancel ?? "Cancel"}
+              </Button>
               <Button
                 type="submit"
+                {...(asked.kind === "confirm" && !options?.danger ? { "data-autofocus": "" } : {})}
                 variant={options?.danger ? "danger-solid" : "primary"}
                 disabled={!ready}
                 loading={working}

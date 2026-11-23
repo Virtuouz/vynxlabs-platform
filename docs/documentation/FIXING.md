@@ -13,7 +13,7 @@ You work alone in one worktree on its own branch, on the rows you are given. Rea
 
 - One commit for each row, or for rows with one cause: `Phase 29: <what is true now> (<ROW>)`, ending with the two attribution lines below. Never push, merge, rebase, or touch another branch or worktree.
 - Match the code around you. Copy is plain, in American spelling, says what is missing and who can give it, and says "flow", never "workflow". No "simply", "easily", "just". Never write the letters v-y-n-x together.
-- `ctx.mutate` for every change, audited. Every route has an access rule and schemas. Migrations go forward only: at most **one** for the lane, named `0086_<lane>_<what>.sql`, not locked. The integrator renumbers and locks it. Data continuity of development instances need not be kept, but a migration must run on any earlier database.
+- `ctx.mutate` for every change, audited. Every route has an access rule and schemas. Migrations go forward only: at most **one** for the lane, named `0090_<lane>_<what>.sql`, not locked. The integrator renumbers and locks it. Data continuity of development instances need not be kept, but a migration must run on any earlier database.
 - A change to a kind's schema, the bundle format or a worker route is a contract: update `schemas/` (`pnpm emit:schemas`) and `docs/contracts/` in the same commit, and keep old bundles and workers working.
 - Do not edit `packages/docs/content` or `CHANGELOG.md`. Put the lines they need in your `fixed/` file.
 - **Never use `git stash`.** Stashes are shared by every worktree, and one lane has already popped another's. To see a test fail without the fix, use `git diff > <scratch file>` and `git apply -R`, or write the test first.
@@ -29,3 +29,5 @@ Claude-Session: https://claude.ai/code/session_012qigawEemeHyLtPPSDxr8t
 ```
 
 **Report**, in at most 300 words: rows done, refuted and left, with why; the test files; whether you made a migration; shared files you changed that another lane is likely to touch; what is new under "Found"; screens to walk.
+
+**Tier 2 and later.** Read what tier 1 did in your files first (`docs/documentation/fixed/`): a row may already be fixed, in which case say so with the test that shows it. Every test is seen failing on the code before your change, at the level a person or program meets it (render the screen, call the route, run the command), not only through a helper you made. Console built files that tests read (`apps/console/dist/help`) need `pnpm build` in your worktree once, through a slot.

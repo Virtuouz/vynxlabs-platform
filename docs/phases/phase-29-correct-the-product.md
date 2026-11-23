@@ -19,7 +19,7 @@ The plan's M1 to M13 are kept as labels on the rows. The work is done in tiers, 
 |---|---|---|
 | 0 | Triage, 519 rows settled | Built |
 | 1 | Security and data, 107 rows | acc, gov, ins, host, files, tab, dat, draft, cfg, flw, mask, trg, rel, wid, shl |
-| 2 | Broken and untrue | |
+| 2 | Broken and untrue, 238 rows | bldwid, app, clirel, cfg2, flw2, ins2, opsa, opsb, dat2, gov2, tab2, host2, scr2, ext2, acc2, api2 |
 | 3 | Missing parts | |
 | 4 | Rough edges, and one vocabulary (M13) | |
 

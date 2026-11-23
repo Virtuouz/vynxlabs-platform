@@ -95,6 +95,19 @@ export {
   type WebhookVerify,
 } from "./flow.js";
 export {
+  EXPRESSION_EXAMPLE_DATA,
+  EXPRESSION_FUNCTIONS,
+  EXPRESSION_LIMITS,
+  EXPRESSION_NAMES,
+  EXPRESSION_OPERATORS,
+  type ExpressionFunction,
+  type ExpressionName,
+  FLOW_STARTS,
+  FLOW_STEPS,
+  type FlowStartWords,
+  type FlowStepWords,
+} from "./flow-words.js";
+export {
   checkForm,
   FORM_FIELD_TYPES,
   FORM_RESERVED_NAMES,

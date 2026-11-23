@@ -1,3 +1,4 @@
+import { EXPRESSION_NAMES } from "./flow-words.js";
 import { checkForm, type FormTrigger } from "./form.js";
 import type { ManifestIssue } from "./registry.js";
 
@@ -187,15 +188,9 @@ export function addressedStarts(body: {
 /**
  * The names an expression in a flow may read: what started it, what the steps gave, the
  * time, the item and its place in a For each, and the event an event start was given.
+ * Each has its words in `EXPRESSION_NAMES`.
  */
-export const EXPRESSION_ROOTS: readonly string[] = [
-  "trigger",
-  "steps",
-  "now",
-  "item",
-  "index",
-  "event",
-];
+export const EXPRESSION_ROOTS: readonly string[] = EXPRESSION_NAMES.map((one) => one.name);
 
 /** Every expression in a flow, with the place it was written. */
 export function flowExpressions(body: FlowBody): { path: string; expression: string }[] {

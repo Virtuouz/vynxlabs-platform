@@ -690,6 +690,8 @@ export interface FlowRunTable {
   input: NullableJson;
   input_ref: string | null;
   output: NullableJson;
+  /** Where the output is kept when it was too large for the row. */
+  output_ref: Generated<string | null>;
   error: ErrorColumn;
   alert: ColumnType<Record<string, unknown> | null, string | null | undefined, string | null>;
   parent_flow_run_id: string | null;

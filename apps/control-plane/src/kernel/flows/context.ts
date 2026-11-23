@@ -36,10 +36,10 @@ export async function readOutput(db: Db | Trx, step: ContextStep): Promise<unkno
   if (step.child_flow_run_id) {
     const child = await db
       .selectFrom("flow_run")
-      .select("output")
+      .select(["output", "output_ref"])
       .where("id", "=", step.child_flow_run_id)
       .executeTakeFirst();
-    return child?.output ?? null;
+    return child?.output_ref ? tooLarge(child.output_ref) : (child?.output ?? null);
   }
   return step.output_ref ? tooLarge(step.output_ref) : (step.output ?? null);
 }

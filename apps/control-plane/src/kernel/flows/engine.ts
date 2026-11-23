@@ -15,7 +15,14 @@ import type { Trx } from "../audit.js";
 import { badRequest, conflict, HttpError, notFound } from "../errors.js";
 import { bundleManifest } from "../execution/bundles.js";
 import { summarize } from "../execution/redact.js";
-import { cancelRun, MAX_TAGS, startRun, storePayload } from "../execution/runs.js";
+import {
+  cancelRun,
+  MAX_TAGS,
+  refuseUnstorable,
+  startRun,
+  storable,
+  storePayload,
+} from "../execution/runs.js";
 import type { Kernel } from "../kernel.js";
 import { observe } from "../metrics.js";
 import { type AliasUse, formerPaths, resolveResource } from "../resolve.js";
@@ -173,6 +180,7 @@ export async function startFlowRun(kernel: Kernel, trx: Trx, request: StartFlowR
   const trace = traceFor(
     request.parent ? { traceId: above?.trace_id ?? null, ...request.parent } : undefined,
   );
+  refuseUnstorable(request.input);
   const input = await storePayload(kernel, id, "input", request.input ?? {}, "flow-runs");
   const flowRun = await trx
     .insertInto("flow_run")
@@ -185,7 +193,7 @@ export async function startFlowRun(kernel: Kernel, trx: Trx, request: StartFlowR
       bundle_id: bundle.id,
       trigger_node: triggerNode,
       trigger_type: request.trigger.type,
-      trigger_detail: JSON.stringify(request.trigger.detail ?? {}),
+      trigger_detail: JSON.stringify(storable(request.trigger.detail ?? {})),
       status: "running",
       input: input.inline,
       input_ref: input.ref,
@@ -328,11 +336,13 @@ async function seedRetry(
     } else if (step.child_flow_run_id) {
       const child = await trx
         .selectFrom("flow_run")
-        .select("output")
+        .select(["output", "output_ref"])
         .where("id", "=", step.child_flow_run_id)
         .executeTakeFirst();
-      output = child?.output ?? null;
-      outputRef = null;
+      // A large answer is copied to the retry's own key, as a script's is: the retry then
+      // needs nothing of the run it retries.
+      output = child?.output_ref ? null : (child?.output ?? null);
+      outputRef = child?.output_ref ?? null;
     }
     const name = `${step.node_id}${step.item_key ? `-${step.item_key}` : ""}`;
     await trx
@@ -583,9 +593,9 @@ class Advance {
         node_id: node,
         item_key: item,
         ...rest,
-        ...(output !== undefined ? { output: JSON.stringify(output) } : {}),
-        ...(error !== undefined ? { error: error ? JSON.stringify(error) : null } : {}),
-        ...(detail !== undefined ? { detail: JSON.stringify(detail) } : {}),
+        ...(output !== undefined ? { output: JSON.stringify(storable(output)) } : {}),
+        ...(error !== undefined ? { error: error ? JSON.stringify(storable(error)) : null } : {}),
+        ...(detail !== undefined ? { detail: JSON.stringify(storable(detail)) } : {}),
       })
       .returningAll()
       .executeTakeFirstOrThrow();
@@ -602,9 +612,9 @@ class Advance {
       .set({
         ...rest,
         ...finished,
-        ...(output !== undefined ? { output: JSON.stringify(output) } : {}),
-        ...(error !== undefined ? { error: error ? JSON.stringify(error) : null } : {}),
-        ...(detail !== undefined ? { detail: JSON.stringify(detail) } : {}),
+        ...(output !== undefined ? { output: JSON.stringify(storable(output)) } : {}),
+        ...(error !== undefined ? { error: error ? JSON.stringify(storable(error)) : null } : {}),
+        ...(detail !== undefined ? { detail: JSON.stringify(storable(detail)) } : {}),
       })
       .where("flow_run_id", "=", step.flow_run_id)
       .where("node_id", "=", step.node_id)
@@ -840,7 +850,7 @@ class Advance {
             }
             headers[name.toLowerCase()] = value;
           }
-          const answer = JSON.stringify({ status: node.status ?? 200, headers, body });
+          const answer = JSON.stringify(storable({ status: node.status ?? 200, headers, body }));
           if (answer.length > MAX_RESPONSE_LENGTH) {
             throw new StepFailure(
               `The answer is longer than ${MAX_RESPONSE_LENGTH} characters. Answer with less, and let the caller fetch the rest.`,
@@ -1126,8 +1136,9 @@ class Advance {
       .set({
         status,
         output: stored.inline ?? JSON.stringify({ stored: stored.ref }),
+        output_ref: stored.ref,
         output_summary: summarize(output),
-        error: error ? JSON.stringify(error) : null,
+        error: error ? JSON.stringify(storable(error)) : null,
         finished_at: new Date(),
       })
       .where("id", "=", this.#flowRun.id)
@@ -1306,9 +1317,54 @@ export async function advanceDueFlows(kernel: Kernel): Promise<number> {
     limit 200
   `.execute(kernel.db);
   for (const { id } of due.rows) {
-    await advance(kernel, id).catch((error) =>
-      kernel.log.error({ err: error, flowRunId: id }, "a flow run could not be advanced"),
+    await advance(kernel, id).then(
+      () => stuck.delete(id),
+      async (error) => {
+        kernel.log.error({ err: error, flowRunId: id }, "a flow run could not be advanced");
+        // One that fails every time would hold a place in each sweep for ever, and the
+        // sweep takes the oldest first: after a few tries it is failed, and says why.
+        const tries = (stuck.get(id) ?? 0) + 1;
+        stuck.set(id, tries);
+        if (tries >= MAX_ADVANCE_TRIES) {
+          stuck.delete(id);
+          await failStuck(kernel, id, error).catch((inner) =>
+            kernel.log.error({ err: inner, flowRunId: id }, "a stuck flow run could not be failed"),
+          );
+        }
+      },
     );
   }
   return due.rows.length;
+}
+
+/** How many sweeps may fail to move a flow run before it is failed. */
+const MAX_ADVANCE_TRIES = 3;
+/** Flow runs the sweep could not move, and how many times in a row. */
+const stuck = new Map<string, number>();
+
+async function failStuck(kernel: Kernel, flowRunId: string, cause: unknown) {
+  const message =
+    `The flow could not go on: ${cause instanceof Error ? cause.message : String(cause)}`.slice(
+      0,
+      500,
+    );
+  await kernel.db.transaction().execute(async (trx) => {
+    await sql`select pg_advisory_xact_lock(hashtextextended(${flowRunId}, 1))`.execute(trx);
+    await trx
+      .updateTable("step_run")
+      .set({ status: "cancelled", finished_at: new Date() })
+      .where("flow_run_id", "=", flowRunId)
+      .where("status", "in", ACTIVE)
+      .execute();
+    await trx
+      .updateTable("flow_run")
+      .set({
+        status: "failed",
+        error: JSON.stringify({ message: storable(message) }),
+        finished_at: new Date(),
+      })
+      .where("id", "=", flowRunId)
+      .where("status", "=", "running")
+      .execute();
+  });
 }

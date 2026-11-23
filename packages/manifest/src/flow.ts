@@ -79,7 +79,16 @@ export interface FlowGrants {
 export const GRANT_KINDS = { connections: "connection", tables: "table", events: "event" } as const;
 
 export type FlowNode =
-  | { type: "trigger"; trigger: FlowTrigger }
+  | {
+      type: "trigger";
+      /**
+       * What names this start for as long as the flow lives: its address, its pause
+       * and when it last fired follow the key through a rename of the step. Left out,
+       * the step's own name is the key.
+       */
+      key?: string;
+      trigger: FlowTrigger;
+    }
   | {
       type: "script";
       script: string;
@@ -158,6 +167,22 @@ export const RESPONSE_HEADERS_REFUSED: readonly string[] = [
 ];
 
 export const OTHERWISE = "otherwise";
+
+/**
+ * The starts of a flow that have an address of their own, a webhook or a form,
+ * by what names them: their `key`, or their step's name without one.
+ */
+export function addressedStarts(body: {
+  nodes: Record<string, FlowNode>;
+}): Map<string, { node: string; type: "webhook" | "form" }> {
+  const found = new Map<string, { node: string; type: "webhook" | "form" }>();
+  for (const [node, definition] of Object.entries(body.nodes)) {
+    if (definition.type !== "trigger") continue;
+    const type = definition.trigger.type;
+    if (type === "webhook" || type === "form") found.set(definition.key ?? node, { node, type });
+  }
+  return found;
+}
 
 /** Every expression in a flow, with the place it was written. */
 export function flowExpressions(body: FlowBody): { path: string; expression: string }[] {
@@ -407,6 +432,17 @@ export function checkFlow(body: FlowBody): ManifestIssue[] {
         issues.push({
           path: `${at}/trigger/respond`,
           message: "the webhook waits for the flow to answer, and no respond step follows it",
+        });
+      }
+    }
+    if (node.type === "trigger") {
+      const named = Object.entries(body.nodes).filter(
+        ([other, one]) => one.type === "trigger" && (one.key ?? other) === (node.key ?? id),
+      );
+      if (named.length > 1 && named[0]?.[0] === id) {
+        issues.push({
+          path: `${at}/key`,
+          message: `two starts are named "${node.key ?? id}": give each its own key`,
         });
       }
     }

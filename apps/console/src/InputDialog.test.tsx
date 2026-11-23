@@ -100,3 +100,23 @@ test("a value masked when shown is left out of a run again, named, and asked for
   fireEvent.click(screen.getByRole("button", { name: "Run again" }));
   await waitFor(() => expect(sent).toHaveBeenCalledWith({ sku: "A-1", apiKey: "k-2" }));
 });
+
+test("an input too large to be shown can only be run again as it was (FLW-24)", async () => {
+  const sent = vi.fn(async () => {});
+  const same = vi.fn(async () => {});
+  show(
+    <InputDialog
+      open
+      onClose={() => {}}
+      title="Run again"
+      action="Run again"
+      initial={{ stored: "flow-runs/abc/input.json" }}
+      onSame={same}
+      onSubmit={sent}
+    />,
+  );
+  expect(screen.getByText(/too large to show or change here/)).toBeTruthy();
+  fireEvent.click(screen.getByText("Run again with the same input"));
+  await waitFor(() => expect(same).toHaveBeenCalled());
+  expect(sent).not.toHaveBeenCalled();
+});

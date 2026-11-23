@@ -577,6 +577,13 @@ export const flowKind: KindDefinition = {
             node(
               "trigger",
               {
+                key: {
+                  type: "string",
+                  pattern: nodeId,
+                  maxLength: 63,
+                  description:
+                    "What names this start for as long as the flow lives. A webhook's address, a form's address, a pause and the time it last fired follow the key when the step is renamed. Left out, the step's own name is the key.",
+                },
                 trigger: {
                   oneOf: [
                     node("manual", {

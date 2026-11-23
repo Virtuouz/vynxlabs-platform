@@ -1,5 +1,6 @@
 import { newId, type ResourceMeta, sql } from "@volvel/db";
 import {
+  addressedStarts,
   type BundleManifest,
   bundleCompatibility,
   type FlowBody,
@@ -442,6 +443,20 @@ export async function deployBundle(
         path: manifest.path,
         message: `the tool ${toolBefore} is now called ${toolAfter}. An agent that calls it by the old name will fail.`,
       });
+    }
+    // A webhook's address and a form's are what the world calls. One that no start of the new
+    // flow carries stops answering, and is said so: a rename keeps it only with a `key`.
+    if (stored && manifest.kind === "flow" && stored.kind === "flow") {
+      const before = addressedStarts(stored.body as unknown as FlowBody);
+      const after = addressedStarts(manifest.body as unknown as FlowBody);
+      for (const [name, start] of before) {
+        const kept = after.get(name);
+        if (kept?.type === start.type) continue;
+        summary.breaking.push({
+          path: manifest.path,
+          message: `the ${start.type} start "${start.node}" of ${manifest.path} is no longer in the flow under that name, so its address stops answering. A start keeps its address through a rename when it has a \`key\` equal to its old name.`,
+        });
+      }
     }
     const result = await putResource(kernel, trx, audit, workspace, {
       path: manifest.path,

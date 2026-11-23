@@ -76,6 +76,41 @@ export function grantsFor(
   return Object.keys(grants).length > 0 ? grants : undefined;
 }
 
+/**
+ * A step's `with` after its fields changed from `before` to `after`: only what the
+ * changed picks granted is added or taken away. A grant written in code, or for a
+ * field chosen by an expression, is left as it is.
+ */
+export function updateGrants(
+  spec: PickableNode,
+  current: unknown,
+  before: Record<string, string>,
+  after: Record<string, string>,
+): Record<string, string[]> | undefined {
+  const had = grantsFor(spec, before) ?? {};
+  const has = grantsFor(spec, after) ?? {};
+  const kept = (current && typeof current === "object" ? current : {}) as Record<string, unknown>;
+  const next: Record<string, string[]> = {};
+  for (const [field, list] of Object.entries(kept)) {
+    if (Array.isArray(list)) next[field] = list.map(String);
+  }
+  for (const field of new Set([...Object.keys(had), ...Object.keys(has)])) {
+    const gone = (had[field] ?? []).filter((one) => !(has[field] ?? []).includes(one));
+    const merged = [...(next[field] ?? []), ...(has[field] ?? [])].filter(
+      (one, at, all) => !gone.includes(one) && all.indexOf(one) === at,
+    );
+    next[field] = merged;
+  }
+  for (const field of Object.keys(next)) if ((next[field] ?? []).length === 0) delete next[field];
+  return Object.keys(next).length > 0 ? next : undefined;
+}
+
+/** Fields chosen one at a time, as the one expression that gives the same input. */
+export const wholeOf = (inputs: Record<string, string>): string =>
+  `{${Object.entries(inputs)
+    .map(([name, expression]) => `${quoted(name)}: ${expression}`)
+    .join(", ")}}`;
+
 /** The fields of a node's input that must be given and are not. */
 export function missingInputs(spec: PickableNode, node: FlowNode): string[] {
   if (node.input !== undefined) return [];
@@ -103,7 +138,7 @@ export function NodeInputs({
     const next = { ...inputs };
     if (expression === undefined || expression === "") delete next[name];
     else next[name] = expression;
-    onChange({ inputs: next, with: grantsFor(spec, next) });
+    onChange({ inputs: next, with: updateGrants(spec, node.with, inputs, next) });
   };
   const required = new Set(spec.input.required ?? []);
   return (
@@ -122,8 +157,8 @@ export function NodeInputs({
         onChange={(mode) =>
           onChange(
             mode === "whole"
-              ? { input: "{}", inputs: undefined }
-              : { input: undefined, inputs: {}, with: undefined },
+              ? { input: wholeOf(inputs), inputs: undefined }
+              : { input: undefined, inputs: {} },
           )
         }
       />

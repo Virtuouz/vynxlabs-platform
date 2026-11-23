@@ -407,6 +407,28 @@ function bundle(
         ["work", "after"],
       ],
     ),
+    // Two ends, each under the inline limit and together over it: this flow's own output is stored.
+    flow("wide", { start: manual, a: set({ x: "trigger.blob" }), b: set({ y: "trigger.blob" }) }, [
+      ["start", "a"],
+      ["start", "b"],
+    ]),
+    flow(
+      "wide-parent",
+      {
+        start: manual,
+        child: { type: "subflow", flow: "wide", input: "{'blob': trigger.blob}" },
+        use: run("risky", "{'fail': now < timestamp(trigger.failUntil)}"),
+        note: set({ note: "steps.child.output.note" }),
+      },
+      [
+        ["start", "child"],
+        ["child", "use"],
+        ["use", "note"],
+      ],
+    ),
+    flow("cutting", { start: manual, half: set({ half: "trigger.text.substring(0, 2)" }) }, [
+      ["start", "half"],
+    ]),
     flow(
       "heavy",
       { start: manual, make: run("big"), use: set({ note: "steps.make.output.note" }) },
@@ -813,6 +835,47 @@ describe("running a flow", () => {
     expect(step(done, "make").output).toEqual({
       stored: expect.stringMatching(/^runs\/.+\/output\.json$/),
     });
+  });
+
+  test("a sub-flow's answer too large to hold gives the next step a note, and a retry keeps its own copy (FLW-33)", async () => {
+    const blob = "x".repeat(200 * 1024);
+    const failUntil = new Date(Date.now() + 1500).toISOString();
+    const failed = await finished(await start("wide-parent", { blob, failUntil }));
+    expect(failed.status).toBe("failed");
+    const child = await read(step(failed, "child").childFlowRunId);
+    expect(child.output).toEqual({
+      stored: expect.stringMatching(/^flow-runs\/.+\/output\.json$/),
+    });
+    // The next step's expressions see the note, as they do for a script's large output.
+    const next = await alice.post(`${ws()}/flow-runs`, {
+      flow: "wide-parent",
+      input: { blob, failUntil: new Date(0).toISOString() },
+    });
+    const done = await finished(next.body.id);
+    expect(done.output.note.note).toMatch(/too large to use in an expression/);
+
+    await new Promise((resolve) => setTimeout(resolve, 1600));
+    const retried = await alice.post(`${ws()}/flow-runs/${failed.id}/retry`, { from: "failed" });
+    expect(retried.status, JSON.stringify(retried.body)).toBe(201);
+    const again = await finished(retried.body.id);
+    // What the retry kept is stored under the retry's own name, not the run it copies.
+    expect(step(again, "child").output).toEqual({
+      stored: expect.stringContaining(`flow-runs/${retried.body.id}/`),
+    });
+  });
+
+  test("a value the database cannot hold does not leave the run going for ever (FLW-02)", async () => {
+    // The second character is an emoji: cut after two units, half of it is left.
+    const done = await finished(await start("cutting", { text: "a\u{1F600}b" }));
+    expect(done.status, JSON.stringify(done.error)).toBe("succeeded");
+    expect(done.output.half.half).toBeTypeOf("string");
+    // A NUL in what a start is given is refused, naming where, and is not a 500.
+    const refused = await alice.post(`${ws()}/flow-runs`, {
+      flow: "cutting",
+      input: { text: "a\u0000b" },
+    });
+    expect(refused.status).toBe(400);
+    expect(refused.body.detail).toContain("at text");
   });
 
   test("a sub-flow runs as a step, and a foreach can run a flow per item", async () => {

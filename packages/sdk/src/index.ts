@@ -1054,27 +1054,42 @@ export function defineDataSource(options: DataSourceOptions): ResourceDefinition
   );
 }
 
-/** The theme tokens a workspace may set. Each is the CSS variable `--vx-<name>` in the component kit. */
-export type ThemeToken =
-  | "canvas"
-  | "surface"
-  | "sunken"
-  | "line"
-  | "ink"
-  | "ink-muted"
-  | "action"
-  | "action-ink"
-  | "action-soft"
-  | "attention"
-  | "attention-soft"
-  | "danger"
-  | "danger-soft"
-  | "success"
-  | "success-soft"
-  | "radius-control"
-  | "radius-panel"
-  | "font"
-  | "font-code";
+/**
+ * The theme tokens a workspace may set, each the CSS variable `--vx-<name>` in the
+ * component kit. The manifest's own list (`THEME_TOKENS`) is the same: a test holds them equal.
+ */
+export const THEME_TOKENS = [
+  "canvas",
+  "surface",
+  "sunken",
+  "line",
+  "ink",
+  "ink-muted",
+  "action",
+  "action-ink",
+  "action-soft",
+  "attention",
+  "attention-soft",
+  "danger",
+  "danger-soft",
+  "success",
+  "success-soft",
+  "structure",
+  "raised",
+  "selected",
+  "line-strong",
+  "line-control",
+  "ink-subtle",
+  "code-bg",
+  "focus",
+  "radius-control",
+  "radius-panel",
+  "font",
+  "font-code",
+] as const;
+
+/** One of the theme tokens a workspace may set. */
+export type ThemeToken = (typeof THEME_TOKENS)[number];
 
 export interface ThemeOptions extends ResourceNames {
   /** Default `theme`. A workspace has one theme. */

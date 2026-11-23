@@ -79,7 +79,7 @@ const FlowEditor = lazy(() =>
 
 import { ErrorState, Loading } from "../kit/LoadState.tsx";
 import { ObjectPage } from "../kit/ObjectPage.tsx";
-import { ObjectLink, ProductionNotice } from "../kit/objects.tsx";
+import { hasHome, ObjectLink, objectHref, ProductionNotice } from "../kit/objects.tsx";
 import { Code, EnvTag, StatePill } from "../kit/status.tsx";
 import { Alerts } from "./Alerts.tsx";
 import { Flows, FlowView } from "./Flows.tsx";
@@ -728,24 +728,29 @@ function WorkspaceDetail({
             columns={[
               {
                 header: "Path",
-                cell: (row) =>
-                  isEditedKind(row.kind) ? (
-                    <Link
-                      to={`/t/${tenantId}/workspaces/${workspaceId}/resources/edit/${row.kind}/${row.path}`}
-                      className="block min-w-0 font-mono text-code text-action"
-                    >
-                      <Truncate mode="middle">{row.path}</Truncate>
-                    </Link>
-                  ) : (
-                    <span className="flex min-w-0 flex-col">
+                cell: (row) => (
+                  <span className="flex min-w-0 flex-col">
+                    {hasHome(row.kind) ? (
+                      <Link
+                        to={objectHref(
+                          `/t/${tenantId}/workspaces/${workspaceId}`,
+                          row.kind,
+                          row.path,
+                        )}
+                        className="block min-w-0 font-mono text-code text-action"
+                      >
+                        <Truncate mode="middle">{row.path}</Truncate>
+                      </Link>
+                    ) : (
                       <Code>
                         <Truncate mode="middle">{row.path}</Truncate>
                       </Code>
-                      {row.title ? (
-                        <span className="text-meta text-ink-muted">{row.title}</span>
-                      ) : null}
-                    </span>
-                  ),
+                    )}
+                    {row.title ? (
+                      <span className="text-meta text-ink-muted">{row.title}</span>
+                    ) : null}
+                  </span>
+                ),
               },
               { header: "Kind", cell: (row) => row.kind },
               {

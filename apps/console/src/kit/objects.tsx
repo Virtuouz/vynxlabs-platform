@@ -6,6 +6,19 @@ import { Link } from "../router.tsx";
 /** The console address of a workspace from its API address: `/tenants/t/workspaces/w` → `/t/t/workspaces/w`. */
 export const consoleLink = (root: string) => root.replace(/^\/tenants\//, "/t/");
 
+/** The kinds of resource the resources editor makes and changes: the ones that are settings, with no code. */
+export const EDITED_KINDS = [
+  "connection",
+  "connection_group",
+  "variable",
+  "event",
+  "schedule",
+  "trigger",
+] as const;
+export type EditedKind = (typeof EDITED_KINDS)[number];
+export const isEditedKind = (kind: string): kind is EditedKind =>
+  (EDITED_KINDS as readonly string[]).includes(kind);
+
 /**
  * Where a thing lives in the console, by its kind and path: the page that is
  * its home. Every path, name and version shown anywhere links here.
@@ -37,10 +50,23 @@ export function objectHref(link: string, kind: string, path: string): string {
     case "connector":
     case "trigger_source":
       return `${link}/extensions/${kind}/edit/${at}`;
+    case "query":
+      return `${link}/queries?query=${encodeURIComponent(path)}`;
+    case "data_source":
+      return `${link}/sources/${at}`;
+    case "doc":
+      return `${link}/docs/${at}`;
+    // A dashboard's page is by its ID, which a path does not give.
+    case "dashboard":
+      return `${link}/dashboards`;
     default:
-      return `${link}/resources/edit/${kind}/${at}`;
+      // Only the kinds the editor makes have an editor. The rest are found in the list of resources.
+      return isEditedKind(kind) ? `${link}/resources/edit/${kind}/${at}` : `${link}/resources`;
   }
 }
+
+/** Whether a kind has a page of its own to go to, and not only the list of resources. */
+export const hasHome = (kind: string) => !objectHref("", kind, "x").endsWith("/resources");
 
 /**
  * A trigger as the Triggers screen and runs name it: its path, and the node

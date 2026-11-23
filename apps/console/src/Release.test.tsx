@@ -154,6 +154,19 @@ test("a draft is set aside after asking, and a production workspace has no revie
   expect(asked()).toBe(before);
 });
 
+test("an address that names a step this workspace does not have opens the first one (REL-14)", async () => {
+  history.replaceState(null, "", "/?step=review");
+  const first = show(review(production));
+  await screen.findByRole("heading", { name: "Versions" });
+  expect(screen.queryByText("Loading")).toBeNull();
+  first.unmount();
+  // A dev workspace with nothing to promote to has no promote step.
+  history.replaceState(null, "", "/?step=promote");
+  show(review());
+  expect(await screen.findByRole("link", { name: "orders/sync" })).toBeTruthy();
+  history.replaceState(null, "", "/");
+});
+
 test("a promotion that changes an agent's tool says so, asks, and sends that it was confirmed", async () => {
   const linked: Place = { ...dev, linkedWorkspaceId: "w2" };
   const target = { id: "w2", name: "Clinics", type: "production", linkedWorkspaceId: null };

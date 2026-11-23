@@ -18,7 +18,7 @@ import { DraftClash } from "../kit/DraftClash.tsx";
 import { putDraft } from "../kit/draftApi.ts";
 import { useDraftSave } from "../kit/draftSave.ts";
 import { Loading } from "../kit/LoadState.tsx";
-import { ProductionNotice } from "../kit/objects.tsx";
+import { EDITED_KINDS, type EditedKind, isEditedKind, ProductionNotice } from "../kit/objects.tsx";
 import { PageHeader } from "../kit/PageHeader.tsx";
 import { RemoveDraftButton } from "../kit/RemoveDraftButton.tsx";
 import { clearRecovery, useKeptCopy, useRecoveryCopy } from "../kit/recovery.ts";
@@ -34,18 +34,7 @@ import {
 import { ResourceIdentity } from "./ResourceIdentity.tsx";
 import { ScheduleFields } from "./ScheduleForm.tsx";
 
-/** The kinds of resource this editor makes and changes: the ones that are settings, with no code. */
-export const EDITED_KINDS = [
-  "connection",
-  "connection_group",
-  "variable",
-  "event",
-  "schedule",
-  "trigger",
-] as const;
-export type EditedKind = (typeof EDITED_KINDS)[number];
-export const isEditedKind = (kind: string): kind is EditedKind =>
-  (EDITED_KINDS as readonly string[]).includes(kind);
+export { EDITED_KINDS, type EditedKind, isEditedKind };
 
 type Body = Record<string, unknown>;
 

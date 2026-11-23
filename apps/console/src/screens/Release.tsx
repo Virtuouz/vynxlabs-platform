@@ -132,7 +132,7 @@ export function Release({
   reload: () => void;
 }) {
   // The step is in the address: a link, a reload or Back lands on the same one.
-  const [step, setStep] = useUrlParam<ReleaseStep>(
+  const [asked, setStep] = useUrlParam<ReleaseStep>(
     "step",
     workspace.type === "production" ? "deploy" : initial,
     { push: true },
@@ -156,6 +156,10 @@ export function Release({
             ? [{ key: "promote", label: "Promote", detail: target?.name ?? "Linked workspace" }]
             : []),
         ];
+
+  // An address can name a step this workspace does not have (review in production, promote with
+  // nowhere to promote to): it opens the first one that there is.
+  const step = steps.some((one) => one.key === asked) ? asked : (steps[0]?.key as ReleaseStep);
 
   return (
     <div className="flex flex-col gap-6">

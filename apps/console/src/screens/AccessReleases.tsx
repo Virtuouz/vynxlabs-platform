@@ -200,8 +200,16 @@ export function AccessReleases({ base, framed }: { base: string; framed?: Framed
     });
     if (!sure) return;
     try {
-      await api.post(`${base}/access/releases/${release.id}/rollback`, {});
-      notify.success(`The tenant's access is what release ${release.number} left.`);
+      const made = await api.post<{ number: number; status: string }>(
+        `${base}/access/releases/${release.id}/rollback`,
+        {},
+      );
+      // With a second person asked for, going back is a release that waits: nothing has changed yet.
+      notify.success(
+        made.status === "awaiting_approval"
+          ? `Going back to release ${release.number} is release ${made.number}, and waits for a second person. Nothing has changed yet.`
+          : `The tenant's access is what release ${release.number} left.`,
+      );
       releases.reload();
     } catch (error) {
       setProblem(failed(error));

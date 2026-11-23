@@ -32,3 +32,21 @@
 - Behavior change to say in the docs: a waiting release made stale by another release is no longer withdrawn by hand; it is already finished. `release_stale` still guards the case a release was made stale by a change that did not go through a release (none known).
 - REL-17: already fixed by tier 1 (ACC lane): `tenantHolders` (`kernel/administer.ts:31`) counts group members. Test added that shows it: `access-releases.test.ts` "two members who hold access:write through a group are two (REL-17)" (passes; it would have failed at the row's commit, which counted direct bindings only).
 - Screens to walk: Releases (access) with approval on: a waiting release that another change superseded shows "Superseded" and no Approve/Decline/Withdraw buttons. Check the row actions of `AccessReleases.tsx` are shown only for `awaiting_approval` (they key on status). Walk not run.
+
+## REL-12
+- `apps/console/src/screens/AccessReleases.tsx` (`back`, ~200): reads the rollback's `status`. When it is `awaiting_approval` the toast says "Going back to release N is release M, and waits for a second person. Nothing has changed yet."; applied keeps the old text.
+- Test: `AccessReleases.test.tsx` "going back says it waits for a second person when it does, and that it applied when it did (REL-12)". Failed before.
+- Siblings: the screen's other action, `decide`, answers `applied` for an approval always (the API says so), declined and withdrawn say what they are; the approval switch says what it did. No other `releases` action toasts.
+- A person sees: with a second person asked for, Go back says it waits. Screens to walk: Releases (access) with approval on and off, Go back. Polish gate: states: applied, waiting; lifecycle: go back, then the new release appears waiting in the list; keyboard and copy as before. Walk not run.
+
+## REL-07
+- `objectHref` (`apps/console/src/kit/objects.tsx`): query goes to `queries?query=<path>`, data source to `sources/<path>`, doc to `docs/<path>`, dashboard to the dashboards list (its page is by ID, which a path does not give). Any other kind without a page (theme, role, binding) goes to `resources`, and `resources/edit/<kind>` is only for the kinds the editor makes. `EDITED_KINDS`/`isEditedKind` moved here from `ResourceEditor.tsx` (re-exported there); new `hasHome(kind)`.
+- The Resources list (`Tenant.tsx` ~705) links every kind that has a home through `objectHref`, and shows the title line for all.
+- Test: `ObjectPages.test.tsx` "no kind is sent to an editor that does not exist for it (REL-07)". Failed before.
+- Siblings: everything that calls `objectHref` gets it (Release review's `editLink`, Used by, Audit, Operate, Resources). The notice "There is no editor here for a <kind>" remains for a typed address.
+- Screens to walk: Release > review with a query, doc, theme and data-source draft: each link opens its screen or the resources list; Resources list rows. Walk not run.
+
+## REL-14
+- `Release.tsx` (~135 and the render): the step from the address is used only when this workspace has it; else the first. `?step=review` in production shows Versions, `?step=promote` with nothing to promote to shows Review.
+- Test: `Release.test.tsx` "an address that names a step this workspace does not have opens the first one (REL-14)". Failed before.
+- Siblings: the other `useUrlParam("step")` users (`Flows.tsx:749`, `FlowEditor.tsx:624`) choose a flow step in a list, not a stepper, so are not clamped.

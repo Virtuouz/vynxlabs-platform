@@ -1,6 +1,6 @@
 import { Button, JsonView, Notice } from "@volvel/ui";
 import { Download } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { copyText } from "../ask.tsx";
 import { actionWords } from "../audit-words.ts";
@@ -32,7 +32,7 @@ interface Entry {
 }
 
 /** The areas of the log a person can narrow to. Each is the word an action starts with. */
-const AREAS: [string, string][] = [
+export const AREAS: [string, string][] = [
   ["", "Everything"],
   ["member", "Members and sign-ins"],
   ["tenant_member", "Tenant membership"],
@@ -62,7 +62,55 @@ const AREAS: [string, string][] = [
   ["app_domain", "Hostnames"],
   ["worker_credential", "Worker credentials"],
   ["tenant", "Tenant"],
+  ["tenant_import", "Tenant imports"],
+  ["identity_provider", "Identity providers"],
+  ["identity_domain", "Identity provider domains"],
+  ["identity_link", "Identity provider ties"],
+  ["sso", "Single sign-on sign-ins"],
+  ["scim", "Provisioning pushes"],
+  ["scim_token", "Provisioning tokens"],
+  ["end_user_group", "Groups of end users"],
+  ["group_member", "Group members"],
+  ["promotion", "Promotions"],
+  ["access", "Access releases"],
+  ["approval", "Approvals"],
+  ["trigger", "Triggers"],
+  ["schedule", "Schedules"],
+  ["alert", "Alerts"],
+  ["worker_pool", "Worker pools"],
+  ["git_repository", "Git repositories"],
+  ["workspace_git", "Workspace Git"],
+  ["dashboard", "Dashboards"],
+  ["page_action", "Page actions"],
+  ["connection_group", "Connection groups"],
+  ["sql", "SQL"],
+  ["database_location", "Database locations"],
+  ["bundle_asset", "Bundle assets"],
+  ["operator", "Operator actions"],
+  ["instance", "Instance settings"],
 ];
+
+/** The log of the instance holds what operators and the instance's own settings did. */
+const INSTANCE_AREAS = new Set([
+  "",
+  "member",
+  "tenant",
+  "tenant_import",
+  "access_grant",
+  "operator",
+  "instance",
+  "identity_provider",
+  "identity_domain",
+  "identity_link",
+  "sso",
+  "scim",
+  "scim_token",
+  "worker_pool",
+  "worker_credential",
+  "database_location",
+  "portal",
+  "app_domain",
+]);
 
 type Verb = "Create" | "Update" | "Delete" | "Execute" | "Read" | "Other";
 const VERB_TONE: Record<Verb, TagTone> = {
@@ -208,16 +256,23 @@ export function AuditTable({
   const asked = filters.toString();
   const facets = useLoad<Facets>(tenantLog ? `${path}-facets?${asked}` : null);
 
+  // Each first page asked for is the newest; an answer to an earlier one, or to one before the
+  // filters changed, is not shown.
+  const latest = useRef(0);
   const load = async (from: string | null) => {
+    if (!from) latest.current += 1;
+    const mine = latest.current;
     try {
       const query = new URLSearchParams(asked);
       query.set("limit", "50");
       if (from) query.set("cursor", from);
       const page = await api.get<{ items: Entry[]; nextCursor: string | null }>(`${path}?${query}`);
+      if (mine !== latest.current) return;
       setEntries((current) => (from ? [...current, ...page.items] : page.items));
       setCursor(page.nextCursor);
       setError(undefined);
     } catch (caught) {
+      if (mine !== latest.current) return;
       setError(caught as ApiError);
     }
     setLoaded(true);
@@ -350,11 +405,13 @@ export function AuditTable({
                 onChange={(event) => setUrl({ area: event.currentTarget.value || undefined })}
                 className={select}
               >
-                {AREAS.map(([value, label]) => (
-                  <option key={value} value={value}>
-                    {label}
-                  </option>
-                ))}
+                {AREAS.filter(([value]) => tenantLog || INSTANCE_AREAS.has(value)).map(
+                  ([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ),
+                )}
               </select>
             </label>
             <label className="flex flex-col text-meta text-ink-muted">

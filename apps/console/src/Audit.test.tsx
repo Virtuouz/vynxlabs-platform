@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { AuditTable, targetName, verbOf } from "./screens/Audit.tsx";
+import { AREAS, AuditTable, targetName, verbOf } from "./screens/Audit.tsx";
 import { show } from "./testing.tsx";
 
 const entry = (id: string, action: string, over: object = {}) => ({
@@ -189,4 +189,65 @@ test("the time it covers is asked of the server", async () => {
   await screen.findAllByText("secret.set");
   fireEvent.change(screen.getByLabelText("Since"), { target: { value: "24h" } });
   await waitFor(() => expect(asked.at(-1)).toMatch(/[?&]from=\d{4}-/));
+});
+
+test("an answer to a filter that is no longer the one asked is not shown (GOV-17)", async () => {
+  // The first page, with no filter, answers only when told to: after the filtered one.
+  let release: () => void = () => {};
+  const slow = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  vi.stubGlobal("fetch", async (address: string) => {
+    if (address.includes("/audit-facets")) {
+      return new Response(JSON.stringify({ actions: [], actors: [], targetTypes: [] }), {
+        status: 200,
+      });
+    }
+    const filtered = address.includes("area=role");
+    if (!filtered) await slow;
+    const items = filtered ? [entry("r", "role.created")] : [entry("a", "run.started")];
+    return new Response(JSON.stringify({ items, nextCursor: null }), { status: 200 });
+  });
+  show(<AuditTable title="Audit log" description="" path="/tenants/t1/audit" />);
+  fireEvent.change(await screen.findByLabelText("Area"), { target: { value: "role" } });
+  await screen.findAllByText("role.created");
+  release();
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(screen.queryAllByText("run.started")).toHaveLength(0);
+  expect(screen.getAllByText("role.created").length).toBeGreaterThan(0);
+});
+
+test("every action the server writes by a literal name has an area to narrow to (GOV-27)", async () => {
+  const { readdirSync, readFileSync, statSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const root = join(__dirname, "../../control-plane/src");
+  const files: string[] = [];
+  const walk = (dir: string) => {
+    for (const name of readdirSync(dir)) {
+      const full = join(dir, name);
+      if (statSync(full).isDirectory()) walk(full);
+      else if (name.endsWith(".ts") && !name.endsWith(".test.ts")) files.push(full);
+    }
+  };
+  walk(root);
+  const written = new Set<string>();
+  for (const file of files) {
+    for (const found of readFileSync(file, "utf8").matchAll(
+      /action: ["'`]([a-z_]+)\.[a-z_.]+["'`]/g,
+    )) {
+      written.add(found[1] as string);
+    }
+  }
+  const areas = new Set(AREAS.map(([value]) => value));
+  expect([...written].filter((word) => !areas.has(word)).sort()).toEqual([]);
+  // Operator access is under `operator`, not `access_grant`.
+  expect(areas.has("operator")).toBe(true);
+});
+
+test("the instance's log offers the instance's areas, not a tenant's", async () => {
+  show(<AuditTable title="Audit log" description="" path="/instance/audit" />);
+  await screen.findByLabelText("Area");
+  const options = screen.getAllByRole("option").map((option) => option.textContent);
+  expect(options).toContain("Instance settings");
+  expect(options).not.toContain("Flows");
 });

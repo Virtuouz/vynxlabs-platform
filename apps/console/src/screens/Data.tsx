@@ -47,9 +47,11 @@ import {
   ChangeTypeDialog,
   ColumnRulesDialog,
   DefaultField,
+  draftsOf,
   hasNoDefault,
   IndexDialog,
   MAX_INDEXES,
+  MoreColumnsField,
   typesFrom,
 } from "./ColumnControls.tsx";
 import { ResourceIdentity } from "./ResourceIdentity.tsx";
@@ -1349,20 +1351,81 @@ export function Tables({ root, link }: { root: string; link: string }) {
             placeholder: "notes",
             hint: "Lowercase letters, digits and dashes.",
           },
-          { name: "column", label: "First column", placeholder: "title" },
           {
-            name: "type",
-            label: "It holds",
-            options: TYPES.filter((type) => type.value !== "reference"),
+            name: "description",
+            label: "What it holds",
+            required: false,
+            placeholder: "Notes taken in meetings",
+            hint: "In plain words. Shown under the table's name. Optional.",
+          },
+          { name: "column", label: "First column", placeholder: "title" },
+          { name: "type", label: "It holds", options: TYPES },
+          {
+            name: "references",
+            label: "Which table",
+            required: false,
+            when: (values) => values.type === "reference",
+            choose: {
+              path: `${root}/tables`,
+              option: (item: { name: string; status?: string }) =>
+                item.status === "retired" ? undefined : { value: item.name, label: item.name },
+            },
           },
           VALUES_FIELD,
+          {
+            name: "more",
+            label: "More columns",
+            render: ({ value, onChange }) => (
+              <MoreColumnsField root={root} value={value} onChange={onChange} />
+            ),
+          },
+          {
+            name: "policy",
+            label: "Who sees rows",
+            options: [
+              { value: "open", label: "Everyone who may use the table sees every row" },
+              { value: "owner", label: "Each person sees only the rows they added" },
+            ],
+            hint: "Changed later, with more rules, under Definition. A table of each person's own rows gets an owner_id column that holds who added the row.",
+          },
         ],
-        submit: async ({ name = "", column = "", type = "text", values }) => {
+        submit: async ({
+          name = "",
+          description = "",
+          column = "",
+          type = "text",
+          references,
+          values,
+          more,
+          policy = "open",
+        }) => {
+          const made: Record<string, Record<string, unknown>> = {};
+          const add = (columnName: string, kind: string, listed?: string, table?: string) => {
+            if (!columnName.trim()) throw new Error("Name every column, or remove the empty one.");
+            if (made[columnName] || ["id", "created_at", "updated_at"].includes(columnName))
+              throw new Error(
+                `There is already a column called "${columnName}". Choose another name.`,
+              );
+            if (kind === "reference" && !table)
+              throw new Error(`Choose the table that "${columnName}" points to.`);
+            made[columnName] = {
+              ...newColumn(kind, listed),
+              ...(kind === "reference" ? { references: table } : {}),
+            };
+          };
+          add(column, type, values, references);
+          for (const extra of draftsOf(more ?? ""))
+            add(extra.name.trim(), extra.type, extra.values, extra.references);
+          if (policy === "owner" && !made.owner_id) made.owner_id = { type: "uuid" };
           await api.put(`${root}/resources/${name}`, {
             kind: "table",
             schemaVersion: 1,
             ownership: "ui",
-            body: { columns: { [column]: newColumn(type, values) } },
+            body: {
+              ...(description.trim() ? { description: description.trim().slice(0, 500) } : {}),
+              columns: made,
+              ...(policy === "owner" ? { policy: { type: "owner", column: "owner_id" } } : {}),
+            },
             // A new table: one already at this name is said so, not replaced.
             create: true,
           });

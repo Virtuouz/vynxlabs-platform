@@ -1389,3 +1389,93 @@ test("TAB-P7: a table's rules are seen as a group, of end users or of members, w
     true,
   );
 });
+
+test("TAB-P5: Create table takes a description, several columns, a reference, and who sees rows", async () => {
+  routes[`GET /api/v1${root}/tables`] = () => [
+    200,
+    {
+      items: [
+        {
+          name: "customers",
+          description: "",
+          status: "active",
+          managedIn: "ui",
+          columnCount: 1,
+          rowCount: 0,
+          policy: { type: "open" },
+        },
+      ],
+    },
+  ];
+  routes[`PUT /api/v1${root}/resources/visits`] = () => [201, {}];
+  show(<Tables root={root} link="/t/t1/workspaces/w1" />);
+  fireEvent.click(
+    (await screen.findAllByRole("button", { name: "Create table" }))[0] as HTMLElement,
+  );
+  const dialog = await screen.findByRole("dialog");
+  fireEvent.input(within(dialog).getByLabelText("Name"), { target: { value: "visits" } });
+  fireEvent.input(within(dialog).getByLabelText("What it holds"), {
+    target: { value: "  Who came in.  " },
+  });
+  // The first column points to another table, chosen from the tables there are.
+  fireEvent.input(within(dialog).getByLabelText("First column"), { target: { value: "customer" } });
+  fireEvent.change(within(dialog).getByLabelText("It holds"), { target: { value: "reference" } });
+  const box = await within(dialog).findByRole("combobox", { name: "Which table" });
+  fireEvent.click(box);
+  fireEvent.keyDown(box, { key: "ArrowDown" });
+  fireEvent.click(await screen.findByRole("option", { name: "customers" }));
+  // More columns, each with its own kind.
+  fireEvent.click(within(dialog).getByRole("button", { name: "Add another column" }));
+  fireEvent.input(within(dialog).getByLabelText("Column 2"), { target: { value: "state" } });
+  fireEvent.change(within(dialog).getByLabelText("Column 2 holds"), { target: { value: "enum" } });
+  fireEvent.input(within(dialog).getByLabelText("Column 2 values"), {
+    target: { value: "new, done" },
+  });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Add another column" }));
+  fireEvent.input(within(dialog).getByLabelText("Column 3"), { target: { value: "minutes" } });
+  fireEvent.change(within(dialog).getByLabelText("Column 3 holds"), {
+    target: { value: "integer" },
+  });
+  fireEvent.change(within(dialog).getByLabelText("Who sees rows"), { target: { value: "owner" } });
+  fireEvent.submit(dialog.querySelector("form") as HTMLFormElement);
+  await waitFor(() =>
+    expect(calls.find((call) => call.method === "PUT")?.body).toEqual({
+      kind: "table",
+      schemaVersion: 1,
+      ownership: "ui",
+      create: true,
+      body: {
+        description: "Who came in.",
+        columns: {
+          customer: { type: "reference", references: "customers" },
+          state: { type: "enum", values: ["new", "done"] },
+          minutes: { type: "integer" },
+          owner_id: { type: "uuid" },
+        },
+        policy: { type: "owner", column: "owner_id" },
+      },
+    }),
+  );
+});
+
+test("TAB-P5: Create table says which column is wrong, and sends nothing, when two have one name or a reference has no table", async () => {
+  routes[`GET /api/v1${root}/tables`] = () => [200, { items: [] }];
+  show(<Tables root={root} link="/t/t1/workspaces/w1" />);
+  fireEvent.click(
+    (await screen.findAllByRole("button", { name: "Create table" }))[0] as HTMLElement,
+  );
+  const dialog = await screen.findByRole("dialog");
+  fireEvent.input(within(dialog).getByLabelText("Name"), { target: { value: "visits" } });
+  fireEvent.input(within(dialog).getByLabelText("First column"), { target: { value: "title" } });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Add another column" }));
+  fireEvent.input(within(dialog).getByLabelText("Column 2"), { target: { value: "title" } });
+  fireEvent.submit(dialog.querySelector("form") as HTMLFormElement);
+  expect(await within(dialog).findByText(/There is already a column called "title"/)).toBeTruthy();
+  fireEvent.input(within(dialog).getByLabelText("Column 2"), { target: { value: "other" } });
+  fireEvent.change(within(dialog).getByLabelText("Column 2 holds"), {
+    target: { value: "reference" },
+  });
+  fireEvent.submit(dialog.querySelector("form") as HTMLFormElement);
+  expect(await within(dialog).findByText(/Choose the table that "other" points to/)).toBeTruthy();
+  expect(calls.some((call) => call.method === "PUT")).toBe(false);
+});

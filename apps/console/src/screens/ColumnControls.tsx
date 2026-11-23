@@ -508,3 +508,117 @@ export function IndexDialog({
     </Dialog>
   );
 }
+
+/** One more column of a new table, as the form holds it. */
+export interface DraftColumn {
+  key: number;
+  name: string;
+  type: string;
+  values: string;
+  references: string;
+}
+
+/** The extra columns of a form, kept in the form's one text value. */
+export function draftsOf(text: string): DraftColumn[] {
+  try {
+    const parsed = JSON.parse(text || "[]") as DraftColumn[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * More columns for a table that is being made, each with what it holds, its values when it is a
+ * list, and its table when it points to one. The first column has its own fields in the form.
+ */
+export function MoreColumnsField({
+  root,
+  value,
+  onChange,
+}: {
+  root: string;
+  value: string;
+  onChange: (text: string) => void;
+}) {
+  const drafts = draftsOf(value);
+  const set = (next: DraftColumn[]) => onChange(next.length > 0 ? JSON.stringify(next) : "");
+  const change = (key: number, edit: Partial<DraftColumn>) =>
+    set(drafts.map((one) => (one.key === key ? { ...one, ...edit } : one)));
+  return (
+    <fieldset className="m-0 flex min-w-0 flex-col gap-3 border-0 p-0">
+      <legend className="p-0 text-body-sm font-medium">More columns</legend>
+      {drafts.map((one, at) => (
+        <fieldset
+          key={one.key}
+          className="m-0 flex min-w-0 flex-col gap-3 rounded-control border border-line p-3"
+        >
+          <legend className="sr-only">{`Column ${at + 2}`}</legend>
+          <TextField
+            name={`more-name-${one.key}`}
+            label={`Column ${at + 2}`}
+            value={one.name}
+            required={false}
+            placeholder="amount"
+            onChange={(name) => change(one.key, { name })}
+          />
+          <SelectField
+            name={`more-type-${one.key}`}
+            label={`Column ${at + 2} holds`}
+            value={one.type}
+            options={COLUMN_TYPES}
+            onChange={(type) => change(one.key, { type })}
+          />
+          {one.type === "enum" || one.type === "enum_list" ? (
+            <TextField
+              name={`more-values-${one.key}`}
+              label={`Column ${at + 2} values`}
+              value={one.values}
+              required={false}
+              placeholder="new, paid, shipped"
+              hint="Separated by commas, in the order they are offered."
+              onChange={(values) => change(one.key, { values })}
+            />
+          ) : null}
+          {one.type === "reference" ? (
+            <TableChoice
+              root={root}
+              label={`Column ${at + 2}: which table`}
+              value={one.references}
+              onChange={(references) => change(one.key, { references })}
+            />
+          ) : null}
+          <div>
+            <Button
+              size="small"
+              variant="quiet"
+              aria-label={`Remove column ${at + 2}`}
+              onClick={() => set(drafts.filter((other) => other.key !== one.key))}
+            >
+              Remove
+            </Button>
+          </div>
+        </fieldset>
+      ))}
+      <div>
+        <Button
+          size="small"
+          onClick={() =>
+            set([
+              ...drafts,
+              {
+                key: Math.max(0, ...drafts.map((one) => one.key)) + 1,
+                name: "",
+                type: "text",
+                values: "",
+                references: "",
+              },
+            ])
+          }
+        >
+          Add another column
+        </Button>
+      </div>
+    </fieldset>
+  );
+}

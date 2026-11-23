@@ -1,6 +1,6 @@
 # Inventory: api and reference
 
-Read from the code at `270e509` on 2026-11-22. A report, not checked prose: what it calls a bug is settled in [the findings](../findings.md).
+Read from the code at `270e509` on 2026-11-22. A report, not checked prose: what it calls a bug is settled in [the findings](../findings/README.md).
 
 Paths are relative to .. "cp" is apps/control-plane/src. Counts come from a local run of the generators' modules and from `generated/openapi.json` (v0.5.0). That file was written 22 Nov 13:01, before the other generated pages (13:43). `generated/` and `dist/` are gitignored.
 

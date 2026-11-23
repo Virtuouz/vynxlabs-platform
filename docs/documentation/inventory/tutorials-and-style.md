@@ -1,6 +1,6 @@
 # Inventory: tutorials and style
 
-Read from the code at `270e509` on 2026-11-22. A report, not checked prose: what it calls a bug is settled in [the findings](../findings.md).
+Read from the code at `270e509` on 2026-11-22. A report, not checked prose: what it calls a bug is settled in [the findings](../findings/README.md).
 
 Everything here comes from reading; nothing was run on an instance. `docs/evolution/02` and `05` describe state before phase 9, so do not write from their limitations. Use `CHANGELOG.md` phases 9–28. `content/` is about 15,600 words, and roughly 10,000 of those are five pages (App Builder editor 4,024, App Builder 2,374, writing-a-widget 1,726, dashboard-builder 854, documentation 771). Most other pages are one sentence repeating their description.
 

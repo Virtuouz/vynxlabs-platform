@@ -1,6 +1,6 @@
 # Inventory: scripts
 
-Read from the code at `270e509` on 2026-11-22. A report, not checked prose: what it calls a bug is settled in [the findings](../findings.md).
+Read from the code at `270e509` on 2026-11-22. A report, not checked prose: what it calls a bug is settled in [the findings](../findings/README.md).
 
 R = `.`. AU = `R/apps/console/src/screens/Authoring.tsx`, EX = `…/screens/Execution.tsx`, OP = `…/screens/ObjectPages.tsx`, RU = `…/screens/Runs.tsx`, CP = `R/apps/control-plane/src`, SDK = `R/packages/sdk/src`, WK = `R/packages/worker/src`, CMP = `R/packages/compose/src/index.ts`, KINDS = `R/packages/manifest/src/kinds.ts`. I read code and tests and ran nothing. Items tagged [inferred] come from reading alone.
 

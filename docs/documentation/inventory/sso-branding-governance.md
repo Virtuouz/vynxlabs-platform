@@ -1,6 +1,6 @@
 # Inventory: sso branding governance
 
-Read from the code at `270e509` on 2026-11-22. A report, not checked prose: what it calls a bug is settled in [the findings](../findings.md).
+Read from the code at `270e509` on 2026-11-22. A report, not checked prose: what it calls a bug is settled in [the findings](../findings/README.md).
 
 I read the code and the contract docs in full; tests by name, plus the SSO recovery and import cases. I ran nothing. Every bug in E comes from reading the code.
 

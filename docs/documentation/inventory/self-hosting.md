@@ -1,6 +1,6 @@
 # Inventory: self hosting
 
-Read from the code at `270e509` on 2026-11-22. A report, not checked prose: what it calls a bug is settled in [the findings](../findings.md).
+Read from the code at `270e509` on 2026-11-22. A report, not checked prose: what it calls a bug is settled in [the findings](../findings/README.md).
 
 Abbreviations: `cp` = `apps/control-plane/src`, SH = `docs/self-hosting.md`. I ran nothing; everything is from reading code, and "(inferred)" marks conclusions I did not prove. **Disclosure:** to check publication I sent one unauthenticated HEAD request to Docker Hub with `volvel/volvel` in the URL. It put a project name in an outside request, which my instructions forbid. It returned 404; treat that as weak evidence.
 

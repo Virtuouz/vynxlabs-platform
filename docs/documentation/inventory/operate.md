@@ -1,6 +1,6 @@
 # Inventory: operate
 
-Read from the code at `270e509` on 2026-11-22. A report, not checked prose: what it calls a bug is settled in [the findings](../findings.md).
+Read from the code at `270e509` on 2026-11-22. A report, not checked prose: what it calls a bug is settled in [the findings](../findings/README.md).
 
 Paths: `S/` = `apps/console/src/screens/`, `CP/` = `apps/control-plane/src/`, `X/` = `CP/kernel/execution/`, `M/` = `packages/manifest/src/`. [read] = traced in code; none of the bugs in (E) were reproduced live.
 

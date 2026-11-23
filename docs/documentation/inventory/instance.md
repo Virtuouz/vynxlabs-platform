@@ -1,6 +1,6 @@
 # Inventory: instance
 
-Read from the code at `270e509` on 2026-11-22. A report, not checked prose: what it calls a bug is settled in [the findings](../findings.md).
+Read from the code at `270e509` on 2026-11-22. A report, not checked prose: what it calls a bug is settled in [the findings](../findings/README.md).
 
 Paths: C = apps/console/src, A = apps/control-plane/src, D = packages/docs/content. I read code and tests and ran nothing. "Bug" items are from reading the code.
 

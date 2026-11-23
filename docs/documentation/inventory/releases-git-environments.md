@@ -1,6 +1,6 @@
 # Inventory: releases git environments
 
-Read from the code at `270e509` on 2026-11-22. A report, not checked prose: what it calls a bug is settled in [the findings](../findings.md).
+Read from the code at `270e509` on 2026-11-22. A report, not checked prose: what it calls a bug is settled in [the findings](../findings/README.md).
 
 **Paths.** Root: ``. `S/` = `apps/console/src/screens/`, `K/` = `apps/console/src/kit/`, `R/` = `apps/control-plane/src/routes/`, `N/` = `apps/control-plane/src/kernel/`, `C/` = `packages/docs/content/`. From code reading; nothing was run.
 

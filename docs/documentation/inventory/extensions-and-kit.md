@@ -1,6 +1,6 @@
 # Inventory: extensions and kit
 
-Read from the code at `270e509` on 2026-11-22. A report, not checked prose: what it calls a bug is settled in [the findings](../findings.md).
+Read from the code at `270e509` on 2026-11-22. A report, not checked prose: what it calls a bug is settled in [the findings](../findings/README.md).
 
 Paths below are relative to ``, with these prefixes: **Au** = `apps/console/src/screens/Authoring.tsx`, **SDK** = `packages/sdk/src/index.ts`, **W** = `packages/widget-sdk/src/index.ts`, **T** = `apps/control-plane/src/extensions.test.ts`, **CT** = `apps/control-plane/src/kernel/execution/triggers.ts`. I read code and tests only. Nothing was run, including the suspected bugs in (E).
 

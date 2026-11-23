@@ -1,6 +1,6 @@
 # Inventory: people and access
 
-Read from the code at `270e509` on 2026-11-22. A report, not checked prose: what it calls a bug is settled in [the findings](../findings.md).
+Read from the code at `270e509` on 2026-11-22. A report, not checked prose: what it calls a bug is settled in [the findings](../findings/README.md).
 
 ## (A) Proposed pages (paths under packages/docs/content)
 

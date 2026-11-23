@@ -1,6 +1,6 @@
 # Inventory: flows
 
-Read from the code at `270e509` on 2026-11-22. A report, not checked prose: what it calls a bug is settled in [the findings](../findings.md).
+Read from the code at `270e509` on 2026-11-22. A report, not checked prose: what it calls a bug is settled in [the findings](../findings/README.md).
 
 Scope: HEAD 270e509. Abbreviations: FE = `apps/console/src/screens/FlowEditor.tsx`; FS = `FlowSteps.tsx`, FL = `Flows.tsx`, RP = `RunPage.tsx` and SF = `ScheduleForm.tsx` (same folder); ENG = `apps/control-plane/src/kernel/flows/engine.ts`; RT = `apps/control-plane/src/routes/flows.ts`; MF = `packages/manifest/src/flow.ts`; SDK = `packages/sdk/src/index.ts`; SCH = `schemas/kinds/flow.v1.schema.json`. [ran] = I executed it, read-only.
 

@@ -1,6 +1,6 @@
 # Inventory: cli and local development
 
-Read from the code at `270e509` on 2026-11-22. A report, not checked prose: what it calls a bug is settled in [the findings](../findings.md).
+Read from the code at `270e509` on 2026-11-22. A report, not checked prose: what it calls a bug is settled in [the findings](../findings/README.md).
 
 **Scope read:** all of `packages/cli/src` (tests included, some only by title), manifest `files`/`file-schema`/`bundle`/`references`/`tenant`, the SDK, and the server's deploy, preview and promote code. Nothing was run.
 

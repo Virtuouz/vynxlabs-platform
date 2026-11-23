@@ -1,6 +1,6 @@
 # Inventory: shell and start
 
-Read from the code at `270e509` on 2026-11-22. A report, not checked prose: what it calls a bug is settled in [the findings](../findings.md).
+Read from the code at `270e509` on 2026-11-22. A report, not checked prose: what it calls a bug is settled in [the findings](../findings/README.md).
 
 **Slice: console shell and "Start".** Read-only; `docs:check` and tests not run. Behaviours come from code unless marked "inferred". Prefixes:
 - `C/` = apps/console/src/

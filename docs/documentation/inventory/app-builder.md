@@ -1,6 +1,6 @@
 # Inventory: app builder
 
-Read from the code at `270e509` on 2026-11-22. A report, not checked prose: what it calls a bug is settled in [the findings](../findings.md).
+Read from the code at `270e509` on 2026-11-22. A report, not checked prose: what it calls a bug is settled in [the findings](../findings/README.md).
 
 **App Builder inventory (read-only, HEAD 270e509).** `B/` = `apps/console/src/screens/builder/`, `K/` = `apps/console/src/kit/inspector/`, `S/` = `packages/screens/src/`, `CP/` = `apps/control-plane/src/`. "Not run" = read in code or tests only, not exercised in a browser.
 

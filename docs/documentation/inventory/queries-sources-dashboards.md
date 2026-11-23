@@ -1,6 +1,6 @@
 # Inventory: queries sources dashboards
 
-Read from the code at `270e509` on 2026-11-22. A report, not checked prose: what it calls a bug is settled in [the findings](../findings.md).
+Read from the code at `270e509` on 2026-11-22. A report, not checked prose: what it calls a bug is settled in [the findings](../findings/README.md).
 
 Abbreviations: Q = `apps/console/src/screens/Queries.tsx`, DB = `.../Dashboards.tsx`, D = `.../Data.tsx`, rq/rs/rd = `apps/control-plane/src/routes/{queries,sources,dashboards}.ts`, qry/ = `apps/control-plane/src/kernel/data/query/`, src = `apps/control-plane/src/kernel/data/sources.ts`, mp = `packages/manifest/src/page.ts`, mk = `packages/manifest/src/kinds.ts`, sp = `packages/widget-sdk/src/page.ts`, PE = `apps/console/src/screens/builder/PageEditor.tsx`. All paths are under `.`. Read from code and tests; nothing was run.
 

@@ -1,6 +1,6 @@
 # Inventory: tables
 
-Read from the code at `270e509` on 2026-11-22. A report, not checked prose: what it calls a bug is settled in [the findings](../findings.md).
+Read from the code at `270e509` on 2026-11-22. A report, not checked prose: what it calls a bug is settled in [the findings](../findings/README.md).
 
 Read-only, at `270e509`. I ran no code or tests: **E** items come from reading the code unless marked "tested". Paths are from ``. Short names: `Data` = `apps/console/src/screens/Data.tsx`, `Rules` = `apps/console/src/screens/RowRules.tsx`, `rd` = `apps/control-plane/src/routes/data.ts`, `kd` = `apps/control-plane/src/kernel/data`, `T` = `packages/manifest/src/table.ts`, `K` = `packages/manifest/src/kinds.ts`, `Grid` = `packages/ui/src/Grid.tsx`.
 

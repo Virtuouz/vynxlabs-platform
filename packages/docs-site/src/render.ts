@@ -30,6 +30,7 @@ import {
 } from "@volvel/docs-engine";
 import {
   type FieldInfo,
+  highlightCode,
   imageKind,
   linkKind,
   type ProfileName,
@@ -336,6 +337,8 @@ function draw(at: SiteView, path: string, tree: Root): string {
     ...(at.productName ? { productName: at.productName } : {}),
     ...(at.resolve?.field ? { field: at.resolve.field } : {}),
     ...(at.resolve?.screenshot ? { screenshot: at.resolve.screenshot } : {}),
+    // Classes only, drawn here: no script and no policy to change.
+    highlight: highlightCode,
     // The page's title is its first heading. What the author wrote as `#` comes under it.
     headingShift: 1,
     folder,

@@ -21,9 +21,31 @@ interface Indexed {
   /** For a section: its heading, and what a link to it ends in. */
   heading: string;
   anchor: string;
+  /** What is searched: a page's words before its first heading, a section's words. Not stored. */
   text: string;
-  /** For a page: its words before its first heading, which no section holds. */
-  intro: string;
+  /**
+   * What is kept to draw a result from: the first words of `text`, clipped.
+   * An index built before this one kept `text` and `intro` whole.
+   */
+  passage: string;
+  /** What kind of page it is. Stored and not searched; empty until pages have a type. */
+  type: string;
+}
+
+/** The most characters of a page's or a section's words an index keeps for a result's snippet. */
+export const PASSAGE_LENGTH = 400;
+
+/** Words clipped to a length at the end of a word. */
+function clip(text: string): string {
+  const flat = text.replace(/\s+/g, " ").trim();
+  if (flat.length <= PASSAGE_LENGTH) return flat;
+  const cut = flat.slice(0, PASSAGE_LENGTH);
+  return cut.slice(0, Math.max(cut.lastIndexOf(" "), PASSAGE_LENGTH / 2));
+}
+
+/** Whether a page is reference, which a search shows after pages that explain, unless it is asked for by name. */
+function isReference(path: string, type: unknown): boolean {
+  return type === "reference" || path.split("/").slice(0, -1).includes("reference");
 }
 
 export interface SearchHit {
@@ -68,8 +90,8 @@ const OPTIONS = {
     "collection",
     "heading",
     "anchor",
-    "text",
-    "intro",
+    "passage",
+    "type",
   ],
   searchOptions: {
     boost: { title: 4, heading: 3, headings: 2, description: 2 },
@@ -121,6 +143,8 @@ export function buildSearchIndex(set: DocSet, options: { productName?: string } 
       collection,
     };
     const parts = sections(entry.tree);
+    // A page's own words are those before its first heading: the rest is its sections'.
+    const intro = text(parts[0]?.nodes ?? []);
     index.add({
       ...base,
       id: path,
@@ -128,11 +152,13 @@ export function buildSearchIndex(set: DocSet, options: { productName?: string } 
       headings: headings.join("\n"),
       heading: "",
       anchor: "",
-      text: text(entry.tree.children),
-      intro: text(parts[0]?.nodes ?? []),
+      text: intro,
+      passage: clip(intro),
+      type: "",
     });
     for (const part of parts.slice(1)) {
       if (!part.heading) continue;
+      const words = text(part.nodes);
       index.add({
         ...base,
         id: `${path}#${part.heading.id}`,
@@ -142,8 +168,9 @@ export function buildSearchIndex(set: DocSet, options: { productName?: string } 
         title: "",
         heading: part.heading.text,
         anchor: part.heading.id,
-        text: text(part.nodes),
-        intro: "",
+        text: words,
+        passage: clip(words),
+        type: "",
       });
     }
   }
@@ -205,6 +232,12 @@ export function mark(text: string, terms: readonly string[]): Marked {
   return out;
 }
 
+/** What an index kept of a hit's words: a passage, or in an older index the whole text. */
+function passageOf(hit: Record<string, unknown>): string {
+  const own = hit.kind === "section" ? hit.text : hit.intro;
+  return String(hit.passage ?? own ?? hit.text ?? "");
+}
+
 /** Reads an index back, to ask it questions. */
 export function loadSearchIndex(json: string): {
   /** Pages, best first: for a page of results. */
@@ -213,34 +246,57 @@ export function loadSearchIndex(json: string): {
   grouped(query: string, options?: { collection?: string; limit?: number }): PageHit[];
 } {
   const index = MiniSearch.loadJSON<Indexed>(json, OPTIONS);
+  const titleOf = (path: string) => String(index.getStoredFields(path)?.title ?? "");
+  /**
+   * Hits, best first. A page of reference comes after pages that explain, unless
+   * what was typed is its title, or a heading on it, in full.
+   */
+  const found = (query: string, filter?: (hit: Record<string, unknown>) => boolean) => {
+    const asked = query.trim().toLowerCase();
+    return index
+      .search(query, filter ? { filter } : {})
+      .map((hit) => {
+        const path = hit.path as string;
+        const exact =
+          titleOf(path).toLowerCase() === asked ||
+          String(hit.heading ?? "").toLowerCase() === asked;
+        const reference = isReference(path, index.getStoredFields(path)?.type);
+        return { hit, score: reference && !exact ? hit.score * 0.6 : hit.score };
+      })
+      .sort((a, b) => b.score - a.score)
+      .map((one) => one.hit);
+  };
   return {
     search(query, limit = 20) {
       if (query.trim() === "") return [];
-      return (
-        index
-          // An index built before sections were indexed holds pages alone, and says no kind.
-          .search(query, { filter: (hit) => hit.kind !== "section" })
-          .slice(0, limit)
-          .map((hit) => ({
-            path: hit.path as string,
-            url: hit.url as string,
-            title: hit.title as string,
-            description: hit.description as string,
-            excerpt: excerpt(hit.text as string, hit.terms),
-          }))
-      );
+      const pages = new Map<string, SearchHit>();
+      // A page is found by its own words or by those of a section of it.
+      for (const hit of found(query)) {
+        const path = hit.path as string;
+        if (pages.has(path) || pages.size >= limit) continue;
+        const own = index.getStoredFields(path);
+        pages.set(path, {
+          path,
+          url: hit.url as string,
+          title: String(own?.title ?? hit.title ?? ""),
+          description: String(own?.description ?? hit.description ?? ""),
+          excerpt: excerpt(passageOf(hit), hit.terms),
+        });
+      }
+      return [...pages.values()];
     },
     grouped(query, options = {}) {
       const asked = query.trim();
       if (asked === "") return [];
       const words = asked.split(/\s+/);
-      const found = index.search(asked, {
-        ...(options.collection !== undefined
-          ? { filter: (hit) => hit.collection === options.collection }
-          : {}),
-      });
+      const hits = found(
+        asked,
+        options.collection !== undefined
+          ? (hit) => hit.collection === options.collection
+          : undefined,
+      );
       const pages = new Map<string, PageHit>();
-      for (const hit of found) {
+      for (const hit of hits) {
         const path = hit.path as string;
         let page = pages.get(path);
         if (!page) {
@@ -269,10 +325,12 @@ export function loadSearchIndex(json: string): {
           page.places.push({ type: "heading", url, words: mark(heading, terms) });
           continue;
         }
-        // A page's own words are those before its first heading: the rest is its sections'.
-        const text = String((hit.kind === "page" ? hit.intro : hit.text) ?? "");
+        const text = passageOf(hit);
         const lower = text.toLowerCase();
-        if (!terms.some((term) => lower.includes(term.toLowerCase()))) continue;
+        // A section found by words beyond its passage still shows how it begins.
+        if (hit.kind !== "section" && !terms.some((term) => lower.includes(term.toLowerCase())))
+          continue;
+        if (text === "") continue;
         page.places.push({ type: "text", url, words: mark(sentence(text, terms), terms) });
       }
       return [...pages.values()];

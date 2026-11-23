@@ -462,3 +462,12 @@ describe("a grid's headings", () => {
     expect(screen.getAllByRole("button")).toHaveLength(1);
   });
 });
+
+describe("code in a page of documentation", () => {
+  test("is highlighted with classes, as a served page is, in the help and in a preview alike", () => {
+    const { container } = render(<Doc tree={parse("```ts\nconst a = 1; // one\n```\n")} />);
+    expect(container.querySelector("pre code .hljs-keyword")?.textContent).toBe("const");
+    expect(container.querySelector("pre code .hljs-comment")?.textContent).toBe("// one");
+    expect(container.querySelector("pre code")?.textContent).toBe("const a = 1; // one");
+  });
+});

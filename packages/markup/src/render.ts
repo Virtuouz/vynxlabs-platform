@@ -65,6 +65,11 @@ export interface RenderOptions {
   headingShift?: number;
   /** Put before every id this drawing makes up, so two drawings on one page do not clash. */
   idPrefix?: string;
+  /**
+   * Draws code as spans with classes, for a language it knows: `hljs-*`, never a style, so
+   * that a page's policy needs no change. Nothing leaves the code as it was written.
+   */
+  highlight?: (code: string, lang: string) => Drawn[] | null | undefined;
   /** The words of the link behind a term. `{word}` is the term as it was written. "More about {word}" when left out. */
   learnMore?: string;
 }
@@ -218,7 +223,7 @@ function usual(node: Node, ctx: Context): Drawn[] {
     case "inlineCode":
       return [el("code", {}, [node.value])];
     case "code":
-      return [codeBlock(node.value, node.lang)];
+      return [codeBlock(node.value, node.lang, ctx)];
     case "link": {
       const href = hrefOf(node.href, ctx);
       if (href === undefined) return inside();
@@ -295,7 +300,7 @@ function usual(node: Node, ctx: Context): Drawn[] {
   }
 }
 
-export function codeBlock(value: string, lang: string | undefined): El {
+export function codeBlock(value: string, lang: string | undefined, ctx?: Context): El {
   // A diagram is drawn by the page's script. Until then, and without it, it is its source.
   if (lang === "mermaid") {
     return el("figure", { class: "vd-mermaid", "data-vd-mermaid": "1" }, [
@@ -306,7 +311,11 @@ export function codeBlock(value: string, lang: string | undefined): El {
   }
   const safe = lang && /^[A-Za-z0-9_+#-]+$/.test(lang) ? lang : undefined;
   return el("pre", safe ? { "data-lang": safe } : {}, [
-    el("code", safe ? { class: `language-${safe}` } : {}, [value]),
+    el(
+      "code",
+      safe ? { class: `language-${safe}` } : {},
+      (safe && ctx?.options.highlight?.(value, safe)) || [value],
+    ),
   ]);
 }
 

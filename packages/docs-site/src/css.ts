@@ -1,4 +1,4 @@
-import { DOC_CSS } from "@volvel/markup";
+import { DOC_CSS, DOC_DARK_CSS } from "@volvel/markup";
 
 /**
  * The stylesheet of a docs app: its frame, then the page's own, on the
@@ -288,4 +288,4 @@ main { min-width: 0; padding: 20px 18px 64px; }
   --vd-radius: var(--vx-radius-control); --vd-font-code: var(--vx-font-code);
   --vd-scroll-margin: 4.5rem;
 }
-${DOC_CSS}`;
+${DOC_CSS}${DOC_DARK_CSS}`;

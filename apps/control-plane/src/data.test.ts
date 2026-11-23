@@ -427,6 +427,12 @@ describe("the data API", () => {
         "&sort=count",
       ),
     ).toEqual([1, 20, 21, 22, 23, 24]);
+    // Text that does not hold a word is the rest of the rows (not the rows that hold it).
+    const holding = await find({ column: "label", op: "contains", value: "ITEM 2" });
+    const lacking = await find({ column: "label", op: "not_contains", value: "ITEM 2" });
+    expect(holding.length).toBeGreaterThan(0);
+    expect(lacking.length).toBeGreaterThan(0);
+    expect(lacking.filter((count) => holding.includes(count))).toEqual([]);
     expect(await find({ column: "count", op: "in", value: [3, 5, 99] }, "&sort=count")).toEqual([
       3, 5,
     ]);

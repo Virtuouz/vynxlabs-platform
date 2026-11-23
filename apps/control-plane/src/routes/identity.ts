@@ -1,3 +1,4 @@
+import { Readable } from "node:stream";
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import { newId, sql } from "@volvel/db";
 import { PERMISSION_KINDS } from "@volvel/manifest";
@@ -16,6 +17,7 @@ import { effectivePolicy } from "../kernel/retention.js";
 import { nameOwnedBy } from "../kernel/sso/people.js";
 import { makeRecoveryCodes, ownsATenant } from "../kernel/sso/recovery.js";
 import { likeTerm, listOf, PageQuery, pageOf, SearchPageQuery } from "../pagination.js";
+import { csvCell } from "./data.js";
 import {
   AnyObject,
   Id,
@@ -416,7 +418,7 @@ export async function auditPage(
 }
 
 /** One entry, for a link to it. Undefined when there is none, or it is older than the log keeps. */
-export async function auditEntry(kernel: Kernel, tenantId: string, id: string) {
+export async function auditEntry(kernel: Kernel, tenantId: string | null, id: string) {
   const row = await (await auditSelect(kernel, tenantId, {}))
     .selectAll()
     .where("id", "=", id)
@@ -467,7 +469,7 @@ export async function auditFacets(kernel: Kernel, tenantId: string | null, query
 /** Every entry for `filters`, newest first, a thousand at a time, for an export. */
 export async function* auditEntries(
   kernel: Kernel,
-  tenantId: string,
+  tenantId: string | null,
   query: AuditFilters,
   cap: number,
 ) {
@@ -487,6 +489,35 @@ export async function* auditEntries(
     after = rows.at(-1)?.id;
     if (rows.length < 1000) return;
   }
+}
+
+/** How many entries one audit export holds at most. */
+export const AUDIT_CSV_CAP = 100_000;
+const AUDIT_CSV_COLUMNS = [
+  "occurredAt",
+  "action",
+  "actorType",
+  "actorLabel",
+  "actorId",
+  "targetType",
+  "targetLabel",
+  "targetId",
+  "workspaceId",
+  "accessGrantId",
+  "requestId",
+  "ipAddress",
+  "details",
+] as const;
+
+/** A log's entries as CSV lines: the one file a tenant's log and the instance's both give. */
+export function auditCsv(kernel: Kernel, tenantId: string | null, query: AuditFilters) {
+  async function* lines() {
+    yield `${AUDIT_CSV_COLUMNS.join(",")}\r\n`;
+    for await (const entry of auditEntries(kernel, tenantId, query, AUDIT_CSV_CAP)) {
+      yield `${AUDIT_CSV_COLUMNS.map((column) => csvCell(entry[column])).join(",")}\r\n`;
+    }
+  }
+  return Readable.from(lines());
 }
 
 const DisabledMember = Type.Object({
@@ -1271,6 +1302,46 @@ export function identityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         },
       },
       async ({ query }) => auditFacets(kernel, null, query),
+    );
+
+    app.get(
+      "/audit/:id",
+      {
+        config: { access: access.instance("audit:read") },
+        schema: {
+          summary: "One instance-level audit entry",
+          description: "For a link to an entry. 404 once the log no longer keeps it.",
+          tags: ["audit"],
+          params: Type.Object({ id: Id }),
+          response: { 200: AuditEntry },
+        },
+      },
+      async ({ params }) => {
+        const entry = await auditEntry(kernel, null, params.id);
+        if (!entry) throw notFound("The audit entry");
+        return entry;
+      },
+    );
+
+    app.get(
+      "/audit-export",
+      {
+        config: { access: access.instance("audit:read") },
+        schema: {
+          summary: "The instance's audit entries, as CSV",
+          description: `The instance-level entries the filters keep, newest first, at most ${AUDIT_CSV_CAP.toLocaleString("en-US")}.`,
+          tags: ["audit"],
+          querystring: AuditFilterQuery,
+          produces: ["text/csv"],
+          response: { 200: Type.Unknown({ description: "The entries, as CSV." }) },
+        },
+      },
+      async ({ query }, reply) => {
+        reply
+          .header("content-type", "text/csv; charset=utf-8")
+          .header("content-disposition", `attachment; filename="audit-log.csv"`);
+        return reply.send(auditCsv(kernel, null, query));
+      },
     );
   };
 }

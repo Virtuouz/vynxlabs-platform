@@ -5,7 +5,7 @@ import { KeyValues } from "../kit/layout.tsx";
 import { Mono, Tag } from "../kit/status.tsx";
 import { Time } from "../kit/Time.tsx";
 import { Link, navigate, useUrlParam } from "../router.tsx";
-import { DeleteTenantButton, RenameTenantButton } from "./Environments.tsx";
+import { ConsoleCodeButton, DeleteTenantButton, RenameTenantButton } from "./Environments.tsx";
 import { TenantPowers } from "./TenantPowers.tsx";
 
 interface TenantRow {
@@ -15,6 +15,7 @@ interface TenantRow {
   dataLocation: string | null;
   workspaceCount?: number;
   mayRename?: boolean;
+  consoleCode?: boolean;
   createdAt: string;
 }
 
@@ -151,6 +152,7 @@ export function Tenants({ me }: { me: Me }) {
               Open
             </Button>
             <RenameTenantButton tenant={row} onDone={reload} />
+            <ConsoleCodeButton tenant={row} onDone={reload} />
             {operator ? (
               <DeleteTenantButton
                 tenant={row}

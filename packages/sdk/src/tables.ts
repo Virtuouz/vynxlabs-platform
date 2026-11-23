@@ -5,7 +5,18 @@ export type Filter =
   | {
       column: string;
       /** Default `eq`. */
-      op?: "eq" | "ne" | "gt" | "gte" | "lt" | "lte" | "in" | "has" | "contains" | "is_null";
+      op?:
+        | "eq"
+        | "ne"
+        | "gt"
+        | "gte"
+        | "lt"
+        | "lte"
+        | "in"
+        | "has"
+        | "contains"
+        | "not_contains"
+        | "is_null";
       value?: unknown;
     };
 

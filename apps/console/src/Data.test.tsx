@@ -458,6 +458,8 @@ test("DAT-23, DAT-21: a table with no key is added to, and a table's name with a
 
 test("filter text becomes a filter of the column's type", () => {
   expect(toFilter("text", " ada ")).toEqual({ op: "contains", value: "ada" });
+  expect(toFilter("text", "!~ ada")).toEqual({ op: "not_contains", value: "ada" });
+  expect(() => toFilter("integer", "!~5")).toThrow(/Only text/);
   expect(toFilter("integer", ">= 5")).toEqual({ op: "gte", value: 5 });
   expect(toFilter("boolean", "yes")).toEqual({ op: "eq", value: true });
   expect(toFilter("date", "< 2026-01-01")).toEqual({ op: "lt", value: "2026-01-01" });

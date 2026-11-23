@@ -417,7 +417,8 @@ function RowsBrowser(
                   <Code>{"..20"}</Code> leave one end open
                 </li>
                 <li>
-                  <Code>{"!x"}</Code> for rows that are not exactly x
+                  <Code>{"!x"}</Code> for rows that are not exactly x, <Code>{"!~x"}</Code> for text
+                  that does not hold x
                 </li>
                 <li>
                   <Code>{"a | b"}</Code> for rows that are a or b

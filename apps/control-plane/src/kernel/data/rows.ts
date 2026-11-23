@@ -576,11 +576,14 @@ function compileFilter(
     throw invalid(`a list of values can only be tested with has or is_null`);
   // An enum is compared with any text, so a filter can still find rows that hold a retired value.
   const compared = meta.type === "enum" ? { ...meta, type: "text" } : meta;
-  if (op === "contains") {
+  if (op === "contains" || op === "not_contains") {
     if (meta.type !== "text" || typeof node.value !== "string")
-      throw invalid(`"contains" works on text columns, with text to look for`);
+      throw invalid(`"${op}" works on text columns, with text to look for`);
     const pattern = `%${node.value.replace(/[\\%_]/g, "\\$&")}%`;
-    return sql`${reference} ilike ${pattern}`;
+    // A row with no text does not contain it, so it is among those that do not.
+    return op === "contains"
+      ? sql`${reference} ilike ${pattern}`
+      : sql`not coalesce(${reference} ilike ${pattern}, false)`;
   }
   if (op === "in") {
     if (!Array.isArray(node.value) || node.value.length === 0 || node.value.length > 200)
@@ -595,7 +598,7 @@ function compileFilter(
   const operator = COMPARE[op];
   if (!operator)
     throw invalid(
-      `there is no operator "${op}". Use eq, ne, gt, gte, lt, lte, in, has, contains or is_null`,
+      `there is no operator "${op}". Use eq, ne, gt, gte, lt, lte, in, has, contains, not_contains or is_null`,
     );
   if (node.value === null || node.value === undefined) {
     if (op === "eq") return sql`${reference} is null`;

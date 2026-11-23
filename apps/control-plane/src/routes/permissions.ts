@@ -1,4 +1,3 @@
-import { Readable } from "node:stream";
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import { newId, type PrincipalType as PrincipalKind } from "@volvel/db";
 import { ACCESS_DESCRIPTION_MAX } from "@volvel/manifest";
@@ -13,13 +12,13 @@ import type { Kernel } from "../kernel/kernel.js";
 import { INSTANCE_ONLY_ROLE } from "../kernel/kinds.js";
 import { releaseOne } from "../kernel/tenant/releases.js";
 import { listOf, pageOf } from "../pagination.js";
-import { csvCell } from "./data.js";
 import {
+  AUDIT_CSV_CAP,
   AuditEntry,
   AuditFacets,
   AuditFilterQuery,
   AuditQuery,
-  auditEntries,
+  auditCsv,
   auditEntry,
   auditFacets,
   auditPage,
@@ -984,38 +983,14 @@ export function permissionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         },
       },
       async ({ params, query }, reply) => {
-        const columns = [
-          "occurredAt",
-          "action",
-          "actorType",
-          "actorLabel",
-          "actorId",
-          "targetType",
-          "targetLabel",
-          "targetId",
-          "workspaceId",
-          "accessGrantId",
-          "requestId",
-          "ipAddress",
-          "details",
-        ] as const;
-        async function* lines() {
-          yield `${columns.join(",")}\r\n`;
-          for await (const entry of auditEntries(kernel, params.t, query, AUDIT_CSV_CAP)) {
-            yield `${columns.map((column) => csvCell(entry[column])).join(",")}\r\n`;
-          }
-        }
         reply
           .header("content-type", "text/csv; charset=utf-8")
           .header("content-disposition", `attachment; filename="audit-log.csv"`);
-        return reply.send(Readable.from(lines()));
+        return reply.send(auditCsv(kernel, params.t, query));
       },
     );
   };
 }
-
-/** How many entries one audit export holds at most. */
-const AUDIT_CSV_CAP = 100_000;
 
 /**
  * Gives a principal a role at a scope, inside a change: checks that the role

@@ -16,3 +16,6 @@ Paths: `C/` = `apps/console/src/`. Each test was seen failing before its fix.
 
 ## WLK-17e Schedule editor header at 390
 `C/kit/PageHeader.tsx` (compact, not `bar`): the name and state block takes at least `min(100%, 16rem)`, so a long name is not cut to "C…" and the actions wrap under it instead of squeezing it. Test `WLK-17e` in new `C/kit/PageHeader.test.tsx` (class, no layout in jsdom). Siblings, all compact non-bar headers: Authoring, Runs, FlowEditor, ResourceEditor, DocEditor, KitSheet, AppPreview; `bar` (the builder's) is unchanged and tested. Walk each at 390 with a long name. Gate: no new state; keyboard order unchanged.
+
+## WLK-17f Import check, format 1 line
+`C/screens/Environments.tsx` `Check`: draws its own line (icon, then wrapping text with `break-words`) in place of `StatePill`, which truncates; a new `"note"` state (the warning icon and tone) is used for a file with no signature (`authenticated === false`), which the import allows. Test `WLK-17f` in `C/Environments.test.tsx`. "Members 0" (INS-11): already fixed by ins2 (`inspectImport` reads `counts.member`; test "the check says whether the list of contents is signed"); nothing more done. Siblings: `Check` is used only in this check. Walk: Tenant import with a format 1 file at 1440 and 390, light and dark.

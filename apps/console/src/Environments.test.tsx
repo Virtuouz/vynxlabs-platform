@@ -397,3 +397,18 @@ test("a tenant whose database does not answer is deleted only after a second con
   await waitFor(() => expect(done).toHaveBeenCalled());
   expect(sentBodies).toEqual([{ confirm: "acme" }, { confirm: "acme", tablesLeftBehind: true }]);
 });
+
+test("WLK-17f: a file with no signature is a note, not a failure, and its long line wraps", async () => {
+  routes["GET /api/v1/instance/database-locations/names"] = () => [200, { items: [] }];
+  routes["POST /api/v1/instance/tenant-imports/staged"] = () => [
+    201,
+    staged({ authenticated: false, formatVersion: 1 } as never),
+  ];
+  show(<TenantImport />);
+  const file = new File(["tar bytes"], "acme.tar", { type: "application/x-tar" });
+  fireEvent.change(screen.getByLabelText("Export file"), { target: { files: [file] } });
+  fireEvent.submit(screen.getByLabelText("Export file").closest("form") as HTMLFormElement);
+  const line = (await screen.findByText(/Format 1 has no signature/)).closest("li");
+  expect(line?.getAttribute("data-check")).toBe("note");
+  expect(line?.querySelector("span")?.className).toContain("break-words");
+});

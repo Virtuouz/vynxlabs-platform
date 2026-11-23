@@ -13,7 +13,7 @@ import {
 } from "../kit/layout.tsx";
 import { consoleLink } from "../kit/objects.tsx";
 import { SaveBar } from "../kit/SaveBar.tsx";
-import { Code, Mono, StatePill } from "../kit/status.tsx";
+import { Code, lookUp, Mono, StatePill } from "../kit/status.tsx";
 import { Time } from "../kit/Time.tsx";
 import { ListScreen, Page, RemoveButton, when } from "../ListScreen.tsx";
 import { Link, navigate } from "../router.tsx";
@@ -862,11 +862,22 @@ async function withPassphrase<T>(
   return body as T;
 }
 
-/** One line of what an inspection found, as a state and what it means. */
-function Check({ ok, children }: { ok: boolean | null; children: ReactNode }) {
+/**
+ * One line of what an inspection found, as a state and what it means. A long sentence wraps
+ * under its icon, as it must in a card at a phone's width. `ok` is "note" for what allows the
+ * import and still deserves a look: a warning, not a failure.
+ */
+function Check({ ok, children }: { ok: boolean | null | "note"; children: ReactNode }) {
+  const [, Icon, tone] = lookUp(
+    ok === null ? "unchecked" : ok === "note" ? "warning" : ok ? "ok" : "failed",
+  );
   return (
-    <li>
-      <StatePill state={ok === null ? "unchecked" : ok ? "ok" : "failed"}>{children}</StatePill>
+    <li
+      data-check={ok === "note" ? "note" : ok === null ? "unchecked" : ok ? "ok" : "failed"}
+      className="flex items-start gap-1.5"
+    >
+      <Icon aria-hidden="true" size={14} className={`mt-1 shrink-0 ${tone}`} />
+      <span className={`min-w-0 break-words ${tone}`}>{children}</span>
     </li>
   );
 }
@@ -1067,7 +1078,11 @@ export function TenantImport() {
                       ? "The passphrase opens it"
                       : "The passphrase does not open it"}
                 </Check>
-                <Check ok={inspection.authenticated ?? null}>
+                <Check
+                  ok={
+                    inspection.authenticated === false ? "note" : (inspection.authenticated ?? null)
+                  }
+                >
                   {inspection.authenticated === true
                     ? "Its list of contents is signed with its key, and the signature is right"
                     : inspection.authenticated === false

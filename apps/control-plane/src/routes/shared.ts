@@ -57,7 +57,7 @@ export function toPage<Row, Item>(
 
 /**
  * The answer to a change to a tenant's access that waits for a second person:
- * nothing changed yet, and this is the release someone else has to approve.
+ * nothing changed yet, and this is the access change someone else has to approve.
  */
 export const Waiting = Type.Object(
   {
@@ -71,5 +71,5 @@ export const waiting = (release: { id: string; number: number; status: string })
   waiting: true as const,
   release: { id: release.id, number: release.number, status: release.status },
   detail:
-    "This tenant asks for a second person before its access changes. Nothing changed yet: someone else who may release access has to approve it.",
+    "This tenant asks for a second person before its access changes. Nothing changed yet: someone else who may change access has to approve it.",
 });

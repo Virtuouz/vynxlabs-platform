@@ -215,13 +215,13 @@ describe("releases of access, lane acc2", () => {
     expect(approved.status, JSON.stringify(approved.body)).toBe(200);
     const left = (await releases()).find((row) => row.id === three.body.release.id);
     expect(left.status).toBe("superseded");
-    expect(left.comment).toContain(`Release ${approved.body.number}`);
+    expect(left.comment).toContain(`Access change ${approved.body.number}`);
     // Going back answers the same way as anything else that waits.
     const here = (await releases()).filter((row) => row.status === "applied").at(-1);
     const back = await alice.post(`${at()}/releases/${here.id}/rollback`);
     expect(back.status, JSON.stringify(back.body)).toBe(202);
     expect(back.body.waiting).toBe(true);
-    expect(back.body.detail).toContain(`Release ${back.body.number} waits`);
+    expect(back.body.detail).toContain(`Access change ${back.body.number} waits`);
     const now = (await alice.get(at())).body.resources as Any[];
     const full = await alice.post(`${at()}/releases`, {
       resources: now.map((one) => (one.key === "ops" ? group("ops", "Operations") : one)),

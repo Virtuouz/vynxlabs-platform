@@ -513,7 +513,7 @@ function AppList({ root, onShare }: { root: string; onShare: (app: AppSummary) =
         </div>
       ) : null}
       <CollectionView<AppSummary>
-        title="Published apps"
+        title="Apps"
         description="What end users and staff can open: apps built in the repository, and apps made in the App Builder. Each has an address here, and can have hostnames of the tenant's own under Domains."
         toolbar={
           <div className="flex flex-wrap items-center gap-3">

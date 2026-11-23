@@ -55,7 +55,7 @@ test("ACC-23: a change that waits closes the form, says it waits and leads to Re
   fireEvent.click(within(dialog).getByRole("button", { name: "Create group" }));
   expect(await screen.findByText(/waits for a second person/)).toBeTruthy();
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-  expect(screen.getByRole("link", { name: "Open Releases" }).getAttribute("href")).toBe(
+  expect(screen.getByRole("link", { name: "Open Access changes" }).getAttribute("href")).toBe(
     "/t/t1/releases",
   );
   expect(calls.filter((call) => call.method === "POST")).toHaveLength(1);

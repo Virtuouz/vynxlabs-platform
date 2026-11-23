@@ -80,7 +80,8 @@ const Group = Type.Object({
   name: Type.String({ description: "What people read. It can change." }),
   description: Type.String(),
   managedBy: Type.String({
-    description: "`provider` for one an identity provider made by pushing it, `release` otherwise.",
+    description:
+      "`provider` for one an identity provider made by pushing it, `release` when an access change made it.",
   }),
   signInValues: Type.Array(Type.String(), {
     description:

@@ -118,16 +118,16 @@ export function isWaiting(error: unknown): boolean {
 }
 
 /**
- * Says that a change waits, in a toast that leads to Releases. For a dialog that asked for a
+ * Says that a change waits, in a toast that leads to Access changes. For a dialog that asked for a
  * change: when this returns true the dialog is done and closes, and asking again would only
- * make a second waiting release. Returns false for any other error, which the dialog shows.
+ * make a second waiting access change. Returns false for any other error, which the dialog shows.
  */
 export function noteWaiting(error: unknown): boolean {
   if (!isWaiting(error)) return false;
   const tenant = /^\/t\/([^/]+)/.exec(window.location.pathname)?.[1];
   need(toasts).info(failureText(error), {
     title: "Waits for approval",
-    ...(tenant ? { link: { label: "Open Releases", href: `/t/${tenant}/releases` } } : {}),
+    ...(tenant ? { link: { label: "Open Access changes", href: `/t/${tenant}/releases` } } : {}),
   });
   return true;
 }

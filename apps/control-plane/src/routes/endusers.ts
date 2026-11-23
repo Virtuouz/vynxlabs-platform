@@ -519,7 +519,7 @@ export function endUserRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       memberCount: Type.Integer(),
       managedBy: Type.String({
         description:
-          "`provider` for one an identity provider pushed, which is changed there, `release` otherwise.",
+          "`provider` for one an identity provider pushed, which is changed there, `release` when an access change made it.",
       }),
       signInValues: Type.Array(Type.String(), {
         description:

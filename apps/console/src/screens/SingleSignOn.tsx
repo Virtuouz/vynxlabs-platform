@@ -107,7 +107,7 @@ interface GroupMap {
   value: string;
   groupId: string;
   groupName?: string;
-  /** `release` for one an access release made: it is changed by a release, not here. */
+  /** `release` for one an access change made: it is changed by another access change, not here. */
   managedBy?: "hand" | "release";
 }
 interface Link {
@@ -591,9 +591,9 @@ function Groups({ base, root, audience }: { base: string; root: string; audience
       {released.length > 0 ? (
         <div className="flex flex-col gap-2">
           <p className="m-0 text-ink-muted">
-            These come from a{" "}
+            These come from an{" "}
             <RouteLink to={`/t/${tenantId}/releases`} className="text-action">
-              release of the tenant's access
+              access change
             </RouteLink>
             . Change them there.
           </p>
@@ -605,7 +605,7 @@ function Groups({ base, root, audience }: { base: string; root: string; audience
               <Mono>{row.value}</Mono>
               <span className="text-ink-muted">goes to</span>
               <strong>{row.groupName ?? row.groupId}</strong>
-              <Tag tone="neutral">Release</Tag>
+              <Tag tone="neutral">Access change</Tag>
             </div>
           ))}
         </div>

@@ -282,7 +282,7 @@ test("a mapping an access release made is shown read only, with the way to the r
   // Only the one made by hand has fields and a remove button.
   expect(screen.getAllByLabelText("Group at the provider")).toHaveLength(1);
   expect(screen.getAllByRole("button", { name: /Remove mapping/ })).toHaveLength(1);
-  const link = screen.getByRole("link", { name: /release/i }) as HTMLAnchorElement;
+  const link = screen.getByRole("link", { name: /access change/i }) as HTMLAnchorElement;
   expect(link.getAttribute("href")).toBe("/t/t1/releases");
   expect(screen.getByText("gold")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Remove mapping 1" }));

@@ -2341,7 +2341,13 @@ function Definition({
   table: TableDetail;
   reload: () => void;
 }) {
-  const editable = table.managedIn === "ui" && table.status === "active";
+  // A definition is saved as a resource of the workspace: `PUT resources/*` asks resource:write.
+  const mayDefine = useNeeds({
+    base: root,
+    permission: "resource:write",
+    what: "this table's definition",
+  });
+  const editable = table.managedIn === "ui" && table.status === "active" && mayDefine.can;
   // `/tenants/<id>`, the part of the workspace's address the tenant's people are listed under.
   const tenantBase = root.split("/workspaces/")[0];
   const [adding, setAdding] = useState(false);
@@ -2578,12 +2584,13 @@ function Definition({
 
   return (
     <div className="flex flex-col gap-5">
-      {table.status === "active" && !editable ? (
+      {table.status === "active" && table.managedIn !== "ui" ? (
         <Notice tone="attention">
           This table is defined in the tenant's repository. To change it, change{" "}
           <Code>{"defineTable"}</Code> there and deploy.
         </Notice>
       ) : null}
+      {table.managedIn === "ui" ? mayDefine.line : null}
       {failure ? <Notice tone="danger">{failure}</Notice> : null}
       {editable ? (
         <section className="flex flex-wrap items-center gap-2" aria-label="About this table">
@@ -3413,6 +3420,12 @@ function TestSource({
 
 export function Sources({ root, link }: { root: string; link: string }) {
   const sourceUses = useReferences(root, "data_source");
+  // Declaring a source is a resource of the workspace, which `PUT resources/*` guards.
+  const declare = useNeeds({
+    base: root,
+    permission: "resource:write",
+    what: "this workspace's data sources",
+  });
   return (
     <ListScreen<SourceBinding>
       title="Data sources"
@@ -3422,7 +3435,11 @@ export function Sources({ root, link }: { root: string; link: string }) {
       path={`${root}/data-source-bindings`}
       rowKey={(row) => row.path}
       action={
-        <Button onClick={() => navigate(`${link}/resources/new/data_source`)}>
+        <Button
+          disabled={!declare.can}
+          {...(declare.reason ? { tooltip: declare.reason } : {})}
+          onClick={() => navigate(`${link}/resources/new/data_source`)}
+        >
           Declare source
         </Button>
       }

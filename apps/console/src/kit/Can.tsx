@@ -1,7 +1,7 @@
 import { grants } from "@volvel/manifest";
 import { Notice } from "@volvel/ui";
-import type { ReactNode } from "react";
-import { askForAccess, type Me, useLoad } from "../api.ts";
+import { type ReactNode, useEffect, useState } from "react";
+import { api, askForAccess, type Me, useLoad } from "../api.ts";
 
 interface Held {
   permissions: { permission: string; sources?: string[] }[];
@@ -126,6 +126,46 @@ export function useMayOn(
     // An answer that does not say is no refusal: the server decides.
     return Array.isArray(asked.data.allowed) ? asked.data.allowed.includes(permission) : true;
   };
+}
+
+/**
+ * For a list whose rows each belong to a script or flow: whether each is allowed `permission`,
+ * counting a grant on that one resource, as the server does for runs. Nothing is held until the
+ * answer is in; an answer that cannot be had leaves the control, and the server decides.
+ */
+export function useMayEach(
+  root: string | null,
+  wanted: { kind: string; path: string; permission: string }[],
+): (kind: string, path: string, permission: string) => boolean {
+  const [known, setKnown] = useState<Record<string, boolean>>({});
+  const key = (kind: string, path: string, permission: string) => `${permission} ${kind} ${path}`;
+  const missing = wanted.filter((one) => !(key(one.kind, one.path, one.permission) in known));
+  const signature = missing.map((one) => key(one.kind, one.path, one.permission)).join("\n");
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `signature` stands for `missing`
+  useEffect(() => {
+    if (root === null || missing.length === 0) return;
+    let live = true;
+    for (const one of missing) {
+      const on = `kind=${encodeURIComponent(one.kind)}&path=${encodeURIComponent(one.path)}`;
+      api
+        .get<{ allowed?: string[] }>(
+          `${root}/allowed?permissions=${encodeURIComponent(one.permission)}&${on}`,
+        )
+        .then(
+          (answer) => !Array.isArray(answer.allowed) || answer.allowed.includes(one.permission),
+          () => true,
+        )
+        .then((value) => {
+          if (live) {
+            setKnown((was) => ({ ...was, [key(one.kind, one.path, one.permission)]: value }));
+          }
+        });
+    }
+    return () => {
+      live = false;
+    };
+  }, [root, signature]);
+  return (kind, path, permission) => known[key(kind, path, permission)] === true;
 }
 
 /**

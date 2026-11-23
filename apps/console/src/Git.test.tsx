@@ -65,6 +65,44 @@ test("a repository is connected with a token, which is sent once and not kept on
   });
 });
 
+test("a folder volvel.yaml names is shown as read-only, and says where it is set (D65)", async () => {
+  const stored = {
+    ...repository,
+    folderInForce: "conf",
+    folderFrom: "volvel.yaml",
+    fileReadAt: "2026-11-22T10:00:00Z",
+  };
+  routes["GET /api/v1/tenants/t1/git-repository"] = () => [200, { repository: stored }];
+  routes["PUT /api/v1/tenants/t1/git-repository"] = () => [200, stored];
+  show(<RepositorySettings base="/tenants/t1" />);
+  const field = (await screen.findByLabelText("Folder")) as HTMLInputElement;
+  expect(field.value).toBe("conf");
+  expect(field.readOnly).toBe(true);
+  expect(screen.getByText(/Set in volvel\.yaml/)).toBeTruthy();
+  // Saving keeps the setting as it was: the file's folder is not copied into it.
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  await waitFor(() => expect(sent("PUT")).toHaveLength(1));
+  expect(sent("PUT")[0]?.body).toMatchObject({ folder: "platform" });
+});
+
+test("a folder is edited here until a volvel.yaml has been read, and says so", async () => {
+  routes["GET /api/v1/tenants/t1/git-repository"] = () => [
+    200,
+    {
+      repository: {
+        ...repository,
+        folderInForce: "platform",
+        folderFrom: "setting",
+        fileReadAt: null,
+      },
+    },
+  ];
+  show(<RepositorySettings base="/tenants/t1" />);
+  const field = (await screen.findByLabelText("Folder")) as HTMLInputElement;
+  expect(field.readOnly).toBe(false);
+  expect(screen.getByText(/volvel\.yaml has not been read yet/)).toBeTruthy();
+});
+
 test("a refused token is said, and a paused sync is explained", async () => {
   routes["GET /api/v1/tenants/t1/git-repository"] = () => [
     200,

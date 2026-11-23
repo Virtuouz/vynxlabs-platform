@@ -266,6 +266,9 @@ interface Repository {
   config: RepositoryConfig;
   /** What is wrong with `volvel.yaml`, if anything. */
   problems: string[];
+  /** Where the console writes: `resources` of `volvel.yaml` when it names one, else the Repository page's folder (D65). */
+  folder: string;
+  folderFrom: "setting" | "volvel.yaml";
 }
 
 /**
@@ -286,7 +289,19 @@ async function readRepository(
   const { tree: root } = await git.readTree({ fs, gitdir, oid: commit });
   const said = root.find((entry) => entry.path === REPOSITORY_CONFIG && entry.type === "blob");
   const { config, problems } = parseRepositoryConfig(said ? await text(said.oid) : undefined);
-  const docs = docsRoots(config, folder);
+  let inForce = folder;
+  let folderFrom: Repository["folderFrom"] = "setting";
+  if (config.resources !== undefined) {
+    if (!FOLDER.test(config.resources) || config.resources.split("/").includes("..")) {
+      problems.push(
+        `${REPOSITORY_CONFIG}: resources is "${config.resources}", which is not a folder inside the repository. Name one, such as platform, or take resources out of the file to use the folder on the Repository page.`,
+      );
+    } else {
+      inForce = config.resources;
+      folderFrom = "volvel.yaml";
+    }
+  }
+  const docs = docsRoots(config, inForce);
   const walk = async (tree: typeof root, prefix: string) => {
     for (const entry of tree) {
       const path = prefix ? `${prefix}/${entry.path}` : entry.path;
@@ -306,7 +321,23 @@ async function readRepository(
     }
   };
   await walk(root, "");
-  return { files: files.sort((a, b) => (a.path < b.path ? -1 : 1)), config, problems };
+  return {
+    files: files.sort((a, b) => (a.path < b.path ? -1 : 1)),
+    config,
+    problems,
+    folder: inForce,
+    folderFrom,
+  };
+}
+
+/** Keeps what `volvel.yaml` said about the folder, for the Repository page to show. */
+async function rememberFolder(db: Db, tenantId: string, repository: Repository) {
+  const named = repository.folderFrom === "volvel.yaml" ? repository.folder : null;
+  await db
+    .updateTable("git_repository")
+    .set({ file_folder: named, file_read_at: new Date() })
+    .where("tenant_id", "=", tenantId)
+    .execute();
 }
 
 type Entry = { mode: string; path: string; oid: string; type: "blob" | "tree" | "commit" };
@@ -621,6 +652,10 @@ export async function saveRepository(
       credential,
       credential_kind: credentialKind(token),
       verified_at: new Date(),
+      // What the old repository's file said is not known of this one until it is read.
+      ...(existing && (existing.url !== input.url || existing.default_branch !== defaultBranch)
+        ? { file_folder: null, file_read_at: null }
+        : {}),
       ...(input.releaseBranch !== undefined ? { release_branch: input.releaseBranch } : {}),
       ...(input.tenantBranch !== undefined ? { tenant_branch: input.tenantBranch } : {}),
       updated_at: new Date(),
@@ -806,8 +841,8 @@ const changedHere =
 async function sidesOf(
   manifests: readonly BundleManifest[],
   repository: Repository,
-  folder: string,
 ): Promise<Sides> {
+  const { folder } = repository;
   const options = { folder, roots: repository.config.roots };
   const remote = new Map(repository.files.map((file) => [file.path, file.content]));
   const parsed = parseRepositoryFiles(repository.files, {
@@ -921,7 +956,8 @@ export async function push(
     }
     try {
       const repository = await readRepository(tip.gitdir, tip.commit, remote.folder);
-      const sides = await sidesOf(manifests, repository, remote.folder);
+      if (tip.exists) await rememberFolder(db, workspace.tenantId, repository);
+      const sides = await sidesOf(manifests, repository);
       const problem = configProblem(repository) ?? sides.problems[0];
       if (problem) return failed(db, workspace, actor, "push", problem);
       const { theirs, mine: local } = sides;
@@ -935,11 +971,7 @@ export async function push(
           .limit(1)
           .executeTakeFirst();
         if (pending) {
-          const drafted = await sidesOf(
-            await draftManifests(kernel, db, workspace),
-            repository,
-            remote.folder,
-          );
+          const drafted = await sidesOf(await draftManifests(kernel, db, workspace), repository);
           for (const [path, hash] of Object.entries(drafted.mine)) {
             if (theirs[path] === hash && local[path] !== hash) {
               local[path] = hash;
@@ -977,7 +1009,7 @@ export async function push(
       // A branch made by this push starts as the default branch. The console's folder there
       // becomes what the workspace has. A resource file kept anywhere else that the workspace
       // does not have is somebody's work, and is left for a pull to bring in.
-      const mayRemove = (path: string) => tip.exists || path.startsWith(`${remote.folder}/`);
+      const mayRemove = (path: string) => tip.exists || path.startsWith(`${repository.folder}/`);
       const changes = [
         ...sides.mineFiles
           .filter((file) => theirs[file.path] !== local[file.path])
@@ -1006,10 +1038,10 @@ export async function push(
       const after = parseRepositoryFiles(
         [...sides.remoteFiles.filter((file) => !changed.has(file.path)), ...sides.mineFiles],
         {
-          folder: remote.folder,
+          folder: repository.folder,
           roots: repository.config.roots,
           kinds: WORKSPACE_KINDS,
-          docs: docsRoots(repository.config, remote.folder),
+          docs: docsRoots(repository.config, repository.folder),
         },
       );
       if (after.problems.length > 0) {
@@ -1176,8 +1208,9 @@ export async function pull(
         if (!(error instanceof TooLarge)) throw error;
         return stopped(error.message);
       }
+      await rememberFolder(db, workspace.tenantId, repository);
       const active = await activeConsoleManaged(kernel, db, workspace.id);
-      const sides = await sidesOf(active, repository, remote.folder);
+      const sides = await sidesOf(active, repository);
       const wrong = configProblem(repository);
       if (wrong) return stopped(wrong);
       const { theirs, mine, remoteFiles, mineFiles, resourceOf } = sides;
@@ -1199,8 +1232,8 @@ export async function pull(
       // Before files were kept anywhere, a resource was named without the console's folder.
       const chosen = (resource: string) =>
         options.resolutions?.[resource] ??
-        (resource.startsWith(`${remote.folder}/`)
-          ? options.resolutions?.[resource.slice(remote.folder.length + 1)]
+        (resource.startsWith(`${repository.folder}/`)
+          ? options.resolutions?.[resource.slice(repository.folder.length + 1)]
           : undefined);
       const take: string[] = [];
       const conflicts: string[] = [];
@@ -1245,10 +1278,10 @@ export async function pull(
         ...remoteFiles.filter((file) => taken.has(resourceOf(file.path))),
       ];
       const parsed = parseRepositoryFiles(merged, {
-        folder: remote.folder,
+        folder: repository.folder,
         roots: repository.config.roots,
         kinds: WORKSPACE_KINDS,
-        docs: docsRoots(repository.config, remote.folder),
+        docs: docsRoots(repository.config, repository.folder),
       });
       if (parsed.problems.length > 0) {
         return stopped(`The files on the branch are not valid: ${parsed.problems.join(" ")}`);
@@ -1312,13 +1345,7 @@ export async function pull(
           synced_files: JSON.stringify(theirs),
           // What the workspace says now, read as the next comparison will read it.
           synced_said: JSON.stringify(
-            (
-              await sidesOf(
-                await activeConsoleManaged(kernel, db, workspace.id),
-                repository,
-                remote.folder,
-              )
-            ).said,
+            (await sidesOf(await activeConsoleManaged(kernel, db, workspace.id), repository)).said,
           ),
           state: ahead ? "ahead" : "synced",
           last_error: null,
@@ -1359,7 +1386,15 @@ export async function gitStatus(kernel: Kernel, workspace: WorkspaceRef) {
   const [repository, link] = await Promise.all([
     kernel.db
       .selectFrom("git_repository")
-      .select(["url", "default_branch", "folder", "paused", "release_branch"])
+      .select([
+        "url",
+        "default_branch",
+        "folder",
+        "paused",
+        "release_branch",
+        "file_folder",
+        "file_read_at",
+      ])
       .where("tenant_id", "=", workspace.tenantId)
       .executeTakeFirst(),
     kernel.db
@@ -1396,7 +1431,19 @@ export async function checkRepository(kernel: Kernel, actor: Actor, tenantId: st
   let problem: string | null = null;
   try {
     const tip = await fetchTip(remote, remote.defaultBranch);
-    await rm(tip.gitdir, { recursive: true, force: true });
+    try {
+      if (tip.exists) {
+        await rememberFolder(
+          kernel.db,
+          tenantId,
+          await readRepository(tip.gitdir, tip.commit, remote.folder, true),
+        );
+      }
+    } catch {
+      // A branch too large to read, or with a file that cannot be read, is a pull's to say.
+    } finally {
+      await rm(tip.gitdir, { recursive: true, force: true });
+    }
   } catch (error) {
     problem = remoteProblem(error);
   }
@@ -1465,13 +1512,18 @@ export async function compareWithBranch(
   try {
     const repository = tip.exists
       ? await readRepository(tip.gitdir, tip.commit, remote.folder)
-      : { files: [], config: { roots: [], ignore: [], docs: [] }, problems: [] };
+      : {
+          files: [],
+          config: { roots: [], ignore: [], docs: [] },
+          problems: [],
+          folder: remote.folder,
+          folderFrom: "setting" as const,
+        };
     const sides = await sidesOf(
       options.drafts
         ? await draftManifests(kernel, db, workspace)
         : await activeConsoleManaged(kernel, db, workspace.id),
       repository,
-      remote.folder,
     );
     const { theirs, mine, remoteFiles, mineFiles } = sides;
     const base = link.synced_files;
@@ -1622,11 +1674,7 @@ export async function pushRelease(
     // The branch is what production runs, and no more: a resource file there that
     // production does not have is removed, wherever it is kept.
     const repository = await readRepository(tip.gitdir, tip.commit, remote.folder);
-    const sides = await sidesOf(
-      await activeConsoleManaged(kernel, db, workspace.id),
-      repository,
-      remote.folder,
-    );
+    const sides = await sidesOf(await activeConsoleManaged(kernel, db, workspace.id), repository);
     const files = sides.mineFiles;
     const changes = [
       ...files

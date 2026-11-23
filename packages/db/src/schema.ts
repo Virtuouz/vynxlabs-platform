@@ -437,6 +437,10 @@ export interface GitRepositoryTable {
   release_branch: Generated<string | null>;
   /** The branch the tenant's access is committed to. */
   tenant_branch: Generated<string | null>;
+  /** The folder `volvel.yaml` named when a branch was last read. Null: it names none. */
+  file_folder: Generated<string | null>;
+  /** When a branch's `volvel.yaml` was last read, by a sync or a check. Null: not yet. */
+  file_read_at: Generated<Date | null>;
   /** When the sealed credential was last set, and by whom. Stamped by a trigger. */
   credential_set_at: ColumnType<Date | null, never, never>;
   credential_set_by_type: ColumnType<string | null, never, never>;

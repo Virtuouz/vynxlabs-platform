@@ -322,3 +322,12 @@ test("WLK-17a: at a phone's width the health, used-by and kind cells keep room, 
   const kind = screen.getAllByText("HTTP")[0]?.closest("td")?.firstElementChild;
   expect(kind?.className).toContain("whitespace-nowrap");
 });
+
+test("WLK-17g: in production with nothing arriving, Set up a connection says so and opens no empty form", async () => {
+  rows = [row({ path: "shop", connector: "http" })];
+  show(<Connections root={root} production />);
+  await screen.findByText("shop");
+  fireEvent.click(await screen.findByRole("button", { name: "Set up a connection" }));
+  expect(await screen.findByText(/Nothing waits to be set up here/)).toBeTruthy();
+  expect(screen.queryByRole("dialog", { name: /New connection/ })).toBeNull();
+});

@@ -392,7 +392,11 @@ const toAuditEntry = (
   workspaceId: row.workspace_id,
   actorType: row.actor_type,
   actorId: row.actor_id,
-  actorLabel: nameOf(row.actor_type, row.actor_id),
+  actorLabel:
+    nameOf(row.actor_type, row.actor_id) ??
+    (typeof (row.details as { actorName?: unknown } | null)?.actorName === "string"
+      ? (row.details as { actorName: string }).actorName
+      : null),
   apiKeyId: row.api_key_id,
   accessGrantId: row.access_grant_id,
   action: row.action,

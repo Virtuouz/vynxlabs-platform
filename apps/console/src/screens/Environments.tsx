@@ -592,7 +592,9 @@ export function Promotion({
         </div>
         {unsaved ? (
           <p className="m-0 max-w-measure text-ink-muted">
-            Save the new target to review a promotion to it.
+            {linked === null
+              ? "Saved, this workspace promotes nowhere. Save to stop, or choose a target again."
+              : "Save the new target to review a promotion to it."}
           </p>
         ) : target ? (
           // The one place that reviews, asks for and makes a promotion is the Release screen's promote step.

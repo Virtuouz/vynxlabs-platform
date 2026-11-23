@@ -257,6 +257,13 @@ test("CFG-13: with a new target chosen and not saved, there is no button that pr
   expect(screen.getByText(/Save the new target/)).toBeTruthy();
 });
 
+test("clirel left: an unsaved link that was cleared says so, and offers no promotion to the old target", async () => {
+  routes[`GET ${base}/workspaces`] = () => [200, { items: [dev, main] }];
+  show(<Promotion base={base} workspace={dev} reload={() => {}} linked={null} onLink={() => {}} />);
+  expect(await screen.findByText(/promotes nowhere/)).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Review and promote" })).toBeNull();
+});
+
 test("CFG-11, CFG-12: the settings and the clone say what a clone with Safety off gets", async () => {
   routes[`POST ${base}/workspaces/w-main/clones`] = () => [
     202,

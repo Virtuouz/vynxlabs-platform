@@ -51,3 +51,11 @@
 - Siblings: connections, variables, secrets, events, scripts already show it. Queries.tsx is also in lane t3-data (one section added next to the Tables section).
 - Left: dashboards and docs. Nothing in a manifest names a dashboard or a doc (an app names an interface, not a dashboard; doc links are prose and are not parsed), so there is no use to list. Asked: should an app or a doc link become a reference? Not decided here.
 - Polish: states: Reading, Could not be read, "Nothing deployed uses it" in the column; "Nothing uses it, deployed or in a draft." under a query. Walk: Queries with a saved query open (aside under the editor at 390 px), Data sources at 390 px (column hidden below tablet).
+
+## APP-MP3: Apps list sort, filter, search, Delete
+- Test: `Portal.test.tsx` "APP-MP3: apps are searched, filtered by how they are built, sorted, and a console-made one is removed". Failed before.
+- Change: `apps/console/src/screens/Apps.tsx` `AppList`: search box ("Find an app"), "Built" filter chips with counts, sortable App and Built headers, "No app matches" empty state, and in the inspector the shared `RemoveDraftButton` (kind `app`) for apps made in the console, or "Managed in the repository" for repository apps. `apps/control-plane/src/routes/apps.ts`: the `/apps` item gains `ownership` (additive).
+- Siblings: the same shared piece removes flows (`Flows.tsx`) and scripts; dashboards and queries lists have their own removal (other lane).
+- Left: Unpublish. Only a documentation app has a `published` flag, set in the repository. A console-made app has no switched-off state: taking it out of service is removing it (the Remove button, deployed with the next release). Adding a published flag to builder apps changes the app kind's schema; asked, not built.
+- The list shows deployed apps, so a removed one stays listed until its removal draft is deployed (the notice from the shared button says so).
+- Polish: states: loading, empty, no match, error; keyboard: search and chips are native; Walk: Apps at 390 px (toolbar wraps), inspector Remove, reload keeps nothing (search is not in the URL).

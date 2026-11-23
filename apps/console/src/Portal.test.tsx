@@ -110,6 +110,71 @@ test("the apps of a workspace are listed with their addresses and who they are o
   expect(sheet.textContent).toContain("12, 340 KB");
 });
 
+const appRow = (id: string, path: string, title: string, more: object = {}) => ({
+  id,
+  path,
+  title,
+  description: null,
+  url: `https://apps.example.test/apps/acme/main/${path}/`,
+  domains: [],
+  files: 0,
+  bytes: 0,
+  access: [],
+  builtWith: "builder",
+  ownership: "ui",
+  ...more,
+});
+
+test("APP-MP3: apps are searched, filtered by how they are built, sorted, and a console-made one is removed", async () => {
+  routes[`GET /api/v1${base}/workspaces/w1/apps`] = () => [
+    200,
+    {
+      items: [
+        appRow("a1", "portal/orders", "Orders"),
+        appRow("a2", "back-office", "Back office", { builtWith: "code", ownership: "code" }),
+        appRow("a3", "alpha", "Alpha"),
+      ],
+    },
+  ];
+  routes[`PUT /api/v1${base}/workspaces/w1/drafts/portal/orders`] = () => [200, {}];
+  show(<Apps root={`${base}/workspaces/w1`} />);
+  await screen.findByText("Orders");
+  // Search by title or path.
+  fireEvent.input(screen.getByLabelText("Find an app"), { target: { value: "office" } });
+  expect(screen.queryByText("Orders")).toBeNull();
+  expect(screen.getByText("Back office")).toBeTruthy();
+  fireEvent.input(screen.getByLabelText("Find an app"), { target: { value: "" } });
+  // Filter by how it is built.
+  fireEvent.click(screen.getByRole("radio", { name: /^Repository/ }));
+  expect(screen.queryByText("Orders")).toBeNull();
+  fireEvent.click(screen.getByRole("radio", { name: /^All/ }));
+  // Sort by the title's header.
+  fireEvent.click(screen.getByRole("button", { name: /App/ }));
+  const titles = () =>
+    screen
+      .getAllByRole("row")
+      .slice(1)
+      .map((row) => row.textContent ?? "");
+  expect(titles()[0]).toContain("Alpha");
+  // A repository app is removed there; a console-made one is removed from its inspector.
+  fireEvent.click(screen.getByText("Back office"));
+  expect((await screen.findByRole("dialog")).textContent).toContain("Managed in the repository");
+  cleanup();
+  show(<Apps root={`${base}/workspaces/w1`} />);
+  fireEvent.click(await screen.findByText("Orders"));
+  const sheet = await screen.findByRole("dialog");
+  fireEvent.click(within(sheet).getByRole("button", { name: "Remove" }));
+  await answer("Remove");
+  await waitFor(() =>
+    expect(
+      sent("PUT").find((call) => call.url.endsWith("/drafts/portal/orders"))?.body,
+    ).toMatchObject({
+      kind: "app",
+      deleted: true,
+    }),
+  );
+});
+
 test("a workspace with no apps says where apps come from", async () => {
   routes[`GET /api/v1${base}/workspaces/w1/apps`] = () => [200, { items: [] }];
   show(<Apps root={`${base}/workspaces/w1`} />);

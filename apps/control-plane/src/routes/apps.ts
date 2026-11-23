@@ -133,6 +133,10 @@ const AppItem = Type.Object({
     description:
       "`builder` for an app that serves an interface made in the console, `docs` for one that serves pages of documentation.",
   }),
+  ownership: Type.String({
+    description:
+      "`code` for an app the repository defines, which is removed there; `ui` for one made in the console.",
+  }),
   interface: NullableString,
   docs: Type.Optional(
     Type.Union([NullableString], {
@@ -317,7 +321,7 @@ export function appRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         const tenant = await tenantOf(params.t);
         const resources = await db
           .selectFrom("resource")
-          .select(["id", "path", "body"])
+          .select(["id", "path", "body", "ownership"])
           .where("workspace_id", "=", params.w)
           .where("kind", "=", "app")
           .orderBy("path")
@@ -442,6 +446,7 @@ export function appRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                 })),
               files: files.length,
               bytes: files.reduce((sum, file) => sum + file.size, 0),
+              ownership: resource.ownership,
               builtWith: body.docs
                 ? ("docs" as const)
                 : body.interface

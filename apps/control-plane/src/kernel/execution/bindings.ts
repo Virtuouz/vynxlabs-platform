@@ -45,6 +45,8 @@ export async function bindConnection(
   id: BindingName,
   config: Record<string, unknown>,
   credential: string | null | undefined,
+  /** The kind of connector it is bound as, when known. Kept with the binding. */
+  connector?: string | null,
 ) {
   const existing = await trx
     .selectFrom("connection_binding")
@@ -82,6 +84,7 @@ export async function bindConnection(
         config: JSON.stringify(config),
         credential: encrypted,
         updated_at: new Date(),
+        ...(connector ? { connector } : {}),
         ...(reauthorize ? { oauth_tokens: null, oauth: null } : {}),
       })
       .where("id", "=", existing.id)
@@ -101,6 +104,7 @@ export async function bindConnection(
       path: id.path,
       config: JSON.stringify(config),
       credential: encrypted,
+      connector: connector ?? null,
       updated_at: new Date(),
     })
     .execute();

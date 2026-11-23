@@ -3,9 +3,12 @@ import { Button, Notice } from "@volvel/ui";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError, api, useLoad } from "../../api.ts";
 import { ask, failureText, notify, takenText } from "../../ask.tsx";
+import { DraftClash } from "../../kit/DraftClash.tsx";
+import { isDraftClash, putDraft } from "../../kit/draftApi.ts";
 import { ago } from "../../kit/format.ts";
 import { useHistory } from "../../kit/history.ts";
 import { heading } from "../../kit/inspector/model.ts";
+import { RemoveDraftButton } from "../../kit/RemoveDraftButton.tsx";
 import {
   DeviceSwitch,
   DraftPill,
@@ -94,6 +97,7 @@ export function AppBuilder({
     },
   );
   const dirty = useRef(false);
+  const clashed = useRef(false);
   const list = useLoad<{ items: Listed[] }>(`${root}/interfaces`);
   const drafts = useLoad<{ items: { path: string }[] }>(`${root}/drafts`);
   const apps = useLoad<{ items: { path: string; url: string; preview?: string }[] }>(
@@ -103,7 +107,12 @@ export function AppBuilder({
   const deployed = useLoad<{ body: InterfaceBody }>(`${root}/interfaces/${path}`);
   const { groups } = useGroupKeys(root);
   /** Someone who may not edit here reads the app as it is published; nothing is changed, saved or published. */
-  const { known, readOnly, why } = useReadOnly(root);
+  const { known, readOnly: mayNot, why } = useReadOnly(root);
+  /** The draft removes this app: it is shown as it is published, and nothing is saved from here. */
+  const [removal, setRemoval] = useState(false);
+  /** Someone else saved the draft first: nothing is saved until their version is loaded. */
+  const [clash, setClash] = useState(false);
+  const readOnly = mayNot || removal;
   /** The screen sizes whose hand-made layout the builder has agreed to write, until the page is left. */
   const agreed = useRef(new Set<string>());
   const [restoring, setRestoring] = useState(false);
@@ -119,6 +128,10 @@ export function AppBuilder({
       (draft) => {
         if (!current) return;
         revision.current = draft.revision;
+        if ((draft as { deleted?: boolean }).deleted) {
+          setRemoval(true);
+          return;
+        }
         setProblems(draft.problems ?? []);
         setBody(draft.body);
       },
@@ -150,21 +163,25 @@ export function AppBuilder({
 
   const save = useCallback(
     async (next: InterfaceBody) => {
-      if (readOnly) return false;
+      if (readOnly || clashed.current) return false;
       setSaving("saving");
       try {
-        const saved = await api.put<DraftAnswer>(`${root}/drafts/${path}`, {
-          kind: "interface",
-          schemaVersion: 2,
-          body: next,
-          ...(revision.current !== undefined ? { revision: revision.current } : {}),
-        });
+        const saved = await putDraft<DraftAnswer>(
+          root,
+          path,
+          { kind: "interface", schemaVersion: 2, body: next as unknown as Record<string, unknown> },
+          revision.current !== undefined ? { revision: revision.current } : { first: true },
+        );
         revision.current = saved.revision;
         setProblems(saved.problems ?? []);
         setSaving("saved");
         setKept((count) => count + 1);
         return true;
       } catch (error) {
+        if (isDraftClash(error)) {
+          clashed.current = true;
+          setClash(true);
+        }
         setSaving({ failed: failureText(error) });
         return false;
       }
@@ -480,7 +497,55 @@ export function AppBuilder({
     ),
     notices: (
       <>
-        {readOnly ? <ReadOnlyLine what="Apps" why={why} /> : null}
+        {removal ? (
+          <Notice
+            tone="attention"
+            action={
+              <RemoveDraftButton
+                root={root}
+                kind="interface"
+                path={path}
+                noun="app"
+                state="removed"
+                size="small"
+                onDone={() => {
+                  // The removal is taken back: the app is read again as a draft or as published.
+                  revision.current = undefined;
+                  setBody(undefined);
+                  setNoDraft(false);
+                  setRemoval(false);
+                }}
+              />
+            }
+          >
+            This app is removed in your drafts. Nothing changes until that draft is deployed. It is
+            shown as it is published, and cannot be changed here until the removal is taken back.
+          </Notice>
+        ) : mayNot ? (
+          <ReadOnlyLine what="Apps" why={why} />
+        ) : null}
+        {clash ? (
+          <DraftClash
+            what="app"
+            onTake={async () => {
+              const theirs = await api
+                .get<DraftAnswer>(`${root}/drafts/${path}`)
+                .catch(() => undefined);
+              revision.current = theirs?.revision;
+              if (theirs) {
+                setProblems(theirs.problems ?? []);
+                setBody(theirs.body);
+              } else {
+                const now = await api.get<{ body: InterfaceBody }>(`${root}/interfaces/${path}`);
+                setBody(now.body);
+              }
+              dirty.current = false;
+              clashed.current = false;
+              setClash(false);
+              setSaving("saved");
+            }}
+          />
+        ) : null}
         {!readOnly && appPath === null && list.data ? (
           <Notice
             tone="attention"

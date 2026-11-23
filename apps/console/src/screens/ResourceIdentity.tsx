@@ -2,6 +2,7 @@ import { Button, Dialog, Notice, TextField } from "@volvel/ui";
 import { useEffect, useRef, useState } from "react";
 import { ApiError, api } from "../api.ts";
 import { failureText, notify } from "../ask.tsx";
+import { putDraft } from "../kit/draftApi.ts";
 import { Loading } from "../kit/LoadState.tsx";
 import { navigate } from "../router.tsx";
 
@@ -87,6 +88,7 @@ interface Stored {
   body: Record<string, unknown>;
   key?: string;
   title?: string | null;
+  revision?: number;
 }
 
 /**
@@ -168,6 +170,7 @@ function IdentityForm({
   onDone: (path: string) => void;
 }) {
   const [stored, setStored] = useState<Stored>();
+  const [draftRevision, setDraftRevision] = useState<number>();
   const [was, setWas] = useState("");
   const [path, setPath] = useState(row.path);
   const [title, setTitle] = useState("");
@@ -210,6 +213,7 @@ function IdentityForm({
       // A draft that does not speak of the title leaves the one the resource has.
       const now = (draft && draft.title !== null ? draft.title : deployed?.title) ?? "";
       setStored(found);
+      setDraftRevision(draft?.revision);
       setWas(now);
       setTitle(now);
     })().catch((error) => current && setProblem(failureText(error)));
@@ -225,13 +229,19 @@ function IdentityForm({
     setBusy(true);
     setProblem(undefined);
     try {
-      await api.put(`${root}/drafts/${row.path}`, {
-        kind: stored.kind,
-        schemaVersion: stored.schemaVersion,
-        body: stored.body,
-        ...(moved ? { path: path.trim() } : {}),
-        ...(retitled ? { title: title.trim() || null } : {}),
-      });
+      // Based on the draft this dialog read when it opened, or on none when there was none.
+      await putDraft(
+        root,
+        row.path,
+        {
+          kind: stored.kind,
+          schemaVersion: stored.schemaVersion,
+          body: stored.body,
+          ...(moved ? { path: path.trim() } : {}),
+          ...(retitled ? { title: title.trim() || null } : {}),
+        },
+        draftRevision !== undefined ? { revision: draftRevision } : { first: true },
+      );
       notify.success(
         moved
           ? `A draft renames ${row.path} to ${path.trim()}.`

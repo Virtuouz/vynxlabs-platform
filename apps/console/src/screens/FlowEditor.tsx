@@ -51,6 +51,8 @@ import { autoLayout, describe, type GraphEdge, type GraphNode } from "../FlowGra
 import { type Clip, type ClipStep, copySteps, pasteSteps, readClip } from "../flowClipboard.ts";
 import { renameInNode } from "../flowRename.ts";
 import { DeployMenu } from "../kit/DeployMenu.tsx";
+import { DraftClash } from "../kit/DraftClash.tsx";
+import { putDraft } from "../kit/draftApi.ts";
 import { useDraftSave } from "../kit/draftSave.ts";
 import { useHistory } from "../kit/history.ts";
 import { formatCombo, isTyping, keysOf, useShortcut } from "../kit/keys.ts";
@@ -517,7 +519,9 @@ export function FlowEditor({
   // Where the canvas was left this session, read once per flow.
   const kept = useMemo(() => viewportOf(path), [path]);
   const [canvas, setCanvas] = useState<ReactFlowInstance<CanvasNode, Edge>>();
-  const [state, setState] = useState<"new" | "draft" | "deployed" | "repository">("new");
+  const [state, setState] = useState<"new" | "draft" | "deployed" | "repository" | "removed">(
+    "new",
+  );
   const [loaded, setLoaded] = useState(false);
   const [starterId, setStarterId] = useState("blank");
   const [testing, setTesting] = useState(false);
@@ -534,19 +538,25 @@ export function FlowEditor({
   // Autosaves that failed in a row, and whether they have been given up until asked again.
   const failures = useRef(0);
   const [gaveUp, setGaveUp] = useState(false);
+  // Counted up to read the flow again, as when someone else's version is loaded.
+  const [again, setAgain] = useState(0);
   const [savedAt, setSavedAt] = useState<number>();
   // What a save sends is read from the newest render when it goes out, so that a change made
   // while one is in flight is in the next. The hook counts the changes and sends again.
   const toSend = useRef<() => FlowBody>(() => ({ nodes: {}, edges: [] }));
   const draft = useDraftSave<null, { revision: number }>({
     send: (_snapshot, at) =>
-      api.put<{ revision: number }>(`${root}/drafts/${pathNow.current}`, {
-        kind: "flow",
-        schemaVersion: 1,
-        body: toSend.current(),
+      putDraft<{ revision: number }>(
+        root,
+        pathNow.current,
+        {
+          kind: "flow",
+          schemaVersion: 1,
+          body: toSend.current() as unknown as Record<string, unknown>,
+        },
         // A new flow is a create: a path that is taken is refused, never overwritten.
-        ...(at ? { revision: at } : opened ? {} : { create: true }),
-      }),
+        at ? { revision: at } : opened ? { first: true } : { create: true },
+      ),
     applied: (_saved, _sent, _current) => {
       setState("draft");
       setSavedAt(Date.now());
@@ -703,13 +713,23 @@ export function FlowEditor({
       open({ nodes: { start: { type: "trigger", trigger: { type: "manual" } } }, edges: [] });
       return;
     }
-    if (opened === savedAs.current) return;
+    if (opened === savedAs.current && again === 0) return;
     (async () => {
       try {
-        const found = await api.get<{ body: FlowBody; revision: number }>(
+        const found = await api.get<{ body: FlowBody; revision: number; deleted?: boolean }>(
           `${root}/drafts/${opened}`,
         );
         if (!current) return;
+        if (found.deleted) {
+          // A draft that removes it holds no steps: what is shown is what is deployed, and
+          // nothing is saved from here, so the removal is never undone by an autosave.
+          const resource = await api.get<{ body: FlowBody }>(`${root}/resources/${opened}`);
+          if (!current) return;
+          open(resource.body);
+          draft.reset(null, found.revision);
+          setState("removed");
+          return;
+        }
         open(found.body);
         draft.reset(null, found.revision);
         setState("draft");
@@ -726,7 +746,7 @@ export function FlowEditor({
     return () => {
       current = false;
     };
-  }, [root, opened, open, draft.reset]);
+  }, [root, opened, open, draft.reset, again]);
 
   const flowNodes = useMemo(
     () => Object.fromEntries(nodes.map((node) => [node.id, node.data.node])),
@@ -1077,6 +1097,7 @@ export function FlowEditor({
     ),
   });
   const save = async (): Promise<boolean> => {
+    if (state === "removed") return false;
     setProblem(undefined);
     setPathTaken(undefined);
     if (!PATH.test(path)) {
@@ -1093,7 +1114,15 @@ export function FlowEditor({
   // tries until the next change or Retry, so that a lost connection is said, not hidden.
   // biome-ignore lint/correctness/useExhaustiveDependencies: `save` reads the latest state when it runs
   useEffect(() => {
-    if (!dirty || busy || gaveUp || state === "new" || state === "repository") return;
+    if (
+      !dirty ||
+      busy ||
+      gaveUp ||
+      state === "new" ||
+      state === "repository" ||
+      state === "removed"
+    )
+      return;
     const wait = failures.current === 0 ? 1500 : retryAfter(failures.current);
     const timer = setTimeout(async () => {
       if (await save()) {
@@ -1252,7 +1281,7 @@ export function FlowEditor({
           : "Saving…"
     : savedAt
       ? `Draft saved ${ago(savedAt)}`
-      : stateLabel(state);
+      : stateLabel(state === "removed" ? "draft" : state);
 
   const keepViewport = (viewport: Viewport) => {
     if (!path) return;
@@ -1800,9 +1829,15 @@ export function FlowEditor({
           title={opened ? path : "New flow"}
           state={
             <>
-              <StatePill
-                state={state === "repository" || (state === "deployed" && !dirty) ? state : "draft"}
-              />
+              {state === "removed" ? (
+                <StatePill state="draft">Removing</StatePill>
+              ) : (
+                <StatePill
+                  state={
+                    state === "repository" || (state === "deployed" && !dirty) ? state : "draft"
+                  }
+                />
+              )}
               {found.length > 0 ? (
                 <span className="flex items-center gap-1 text-meta text-attention">
                   <TriangleAlert aria-hidden="true" size={14} /> {found.length} to fix
@@ -1868,7 +1903,18 @@ export function FlowEditor({
               <Button size="small" aria-pressed={testing} onClick={() => setTesting((on) => !on)}>
                 <Play aria-hidden="true" size={14} /> Test
               </Button>
-              {opened && state !== "new" ? (
+              {opened && state === "removed" ? (
+                <RemoveDraftButton
+                  root={root}
+                  kind="flow"
+                  path={opened}
+                  noun="flow"
+                  state="removed"
+                  size="small"
+                  onDone={() => setAgain((n) => n + 1)}
+                />
+              ) : null}
+              {opened && state !== "new" && state !== "removed" ? (
                 <ResourceIdentity
                   root={root}
                   link={link}
@@ -1885,7 +1931,7 @@ export function FlowEditor({
                   }}
                 />
               ) : null}
-              {opened && state !== "new" ? (
+              {opened && state !== "new" && state !== "removed" ? (
                 <RemoveDraftButton
                   root={root}
                   kind="flow"
@@ -1900,7 +1946,7 @@ export function FlowEditor({
               <Button
                 size="small"
                 variant={state === "draft" && !dirty ? "secondary" : "primary"}
-                disabled={busy || (!dirty && state !== "new")}
+                disabled={busy || state === "removed" || (!dirty && state !== "new")}
                 onClick={() => void save()}
               >
                 Save draft
@@ -1958,8 +2004,19 @@ export function FlowEditor({
           }
         />
       </div>
-      {state === "repository" || problem || found.length > 0 ? (
+      {state === "repository" ||
+      state === "removed" ||
+      draft.clashed ||
+      problem ||
+      found.length > 0 ? (
         <div className="flex flex-col gap-2 px-4 pt-3 md:px-5">
+          {state === "removed" ? (
+            <Notice tone="attention">
+              This flow is removed in your drafts. Nothing changes until that draft is deployed. The
+              steps shown are what is deployed now. Keep this flow to take the removal back.
+            </Notice>
+          ) : null}
+          {draft.clashed ? <DraftClash what="flow" onTake={() => setAgain((n) => n + 1)} /> : null}
           {state === "repository" ? (
             <Notice tone="attention">
               This flow is managed in the tenant's repository. Saving a draft of it takes it over.

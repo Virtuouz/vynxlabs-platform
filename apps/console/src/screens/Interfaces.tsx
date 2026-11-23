@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { ApiError, api, useLoad } from "../api.ts";
 import { failureText, notify, takenText } from "../ask.tsx";
 import { DataTable } from "../kit/DataTable.tsx";
+import { putDraft } from "../kit/draftApi.ts";
 import { ago } from "../kit/format.ts";
 import { RemoveDraftButton } from "../kit/RemoveDraftButton.tsx";
 import { Mono, StatePill, Tag } from "../kit/status.tsx";
@@ -149,6 +150,18 @@ export function Interfaces({
                       >
                         Rename
                       </Button>
+                      {row.draft && row.deployed && !row.removing && row.ownership !== "code" ? (
+                        <RemoveDraftButton
+                          root={root}
+                          kind="interface"
+                          path={row.path}
+                          noun="app"
+                          size="small"
+                          state="draft"
+                          also={row.app ? [{ kind: "app", path: row.app }] : []}
+                          onDone={() => list.reload()}
+                        />
+                      ) : null}
                       <RemoveDraftButton
                         root={root}
                         kind="interface"
@@ -165,7 +178,7 @@ export function Interfaces({
                                 : "draft"
                         }
                         also={row.app ? [{ kind: "app", path: row.app }] : []}
-                        then="The app's address stops serving it once that is deployed."
+                        then={`The app's address stops serving it once that is deployed.${row.draft && row.deployed ? " The edits not published are replaced by the removal; to drop only them, use Discard draft." : ""}`}
                         onDone={() => list.reload()}
                       />
                     </span>
@@ -186,7 +199,7 @@ export function Interfaces({
         open={creating}
         onClose={() => setCreating(false)}
         title="Make an app"
-        description="It starts with one empty page. Nobody else sees it until you publish it."
+        description="It starts with one empty page. Other builders of this workspace see the draft; people who use the app see nothing until you publish it."
       >
         <form
           className="flex flex-col gap-3"
@@ -198,22 +211,26 @@ export function Interfaces({
             let screenMade = false;
             const path = `screens/${slug(where)}`;
             try {
-              await api.put(`${root}/drafts/${path}`, {
-                kind: "interface",
-                schemaVersion: 2,
-                body: {
-                  title: title.trim(),
-                  pages: [{ id: "main", title: title.trim(), widgets: [] }],
+              await putDraft(
+                root,
+                path,
+                {
+                  kind: "interface",
+                  schemaVersion: 2,
+                  body: {
+                    title: title.trim(),
+                    pages: [{ id: "main", title: title.trim(), widgets: [] }],
+                  },
                 },
-                create: true,
-              });
+                { create: true },
+              );
               screenMade = true;
-              await api.put(`${root}/drafts/${slug(where)}`, {
-                kind: "app",
-                schemaVersion: 1,
-                body: { title: title.trim(), interface: path },
-                create: true,
-              });
+              await putDraft(
+                root,
+                slug(where),
+                { kind: "app", schemaVersion: 1, body: { title: title.trim(), interface: path } },
+                { create: true },
+              );
               setCreating(false);
               setTitle("");
               setAddress("");

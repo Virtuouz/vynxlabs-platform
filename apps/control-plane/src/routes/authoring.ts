@@ -565,7 +565,9 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                 description:
                   "Say that this makes something new. When the path already holds a draft or a " +
                   "deployed resource, it is refused with 409 `path_taken` and nothing is saved. " +
-                  "Without it, a save without a revision replaces what is there.",
+                  "A save names the draft it saw (`revision`), or says it makes something new. A save " +
+                  "that does neither over a draft, or names a draft that is gone, is refused with 409 " +
+                  "`draft_changed`.",
               }),
             ),
             path: Type.Optional(
@@ -906,6 +908,7 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             schemaVersion: kept.schema_version,
             body: kept.body as Record<string, unknown>,
             deleted: kept.deleted,
+            replace: true,
           }),
         );
         const owned = await ownership(workspace.id, [saved.draft.key]);

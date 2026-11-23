@@ -8,17 +8,18 @@ import {
   planRename,
   setFrontmatter,
 } from "@volvel/docs-engine";
-import { Button, Doc, Notice, Panel, TextField } from "@volvel/ui";
+import { Button, Doc, Panel, TextField } from "@volvel/ui";
 import { CircleAlert, CircleCheck, ExternalLink, FilePen, Pencil } from "lucide-react";
 import { type KeyboardEvent, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
-import { ApiError, api, useLoad } from "../../api.ts";
-import { ask, failureText, notify, takenText } from "../../ask.tsx";
+import { api, useLoad } from "../../api.ts";
+import { failureText, notify, takenText } from "../../ask.tsx";
 import { Diagram } from "../../diagrams/Diagram.tsx";
 import type { CodeEditorHandle, Marker } from "../../editor/CodeEditor.tsx";
 import { useWorkspaceTerms } from "../../help/glossary.tsx";
 import { useHelpTopic } from "../../help/store.ts";
 import { useBrand } from "../../kit/brand.tsx";
 import { DiffView } from "../../kit/DiffView.tsx";
+import { DraftClash } from "../../kit/DraftClash.tsx";
 import { useDraftSave } from "../../kit/draftSave.ts";
 import { useShortcut } from "../../kit/keys.ts";
 import { ErrorState, Pending } from "../../kit/LoadState.tsx";
@@ -118,7 +119,6 @@ export function DocEditor({
       }),
     applied: (_answer, text, newest) => {
       setSaved(text);
-      setClash(false);
       list.reload();
       if (newest) {
         notify.success(
@@ -131,8 +131,7 @@ export function DocEditor({
     },
     failed: (error) => {
       // Someone else saved it since it was opened: say so, and keep what was typed.
-      if (error instanceof ApiError && error.code === "draft_changed") setClash(true);
-      else if (takenText(error)) setTaken(takenText(error));
+      if (takenText(error)) setTaken(takenText(error));
       else notify.error(error);
     },
   });
@@ -142,7 +141,6 @@ export function DocEditor({
     setSource(next);
     draft.edit(next);
   };
-  const [clash, setClash] = useState(false);
   const [taken, setTaken] = useState<string>();
   const [reveal, setReveal] = useState<{ line: number; at: number }>();
   const [comparing, setComparing] = useState(compareAsked === "1");
@@ -465,34 +463,17 @@ export function DocEditor({
           </>
         }
       />
-      {clash ? (
-        <Notice
-          tone="danger"
-          action={
-            <Button
-              size="small"
-              onClick={async () => {
-                const theirs = await api.get<Opened>(`${root}/docs/page/${where}`);
-                const sure = await ask.confirm({
-                  title: "Take their version?",
-                  text: "What you typed since you opened the page is replaced by what they saved. Copy anything you want to keep first.",
-                  action: "Take theirs",
-                  danger: true,
-                });
-                if (!sure) return;
-                change(theirs.source);
-                setSaved(theirs.source);
-                draft.reset(theirs.source, theirs.revision ?? undefined);
-                setClash(false);
-              }}
-            >
-              See what they saved
-            </Button>
-          }
-        >
-          Someone else saved this page after you opened it. Nothing of theirs was overwritten, and
-          what you typed is still here.
-        </Notice>
+      {draft.clashed ? (
+        <DraftClash
+          what="page"
+          mine={() => source}
+          onTake={async () => {
+            const theirs = await api.get<Opened>(`${root}/docs/page/${where}`);
+            setSource(theirs.source);
+            setSaved(theirs.source);
+            draft.reset(theirs.source, theirs.revision ?? undefined);
+          }}
+        />
       ) : null}
 
       <Panel className="flex min-h-0 flex-col overflow-hidden p-0">

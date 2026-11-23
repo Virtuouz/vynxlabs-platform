@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type Bundle, type BundleManifest, bundleDigest } from "@volvel/manifest";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { type Client, startTestApp, type TestApp } from "./testing.js";
+import { type Client, putSeen, startTestApp, type TestApp } from "./testing.js";
 
 /**
  * A page's action runs on the server, as its own grant (decision 0004, phase 26): whoever may
@@ -741,7 +741,7 @@ describe("a flow", () => {
   test("a flow that is not there stops the action before anything changes", async () => {
     const id = await invoice();
     // `kick` starts flows/ping, so with the flow there this must have worked; the draft removes it.
-    const saved = await alice.put(`${ws()}/drafts/screens/invoices`, {
+    const saved = await putSeen(alice, `${ws()}/drafts/screens/invoices`, {
       kind: "interface",
       schemaVersion: 2,
       body: {
@@ -779,7 +779,7 @@ describe("a draft", () => {
   });
 
   test("holds a button with no steps yet, says so as a problem, and is not deployed with it", async () => {
-    const saved = await alice.put(`${ws()}/drafts/screens/invoices`, {
+    const saved = await putSeen(alice, `${ws()}/drafts/screens/invoices`, {
       kind: "interface",
       schemaVersion: 2,
       body: draftOf([button("unfinished", 8, { steps: [] })]),
@@ -789,7 +789,7 @@ describe("a draft", () => {
   });
 
   test("is refused to an end user and run by an editor", async () => {
-    const saved = await alice.put(`${ws()}/drafts/screens/invoices`, {
+    const saved = await putSeen(alice, `${ws()}/drafts/screens/invoices`, {
       kind: "interface",
       schemaVersion: 2,
       body: draftOf([
@@ -845,7 +845,7 @@ describe("a dashboard", () => {
         },
       ],
     };
-    const saved = await alice.put(`${ws()}/drafts/boards/by-team`, {
+    const saved = await putSeen(alice, `${ws()}/drafts/boards/by-team`, {
       kind: "dashboard",
       schemaVersion: 3,
       body: sneaky,

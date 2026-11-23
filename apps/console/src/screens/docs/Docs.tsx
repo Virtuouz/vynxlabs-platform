@@ -16,7 +16,6 @@ import {
   readPage,
   slugOf,
 } from "@volvel/docs-engine";
-
 import {
   Button,
   Dialog,
@@ -54,6 +53,7 @@ import { Diagram } from "../../diagrams/Diagram.tsx";
 import { loadManifest } from "../../help/content.ts";
 import { useWorkspaceTerms } from "../../help/glossary.tsx";
 import { useBrand } from "../../kit/brand.tsx";
+import { putOnDraftNow, readDraft } from "../../kit/draftApi.ts";
 import { listOf } from "../../kit/format.ts";
 import { ErrorState, Pending } from "../../kit/LoadState.tsx";
 import { PageHeader } from "../../kit/PageHeader.tsx";
@@ -301,7 +301,7 @@ export function Docs({
   /** Saves the app of a site with one setting changed, and offers to put it back. */
   const changeSite = async (site: DocsApp, body: Record<string, unknown>, done: string) => {
     const put = (to: Record<string, unknown>) =>
-      api.put(`${root}/drafts/${site.path}`, { kind: "app", schemaVersion: 1, body: to });
+      putOnDraftNow(root, site.path, { kind: "app", schemaVersion: 1, body: to });
     try {
       await put(body);
       list.reload();
@@ -369,7 +369,7 @@ export function Docs({
     if (!sure) return;
     try {
       if (site.deployed)
-        await api.put(`${root}/drafts/${site.path}`, {
+        await putOnDraftNow(root, site.path, {
           kind: "app",
           schemaVersion: 1,
           body: {},
@@ -692,6 +692,7 @@ export function Docs({
           if (!site) return undefined;
           const table = FEEDBACK_TABLE;
           try {
+            const seen = await readDraft(root, site.path);
             await api.post(`${root}/drafts/batch`, {
               changes: [
                 // The workspace's one table of answers: made once, by whichever site is first.
@@ -701,6 +702,8 @@ export function Docs({
                   kind: "app",
                   schemaVersion: 1,
                   body: { ...site.body, feedback: { table } },
+                  // Based on the draft there is now, or none.
+                  ...(seen ? { revision: seen.revision } : {}),
                 },
               ],
             });
@@ -711,7 +714,7 @@ export function Docs({
                 onClick: async () => {
                   try {
                     if (makeTable) await api.delete(`${root}/drafts/${table}`);
-                    await api.put(`${root}/drafts/${site.path}`, {
+                    await putOnDraftNow(root, site.path, {
                       kind: "app",
                       schemaVersion: 1,
                       body: site.body,

@@ -1,7 +1,7 @@
 import { type Bundle, type BundleManifest, bundleDigest } from "@volvel/manifest";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { describeChange } from "./kernel/describe.js";
-import { type Client, startTestApp, type TestApp } from "./testing.js";
+import { type Client, putSeen, startTestApp, type TestApp } from "./testing.js";
 
 const PASSWORD = "a-good-long-password";
 const TENANT_ADMIN = "00000000-0000-7000-8000-000000000002";
@@ -163,7 +163,7 @@ describe("promoting", () => {
 
 describe("drafts", () => {
   const save = (body: Record<string, unknown>, as = alice) =>
-    as.put(`${ws()}/drafts/orders/note`, { kind: "variable", schemaVersion: 1, body });
+    putSeen(as, `${ws()}/drafts/orders/note`, { kind: "variable", schemaVersion: 1, body });
 
   test("each save keeps what it replaced, and setting a draft aside keeps it whole", async () => {
     expect((await save({ description: "First" })).status).toBe(200);

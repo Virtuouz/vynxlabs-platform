@@ -311,3 +311,30 @@ test("a deployed script is removed as a draft that removes it, and the Changes s
   expect(saved[0]).toEqual({ kind: "script", schemaVersion: 1, body: {}, deleted: true });
   await waitFor(() => expect(location.pathname).toBe("/t/t1/workspaces/w1/changes"));
 });
+
+test("a script drafted for removal opens as a removal: its deployed code, read only, and nothing is saved (SCR-11)", async () => {
+  const saved: unknown[] = [];
+  routes[`PUT ${base}/drafts/hello/greet`] = (body) => {
+    saved.push(body);
+    return {};
+  };
+  routes[`GET ${base}/drafts/hello/greet`] = () => ({
+    path: "hello/greet",
+    kind: "script",
+    revision: 2,
+    deleted: true,
+    body: {},
+  });
+  routes[`GET ${base}/resources/hello/greet`] = () => ({
+    ownership: "ui",
+    body: draftOf("export default async () => ({});\n").body,
+  });
+  history.replaceState(null, "", "/t/t1/workspaces/w1/scripts/edit/hello/greet");
+  show(<AtAddress />);
+  expect(await screen.findByText(/This script is removed in your drafts/)).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Keep this script" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Save draft" })).toBeNull();
+  // An autosave would have run by now.
+  await new Promise((done) => setTimeout(done, 3400));
+  expect(saved).toEqual([]);
+}, 15_000);

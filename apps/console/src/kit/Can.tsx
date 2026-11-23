@@ -4,7 +4,35 @@ import type { ReactNode } from "react";
 import { askForAccess, type Me, useLoad } from "../api.ts";
 
 interface Held {
-  permissions: { permission: string }[];
+  permissions: { permission: string; sources?: string[] }[];
+  /** What gives them, and where: a tenant's permission is held by a source at the tenant alone. */
+  sources?: { id: string; scope?: { type?: string }; counts?: boolean }[];
+}
+
+/** Other ways to be let in, which the server counts as the permission itself. */
+export interface Options {
+  /**
+   * Permissions that are enough alone, where the server lets them stand in for `permission` on
+   * their own kinds: `interface:write` for an app, `doc:write` for a page of documentation.
+   */
+  alone?: string[] | undefined;
+  /** The route is `tenantOrInstance`: what an operator holds on the instance counts as well. */
+  orInstance?: boolean | undefined;
+}
+
+/** Whether `held` gives `permission` through a source at the tenant, as the server counts it. */
+function heldAtTenant(held: Held, permission: string): boolean {
+  const list = held.permissions.filter((one) => one.permission === permission);
+  if (list.length === 0) return false;
+  // An answer that does not say where each is given is not known: the server decides.
+  if (!Array.isArray(held.sources)) return true;
+  return list.some((one) =>
+    (one.sources ?? []).some((id) => {
+      const source = held.sources?.find((found) => found.id === id);
+      // A grant at a workspace or on a resource is not one at the tenant, where the server asks.
+      return source !== undefined && source.scope?.type === "tenant" && source.counts !== false;
+    }),
+  );
 }
 
 /**
@@ -12,11 +40,18 @@ interface Held {
  * `/instance`), so a screen can say so before it draws a control that the server would refuse.
  * It answers yes while that is not known, and when it cannot be read: the server decides again,
  * and a control that is missing for a moment is worse than one that is refused with a reason.
- * At a tenant, a permission given at one workspace counts (the access route lists it); at a
- * workspace (`/tenants/<id>/workspaces/<id>`) the server answers for that workspace alone. With
- * no `base` nothing is asked and the answer is yes.
+ * At a tenant, only a permission given at the tenant counts, as the server asks it there: one
+ * given at a workspace or on a resource does not. At a workspace (`/tenants/<id>/workspaces/<id>`)
+ * the server answers for that workspace alone. With no `base` nothing is asked and the answer is
+ * yes. `resource` is for a route the server answers for a grant on the resource itself; leave it
+ * off for one that asks the workspace.
  */
-export function useCan(base: string | null, permission: string, resource?: Resource): boolean {
+export function useCan(
+  base: string | null,
+  permission: string,
+  resource?: Resource,
+  options: Options = {},
+): boolean {
   const me = useLoad<Me>(base === null ? null : "/me");
   const instance = base === "/instance" || (base?.startsWith("/instance/") ?? false);
   const inWorkspace = isWorkspace(base);
@@ -24,18 +59,25 @@ export function useCan(base: string | null, permission: string, resource?: Resou
   const held = useLoad<Held>(
     base !== null && !instance && !inWorkspace && id ? `${base}/access/member/${id}` : null,
   );
-  const asked = useAsked(inWorkspace ? base : null, [permission], resource);
+  const either = [permission, ...(options.alone ?? [])];
+  const asked = useAsked(inWorkspace ? base : null, either, resource);
   if (base === null) return true;
   // An answer that is not the shape expected is not known, and says yes (the server decides).
   if (instance) {
     const given = me.data?.instancePermissions;
-    return Array.isArray(given) ? grants(given, permission) : true;
+    return Array.isArray(given) ? either.some((one) => grants(given, one)) : true;
   }
   if (inWorkspace) {
-    return Array.isArray(asked.data?.allowed) ? asked.data.allowed.includes(permission) : true;
+    const allowed = asked.data?.allowed;
+    return Array.isArray(allowed) ? either.some((one) => allowed.includes(one)) : true;
   }
   const list = held.data?.permissions;
-  return Array.isArray(list) ? list.some((one) => one.permission === permission) : true;
+  if (!Array.isArray(list)) return true;
+  const given = me.data?.instancePermissions;
+  if (options.orInstance && Array.isArray(given) && either.some((one) => grants(given, one))) {
+    return true;
+  }
+  return either.some((one) => heldAtTenant(held.data as Held, one));
 }
 
 /** A resource of a workspace, by its kind and path: a grant given on it alone counts for it. */
@@ -91,11 +133,19 @@ export function useMayOn(
  * as a whole, under a line that says so and whom to ask. Reading is not hidden.
  */
 /** The line that says a screen is for reading by this member, and whom to ask. */
-export function NotAllowed({ permission, what }: { permission: string; what: string }) {
+export function NotAllowed({
+  permission,
+  what,
+  alone,
+}: {
+  permission: string;
+  what: string;
+  alone?: string[] | undefined;
+}) {
   return (
     <Notice tone="plain">
-      You can see {what}, not change it. It needs <code className="font-mono">{permission}</code>.{" "}
-      {askForAccess()}
+      You can see {what}, not change it. It needs <code className="font-mono">{permission}</code>
+      {alone?.length ? `, or ${alone.join(" or ")} alone` : ""}. {askForAccess()}
     </Notice>
   );
 }
@@ -105,18 +155,19 @@ export function Can({
   permission,
   what,
   children,
+  ...options
 }: {
   base: string;
   permission: string;
   /** What the member can still see, for the line: "this provider". */
   what: string;
   children: ReactNode;
-}) {
-  const can = useCan(base, permission);
+} & Options) {
+  const can = useCan(base, permission, undefined, options);
   // The same tree either way, so what a member typed while this was being read is not lost.
   return (
     <>
-      {can ? null : <NotAllowed permission={permission} what={what} />}
+      {can ? null : <NotAllowed permission={permission} what={what} alone={options.alone} />}
       <fieldset disabled={!can} className="contents">
         {children}
       </fieldset>
@@ -125,7 +176,7 @@ export function Can({
 }
 
 /** What changing a list takes, and where it is held: the `needs` of a list. */
-export interface Needs {
+export interface Needs extends Options {
   base: string;
   permission: string;
   what: string;
@@ -138,11 +189,17 @@ export interface Needs {
  * and the words for a button that is greyed. Reading is never hidden (GOV-37).
  */
 export function useNeeds(needs: Needs | undefined) {
-  const can = useCan(needs?.base ?? null, needs?.permission ?? "", needs?.resource);
+  const can = useCan(needs?.base ?? null, needs?.permission ?? "", needs?.resource, {
+    alone: needs?.alone,
+    orInstance: needs?.orInstance,
+  });
+  const or = needs?.alone?.length ? `, or ${needs.alone.join(" or ")} alone` : "";
   return {
     can,
-    line: !can && needs ? <NotAllowed permission={needs.permission} what={needs.what} /> : null,
-    reason:
-      !can && needs ? `It needs ${needs.permission}. ${askForAccess()}` : (undefined as undefined),
+    line:
+      !can && needs ? (
+        <NotAllowed permission={needs.permission} what={needs.what} alone={needs.alone} />
+      ) : null,
+    reason: !can && needs ? `It needs ${needs.permission}${or}. ${askForAccess()}` : undefined,
   };
 }

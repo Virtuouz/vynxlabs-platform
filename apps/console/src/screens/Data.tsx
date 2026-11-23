@@ -1521,7 +1521,7 @@ export function Tables({ root, link }: { root: string; link: string }) {
   return (
     <ListScreen<TableSummary>
       title="Tables"
-      needs={{ base: root, permission: "table:write", what: "this workspace's tables" }}
+      needs={{ base: root, permission: "resource:write", what: "this workspace's tables" }}
       description="The data this workspace keeps. A table defined in the repository changes when a bundle is deployed. Nothing is ever dropped by a deploy: what leaves a definition is retired and its data kept."
       path={`${root}/tables`}
       rowKey={(row) => `${row.name}:${row.status}:${row.id ?? ""}`}

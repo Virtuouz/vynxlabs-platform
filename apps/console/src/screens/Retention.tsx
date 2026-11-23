@@ -132,7 +132,12 @@ export function RetentionSettings({ base, bare = false }: { base: string; bare?:
   };
 
   const body = (
-    <Can base={base} permission="tenant:write" what="how long this tenant's history is kept">
+    <Can
+      base={base}
+      permission="tenant:write"
+      orInstance
+      what="how long this tenant's history is kept"
+    >
       <form
         className="flex max-w-xl flex-col gap-4"
         onSubmit={(event) => {

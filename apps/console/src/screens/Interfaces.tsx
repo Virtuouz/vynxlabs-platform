@@ -36,7 +36,12 @@ export function Interfaces({
   const [renaming, setRenaming] = useState<Listed>();
   const where = address || slug(title);
 
-  const may = useNeeds({ base: root, permission: "resource:write", what: "this workspace's apps" });
+  const may = useNeeds({
+    base: root,
+    permission: "resource:write",
+    alone: ["interface:write"],
+    what: "this workspace's apps",
+  });
   const create = editable ? (
     <Button
       variant="primary"

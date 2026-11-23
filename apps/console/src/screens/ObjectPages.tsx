@@ -398,7 +398,6 @@ export function EventPage({
     base: root,
     permission: "event:write",
     what: "this event",
-    resource: { kind: "event", path },
   });
   return (
     <Gate found={found} list={`${link}/events`} noun="event">

@@ -19,6 +19,8 @@ import {
   SettingsRows,
   Stepper,
 } from "../kit/layout.tsx";
+import { consoleLink } from "../kit/objects.tsx";
+import { RefusalList } from "../kit/RefusalList.tsx";
 import { SaveBar } from "../kit/SaveBar.tsx";
 import { Code, Mono, StatePill, Tag } from "../kit/status.tsx";
 import { Time } from "../kit/Time.tsx";
@@ -660,13 +662,10 @@ export function Promotion({
             ) : (
               <Notice tone="danger">
                 <p className="m-0">It cannot be promoted yet. {preview.refusal?.detail}</p>
-                {preview.refusal?.errors.length ? (
-                  <ul className="mt-1 mb-0 list-disc pl-5">
-                    {preview.refusal.errors.map((entry) => (
-                      <li key={entry.path}>{entry.message}</li>
-                    ))}
-                  </ul>
-                ) : null}
+                <RefusalList
+                  errors={preview.refusal?.errors ?? []}
+                  link={`${consoleLink(base)}/workspaces/${preview.target.id}`}
+                />
               </Notice>
             )}
             <div className="flex justify-end gap-2">

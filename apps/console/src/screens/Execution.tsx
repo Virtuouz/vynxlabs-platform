@@ -36,6 +36,7 @@ import {
   startConnect,
   testText,
 } from "./ConnectionWizard.tsx";
+import { type GroupMemberRow, GroupMemberSheet } from "./GroupMemberSheet.tsx";
 import { OfferButton } from "./OfferToAgent.tsx";
 
 type Status = "queued" | "running" | "succeeded" | "failed" | "cancelled";
@@ -670,7 +671,7 @@ export function ConnectionHealth({ root, row }: { root: string; row: ConnectionR
   return <HealthCell health={row.health} />;
 }
 
-export function Connections({ root }: { root: string }) {
+export function Connections({ root, production = false }: { root: string; production?: boolean }) {
   const connectionUses = useReferences(root, "connection");
   const list = useLoad<{ items: ConnectionRow[] }>(`${root}/connection-bindings`);
   const [editing, setEditing] = useState<{ row?: ConnectionRow | undefined } | null>(null);
@@ -691,9 +692,18 @@ export function Connections({ root }: { root: string }) {
   }, [list.data, oauth, oauthError, returnedPath, setOauth, setOauthError, setReturnedPath]);
   // The list below reads the same address, from the same cache: reading it here reads it there.
   const reload = () => list.reload();
+  // A refused promotion links here to set up what it names.
+  const [setup, setSetup] = useQueryValue("setup");
+  useEffect(() => {
+    if (!setup || !list.data) return;
+    const row = list.data.items.find((item) => item.path === setup);
+    if (row) setEditing({ row });
+    else notify.error(new Error(`There is no connection ${setup} here to set up.`));
+    setSetup(null);
+  }, [setup, list.data, setSetup]);
   const newButton = (
     <Button variant="primary" onClick={() => setEditing({})}>
-      New connection
+      {production ? "Set up a connection" : "New connection"}
     </Button>
   );
   return (
@@ -708,7 +718,15 @@ export function Connections({ root }: { root: string }) {
           {
             header: "Connection",
             cell: (row) => (
-              <ObjectLink link={consoleLink(root)} kind="connection" path={row.path} />
+              <span className="inline-flex flex-wrap items-center gap-2">
+                {row.arrives ? (
+                  // Not deployed here yet: it has no page.
+                  <Code>{row.path}</Code>
+                ) : (
+                  <ObjectLink link={consoleLink(root)} kind="connection" path={row.path} />
+                )}
+                {row.arrives ? <Tag tone="neutral">Arrives with the next promotion</Tag> : null}
+              </span>
             ),
           },
           // Second, so a phone shows it without scrolling the table.
@@ -778,6 +796,7 @@ export function Connections({ root }: { root: string }) {
             open={shown}
             row={editing.row}
             rows={list.data?.items ?? []}
+            production={production}
             returned={returned}
             onClose={() => {
               setEditing(null);
@@ -799,6 +818,7 @@ export function Variables({ root }: { root: string }) {
       description: string;
       default: string | null;
       value: string | null;
+      arrives?: boolean;
       draft?: "new" | "changed" | "removed" | null;
     }>
       title="Variables"
@@ -818,6 +838,8 @@ export function Variables({ root }: { root: string }) {
                 >
                   {row.path}
                 </Link>
+              ) : row.arrives ? (
+                <Code>{row.path}</Code>
               ) : (
                 <ObjectLink link={consoleLink(root)} kind="variable" path={row.path} />
               )}
@@ -825,6 +847,8 @@ export function Variables({ root }: { root: string }) {
                 <StatePill state="draft">Draft, never deployed</StatePill>
               ) : row.draft ? (
                 <Tag tone="draft">{row.draft === "removed" ? "Removing" : "Draft"}</Tag>
+              ) : row.arrives ? (
+                <Tag tone="neutral">Arrives with the next promotion</Tag>
               ) : null}
             </span>
           ),
@@ -1286,16 +1310,12 @@ export function Workers({ base }: { base: string }) {
   );
 }
 
-interface GroupMember {
-  key: string;
-  label: string;
-  config: { baseUrl?: string };
-  hasCredential: boolean;
-}
+type GroupMember = GroupMemberRow;
 interface ConnectionGroup {
   path: string;
   description: string;
   connector: string;
+  configSchema: Record<string, unknown>;
   members: GroupMember[];
   /** A change made in the console that waits to be deployed. */
   draft?: "new" | "changed" | "removed" | null;
@@ -1307,7 +1327,7 @@ interface ConnectionGroup {
  */
 export function ConnectionGroups({ root }: { root: string }) {
   const groups = useLoad<{ items: ConnectionGroup[] }>(`${root}/connection-groups`);
-  const [adding, setAdding] = useState<string>();
+  const [editing, setEditing] = useState<{ group: ConnectionGroup; member?: GroupMember }>();
   if (groups.error) return <ErrorState error={groups.error} onRetry={groups.reload} />;
   if (!groups.data) return <Loading />;
 
@@ -1354,7 +1374,7 @@ export function ConnectionGroups({ root }: { root: string }) {
                 Open the draft
               </Button>
             ) : (
-              <Button size="small" variant="primary" onClick={() => setAdding(group.path)}>
+              <Button size="small" variant="primary" onClick={() => setEditing({ group })}>
                 Add a member
               </Button>
             )}
@@ -1380,7 +1400,8 @@ export function ConnectionGroups({ root }: { root: string }) {
                 {
                   header: "Points to",
                   truncate: true,
-                  cell: (member) => member.config.baseUrl ?? "",
+                  cell: (member) =>
+                    String(member.config.baseUrl ?? member.config.host ?? member.config.url ?? ""),
                 },
                 {
                   header: "Credential",
@@ -1392,13 +1413,18 @@ export function ConnectionGroups({ root }: { root: string }) {
                   header: "",
                   align: "end",
                   cell: (member) => (
-                    <RemoveButton
-                      confirm={`Scripts that ask ${group.path} for "${member.key}" will fail until it is added again.`}
-                      run={() =>
-                        api.delete(`${root}/connection-group-members/${member.key}/${group.path}`)
-                      }
-                      onDone={groups.reload}
-                    />
+                    <span className="flex flex-wrap justify-end gap-2">
+                      <Button size="small" onClick={() => setEditing({ group, member })}>
+                        Change
+                      </Button>
+                      <RemoveButton
+                        confirm={`Scripts that ask ${group.path} for "${member.key}" will fail until it is added again.`}
+                        run={() =>
+                          api.delete(`${root}/connection-group-members/${member.key}/${group.path}`)
+                        }
+                        onDone={groups.reload}
+                      />
+                    </span>
                   ),
                 },
               ]}
@@ -1406,57 +1432,20 @@ export function ConnectionGroups({ root }: { root: string }) {
           )}
         </Panel>
       ))}
-      <CreateDialog
-        key={adding}
-        open={adding !== undefined}
-        onClose={() => setAdding(undefined)}
-        onCreated={() => {
-          setAdding(undefined);
-          groups.reload();
-        }}
-        config={{
-          action: "Add a member",
-          description: `To ${adding ?? ""}. A key that is already there is replaced. Leave the credential empty to keep the stored one.`,
-          fields: [
-            {
-              name: "key",
-              label: "Key",
-              placeholder: "acme-north",
-              hint: "What a script asks for: a customer's ID, a region, a shop's name.",
-            },
-            { name: "label", label: "Name", required: false, placeholder: "Acme, northern shop" },
-            { name: "baseUrl", label: "Address", placeholder: "https://api.example.com" },
-            {
-              name: "auth",
-              label: "How the credential is sent",
-              options: [
-                { value: "none", label: "No credential" },
-                { value: "bearer", label: "Authorization: Bearer" },
-                { value: "header", label: "In a header of your choice" },
-              ],
-            },
-            {
-              name: "header",
-              label: "Header name",
-              placeholder: "x-api-key",
-              when: (values) => values.auth === "header",
-            },
-            { name: "credential", label: "Credential", type: "password", required: false },
-          ],
-          submit: ({ key = "", label, baseUrl, auth, header, credential }) =>
-            api.put(`${root}/connection-group-members/${encodeURIComponent(key)}/${adding}`, {
-              ...(label ? { label } : {}),
-              config: {
-                baseUrl,
-                ...(auth === "bearer" ? { auth: { type: "bearer" } } : {}),
-                ...(auth === "header"
-                  ? { auth: { type: "header", name: header || "x-api-key" } }
-                  : {}),
-              },
-              ...(credential ? { credential } : {}),
-            }),
-        }}
-      />
+      {editing ? (
+        <GroupMemberSheet
+          key={`${editing.group.path}/${editing.member?.key ?? ""}`}
+          root={root}
+          group={editing.group.path}
+          schema={editing.group.configSchema}
+          member={editing.member}
+          onClose={() => setEditing(undefined)}
+          onSaved={() => {
+            setEditing(undefined);
+            groups.reload();
+          }}
+        />
+      ) : null}
     </section>
   );
 }

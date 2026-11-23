@@ -24,6 +24,8 @@ export interface ConnectionRow {
   description: string;
   defined: boolean;
   bound: boolean;
+  /** Declared by a workspace linked to this one: it arrives with the next promotion. */
+  arrives?: boolean;
   config: { baseUrl?: string; host?: string; [more: string]: unknown } | null;
   configSchema: Record<string, unknown>;
   hasCredential: boolean;
@@ -159,11 +161,14 @@ export function ConnectionWizard({
   row,
   rows,
   returned,
+  production = false,
   onClose,
   onSaved,
 }: {
   root: string;
   open: boolean;
+  /** In production nothing is declared by hand: what is set up here is what a promotion brings. */
+  production?: boolean;
   /** The connection being changed. None for a new one. */
   row: ConnectionRow | undefined;
   rows: ConnectionRow[];
@@ -174,7 +179,7 @@ export function ConnectionWizard({
 }) {
   const kinds = useLoad<{ items: ConnectorKind[] }>(open ? `${root}/connectors` : null);
   const [choice, setChoice] = useState<string>(
-    row?.path ?? rows.find((candidate) => !candidate.bound)?.path ?? NEW,
+    row?.path ?? rows.find((candidate) => !candidate.bound)?.path ?? (production ? "" : NEW),
   );
   // The one chosen stays among the choices once it is bound.
   const declared = rows.filter((candidate) => !candidate.bound || candidate.path === choice);
@@ -211,6 +216,22 @@ export function ConnectionWizard({
     hint: "The password or key, when the system asks for one.",
   };
   const hasCredential = saved?.hasCredential ?? chosen?.hasCredential ?? false;
+  // Another address keeps no credential that was given for the old one: it is typed again.
+  const held = (saved ?? chosen)?.config;
+  const place = (value: unknown) => {
+    try {
+      return new URL(String(value)).origin;
+    } catch {
+      return String(value ?? "");
+    }
+  };
+  const addressMoved =
+    hasCredential &&
+    credential === "" &&
+    held != null &&
+    ["baseUrl", "host", "port", "tokenUrl"].some(
+      (field) => place(held[field]) !== place(config[field]),
+    );
 
   // A preset fills in what it knows, and keeps the client the member typed.
   const applyPreset = (which: keyof typeof OAUTH_PRESETS, tenant = msTenant) => {
@@ -348,13 +369,17 @@ export function ConnectionWizard({
                 label="Connection"
                 name="connection"
                 value={choice}
-                hint="One the workspace's resources declare and nothing has bound yet, or a new one."
+                hint={
+                  production
+                    ? "One the next promotion brings, or that is declared here, and nothing has bound yet."
+                    : "One the workspace's resources declare and nothing has bound yet, or a new one."
+                }
                 options={[
                   ...declared.map((candidate) => ({
                     value: candidate.path,
                     label: `${candidate.path} (${CONNECTOR_NAMES[candidate.connector] ?? candidate.connector})`,
                   })),
-                  { value: NEW, label: "A new connection…" },
+                  ...(production ? [] : [{ value: NEW, label: "A new connection…" }]),
                 ]}
                 onChange={(value) => {
                   setChoice(value);
@@ -362,7 +387,12 @@ export function ConnectionWizard({
                   setFormKey((key) => key + 1);
                 }}
               />
-              {chosen ? null : (
+              {chosen ? null : production ? (
+                <Notice tone="attention">
+                  Nothing waits to be set up here. A connection is declared in a dev workspace and
+                  arrives here with a promotion, which lists what it needs set up first.
+                </Notice>
+              ) : (
                 <div className="grid gap-3 sm:grid-cols-2">
                   <TextField
                     label="Name"
@@ -453,6 +483,12 @@ export function ConnectionWizard({
 
         <section className="flex flex-col gap-3" ref={credentialRef} tabIndex={-1}>
           <SectionLabel>3 · {credentialSays.label}</SectionLabel>
+          {addressMoved ? (
+            <Notice tone="attention">
+              The address changed. Saving removes the stored {credentialSays.label.toLowerCase()},
+              which was given for the old one: enter it again to keep using this connection.
+            </Notice>
+          ) : null}
           <SecretField
             label={credentialSays.label}
             name="credential"
@@ -474,7 +510,7 @@ export function ConnectionWizard({
           {!saved ? (
             <p className="m-0 text-ink-muted">
               Save, and one of this workspace's workers tries it from where scripts run.
-              {chosen
+              {chosen || production
                 ? ""
                 : " A new connection is declared in a draft, deployed with your next change."}
             </p>

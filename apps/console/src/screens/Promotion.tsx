@@ -6,6 +6,7 @@ import { ask, failureText, notify } from "../ask.tsx";
 import { ago } from "../kit/format.ts";
 import { ErrorState } from "../kit/LoadState.tsx";
 import { Panel, SectionLabel } from "../kit/layout.tsx";
+import { RefusalList } from "../kit/RefusalList.tsx";
 import { Mono, StatePill } from "../kit/status.tsx";
 import { breakingOf, breakingText, PromotionConfirm } from "./PromotionConfirm.tsx";
 import { PreviewPanels, type PromotionPreview } from "./Release.tsx";
@@ -345,7 +346,7 @@ function ReviewRequest({
           preview.data.tried ? (
             <PreviewPanels data={preview.data} targetName={request.target.name} link={link} />
           ) : (
-            <ChangesOnly data={preview.data} />
+            <ChangesOnly data={preview.data} link={link} />
           )
         ) : (
           <p className="m-0 text-ink-muted">Working out what it would change…</p>
@@ -356,11 +357,15 @@ function ReviewRequest({
 }
 
 /** The changes alone, for a preview that says nothing of runs. */
-function ChangesOnly({ data }: { data: PromotionPreview }) {
+function ChangesOnly({ data, link }: { data: PromotionPreview; link: string }) {
   if (data.refusal) {
     return (
       <Notice tone="danger">
         <strong>It cannot be promoted.</strong> {data.refusal.detail}
+        <RefusalList
+          errors={data.refusal.errors}
+          link={link.replace(/\/workspaces\/[^/]+$/, `/workspaces/${data.target.id}`)}
+        />
       </Notice>
     );
   }

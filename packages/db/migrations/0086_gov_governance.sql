@@ -13,3 +13,10 @@ alter table end_user add column disabled_by text check (disabled_by in ('hand', 
 update tenant_member set suspended_by = 'hand' where suspended_at is not null;
 update member set disabled_by = 'hand' where disabled_at is not null;
 update end_user set disabled_by = 'hand' where disabled_at is not null;
+
+-- GOV-20: a hostname is one tenant's once it is proved or enabled, and until then it is only a
+-- wish. An unproved registration of a name does not keep its owner from registering it.
+alter table app_domain drop constraint if exists app_domain_hostname_key;
+create unique index app_domain_hostname_held_idx on app_domain (hostname)
+  where verified_at is not null or enabled;
+create index app_domain_hostname_idx on app_domain (hostname);

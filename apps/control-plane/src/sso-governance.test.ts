@@ -708,3 +708,65 @@ describe("requiring single sign-on (D12)", () => {
     });
   });
 });
+
+describe("a hostname that is not proved yet (GOV-20)", () => {
+  test("keeps no other tenant from registering it, and the first to prove it holds it", async () => {
+    const globex = await seed("globex", "gina@globex.example");
+    const wsA = (
+      await alice.post(`/tenants/${tenant}/workspaces`, {
+        slug: "main",
+        name: "Main",
+        type: "production",
+      })
+    ).body.id as string;
+    const wsB = (
+      await globex.client.post(`/tenants/${globex.id}/workspaces`, {
+        slug: "main",
+        name: "Main",
+        type: "production",
+      })
+    ).body.id as string;
+    const host = "shared.portal.test";
+    const first = await alice.post(`/tenants/${tenant}/domains`, {
+      workspaceId: wsA,
+      app: "",
+      hostname: host,
+    });
+    expect(first.status, JSON.stringify(first.body)).toBe(201);
+    // The same tenant twice is a mistake.
+    expect(
+      (
+        await alice.post(`/tenants/${tenant}/domains`, {
+          workspaceId: wsA,
+          app: "",
+          hostname: host,
+        })
+      ).status,
+    ).toBe(409);
+    // The owner of the name is not locked out by someone who got there first.
+    const second = await globex.client.post(`/tenants/${globex.id}/domains`, {
+      workspaceId: wsB,
+      app: "",
+      hostname: host,
+    });
+    expect(second.status, JSON.stringify(second.body)).toBe(201);
+
+    // Whoever proves it first holds it.
+    txt.set(first.body.challenge.name, first.body.challenge.value);
+    const proved = await alice.post(`/tenants/${tenant}/domains/${first.body.id}/checks`);
+    expect(proved.body.verifiedAt).not.toBeNull();
+    txt.set(second.body.challenge.name, second.body.challenge.value);
+    const late = await globex.client.post(`/tenants/${globex.id}/domains/${second.body.id}/checks`);
+    expect(late.status, JSON.stringify(late.body)).toBe(409);
+    // And nobody else registers it now.
+    expect(
+      (
+        await globex.client.post(`/tenants/${globex.id}/domains`, {
+          workspaceId: wsB,
+          app: "",
+          hostname: host,
+        })
+      ).status,
+    ).toBe(409);
+  });
+});

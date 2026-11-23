@@ -132,7 +132,7 @@ export function Release({
   reload: () => void;
 }) {
   // The step is in the address: a link, a reload or Back lands on the same one.
-  const [step, setStep] = useUrlParam<ReleaseStep>(
+  const [asked, setStep] = useUrlParam<ReleaseStep>(
     "step",
     workspace.type === "production" ? "deploy" : initial,
     { push: true },
@@ -156,6 +156,10 @@ export function Release({
             ? [{ key: "promote", label: "Promote", detail: target?.name ?? "Linked workspace" }]
             : []),
         ];
+
+  // An address can name a step this workspace does not have (review in production, promote with
+  // nowhere to promote to): it opens the first one that there is.
+  const step = steps.some((one) => one.key === asked) ? asked : (steps[0]?.key as ReleaseStep);
 
   return (
     <div className="flex flex-col gap-6">
@@ -783,9 +787,19 @@ function PromoteStep({
         <Notice tone="success">
           {target.name} now runs version {result.bundleVersion}.
           {result.release?.status === "done" ? ` Committed to ${result.release.branch}.` : ""}
-          {result.release?.status === "failed"
-            ? ` The release branch was not updated: ${result.release.problem ?? "the push failed"}. Try again from Git sync.`
-            : ""}
+          {result.release?.status === "failed" ? (
+            <>
+              {" "}
+              The release branch was not updated: {result.release.problem ?? "the push failed"}.{" "}
+              <Link
+                to={`${link.split("/workspaces/")[0]}/workspaces/${target.id}/git`}
+                className="text-action"
+              >
+                Try again from Git sync
+              </Link>
+              .
+            </>
+          ) : null}
         </Notice>
       ) : null}
       {data && data.canPromote === false ? (

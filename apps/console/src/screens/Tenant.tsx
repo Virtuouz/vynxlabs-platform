@@ -79,7 +79,7 @@ const FlowEditor = lazy(() =>
 
 import { ErrorState, Loading } from "../kit/LoadState.tsx";
 import { ObjectPage } from "../kit/ObjectPage.tsx";
-import { ObjectLink, ProductionNotice } from "../kit/objects.tsx";
+import { hasHome, ObjectLink, objectHref, ProductionNotice } from "../kit/objects.tsx";
 import { Code, EnvTag, StatePill } from "../kit/status.tsx";
 import { Alerts } from "./Alerts.tsx";
 import { Flows, FlowView } from "./Flows.tsx";
@@ -290,9 +290,8 @@ export function Tenant({ tenantId, me, path }: { tenantId: string; me: Me; path:
 
 function Workspaces({ base, tenantId }: { base: string; tenantId: string }) {
   const existing = useLoad<{ items: Workspace[] }>(`${base}/workspaces`);
-  const production = (existing.data?.items ?? []).filter(
-    (workspace) => workspace.type === "production",
-  );
+  // A dev workspace may promote to production or to another dev workspace, which is what a clone does.
+  const all = existing.data?.items ?? [];
   return (
     <ListScreen<Workspace>
       title="Workspaces"
@@ -316,7 +315,7 @@ function Workspaces({ base, tenantId }: { base: string; tenantId: string }) {
         {
           header: "Promotes to",
           cell: (row) =>
-            production.find((candidate) => candidate.id === row.linkedWorkspaceId)?.name ?? "",
+            all.find((candidate) => candidate.id === row.linkedWorkspaceId)?.name ?? "",
         },
       ]}
       empty={{
@@ -347,10 +346,10 @@ function Workspaces({ base, tenantId }: { base: string; tenantId: string }) {
           {
             name: "linkedWorkspaceId",
             label: "Promotes to",
-            hint: "For a dev workspace: the production workspace its changes go to.",
+            hint: "For a dev workspace: the workspace its changes go to, production or another dev workspace.",
             options: [
               { value: "", label: "Nothing" },
-              ...production.map((w) => ({ value: w.id, label: w.name })),
+              ...all.map((w) => ({ value: w.id, label: `${w.name} (${w.type})` })),
             ],
           },
         ],
@@ -624,7 +623,13 @@ function WorkspaceDetail({
           reload={workspace.reload}
         />
       ) : tab === "git" ? (
-        <GitSync root={root} link={`/t/${tenantId}/workspaces/${workspaceId}`} />
+        <GitSync
+          root={root}
+          link={`/t/${tenantId}/workspaces/${workspaceId}`}
+          production={
+            workspace.data.type === "production" ? { slug: workspace.data.slug } : undefined
+          }
+        />
       ) : tab === "scripts" && rest ? (
         <ScriptPage
           root={root}
@@ -728,24 +733,29 @@ function WorkspaceDetail({
             columns={[
               {
                 header: "Path",
-                cell: (row) =>
-                  isEditedKind(row.kind) ? (
-                    <Link
-                      to={`/t/${tenantId}/workspaces/${workspaceId}/resources/edit/${row.kind}/${row.path}`}
-                      className="block min-w-0 font-mono text-code text-action"
-                    >
-                      <Truncate mode="middle">{row.path}</Truncate>
-                    </Link>
-                  ) : (
-                    <span className="flex min-w-0 flex-col">
+                cell: (row) => (
+                  <span className="flex min-w-0 flex-col">
+                    {hasHome(row.kind) ? (
+                      <Link
+                        to={objectHref(
+                          `/t/${tenantId}/workspaces/${workspaceId}`,
+                          row.kind,
+                          row.path,
+                        )}
+                        className="block min-w-0 font-mono text-code text-action"
+                      >
+                        <Truncate mode="middle">{row.path}</Truncate>
+                      </Link>
+                    ) : (
                       <Code>
                         <Truncate mode="middle">{row.path}</Truncate>
                       </Code>
-                      {row.title ? (
-                        <span className="text-meta text-ink-muted">{row.title}</span>
-                      ) : null}
-                    </span>
-                  ),
+                    )}
+                    {row.title ? (
+                      <span className="text-meta text-ink-muted">{row.title}</span>
+                    ) : null}
+                  </span>
+                ),
               },
               { header: "Kind", cell: (row) => row.kind },
               {

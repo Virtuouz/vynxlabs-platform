@@ -985,6 +985,66 @@ describe("safety", () => {
     expect(JSON.stringify(operations)).not.toContain(TOKEN);
   });
 
+  test("a dev workspace stops following a branch, and the branch is left as it is (REL-09, D48)", async () => {
+    const made = await alice.post(`/tenants/${tenant}/workspaces`, {
+      slug: "side",
+      name: "Side",
+      type: "dev",
+    });
+    expect(made.status, JSON.stringify(made.body)).toBe(201);
+    const side = made.body.id as string;
+    const followed = await alice.put(`${ws(side)}/git`, { branch: "vx/side" });
+    expect(followed.body.branch, JSON.stringify(followed.body)).toBe("vx/side");
+    const stopped = await alice.delete(`${ws(side)}/git`);
+    expect(stopped.status, JSON.stringify(stopped.body)).toBe(200);
+    expect(stopped.body).toMatchObject({ branch: null, state: null });
+    // What the screen says to do is something the screen has.
+    const none = await alice.get(`${ws(side)}/git/compare`);
+    expect(none.body.code).toBe("no_branch");
+    expect(none.body.detail).toContain("Git sync");
+    expect(none.body.detail).not.toContain("Workspace settings");
+    // Asked again, with nothing followed, it says so.
+    expect((await alice.delete(`${ws(side)}/git`)).body.code).toBe("no_branch");
+    // Production has no branch to follow, and says what it commits to instead.
+    expect((await alice.delete(`${ws(prod)}/git`)).body.code).toBe("production_workspace");
+    expect((await alice.get(`${ws(prod)}/git`)).body.repository.releaseBranch).toBe("release");
+    const audit = (await alice.get(`/tenants/${tenant}/audit?limit=200`)).body.items as {
+      action: string;
+    }[];
+    expect(audit.filter((entry) => entry.action === "workspace_git.cleared")).toHaveLength(1);
+  });
+
+  test("a pull that would delete what holds runs says which paths, and goes through when they are allowed (REL-10)", async () => {
+    const code = "export default async () => ({ old: true });\n";
+    await deployDraft("pulls/old", code, "Something that ran");
+    expect((await alice.post(`${ws()}/git/push`, {})).body.status).toBe("done");
+    const started = await alice.post(`${ws()}/runs`, { script: "pulls/old", input: {} });
+    expect(started.status, JSON.stringify(started.body)).toBe(201);
+    const yaml = sh(["show", "vx/dev:platform/pulls/old.script.yaml"], bare());
+    commitOnBranch(
+      {
+        "platform/pulls/old.script.yaml": null,
+        "platform/pulls/old.script.ts": null,
+        "platform/pulls/new.script.yaml": yaml
+          .split("\n")
+          .filter((line) => !line.startsWith("key:"))
+          .join("\n"),
+        "platform/pulls/new.script.ts": code,
+      },
+      "Move it, or so it seems",
+    );
+    const refused = await alice.post(`${ws()}/git/pull`, {});
+    expect(refused.body, JSON.stringify(refused.body)).toMatchObject({
+      status: "failed",
+      suspected: ["pulls/old"],
+    });
+    expect((await alice.get(`${ws()}/resources/pulls/old`)).status).toBe(200);
+    const allowed = await alice.post(`${ws()}/git/pull`, { allowDelete: ["pulls/old"] });
+    expect(allowed.body, JSON.stringify(allowed.body)).toMatchObject({ status: "done" });
+    expect((await alice.get(`${ws()}/resources/pulls/old`)).status).toBe(404);
+    expect((await alice.get(`${ws()}/resources/pulls/new`)).status).toBe(200);
+  });
+
   test("disconnecting leaves the repository as it is", async () => {
     const before = sh(["rev-parse", "vx/dev"], bare());
     expect((await alice.delete(`/tenants/${tenant}/git-repository`)).status).toBe(204);

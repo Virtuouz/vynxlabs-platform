@@ -73,6 +73,11 @@ beforeEach(() => {
         202,
       );
     }
+    if (address.endsWith("/rollback")) {
+      return approval
+        ? json({ id: "r9", number: 9, status: "awaiting_approval" }, 202)
+        : json({ id: "r9", number: 9, status: "applied" }, 201);
+    }
     return json({ id: "r2", number: 2, status: "applied" });
   });
 });
@@ -100,6 +105,21 @@ test("a release that waits says what it would do, and is approved after asking",
       body: { decision: "approve" },
     }),
   );
+});
+
+test("going back says it waits for a second person when it does, and that it applied when it did (REL-12)", async () => {
+  show(<AccessReleases base={base} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Go back to this" }));
+  await answer("Go back");
+  expect(
+    await screen.findByText(/release 9, and waits for a second person\. Nothing has changed yet\./),
+  ).toBeTruthy();
+  cleanup();
+  approval = false;
+  show(<AccessReleases base={base} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Go back to this" }));
+  await answer("Go back");
+  expect(await screen.findByText("The tenant's access is what release 1 left.")).toBeTruthy();
 });
 
 test("an applied release can be gone back to, and asking for a second person can be stopped", async () => {

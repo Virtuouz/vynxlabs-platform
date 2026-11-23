@@ -480,7 +480,7 @@ async function linkOf(db: Db, workspace: WorkspaceRef) {
     throw new HttpError(
       409,
       "no_branch",
-      "This workspace does not follow a branch yet. Choose one under Workspace settings.",
+      "This workspace does not follow a branch yet. Choose one under Git sync.",
     );
   }
   return row;
@@ -710,6 +710,48 @@ export async function followBranch(
       details: { branch },
     });
     return row;
+  });
+}
+
+/**
+ * Makes a dev workspace follow no branch. The branch itself is left as it is, and so is
+ * everything on it: the workspace only stops syncing with it.
+ */
+export async function unfollowBranch(kernel: Kernel, actor: Actor, workspace: WorkspaceRef) {
+  const type = await kernel.db
+    .selectFrom("workspace")
+    .select("type")
+    .where("id", "=", workspace.id)
+    .executeTakeFirstOrThrow();
+  if (type.type !== "dev") {
+    throw new HttpError(
+      409,
+      "production_workspace",
+      "Only a dev workspace follows a branch. Production commits to its release branch after a promotion.",
+    );
+  }
+  const following = await kernel.db
+    .selectFrom("workspace_git")
+    .select("branch")
+    .where("workspace_id", "=", workspace.id)
+    .executeTakeFirst();
+  if (!following) {
+    throw new HttpError(409, "no_branch", "This workspace does not follow a branch.");
+  }
+  await mutate(kernel.db, actor, async (trx, audit) => {
+    const removed = await trx
+      .deleteFrom("workspace_git")
+      .where("workspace_id", "=", workspace.id)
+      .returning("branch")
+      .executeTakeFirstOrThrow();
+    await audit({
+      action: "workspace_git.cleared",
+      targetType: "workspace",
+      targetId: workspace.id,
+      tenantId: workspace.tenantId,
+      workspaceId: workspace.id,
+      details: { branch: removed.branch },
+    });
   });
 }
 
@@ -1104,10 +1146,11 @@ export async function pull(
   await linkOf(db, workspace);
   return withLease(db, workspace.id, async () => {
     const link = await linkOf(db, workspace);
-    const stopped = async (problem: string) => ({
+    const stopped = async (problem: string, suspected: string[] = []) => ({
       ...(await failed(db, workspace, actor, "pull", problem)),
       conflicts: [] as string[],
       applied: [] as string[],
+      suspected,
     });
     let tip: Tip;
     try {
@@ -1248,7 +1291,13 @@ export async function pull(
             error.message,
             ...(error.issues ?? []).map((issue) => `${issue.path} ${issue.message}`),
           ].join(" ");
-          return stopped(`What is on the branch cannot be deployed. ${detail}`);
+          return stopped(
+            `What is on the branch cannot be deployed. ${detail}`,
+            // What the deploy took for a rename, to be allowed by name when it is not one.
+            error.problemCode === "rename_suspected"
+              ? (error.issues ?? []).map((issue) => issue.path)
+              : [],
+          );
         }
       }
       // For a resource kept as "mine", the branch's version is now the base, so the next push replaces it.
@@ -1310,7 +1359,7 @@ export async function gitStatus(kernel: Kernel, workspace: WorkspaceRef) {
   const [repository, link] = await Promise.all([
     kernel.db
       .selectFrom("git_repository")
-      .select(["url", "default_branch", "folder", "paused"])
+      .select(["url", "default_branch", "folder", "paused", "release_branch"])
       .where("tenant_id", "=", workspace.tenantId)
       .executeTakeFirst(),
     kernel.db

@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { objectHref } from "./kit/objects.tsx";
+import { isEditedKind, objectHref } from "./kit/objects.tsx";
 import { ReferenceList } from "./kit/references.tsx";
 import {
   ConnectionPage,
@@ -66,6 +66,43 @@ test("every kind of thing has a home to link to", () => {
   expect(objectHref(link, "table", "orders")).toBe(`${link}/tables/orders`);
   expect(objectHref(link, "connection_group", "crm/accounts")).toBe(`${link}/connections`);
   expect(objectHref(link, "workspace", "settings")).toBe(`${link}/alerts`);
+});
+
+test("no kind is sent to an editor that does not exist for it (REL-07)", () => {
+  const kinds = [
+    "role",
+    "connector",
+    "connection",
+    "connection_group",
+    "variable",
+    "table",
+    "query",
+    "data_source",
+    "event",
+    "script",
+    "trigger_source",
+    "schedule",
+    "trigger",
+    "flow",
+    "theme",
+    "interface",
+    "dashboard",
+    "doc",
+    "app",
+    "binding",
+  ];
+  for (const kind of kinds) {
+    const to = objectHref(link, kind, "a/b");
+    if (!isEditedKind(kind)) expect(to, kind).not.toContain("/resources/edit/");
+  }
+  expect(objectHref(link, "query", "sales/by-day")).toBe(`${link}/queries?query=sales%2Fby-day`);
+  expect(objectHref(link, "data_source", "erp/db")).toBe(`${link}/sources/erp/db`);
+  expect(objectHref(link, "doc", "guide/intro")).toBe(`${link}/docs/guide/intro`);
+  expect(objectHref(link, "theme", "theme")).toBe(`${link}/resources`);
+  expect(objectHref(link, "variable", "a/b")).toBe(`${link}/variables/a/b`);
+  expect(objectHref(link, "connection_group", "a/b")).toBe(
+    `${link}/resources/edit/connection_group/a/b`,
+  );
 });
 
 test("what uses a thing is a list of links, drafts marked, and a failed read says so", async () => {

@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { startTestApp, type TestApp } from "@volvel/control-plane/testing";
@@ -126,4 +126,202 @@ test("a deploy names the console resources it would delete before it uploads (CL
   expect(
     consoleResourcesLeft(deployed, ["orders/size", "guide/intro", "lending/limit"], []),
   ).toEqual([]);
+});
+
+/** An instance that answers as a script says, for what the test app cannot be made to do. */
+async function standIn(answers: (method: string, path: string) => [number, unknown] | undefined) {
+  const { createServer } = await import("node:http");
+  const server = createServer((request, response) => {
+    const [status, body] = answers(
+      request.method ?? "GET",
+      (request.url ?? "").split("?")[0] ?? "",
+    ) ?? [404, { detail: "no such route" }];
+    response.writeHead(status, { "content-type": "application/json" });
+    response.end(JSON.stringify(body));
+  });
+  await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
+  const address = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+  return { address, close: () => new Promise((done) => server.close(done)) };
+}
+
+const tenantRoutes =
+  (
+    extra: (method: string, path: string) => [number, unknown] | undefined,
+    workspaceType = "production",
+  ) =>
+  (method: string, path: string): [number, unknown] | undefined => {
+    if (path === "/api/v1/tenants")
+      return [200, { items: [{ id: "t1", slug: "acme", name: "Acme" }] }];
+    if (path === "/api/v1/tenants/t1/workspaces")
+      return [200, { items: [{ id: "w1", slug: "main", type: workspaceType }] }];
+    return extra(method, path);
+  };
+
+test("an unexpected reply is one line, and the trace comes with VOLVEL_DEBUG (CLI-07)", async () => {
+  const instance = await standIn((_method, path) =>
+    path === "/api/v1/me" ? [200, {}] : undefined,
+  );
+  try {
+    const env = { VOLVEL_URL: instance.address, VOLVEL_TOKEN: "k" };
+    const plain = await cli(["whoami"], env);
+    expect(plain.code).toBe(1);
+    expect(plain.err.split("\n")).toHaveLength(1);
+    expect(plain.err).not.toContain("    at ");
+    const debug = await cli(["whoami"], { ...env, VOLVEL_DEBUG: "1" });
+    expect(debug.code).toBe(1);
+    expect(debug.err.split("\n").length).toBeGreaterThan(0);
+  } finally {
+    await instance.close();
+  }
+});
+
+test("a record of the last pull that is not JSON is explained (CLI-07)", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "pulled-"));
+  try {
+    await mkdir(join(dir, ".platform"), { recursive: true });
+    await writeFile(join(dir, ".platform", "pulled.json"), "{not json");
+    const { readPulled } = await import("./pull.js");
+    await expect(readPulled(dir)).rejects.toThrow("is not valid JSON");
+    await expect(readPulled(dir)).rejects.toBeInstanceOf((await import("./errors.js")).CliError);
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
+test("--version and <command> --help answer, and name no other command (CLI-08)", async () => {
+  const version = await cli(["--version"]);
+  expect(version).toMatchObject({ code: 0, out: expect.stringMatching(/^volvel \d+\.\d+\.\d+/) });
+  const help = await cli(["build", "--help"]);
+  expect(help.code).toBe(0);
+  expect(help.out).toContain("build");
+  expect(help.out).not.toContain("promote");
+  expect((await cli(["tenant", "-h"])).out).toContain("tenant export");
+});
+
+test("a port that is not a whole number from 1 to 65535 is refused before anything else (CLI-09)", async () => {
+  for (const port of ["abc", "0", "70000", "80.5"]) {
+    const result = await cli(["dev", "--port", port], {
+      VOLVEL_URL: "http://127.0.0.1:1",
+      VOLVEL_TOKEN: "k",
+    });
+    expect(result.code).toBe(1);
+    expect(result.err).toContain("--port is a whole number from 1 to 65535");
+  }
+  expect(
+    (await cli(["runs", "cancel", "--older-than", "x"], { VOLVEL_URL: url, VOLVEL_TOKEN: token }))
+      .err,
+  ).toContain("--older-than is a whole number");
+});
+
+const breakingRoutes = (promotions: unknown) =>
+  tenantRoutes((method, path) => {
+    if (path === "/api/v1/tenants/t1/workspaces/w1/promotion-preview")
+      return [
+        200,
+        {
+          target: { slug: "live", type: "production" },
+          bundle: { digest: "abcdef0123456789", version: 4 },
+          possible: true,
+          summary: {
+            created: 0,
+            updated: 1,
+            deleted: 0,
+            unchanged: 2,
+            breaking: [{ path: "orders/place", message: "orders/place no longer answers." }],
+          },
+        },
+      ];
+    if (method === "POST" && path === "/api/v1/tenants/t1/workspaces/w1/promotions")
+      return [201, promotions];
+    return undefined;
+  }, "dev");
+
+test("promote --preview says breaking changes need --confirm-breaking, and exits 4 (CLI-10, D49)", async () => {
+  const instance = await standIn(breakingRoutes({}));
+  try {
+    const env = { VOLVEL_URL: instance.address, VOLVEL_TOKEN: "k" };
+    const target = ["--tenant", "acme", "--workspace", "main"];
+    const preview = await cli(["promote", ...target, "--preview"], env);
+    expect(preview.code).toBe(4);
+    expect(preview.err).toContain("--confirm-breaking");
+    expect(preview.out).toContain("Breaking: orders/place no longer answers.");
+    expect(preview.out).not.toContain("Run it again without --preview to promote");
+    const confirmed = await cli(["promote", ...target, "--preview", "--confirm-breaking"], env);
+    expect(confirmed.code).toBe(0);
+  } finally {
+    await instance.close();
+  }
+});
+
+test("promote shows a failed release push as a warning and a done one as the branch (CLI-11, D49)", async () => {
+  const summary = { created: 0, updated: 1, deleted: 0, unchanged: 2 };
+  const target = ["--tenant", "acme", "--workspace", "main", "--confirm-breaking"];
+  const failed = await standIn(
+    breakingRoutes({
+      bundleVersion: 4,
+      summary,
+      release: {
+        status: "failed",
+        branch: "release/live",
+        problem: "The remote refused the push.",
+      },
+    }),
+  );
+  try {
+    const result = await cli(["promote", ...target], {
+      VOLVEL_URL: failed.address,
+      VOLVEL_TOKEN: "k",
+    });
+    expect(result.code).toBe(0);
+    expect(result.out).toContain("Promoted to live (production) as version 4");
+    expect(result.err).toContain("The remote refused the push.");
+  } finally {
+    await failed.close();
+  }
+  const done = await standIn(
+    breakingRoutes({
+      bundleVersion: 4,
+      summary,
+      release: { status: "done", branch: "release/live" },
+    }),
+  );
+  try {
+    const result = await cli(["promote", ...target], {
+      VOLVEL_URL: done.address,
+      VOLVEL_TOKEN: "k",
+    });
+    expect(result.code).toBe(0);
+    expect(result.out).toContain("release/live");
+    expect(result.err).toBe("");
+  } finally {
+    await done.close();
+  }
+});
+
+test("pull refuses a volvel.yaml that build refuses, before asking the instance (CLI-12)", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "pull-config-"));
+  try {
+    await writeFile(join(dir, "volvel.yaml"), "roots: 5\n");
+    const result = await cli(["pull", "--dir", dir, "--tenant", "acme", "--workspace", "main"], {
+      VOLVEL_URL: url,
+      VOLVEL_TOKEN: token,
+    });
+    expect(result.code).toBe(1);
+    expect(result.err).toContain("volvel.yaml");
+    expect(result.err).toContain("The build failed");
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
+test("init says how to install the CLI and sign in, and writes a tsconfig (CLI-14)", async () => {
+  const dir = join(await mkdtemp(join(tmpdir(), "init-")), "repo");
+  try {
+    const created = await cli(["init", dir]);
+    expect(created.out).toContain("npm install --global @volvel/cli");
+    expect(created.out).toContain("volvel login --url");
+    expect(JSON.parse(await readFile(join(dir, "tsconfig.json"), "utf8")).include).toEqual(["src"]);
+  } finally {
+    await rm(join(dir, ".."), { recursive: true });
+  }
 });

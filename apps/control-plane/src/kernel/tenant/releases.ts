@@ -891,6 +891,7 @@ export async function releaseAccess(
       deleted: summary.deleted,
     },
   });
+  await supersedeWaiting(trx, audit, tenantId, id);
   if (steps.length > 0) {
     applied.set(id, { tenantId, number, message: request.message ?? null, at: Date.now() });
   }
@@ -1101,6 +1102,7 @@ export async function decideRelease(
       deleted: summary.deleted,
     },
   });
+  await supersedeWaiting(trx, audit, tenantId, release.id);
   applied.set(release.id, {
     tenantId,
     number: release.number,
@@ -1108,6 +1110,39 @@ export async function decideRelease(
     at: Date.now(),
   });
   return { id: release.id, number: release.number, status: "applied", summary };
+}
+
+/**
+ * A release that waits was asked for against the access as it was then. When the access
+ * changes, a waiting release that was asked against another state can no longer be approved
+ * as shown: it is marked superseded, so the history says so and the list stops offering it.
+ */
+async function supersedeWaiting(trx: Trx, audit: Audit, tenantId: string, exceptId: string) {
+  const waiting = await trx
+    .selectFrom("tenant_release")
+    .select(["id", "number", "content"])
+    .where("tenant_id", "=", tenantId)
+    .where("status", "=", "awaiting_approval")
+    .where("id", "<>", exceptId)
+    .forUpdate()
+    .execute();
+  if (waiting.length === 0) return;
+  const now = fingerprint(await currentAccess(trx, tenantId));
+  for (const one of waiting) {
+    if ((one.content as { base?: string }).base === now) continue;
+    await trx
+      .updateTable("tenant_release")
+      .set({ status: "superseded", decided_at: new Date() })
+      .where("id", "=", one.id)
+      .execute();
+    await audit({
+      action: "access.release_superseded",
+      targetType: "tenant_release",
+      targetId: one.id,
+      tenantId,
+      details: { number: one.number, supersededBy: exceptId },
+    });
+  }
 }
 
 /** The whole set an earlier release left, asked for again: going back to it. */

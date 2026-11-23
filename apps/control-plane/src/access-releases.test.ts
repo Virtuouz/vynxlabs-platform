@@ -571,11 +571,16 @@ describe("going back, and asking a second person", () => {
       bob,
     );
     expect((await decide(alice, "approve", other.body.id)).status).toBe(200);
+    // The release that was asked against the old state is marked so, not left waiting (REL-16).
+    const listed = ((await alice.get(`${at()}/releases`)).body.items as Any[]).find(
+      (one) => one.id === stale.body.id,
+    );
+    expect(listed.status).toBe("superseded");
     const late = await decide(bob, "approve", stale.body.id);
     expect(late.status).toBe(409);
-    expect(late.body.code).toBe("release_stale");
+    expect(late.body.message ?? late.body.detail).toContain("superseded");
     expect((await decide(bob, "withdraw", stale.body.id)).status).toBe(409);
-    expect((await decide(alice, "withdraw", stale.body.id)).body.status).toBe("withdrawn");
+    expect((await decide(alice, "withdraw", stale.body.id)).status).toBe(409);
 
     // What the console changes waits the same way: a group made there is not there yet.
     const made = await alice.post(`/tenants/${tenant}/groups`, { name: "Night shift" });
@@ -663,6 +668,41 @@ describe("going back, and asking a second person", () => {
     // Someone of another tenant can neither read nor release this one's access.
     expect((await sam.get(at())).status).toBe(404);
     expect((await release(all, {}, sam)).status).toBe(404);
+  });
+});
+
+describe("approval counts the people who may release by every way they hold it (REL-17)", () => {
+  test("two members who hold access:write through a group are two", async () => {
+    const slug = await t.admin.post("/tenants", { slug: "grouped", name: "Grouped" });
+    const grouped = slug.body.id as string;
+    const grant = await t.admin.post(`/tenants/${grouped}/access-grants`, {
+      reason: "Setup",
+      roleId: roles.tenant_admin,
+    });
+    const sam = await t.admin.post(`/tenants/${grouped}/members`, {
+      email: "sam@grouped.example",
+      name: "Sam",
+      password: PASSWORD,
+    });
+    const kim = await t.admin.post(`/tenants/${grouped}/members`, {
+      email: "kim@grouped.example",
+      name: "Kim",
+      password: PASSWORD,
+    });
+    const group = await t.admin.post(`/tenants/${grouped}/groups`, { name: "Releasers" });
+    expect(group.status, JSON.stringify(group.body)).toBeLessThan(300);
+    for (const member of [sam, kim]) {
+      await t.admin.put(`/tenants/${grouped}/groups/${group.body.id}/members/${member.body.id}`);
+    }
+    await t.admin.post(`/tenants/${grouped}/bindings`, {
+      principalType: "group",
+      principalId: group.body.id,
+      roleId: roles.tenant_admin,
+    });
+    await t.admin.delete(`/tenants/${grouped}/access-grants/${grant.body.id}`);
+    const asSam = await t.signIn("sam@grouped.example", PASSWORD);
+    const on = await asSam.put(`/tenants/${grouped}/access/approval`, { required: true });
+    expect(on.status, JSON.stringify(on.body)).toBe(200);
   });
 });
 

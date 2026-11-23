@@ -612,6 +612,13 @@ describe("deploying drafts", () => {
       change: "rename",
       renamedFrom: "orders/hello",
     });
+    // A renamed resource is described against what runs under its key, not as a new one (REL-15).
+    const listed = (await alice.get(`${ws()}/drafts`)).body.items as {
+      path: string;
+      about: string[];
+    }[];
+    const about = listed.find((one) => one.path === "greetings/hello")?.about ?? [];
+    expect(about.join(" ")).not.toContain("A new");
     // The draft is at the path the resource is to have. What runs has not moved yet.
     expect((await alice.get(`${ws()}/drafts/orders/hello`)).status).toBe(404);
     expect((await alice.get(`${ws()}/drafts/greetings/hello`)).body.change).toBe("rename");

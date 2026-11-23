@@ -154,6 +154,19 @@ test("a draft is set aside after asking, and a production workspace has no revie
   expect(asked()).toBe(before);
 });
 
+test("an address that names a step this workspace does not have opens the first one (REL-14)", async () => {
+  history.replaceState(null, "", "/?step=review");
+  const first = show(review(production));
+  await screen.findByRole("heading", { name: "Versions" });
+  expect(screen.queryByText("Loading")).toBeNull();
+  first.unmount();
+  // A dev workspace with nothing to promote to has no promote step.
+  history.replaceState(null, "", "/?step=promote");
+  show(review());
+  expect(await screen.findByRole("link", { name: "orders/sync" })).toBeTruthy();
+  history.replaceState(null, "", "/");
+});
+
 test("a promotion that changes an agent's tool says so, asks, and sends that it was confirmed", async () => {
   const linked: Place = { ...dev, linkedWorkspaceId: "w2" };
   const target = { id: "w2", name: "Clinics", type: "production", linkedWorkspaceId: null };
@@ -173,7 +186,15 @@ test("a promotion that changes an agent's tool says so, asks, and sends that it 
     });
     const json = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status });
     if (method === "POST") {
-      return json({ bundleVersion: 8, bundleId: "b8", workspaceId: "w2" }, 201);
+      return json(
+        {
+          bundleVersion: 8,
+          bundleId: "b8",
+          workspaceId: "w2",
+          release: { status: "failed", branch: "release/main", problem: "The remote refused it." },
+        },
+        201,
+      );
     }
     if (address.includes("/promotion-preview")) {
       return json({
@@ -219,6 +240,9 @@ test("a promotion that changes an agent's tool says so, asks, and sends that it 
   await waitFor(() =>
     expect(calls.find((call) => call.method === "POST")?.body).toEqual({ confirmBreaking: true }),
   );
+  // A release commit that failed points at the place that tries it again (REL-06).
+  const retry = await screen.findByRole("link", { name: "Try again from Git sync" });
+  expect(retry.getAttribute("href")).toBe("/t/t1/workspaces/w2/git");
 });
 
 test("a file that differs from the branch says how: new, removed or changed, and on which side", () => {

@@ -152,7 +152,9 @@ export interface ReferenceOptions<Required extends boolean = boolean>
   extends ColumnOptions<Required> {
   /**
    * `restrict` refuses the deletion, `set_null` empties this column, `cascade`
-   * deletes this row too. Left out, `restrict`.
+   * deletes this row too. Left out, `restrict`. The database does the last two: a row it
+   * deletes or empties this way is not announced as a `platform/row-changed` event, only the
+   * row that was deleted is.
    */
   onDelete?: "restrict" | "set_null" | "cascade";
 }

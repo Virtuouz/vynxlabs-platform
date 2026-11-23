@@ -988,7 +988,9 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           summary: "Delete several rows",
           description:
             "Deletes the rows with these keys that the table's policy lets the caller delete, in " +
-            "one statement. Keys that name no such row come back in `missing`.",
+            "one statement. Keys that name no such row come back in `missing`. Rows that a " +
+            "reference's `cascade` or `set_null` rule deletes or empties with them are not " +
+            "announced as changes; only the rows named here are.",
           tags: ["data"],
           params: WildParams,
           body: Type.Object({
@@ -1032,6 +1034,9 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.custom, rateLimit: guestLimit },
         schema: {
           summary: "Delete a row",
+          description:
+            "Rows that a reference's `cascade` or `set_null` rule deletes or empties with it are " +
+            "not announced as changes; only this row is.",
           tags: ["data"],
           params: RowParams,
           response: { 204: NoContent },

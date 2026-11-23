@@ -911,6 +911,22 @@ export async function reconcileReferences(trx: Trx, workspaceId: string, final: 
     // Rows that came back with a table may name a row that is gone. They are left as they are,
     // and every row written from now on is held to the key. A key pointed at another table is
     // still refused while a row would point nowhere.
+    if (there && there.target !== target.physical_name) {
+      // Pointed at another table while rows hold IDs: said by column and count, not as a refusal of the key.
+      const stray = await sql<{ n: string }>`
+        select count(*) as n from ${own} as r
+        where r.${sql.id(reference.physical_name)} is not null and not exists (
+          select 1 from ${sql.id(schema, target.physical_name)} as t where t.id = r.${sql.id(reference.physical_name)}
+        )
+      `.execute(trx);
+      const count = Number(stray.rows[0]?.n ?? 0);
+      if (count > 0) {
+        throw conflict(
+          `The column "${reference.name}" of "${reference.table_name}" cannot refer to "${reference.reference_table}": ` +
+            `${count} ${count === 1 ? "row holds" : "rows hold"} an ID that is not a row of it. Empty those values, or change them, first.`,
+        );
+      }
+    }
     const dangling = there
       ? { rows: [] }
       : await sql`

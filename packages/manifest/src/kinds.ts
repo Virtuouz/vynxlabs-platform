@@ -1063,7 +1063,7 @@ export const tableKind: KindDefinition = {
             onDelete: {
               enum: ["restrict", "set_null", "cascade"],
               description:
-                "For a reference: what happens to this row when the row it points to is deleted. `restrict` refuses the deletion, `set_null` empties the column, `cascade` deletes this row too. Left out, `restrict`.",
+                "For a reference: what happens to this row when the row it points to is deleted. `restrict` refuses the deletion, `set_null` empties the column, `cascade` deletes this row too. Left out, `restrict`. The database does the last two: a row it deletes or empties this way is not announced as a row change, only the row that was deleted is.",
             },
             values: {
               type: "array",

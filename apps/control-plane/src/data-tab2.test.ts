@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { type Kysely, type PlatformSchema, sql } from "@volvel/db";
 import { createTestDatabase, type TestDatabase } from "@volvel/db/testing";
 import { type Bundle, type BundleManifest, bundleDigest, formatFor } from "@volvel/manifest";
@@ -505,5 +506,43 @@ describe("a value a list no longer offers", () => {
     expect((await alice.patch(`${ws(own)}/row/${other}/tags`, { many: ["a", "b"] })).status).toBe(
       400,
     );
+  });
+});
+
+describe("a reference that comes back, or points elsewhere", () => {
+  test("TAB-23: a column comes back with rows that name a row now gone, and a new target is refused in words", async () => {
+    const own = await fresh();
+    expect((await put(own, "parents", { columns: { name: { type: "text" } } })).status).toBe(201);
+    expect((await put(own, "others", { columns: { name: { type: "text" } } })).status).toBe(201);
+    const withRef = (references: string) => ({
+      columns: { label: { type: "text" }, parent: { type: "reference", references } },
+    });
+    expect((await put(own, "kids", withRef("parents"))).status).toBe(201);
+    const parent = (await alice.post(`${ws(own)}/rows/parents`, { name: "p" })).body.items[0].id;
+    await alice.post(`${ws(own)}/rows/kids`, { label: "k", parent });
+    // Pointing at another table while a row holds an ID that is not there: said by column and count.
+    const retargeted = await put(own, "kids", withRef("others"));
+    expect(retargeted.status, JSON.stringify(retargeted.body)).toBe(409);
+    expect(retargeted.body.detail).toContain('"parent"');
+    expect(retargeted.body.detail).toContain("1 row");
+    // The column goes, the row it named goes, and a rollback brings the column back.
+    expect((await put(own, "kids", { columns: { label: { type: "text" } } })).status).toBe(200);
+    expect((await alice.delete(`${ws(own)}/row/${parent}/parents`)).status).toBe(204);
+    const back = await put(own, "kids", withRef("parents"));
+    expect(back.status, JSON.stringify(back.body)).toBe(200);
+  });
+});
+
+describe("what the words say", () => {
+  test("TAB-27 and TAB-41: the table kind says a rule's own deletions are not announced, and how values sort", () => {
+    const schema = readFileSync(
+      new URL("../../../schemas/kinds/table.v1.schema.json", import.meta.url),
+      "utf8",
+    );
+    // D28: rows a reference's rule deletes or empties are not announced, and the schema says so.
+    expect(schema).toContain("is not announced as a row change");
+    // Values are offered in their order and sorted by spelling (phase 18).
+    expect(schema).not.toContain("offered and sorted");
+    expect(schema).toContain("spelling of the value");
   });
 });

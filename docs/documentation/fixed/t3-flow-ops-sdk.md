@@ -30,3 +30,10 @@ No migration.
 - Tests: `apps/console/src/Runs.test.tsx` "runs between two times: ...", "a window that ends before it starts says so and asks for nothing". Seen failing before.
 - Siblings: the other lists with "Last 24 hours" windows: none besides Runs found. The API took `from` and `to` already.
 - Polish gate: states: loading, empty ("Nothing ran in this time"), refused window (notice). Keyboard: native fields. 390 px: the fields wrap in the header actions. Walk: Runs, Between, reload, a saved view.
+
+## OPS-MP8 Run later, with a priority
+- `apps/console/src/InputDialog.tsx`: `timing` prop adds "Start: Now / Later" (a "Starts at" date-time field) and "Priority" to the input form and gives `onSubmit(input, { startAfter?, priority? })`. A time that has passed, no time chosen with Later, and a priority that is not a whole number from -100 to 100 are refused in words, in the dialog's notice. Used by the script Run button (`Execution.tsx` `RunButton`, so a script's page and its list) and the palette's `/run` (`kit/CommandPalette.tsx`, scripts only). Flows are not offered it: `POST flow-runs` takes neither. The API is unchanged (`POST runs` already took both).
+- Tests: `InputDialog.test.tsx` "a run can start later and with a priority...", `CommandPalette.test.tsx` "/run can start the script later and with a priority". Seen failing before.
+- Siblings: "Run again with other input" on the run page and in Runs use `POST runs/:id/rerun`, which takes neither (left out). Dialogs that do not pass `timing` are unchanged.
+- Depends on OPS-25 (t4-flows-ops): until it lands a later run is listed and counted as queued; the dialog says it "waits as queued".
+- Polish gate: states: saving and failure are the form's; keyboard: native select and fields, Enter submits; 390 px: the fields wrap. Walk: Run on a script page, with Later and a past time, with priority 500, then a valid one; reload clears it (a dialog).

@@ -158,12 +158,25 @@ export function seenByTag(
 }
 
 /** A confirmation's text, with `{column}` filled from the record it is about. */
-export function fillText(text: string, row: Row | undefined, label: (column: string) => string) {
-  return text.replace(/\{([a-z][a-z0-9_]*)\}/g, (_all, column: string) => {
+export function fillText(
+  text: string,
+  row: Row | undefined,
+  label: (column: string) => string,
+  /** Several records: no one of them stands for the rest, so what is said of "its" column is left out. */
+  several = false,
+) {
+  const filled = text.replace(/\{([a-z][a-z0-9_]*)\}/g, (_all, column: string) => {
+    if (several) return "";
     const value = row?.[column];
     if (value === undefined || value === null || value === "") return row ? "" : "this record";
     return label(String(value));
   });
+  return several
+    ? filled
+        .replace(/ {2,}/g, " ")
+        .replace(/ +([?.,!:;])/g, "$1")
+        .trim()
+    : filled;
 }
 
 /** What asked fields are, as a form's schema: typed, with the ones that must be given listed. */
@@ -526,6 +539,7 @@ function Confirmation({
   onCancel(): void;
 }) {
   const confirm = asking.action.confirm;
+  const several = (asking.request.records?.length ?? 0) > 1;
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<ActionError | Error>();
   const words = confirmWords({
@@ -538,10 +552,11 @@ function Confirmation({
         }
       : undefined,
     table: tableOfWidget(asking.request.widget) ?? asking.request.table,
-    row: asking.request.row,
+    row: several ? undefined : asking.request.row,
     facts: asking.request.facts,
+    count: several ? asking.request.records?.length : undefined,
   });
-  const text = words.text ? fillText(words.text, asking.request.row, label) : undefined;
+  const text = words.text ? fillText(words.text, asking.request.row, label, several) : undefined;
   const ask = confirm?.ask ?? [];
   const go = async (inputs: Record<string, unknown>) => {
     setBusy(true);
@@ -564,7 +579,7 @@ function Confirmation({
     <Dialog
       open={open}
       onClose={() => !busy && onCancel()}
-      title={fillText(words.title, asking.request.row, label)}
+      title={fillText(words.title, asking.request.row, label, several)}
       {...(text ? { description: text } : {})}
     >
       {failure && Object.keys(fields).length === 0 ? (

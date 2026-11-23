@@ -16,3 +16,11 @@ Commits are named by the row in their subject: `git log --grep "(WID-01)"`.
 - **A person sees:** Save, confirm: the row is made with what they typed; a refused field is drawn at the field, not an empty row and a cleared form.
 - **Walk:** a form on a page with "Ask to confirm" on its submit (inspector: form, Submit action), required field emptied then confirmed; 1440/390, light/dark, keyboard (Enter in the dialog, Escape cancels), reload. Polish gate: states (busy, refused field, cancelled) answered by the tests; lifecycle: form keeps values after a refusal; copy unchanged.
 - **Left out:** the walk was not run in a browser by this lane.
+
+## WID-03 Confirming an action on several rows named only the first
+- **Test:** `packages/screens/src/row-actions.test.tsx` > "confirming an action on several rows" (2 tests, failed before: "Remove the invoice INV-1?"); `confirmWords.test.ts` > "several records".
+- **Changed:** `packages/screens/src/confirmWords.ts` (`ConfirmInput.count`, `recordWords`, new `nounsOf`, exported from `index.ts`); `packages/screens/src/actions.tsx` (`Confirmation` passes the count and no row when `records` has more than one; `fillText` takes `several` and leaves `{column}` out and tidies spaces).
+- **Siblings looked at:** the inspector's confirm preview (`apps/console/.../confirmPreview.tsx`, `actionControls.tsx:1095`) calls `confirmWords` with a sample record only and does not offer a count, so it is unchanged and still right for one row. Single-row paths are unchanged.
+- **A person sees:** two rows chosen, Remove: "Remove 2 invoices?"; the author's `{column}` words read without the column.
+- **Walk:** table with "Choose rows" on and a Remove action with Ask to confirm; choose 2, press Remove; 1440/390, light/dark, keyboard (Tab to the bar, Enter), reload.
+- **Left out:** the preview does not show the several-rows wording.

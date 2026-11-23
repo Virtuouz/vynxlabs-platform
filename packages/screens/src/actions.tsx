@@ -342,7 +342,13 @@ export function useActions(host: ActionsHost): {
           say(step.text, step.tone ?? "success");
         } else if (step.do === "narrow") {
           const value = request.group?.[step.from];
-          values = { ...values, [step.filter]: value ?? null };
+          // A group with no value (rows with none set) gives nothing to narrow by: the page is
+          // left as it is, and it is said, rather than widened.
+          if (value === undefined || value === null) {
+            say("Those rows have no value to narrow the page by.", "info");
+            continue;
+          }
+          values = { ...values, [step.filter]: value };
           now.onFilterValues(values);
         } else if (step.do === "rows") {
           // A clicked point gives its group; a number that isn't broken down (a stat) gives

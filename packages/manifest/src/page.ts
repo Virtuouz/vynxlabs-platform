@@ -935,6 +935,8 @@ export function checkWidgets(
     say: (path: string, message: string) => void,
     /** What else is asked for: a form's fields, by their columns. */
     typed: readonly string[] = [],
+    /** Whether the event clicks a group (a point, a cell): `narrow` takes its value from one. */
+    eventGivesGroup = false,
   ) {
     checkConditions(action.when, `${path}/when`, eventGivesRecord, say);
     // An unfinished action is kept in a draft; it is said here, and publishing refuses it.
@@ -1014,6 +1016,12 @@ export function checkWidgets(
         context.page?.kind !== "modal"
       ) {
         say(at, "only a side sheet or a modal can be closed");
+      }
+      if (step.do === "narrow" && !eventGivesGroup) {
+        say(
+          at,
+          "narrows the page by what was clicked, and this event clicks no group (a point or a cell does)",
+        );
       }
       if (step.do === "narrow" && !byName.has(step.filter)) {
         say(`${at}/filter`, `the page has no filter "${step.filter}"`);
@@ -1226,7 +1234,14 @@ export function checkWidgets(
         say(`/on/${event}`, `${definition.title} has no event "${event}"`);
         continue;
       }
-      checkAction(action, `/on/${event}`, declared.gives === "record", say);
+      checkAction(
+        action,
+        `/on/${event}`,
+        declared.gives === "record",
+        say,
+        [],
+        declared.gives === "group",
+      );
     }
     for (const [property, schema] of Object.entries(definition.config.properties)) {
       const control = schema["x-volvel"]?.control;

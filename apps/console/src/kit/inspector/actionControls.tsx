@@ -111,6 +111,7 @@ export function actionContext(env: Env): ActionContext {
     eventTable: raisesRecord ? own : undefined,
     defaultRef: raisesRecord || !thisTable ? "event" : "this",
     groupEvent: events.some((one) => one.gives === "group"),
+    rowsEvent: events.some((one) => one.gives === "group") || env.widget.type === "core/stat",
     openAs: kind === "sheet" ? "sheet" : kind === "modal" ? "modal" : "page",
     columnsOf,
   };

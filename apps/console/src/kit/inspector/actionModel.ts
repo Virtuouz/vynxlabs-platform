@@ -35,6 +35,8 @@ export interface ActionContext {
   defaultRef: RecordRef;
   /** Whether the widget raises an event that gives a group (a point, a cell). */
   groupEvent: boolean;
+  /** Whether the event can show the rows behind it: a click on a point or a cell, and a click on a number. */
+  rowsEvent: boolean;
   /** What the page is when it is open as: a side sheet, a dialog, or a page. */
   openAs: "page" | "sheet" | "modal";
   columnsOf: (table: string | undefined) => CatalogColumn[];
@@ -84,7 +86,12 @@ export const STEP_WORDS: Record<StepKind, { title: string; help: string }> = {
  * offers narrow, message and rows only; narrowing and showing rows need an event that gives a group.
  */
 export function stepKindsFor(ctx: ActionContext): StepKind[] {
-  if (ctx.surface === "dashboard") return ["narrow", "message", "rows"];
+  if (ctx.surface === "dashboard")
+    return [
+      ...(ctx.groupEvent ? (["narrow"] as const) : []),
+      "message",
+      ...(ctx.rowsEvent ? (["rows"] as const) : []),
+    ];
   const kinds: StepKind[] = [];
   if (refsOf(ctx).length > 0) kinds.push("update");
   kinds.push("create");
@@ -92,7 +99,8 @@ export function stepKindsFor(ctx: ActionContext): StepKind[] {
   kinds.push("flow", "script", "open");
   if (ctx.openAs !== "page") kinds.push("close");
   kinds.push("message");
-  if (ctx.groupEvent) kinds.push("narrow", "rows");
+  if (ctx.groupEvent) kinds.push("narrow");
+  if (ctx.rowsEvent) kinds.push("rows");
   return kinds;
 }
 

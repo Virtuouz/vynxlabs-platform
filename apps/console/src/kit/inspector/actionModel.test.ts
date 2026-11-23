@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { typedConstant } from "./actionModel.ts";
+import { stepKindsFor, typedConstant } from "./actionModel.ts";
 
 test("a value typed for a column is stored as that column's type, not as it looks", () => {
   expect(typedConstant("007", "text")).toBe("007");
@@ -15,4 +15,12 @@ test("with no column to go by (a flow's input) it is read as it looks", () => {
   expect(typedConstant("007")).toBe(7);
   expect(typedConstant("false")).toBe(false);
   expect(typedConstant("late")).toBe("late");
+});
+
+test("a dashboard offers narrowing and the rows behind only where the event gives them", () => {
+  const ctx = (groupEvent: boolean, rowsEvent: boolean) =>
+    ({ surface: "dashboard", groupEvent, rowsEvent, columnsOf: () => [] }) as never;
+  expect(stepKindsFor(ctx(true, true))).toEqual(["narrow", "message", "rows"]);
+  expect(stepKindsFor(ctx(false, true))).toEqual(["message", "rows"]);
+  expect(stepKindsFor(ctx(false, false))).toEqual(["message"]);
 });

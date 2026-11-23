@@ -112,11 +112,15 @@ function TableView(props: WidgetViewProps<Record<string, unknown>> & Extra) {
     </div>
   );
 }
-function PointsView({ data, emit }: WidgetViewProps) {
+function PointsView({ data, emit, title }: WidgetViewProps) {
   return (
     <button
       type="button"
-      onClick={() => emit("pointClick", { group: { status: "open" } })}
+      onClick={() =>
+        emit("pointClick", {
+          group: { status: title === "empty" ? null : "open" },
+        })
+      }
       data-has={data.totals ? "yes" : "no"}
     >
       Point
@@ -419,6 +423,32 @@ describe("the browser's steps", () => {
       expect(onFilterValues).toHaveBeenCalledWith({ month: "2026-11", status: "open" }),
     );
     expect(client.act).toHaveBeenCalledWith("points", "on/pointClick", { records: {} });
+  });
+
+  test("narrow on a group with no value leaves the page as it is, and says so", async () => {
+    const client = clientOf({ client: [{ do: "narrow", filter: "status", from: "status" }] });
+    const points: PageWidget = {
+      id: "points",
+      type: "test/points",
+      at,
+      title: "empty",
+      data: {
+        totals: {
+          source: {
+            visual: {
+              table: "invoices",
+              measures: [{ fn: "count" }],
+              groupBy: [{ column: "status" }],
+            },
+          },
+        } as never,
+      },
+      on: { pointClick: { steps: [{ do: "narrow", filter: "status", from: "status" }] } },
+    };
+    const { onFilterValues } = show([points], client, {}, { month: "2026-11" });
+    fireEvent.click(await screen.findByText("Point"));
+    expect(await screen.findByText("Those rows have no value to narrow the page by.")).toBeTruthy();
+    expect(onFilterValues).not.toHaveBeenCalled();
   });
 
   test("rows opens a side sheet of the rows behind the group, drawn by the table", async () => {

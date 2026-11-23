@@ -1,7 +1,7 @@
 /**
  * The permissions of each built-in role, as the migrations leave them. A test of the control plane
  * (`builtin-roles.test.ts`) reads the roles from a database and holds this to them, so the table
- * cannot go stale. The literal is plain JSON on purpose: that test parses it.
+ * cannot go stale.
  */
 export const BUILTIN_ROLES: Record<string, string[]> = {
   agent_runner: ["flow_run:write", "run:write"],

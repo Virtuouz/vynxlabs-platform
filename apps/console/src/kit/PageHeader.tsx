@@ -208,6 +208,7 @@ export function useSeen(key: string | undefined, has: boolean): [boolean] {
   const waiting = usePreferencesWaiting();
   const first = useRef<boolean | undefined>(undefined);
   if (first.current === undefined && !waiting) first.current = !seen;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `waiting` ending is when `first` is decided, so it runs again then
   useEffect(() => {
     if (key && has && first.current) setSeen(true);
   }, [key, has, setSeen, waiting]);

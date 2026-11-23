@@ -14,7 +14,7 @@ import {
   TextField,
 } from "@volvel/ui";
 import { Plus, Trash2 } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, failureText, notify } from "../ask.tsx";
 import { DataTable } from "../kit/DataTable.tsx";
@@ -22,6 +22,7 @@ import { listOf } from "../kit/format.ts";
 import { ErrorState, Loading } from "../kit/LoadState.tsx";
 import { Stepper } from "../kit/layout.tsx";
 import { PageHeader } from "../kit/PageHeader.tsx";
+import { SaveBar } from "../kit/SaveBar.tsx";
 import { SecretField } from "../kit/SecretField.tsx";
 import { Mono, StatePill, Tag } from "../kit/status.tsx";
 import { useOpenRow } from "../kit/useOpenRow.ts";
@@ -571,6 +572,35 @@ function Groups({ base, root, audience }: { base: string; root: string; audience
     value: group.id,
     label: group.name,
   }));
+  const saveMapping = async () => {
+    // A row left empty is nothing; one half filled in is not saved quietly without its half.
+    const half = rows.findIndex((row) => !!row.value.trim() !== !!row.groupId);
+    if (half >= 0) {
+      setProblem(
+        `Row ${half + 1} is not complete. ${
+          rows[half]?.value.trim()
+            ? "Choose the group here for it"
+            : "Write the group at the provider for it"
+        }, or remove the row.`,
+      );
+      return;
+    }
+    setProblem(undefined);
+    const items = rows.filter((row) => row.value.trim() && row.groupId);
+    setBusy(true);
+    try {
+      await api.put(`${root}/group-maps`, {
+        items: items.map((row) => ({ value: row.value.trim(), groupId: row.groupId })),
+      });
+      setEdited(undefined);
+      stored.reload();
+      notify.success("The group mapping was saved.");
+    } catch (error) {
+      notify.error(error);
+    } finally {
+      setBusy(false);
+    }
+  };
   return (
     <div className="flex max-w-measure flex-col gap-4">
       <p className="m-0 text-ink-muted">
@@ -633,44 +663,18 @@ function Groups({ base, root, audience }: { base: string; root: string; audience
         <Button onClick={() => setEdited([...rows, { value: "", groupId: "" }])}>
           <Plus size={16} aria-hidden="true" /> Add a mapping
         </Button>
-        <Button
-          variant="primary"
-          loading={busy}
-          disabled={edited === undefined}
-          onClick={async () => {
-            // A row left empty is nothing; one half filled in is not saved quietly without its half.
-            const half = rows.findIndex((row) => !!row.value.trim() !== !!row.groupId);
-            if (half >= 0) {
-              setProblem(
-                `Row ${half + 1} is not complete. ${
-                  rows[half]?.value.trim()
-                    ? "Choose the group here for it"
-                    : "Write the group at the provider for it"
-                }, or remove the row.`,
-              );
-              return;
-            }
-            setProblem(undefined);
-            const items = rows.filter((row) => row.value.trim() && row.groupId);
-            setBusy(true);
-            try {
-              await api.put(`${root}/group-maps`, {
-                items: items.map((row) => ({ value: row.value.trim(), groupId: row.groupId })),
-              });
-              setEdited(undefined);
-              stored.reload();
-              notify.success("The group mapping was saved.");
-            } catch (error) {
-              notify.error(error);
-            } finally {
-              setBusy(false);
-            }
-          }}
-        >
-          Save mapping
-        </Button>
       </div>
       {problem ? <Notice tone="danger">{problem}</Notice> : null}
+      <SaveBar
+        dirty={edited !== undefined}
+        saving={busy}
+        onSave={() => void saveMapping()}
+        onDiscard={() => {
+          setEdited(undefined);
+          setProblem(undefined);
+        }}
+        what="this group mapping"
+      />
       {groups.data && options.length === 0 ? (
         <Notice tone="attention">
           {audience === "members"
@@ -731,9 +735,42 @@ function Settings({
     />
   );
   const saml = provider.protocol === "saml";
+  // What is on the screen, to tell whether it differs from what was last saved.
+  const snapshot = () =>
+    JSON.stringify([
+      name,
+      config,
+      certificates,
+      attributes,
+      clientSecret,
+      removeSecret,
+      scopes,
+      provision,
+      roleId ?? null,
+    ]);
+  const [saved, setSaved] = useState(snapshot);
+  const dirty = snapshot() !== saved;
+  const form = useRef<HTMLFormElement>(null);
+  const discard = () => {
+    setName(provider.name);
+    setConfig(provider.config);
+    setCertificates((provider.config.certificates ?? []).join("\n"));
+    setAttributes(
+      Object.entries(provider.config.attributes ?? {})
+        .map(([attribute, claim]) => `${attribute} = ${claim}`)
+        .join("\n"),
+    );
+    setClientSecret("");
+    setRemoveSecret(false);
+    setScopes((provider.config.scopes ?? []).join(" "));
+    setProvision(provider.provision);
+    setRoleId(provider.defaultRoleId ?? undefined);
+    setError(undefined);
+  };
 
   return (
     <form
+      ref={form}
       className="flex max-w-measure flex-col gap-3"
       onSubmit={async (event) => {
         event.preventDefault();
@@ -776,7 +813,7 @@ function Settings({
         setBusy(true);
         try {
           const { spCertificate: _ours, ...sent } = config;
-          const saved = await api.patch<IdentityProvider>(root, {
+          const updated = await api.patch<IdentityProvider>(root, {
             name: name.trim(),
             config: {
               ...sent,
@@ -799,9 +836,23 @@ function Settings({
           });
           setClientSecret("");
           setRemoveSecret(false);
-          onChanged(saved);
+          // What was typed is now what is saved; the secret is never kept on the screen.
+          setSaved(
+            JSON.stringify([
+              name,
+              config,
+              certificates,
+              attributes,
+              "",
+              false,
+              scopes,
+              provision,
+              roleId ?? null,
+            ]),
+          );
+          onChanged(updated);
           // A secret stored for the old issuer is not sent to a new one: said, not lost in silence.
-          if (provider.hasSecret && !saved.hasSecret)
+          if (provider.hasSecret && !updated.hasSecret)
             notify.info(
               "The provider was saved. Its client secret was dropped because the issuer changed: give it again in Settings.",
             );
@@ -977,11 +1028,13 @@ function Settings({
         />
       ) : null}
       {error ? <Notice tone="danger">{failureText(error)}</Notice> : null}
-      <div className="mt-1 flex justify-end">
-        <Button type="submit" variant="primary" loading={busy}>
-          Save
-        </Button>
-      </div>
+      <SaveBar
+        dirty={dirty}
+        saving={busy}
+        onSave={() => form.current?.requestSubmit()}
+        onDiscard={discard}
+        what="this provider's settings"
+      />
     </form>
   );
 }

@@ -38,3 +38,11 @@ Migration: none.
 - Test failed before: `Workers.test.tsx` "the worker command hands the credential on standard input, never on the command line (GOV-36)".
 - `screens/Execution.tsx` credential sheet: `printf '%s\n' '<token>' | volvel-worker --url <url> --token-stdin` (printf is a shell builtin, so the credential is not in the process list); the table description says `--token-stdin`.
 - Siblings: Hosts/compose file already done (HOST-27); `docs/self-hosting.md:184` already recommends it.
+
+## GOV-33
+- Tests failed before: `SingleSignOn.test.tsx` "settings and a group mapping left unsaved say so, and can be put back (GOV-33)"; `Provisioning.test.tsx` "how pushes are taken is chosen and saved together, from the save bar (GOV-33)".
+- The shared `kit/SaveBar` now closes the three: `SingleSignOn.tsx` Settings (a snapshot of every field against the last saved one; Discard puts back the provider's values; the form still submits through `requestSubmit`, so required fields are checked as before) and Groups (the "Save mapping" button is the bar's Save), and `Provisioning.tsx` ("How pushes are taken"). Leaving asks, and Ctrl+S saves, as on Branding and Retention.
+- Existing tests that pressed Save with nothing changed now change a field first (the bar is shown only when something differs). "Save mapping" is now "Save".
+- Siblings looked at: Branding, Retention, InstanceBranding, Environments, KitSheet (already use SaveBar); Domains tab and tokens act at once and say so.
+- Not done: field errors there are still one notice, not at the field.
+- Screens: provider Settings, Groups and Provisioning at 390/768/1440, light and dark: change a field, bar appears, reload leaves nothing; leave with a change asks; Discard; Ctrl+S.

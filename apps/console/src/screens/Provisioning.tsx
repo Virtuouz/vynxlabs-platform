@@ -6,6 +6,7 @@ import { DataTable } from "../kit/DataTable.tsx";
 import { ErrorState, Loading } from "../kit/LoadState.tsx";
 import { FilterChips, SectionLabel } from "../kit/layout.tsx";
 import { OneTimeSecret } from "../kit/OneTimeSecret.tsx";
+import { SaveBar } from "../kit/SaveBar.tsx";
 import { Mono, StatePill } from "../kit/status.tsx";
 import { Time } from "../kit/Time.tsx";
 import { CopyButton, when } from "../ListScreen.tsx";
@@ -230,11 +231,13 @@ export function Provisioning({
             ) : null}
           </>
         )}
-        <div>
-          <Button variant="primary" disabled={!dirty || busy} onClick={save}>
-            Save
-          </Button>
-        </div>
+        <SaveBar
+          dirty={dirty}
+          saving={busy}
+          onSave={() => void save()}
+          onDiscard={() => setSettings(data.settings)}
+          what="how pushes are taken"
+        />
       </section>
 
       <section className="flex flex-col gap-2">

@@ -249,12 +249,12 @@ test("a SAML provider's settings say what lowering the bar means, and group mapp
   const values = screen.getAllByLabelText("Group at the provider");
   fireEvent.change(values[1] as HTMLElement, { target: { value: " gold " } });
   // A row with no group chosen is not saved, and says so (GOV-18).
-  fireEvent.click(screen.getByRole("button", { name: "Save mapping" }));
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
   expect((await screen.findByRole("alert")).textContent).toContain("Row 2");
   expect(sent("PUT")).toHaveLength(0);
   // Taken out, the rest is saved.
   fireEvent.click(screen.getByRole("button", { name: "Remove mapping 2" }));
-  fireEvent.click(screen.getByRole("button", { name: "Save mapping" }));
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
   await waitFor(() => expect(sent("PUT")).toHaveLength(1));
   expect(sent("PUT")[0]?.body).toEqual({ items: [{ value: "*", groupId: "g1" }] });
 });
@@ -286,7 +286,7 @@ test("a mapping an access release made is shown read only, with the way to the r
   expect(link.getAttribute("href")).toBe("/t/t1/releases");
   expect(screen.getByText("gold")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Remove mapping 1" }));
-  fireEvent.click(screen.getByRole("button", { name: "Save mapping" }));
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
   await waitFor(() => expect(sent("PUT")).toHaveLength(1));
   expect(sent("PUT")[0]?.body).toEqual({ items: [] });
 });
@@ -460,6 +460,9 @@ test("after an edit, removing the last domain turns the header off with the prov
   show(<SingleSignOn base="/tenants/t1" />);
   fireEvent.click(await screen.findByRole("button", { name: "Acme Login" }));
   fireEvent.click(screen.getByRole("tab", { name: "Settings" }));
+  fireEvent.change((await screen.findAllByLabelText("Name"))[0] as HTMLElement, {
+    target: { value: "Acme Login 2" },
+  });
   fireEvent.click(await screen.findByRole("button", { name: "Save" }));
   await waitFor(() => expect(sent("PATCH")).toHaveLength(1));
   await screen.findByRole("button", { name: "Stop requiring it" });
@@ -517,4 +520,29 @@ test("WLK-12: saving an issuer that dropped the client secret says so, and says 
   await answer("Change it");
   expect(await screen.findByText(/client secret was dropped/i)).toBeTruthy();
   expect(screen.queryByText("The provider was saved.")).toBeNull();
+});
+
+test("settings and a group mapping left unsaved say so, and can be put back (GOV-33)", async () => {
+  routes[`GET ${base}`] = () => [200, { items: [oidc] }];
+  routes[`GET ${base}/p1/group-maps`] = () => [200, { items: [] }];
+  routes["GET /api/v1/tenants/t1/groups?limit=200"] = () => [200, { items: [] }];
+  show(<SingleSignOn base="/tenants/t1" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Acme Login" }));
+  fireEvent.click(screen.getByRole("tab", { name: "Settings" }));
+  const name = (await screen.findAllByLabelText("Name"))[0] as HTMLInputElement;
+  expect(screen.queryByRole("region", { name: "Unsaved changes" })).toBeNull();
+  fireEvent.change(name, { target: { value: "Acme Login 2" } });
+  const bar = await screen.findByRole("region", { name: "Unsaved changes" });
+  fireEvent.click(within(bar).getByRole("button", { name: "Discard" }));
+  expect(name.value).toBe("Acme Login");
+  expect(screen.queryByRole("region", { name: "Unsaved changes" })).toBeNull();
+
+  fireEvent.click(screen.getByRole("tab", { name: "Groups" }));
+  await screen.findByRole("button", { name: "Add a mapping" });
+  expect(screen.queryByRole("region", { name: "Unsaved changes" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Add a mapping" }));
+  const mapping = await screen.findByRole("region", { name: "Unsaved changes" });
+  expect(mapping.textContent).toContain("group mapping");
+  fireEvent.click(within(mapping).getByRole("button", { name: "Discard" }));
+  expect(screen.queryByLabelText("Group at the provider")).toBeNull();
 });

@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { Provisioning } from "./screens/Provisioning.tsx";
 import { answer, show } from "./testing.tsx";
@@ -106,10 +106,11 @@ test("the address, the tokens and what was pushed are shown, and a new token onc
   );
 });
 
-test("how pushes are taken is chosen and saved together", async () => {
+test("how pushes are taken is chosen and saved together, from the save bar (GOV-33)", async () => {
   show(<Provisioning root={root} instance={false} audience="end_users" />);
-  const save = (await screen.findByRole("button", { name: "Save" })) as HTMLButtonElement;
-  expect(save.disabled).toBe(true);
+  await screen.findByLabelText("A person's groups come from");
+  // Nothing is changed: no bar, and nothing to save.
+  expect(screen.queryByRole("region", { name: "Unsaved changes" })).toBeNull();
   expect(screen.getByText(/is disabled, and whatever they were signed in to ends/)).toBeTruthy();
   // Making groups is offered only once pushed groups decide.
   expect(screen.queryByLabelText(/Make a group here/)).toBeNull();
@@ -121,8 +122,27 @@ test("how pushes are taken is chosen and saved together", async () => {
     screen.getByLabelText("The name the provider signs a person in by is pushed as"),
     { target: { value: "externalId" } },
   );
-  expect(save.disabled).toBe(false);
-  fireEvent.click(save);
+  const bar = await screen.findByRole("region", { name: "Unsaved changes" });
+  expect(bar.textContent).toContain("how pushes are taken");
+  // Discard puts back what was saved.
+  fireEvent.click(within(bar).getByRole("button", { name: "Discard" }));
+  expect(screen.queryByRole("region", { name: "Unsaved changes" })).toBeNull();
+  expect((screen.getByLabelText("A person's groups come from") as HTMLSelectElement).value).toBe(
+    "sign_in",
+  );
+  fireEvent.change(screen.getByLabelText("A person's groups come from"), {
+    target: { value: "scim" },
+  });
+  fireEvent.click(screen.getByLabelText(/Make a group here/));
+  fireEvent.change(
+    screen.getByLabelText("The name the provider signs a person in by is pushed as"),
+    { target: { value: "externalId" } },
+  );
+  fireEvent.click(
+    within(await screen.findByRole("region", { name: "Unsaved changes" })).getByRole("button", {
+      name: "Save",
+    }),
+  );
   await waitFor(() => expect(calls.some((call) => call.method === "PUT")).toBe(true));
   expect(calls.find((call) => call.method === "PUT")?.body).toEqual({
     subjectFrom: "externalId",

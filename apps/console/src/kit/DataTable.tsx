@@ -17,7 +17,7 @@ import { useRestoredScroll } from "../router.tsx";
 import { isTyping, singleKeysOn } from "./keys.ts";
 import { ErrorState, useDelayed } from "./LoadState.tsx";
 import { EmptyCanvas } from "./layout.tsx";
-import { fullOnHover } from "./Truncate.tsx";
+import { Breakable, fullOnHover } from "./Truncate.tsx";
 
 /**
  * The one list: rows of like things, scannable, sortable, selectable, opened by
@@ -66,6 +66,10 @@ const isEmptyContent = (value: unknown): value is EmptyContent =>
 
 export type SortState = { key: string; dir: "asc" | "desc" } | undefined;
 export type Density = "compact" | "standard" | "comfortable";
+
+/** A cell that is a bare address or path may break after its @, dots and slashes, not in the middle of a word. */
+const breakable = (cell: ReactNode): ReactNode =>
+  typeof cell === "string" && /[@.\-_/]./.test(cell) ? <Breakable>{cell}</Breakable> : cell;
 
 const SHOWN = { 1: "", 2: "hidden sm:table-cell", 3: "hidden lg:table-cell" } as const;
 const PAD: Record<Density, string> = { compact: "py-0.5", standard: "py-2", comfortable: "py-3" };
@@ -637,7 +641,7 @@ export function DataTable<Row>(props: DataTableProps<Row>) {
                         } ${column.truncate ? "truncate" : ""} ${edges} ${ring}`}
                         onPointerEnter={column.truncate ? fullOnHover : undefined}
                       >
-                        {column.cell(row)}
+                        {breakable(column.cell(row))}
                         {position === (checking ? 1 : 0) && extra ? (
                           <div className="mt-0.5 truncate text-meta">{extra}</div>
                         ) : null}

@@ -1,5 +1,5 @@
 import { keepPreviousData, QueryClient, QueryClientContext, useQuery } from "@tanstack/react-query";
-import { grants } from "@volvel/manifest";
+import { grants, isErrorCode } from "@volvel/manifest";
 import { useCallback, useContext } from "react";
 import { sessionIsOpen, whenRenewed } from "./session.ts";
 
@@ -43,6 +43,26 @@ export function fieldWords(message: string): string {
   return `Use only ${list}.`;
 }
 
+/**
+ * The code of each refusal whose words were just made, so a notice of those words, wherever a
+ * screen shows them, can lead to what the code means. Every `ApiError` records its own message;
+ * a screen that joins more words to it records those with `withCode`. A short list: only what was
+ * just shown can be asked about.
+ */
+const wordsOfCode = new Map<string, string>();
+
+/** Says `words` for `error`, and remembers the error's code against them. Returns `words`. */
+export function withCode(words: string, error: unknown): string {
+  if (error instanceof ApiError && isErrorCode(error.code)) wordsOfCode.set(words, error.code);
+  if (wordsOfCode.size > 60) wordsOfCode.delete(wordsOfCode.keys().next().value as string);
+  return words;
+}
+
+/** The code the API gave for a refusal that was said in these words, if any. */
+export function codeOfWords(words: string): string | undefined {
+  return wordsOfCode.get(words);
+}
+
 /** A failed API call, carrying the problem document the server sent. */
 export class ApiError extends Error {
   readonly status: number;
@@ -81,6 +101,7 @@ export class ApiError extends Error {
       message: fieldWords(one.message),
     }));
     this.requestId = problem.requestId ?? requestId ?? undefined;
+    withCode(this.message, this);
   }
 }
 

@@ -28,7 +28,7 @@ import {
 } from "@volvel/ui";
 import { Download, Ellipsis, Keyboard } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
-import { ApiError, api, useLoad } from "../api.ts";
+import { ApiError, api, useLoad, withCode } from "../api.ts";
 import { ask, failureText, notify } from "../ask.tsx";
 import { AttachedPages, workspaceOf } from "../help/glossary.tsx";
 import { useAddressBox } from "../kit/addressBox.ts";
@@ -2585,7 +2585,9 @@ function Definition({
       if (report) {
         const caught = error as ApiError;
         const first = caught.fields?.[0];
-        setFailure(first ? `${caught.message} ${first.message}` : caught.message);
+        setFailure(
+          withCode(first ? `${caught.message} ${first.message}` : caught.message, caught),
+        );
       }
       throw error;
     }

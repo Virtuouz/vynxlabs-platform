@@ -1,10 +1,11 @@
 // @vitest-environment happy-dom
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, renderHook, screen, waitFor } from "@testing-library/react";
 import { useEffect, useState } from "react";
 import { afterEach, expect, test } from "vitest";
 import { Dialog } from "./Dialog.tsx";
 import { DialogsProvider, useDialogs } from "./Dialogs.tsx";
 import { SelectField } from "./Fields.tsx";
+import { useReturnFocus } from "./returnFocus.ts";
 import { SideSheet } from "./SideSheet.tsx";
 
 afterEach(cleanup);
@@ -264,4 +265,62 @@ test("focus that Tab lets slip onto a focus guard goes back into the side sheet 
   guard.focus();
   expect(document.activeElement).toBe(close);
   guard.remove();
+});
+
+test("a question answered by opening another dialog leaves the focus in that one, and does not take it back to the page", async () => {
+  function Page() {
+    const dialogs = useDialogs();
+    const [result, setResult] = useState(false);
+    return (
+      <>
+        <button
+          type="button"
+          onClick={async () => {
+            if (await dialogs.confirm({ title: "Make it?", action: "Make it" })) setResult(true);
+          }}
+        >
+          Make
+        </button>
+        <Dialog open={result} onClose={() => setResult(false)} title="Result">
+          <button type="button" data-autofocus="">
+            Done
+          </button>
+        </Dialog>
+      </>
+    );
+  }
+  render(
+    <DialogsProvider>
+      <Page />
+    </DialogsProvider>,
+  );
+  const trigger = screen.getByRole("button", { name: "Make" });
+  trigger.focus();
+  fireEvent.click(trigger);
+  const buttons = await screen.findAllByRole("button", { name: "Make it" });
+  fireEvent.click(buttons[buttons.length - 1] as HTMLElement);
+  const done = await screen.findByRole("button", { name: "Done" });
+  await waitFor(() => expect(document.activeElement).toBe(done));
+  await new Promise((wait) => setTimeout(wait, 700));
+  expect(document.activeElement).toBe(done);
+});
+
+test("the focus a closing dialog hands back is not taken from another dialog that has opened (the reset link's result)", () => {
+  // In a browser the question leaves by a transition, and its answer's dialog is open before the
+  // hand-back runs; a test has no transition, so the hand-back is asked for at that moment.
+  const page = document.createElement("button");
+  document.body.append(page);
+  page.focus();
+  const { result } = renderHook(() => useReturnFocus(true));
+  const second = document.createElement("div");
+  second.setAttribute("role", "dialog");
+  const done = document.createElement("button");
+  second.append(done);
+  document.body.append(second);
+  done.focus();
+  expect(result.current()).toBe(false);
+  second.setAttribute("data-ending-style", "");
+  expect(result.current()).toBe(page);
+  second.remove();
+  page.remove();
 });

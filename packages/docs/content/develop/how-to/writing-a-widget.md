@@ -1,161 +1,158 @@
 ---
-title: Writing a widget
-description: "How a widget is made: what it declares, what it is given to draw, and how the builder configures it without any code of its own."
+title: Write a widget
+description: "How a widget is declared and drawn in Volvel's own source, taking the Goal widget from its definition to its test."
+subjects: [widgets, apps]
 moved_from:
   - build/writing-a-widget
 ---
 
-A widget is a piece of a page: a table, a number, a chart, a goal. Every widget the product ships is made the same way, and so is every one that will come later. This page says how, and walks through a small one, `labs/goal`, from start to end.
-
-:::alert[Developer widgets are not available yet]{type=info}
-Everything here is true of the widgets the product ships today. A widget a developer writes for their own users, packaged in a repository and run in a sandboxed frame, is designed and not built. It would be a new kind of resource in a tenant's repository, run in a frame with no network, and shown to builders exactly as the product's own widgets are. When it is, it will be written as this page says.
+:::alert[Developer widgets are not available]{type=info}
+This page is for contributors to Volvel's own source. A widget a developer writes for their own users, packaged in a tenant's repository, is not built: a repository cannot add a widget, and no page loads one. Every widget is declared in a pack that is compiled into the console and into the app runtime. The widgets Volvel ships are in the **core** pack. A second pack, **labs**, exists for tests and holds no widget that "Add to page" offers.
 :::
 
-## The boundary
+## Write a widget
 
-Two kinds of people work with a widget, and each keeps to their side.
+By the end you will have declared a widget, drawn it, added it to the core pack, tested it, and seen it in **Add to page**. The worked example is the Goal widget, `core/goal`, which shows how far a number is toward a target.
 
-- **A developer declares what a widget can do.** What it reads, what can be set, what it can tell the page, how big it may be.
-- **A builder configures it.** They add it to a page, point it at their data, set it up in the inspector and say what its events do. They write no code.
+## Before you start
 
-The platform keeps the two apart. A widget cannot add a control to the inspector, read data nobody gave it, or do anything the page did not say. A builder cannot make a widget do more than its definition declared.
+- A checkout of Volvel's source, with its dependencies installed.
+- The widget needs a name of the form `pack/name`, in small letters: `core/goal`.
+- Read how the contract keeps two kinds of people apart. A **developer** declares what a widget reads, what can be set, what it can tell the page and how big it may be. A **builder** adds it to a page, points it at data, sets it in the inspector and says what its events do, and writes no code. A widget cannot add a control to the inspector, read data nobody gave it or do anything the page did not say.
 
-## A widget is two halves
+A widget is two halves. The **definition** is data and holds no browser code: the CLI, the control plane and the builder all read it. The **view** is a React component that is given the widget's configuration and data and draws them. A view is given no token and no way to fetch.
 
-A **definition** is data. It has no browser code, so the CLI, the control plane and the builder can all read it. It says:
+## Steps
 
-| What | Says |
-| --- | --- |
-| `type` and `version` | Its name, as `pack/name` (`labs/goal`), and its version. |
-| `title`, `description`, `category`, `icon` | What "Add to page" shows. The category (`records`, `action`, `understand`, `organize`, `content`) is how widgets are grouped there. |
-| `surfaces` | Where it is offered: `app` for an app's page, `dashboard`. |
-| `data` | What it reads, as named inputs. |
-| `config` | What can be set, with a hint for each setting. |
-| `events` | What it can tell the page. |
-| `layout` | How big it may be, and what it does on a phone. |
+:::steps
+1. **Declare what it reads.** In `packages/widgets-core/src/index.ts`, call `defineWidget` with a `type`, a `version` (`x.y.z`), a `title`, a one-line `description`, a `category`, an `icon` and the `surfaces` it is offered on. Under `data`, name each input and its shape. Goal reads one summary: one or two values and no breakdown.
 
-A **view** is a component. It is given its configuration, the data the platform read for it, and a way to raise its events. It is given nothing else: no token, no way to fetch, no other widget's data. When the data is still loading, or empty, or could not be read, or the viewer may not read it, the frame around the widget says so, the same way for every widget. A view is only drawn when there is something to draw.
+   ```ts
+   data: { value: { shape: "summary", values: { min: 1, max: 2 }, breakdowns: { min: 0, max: 0 } } },
+   dataHints: [
+     {
+       of: "value",
+       controls: [
+         { control: "source", label: "Source" },
+         { control: "measure", label: "Value" },
+         { control: "conditions", label: "Only include", help: "For example: Status is Paid." },
+       ],
+     },
+   ],
+   ```
 
-The view's props are:
+2. **Declare what can be set.** `config` is a JSON Schema with an `x-volvel` hint on each property. The inspector is drawn from the hints alone. Goal puts "Goal" (`target`) and "Goal from a column" (`goalFrom`) in the Data tab under the group "Progress", and its looks in the Display tab.
 
-| Prop | What it is |
-| --- | --- |
-| `config` | The widget's settings, with the definition's `defaults` filled in. |
-| `data` | Each data input, read, by name. |
-| `size` | Its width and height in cells, and whether the page is a phone's width. |
-| `emit(event, payload)` | Raises an event the definition declared. |
-| `building` | Whether the page is being built. A view may draw a hint for the builder. It never draws different data. |
+   ```ts
+   target: {
+     type: "number",
+     exclusiveMinimum: 0,
+     "x-volvel": hint({
+       tab: "data",
+       group: "Progress",
+       control: "number",
+       label: "Goal",
+       help: "A fixed amount. Or take it from a column below.",
+       order: 1,
+     }),
+   },
+   ```
 
-A pack is the two together: `{ definitions, views }`. Definitions come from `@volvel/widgets`, which has no React in it. Views are written with `@volvel/widgets`, `@volvel/ui` and `react`, and nothing else.
+3. **Declare what it tells the page, and its size.** Goal has one event, `click`, which gives nothing. It may be as small as 2 by 2 cells and starts at 3 by 3, and it stacks on a phone.
 
-## Data
+   ```ts
+   defaults: { goodWhen: "up", bands: false, reached: "green", percent: true },
+   events: { click: { gives: "nothing", label: "When it is clicked" } },
+   layout: { min: { w: 2, h: 2 }, default: { w: 3, h: 3 }, phone: "stack" },
+   ```
 
-A widget does not fetch. It declares each thing it reads as a named input with a shape, and the platform reads it under the viewer's permissions and hands it over.
+4. **Add it to the pack.** Put the definition in the `CORE_WIDGETS` list at the foot of `packages/widgets-core/src/index.ts`. `defineWidget` throws when the definition is wrong, so a pack fails when it is built, not when a page is drawn. Write `words` for every setting the schema does not explain: the generated documentation draws a widget's page from the hints and the words, and a setting with neither is a gap there.
 
-| Shape | What the view gets |
-| --- | --- |
-| `rows` | Rows of a table or a query, a page at a time. It is how a table or a list reads. |
-| `summary` | Rows gathered into groups with a value for each group (a total, a count, an average), or one line of values with no groups. |
-| `record` | One row. |
+5. **Write the view.** Make `packages/widgets-core/views/goal.tsx`. It reads the one value it was given, works out the share, and draws the number, a bar that never passes its end with a label for a screen reader, the share, which can pass 100%, and the line under it. It uses only `react`, `@volvel/widgets` and `@volvel/ui`. Use the kit's color classes and no raw colors, so it follows light and dark. Size what you draw by the cell's width with a container query such as `@[14rem]/cell:`, not by the window.
 
-A summary also says how many values it takes (`values: { min, max }`) and how many ways it may be broken down (`breakdowns: { min, max }`). A widget that shows one number takes one value and no breakdowns.
+   The view does not draw loading, empty, failed or forbidden: the frame around the widget does, the same way for every widget. It does not know where its data came from or what a click does. It is a button (`role="button"`) only when the page does something on `click`, which `listens("click")` says.
 
-The `dataHints` say which of the data controls the builder gets for each input, in order: `source` (a table, a query, or on a dashboard SQL), `measure` ("Value"), `breakdown`, `conditions` ("Only include"), `sort` and `limit`. The builder fills them in. The widget never sees where its data came from.
+6. **Register the view.** In `packages/widgets-core/views/index.ts` add the view to `corePack.views`, under its type: `"core/goal": GoalView`. A definition with no view, or a type in two packs, throws when the registry is built.
 
-## What can be set
+7. **Test it.** Copy `packages/screens/src/goal.test.tsx`. Check the definition with `definitionProblems`, which returns each fault as a sentence, and draw the view with sample data in happy-dom. Run it.
 
-`config` is a JSON Schema for the settings. Each setting carries an `x-volvel` hint, and the inspector is drawn from the hints alone. There is no other way to put a setting in it.
+   ```bash
+   npx vitest run packages/screens/src/goal.test.tsx
+   ```
 
-A hint says:
+8. **Look at it.** Open an app in **App Builder**, press **Add to page**, and find the widget under its category. Goal is in **Understand data** with "How far a number is toward a target". Add it, point it at a table, and set it up in the inspector. Reload, and look at it in light and dark and at phone width.
+:::
 
-- `tab`: Data, Display, Actions or Rules;
-- `level`: `main` is shown at once, `more` is under "More options";
-- `control`: how it is drawn, one of a fixed set;
-- `label` and `help`: the words next to it;
-- for a `choice` or `segmented` control, `choices`; for a column control, `of`, the input it belongs to, and `types`, the column types it offers; `when`, to show it only when other settings have given values.
+## The result
 
-The controls are `text`, `markdown`, `number`, `switch`, `choice`, `segmented`, `format`, `column`, `columns` and `filter` for a setting, and `source`, `measure`, `breakdown`, `conditions`, `sort` and `limit` for a data input. A setting with no hint, or a hint with a control that does not exist, is refused when the pack is built.
+The widget is in **Add to page**, drawn from its definition, and its settings are in the inspector's tabs: **Data**, **Display**, **Actions** and **Rules**. The builder sets it up the way they set any widget. The widget's page in the generated reference is drawn from the definition.
 
-Write labels and help in the reader's words: "A line under it", not "caption".
+The Goal widget in the builder has a Data tab with a source, a **Value** and **Only include**, and a group **Progress** with **Goal** and **Goal from a column**, which wins when both are set. Its Display tab has **A line under it**, **Numbers**, **Show the percentage**, **When reached, the bar** (**Turns green** or **Stays**), and under **More**, **Good news is** and **Color by how close**.
 
-## Events
-
-An event is something the viewer does to the widget that the page may react to. A definition declares each one with a name, the words the builder sees in the Actions tab ("When a row is clicked") and what it gives:
-
-- `record`: a row, by its id (a row clicked);
-- `group`: the values of a group's breakdown (a bar clicked);
-- `nothing`.
-
-The view raises it with `emit`. The host checks the payload against what was declared and drops anything else. What happens next is whatever the builder set up in the Actions tab, or nothing.
-
-## Layout
-
-`layout` gives `min`, `default` and optionally `max`, in the page's grid of twelve columns and rows of 40 pixels. The builder cannot resize the widget outside them. `phone` is what it does on a narrow screen when nobody has said: `stack` (full width, in reading order), `list` (as stack, but its view draws a list) or `hide`.
-
-Draw to the size you are given. A view that only works at its default size will break when it is made smaller, or on a phone.
-
-## Walkthrough: a goal
-
-`labs/goal` is in the labs pack, which exists to prove that nothing in the builder is made for the product's own widgets alone. It shows how far a number is toward a target: "$45,000 of $60,000 this month", with a bar and "75%".
+## What the contract offers
 
 ### The definition
 
-It reads one number, so it declares one summary input with one value and no breakdowns, and the builder's Data tab gets a source, a Value and "Only include":
+| Field | Says |
+| --- | --- |
+| `type`, `version` | `pack/name` and `x.y.z`. |
+| `title`, `description`, `category`, `icon` | What **Add to page** shows. A category is `records`, `action`, `understand`, `organize` or `content`, shown as **Work with records**, **Take action**, **Understand data**, **Organize** and **Content**. The icon is a platform widget's name, a page icon, or `globe`, `radio` or `table-2`; any other name draws a puzzle piece. |
+| `surfaces` | `app`, `dashboard`, or both. |
+| `data`, `dataHints` | What it reads, and the Data tab's controls for each input, in order. |
+| `config`, `words`, `defaults`, `initialData` | What can be set, what each setting is, what the widget is when it is added, and a source a widget starts with. |
+| `events` | What it can tell the page, each with the words the Actions tab shows. |
+| `layout` | `min`, `default` and `max` sizes in the page's grid of 12 columns and rows of 40 pixels, `phone` (`stack`, `list` or `hide`), and `frame` (`card` or `none`). |
+| `role` | `container` or `filters`. Only the core pack may set it. |
 
-```ts
-data: { value: { shape: "summary", values: { min: 1, max: 1 }, breakdowns: { min: 0, max: 0 } } },
-dataHints: [
-  {
-    of: "value",
-    controls: [
-      { control: "source", label: "Source" },
-      { control: "measure", label: "Value" },
-      { control: "conditions", label: "Only include" },
-    ],
-  },
-],
-```
+A type is `pack/name` in small letters, at most 31 characters before the slash and 41 after. A version is `x.y.z`. A data input's name and an event's name start with a small letter, and are up to 41 characters of letters and digits. Sizes are 1 to 12 wide and 1 to 40 high, and the default may not be smaller than the minimum or larger than the maximum. `version` is checked for its shape. This page does not say that a deploy pins it.
 
-Its settings are the target, how the numbers look and a line under it, which are shown at once, and which way good news goes and whether to colour the bar, which are under "More options":
+### Data
 
-```ts
-target: {
-  type: "number",
-  exclusiveMinimum: 0,
-  "x-volvel": { tab: "display", control: "number", label: "Target" },
-},
-bands: {
-  type: "boolean",
-  "x-volvel": { tab: "display", level: "more", control: "switch", label: "Colour by how close" },
-},
-```
+A widget does not fetch. The platform reads each input under the viewer's permissions and hands it over.
 
-It declares one event, `click`, which gives nothing. It may be as small as 2 by 2 cells, starts at 3 by 3, and stacks on a phone. It is offered on apps and dashboards, in "Understand data".
+| Shape | What the view gets |
+| --- | --- |
+| `rows` | Rows of a table or a query, a page at a time, with `more`, `total`, `groups`, `sortBy` and `sorted`. |
+| `summary` | Rows gathered into groups with a value for each group, or one line of values with no groups. It may carry `previous` and a `trend`. A summary says how many values it takes and how many breakdowns. |
+| `record` | One row. |
+| `approvals` | The steps of the workspace's flows that wait for a decision. A widget that reads it is read for a member only. |
 
-### The view
+An input may come from a table, a query, SQL or the workspace's approvals. SQL is never offered on an app's page.
 
-The view reads the one value the platform gave it, works out the share, and draws what the definition promised:
+### Settings and controls
 
-1. The number, written as the format says.
-2. A bar as full as the share is, never past its end, with a label for a screen reader.
-3. The share reached, which can go past 100%.
-4. The line under it.
+Each setting has a hint with a `tab` (`data`, `display`, `actions` or `rules`), an optional `group`, a `level` (`main`, or `more` under "More options"), a `control`, a `label`, and optionally `help`, `of`, `types`, `choices`, `when` and `order`. A setting with no hint, or a hint with a control that does not exist, is refused when the pack is built.
 
-It uses the kit's theme colours and nothing raw, so it follows light and dark and the instance's branding. A click raises `click`.
+There are 28 controls. For a setting: `text`, `markdown`, `number`, `switch`, `choice`, `segmented`, `format`, `column`, `columns`, `filter`, `action`, `actions`, `page`, `tabs`, `pageFilters`, `position`, `tiles`, `slots`, `icon`, `groups`, `fields` and `groupRows`. For a data input: `source`, `measure`, `breakdown`, `conditions`, `sort` and `limit`.
 
-It does not draw loading, empty or failed. The frame does. It does not know where the number came from, or what a click does.
+A widget cannot add a control, and a pack cannot add a custom inspector section. The console registers its own sections for some widgets, among them Goal, Chart, Stat and Pivot, in its own source. For a `slots` setting a pack gets only "its places are drawn by the widget" unless the console registers a drawer for it.
 
-### What the builder sees
+### What a view is given
 
-Nothing else was written. The builder finds Goal in "Add to page", picks a table, a Value (for example "Sum of Total") and a condition, types a target, and sets it to look like money. That is the same inspector, the same Data tab and the same Actions tab as for every other widget.
+| Prop | What it is |
+| --- | --- |
+| `config` | The settings, with `defaults` filled in. |
+| `data` | Each input, read, by name. |
+| `size` | `w` and `h` in cells, and whether the page is a phone's width. |
+| `emit(event, payload)` | Raises a declared event. The host checks the payload against the declaration. |
+| `building`, `viewing` | Whether the page is being built, and whether it is viewed as a group. A view may draw a hint for the builder and never different data. |
+| `title`, `viewer`, `selectedRecord` | The widget's title, the person looking, and the record whose sheet is open. |
+| `act`, `can`, `why` | Runs an action the widget holds, says whether one may be pressed, and why not. Absent while building. |
+| `decide`, `refresh` | Decides a waiting approval, and reads the data again. |
+| `listens`, `choices`, `close` | Whether the page does something when an event is raised, what a reference or choice column offers, and a way to close the sheet or modal the widget is shown in. |
+| `place`, `tab`, `filters` | A container's (`role: "container"`) drawing of the widgets placed in it, its open tab, and a filter widget's (`role: "filters"`) values and how to set them. |
 
-## Making a pack
+There are no hooks to call. Actions are data: a step is `update`, `create`, `delete`, `flow`, `script`, `open`, `close`, `message`, `narrow` or `rows`, and the server runs the first five.
 
-A pack is a folder with two parts:
+### Helpers
 
-- `src/` holds the definitions, built with `tsc` and exported from the package;
-- `views/` holds the views, exported from source as `./views`, as `{ definitions, views: { "labs/goal": GoalView } }`.
+`@volvel/widgets` exports `formatValue`, `formatNumber`, `formatDay`, `numberOf`, `sentenceCase`, `choiceWords`, `mustGive`, `countText`, `readerLocale`, `moneyFormatOf`, `parseMoney`, `moneyText` and `FORMAT_SCHEMA`. Numbers follow the reader's browser language, and use en-US when it gives none.
 
-Check your definition with `definitionProblems` from `@volvel/widgets`, which gives each fault as a sentence, or declare it with `defineWidget`, which throws on the first build. A test of the definition and a test that draws the view with sample data are enough to start.
+## If it does not work
 
-When a widget needs something the contract does not offer, that is for the contract to grow, for every widget. It is not for a widget to reach around.
+- **The pack throws "`<type>` has a definition but no view".** Add the view to `corePack.views`.
+- **The pack throws "`<type>` is declared twice" or "is in two packs".** A type is one widget.
+- **`definitionProblems` says a config has no `x-volvel` hint.** Give every property a hint, or the inspector cannot draw it.
+- **A view fails the import check.** A pack's views may import `react`, `@volvel/widgets`, `@volvel/ui` and their own files, and nothing else: `apps/console/src/enforce.test.ts` holds this.
+- **The widget is not in "Add to page".** Its `surfaces` do not include the page's surface, or it is not in `CORE_WIDGETS`.
+- **A widget needs something the contract does not offer.** The contract grows, for every widget. A widget does not reach around it.

@@ -5,6 +5,7 @@ type: reference
 pages:
   - settings
   - console
+  - running
 ---
 
 - [Settings](settings): every environment variable.

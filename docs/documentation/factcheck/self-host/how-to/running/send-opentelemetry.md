@@ -1,0 +1,11 @@
+# Fact-check: self-host/how-to/running/send-opentelemetry.md
+
+Written at commit `14f7d5b9`. Lines are those of that commit. Checked by: the writer; the second agent's column is open.
+
+| Claim | Source (file:line) | Checked by | Result |
+| --- | --- | --- | --- |
+| Endpoint, headers, protocol `http/json`, interval at least 1000, exporters `none`, service name default `volvel`. | `config.ts:273-296,391-393` | writer, 2026-11-23 | holds |
+| 2,000 held, 200 batches, 2 s flush, 10 s timeout. | `kernel/telemetry.ts:259-261,323` | writer, 2026-11-23 | holds |
+| `x-trace-id` on every response. | `app.ts:178` | writer, 2026-11-23 | holds |
+| What is traced, `traceparent`, worker spans, managed workers get no instance settings. | `docs/self-hosting.md`; `routes/worker.ts:84` | writer, 2026-11-23 | carried; not run |
+| An endpoint received spans. | none | writer, 2026-11-23 | NOT RUN: no collector |

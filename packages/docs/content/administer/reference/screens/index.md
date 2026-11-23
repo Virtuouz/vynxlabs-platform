@@ -18,6 +18,10 @@ pages:
   - audit-log
   - retention
   - export
+  - groups
+  - roles
+  - access
+  - access-changes
 moved_from:
   - tenant/index
 ---

@@ -5,6 +5,9 @@ type: reference
 pages:
   - permissions
   - screens
+  - configure
+  - sso
+  - queries
 ---
 
 - [Permissions](permissions): what each allows.

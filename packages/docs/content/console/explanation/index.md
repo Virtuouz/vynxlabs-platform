@@ -4,6 +4,14 @@ description: Why the console's parts work the way they do.
 type: explanation
 pages:
   - how-tables-work
+  - flows
+  - docs
+  - app-builder
+  - operate
+  - configure
+  - widgets
+  - releases
+  - queries
 ---
 
 The ideas behind the console, for when you want to know why a screen does what it does.

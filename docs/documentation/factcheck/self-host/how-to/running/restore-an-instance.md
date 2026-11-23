@@ -1,0 +1,14 @@
+# Fact-check: self-host/how-to/running/restore-an-instance.md
+
+Written at commit `14f7d5b9`. Lines are those of that commit. Checked by: the writer; the second agent's column is open.
+
+| Claim | Source (file:line) | Checked by | Result |
+| --- | --- | --- | --- |
+| `pg_restore --no-owner` into an empty database reports 5 errors, all `vxd_` role references; exit 1. | run: `restore.errors`: 1 CREATE POLICY and 4 GRANT/REVOKE; "errors ignored on restore: 5" | writer, 2026-11-23 | holds |
+| `--exit-on-error` stops at the first and leaves no policies. | run: first attempt stopped at the CREATE POLICY | writer, 2026-11-23 | holds |
+| At start: "row policies now read the signed claim" with a count. | run log of the restored stack; `kernel/data/apply.ts` | writer, 2026-11-23 | holds |
+| After the restore a tenant, its rows, its file and a new row work; sign-in with the old password works. | run | writer, 2026-11-23 | holds |
+| Under another database name. | `apps/control-plane/src/restore.test.ts` test 2 | writer, 2026-11-23 | holds by test; not in the run |
+| A wrong `MASTER_KEY` stops boot. | run | writer, 2026-11-23 | holds |
+| Newer-database message text. | `packages/db/src/errors.ts:4-5` | writer, 2026-11-23 | holds |
+| The rate-limit table is unlogged. | `packages/db/migrations/0046_rate_limit.sql:4` | writer, 2026-11-23 | holds |

@@ -1,0 +1,129 @@
+[
+  {
+    "name": "console/operate-runs",
+    "address": "runs",
+    "who": "Maya Brooks, tenant admin",
+    "setup": "handbook",
+    "viewport": "desktop",
+    "ready": "the runs list shows rows",
+    "mask": [
+      "Started and Duration columns",
+      "Run ID column"
+    ],
+    "steps": [
+      "open Operate, then Runs"
+    ],
+    "alt": "The Runs screen: the filter row, the status chips with counts, and a list of runs with their state, target, result, trigger, start time and duration."
+  },
+  {
+    "name": "console/operate-run-failed",
+    "address": "runs/<id of a failed run>",
+    "who": "Maya Brooks, tenant admin",
+    "setup": "a scene with one failed script run whose error is a 404 from a connection, with a diagnosis",
+    "viewport": "desktop",
+    "ready": "the Why it failed block and the diagnosis are shown",
+    "mask": [
+      "times",
+      "run ID",
+      "trace ID"
+    ],
+    "steps": [
+      "open the failed run from the Runs list"
+    ],
+    "alt": "A failed script run: the header with the state, version and Re-run menu, the attempts and details on the left, and on the right the error, a diagnosis, the log and the input and error tabs."
+  },
+  {
+    "name": "console/operate-cancel-by-age",
+    "address": "runs",
+    "who": "Maya Brooks, tenant admin",
+    "setup": "handbook, with a run set to start later",
+    "viewport": "desktop",
+    "ready": "the Cancel by age button is shown",
+    "mask": [
+      "times"
+    ],
+    "steps": [
+      "press Cancel by age\u2026"
+    ],
+    "alt": "The Cancel runs by age dialog, with a choice of flow runs or script runs and a field for how long ago they started."
+  },
+  {
+    "name": "console/operate-triggers",
+    "address": "triggers?trigger=<a schedule>",
+    "who": "Maya Brooks, tenant admin",
+    "setup": "handbook",
+    "viewport": "desktop",
+    "ready": "the trigger's details are open",
+    "mask": [
+      "Last fired, Next and Paused times"
+    ],
+    "steps": [
+      "open Operate, then Triggers",
+      "choose a schedule"
+    ],
+    "alt": "The Triggers screen with the kind chips, a list of triggers with what each starts, its state and when it last fired, and a schedule's details open beside it."
+  },
+  {
+    "name": "console/operate-events",
+    "address": "events",
+    "who": "Maya Brooks, tenant admin",
+    "setup": "handbook",
+    "viewport": "desktop",
+    "ready": "events are listed and one is open",
+    "mask": [
+      "When column",
+      "Event ID"
+    ],
+    "steps": [
+      "open Operate, then Events",
+      "choose the first event"
+    ],
+    "alt": "The Events screen: a filter by event name, the Publish an event button, and a list of events with when, name, publisher and what each started, with one event's details open beside it."
+  },
+  {
+    "name": "console/operate-approvals",
+    "address": "approvals",
+    "who": "Maya Brooks, tenant admin",
+    "setup": "a scene with two flow runs waiting at the reorder approval, one for Maya's group",
+    "viewport": "desktop",
+    "ready": "the Approve and Reject buttons are shown",
+    "mask": [
+      "Waiting column"
+    ],
+    "steps": [
+      "open Operate, then Approvals"
+    ],
+    "alt": "The Approvals screen: three chips with counts, and a list with the question, how long it has waited, who decides, and Approve and Reject buttons on each row."
+  },
+  {
+    "name": "console/configure-alerts",
+    "address": "alerts",
+    "who": "Maya Brooks, tenant admin",
+    "setup": "handbook",
+    "viewport": "desktop",
+    "ready": "the default section is shown",
+    "mask": [
+      "Recent alerts times"
+    ],
+    "steps": [
+      "open Configure, then Alerts"
+    ],
+    "alt": "The Alerts screen: the workspace's default with a script and a connection to choose, the scripts that set their own, and a list of recent alerts."
+  },
+  {
+    "name": "console/configure-alerts-default",
+    "address": "alerts",
+    "who": "Maya Brooks, tenant admin",
+    "setup": "handbook, with alerts/run-failed chosen as the default script and the sms connection chosen to post to",
+    "viewport": "desktop",
+    "ready": "the Send a test alert button is shown",
+    "mask": [
+      "Recent alerts times"
+    ],
+    "steps": [
+      "open Configure, then Alerts",
+      "choose the script and the connection"
+    ],
+    "alt": "The Alerts screen with a script chosen to start and a connection chosen to post to, and the Save and Send a test alert buttons."
+  }
+]

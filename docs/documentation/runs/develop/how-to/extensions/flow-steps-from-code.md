@@ -1,0 +1,9 @@
+# Run log: develop/how-to/extensions/flow-steps-from-code.md
+
+- Instance: http://localhost:8091, the throwaway instance seeded by `examples/fernhill/setup/setup.mjs`, commit `5ebf1c80` (branch phase-31-write-the-docs). Signed in as Maya Brooks (`maya.brooks@fernhill.example`, tenant admin), in Fernhill's Sandbox (dev) workspace, at 1440 px, light theme, Playwright headless. No other width or theme was run.
+- Only the console tab and the palette were run. The Code tab was type-checked, not deployed.
+
+1. **Build > Scripts > New script** (`scripts/new`), path `ext31/count-things`. **Settings** was open on a new script. **Use as a flow step** had **Step name**; typing "Count things" showed **Icon**, **Group** and **A step may hand it**. **Icon** listed None and Checklist, Document, File, Folder, Globe, Health, Home, Inbox, Mail, Package, Paw, People, Receipt, Settings, Signal, Stethoscope, Table, Tools, Truck, Wallet. Icon Table, Group "Fernhill steps", **A step may hand it** offered A connection, A table, An event; A table chosen. **Save draft**, **Deploy > This change only**.
+2. A new flow (`flows/new`), **Add step**: the list had **CORE** (HTTP request, Send email, Read rows, Write a row, Publish an event, each with its description), **SCRIPTS** (every other script by path) and **FERNHILL STEPS** with "Count things". The icon beside it was not looked at.
+3. The code sample was added to `examples/fernhill/src` in the walk tree and type-checked with `tsc --noEmit -p examples/fernhill`: no errors. It was removed again. `.meta({ "x-pick": "table" })` was checked to reach the JSON Schema (`{"type":"string","x-pick":"table","title":"Table"}`).
+4. Not run: using the new step in a flow and running the flow, the step form's table list, `volvel deploy` of the Code tab, and the deploy refusals.

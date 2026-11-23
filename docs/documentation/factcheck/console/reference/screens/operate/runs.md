@@ -1,0 +1,28 @@
+# Fact-check record: console/reference/screens/operate/runs.md
+
+Lines are current at commit `5ebf1c80` (branch phase-31-write-the-docs). Paths are under the repository root. Written by the writer; "Checked by" is for the second agent.
+
+| Claim | Source (file:line) | Checked by | Result |
+| --- | --- | --- | --- |
+| Windows: Last hour, Last 24 hours (default), Last 7 days, Between…, Everything kept. | apps/console/src/screens/Runs.tsx:103-109,169 | writer, run on the instance 2026-11-23; second agent: pending | holds as run |
+| Status chips and their labels; a later run counts under Waiting for a time. | apps/console/src/screens/Runs.tsx:124-133; apps/control-plane/src/kernel/execution/state.ts runState | writer, run on the instance 2026-11-23; second agent: pending | holds as run |
+| Search placeholder, 300 ms, 200 characters, what it finds. | apps/console/src/screens/Runs.tsx:765-771; apps/console/src/kit/addressBox.ts; apps/control-plane/src/routes/operations.ts activity route | writer, read from the code 2026-11-23; second agent: pending | holds as read |
+| Between… : From and To fields, From defaults to 24 h ago, empty To is until now, backwards window notice 'The end is before the start.' | apps/console/src/screens/Runs.tsx:237-242,791-830,834 | writer, run on the instance 2026-11-23; second agent: pending | holds as run |
+| Cancel N queued: shown only with All/Queued chip, not Flows, queued>0, run:write; its text and notice. | apps/console/src/screens/Runs.tsx:407-435,870-877 | writer, read from the code 2026-11-23; second agent: pending | holds as read |
+| Cancel by age…: shown when a run is in progress and run:write or flow_run:write; dialog texts; 10,000 per request; script runs narrowed by search/tags/target, not window. | apps/console/src/screens/Runs.tsx:373,878-882,903-915; apps/console/src/screens/CancelOlder.tsx:23-155; apps/control-plane/src/kernel/execution/bulk-cancel.ts:10 | writer, run on the instance 2026-11-23 (dialog opened); second agent: pending | holds as run |
+| Columns, order and what each shows; Attempt only when attempt>1; unfinished duration shows a dash. | apps/console/src/screens/Runs.tsx:642-740 | writer, run on the instance 2026-11-23; second agent: pending | holds as run |
+| Row menu items and when each shows. | apps/console/src/screens/Runs.tsx:553-640 | writer, run on the instance 2026-11-23 (Open, Run again…, Only runs of…, Copy; Cancel); second agent: pending | holds as run |
+| Checked-row bar: N selected, Cancel, Run again, Clear; texts of both questions. | apps/console/src/screens/Runs.tsx:484-543; apps/console/src/kit/DataTable.tsx:425-440 | writer, read from the code 2026-11-23; second agent: pending | holds as read |
+| API takes at most 100 per kind; console sends slices of 100. | apps/control-plane/src/routes/batch.ts:19,34; apps/console/src/kit/BatchResult.tsx | writer, read from the code 2026-11-23; second agent: pending | holds as read |
+| Batch failure dialog: 'N done, M not done.', request ID, Retry the M not done. | apps/console/src/kit/BatchResult.tsx:132,168 | writer, read from the code 2026-11-23; second agent: pending | holds as read |
+| Header text 'Scripts and flows that ran here…', Kept N days, Updated HH:MM, asked again every 5 s. | apps/console/src/screens/Runs.tsx:749-761 | writer, run on the instance 2026-11-23; second agent: pending | holds as run |
+| Page size 100, Load more, 'N new runs' button, 5 s poll without the stream. | apps/console/src/screens/Runs.tsx:243,333-342,986-1003,1057-1065 | writer, read from the code 2026-11-23; second agent: pending | holds as read |
+| Inspector tabs Logs / Input and output / Details, fields of the Details tab. | apps/console/src/screens/Runs.tsx:1242-1375 | writer, read from the code 2026-11-23; second agent: pending | holds as read |
+| Flow run inspector fields. | apps/console/src/screens/Runs.tsx:1073-1105 | writer, read from the code 2026-11-23; second agent: pending | holds as read |
+| Unknown ID: 'No run has this ID.'; step of a flow run notice. | apps/console/src/screens/Runs.tsx:942-974 | writer, read from the code 2026-11-23; second agent: pending | holds as read |
+| Keys. | apps/console/src/kit/DataTable.tsx:283-359; apps/console/src/kit/keys.ts:41 | writer, read from the code 2026-11-23; second agent: pending | holds as read |
+| Address keys status, kind, when, from, to, q, tag, target, sort, dir, cols, run; ?status=cancelled still works. | apps/console/src/screens/Runs.tsx:166-179,210 | writer, read from the code 2026-11-23; second agent: pending | holds as read |
+| Empty state 'Nothing ran in this time'; filtered 'Nothing matches these filters', Clear filters. | apps/console/src/screens/Runs.tsx:1046; apps/console/src/kit/DataTable.tsx:401-412 | writer, read from the code 2026-11-23; second agent: pending | holds as read |
+| Saved views menu items; 50 per list, 16,384 bytes, name 1-80. | apps/console/src/kit/views.tsx:140-170; apps/control-plane/src/routes/preferences.ts:19-37 | writer, read from the code 2026-11-23; second agent: pending | holds as read |
+| Permissions: activity needs workspace:read; cancel/rerun run:write at workspace or script; bulk cancel run:write; flow runs flow_run:write. | apps/control-plane/src/routes/operations.ts:204; routes/execution.ts:1373,1768; routes/flows.ts:1533 | writer, read from the code 2026-11-23; second agent: pending | holds as read |
+| Row menu counts a grant on the script or flow; batch bar and Cancel N queued use workspace-level permission. | apps/console/src/screens/Runs.tsx:376-388 | writer, read from the code 2026-11-23; second agent: pending | holds as read |

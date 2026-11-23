@@ -6,6 +6,10 @@ pages:
   - screens
   - column-types
   - filter-syntax
+  - flows
+  - app-builder
+  - operate
+  - queries
 ---
 
 - [Screens](screens/index): what each screen shows and does.

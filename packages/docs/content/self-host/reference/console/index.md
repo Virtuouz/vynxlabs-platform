@@ -25,9 +25,9 @@ For whoever operates the installation.
 - [Operators](operators): Who operates the instance, and what an operator may do.
 - [Single sign-on for operators](single-sign-on): Signing operators in through an identity provider.
 - [Database locations](databases): The databases tenants' data can be placed in.
-- [Import a tenant](import): Bringing in a tenant exported from another instance.
-- [Pausing triggers](triggers): Stopping every trigger on the instance, for maintenance.
+- [Import a tenant](import): Bringing in a tenant from an export file.
+- [Triggers](triggers): The emergency stop that pauses every trigger on the instance.
 - [Instance health](health): Whether a replica is ready, its keys, and what it is set to.
-- [Instance audit log](audit-log): What operators did, across the instance.
-- [Console branding](branding): The console's own name, logo and colours, set once for the instance.
+- [Instance audit log](audit-log): What changed on the instance and belongs to no tenant, and the history of deleted tenants.
+- [Console branding](branding): The console's own name, logo and colors, set once for the instance.
 - [Component kit](component-kit): Every component the console is drawn with, live, for whoever builds on it.

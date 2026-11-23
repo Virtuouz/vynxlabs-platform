@@ -16,6 +16,7 @@ pages:
   - resource-editor
   - documentation
   - documentation-editor
+  - script-settings
 moved_from:
   - build/index
 ---

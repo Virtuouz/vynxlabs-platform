@@ -1,0 +1,5 @@
+# Run: administer/how-to/access/add-a-member
+
+Instance http://localhost:8091 (Fernhill seeded), tenant `acc-main` made by the operator for this run; members acc-ann and acc-bob (tenant admins), acc-cy (viewer); commit 5ebf1c80 plus the working tree; 2026-11-23. Browser: Playwright, headless, 1440 px, light, signed in as acc-ann for the screens named; the rest through the API with the same session cookies. Not done: 768 and 390 px, dark, keyboard, reload.
+
+Made the operator's access grants (viewer, then tenant_admin, 4 hours) to reach the new tenant. Added acc-ann, acc-bob (tenant_admin) and acc-cy (viewer) with `POST /members` and `bindings`: 201 each. In the browser, the member list showed Name, Email, Status, Roles ("1 given directly") and Added; selecting acc-cy showed the buttons View access, Make a password reset link, Suspend, Remove. Made a reset link for acc-cy: `emailed: true, url: null` (this instance has a mail sink): the message is in mail-31, with the link, subject "Choose a new password", "works once, until" 2 hours later. The Add member dialog itself was not driven in the browser; its fields were read from the code.

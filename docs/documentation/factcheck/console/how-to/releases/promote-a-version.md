@@ -1,0 +1,8 @@
+# Fact-check record: console/how-to/releases/promote-a-version
+
+Code as of commit `14f7d5b9` (branch `phase-31-write-the-docs`), 2026-11-24. Written by the page's writer; nothing here has been checked by a second agent yet. Other pages of the area hold the line-by-line records of every label: `console/reference/screens/operate/releases`, `console/reference/screens/operate/git-sync`, `administer/reference/screens/repository`, `administer/reference/screens/workspaces`, `console/reference/screens/configure/settings`. `Dep` = `apps/control-plane/src/kernel/execution/deploy.ts`, `Auth` = `apps/control-plane/src/kernel/authoring.ts`, `CPgit` = `apps/control-plane/src/kernel/git.ts`.
+
+| Claim | Source (file:line) | Checked by | Result |
+| --- | --- | --- | --- |
+| Every label, message and permission on this page is the one recorded for the screen it uses | the screen records named above | writer | holds, as recorded there |
+| The steps were run on the throwaway instance | `docs/documentation/runs/console/how-to/releases/promote-a-version.md` | writer | see the run log for what was and was not run |

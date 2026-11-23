@@ -1,167 +1,134 @@
 ---
-title: Building an interface
+title: Building an app
 topic: build-screens-editor
-description: "The builder for one app: add widgets to a page, group them in sections and tabs, place and size them, and set each one in Data, Display, Actions and Rules."
+description: "Every control, state and key of the App Builder workbench: its header, the pages and widgets pane, the page, the settings pane, saving and undo, what makes it read only, and what a clash of drafts looks like."
+subjects: [app-builder, apps]
 moved_from:
   - build/app-builder-editor
 ---
 
-The builder shows the page as the people who open the app will see it, with its search and filters. Beside it is the **inspector**, which sets whatever is selected. The page, its filters and its widgets are saved as a draft as you go. One row along the top holds the app's name (click the pencil to rename it), how many draft changes there are, the **Desktop**, **Tablet** and **Phone** switch, **View as**, **Undo** and **Redo**, **Preview** and **Publish**, which checks the app before it does anything.
+The workbench is where one app is built. It shows the page as the people who open the app will see it, with live rows, and it sets whatever is selected in a pane beside it. It has a header, a pane on the left of the pages and the widgets on the current page, the page itself in the middle, and a settings pane on the right.
 
-## Add to page
+It is reached from the [App Builder list](app-builder), by the name of an app, at `screens/screens/<app>` under the workspace. The page being built is kept in the address as `?page=`, so a reload opens the same page. The help topic is `build-screens-editor`. It is also the topic of every address that starts with `screens/`, the preview included.
 
-**Add to page** opens with **suggestions** for the page's table: when the page shows invoices, it offers a search over them, a detail, a New invoice form. Click one to add it. Below the suggestions it lists the widgets by what they are for, each with a line about it, and has a search. The search reads "Find something to add, or describe what people should do": type "let people mark invoices paid" and the widgets whose name, description or **good for** examples use those words come first. Words are matched against what the builder knows, and nothing is sent anywhere. A preview beside the list shows the widget under the cursor, what it is good for, and which table it would start on. :kbd[↵] places it at the end of the page, or drag it to place it anywhere. The list:
+A change is saved as a draft after a moment. The draft is shared by the builders of the workspace, and people who use the app see it only when it is published. Each part of the workbench has its own page: [pages and their settings](../../app-builder/pages), [the settings pane](../../app-builder/inspector), [laying out a page](../../../how-to/app-builder/lay-out-a-page), [the phone and tablet layout](../../../how-to/app-builder/set-the-phone-layout) and [publishing](../../../how-to/app-builder/publish-an-app).
 
-- **Work with records**: a table, for many rows, dense and sortable; a list, for rows as cards; **Record detail**, for one record's fields and actions; a **Form**, to make or change a record.
-- **Take action**: a **Button**, for one action: update, open, run a workflow; an **Action group**, for several buttons together as one toolbar; **Approvals**, for requests waiting for a decision. Say "sign off" or "review" in the search and it comes first. When the workspace has a workflow with an approval step and the page has no Approvals widget, the suggestions offer it.
-- **Understand data**: a stat, for one number; a chart, for a trend or a comparison; a pivot, for a value across two breakdowns.
-- **Organize**: a **Section**, to group widgets under a heading; **Tabs**, to switch between views in one place; **Search and filter**, a search box and filters for the page.
-- **Content**: text, for headings, instructions and help.
+::screenshot{name=console/app-builder-workbench alt="The App Builder workbench at desktop width: the app's name and the Publish button in the header, the pages and widgets on the left, a page with a table in the middle, and the settings of the selected table on the right."}
 
-A widget that comes from a pack other than the one Volvel ships says the pack's name beside its title. It is set the same way as the others. Click one to place it at the end of the page, or drag it out of the list onto the page: the list closes as you pick it up, the page shows where it would land and moves what is in the way aside, and it lands where you let go. Let it go off the page, or press :kbd[Esc], and nothing is added. When a Section or Tabs is selected, a widget you add is put into it. Near the top or bottom of the window the page scrolls, so you can reach a place out of sight.
+## The header
 
-## Selecting, moving and sizing
+One row under the breadcrumbs. On the left:
 
-Everything is done on the page itself.
+| Control | What it does |
+| --- | --- |
+| The app's name | The title of the app. |
+| Pencil (**Rename the app**) | Turns the name into a field, **Name of the app**, with a counter "n of 100". Enter keeps the name, Escape and leaving the field are told which. A name past 100 characters is not saved and not cut: Enter leaves it for you to shorten. Not drawn when the workbench is read only. |
+| **N draft changes** | A pill that appears when the draft differs from what is published. It opens the publish check. Under 768 px wide it is not drawn. |
+| **N to fix** | A pill that appears when saving the draft was refused for something that must be fixed first. It opens a list, "To fix before it can be published", in the words of the page: "Money: needs at least 1 button". |
+| The status | "Saving…" while a change waits or is saved; "Saved. Not published yet." when the draft is saved and differs from what is published; "Published." when it does not; "Not saved: …" with the reason when a save failed. Below 1280 px wide the words are kept for a screen reader and are not drawn. |
 
-- **Click** anywhere on a widget to select it. :kbd[Esc] lets go.
-- **Drag** a widget to move it, and by its corner to stretch it. While you do, a note says its size and place, such as "8 × 5 · col 1 · row 3", and the widgets in its way move aside. A dragged widget follows the pointer, and a dashed place shows where it would land; Esc puts it back.
-- The **arrow keys** move the selected widget one cell. :kbd[Shift] with an arrow makes it one cell wider, narrower, taller or shorter. The change is read out for screen readers.
-- Click the **title** to rename it where it is.
-- :kbd[Ctrl]+:kbd[D] (:kbd[⌘]+:kbd[D] on a Mac) duplicates it. :kbd[Delete] removes it.
-- **Undo** and **Redo**, and :kbd[Ctrl]+:kbd[Z], take back a move, a size, a removal or a duplicate. Each button says what it would undo, such as "Undo moving Invoices".
+On the right, from left to right:
 
-A widget can't be made smaller than it can be read, or larger than it can be drawn. Widgets that would lie on one another move out of the way.
+| Control | What it does |
+| --- | --- |
+| **Desktop**, **Tablet**, **Phone** | The size the page is drawn at: the full width of the room, 768 px and 390 px. The arrow keys move between them. Only **Phone** is drawn in a device frame. See [the phone and tablet layout](../../../how-to/app-builder/set-the-phone-layout). |
+| **View as** | **Me**, then each group of the tenant. It changes what is drawn, not whose rows: see below. |
+| Undo, Redo | Take back and redo one change at a time. A button says what it would undo, such as "Undo moving Invoices", and its tooltip says "Nothing to undo" when there is nothing. The workbench keeps the last 100 changes in memory. Typing in one field is one change if the pauses are shorter than 1 second. A reload empties them. |
+| **Preview** | Saves what is unsaved, then opens the draft as people will use it, in a new tab. See below. |
+| **Publish** | Saves what is unsaved and opens the publish check, "Ready to publish" or "Not ready to publish". It is off while there is something to fix, or while a save has failed. |
+| **More ways to publish** (the arrow) | **Publish**, **Open the published app** and **Restore an earlier draft**. **Open the published app** is off until the app has an address, with the tooltip "Publish once, and the app has an address.". |
+| **Hide pages and widgets**, **Hide the settings** | Fold the left and the right pane. The button then reads **Show pages and widgets** or **Show the settings**. The choice is remembered on this device. Only in a window 1024 px wide or more. |
 
-Under the **⋯** of the selected widget, **Layout** sets the same numbers exactly (and the phone, see below), **Duplicate** copies it and **Remove** takes it off.
-
-A side sheet or a modal is sized the same way: drag the edge of its frame, and it snaps to **Small**, **Medium**, **Large**, **Extra large** or **Full**. The same choice is **Size** in the page's settings. The size is the one it opens at when the app is served, and its widgets are laid out on its grid as you placed them. They stack in one column only where the screen is narrow, as on a phone. In the builder a size wider than the canvas is drawn smaller, with the scale said; Full fills the canvas at its true size.
-
-A **Button**, and an **Action group**, sit in their own cell. The **Position** on their Display tab is a three by three picker: top, middle or bottom, by left, centre or right.
-
-## Sections, tabs and buttons together
-
-A **Section** is a heading with widgets under it. It can have a line under the heading, and it can be **folded**: turn on **Can be folded**, and whoever reads the page may fold it away. A reload keeps it as they left it. **Starts folded** shows it closed the first time. **Tabs** shows one view at a time. Each tab has its own widgets, and the one that is open is in the page's address, so a link opens the same tab. Add and name the tabs in the inspector.
-
-A Section is **Plain** or a **Card**. Tabs are drawn with an **Underline** or as **Pills**. For Tabs you can also say which tab **Opens first** (the address still wins), and **Remember the last tab**, so each person finds the tab they left on this device.
-
-A Section and Tabs each have their own grid of twelve columns inside them. A widget in one is placed and sized there, and moves with it. They go one level deep: a Section is never put in another Section, or in a tab.
-
-- **Drag** a widget onto a Section or onto a tab of Tabs to put it in, and out onto the page to take it out. The container stays where it is as you come to it, makes room when you rest over it, and shows where the widget would land. A widget dragged out of **Add to page** goes into one the same way.
-- From the keyboard, **⋯ › Move to** lists the Sections and the tabs on the page, and "The page" to take it out.
-- The **outline** shows what each Section and tab holds.
-- A container grows with what it holds. **Duplicate** and **Remove** on a container take what it holds, and **Undo** brings it back.
-
-An **Action group** puts related buttons in one toolbar, the first as the main one. Each button is written as any other action, with its own **when**, and has its own Display, Actions and Rules. Line them up **Left**, **Right** or **Spread**, and choose **Show up to** how many: the rest go under **⋯**, so "Mark paid, Send invoice, Edit" show and Void waits in the menu. A button's style is chosen by looking at it: **Main**, **Normal**, **Quiet** or **Danger**, and it may have an **icon**. What doesn't fit the width goes under **⋯**, on a phone too. When a Button is selected and there are buttons beside it, the builder offers to group them. An Action group is for apps: a dashboard doesn't offer it.
-
-## The inspector: Data, Display, Actions, Rules
-
-The inspector is the same for every widget. It is drawn from what the widget says it can do, so a widget that comes from another pack has the same tabs and the same controls. It begins with the widget's icon, its name and kind, and **⋯**. A tab with nothing in it is not shown. A tab has an orange dot only when something in it needs fixing, such as a table that is gone, an action with no steps or a group that no longer exists; point at the tab, or open it, for what is wrong. A tab with nothing to fix has no dot, however much is set in it.
-
-Settings are grouped rows, each showing its current value. A click on a row opens a small editor for that setting, and the row shows the new value when it is closed. The ones every widget shares are the same everywhere:
-
-- **Page filters** are chips: "Follows 4 page filters", one for each, and a dashed chip for a filter the widget doesn't follow. Click one to switch it off or on.
-- **Conditions** are sentences as chips, such as "Status is Unpaid" with **+ Condition**. The editor offers the column's own words: for a choice column its values with how many rows each has; for a date, "is in the last", "is before", "is after", "is between" and "is empty".
-- **Sorted by** is Newest or Oldest, with **+ Then by** and **Show at most**.
-- **Numbers** are one picker wherever a number is shown: each choice shows the real number (Money, Money whole, Money short, Number, Percent, Plain), with the currency and whether the amount is kept in cents.
-
-- **Data** is what the widget asks of the tables. Pick the **Source** (a table, or a saved query). Then, in the widget's words: **Value** ("Sum of Total", "Average of Total", "Count"), **Break down by** (a column, and for a date how often: "Issued on · Weekly"), and **Only include** ("Status is Unpaid"). Under **More options** are how it is sorted and how many it reads.
-- **Display** is how the answer looks: the **Chart type**, how **Numbers look like** (a number, money, a percent, and whether the money is kept in cents), a line under a stat, a column's name and format in a table. **More options** holds the rest.
-- **Actions** lists what a person can do with the widget, and what happens: "When a row is clicked", "When clicked", a form's "When it is sent", and the buttons on a record detail or at the end of a row. Each is a few **steps**, written in sentences, with a preview of what the person will be asked. See [apps made in the console](app-builder).
-- **Rules** says when a widget is shown, as a sentence ("the current user is in Practice managers"), and what hiding is: it is not security. A widget that is hidden still reads whatever the person may read. What a person may read is decided by the table's own row rules, and the tab links to them. In the builder a widget that wouldn't be shown is drawn faded, with "Shown only when …".
-
-### Pages that open on a record
-
-A page's own settings say its kind: **Page**, **Record page**, **Side sheet** or **Modal**. The builder shows a side sheet or a modal on a sample record, chosen from the table's rows, so the detail and the form have something to show. **Pages** lists them beside the pages of the menu, with the kind under each name.
-
-When a table says what a click does, choose **Open record detail** and the detail's own **Opens as**: **Side sheet**, **Full page** or **Modal**. The table's heading then reads "Click opens Invoice detail", and the detail's footer steps through the records it was opened from.
-
-Most changes are a few choices. To make "Invoiced by week" a line of the sum of Total by the week of Issued on: Data, Source Invoices, Value Sum of Total, Break down by Issued on · Weekly; Display, Chart type Line.
-
-### What each widget offers
-
-Display shows only what fits the data, and says why when something doesn't.
-
-- **Chart.** Data asks three plain questions: **Measure**, **For each** and **Split into colors**, then **Order** ("Biggest first", "Smallest first", "By name") and **Show at most**. A chart type that can't work with the data is greyed, with what it would need. Display has **Numbers**, **Colors** (the app's theme, or a palette), **Show values on bars** and **Show axis titles**. A chart over time also offers **Compare with the period before** (a dashed line, by the page's date range), **Smooth the line** and **Mark each point**; for a date, "For each" offers day, week, month or quarter, and **Include periods with nothing** draws the empty ones as zero.
-- **Stat.** **Compare with the period before** is one switch, followed by **Show change as** a percent or an amount, and **Going up is** Good or Bad, which sets the change's colour.
-- **Goal.** **Value**, **Goal** (a fixed amount, or a column of the result), **Show the percentage**, and **When reached, the bar** turns green.
-- **Table.** Display lists the columns as rows: an eye hides one, a handle moves it, and a click opens it, as does a click on its heading on the page. A column has its **heading**, whether it is shown as text or as a **badge** (a chip with a dot, in a colour for each value), **alignment**, **width**, **Sort by clicking the heading**, **Show a total at the bottom** and **Hide on phones**. Under it are the **row height** (Comfortable or Compact), **rows at a time**, what an empty table says, and **striped rows**. Actions holds what a row click does, the **row actions** (each says when it may be pressed), **buttons above the table**, which replace a separate Action group there, and **Let people select several rows**: with it on, a row action runs on every row selected.
-- **List.** A sample row shows the places: **Title**, **Under the title**, **Right**, **Badge** and **Picture**, each filled with a column. A list is drawn as a **List** or as **Cards**.
-- **Group rows by**, on a Table and on a List: a heading over the rows of each **day, week or month** of a date, or of each value of a choice, text, or yes or no column, with how many rows it has ("Today · Sunday, Nov 22"). **First** is which group comes first; within a group, rows are as **Sorted by** says, or by their time. A time's day is that of whoever reads it, where they are, and under a day's heading only the time is shown. A heading people click to sort sorts each group. With **At most**, those rows are chosen first, and then grouped. Rows of a saved query are in the order its own SQL gives, and are not grouped.
-- **Pivot.** **Measure**, **Rows** and **Columns**, with a small preview, **Shade cells by size**, and totals for each row and column.
-- **Record detail.** Its record is the one the page was opened with, **the row selected in a table on the page** (the detail follows as people click rows), or **the current user's own record**, matched by email against a column of the table. Fields are a list in sections, **1, 2 or 3 across**, and **Let people edit fields in place** lets a person change what is shown on the page, on the server's terms as an action's.
-- **Approvals.** Data is **Which requests**: the workflows to ask of, as chips with their real titles (none chosen is every workflow with an approval step, including those made later), and **Whose**: **Theirs to decide**, or **Every one, theirs or not**. Display is **Looks like** (rows, cards or a queue), what a click opens (a side sheet, a modal or nothing), **What each shows** (the step's own details as a list: drag to reorder, the eye to hide; left alone, the first four) and **Decided ones** (a Waiting and Decided switch, with who decided and why, and what it says when nothing waits). Actions is **Deciding**: what the two buttons say, **Ask why** (never, when rejecting, or always), **Ask before approving**, and **Go to the next one**. **Who may decide is set on the workflow's step**, not here; the drawer says so and links to the workflow. While you build, the buttons don't run, and a page with nothing waiting shows a sample, marked as one.
-- **Form.** Fields and sections with what each requires, what **Submit says**, and **After saving**.
-- **Text.** Its **height** fits the text and grows as it is written. Drag its corner, or choose **Set by hand**, to give it a height of its own: longer text then scrolls inside it.
-- **Button.** What it **says**, an **icon**, its style, **Full width**, and its position. Its actions are shown collapsed, one line per step.
-- **Search and filter.** Every filter is in one list, each with a line on what it does ("Search invoices: looks in Number, Client code, Payment ref"). A filter's editor sets its label, kind and starting value, and which widgets it narrows, as checkboxes. **Filters sit** in a row, or behind a "Filters" button.
-- **Text.** See below.
-
-### Who can run it, and who can see it
-
-The Rules tab has two kinds of sentence.
-
-**Who can run it** is for anything that acts: a button, a row action, a button of an Action group, a form's submit, and a chart's click. Name one or more groups, of members or of end users. Left empty, anyone who may open the app may run it, as before. With groups named, **the server refuses everyone else**, a call made straight to the API too. Someone outside them sees the button greyed, with "Only Billing can do this". It only narrows: the rows a person may read, the fields the action names and its conditions still hold. A named group that no longer exists runs for nobody, and the publish check says so. **Can be pressed when** is separate: it is about the record, not the person.
-
-**Who can see it** shows a widget only to members of some groups. It decides only what is drawn, so it is not security: a person who isn't shown a widget can still read whatever the table's row rules let them. The tab says so, and links to the rules. In the builder a widget shown only to some carries a small tag.
-
-To hide a button instead of greying it, use **Show this button** under **Only when**.
-
-### Search and filter
-
-A page's search and filters are a widget: **Search and filter**, from **Add to page**, wherever you want the bar. A page can have more than one; each filter's name is used once on the page, and the page has at most eight.
-
-In its Data tab, **Add a filter** makes one of:
-
-- a **search**, for words typed into a box. Pick the table's text columns it looks in ("Number, Client, Payment reference"): a row is kept when any of them has the words;
-- a **choice**, from a column's values, such as the Status;
-- a **date range**, a **word** or a **number**, each with the value it starts with.
-
-**Offer "Clear"** in Display puts a button on the bar that sets every filter back to how it starts.
-
-Every widget whose table has the column follows a filter, and the inspector says which. A widget over a table without the column is left alone, and a widget takes a filter only where it is bound to it. If a widget should always be narrowed, say to unpaid invoices, put that under its own **Only include**, where it adds to the filters. The reader's words and choices are in the page's address, so a reload or a shared link keeps them.
-
-## Text, in Markdown
-
-A **Text** widget is written in Markdown, with the components the documentation uses: alerts, steps, tabs, folds, terms, keys and fields. Choose how it looks by looking at the tiles: **Plain**, **Note**, **Warning** or **Tip**. A note, a warning or a tip is drawn with a rail and an icon.
-
-The editor is the same one the documentation uses. **Source** shows the Markdown, **Preview** what readers will see, and the **Insert** menu adds a component (an alert, steps, tabs, a fold) with help for what it takes. A line that can't be drawn is said in words beside the line. **Edit on the page** opens the editor in place, so you write over what readers will see.
-
-```
-:::alert[In dollars]{type=info}
-Every amount here is in dollars, as the clinics invoice.
-:::
-```
-
-See [components](../../../../develop/reference/docs/components) for what each takes.
-
-## Pages
-
-An app has one or more pages, shown as tabs above the page. Add, rename, reorder and remove them from the page's own menu. **Pages** is on the left with a **+**, each page one row: its icon, its title and its kind. A page's settings give its **kind** (four tiles), its **title in the app's menu**, an **icon** from the app's set, and, for a sheet or a modal, its **size**. **+ Page** offers starters made from a table: "A list of Invoices" is a search, a table, a detail sheet and a New invoice form, already joined up; "An Invoice record page" is one invoice, with its actions. A page can name a page of the workspace's documentation as its **help**, and the app then shows that page.
-
-## The phone
-
-Switch the builder to **Phone** (or **Tablet**) to see the page as it will be drawn there, in a device frame. A banner says "Phone layout is made from the desktop one", and how many widgets were changed by hand.
-
-By default each screen is **automatic**: the phone page is made from the desktop one, with no work. Widgets are stacked in the order of the page, and a table is drawn as a list (a column can be left out there with **Hide on phones**). The filters collapse behind "Filters" and a count. From **⋯ › Layout**, a widget can be set by hand for **Tablet** or **Phone**: the place on the grid, as four number fields. For narrow screens, a widget can be **Full width**, **Stack below** or **Hide**, and has a **priority**: a higher one is kept nearer the top when the page stacks. A widget that is hidden is a dashed place with its name ("By clinic is hidden on phones"), so it isn't forgotten.
-
-## Publishing
-
-**Publish** opens **Ready to publish**, which checks the app and says in words what is missing:
-
-- data sources that can't be found, or tables that have lost a column;
-- actions that are not complete, and forms that are not valid;
-- a group that **Who can run it** names and that no longer exists;
-- a warning for widgets hidden on a phone.
-
-Below the checks is what it will publish ("3 changes"). **Try as Billing first** opens the app **as a group sees it**. Then **Publish** deploys the app and its interface. Before that, the draft is only yours. The people who open the app see the published version, and the rows their groups allow.
+On a window narrower than 1024 px the two panes are sheets. A bar under the header, **Pages and widgets**, opens the left one, and choosing a widget opens the settings as a sheet titled **Settings**. Undo and Redo move behind a **⋯** button (its label is "More: undo, redo and the screen size"). Under 640 px **Desktop**, **Tablet**, **Phone** and **View as** move behind it too, and **Preview** shows only its icon. The name, **Preview** and **Publish** stay on the row.
 
 ### View as
 
-**View as** in the header shows the page, its widgets, rules and actions as a group sees them: widgets that group may not see are gone, and buttons it may not run are greyed with the reason. It changes what you see, and **View as Me** brings you back.
+**View as** lists **Me** and the groups of the tenant, members' and end users'. Choosing a group draws the page the way a member of that group sees it: a widget limited to other groups is drawn faded with "Hidden for" and the group's name. A line under the page says "Rows are yours: View as shows what" the group "sees of the page, not their rows." You are still the one reading the rows, and you can still change the page. **Try as <group> first** in the publish check chooses it for you.
 
-### Earlier drafts
+### Preview
 
-**History** in the header lists the earlier drafts that were kept. Pick one, and **Restore** it as the current draft. Restoring doesn't publish it.
+**Preview** opens `…/screens/<app>/preview` in a new tab, with the page you are on when it is one of the app's menu pages. The tab's top bar says "Preview of the draft", the workspace's name and "Actions change" the workspace's "rows." It has the **Desktop**, **Tablet**, **Phone** switch, **Open the published app** when the app is published, and **Close**. The app is drawn as the person previewing it, with their groups, so what is limited to a group shows for a member of it. Buttons really run: a button that updates a row updates it. In the workbench's own page a button never runs.
 
-See [App Builder](app-builder) for what an app is, and what the builder does not do yet.
+If the draft cannot be read, the preview says "You may not read this app's draft, or it is no longer here. Ask whoever builds it, or open the published app." When the app has no draft, the preview shows what is published.
+
+## The pages and widgets pane
+
+| Part | What it holds |
+| --- | --- |
+| **Pages** | One row per page, with its kind's icon, its title and its kind: **Page**, **Record page**, **Side sheet** or **Modal**. The **+** (**Add a page**) is drawn while the app has fewer than 20 pages. Choosing a row shows the page and its own settings. A row has a grip to drag by, and on a pointed or focused row arrows to move it earlier or later. The order is the order of the app's menu. See [pages and their settings](../../app-builder/pages). |
+| **On this page** | The widgets of the page as an outline, with Section and Tabs holding theirs. Choosing one selects it on the page. "Nothing yet." when the page is empty. Drag a row, or press :kbd[Alt]+:kbd[↑] or :kbd[Alt]+:kbd[↓] on it, to move it in the outline. |
+| **Add to page** :kbd[A] | Opens **Add to page**. It is off when the page holds 30 widgets, and the tooltip says "A page holds at most 30 widgets.". See [laying out a page](../../../how-to/app-builder/lay-out-a-page). |
+
+A line at the foot says "Drag in the outline or on the page to reorder. Alt with the arrow keys moves the chosen widget in the outline." It is drawn from 1024 px.
+
+## The page
+
+The middle is the page drawn from this workspace's rows, as you may read them, on twelve columns with the column guides behind. What you can do on it:
+
+- **Click** a widget to select it, :kbd[Esc] to let go. Click a title to rename it in place. Drag a widget to move it and its corner to size it. A note while you drag gives the size and place, such as "8 × 5 · col 1 · row 3".
+- A side sheet or a modal is drawn as it opens, with a bar that gives its kind, size and width, such as "Side sheet · Medium · 720px". The size handle on its edge is a slider named **Size**: drag it, or press :kbd[←] and :kbd[→], :kbd[Home] and :kbd[End]. It snaps to **Small** (480 px), **Medium** (720), **Large** (960), **Extra large** (1200) or **Full**. A size wider than the room is drawn smaller, and "Drawn at N %" says by how much.
+- A page that opens on one record, a record page, a side sheet or a modal, has a line above it, "Preview of" the page "for" a record, with a list of up to 25 rows of its table to draw it with. When the table has no rows the line says so and "Add a row in Data, or choose another table."
+- An empty page says "Nothing on this page yet", with **Add to page** and, when the workspace has tables, the starts **A list of** and **A record page** for the table the app reads most.
+- On **Tablet** and **Phone** a banner above the page says how much of the layout is made by hand. See [the phone and tablet layout](../../../how-to/app-builder/set-the-phone-layout).
+- A table whose row click opens a side sheet shows that sheet over the page while the table is selected and **Actions** is open. See [the settings pane](../../app-builder/inspector).
+
+The page never runs an action: a button pressed here does nothing. **Preview** is where buttons run.
+
+## Saving
+
+The workbench saves 700 ms after the last change, and :kbd[⌘S] or :kbd[Ctrl]+:kbd[S] saves at once. Leaving the workbench while a change is unsaved asks "A change is not saved yet.". The status in the header says where a save stands. A save that is refused is shown as "Not saved:" and the reason.
+
+### When someone else saved first
+
+A draft belongs to the workspace, not to a person. Every save says which version of the draft it was made on. If another builder saved after you opened the app, nothing is overwritten and nothing of yours is saved. A notice appears: "Someone else saved this app after you opened it. Nothing of theirs was overwritten, and what you changed is still here, unsaved." and a button, **Load their version**. It asks "Load their version?": "What you changed since you opened the app is replaced by what they saved." Press **Load theirs** to take their draft, or reload the page to read it. Until you do, the status reads "Not saved:" and the reason.
+
+### Restore an earlier draft
+
+**More ways to publish**, then **Restore an earlier draft**, opens a dialog of the same name: "Each save keeps what it replaced. Restoring one makes it the draft; Undo takes it back." The control plane keeps the newest 30 versions that saves put aside. The list is newest first: when the save was made (the time and "(1m ago)" in the last day, else the date and time), who made it, and what it did, such as "Added page Appointments, added page Appointment detail and 4 more", or "The draft was set aside". The arrow keys, :kbd[Home] and :kbd[End] move in the list. Beside it a preview gives the version's title, its pages with their widget counts, and "Restoring it changes the draft" with the list of what would change. **Restore** is off when the version is the same as the draft now. **Not now** closes the dialog. A restore is one change, which Undo takes back, and it shows "Restored the draft saved" and when, with **Undo**. With no versions the dialog says "No earlier drafts yet. Each change you save keeps the draft it replaced."
+
+## Keys
+
+| Keys | What they do |
+| --- | --- |
+| :kbd[A] | Opens **Add to page**, when focus is not in a field. A single key can be turned off in the keyboard shortcuts of the console. |
+| :kbd[⌘S], :kbd[Ctrl]+:kbd[S] | Save now. |
+| :kbd[⌘Z], :kbd[Ctrl]+:kbd[Z] | Undo, outside a field. |
+| :kbd[⇧⌘Z], :kbd[Ctrl]+:kbd[Y] | Redo, outside a field. |
+| Arrow keys on a selected widget | Move it one cell. With :kbd[Shift], make it one cell wider, narrower, taller or shorter. On a phone, :kbd[↑] and :kbd[↓] change the order. |
+| :kbd[Delete] | Remove the selected widget. |
+| :kbd[Ctrl]+:kbd[D], :kbd[⌘D] | Duplicate it. |
+| :kbd[Esc] | Let go of the selection, or cancel a drag. |
+| :kbd[Alt]+:kbd[↑], :kbd[Alt]+:kbd[↓] | Move the chosen row of **On this page**. |
+| Arrow keys on **Desktop**, **Tablet**, **Phone** | Move between the sizes. |
+
+## States
+
+| State | What you see |
+| --- | --- |
+| Loading | A skeleton of the workbench. |
+| Not found | A red notice with the control plane's words, when the app is neither a draft nor deployed. |
+| Production, or no write permission | A line under the header: "Read only: this is the production workspace. Apps are changed in a dev workspace and arrive here by promotion." or "Read only: you may look at this but not change it. Changing apps needs the resource:write or interface:write permission in this workspace." The app is shown as it is published, nothing is saved, and the header has **Open the app** in place of **Publish**. |
+| Managed in the repository | A notice: "This app is managed in the repository, so it is shown as it is published and cannot be changed here. Taking it over lets you change it here: the next publish then moves it out of the repository, and changes made there no longer reach it." with **Take over**. After **Take over**, or when the app already has a draft, it says "You are taking this app over from the repository. The next publish moves it out of the repository, and changes made there no longer reach it." See [Take over a repository app](../../../how-to/app-builder/take-over-a-repository-app). |
+| Removed in your drafts | A notice: "This app is removed in your drafts. Nothing changes until that draft is deployed. It is shown as it is published, and cannot be changed here until the removal is taken back." with **Keep this app**. |
+| No app serves it | A notice: "No app serves this yet, so nobody can open it." with **Make an app for it**. It asks for an **Address** (filled from the name) and makes the app draft. |
+| A clash of drafts | The notice and **Load their version** above. |
+| A save failed | The status reads "Not saved:" and the reason, in red. **Publish** is off. |
+| Publish refused | "You can change this app but not publish it here. Ask someone who may deploy to this workspace: your draft is kept." |
+
+## Permissions
+
+| Action | Needs |
+| --- | --- |
+| Open and look | `resource:read`, or `interface:read` alone. |
+| Change the draft, undo, restore | `resource:write`, or `interface:write` alone, in a dev workspace. The workspace's summary says whether you may; a production workspace is read only for everyone. |
+| **Preview** | The permission to read the draft. Pressing a button there runs it with your own permissions in the app. |
+| **Publish** | `deployment:write`, or `interface:write` alone, which deploys only an interface and the app that serves it. |
+| The publish check | `deployment:read`, or `interface:write` alone for the interface and app that are named. |
+
+## Related
+
+- [App Builder](app-builder): the list this opens from.
+- [Pages and their settings](../../app-builder/pages) and [the settings pane](../../app-builder/inspector).
+- [Publish an app](../../../how-to/app-builder/publish-an-app): the check, the preview and what a publish does.
+- [How an app is made](../../../explanation/app-builder/how-an-app-is-made).
+- [The dashboard builder](../data/dashboard-builder) uses the same workbench.

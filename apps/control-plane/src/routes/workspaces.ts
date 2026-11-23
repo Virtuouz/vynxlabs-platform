@@ -445,6 +445,7 @@ export function workspaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         const notify = body.failureAlert?.notify;
         if (notify) {
           // A run's failure is posted over HTTP: say now what would only fail when a run does.
+          // Exact path on purpose: the connection a failure alert names is looked up as declared now.
           const declared = await db
             .selectFrom("resource")
             .select("body")
@@ -773,6 +774,7 @@ export function workspaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         await requireStanding(kernel, ctx, workspace, [{ kind: body.kind, path, body: body.body }]);
         const result = await ctx.mutate(async (trx, audit) => {
           if (create) {
+            // Exact path on purpose: a create is refused only where something is at the path now.
             const taken = await trx
               .selectFrom("resource")
               .select("id")
@@ -934,6 +936,7 @@ export function workspaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         });
         await ctx.mutate(async (trx, audit) => {
           // A table that others refer to would leave every later deploy refused.
+          // Exact path on purpose: the delete below removes the resource at this path, nothing else.
           const kind = await trx
             .selectFrom("resource")
             .select("kind")

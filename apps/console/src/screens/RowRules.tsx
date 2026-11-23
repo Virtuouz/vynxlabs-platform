@@ -2,6 +2,7 @@ import { Button, ComboboxField, SelectField, showValue, TextField } from "@volve
 import { useMemo, useState } from "react";
 import { useLoad } from "../api.ts";
 import { DataTable } from "../kit/DataTable.tsx";
+import { count } from "../kit/format.ts";
 import { ErrorState } from "../kit/LoadState.tsx";
 import { usePagedList } from "../kit/paged.tsx";
 
@@ -398,8 +399,7 @@ export function SeeItAs({
       </div>
       {group && typeof counted === "number" ? (
         <p className="m-0 text-body-sm text-ink-muted">
-          Someone in this group would see {counted.toLocaleString("en-US")}{" "}
-          {counted === 1 ? "row" : "rows"} in all.
+          Someone in this group would see {count(counted)} {counted === 1 ? "row" : "rows"} in all.
           {shown.length === 20 && counted > 20 ? " The first 20 are listed." : ""}
         </p>
       ) : null}

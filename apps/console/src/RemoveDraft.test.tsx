@@ -329,7 +329,11 @@ describe("where it is used", () => {
     show(<Queries root={root} link={link} />);
     const rename = await screen.findByRole("button", { name: "Name and path" });
     expect((rename as HTMLButtonElement).disabled).toBe(true);
-    expect(rename.getAttribute("title")).toMatch(/removed in your drafts/);
+    // The reason is on the stop around the disabled button: focusing it says it.
+    fireEvent.focus(rename.parentElement as HTMLElement);
+    await screen.findByText(
+      "The query is removed in your drafts. Keep it to give it another name.",
+    );
     cleanup();
     history.replaceState(null, "", "/?query=reports/fresh");
     const before = history.length;

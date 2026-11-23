@@ -20,6 +20,7 @@ import { useDraftSave } from "../kit/draftSave.ts";
 import { Loading } from "../kit/LoadState.tsx";
 import { EDITED_KINDS, type EditedKind, isEditedKind, ProductionNotice } from "../kit/objects.tsx";
 import { PageHeader } from "../kit/PageHeader.tsx";
+import { listenChoices } from "../kit/platformEvents.ts";
 import { RemoveDraftButton } from "../kit/RemoveDraftButton.tsx";
 import { clearRecovery, useKeptCopy, useRecoveryCopy } from "../kit/recovery.ts";
 import { StatePill, Tag } from "../kit/status.tsx";
@@ -659,7 +660,7 @@ export function ResourceEditor({
             {body.type === "event" ? (
               <>
                 <EventStartFields
-                  events={ofKind("event")}
+                  events={listenChoices(ofKind("event"))}
                   event={text("event")}
                   filter={text("filter") || undefined}
                   readOnly={readOnly}

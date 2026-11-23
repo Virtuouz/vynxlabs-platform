@@ -200,6 +200,20 @@ describe("table columns", () => {
     });
   });
 
+  test("a number can be drawn as a bar or as a change (WID-M5)", async () => {
+    showTable();
+    fireEvent.click(screen.getByRole("button", { name: /^Total/ }));
+    const editor = await screen.findByRole("dialog");
+    fireEvent.click(within(editor).getByRole("radio", { name: "Bar" }));
+    expect(columnsOf().find((one) => one.column === "total")).toMatchObject({ as: "bar" });
+    fireEvent.click(within(editor).getByRole("radio", { name: "Change" }));
+    expect(columnsOf().find((one) => one.column === "total")).toMatchObject({ as: "delta" });
+    fireEvent.click(within(editor).getByRole("radio", { name: "Number" }));
+    expect(
+      (columnsOf().find((one) => one.column === "total") as { as?: string } | undefined)?.as,
+    ).toBeUndefined();
+  });
+
   test("a choice shown as a badge gets a colour for each of its values", async () => {
     showTable();
     fireEvent.click(screen.getByRole("button", { name: /^Status/ }));

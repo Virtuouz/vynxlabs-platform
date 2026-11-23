@@ -6,6 +6,7 @@ import { access, findWorkspace } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
 import { runClone } from "../kernel/tenancy/clone.js";
 import { deleteTenant, deleteWorkspace, removeStored } from "../kernel/tenancy/remove.js";
+import { listOf } from "../pagination.js";
 import {
   AnyObject,
   Id,
@@ -74,7 +75,11 @@ export function environmentRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.post(
       "/tenants/:t/workspaces/:w/clones",
       {
-        config: { access: access.custom },
+        config: {
+          access: access.custom(
+            "Needs `workspace:write` in the tenant and `workspace:read` in the workspace copied. With data it also needs `data_all:read` and `file:read` there, and with `safe` off `secret:write` and `connection:write`.",
+          ),
+        },
         schema: {
           summary: "Copy a workspace into a new dev workspace",
           description:
@@ -190,9 +195,11 @@ export function environmentRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.tenant("workspace:read") },
         schema: {
           summary: "Recent clones in a tenant, newest first",
+          description:
+            "Each copy of a workspace made with `POST .../clones`, with whether it finished.",
           tags: ["tenancy"],
           params: TenantParams,
-          response: { 200: Type.Object({ items: Type.Array(Clone) }) },
+          response: { 200: listOf(Clone, 50) },
         },
       },
       async ({ params }) => ({
@@ -214,6 +221,8 @@ export function environmentRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.tenant("workspace:read") },
         schema: {
           summary: "One clone: whether it finished, and what it copied",
+          description:
+            "How the copy went. The copying continues after the answer that started it, so read this to see whether it is done.",
           tags: ["tenancy"],
           params: Type.Object({ t: Id, id: Id }),
           response: { 200: Clone },

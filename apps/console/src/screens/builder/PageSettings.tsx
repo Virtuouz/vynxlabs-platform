@@ -26,6 +26,7 @@ import { useId, useState } from "react";
 import { DocTopicPicker } from "../../kit/DocTopicPicker.tsx";
 import { type Catalog, heading } from "../../kit/inspector/model.ts";
 import type { PageKind } from "./contract.ts";
+import { NAME_MAX } from "./names.ts";
 import {
   KIND_LINE,
   KIND_NAMES,
@@ -146,7 +147,8 @@ export function PageSettings({
                   label={kind === "page" ? "Title in the app menu" : "Title"}
                   name="page-title"
                   value={page.title}
-                  maxLength={200}
+                  maxLength={NAME_MAX}
+                  showCount
                   required
                   {...(kind === "page"
                     ? {}

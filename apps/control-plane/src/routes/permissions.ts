@@ -1,6 +1,7 @@
 import { Readable } from "node:stream";
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import { newId, type PrincipalType as PrincipalKind } from "@volvel/db";
+import { ACCESS_DESCRIPTION_MAX } from "@volvel/manifest";
 import { Type } from "typebox";
 import { keepingAnAdmin } from "../kernel/administer.js";
 import type { Audit, Db, Trx } from "../kernel/audit.js";
@@ -11,7 +12,7 @@ import { access } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
 import { INSTANCE_ONLY_ROLE } from "../kernel/kinds.js";
 import { releaseOne } from "../kernel/tenant/releases.js";
-import { pageOf } from "../pagination.js";
+import { listOf, pageOf } from "../pagination.js";
 import { csvCell } from "./data.js";
 import {
   AuditEntry,
@@ -27,6 +28,7 @@ import {
   isoOrNull,
   NoContent,
   NullableId,
+  NullableString,
   NullableTime,
   TenantParams,
   Time,
@@ -91,6 +93,8 @@ const Binding = Type.Object({
   ]),
   workspaceId: NullableId,
   resourceId: NullableId,
+  resourceKind: NullableString,
+  resourcePath: NullableString,
   principalType: Type.String(),
   principalId: NullableId,
   principalLabel: Type.String({
@@ -127,15 +131,30 @@ export function permissionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       "/tenants/:t/roles",
       {
-        config: { access: access.tenant("role:read") },
+        config: {
+          access: access.custom(
+            "Needs role:read, or binding:read at the workspace when workspaceId is given.",
+          ),
+        },
         schema: {
           summary: "Roles usable in a tenant: built-in and custom",
+          description:
+            "Each role with the permissions it gives, and whether it is built in or the tenant's own.",
           tags: ["permissions"],
           params: TenantParams,
-          response: { 200: Type.Object({ items: Type.Array(Role) }) },
+          querystring: Type.Object({ workspaceId: Type.Optional(Id) }),
+          response: { 200: listOf(Role) },
         },
       },
-      async ({ params }) => {
+      async ({ ctx, params, query }) => {
+        if (query.workspaceId) {
+          await ctx.authorize("binding:read", {
+            tenantId: params.t,
+            workspaceId: query.workspaceId,
+          });
+        } else {
+          await ctx.authorize("role:read", { tenantId: params.t });
+        }
         const rows = await db
           .selectFrom("role")
           .selectAll()
@@ -154,11 +173,13 @@ export function permissionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.tenant("role:write") },
         schema: {
           summary: "Create a custom role for the tenant",
+          description:
+            "A role is a named set of permissions. Bind it to give it to someone. Audited.",
           tags: ["permissions"],
           params: TenantParams,
           body: Type.Object({
             name: RoleName,
-            description: Type.Optional(Type.String({ maxLength: 500 })),
+            description: Type.Optional(Type.String({ maxLength: ACCESS_DESCRIPTION_MAX })),
             permissions: Permissions,
           }),
           response: { 201: Role, 202: Waiting },
@@ -228,10 +249,12 @@ export function permissionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.tenant("role:write") },
         schema: {
           summary: "Change a custom role",
+          description:
+            "A change to its permissions takes effect for everyone it is bound to. Audited.",
           tags: ["permissions"],
           params: Type.Object({ t: Id, id: Id }),
           body: Type.Object({
-            description: Type.Optional(Type.String({ maxLength: 500 })),
+            description: Type.Optional(Type.String({ maxLength: ACCESS_DESCRIPTION_MAX })),
             permissions: Type.Optional(Permissions),
           }),
           response: { 200: Role, 202: Waiting },
@@ -277,6 +300,8 @@ export function permissionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.tenant("role:write") },
         schema: {
           summary: "Delete a custom role that no binding uses",
+          description:
+            "A role that a binding still gives is not deleted. Remove those bindings first. Audited.",
           tags: ["permissions"],
           params: Type.Object({ t: Id, id: Id }),
           response: { 204: NoContent, 202: Waiting },
@@ -311,7 +336,11 @@ export function permissionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       "/tenants/:t/bindings",
       {
-        config: { access: access.custom },
+        config: {
+          access: access.custom(
+            "Needs `binding:read` at the scope asked for: the tenant, or the workspace given.",
+          ),
+        },
         schema: {
           summary: "Bindings in a tenant",
           description:
@@ -320,7 +349,7 @@ export function permissionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           tags: ["permissions"],
           params: TenantParams,
           querystring: Type.Object({ workspaceId: Type.Optional(Id) }),
-          response: { 200: Type.Object({ items: Type.Array(Binding) }) },
+          response: { 200: listOf(Binding) },
         },
       },
       async ({ ctx, params, query }) => {
@@ -353,7 +382,10 @@ export function permissionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               .onRef("end_user_group.id", "=", "binding.principal_id")
               .on("binding.principal_type", "=", "end_user_group"),
           )
+          .leftJoin("resource", "resource.id", "binding.resource_id")
           .select([
+            "resource.kind as resource_kind",
+            "resource.path as resource_path",
             "binding.id",
             "binding.scope_type",
             "binding.workspace_id",
@@ -380,6 +412,8 @@ export function permissionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             scopeType: row.scope_type as "tenant" | "workspace" | "resource",
             workspaceId: row.workspace_id,
             resourceId: row.resource_id,
+            resourceKind: row.resource_kind,
+            resourcePath: row.resource_path,
             principalType: row.principal_type,
             principalId: row.principal_id,
             principalLabel: principalLabel(row),
@@ -395,7 +429,11 @@ export function permissionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.post(
       "/tenants/:t/bindings",
       {
-        config: { access: access.custom },
+        config: {
+          access: access.custom(
+            "Needs `binding:write` at the scope the binding is given at: the tenant, the workspace or the resource.",
+          ),
+        },
         schema: {
           summary: "Grant a role to a principal",
           description:
@@ -481,7 +519,7 @@ export function permissionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.delete(
       "/tenants/:t/bindings/:id",
       {
-        config: { access: access.custom },
+        config: { access: access.custom("Needs `binding:write` at the binding's scope.") },
         schema: {
           summary: "Remove a binding",
           description: "Needs `binding:write` at the binding's scope.",
@@ -603,13 +641,17 @@ export function permissionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       "/tenants/:t/access-grants",
       {
-        config: { access: access.custom },
+        config: {
+          access: access.custom(
+            "Needs `access_grant:read` in the tenant, which the tenant's admins and operators hold.",
+          ),
+        },
         schema: {
           summary: "Every operator access grant for a tenant, past and present",
           description: "For the tenant's admins, and for operators.",
           tags: ["permissions"],
           params: TenantParams,
-          response: { 200: Type.Object({ items: Type.Array(AccessGrant) }) },
+          response: { 200: listOf(AccessGrant) },
         },
       },
       async ({ ctx, params }) => {
@@ -624,7 +666,11 @@ export function permissionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.post(
       "/tenants/:t/access-grants",
       {
-        config: { access: access.custom },
+        config: {
+          access: access.custom(
+            "Needs `access_grant:write` on the instance, which only operators hold.",
+          ),
+        },
         schema: {
           summary: "Open time-limited operator access to a tenant",
           description:
@@ -694,7 +740,11 @@ export function permissionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.delete(
       "/tenants/:t/access-grants/:id",
       {
-        config: { access: access.custom },
+        config: {
+          access: access.custom(
+            "Needs `access_grant:write` in the tenant, or being the operator who opened the grant.",
+          ),
+        },
         schema: {
           summary: "Revoke an operator access grant",
           description: "For the tenant's admins, and for the operator who opened it.",
@@ -741,6 +791,8 @@ export function permissionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.tenant("audit:read") },
         schema: {
           summary: "A tenant's audit entries, newest first",
+          description:
+            "Who did what, to what, and when, in this tenant. Page through it with `cursor`.",
           tags: ["audit"],
           params: TenantParams,
           querystring: AuditQuery,
@@ -753,15 +805,19 @@ export function permissionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       "/tenants/:t/principals",
       {
-        config: { access: access.tenant("binding:read") },
+        config: {
+          access: access.custom("Needs binding:read, at the workspace when workspaceId is given."),
+        },
         schema: {
           summary: "Who can be given access, found by name or email",
           description:
             "Members, groups, service accounts, end users and groups of end users of the tenant " +
-            "whose name or email holds `q`, at most `limit` of each kind. Without `q`, the first of each.",
+            "whose name or email holds `q`, at most `limit` of each kind. Without `q`, the first of each. " +
+            "Needs `binding:read`, at the workspace when `workspaceId` is given.",
           tags: ["permissions"],
           params: TenantParams,
           querystring: Type.Object({
+            workspaceId: Type.Optional(Id),
             q: Type.Optional(Type.String({ maxLength: 200 })),
             limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 50, default: 10 })),
           }),
@@ -785,7 +841,8 @@ export function permissionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           },
         },
       },
-      async ({ params, query }) => {
+      async ({ ctx, params, query }) => {
+        await ctx.authorize("binding:read", { tenantId: params.t, workspaceId: query.workspaceId });
         const limit = query.limit ?? 10;
         const like = `%${(query.q ?? "").trim().replace(/[\\%_]/g, "\\$&")}%`;
         const [members, groups, accounts, endUsers, endUserGroups] = await Promise.all([

@@ -31,6 +31,7 @@ import {
   type SortField,
   TextField,
 } from "@volvel/ui";
+import { moneyFormatOf } from "@volvel/widgets";
 import { Code2, Database, Plus, Table2 } from "lucide-react";
 import { lazy, Suspense, useEffect, useState } from "react";
 import { Loading } from "../LoadState.tsx";
@@ -482,8 +483,11 @@ function ConditionBody({
   onChange,
   root,
   table,
+  recordColumns,
 }: {
   columns: readonly CatalogColumn[];
+  /** The columns of the record the page opens on, when it does: what a value may be taken from. */
+  recordColumns?: readonly CatalogColumn[] | undefined;
   start: ConditionValue;
   onChange: (next: ConditionValue) => void;
   /** Where the table's column values are read from, and which table. */
@@ -519,6 +523,22 @@ function ConditionBody({
           : undefined;
       }}
       value={draft}
+      valueFrom={(field) => {
+        const type = spokenType(columns.find((one) => one.name === field));
+        return {
+          ...(recordColumns && recordColumns.length > 0
+            ? { record: recordColumns.map((one) => ({ id: one.name, label: heading(one.name) })) }
+            : {}),
+          // Who is looking is a person's id: it is compared with a column that holds one.
+          user: type === "text",
+        };
+      }}
+      money={(field) => {
+        const format = moneyFormatOf(columns.find((one) => one.name === field));
+        return format?.style === "currency"
+          ? { currency: format.currency ?? "USD", minorUnits: format.minorUnits === true }
+          : undefined;
+      }}
       onChange={(next) => {
         setDraft(next);
         onChange(next);
@@ -542,6 +562,13 @@ function ConditionsBlock({
   columns: CatalogColumn[];
 }) {
   const conditions = visual.filters ?? [];
+  // A page that opens on a record lets a condition be about that record's own columns.
+  const opensOn = env.page && env.page.kind !== "page" ? env.page.record?.table : undefined;
+  const pageRecord = opensOn
+    ? env.catalog.tables
+        .find((one) => one.name === opensOn)
+        ?.columns.filter((one) => !["id", "created_at", "updated_at"].includes(one.name))
+    : undefined;
   const write = (filters: VisualCondition[], words: string, key?: string) =>
     writeVisual(env, input, { ...visual, filters }, words, key);
   /** The condition at `at`, replaced by what the editor made of it (a "not" of several is several). */
@@ -596,6 +623,7 @@ function ConditionsBlock({
                     columns={columns}
                     root={env.catalog.root}
                     table={visual.table}
+                    recordColumns={pageRecord}
                     start={toEditor(condition, column)}
                     onChange={(next) => replace(at, next)}
                   />
@@ -637,6 +665,7 @@ function ConditionsBlock({
                 columns={columns}
                 root={env.catalog.root}
                 table={visual.table}
+                recordColumns={pageRecord}
                 start={draft}
                 onChange={setDraft}
               />

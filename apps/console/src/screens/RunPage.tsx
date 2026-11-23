@@ -40,6 +40,7 @@ import {
 import { type FlowDetail, type FlowRunDetail, FlowRunView } from "./Flows.tsx";
 import { NotFound } from "./NotFound.tsx";
 import { RetryOnVersion } from "./RetryOnVersion.tsx";
+import { RunAlert, RunEvents } from "./RunAlert.tsx";
 import { type PreviousSuccess, RunCompare } from "./RunCompare.tsx";
 import type { Insight } from "./Runs.tsx";
 import {
@@ -501,18 +502,8 @@ function ScriptRunPage({ root, link, id }: { root: string; link: string; id: str
                 ))}
               </section>
             ) : null}
-            {run.alert?.handlerRunId ? (
-              <Link to={`${link}/runs/${String(run.alert.handlerRunId)}`} className="text-meta">
-                The failure handler's run
-              </Link>
-            ) : null}
-            {run.alert?.suppressed && typeof run.alert.sameAs === "string" ? (
-              <p className="m-0 text-meta text-ink-muted">
-                No alert was sent: it is counted on{" "}
-                <Link to={`${link}/runs/${run.alert.sameAs}`}>the alert of an earlier failure</Link>
-                , sent less than ten minutes before.
-              </p>
-            ) : null}
+            <RunAlert alert={run.alert} link={link} />
+            {ended ? <RunEvents root={root} link={link} runId={run.id} /> : null}
           </aside>
         }
         second={
@@ -856,6 +847,11 @@ function FlowRunHeader({
           </>
         }
       />
+      {run.alert ? (
+        <div className="mt-4 flex flex-col gap-1.5">
+          <RunAlert alert={run.alert} link={link} />
+        </div>
+      ) : null}
       {finishedBadly ? (
         <div className="mt-4">
           <RunCompare

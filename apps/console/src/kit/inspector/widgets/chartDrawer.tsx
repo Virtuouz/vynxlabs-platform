@@ -10,7 +10,6 @@ import {
   DrawerGroup,
   DrawerRow,
   SegmentedControl,
-  TextField,
   type TileOption,
   TilePicker,
   ToggleRow,
@@ -39,6 +38,7 @@ import { BreakdownRow, MeasureRow } from "../measureControls.tsx";
 import { heading } from "../model.ts";
 import {
   ChoiceRow,
+  CompareAcross,
   ConfigToggle,
   type DrawerData,
   dateFilters,
@@ -490,34 +490,7 @@ export function ChartDisplay({ env, data }: SectionProps) {
             }
           />
         )}
-        {mark !== "pie" && config.axisTitles !== false
-          ? (["x", "y"] as const).map((axis) => (
-              <DrawerRow
-                key={axis}
-                label={axis === "x" ? "Along the bottom" : "Up the side"}
-                value={
-                  typeof config[axis] === "string" && config[axis] !== "" ? (
-                    (config[axis] as string)
-                  ) : (
-                    <span className="text-ink-muted">Named from the data</span>
-                  )
-                }
-                editorTitle={axis === "x" ? "Title along the bottom" : "Title up the side"}
-                editor={
-                  <TextField
-                    name={`${env.widget.id}-axis-${axis}`}
-                    label={axis === "x" ? "Along the bottom" : "Up the side"}
-                    required={false}
-                    maxLength={60}
-                    value={typeof config[axis] === "string" ? (config[axis] as string) : ""}
-                    onChange={(text) =>
-                      set(axis, text === "" ? undefined : text, "changing an axis title")
-                    }
-                  />
-                }
-              />
-            ))
-          : null}
+
         {mark === "pie" ||
         mark === "heatmap" ||
         groups.length > 1 ||
@@ -548,6 +521,7 @@ export function ChartDisplay({ env, data }: SectionProps) {
               )
             }
           />
+          {comparing ? <CompareAcross env={env} /> : null}
           {mark === "line" || mark === "area" ? (
             <>
               <ConfigToggle env={env} name="smooth" label="Smooth the line" />

@@ -313,3 +313,29 @@ test("a viewer who may not read the counts is not told nothing needs them, nor s
   expect(screen.queryByText("Nothing needs you here")).toBeNull();
   expect(screen.queryByText("A first run")).toBeNull();
 });
+
+const firstSteps = (): [number, unknown] => [
+  200,
+  { ...summary(0, 0), scripts: 0, flows: 0, everRan: false, version: null, workersOnline: 0 },
+];
+
+test("the first step does not say the instance starts workers where it starts none (GOV-23)", async () => {
+  routes[`GET ${root}/summary`] = firstSteps;
+  routes[`GET ${root}/triggers`] = () => [200, { items: [] }];
+  routes[`GET ${base}`] = () => [200, { name: "Acme", slug: "acme", managedWorkers: true }];
+  routes[`GET ${base}/managed-workers`] = () => [200, { state: "unavailable" }];
+  show(<Overview root={root} link={link} workspace={workspace} />);
+  await screen.findByText("A worker to run code");
+  await screen.findByText(/Start a worker with a credential/);
+  expect(screen.queryByText(/The instance starts workers for this tenant/)).toBeNull();
+  expect(screen.getByText(/0 of 4 done/)).toBeTruthy();
+});
+
+test("the first step says the instance starts workers where it does (GOV-23)", async () => {
+  routes[`GET ${root}/summary`] = firstSteps;
+  routes[`GET ${root}/triggers`] = () => [200, { items: [] }];
+  routes[`GET ${base}`] = () => [200, { name: "Acme", slug: "acme", managedWorkers: true }];
+  routes[`GET ${base}/managed-workers`] = () => [200, { state: "host" }];
+  show(<Overview root={root} link={link} workspace={workspace} />);
+  await screen.findByText(/1 of 4 done/);
+});

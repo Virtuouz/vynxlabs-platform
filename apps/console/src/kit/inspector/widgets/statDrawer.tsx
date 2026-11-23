@@ -10,6 +10,7 @@ import type { Env } from "../controls.tsx";
 import { HeadingGroup } from "../heading.tsx";
 import { MeasureRow } from "../measureControls.tsx";
 import {
+  CompareAcross,
   type DrawerData,
   dateFilters,
   NumbersRow,
@@ -114,6 +115,7 @@ export function StatDisplay({ env, data }: SectionProps) {
             )
           }
         />
+        {comparing ? <CompareAcross env={env} /> : null}
         {comparing ? (
           <DrawerBlock>
             <div className="grid grid-cols-2 gap-3">

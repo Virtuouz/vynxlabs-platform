@@ -35,6 +35,7 @@ import {
 } from "@xyflow/react";
 import { ago } from "../kit/format.ts";
 import { glide } from "../kit/motion.ts";
+import { listenChoices } from "../kit/platformEvents.ts";
 import "@xyflow/react/dist/style.css";
 import { Play, Plus, Redo2, TriangleAlert, Undo2 } from "lucide-react";
 import {
@@ -1853,7 +1854,7 @@ export function FlowEditor({
                       {(node.trigger as { type: string }).type === "event" ? (
                         <>
                           <EventStartFields
-                            events={eventOptions}
+                            events={listenChoices(eventOptions)}
                             event={(node.trigger as { event?: string }).event}
                             filter={(node.trigger as { filter?: string }).filter}
                             onEvent={(event) =>

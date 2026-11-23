@@ -144,6 +144,8 @@ export function brandingRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.public },
         schema: {
           summary: "The console's logo",
+          description:
+            "The image uploaded for the console's branding. The console draws its own mark when none was uploaded.",
           tags: ["instance"],
           produces: [...LOGO_TYPES],
           response: { 200: Type.Unknown({ description: "The image." }) },
@@ -171,6 +173,8 @@ export function brandingRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.instance("instance:write") },
         schema: {
           summary: "Remove the console's logo",
+          description:
+            "Takes away the uploaded image, so the console draws its own mark again. Audited.",
           tags: ["instance"],
           response: { 204: NoContent },
         },

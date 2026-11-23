@@ -771,3 +771,54 @@ test("a flow run is retried on a version chosen from the list, not only its own 
     bundleId: "b3",
   });
 });
+
+test("a script run says what its failure alert did, and what it published (OPS-MP9, OPS-MP10)", async () => {
+  routes[`GET ${root}/runs/r1`] = () => [
+    200,
+    {
+      ...scriptRun,
+      alert: {
+        handlerRunId: "h1",
+        handlerError: null,
+        notified: false,
+        notifyError: 'The connection "ops-chat" is not bound.',
+        repeats: 2,
+      },
+    },
+  ];
+  routes[`GET ${root}/events`] = (_body, url) => {
+    calls.push({ method: "EVENTS", url, body: undefined });
+    return [
+      200,
+      {
+        items: [{ id: "e9", name: "orders/placed", occurredAt: "2026-11-14T10:00:02.000Z" }],
+        next: null,
+      },
+    ];
+  };
+  show(<RunPage root={root} link={link} id="r1" />);
+  expect(await screen.findByText(/The failure notification was not sent/)).toBeTruthy();
+  expect(screen.getByText(/ops-chat/)).toBeTruthy();
+  expect(screen.getByText(/2 later failures were counted on this alert/)).toBeTruthy();
+  expect(href("The failure handler's run")).toContain(`${link}/runs/h1`);
+  const published = await screen.findByRole("link", { name: "orders/placed" });
+  expect(published.getAttribute("href")).toBe(`${link}/events?item=e9`);
+  expect(calls.some((one) => one.url.includes("/events?run=r1"))).toBe(true);
+});
+
+test("a script run that published nothing says so only once it has ended", async () => {
+  routes[`GET ${root}/events`] = () => [200, { items: [], next: null }];
+  show(<RunPage root={root} link={link} id="r1" />);
+  expect(await screen.findByText("It published no events.")).toBeTruthy();
+});
+
+test("a flow run says that its failure handler failed to start, and that a notification is waiting", async () => {
+  routes[`GET ${root}/flow-runs/f2`] = () => [
+    200,
+    { ...flowRun, alert: { handlerError: "The script is not deployed.", notified: null } },
+  ];
+  show(<RunPage root={root} link={link} id="f2" />);
+  expect(await screen.findByText(/The failure handler did not start/)).toBeTruthy();
+  expect(screen.getByText(/The script is not deployed\./)).toBeTruthy();
+  expect(screen.getByText(/waiting for a worker to post it/)).toBeTruthy();
+});

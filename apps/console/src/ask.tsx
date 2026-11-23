@@ -7,6 +7,7 @@ import {
   ToastProvider,
   type Toasts,
   TooltipProvider,
+  setFailureExplainer,
   useDialogs,
   useToast,
 } from "@volvel/ui";
@@ -77,6 +78,25 @@ export const ask: Dialogs = {
  * server's request ID, which whoever runs the instance can look up.
  */
 export function failureText(error: unknown): string {
+  const said = failureWords(error);
+  if (error instanceof ApiError && isErrorCode(error.code)) explainable.set(said, error.code);
+  // A short list: only what was just shown can be asked about.
+  if (explainable.size > 40) explainable.delete(explainable.keys().next().value as string);
+  return said;
+}
+
+/** The code of each failure whose words were just made, so a notice of those words can lead to what the code means. */
+const explainable = new Map<string, string>();
+
+// A failure shown inside a dialog says the same as the one a toast would, and leads on in the same way.
+setFailureExplainer((words) => {
+  const code = explainable.get(words);
+  return code
+    ? { label: "What does this mean?", onClick: () => openHelp(`errors#${code}`) }
+    : undefined;
+});
+
+function failureWords(error: unknown): string {
   // Whatever was thrown (a string, an object with no message, nothing at all), a person is told something.
   if (typeof error === "string" && error.trim()) return error.trim();
   const failure = (error ?? {}) as Partial<ApiError> & Error;

@@ -56,8 +56,10 @@ describe("a served site at 390 px", () => {
     expect(DOCS_CSS).not.toMatch(/\.finder \.chips \{[^}]*overflow-x/);
   });
 
-  test("a breadcrumb that wraps keeps each separator with the crumb after it", () => {
+  test("a breadcrumb that wraps never begins a line with a separator", () => {
     expect(DOCS_CSS).toMatch(/\.crumbs li \{ display: flex;/);
+    expect(DOCS_CSS).toContain(".crumbs li:not(:last-child)::after");
+    expect(DOCS_CSS).not.toContain(".crumbs li + li::before");
   });
 });
 

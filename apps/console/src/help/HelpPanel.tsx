@@ -1,5 +1,6 @@
 import type { Manifest, Marked, PageFile, PageHit } from "@volvel/docs-engine";
-import { redirectedPath, resolveAsset, resolveLink } from "@volvel/docs-engine";
+import { redirectedPath, resolveAsset, resolveLink, trailOf } from "@volvel/docs-engine";
+import { splitCode } from "@volvel/markup";
 import { Button, CheckboxField, Doc, Notice, Skeleton } from "@volvel/ui";
 import {
   ArrowLeft,
@@ -98,6 +99,10 @@ export function HelpPanel({
   const ready = manifest?.state === "ready" ? manifest.value : undefined;
   const shown = ready
     ? pageFor(ready, target ?? topic, moves?.state === "ready" ? moves.value : undefined)
+    : undefined;
+  // The screen's own page, for when what was asked for is not there.
+  const ownPage = ready
+    ? pageFor(ready, topic, moves?.state === "ready" ? moves.value : undefined)
     : undefined;
   // Set by whatever moves the reader to another page here, so that the page's heading takes focus
   // when it is shown. Another screen's help appearing behind the reader is not a move.
@@ -272,6 +277,14 @@ export function HelpPanel({
         ) : query.trim() !== "" ? (
           <Results
             hits={hits}
+            crumb={(path) =>
+              ready
+                ? trailOf(ready.nav, path)
+                    .filter((folder) => folder.id !== "")
+                    .map((folder) => folder.title)
+                    .join(" › ")
+                : ""
+            }
             onOpen={(path) => {
               setQuery("");
               go(path);
@@ -285,10 +298,25 @@ export function HelpPanel({
           </div>
         ) : !shown || !page ? (
           <div className="flex flex-col items-start gap-3">
-            <p className="m-0 text-ink-muted">There is no help for this screen yet.</p>
-            <Button size="small" onClick={() => openHelp("index")}>
-              Browse the help
-            </Button>
+            {target !== undefined ? (
+              // An address or an old link asked for a page this build does not have.
+              <p className="m-0 text-ink-muted">
+                The help has no page called “{target}”.
+                {ownPage ? " This screen's own page is still there." : ""}
+              </p>
+            ) : (
+              <p className="m-0 text-ink-muted">There is no help for this screen yet.</p>
+            )}
+            <div className="flex flex-wrap gap-2">
+              {target !== undefined && ownPage ? (
+                <Button size="small" onClick={() => showPageHelp()}>
+                  Help for this screen
+                </Button>
+              ) : null}
+              <Button size="small" onClick={() => openHelp("index")}>
+                Browse the help
+              </Button>
+            </div>
           </div>
         ) : page.state === "failed" ? (
           <Notice tone="danger">
@@ -302,7 +330,6 @@ export function HelpPanel({
                   {setting.trail.map((crumb, at) => (
                     // biome-ignore lint/suspicious/noArrayIndexKey: a trail is a fixed run of one page
                     <li key={`${crumb.title}:${at}`} className="flex min-w-0 items-center gap-1">
-                      {at > 0 ? <ChevronRight aria-hidden="true" size={14} /> : null}
                       {crumb.path ? (
                         <a
                           href={`?help=${encodeURIComponent(crumb.path)}`}
@@ -323,6 +350,10 @@ export function HelpPanel({
                           {crumb.title}
                         </span>
                       )}
+                      {/* The separator stays with the crumb before it, so a line never begins with one. */}
+                      {at < setting.trail.length - 1 ? (
+                        <ChevronRight aria-hidden="true" size={14} className="shrink-0" />
+                      ) : null}
                     </li>
                   ))}
                 </ol>
@@ -507,9 +538,12 @@ function PagerLink({
 
 function Results({
   hits,
+  crumb,
   onOpen,
 }: {
   hits: Loaded<PageHit[]> | undefined;
+  /** Where a page is: its collection and folders, so that pages of one name in two places differ. */
+  crumb: (path: string) => string;
   /** A page's path, with `#heading` when a place on it was chosen. */
   onOpen: (path: string) => void;
 }) {
@@ -537,8 +571,23 @@ function Results({
             <span className="font-medium">
               <Words words={hit.title} />
             </span>
+            {crumb(hit.path) ? (
+              <span className="text-label text-ink-subtle">{crumb(hit.path)}</span>
+            ) : null}
             {hit.description ? (
-              <span className="text-meta text-ink-muted">{hit.description}</span>
+              <span className="text-meta text-ink-muted">
+                {splitCode(hit.description).map((part, at) =>
+                  part.code ? (
+                    // biome-ignore lint/suspicious/noArrayIndexKey: the parts are a fixed run of one description
+                    <code key={at} className="font-mono text-code-sm">
+                      {part.text}
+                    </code>
+                  ) : (
+                    // biome-ignore lint/suspicious/noArrayIndexKey: the parts are a fixed run of one description
+                    <span key={at}>{part.text}</span>
+                  ),
+                )}
+              </span>
             ) : null}
           </button>
           {hit.places.length > 0 ? (

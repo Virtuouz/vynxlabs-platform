@@ -151,7 +151,7 @@ main { min-width: 0; padding: 20px 18px 64px; }
 .crumbs a { color: inherit; text-decoration: none; }
 .crumbs a:hover { color: var(--vx-ink); }
 .crumbs li { display: flex; align-items: center; min-width: 0; }
-.crumbs li + li::before { content: ""; display: inline-block; flex: none; width: 6px; height: 6px; margin-right: 8px; border-top: 1.5px solid currentColor; border-right: 1.5px solid currentColor; transform: rotate(45deg) translateY(-2px); opacity: 0.7; }
+.crumbs li:not(:last-child)::after { content: ""; display: inline-block; flex: none; width: 6px; height: 6px; margin: 0 4px 0 10px; border-top: 1.5px solid currentColor; border-right: 1.5px solid currentColor; transform: rotate(45deg) translateY(-2px); opacity: 0.7; }
 .eyebrow { margin: 0 0 6px; font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--vx-action); }
 .lead h1 { margin: 0 0 8px; font-size: 34px; line-height: 1.15; letter-spacing: -0.02em; }
 .lead > p { margin: 0; color: var(--vx-ink-muted); font-size: 18px; }

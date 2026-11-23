@@ -6,6 +6,7 @@ import {
   relatedTo,
   typeCardsOf,
 } from "@volvel/docs-engine";
+import { Panel } from "@volvel/ui";
 
 /**
  * What a served page draws around its words when the site has types: the eyebrow over the title,
@@ -46,10 +47,7 @@ export function ServedAfter({
           <ul className="m-0 grid list-none gap-3 p-0 sm:grid-cols-2">
             {cards.map((card) => (
               <li key={card.type} className="min-w-0">
-                <section
-                  className="flex h-full flex-col gap-1 rounded-panel border border-line bg-surface p-3"
-                  data-type={card.type}
-                >
+                <Panel className="flex h-full flex-col gap-1 p-3" data-type={card.type}>
                   <h4 className="m-0 text-body font-medium">
                     <a className="text-ink hover:text-action" href={address(card.first.path)}>
                       {card.title}
@@ -59,7 +57,7 @@ export function ServedAfter({
                   <a className="text-action text-body-sm" href={address(card.first.path)}>
                     {card.count} {card.count === 1 ? "page" : "pages"} →
                   </a>
-                </section>
+                </Panel>
               </li>
             ))}
           </ul>

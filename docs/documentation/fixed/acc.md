@@ -20,22 +20,43 @@ Test file for every row below: `apps/control-plane/src/access-guards.test.ts` (i
 - **D3**: `node dist/main.js recover-operator <email>` (`kernel/bootstrap.ts` `recoverOperator`): enables, binds `operator_admin`, ends sessions, prints a new password once, audited as `operator.recovered`. Test: "a command run on the machine ...".
 - **API-19 (D14)**: `signed-in` routes refuse a service account's key unless declared `access.signedInOrKey` (now `GET /me` and the batch route). Test: "a route about a person's own account refuses a service account's key".
 
+## Later commits in this lane
+
+- **ACC-08, other half**: migration `0086_acc_key_makers.sql` adds `api_key.created_by` and `tenant_release.asked_through` (no reference: the member may be gone). `releases.ts` `keyMaker` records who made the key a change was asked with; `decideRelease` treats that person as the asker (409 `own_release`). Test: "whoever made the key a change was asked with does not approve it".
+- **Disabling at the instance is not refused for a tenant's sake** (owner's correction): `setMemberDisabled` keeps only the last-operator guard. `PATCH /members/:id` answers `tenantsWithoutAdmin: [{id, name}]`, the `member.disabled` audit entry carries the same, and the console (`screens/Instance.tsx`) says it in the confirmation and again by name after. Tenant-level changes (suspend, remove, unbind, a tenant provider's push, releases) still refuse; an instance provider's push is guarded for the last operator only. Tests: "it is allowed, and the answer and the audit entry name the tenants".
+- **INS-02 rest**: `endSessions` also deletes unfinished `sso_state` rows of the person and closes their open event streams (`endStreamsOf`, this replica only; other replicas' streams end at their next reconnect, as `stream.ts` already says rights are read once). Test: "their open event streams and unfinished sign-ins end with it".
+- **`explainAccess`** (`routes/access.ts`): a binding to anyone is listed as the source of app-facing permissions only. Test: "the explanation of someone's access does not credit ...".
+- **ACC-05, ACC-06**: `withUniqueBindingKeys` in `kernel/tenant/releases.ts` gives each binding a key that nobody else has (a short hash of what it gives to whom is added where two would share a name or one was cut at 63); `rollbackAsks` reads a stored snapshot by identity and re-keys it. Test: "removing one binding does not remove another ...". Siblings looked at: `previewSteps`, `allowDelete`, `put-absent` (all read the keys of `currentAccess`, now unique); the CLI `pull` (`packages/cli/src/access.ts`) writes what `GET /access` returns, so it needs no change; `renderTenantFiles` unchanged. Pulled file names for a binding whose name was shared or cut change once.
+- **ACC-04**: `grants`, `setPermission`, `setEveryone` in `@volvel/manifest` (`permissions.ts`); the control plane's `grants` is now the manifest's. The console picker, Summary, "In short" and `Access.tsx` use them: a wildcard never gives an explicit permission, taking a box away writes a wildcard out as only what it gave, "Read/Change everything" touches only its own wildcard, kinds only the instance checks are not offered. Tests: `packages/manifest/src/permissions.test.ts`, `apps/console/src/Roles.test.tsx`.
+
+## Verified failing first
+
+The GOV-04 and D3 tests, and every test in `access-guards.test.ts`, were run in a detached worktree at 8d4fa3e (removed after) and failed for the rows' reasons: GOV-04 answered 201 where 409 is wanted; D3 `recoverOperator is not a function`; the two-at-once removal answered 204 and 204.
+
 ## Not done
 
-- ACC-04 (wildcard picker in console and `@volvel/manifest`), ACC-05 and ACC-06 (binding keys in releases, rendered files): not started, out of budget in this lane.
-- Console: Operators screen should show Disabled from `memberDisabled`; 409 copy from the guards is plain text from the server.
+- Pending single sign-on codes of an *end user* are not touched (only a member's).
+- Streams on other replicas.
 
 ## Found
 
-- Disabling a member now also refuses when they are the last admin of any tenant they belong to (new behaviour from the guard; say so in the docs for `PATCH /members/:id`).
+- Disabling a member used to leave their pending sign-in codes and event streams; fixed here (INS-02).
 
 ## Lines for docs and changelog
 
-- `PATCH /members/:id`, `DELETE /bindings/:id`, tenant member, group member and binding routes, releases and SCIM answer 409 when they would take the last tenant admin or the last operator.
-- New command `recover-operator <email>`.
-- A service account's key is refused on routes about a person's own account.
-- No migration. No schema or contract change except `GET /bindings` `memberDisabled` (API only).
+- `PATCH /members/:id` answers `tenantsWithoutAdmin`; an operator disable is never refused for a tenant, only for the last operator.
+- Tenant-level removals, suspensions, unbinds, releases and a tenant provider's push answer 409 when they would take the last person who can change the tenant's access.
+- New command `node dist/main.js recover-operator <email>`.
+- A service account's key is refused on routes about a person's own account (`GET /me` and batch excepted).
+- Migration `0086_acc_key_makers.sql` (integrator renumbers and locks).
+- A role's `*` never gives an explicit permission, and the role editor no longer writes one in.
 
-## Screens to walk
+## Polish gate (what people see)
 
-Operators (instance), Members, Groups, Approval toggle in Access, release decision. Polish gate answers for those are not given: no browser walk was run.
+Screens to walk, at 1440, 768 and 390 px, light and dark, by keyboard, with a reload, on a Fernhill instance: Instance > Members (disable confirm and the notice after), Instance > Operators, Roles (picker, inspector "In short", Summary column), Access (a person's permissions), tenant Members and Groups when a removal is refused, the approval switch in Access. **No browser walk has been run in this lane**, so none of the answers below is confirmed by a walk.
+
+- **States.** Disable confirm: the text now says a tenant left without an admin is named afterward; after: a success notice listing tenant names (long lists wrap, no truncation). Refusals from the guards are plain 409 messages shown by the existing error notice; each says what is missing and who can give it ("Give someone else the tenant admin role first", "Make someone else an operator first"). The Operators list still does not show Disabled (`memberDisabled` is served, the screen is not changed): left, see below.
+- **Lifecycle.** Disable ends sessions, grants, streams and pending codes; enable does not bring them back; the way back for a lost operator is the command. Removing an operator ends their open grants.
+- **Keyboard.** Role picker boxes are unchanged (native checkboxes in a fieldset); no new control was added.
+- **Copy.** American spelling, "flow" not used, no banned words; the wildcard copy now says "except what is given by name".
+- **Left**: the Operators screen showing Disabled; the approval switch shows the server's 409 text only.

@@ -583,6 +583,10 @@ const POLICY_NAMES = ["rows", "rows_read", "rows_insert", "rows_update", "rows_d
  */
 const CLAIM = sql`(select vx.claim())`;
 const PRINCIPAL = sql`(${CLAIM} ->> 'principal')`;
+/** Who is asking, when someone is: no one is nobody's, so a request from no person owns no row. */
+const SOMEONE = sql`coalesce(${PRINCIPAL}, '') <> ''`;
+/** What the database writes for `SOMEONE` in a stored policy, to find the policies compiled before it. */
+const SOMEONE_STORED = "->> 'principal'::text), ''::text) <> ''::text";
 const GROUPS = sql`(select jsonb_array_elements_text(coalesce(${CLAIM} -> 'groups', '[]'::jsonb)))`;
 const attribute = (name: string) => sql`(${CLAIM} -> 'attrs' ->> ${sql.lit(name)})`;
 
@@ -616,7 +620,7 @@ async function setPolicy(
     // A caller sees and writes a row when it is theirs, or when they may see every row.
     const allowed = sql`
       ${everything}
-      or ${await physical(policy.column)}::text = ${PRINCIPAL}
+      or (${SOMEONE} and ${await physical(policy.column)}::text = ${PRINCIPAL})
     `;
     await sql`
       create policy rows on ${target} for all to ${sql.id(role)}
@@ -629,10 +633,12 @@ async function setPolicy(
       const column = await physical(when.column);
       if ("is" in when) {
         // No one is nobody's: a request from no person matches no row.
-        return sql`(${PRINCIPAL} <> '' and ${column}::text = ${PRINCIPAL})`;
+        return sql`(${SOMEONE} and ${column}::text = ${PRINCIPAL})`;
       }
       if ("in" in when) return sql`${column}::text in ${GROUPS}`;
-      return sql`${column}::text = ${attribute(when.equals.attribute)}`;
+      // An attribute no one has is empty, and equals no row's empty text.
+      const wanted = attribute(when.equals.attribute);
+      return sql`(coalesce(${wanted}, '') <> '' and ${column}::text = ${wanted})`;
     };
     const any = async (rules: RowRule[]) =>
       rules.length === 0 ? sql`false` : sql.join(await Promise.all(rules.map(clause)), sql` or `);
@@ -670,16 +676,24 @@ async function setPolicy(
  * opened: after it, a policy trusts only the signed claim.
  */
 export async function upgradePolicies(owner: Db, role: string): Promise<number> {
-  const old = await sql<{ schema: string; table: string }>`
-    select distinct schemaname as schema, tablename as "table" from pg_policies
+  // Also those compiled before a request from no person was kept from owning a row: they
+  // read who is asking, and lack the check that someone is.
+  const old = await sql<{ schema: string; table: string; legacy: boolean }>`
+    select schemaname as schema, tablename as "table",
+      bool_or(coalesce(qual, '') like '%current_setting(''app.%'
+        or coalesce(with_check, '') like '%current_setting(''app.%') as legacy
+    from pg_policies
     where schemaname ~ '^ws_[0-9a-f]{32}$'
-      and (coalesce(qual, '') like '%current_setting(''app.%'
+    group by schemaname, tablename
+    having bool_or(coalesce(qual, '') like '%current_setting(''app.%'
         or coalesce(with_check, '') like '%current_setting(''app.%')
+      or (bool_or(coalesce(qual, '') like '%vx.claim%')
+        and not bool_or(coalesce(qual, '') like ${`%${SOMEONE_STORED}%`}))
   `.execute(owner);
   if (old.rows.length === 0) return 0;
   let done = 0;
   await owner.transaction().execute(async (trx) => {
-    for (const { schema, table } of old.rows) {
+    for (const { schema, table, legacy } of old.rows) {
       const hex = schema.slice(3);
       const workspaceId = `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
       const row = await trx
@@ -689,6 +703,12 @@ export async function upgradePolicies(owner: Db, role: string): Promise<number> 
         .where("physical_name", "=", table)
         .executeTakeFirst();
       if (!row) continue;
+      const kept = row.policy as TablePolicy;
+      const asksWho =
+        kept.type === "owner" ||
+        (kept.type === "rules" &&
+          kept.rules.some((rule) => "is" in rule.when || "equals" in rule.when));
+      if (!legacy && !asksWho) continue;
       // A retired table is read by nobody, and its policy may name a column that is gone.
       // It is then left with none, which lets nothing through, and is given its policy
       // again when the table comes back.

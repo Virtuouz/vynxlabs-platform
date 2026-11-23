@@ -460,6 +460,29 @@ const COMPARE: Record<string, string> = {
 };
 const MAX_CONDITIONS = 50;
 
+/**
+ * A time the API gives is in milliseconds, and the column may hold more (a row made by the
+ * database itself has microseconds). A time therefore stands for its whole millisecond.
+ */
+function compareTime(reference: ReturnType<typeof sql.ref>, op: string, value: string) {
+  const from = sql`${value}::timestamptz`;
+  const to = sql`(${value}::timestamptz + interval '1 millisecond')`;
+  switch (op) {
+    case "eq":
+      return sql`(${reference} >= ${from} and ${reference} < ${to})`;
+    case "ne":
+      return sql`(${reference} < ${from} or ${reference} >= ${to})`;
+    case "gt":
+      return sql`${reference} >= ${to}`;
+    case "gte":
+      return sql`${reference} >= ${from}`;
+    case "lt":
+      return sql`${reference} < ${from}`;
+    default:
+      return sql`${reference} < ${to}`;
+  }
+}
+
 function compileFilter(
   target: RowTarget,
   filter: unknown,
@@ -519,6 +542,11 @@ function compileFilter(
   if (op === "in") {
     if (!Array.isArray(node.value) || node.value.length === 0 || node.value.length > 200)
       throw invalid(`"in" needs a list of 1 to 200 values`);
+    if (meta.type === "timestamp")
+      return sql`(${sql.join(
+        node.value.map((item) => compareTime(reference, "eq", value(item) as string)),
+        sql` or `,
+      )})`;
     return sql`${reference} in (${sql.join(node.value.map((item) => sql`${value(item)}`))})`;
   }
   const operator = COMPARE[op];
@@ -532,6 +560,7 @@ function compileFilter(
     throw invalid(`"${op}" needs a value`);
   }
   if (meta.type === "json") throw invalid("a json column can only be tested with is_null");
+  if (meta.type === "timestamp") return compareTime(reference, op, value(node.value) as string);
   return sql`${reference} ${sql.raw(operator)} ${value(node.value)}`;
 }
 
@@ -556,6 +585,9 @@ export interface FindQuery {
  * the table has a key, and is sorted by one column at most.
  */
 const keyset = (target: RowTarget, sort: string[]) => target.key !== null && sort.length <= 1;
+
+/** The sorted time as the database holds it, to the microsecond, beside each row of a page. */
+const SORT_TEXT = "__sort_text";
 
 export async function findRows(db: AnyDb, target: RowTarget, query: FindQuery = {}) {
   const limit = Math.min(Math.max(query.limit ?? 50, 1), 1000);
@@ -598,6 +630,12 @@ export async function findRows(db: AnyDb, target: RowTarget, query: FindQuery = 
       const raw = query.after[0];
       const value = (() => {
         try {
+          // A time is carried as the database wrote it, to the microsecond: a cursor in
+          // milliseconds would put the next page before the rows it should follow.
+          if (by.meta.type === "timestamp" && typeof raw === "string") {
+            if (Number.isNaN(Date.parse(raw))) throw new Invalid("a time");
+            return sql`${raw}::timestamptz`;
+          }
           return toDatabase(by.meta, raw);
         } catch {
           throw invalid();
@@ -610,13 +648,16 @@ export async function findRows(db: AnyDb, target: RowTarget, query: FindQuery = 
               or (${ref} = ${value} and ${key} > ${keyValue}) or ${ref} is null)`;
     }
   }
+  const timed = byKeyset && sorted[0]?.meta.type === "timestamp" ? sorted[0].meta : undefined;
   const result = await sql<Row>`
-    select ${selectList(target)} from ${sql.id(target.schema, target.table)}
+    select ${selectList(target)}${timed ? sql`, ${sql.ref(timed.physicalName)}::text as ${sql.id(SORT_TEXT)}` : sql``}
+    from ${sql.id(target.schema, target.table)}
     where ${where} and ${after}
     ${order.length > 0 ? sql`order by ${sql.join(order)}` : sql``}
     limit ${limit + 1} ${query.after && byKeyset ? sql`` : sql`offset ${offset}`}
   `.execute(db);
   const rows = result.rows.slice(0, limit).map((row) => shape(target, row));
+  const lastText = result.rows[limit - 1]?.[SORT_TEXT] ?? null;
   const more = result.rows.length > limit;
   const lastRow = rows.at(-1);
   return {
@@ -625,7 +666,12 @@ export async function findRows(db: AnyDb, target: RowTarget, query: FindQuery = 
     // The next page starts after this one's last row, when the table and its sort allow it.
     nextAfter:
       more && byKeyset && keyMeta && lastRow
-        ? [...(sorted[0] ? [lastRow[sorted[0].meta.name] ?? null] : []), lastRow[keyMeta.name]]
+        ? [
+            ...(sorted[0]
+              ? [timed ? (lastText ?? null) : (lastRow[sorted[0].meta.name] ?? null)]
+              : []),
+            lastRow[keyMeta.name],
+          ]
         : null,
   };
 }

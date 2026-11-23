@@ -791,7 +791,7 @@ export function listening(row: Pick<EventRow, "listeners" | "pausedListeners">):
 const SOURCE: Record<string, string> = {
   script: "A script",
   api: "The API",
-  platform: "The platform",
+  platform: "Volvel",
 };
 
 /** What was published, newest first, with what each one started. */

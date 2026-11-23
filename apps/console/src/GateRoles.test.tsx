@@ -5,7 +5,7 @@ import type { ReactElement } from "react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { BUILTIN_ROLES } from "./builtinRoles.ts";
 import { Alerts } from "./screens/Alerts.tsx";
-import { Sources, Tables, TableView } from "./screens/Data.tsx";
+import { SourceView, Sources, Tables, TableView } from "./screens/Data.tsx";
 import { ConnectionGroups, Scripts } from "./screens/Execution.tsx";
 import { Files } from "./screens/Files.tsx";
 import { Flows } from "./screens/Flows.tsx";
@@ -180,6 +180,38 @@ const FAMILIES: Family[] = [
     scopes: WORKSPACE,
     serves: (has) => has("resource:write"),
     draw: () => <Sources root={root} link={link} />,
+  },
+  {
+    family: "Data sources: Test, Change",
+    control: /^(Test|Change)$/,
+    route: "POST data-source-checks, PUT data-source-bindings (data_source:write at the workspace)",
+    scopes: WORKSPACE,
+    serves: (has) => has("data_source:write"),
+    draw: () => <Sources root={root} link={link} />,
+  },
+  {
+    family: "Data sources: Remove from here",
+    control: "Remove from here",
+    route: "DELETE data-source-bindings (data_source:write at the workspace)",
+    scopes: WORKSPACE,
+    serves: (has) => has("data_source:write"),
+    draw: () => <Sources root={root} link={link} />,
+  },
+  {
+    family: "Source page: Test, Change",
+    control: /^(Test|Change)$/,
+    route: "POST data-source-checks, PUT data-source-bindings (data_source:write at the workspace)",
+    scopes: WORKSPACE,
+    serves: (has) => has("data_source:write"),
+    draw: () => <SourceView root={root} path="erp" link={link} />,
+  },
+  {
+    family: "Source page: Remove from here",
+    control: "Remove from here",
+    route: "DELETE data-source-bindings (data_source:write at the workspace)",
+    scopes: WORKSPACE,
+    serves: (has) => has("data_source:write"),
+    draw: () => <SourceView root={root} path="erp" link={link} />,
   },
   {
     family: "Runs list: Run again",
@@ -404,6 +436,21 @@ function serve(role: string, scope: Scope) {
         ],
       });
     }
+    if (path === `${root}/data-source-bindings`) {
+      return body({
+        items: [
+          {
+            path: "erp",
+            description: "The ERP",
+            defined: true,
+            bound: true,
+            hasPassword: true,
+            config: { host: "db.test", port: 5432, database: "erp", user: "u", ssl: true },
+            health: null,
+          },
+        ],
+      });
+    }
     if (path === `${root}/connection-groups`) {
       return body({
         items: [
@@ -562,3 +609,22 @@ for (const family of FAMILIES) {
     }
   });
 }
+
+describe("Data sources: Edit, a link to the declaration", () => {
+  for (const [role, allowed] of [
+    ["viewer", false],
+    ["tenant_admin", true],
+  ] as const) {
+    test(`${allowed ? "is a link for" : "is switched off for"} ${role}`, async () => {
+      const answer = serve(role, "tenant");
+      vi.stubGlobal("fetch", async (address: string) => answer(address));
+      show(<Sources root={root} link={link} />);
+      const edit = await screen.findByLabelText("Edit erp");
+      await settled();
+      const now = screen.getByLabelText("Edit erp");
+      expect(now.tagName === "A").toBe(allowed);
+      if (!allowed) expect(offered(now)).toBe(false);
+      void edit;
+    });
+  }
+});

@@ -16,6 +16,7 @@ import { badRequest, conflict, HttpError, notFound } from "../errors.js";
 import { bundleManifest } from "../execution/bundles.js";
 import { redactText, summarize } from "../execution/redact.js";
 import {
+  alreadyEnded,
   announceCanceled,
   cancelRun,
   MAX_TAGS,
@@ -1283,9 +1284,7 @@ export async function cancelFlowRun(
     .executeTakeFirst();
   if (!flowRun) throw notFound("The flow run");
   if (flowRun.status !== "running")
-    throw conflict(
-      `The flow run already ${flowRun.status === "succeeded" ? "succeeded" : flowRun.status}.`,
-    );
+    throw conflict(alreadyEnded("flow run", flowRun.status));
   await cancelFlowTree(kernel, trx, flowRunId);
   return flowRun;
 }

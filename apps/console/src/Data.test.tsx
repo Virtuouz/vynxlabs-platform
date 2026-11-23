@@ -1253,7 +1253,7 @@ test("WLK-09d: the buttons of a source's row wrap on a phone instead of widening
   show(<Sources root={root} link="/t/t1/workspaces/w1" />);
   const unbind = await screen.findByRole("button", { name: "Remove from here" });
   expect(unbind.parentElement?.className).toMatch(/flex-wrap/);
-  expect(unbind.parentElement?.className).toMatch(/max-w-/);
+  expect(unbind.parentElement?.className).toMatch(/max-sm:flex-col/);
 });
 
 test("WLK-09b: a retired table keeps its pill whole and says where it was managed", async () => {
@@ -2289,3 +2289,28 @@ test("m1fix: a table's description past 500 characters is refused at the field, 
   );
   expect(saved()).toBeUndefined();
 }, 20000);
+
+test("p31 fc: on a phone a source's buttons stack in one column instead of clipping the row", async () => {
+  routes[`GET /api/v1${root}/data-source-bindings`] = () => [
+    200,
+    {
+      items: [
+        {
+          path: "erp",
+          description: "The ERP",
+          bound: true,
+          defined: true,
+          config: { host: "erp.internal", database: "erp", user: "reader" },
+          hasPassword: true,
+          health: null,
+        },
+      ],
+    },
+  ];
+  show(<Sources root={root} link="/t/t1/workspaces/w1" />);
+  const test = await screen.findByRole("button", { name: "Test" });
+  for (const group of [test.parentElement, test.parentElement?.parentElement]) {
+    expect(group?.className).toContain("max-sm:flex-col");
+    expect(group?.className).toContain("max-sm:items-end");
+  }
+});

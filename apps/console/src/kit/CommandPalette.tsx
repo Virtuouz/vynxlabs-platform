@@ -409,11 +409,12 @@ export function CommandPalette({
           }));
       }
       if (picking === "flow") {
-        const flows = await api.get<{ items: { path: string; triggers: string[] }[] }>(
+        const flows = await api.get<{ items: { path: string; triggers: string[]; version?: number | null }[] }>(
           `${ws}/flows`,
         );
+        // Only what runs here can be started: a flow that is only a draft cannot yet.
         return flows.items
-          .filter((one) => one.triggers.includes("manual"))
+          .filter((one) => one.triggers.includes("manual") && one.version !== null)
           .map((one) => ({
             key: `pick-${one.path}`,
             label: one.path,

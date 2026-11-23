@@ -107,6 +107,14 @@ beforeEach(() => {
         ],
       });
     }
+    if (url.pathname.endsWith("/flows")) {
+      return json({
+        items: [
+          { path: "orders/intake", triggers: ["manual"], version: 3 },
+          { path: "orders/draft-only", triggers: ["manual"], version: null },
+        ],
+      });
+    }
     if (url.pathname.endsWith("/scripts")) {
       return json({ items: [{ path: "agent/find-client" }, { path: "orders/sync" }] });
     }
@@ -413,4 +421,14 @@ test("w-builder 1: the link of every kind of Recent item opens what it names", a
   // A run, script or flow, is its own page.
   expect(pageOf(T, named("flow_run", "r2"))).toBe(`${ws}/runs/r2`);
   expect(pageOf(T, named("run", "r1"))).toBe(`${ws}/runs/r1`);
+});
+
+test("p31 fc: Start flow offers only a flow that has been deployed, as Run script does", async () => {
+  palette();
+  const box = await screen.findByRole("combobox");
+  fireEvent.change(box, { target: { value: "start flow" } });
+  await screen.findAllByRole("option");
+  fireEvent.keyDown(box, { key: "Enter" });
+  await screen.findByText("orders/intake");
+  expect(screen.queryByText("orders/draft-only")).toBeNull();
 });

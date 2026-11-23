@@ -15,6 +15,23 @@ export interface BatchAnswer {
   }[];
   done: number;
   failed: number;
+  /** Items the server answered 409 to, that need nothing done: counted in neither of the others. */
+  left?: number;
+}
+
+/**
+ * A 409 to a cancel means the run has already ended: nothing was asked of it that is not true,
+ * so it is said to be left alone, not "not done".
+ */
+export function leftAlone(answer: BatchAnswer): BatchAnswer {
+  const left = answer.results.filter((one) => !one.ok && one.status === 409);
+  if (left.length === 0) return answer;
+  return {
+    results: answer.results.filter((one) => one.ok || one.status !== 409),
+    done: answer.done,
+    failed: answer.failed - left.length,
+    left: (answer.left ?? 0) + left.length,
+  };
 }
 
 /** The most items the server does in one batch (`apps/control-plane/src/routes/batch.ts`). */
@@ -36,6 +53,7 @@ export async function inSlices<T>(
     results: answers.flatMap((one) => one.results),
     done: answers.reduce((sum, one) => sum + one.done, 0),
     failed: answers.reduce((sum, one) => sum + one.failed, 0),
+    left: answers.reduce((sum, one) => sum + (one.left ?? 0), 0),
   };
 }
 
@@ -66,7 +84,7 @@ export function useBatch() {
       retry,
     }: {
       /** What the toast says when every item was done: "3 runs canceled." */
-      done: (count: number) => string;
+      done: (count: number, left: number) => string;
       /** What the dialog is called when some were not: "Canceling runs". */
       title: string;
       name?: (id: string) => string;
@@ -76,7 +94,7 @@ export function useBatch() {
     setBusy(true);
     try {
       const answer = await request();
-      if (answer.failed === 0) notify.success(done(answer.done));
+      if (answer.failed === 0) notify.success(done(answer.done, answer.left ?? 0));
       else setShown({ title, answer, name, retry });
       return answer;
     } catch (error) {
@@ -129,7 +147,8 @@ export function BatchResult({
     <Dialog open={open} onClose={onClose} title={title}>
       <div className="flex flex-col gap-3">
         <p className="m-0" role="status">
-          {answer.done} done, {answer.failed} not done.
+          {answer.done} done, {answer.failed} not done
+          {answer.left ? `, ${answer.left} left alone because they had finished` : ""}.
         </p>
         <ul className="m-0 flex max-h-80 list-none flex-col gap-2 overflow-y-auto p-0">
           {failed.map((result) => (

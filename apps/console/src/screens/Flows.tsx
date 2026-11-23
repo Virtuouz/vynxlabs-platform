@@ -94,7 +94,7 @@ export function Flows({
     <CollectionView<FlowRow>
       title="Flows"
       needs={{ base: root, permission: "resource:write", what: "this workspace's flows" }}
-      description="A flow is a graph of steps the platform runs in order, remembering where it is. It survives a restart."
+      description="A flow is a graph of steps Volvel runs in order, remembering where it is. It survives a restart."
       actions={
         editable ? (
           <Button variant="primary" onClick={() => navigate(`${link}/flows/new`)}>

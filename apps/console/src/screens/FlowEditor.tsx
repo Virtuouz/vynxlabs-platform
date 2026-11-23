@@ -168,7 +168,7 @@ const PALETTE: {
   {
     group: "Starts",
     label: "On a form",
-    hint: "When someone fills in a page the platform serves.",
+    hint: "When someone fills in a page Volvel serves.",
     base: "form",
     make: () => ({ type: "trigger", trigger: newForm() }),
   },

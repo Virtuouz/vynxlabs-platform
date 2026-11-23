@@ -543,3 +543,22 @@ test("WID-M10: switching a joined table off takes its columns out, and a table w
   show(<Harness start={listWidget()} definition={list as never} />);
   expect(panel().queryByText("Also from")).toBeNull();
 });
+
+test("p31 fc: switching a followed table off also takes its columns out of Display", async () => {
+  const start = listWidget();
+  start.config = {
+    ...(start.config ?? {}),
+    columns: [{ column: "number" }, { column: "customer.name" }, { column: "customer_city" }],
+  };
+  start.data = {
+    rows: {
+      source: {
+        visual: { table: "invoices", joins: ["customer"], columns: ["number", "customer.name"] },
+      },
+    },
+  };
+  show(<Harness start={start} definition={list as never} using={withCustomers} />);
+  fireEvent.click(panel().getByRole("button", { name: /Customers/ }));
+  expect(last().joins).toBeUndefined();
+  expect((written.at(-1) as { config?: { columns?: unknown } }).config?.columns).toEqual([{ column: "number" }]);
+});

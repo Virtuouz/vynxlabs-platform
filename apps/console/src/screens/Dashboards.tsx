@@ -553,11 +553,12 @@ export function DashboardView({
   };
   restoring.current = keep;
 
+  // Group names are said as written: only the words Volvel supplies begin a sentence in lower case.
   const audience = loaded.shared
-    ? "Everyone in this workspace"
+    ? "everyone in this workspace"
     : (loaded.sharedWith ?? []).length > 0
       ? (loaded.sharedWith ?? []).map((group) => group.name).join(", ")
-      : "Only you";
+      : "only you";
   const asking = body.widgets
     .filter((one) => Object.keys(definitionOf(one.type)?.data ?? {}).length > 0)
     .map((one) => one.id);
@@ -763,7 +764,7 @@ export function DashboardView({
     loaded.kind === "resource"
       ? `Kept by the workspace, at ${loaded.path}. You see the rows you may read.`
       : mine
-        ? `Yours. Seen by: ${audience.toLowerCase()}.`
+        ? `Yours. Seen by: ${audience}.`
         : `${loaded.owner}'s, shared with you. You see the rows you may read.`;
   const stand = resource?.stand;
   return (

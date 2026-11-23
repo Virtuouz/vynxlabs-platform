@@ -73,7 +73,7 @@ const CREDENTIAL: Record<string, { label: string; hint: string }> = {
   smtp: { label: "Password", hint: "The mail server's password for the user above." },
   oauth2: {
     label: "Client secret",
-    hint: "From the app you registered with the provider. Kept on the platform: workers never receive it.",
+    hint: "From the app you registered with the provider. Kept by Volvel: workers never receive it.",
   },
 };
 

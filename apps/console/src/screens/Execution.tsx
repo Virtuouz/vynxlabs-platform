@@ -1214,7 +1214,7 @@ export function QueuePanel({ base }: { base: string }) {
           />
           {tasks > 0 ? (
             <p className="m-0 text-meta text-ink-muted">
-              {tasks} task{tasks === 1 ? "" : "s"} for the platform waiting too: reading schemas,
+              {tasks} task{tasks === 1 ? "" : "s"} for Volvel waiting too: reading schemas,
               sending alerts, trying connections.
             </p>
           ) : null}
@@ -1467,7 +1467,7 @@ export function Workers({ base }: { base: string }) {
         }>
           as="section"
           title="Credentials for standalone workers"
-          description={`A worker outside the platform signs in with one of these: volvel-worker --url ${instanceUrl} --token-stdin, with the credential on its standard input. The full command is shown when a credential is made.`}
+          description={`A worker outside Volvel signs in with one of these: volvel-worker --url ${instanceUrl} --token-stdin, with the credential on its standard input. The full command is shown when a credential is made.`}
           path={`${base}/worker-credentials`}
           rowKey={(row) => row.id}
           columns={[

@@ -781,3 +781,12 @@ test("a dashboard does not read on its timer while the tab is hidden, and reads 
     vi.useRealTimers();
   }
 }, 30_000);
+
+test("p31 fc: a dashboard shared with a group says the group's name as it is written", async () => {
+  routes[`GET ${api}/dashboards/d1`] = () => [
+    200,
+    { ...mine, shared: false, sharedWith: [{ id: "g1", name: "Finance Leads" }] },
+  ];
+  show(<DashboardView root={root} link="/t/t1/workspaces/w1" id="d1" />);
+  await screen.findByText("Yours. Seen by: Finance Leads.");
+});

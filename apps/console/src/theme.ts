@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { readPreference, usePreference } from "./prefs.ts";
 
 const INSTANCE_THEME = "/api/v1/instance/theme.css";
@@ -43,4 +43,35 @@ export function useThemeChoice(): [ThemeChoice, (next: ThemeChoice) => void] {
   const choice: ThemeChoice = kept === "light" || kept === "dark" ? kept : "system";
   useEffect(() => applyThemeChoice(choice), [choice]);
   return [choice, (next) => keep(next === "system" ? undefined : next)];
+}
+
+/** Whether the console is drawn light or dark now: the person's choice, else the browser's. */
+export function currentLook(): "light" | "dark" {
+  const chosen = document.documentElement.dataset.theme;
+  if (chosen === "light" || chosen === "dark") return chosen;
+  return typeof matchMedia === "function" && matchMedia("(prefers-color-scheme: dark)").matches
+    ? "dark"
+    : "light";
+}
+
+/** The look of the console, kept up to date as the person or the browser changes it. */
+export function useLook(): "light" | "dark" {
+  const [look, setLook] = useState(currentLook);
+  useEffect(() => {
+    const update = () => setLook(currentLook());
+    update();
+    const watching = new MutationObserver(update);
+    watching.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["data-theme"],
+    });
+    const query =
+      typeof matchMedia === "function" ? matchMedia("(prefers-color-scheme: dark)") : null;
+    query?.addEventListener?.("change", update);
+    return () => {
+      watching.disconnect();
+      query?.removeEventListener?.("change", update);
+    };
+  }, []);
+  return look;
 }

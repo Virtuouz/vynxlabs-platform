@@ -25,6 +25,12 @@ export interface Manifest {
    * shows one that is not here shows what the picture would have been of.
    */
   screenshots?: string[];
+  /**
+   * The file of each of those, by look: `{ "console/table-help": { light: "…png", dark: "…png" } }`,
+   * under `assets/screenshots/`. The names carry a hash of the picture, so a file never changes.
+   * A build before these were kept has none, and a page then shows its words.
+   */
+  screenshotFiles?: Record<string, Record<string, string>>;
 }
 
 /** What is written for one page: its tree, and what its frontmatter said. */

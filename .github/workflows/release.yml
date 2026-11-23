@@ -22,8 +22,68 @@ permissions:
   contents: read
 
 jobs:
+  screenshots:
+    name: The documentation's pictures
+    # Taken from an instance built from this commit, seeded with Fernhill, in light and
+    # dark with the clock fixed (packages/docs/screenshots.mjs lists them). A picture of
+    # the list that was not taken fails the run, and the release waits for it. They are
+    # kept as an artifact and never committed.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium
+      - name: Postgres, an object store and Keycloak
+        run: docker compose -f deploy/compose/compose.dev.yaml --profile sso up -d --wait
+      - name: Build the image and run it beside them
+        run: |
+          docker build -t volvel/volvel:shots .
+          docker run -d --name platform --network host \
+            -e DATABASE_URL=postgres://platform:platform@localhost:54329/platform \
+            -e PORT=8080 -e PUBLIC_URL=http://localhost:8080 \
+            -e S3_ENDPOINT=http://localhost:8333 -e S3_BUCKET=platform \
+            -e S3_ACCESS_KEY_ID=platform -e S3_SECRET_ACCESS_KEY=platform-dev-secret \
+            -e AUTH_SECRET="$(openssl rand -hex 32)" -e MASTER_KEY="$(openssl rand -base64 32)" \
+            -e BOOTSTRAP_ADMIN_EMAIL=admin@example.com -e BOOTSTRAP_ADMIN_PASSWORD=change-me-please \
+            -e MANAGED_WORKERS=process -e MANAGED_WORKER_USER=same \
+            -e EGRESS_ALLOW=127.0.0.0/8,::1,localhost \
+            volvel/volvel:shots
+          for i in $(seq 1 60); do
+            curl -fsS http://localhost:8080/api/v1/readyz > /dev/null && exit 0
+            sleep 1
+          done
+          docker logs platform
+          exit 1
+      - run: pnpm exec tsc -b
+      - name: Seed Fernhill
+        run: |
+          node examples/fernhill/stand-ins/server.mjs > /tmp/stand-ins.log 2>&1 &
+          for i in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:4020/ > /dev/null && break
+            sleep 1
+          done
+          cd examples/fernhill
+          XDG_CONFIG_HOME="$RUNNER_TEMP/xdg" VOLVEL_URL=http://localhost:8080 node setup/setup.mjs
+      - name: Take the pictures
+        run: pnpm docs:screenshots
+      - uses: actions/upload-artifact@v4
+        with:
+          name: docs-screenshots
+          path: packages/docs/assets/screenshots
+          if-no-files-found: error
+          retention-days: 30
+      - name: Logs
+        if: failure()
+        run: docker logs platform
+
   release:
     name: Build, rehearse, publish
+    needs: screenshots
     runs-on: ubuntu-latest
     services:
       # The API's page of reference is written by the app itself, which needs a database.
@@ -49,6 +109,12 @@ jobs:
           cache: pnpm
           registry-url: https://registry.npmjs.org
       - run: pnpm install --frozen-lockfile
+
+      # The pictures the documentation shows, taken by the job above: the build ships them.
+      - uses: actions/download-artifact@v4
+        with:
+          name: docs-screenshots
+          path: packages/docs/assets/screenshots
 
       - name: The version this is
         id: version

@@ -1,19 +1,11 @@
 // Builds the product's documentation into dist/: a manifest, one tree for each
 // page, and the search index. The console ships these and reads them offline.
-import {
-  copyFileSync,
-  existsSync,
-  mkdirSync,
-  readdirSync,
-  readFileSync,
-  rmSync,
-  statSync,
-  writeFileSync,
-} from "node:fs";
+import { copyFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { packageOutput } from "@volvel/docs-engine";
 import { fieldDescriptions } from "./generators/reference.mjs";
 import { HERE, loadDocs, report, VERSION } from "./load.mjs";
+import { readIndex } from "./screenshots.mjs";
 
 const { set, issues, assets } = loadDocs();
 if (issues.some((issue) => issue.severity === "error")) {
@@ -37,26 +29,20 @@ writeFileSync(join(out, "fields.json"), `${JSON.stringify(fieldDescriptions())}\
 // when a version is released. A build without them is whole: a page then says in
 // words what its picture would have shown.
 const shots = join(HERE, "assets/screenshots");
-const taken = [];
-const collect = (folder, under) => {
-  if (!existsSync(folder)) return;
-  for (const name of readdirSync(folder).sort()) {
-    const full = join(folder, name);
-    const inside = under === "" ? name : `${under}/${name}`;
-    if (statSync(full).isDirectory()) collect(full, inside);
-    else if (name.endsWith(".png")) {
-      const to = join(out, "assets/screenshots", inside);
-      mkdirSync(dirname(to), { recursive: true });
-      copyFileSync(full, to);
-      taken.push(inside.slice(0, -".png".length));
-    }
+// The index says which file is which picture in which look; only those are shipped.
+const files = readIndex(shots);
+const taken = Object.keys(files).sort();
+for (const looks of Object.values(files)) {
+  for (const file of Object.values(looks)) {
+    const to = join(out, "assets/screenshots", file);
+    mkdirSync(dirname(to), { recursive: true });
+    copyFileSync(join(shots, file), to);
   }
-};
-collect(shots, "");
+}
 const manifestFile = join(out, "manifest.json");
 writeFileSync(
   manifestFile,
-  `${JSON.stringify({ ...JSON.parse(readFileSync(manifestFile, "utf8")), screenshots: taken })}\n`,
+  `${JSON.stringify({ ...JSON.parse(readFileSync(manifestFile, "utf8")), screenshots: taken, screenshotFiles: files })}\n`,
 );
 
 for (const asset of assets) {

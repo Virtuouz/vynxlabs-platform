@@ -2,6 +2,7 @@
 //
 //   - a page that does not read, validate or link (the same checks as the build);
 //   - a topic the console asks for that no page has;
+//   - a page that names a screenshot the list in screenshots.mjs does not have;
 //   - a page nothing leads to: no screen opens it and no other page links to it.
 //
 // That every section and editor of the console names a topic at all is held by
@@ -13,6 +14,7 @@ import { linkKind, walk } from "@volvel/markup";
 import { GENERATED, stale, write } from "./generate.mjs";
 import { coverage } from "./generators/reference.mjs";
 import { HERE, loadDocs, report } from "./load.mjs";
+import { shotNames } from "./screenshots.mjs";
 
 const REPO = join(HERE, "../..");
 const CONSOLE = join(REPO, "apps/console/src");
@@ -92,7 +94,19 @@ for (const [topic, where] of topics) {
 }
 
 const linked = new Set();
+const shots = new Set(shotNames());
 for (const entry of set.pages.values()) {
+  for (const { node } of walk(entry.tree)) {
+    if (
+      node.type === "component" &&
+      node.name === "screenshot" &&
+      !shots.has(node.props?.name ?? "")
+    ) {
+      problems.push(
+        `${entry.path}.md  shows the screenshot "${node.props?.name ?? ""}", and packages/docs/screenshots.mjs does not list it. Add it there, or name one of: ${[...shots].join(", ")}.`,
+      );
+    }
+  }
   for (const { node } of walk(entry.tree)) {
     if (node.type !== "link" || linkKind(node.href) !== "relative") continue;
     const target = resolveLink(set, entry.path, node.href);

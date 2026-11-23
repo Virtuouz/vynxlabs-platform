@@ -12,7 +12,7 @@ import {
 import { type ReactNode, useEffect, useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { ask, copyText, notify } from "../ask.tsx";
-import { InputDialog } from "../InputDialog.tsx";
+import { InputDialog, isStoredInput } from "../InputDialog.tsx";
 import { StateAnnouncer } from "../kit/Announce.tsx";
 import { CopyIcon, curlFor, Identifier } from "../kit/copy.tsx";
 import { Current } from "../kit/current.ts";
@@ -831,10 +831,12 @@ function FlowRunHeader({
                 ]}
               />
             )}
-            <CopyIcon
-              value={curlFor("POST", `${root}/flow-runs`, { flow: run.flow, input: run.input })}
-              label="Copy as curl: start this flow again with the same input"
-            />
+            {isStoredInput(run.input) ? null : (
+              <CopyIcon
+                value={curlFor("POST", `${root}/flow-runs`, { flow: run.flow, input: run.input })}
+                label="Copy as curl: start this flow again with the same input"
+              />
+            )}
           </>
         }
       />
@@ -861,6 +863,10 @@ function FlowRunHeader({
             action="Run again"
             schema={trigger?.trigger?.input}
             initial={run.input}
+            onSame={async () => {
+              await retry({ from: "start" });
+              setEditing(false);
+            }}
             onSubmit={async (input) => {
               await retry({ from: "start", input });
               setEditing(false);

@@ -1,4 +1,4 @@
-import { Dialog, type JsonSchema, Notice, SchemaForm } from "@volvel/ui";
+import { Button, Dialog, type JsonSchema, Notice, SchemaForm } from "@volvel/ui";
 import { useState } from "react";
 import type { ApiError } from "./api.ts";
 import { failureText } from "./ask.tsx";
@@ -48,6 +48,15 @@ export function withoutMasked(value: unknown, path = ""): { value: unknown; mask
   return { value, masked: [] };
 }
 
+/** The input of a flow run kept in storage because it was large: the page shows where, not what. */
+export const isStoredInput = (value: unknown): boolean =>
+  typeof value === "object" &&
+  value !== null &&
+  !Array.isArray(value) &&
+  Object.keys(value).length === 1 &&
+  typeof (value as { stored?: unknown }).stored === "string" &&
+  /^flow-runs\/.+\.json$/.test((value as { stored: string }).stored);
+
 export function InputDialog({
   open,
   onClose,
@@ -55,6 +64,7 @@ export function InputDialog({
   action,
   schema,
   initial,
+  onSame,
   onSubmit,
 }: {
   open: boolean;
@@ -65,12 +75,16 @@ export function InputDialog({
   schema?: Record<string, unknown> | undefined;
   /** What the fields start with, such as the input of a run being run again. */
   initial?: unknown;
+  /** Starts it again with the input it had, for an input too large to be shown and edited. */
+  onSame?: () => Promise<void>;
   onSubmit: (input: unknown) => Promise<void>;
 }) {
   return (
     <Dialog open={open} onClose={onClose} title={title}>
       {/* A new form each time it opens, from what it is given then. */}
-      {open ? (
+      {open && onSame && isStoredInput(initial) ? (
+        <TooLarge action={action} onCancel={onClose} onSame={onSame} />
+      ) : open ? (
         <MaskedAware
           schema={schema}
           initial={initial}
@@ -80,6 +94,39 @@ export function InputDialog({
         />
       ) : null}
     </Dialog>
+  );
+}
+
+function TooLarge({
+  action,
+  onCancel,
+  onSame,
+}: {
+  action: string;
+  onCancel: () => void;
+  onSame: () => Promise<void>;
+}) {
+  const [problem, setProblem] = useState<string>();
+  return (
+    <div className="flex flex-col gap-3">
+      <Notice tone="attention">
+        This input is too large to show or change here. It can be run again with the same input.
+      </Notice>
+      {problem ? <Notice tone="danger">{problem}</Notice> : null}
+      <div className="flex flex-wrap justify-end gap-2">
+        <Button variant="secondary" onClick={onCancel}>
+          Cancel
+        </Button>
+        <Button
+          onClick={() => {
+            setProblem(undefined);
+            onSame().catch((error) => setProblem(failureText(error)));
+          }}
+        >
+          {action} with the same input
+        </Button>
+      </div>
+    </div>
   );
 }
 

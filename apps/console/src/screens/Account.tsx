@@ -10,7 +10,7 @@ import { KeyValues, Panel, SectionLabel } from "../kit/layout.tsx";
 import { OneTimeSecret } from "../kit/OneTimeSecret.tsx";
 import { StatePill } from "../kit/status.tsx";
 import { Time } from "../kit/Time.tsx";
-import { CopyButton, type FormField, ListScreen, RemoveButton } from "../ListScreen.tsx";
+import { CopyButton, type FormField, ListScreen, Page, RemoveButton } from "../ListScreen.tsx";
 
 export interface KeyRow {
   id: string;
@@ -498,43 +498,49 @@ export function Sessions() {
 
 export function Account() {
   return (
-    <div className="flex flex-col gap-8">
-      <ListScreen<KeyRow>
-        title="API keys"
-        description="A key acts as you, with your permissions. Use one for the command line or a script."
-        path="/api-keys"
-        rowKey={(row) => row.id}
-        columns={keyColumns}
-        empty={{ title: "No API keys", text: "Create a key to sign in from the command line." }}
-        create={{
-          action: "Create API key",
-          fields: [
-            {
-              name: "name",
-              label: "Name",
-              placeholder: "My laptop",
-              hint: "Where the key will be used.",
-            },
-            keyExpiryField,
-          ],
-          submit: (values) => api.post("/api-keys", newKeyBody(values)),
-          afterCreate: showNewKey,
-        }}
-        rowActions={(row, reload) =>
-          row.revokedAt ? null : (
-            <RemoveButton
-              label="Revoke"
-              confirm={`Revoke the key "${row.name}"? Anything using it stops working.`}
-              run={() => api.delete(`/api-keys/${row.id}`)}
-              onDone={reload}
-            />
-          )
-        }
-      />
-      <Profile />
-      <ChangePassword />
-      <Sessions />
-      <RecoveryCodes />
-    </div>
+    <Page
+      title="Account"
+      description="Your name, your password, your sessions and the keys that act as you."
+    >
+      <div className="flex flex-col gap-8">
+        <ListScreen<KeyRow>
+          as="section"
+          title="API keys"
+          description="A key acts as you, with your permissions. Use one for the command line or a script."
+          path="/api-keys"
+          rowKey={(row) => row.id}
+          columns={keyColumns}
+          empty={{ title: "No API keys", text: "Create a key to sign in from the command line." }}
+          create={{
+            action: "Create API key",
+            fields: [
+              {
+                name: "name",
+                label: "Name",
+                placeholder: "My laptop",
+                hint: "Where the key will be used.",
+              },
+              keyExpiryField,
+            ],
+            submit: (values) => api.post("/api-keys", newKeyBody(values)),
+            afterCreate: showNewKey,
+          }}
+          rowActions={(row, reload) =>
+            row.revokedAt ? null : (
+              <RemoveButton
+                label="Revoke"
+                confirm={`Revoke the key "${row.name}"? Anything using it stops working.`}
+                run={() => api.delete(`/api-keys/${row.id}`)}
+                onDone={reload}
+              />
+            )
+          }
+        />
+        <Profile />
+        <ChangePassword />
+        <Sessions />
+        <RecoveryCodes />
+      </div>
+    </Page>
   );
 }

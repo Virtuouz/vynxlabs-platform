@@ -34,6 +34,18 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+test("the Account page is headed Account, and API keys is one of its sections (r-screens 2)", async () => {
+  routes["GET /api/v1/api-keys"] = () => [200, { items: [] }];
+  routes["GET /api/v1/me"] = () => [
+    200,
+    { principal: { type: "member", id: "m1", name: "Maya", email: "maya@example.test" } },
+  ];
+  show(<Account />);
+  const headings = await screen.findAllByRole("heading", { level: 1 });
+  expect(headings.map((one) => one.textContent)).toEqual(["Account"]);
+  expect(await screen.findByRole("heading", { level: 2, name: "API keys" })).toBeTruthy();
+});
+
 test("an API key is told apart by its first characters and its last four", async () => {
   routes["GET /api/v1/api-keys"] = () => [
     200,

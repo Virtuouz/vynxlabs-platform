@@ -2,7 +2,9 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Manifest } from "@volvel/docs-engine";
+import { setFromManifest } from "@volvel/docs-engine";
 import { describe, expect, test } from "vitest";
+import { docPage } from "../../../../packages/docs-site/src/index.ts";
 import { around } from "./around.ts";
 
 const DOCS = join(dirname(fileURLToPath(import.meta.url)), "../../../../packages/docs/dist");
@@ -85,21 +87,37 @@ describe("where a page is, for the help panel", () => {
     ]);
   });
 
-  test("previous and next are the folder's pages in the order of its `pages:`, and stop at its ends", () => {
+  test("previous and next are the whole navigation's order, folders' own pages among them", () => {
     expect(around(made(), "a/how/two", at)).toMatchObject({
       before: { path: "a/how/one" },
       after: { path: "a/how/three" },
     });
-    const first = around(made(), "a/how/one", at);
-    expect(first.before).toBeUndefined();
-    expect(first.after?.path).toBe("a/how/two");
-    expect(around(made(), "a/how/three", at).after).toBeUndefined();
+    expect(around(made(), "a/how/three", at).after?.path).toBe("a/other");
+    expect(around(made(), "a/how/index", at).before?.path).toBe("a/index");
+    expect(around(made(), "b/why", at).after).toBeUndefined();
   });
 
-  test("a folder inside a folder is a step: its own page, in the order given", () => {
-    const set = around(made(), "a/other", at);
-    expect(set.before?.path).toBe("a/how/index");
-    expect(set.after).toBeUndefined();
+  test("the panel's previous and next are the served site's, for every page of the product docs", () => {
+    const set = setFromManifest(real);
+    const view = { title: "Docs", set, base: "/docs/", look: { themeHref: "/t.css" } };
+    const decode = (text: string) =>
+      text
+        .replace(/&amp;/g, "&")
+        .replace(/&#39;|&#x27;/g, "'")
+        .replace(/&quot;/g, '"');
+    for (const one of real.pages) {
+      if (one.path === "index") continue;
+      const html = docPage(view, one.path);
+      const pager = /<nav class="pager"[^>]*>(.*?)<\/nav>/s.exec(html)?.[1] ?? "";
+      const served = (side: "Previous" | "Next") =>
+        new RegExp(
+          `<small>[^<]*(?:<svg.*?</svg>)?${side}[^<]*(?:<svg.*?</svg>)?</small>([^<]*)</a>`,
+          "s",
+        ).exec(pager)?.[1];
+      const here = around(real, one.path, at);
+      expect(decode(served("Previous") ?? ""), one.path).toBe(here.before?.title ?? "");
+      expect(decode(served("Next") ?? ""), one.path).toBe(here.after?.title ?? "");
+    }
   });
 
   test("the home page has a trail of itself and no neighbours", () => {

@@ -22,6 +22,7 @@ import {
   folderItems,
   glossaryOf,
   type Marked,
+  neighboursOf,
   type PageHit,
   type PageRef,
   pagesInOrder,
@@ -465,10 +466,7 @@ export function docPage(at: SiteView, path: string): string {
   const collection = collectionOf(set, path);
   const body = draw(at, path, entry.tree);
 
-  const order = pagesInOrder(set.nav);
-  const index = order.findIndex((one) => one.path === path);
-  const before = index > 0 ? order[index - 1] : undefined;
-  const after = index >= 0 ? order[index + 1] : undefined;
+  const { before, after } = neighboursOf(set.nav, path);
   const pager =
     before || after
       ? `<nav class="pager" aria-label="Pages before and after">${

@@ -85,6 +85,7 @@ export {
   glossaryOf,
   type Nav,
   nameOf,
+  neighboursOf,
   ordered,
   type PageRef,
   PRODUCT_PREFIX,

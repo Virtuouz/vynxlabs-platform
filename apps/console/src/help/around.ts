@@ -4,6 +4,7 @@ import {
   folderItems,
   glossaryOf,
   type Manifest,
+  neighboursOf,
   type PageRef,
   pagesInOrder,
   relatedTo,
@@ -46,45 +47,13 @@ const firstOf = (folder: Folder): PageRef | undefined =>
 const targetOf = (item: PageRef | Folder): PageRef | undefined =>
   item.type === "page" ? item : firstOf(item);
 
-function* foldersOf(folders: readonly Folder[]): Generator<Folder> {
-  for (const folder of folders) {
-    yield folder;
-    yield* foldersOf(folder.items.filter((item): item is Folder => item.type === "folder"));
-  }
-}
-
-/** The step either side of a page, among what its folder lists, in the order of that folder's `pages:`. */
-function neighbours(manifest: Manifest, path: string): Pick<PageSetting, "before" | "after"> {
-  const folders = [...foldersOf(manifest.nav.collections)];
-  // A page is in the folder that lists it; a folder's own page is the step its parent gives the folder.
-  let found: { folder: Folder; at: number } | undefined;
-  for (const folder of folders) {
-    const at = folder.items.findIndex((item) => item.type === "page" && item.path === path);
-    if (at >= 0) {
-      found = { folder, at };
-      break;
-    }
-  }
-  if (!found) {
-    for (const folder of folders) {
-      const at = folder.items.findIndex(
-        (item) => item.type === "folder" && item.index?.path === path,
-      );
-      if (at >= 0) {
-        found = { folder, at };
-        break;
-      }
-    }
-  }
-  if (!found) return {};
-  const step = (at: number) => {
-    const item = found.folder.items[at];
-    const to = item && targetOf(item);
-    return to ? { path: to.path, title: to.title } : undefined;
+/** The step either side of a page: the whole navigation's order, as the served site's pager has it. */
+function steps(nav: Manifest["nav"], path: string): Pick<PageSetting, "before" | "after"> {
+  const { before, after } = neighboursOf(nav, path);
+  return {
+    ...(before ? { before: { path: before.path, title: before.title } } : {}),
+    ...(after ? { after: { path: after.path, title: after.title } } : {}),
   };
-  const before = step(found.at - 1);
-  const after = step(found.at + 1);
-  return { ...(before ? { before } : {}), ...(after ? { after } : {}) };
 }
 
 /**
@@ -112,7 +81,7 @@ export function around(
   const items = (path: string) => folderItems(manifest.nav, path);
   return {
     trail,
-    ...(path === "index" ? {} : neighbours(manifest, path)),
+    ...(path === "index" ? {} : steps(manifest.nav, path)),
     related: ORDER.flatMap((type) => {
       const pages = related[type];
       return pages?.length

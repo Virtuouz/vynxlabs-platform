@@ -40,6 +40,8 @@ interface Schema {
   functions: string[];
   /** Whether whoever is here holds `sql:read`. */
   maySql: boolean;
+  /** Whether whoever is here may keep a query as a draft: whether they hold `resource:write`. */
+  maySave?: boolean;
 }
 
 interface Result {
@@ -60,6 +62,9 @@ interface Parameter {
 
 interface SavedQuery {
   path: string;
+  title?: string | null;
+  /** The deployed path, when a draft renames it. */
+  renamedFrom?: string;
   description: string;
   sql: string;
   parameters: Parameter[];
@@ -108,7 +113,16 @@ function parametersFor(text: string, known: SavedQuery | undefined): Parameter[]
  * runs it. A query worth keeping is saved by name, and is then a resource
  * like any other: drafted, deployed and promoted.
  */
-export function Queries({ root, link }: { root: string; link: string }) {
+export function Queries({
+  root,
+  link,
+  editable = true,
+}: {
+  root: string;
+  link: string;
+  /** Only a dev workspace keeps queries. Others are given what is promoted to them. */
+  editable?: boolean;
+}) {
   const schema = useLoad<Schema>(`${root}/queries/schema`);
   const saved = useLoad<{ items: SavedQuery[] }>(`${root}/queries`);
   const [open, setOpen] = useUrlParam("query", undefined, { push: true });
@@ -123,6 +137,8 @@ export function Queries({ root, link }: { root: string; link: string }) {
   const [reveal, setReveal] = useState<{ line: number; column?: number; at: number }>();
 
   const listed = saved.data?.items.find((one) => one.path === open);
+  // Saving is offered to whoever may do it, in a workspace where queries are kept.
+  const mayKeep = editable && schema.data?.maySave !== false;
   // The list gives what is deployed. A query with a draft is opened as its draft: its text, its
   // parameters, and the revision a save is based on.
   const drafted = useLoadOf<DraftRead<Partial<SavedQuery>>>(
@@ -323,7 +339,8 @@ export function Queries({ root, link }: { root: string; link: string }) {
   };
 
   const save = async () => {
-    if (removing || !ready) return;
+    // Not for someone who may not keep one, and not for nothing: Mod+S on an empty query asks no name.
+    if (removing || !ready || !mayKeep || text.trim() === "") return;
     if (current) {
       target.current = current.path;
       await keep.save(true);
@@ -352,6 +369,10 @@ export function Queries({ root, link }: { root: string; link: string }) {
   if (!schema.data) return <Loading />;
   // A table whose path is too long for SQL to name is for pages, so it is not listed here.
   const sqlTables = schema.data.tables.filter((table) => table.inSql !== false);
+  // An address that names a query this workspace does not have. One just saved is not that: its
+  // list has not yet come back with it.
+  const gone =
+    open !== undefined && saved.data !== undefined && !listed && savedAs.current !== open;
 
   const grid: GridColumn[] = (result?.columns ?? []).map((column) => ({
     name: column.name,
@@ -373,7 +394,7 @@ export function Queries({ root, link }: { root: string; link: string }) {
         <div className="flex min-w-0 flex-1 flex-col gap-4">
           <div className="flex flex-wrap items-center gap-2">
             <span className="min-w-0 flex-1 font-mono text-code">
-              {current ? current.path : "A new query"}
+              {current ? current.path : gone ? `There is no query at ${open}.` : "A new query"}
               {current?.draft === "new" ? (
                 <span className="ml-2">
                   <StatePill state="draft">Draft, never deployed</StatePill>
@@ -384,7 +405,7 @@ export function Queries({ root, link }: { root: string; link: string }) {
                 </span>
               ) : null}
             </span>
-            {current ? (
+            {current || gone ? (
               <Button size="small" variant="quiet" onClick={() => void go(undefined)}>
                 New query
               </Button>
@@ -438,7 +459,7 @@ export function Queries({ root, link }: { root: string; link: string }) {
             <Button
               size="small"
               onClick={() => void save()}
-              disabled={text.trim() === "" || removing || !ready}
+              disabled={text.trim() === "" || removing || !ready || !mayKeep}
             >
               <Save aria-hidden="true" size={14} /> {current ? "Save" : "Save as…"}
             </Button>
@@ -455,6 +476,26 @@ export function Queries({ root, link }: { root: string; link: string }) {
             <Notice tone="attention">
               This query is removed in your drafts. Nothing changes until that draft is deployed.
               The text shown is what is deployed now. Keep this query to take the removal back.
+            </Notice>
+          ) : null}
+          {mayKeep ? null : (
+            <Notice tone="plain">
+              {editable ? (
+                <>
+                  You can run queries here but not keep them: that takes the permission to write
+                  resources (<code>resource:write</code>). Ask whoever manages roles in this tenant.
+                </>
+              ) : (
+                <>
+                  Queries are written in a dev workspace and promoted to this one, so they are not
+                  saved here. They can be run by name once they are promoted.
+                </>
+              )}
+            </Notice>
+          )}
+          {mayKeep && current?.ownership === "code" ? (
+            <Notice tone="attention">
+              This query is managed in the tenant's repository. Saving a draft of it takes it over.
             </Notice>
           ) : null}
           {keep.clashed ? <DraftClash what="query" mine={() => text} onTake={takeTheirs} /> : null}
@@ -589,7 +630,21 @@ export function Queries({ root, link }: { root: string; link: string }) {
                           one.path === open ? "bg-action-soft" : ""
                         }`}
                       >
-                        <span className="font-mono text-code">{one.path}</span>
+                        {one.title ? <span className="font-medium">{one.title}</span> : null}
+                        <span
+                          className={
+                            one.title
+                              ? "font-mono text-code-sm text-ink-muted"
+                              : "font-mono text-code"
+                          }
+                        >
+                          {one.path}
+                        </span>
+                        {one.renamedFrom ? (
+                          <span className="text-meta text-ink-muted">
+                            Renamed from {one.renamedFrom}
+                          </span>
+                        ) : null}
                         {one.description ? (
                           <span className="text-meta text-ink-muted">{one.description}</span>
                         ) : null}

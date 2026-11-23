@@ -273,6 +273,11 @@ describe("asking a question across tables", () => {
     expect((await frank.client.get(`${ws()}/queries/schema`)).body.maySql).toBe(false);
     expect((await run(frank.client, "select 1")).status).toBe(403);
   });
+
+  test("it says whether the caller may keep a query, so a screen offers Save only to those who may (DAT-24)", async () => {
+    expect((await alice.get(`${ws()}/queries/schema`)).body.maySave).toBe(true);
+    expect((await frank.client.get(`${ws()}/queries/schema`)).body.maySave).toBe(false);
+  });
 });
 
 describe("who may ask, and of which tables", () => {
@@ -633,6 +638,22 @@ describe("queries kept by name", () => {
       await wrong({ sql: "select 1", parameters: [{ name: "n", type: "integer" }] }),
     ).toContain("parameter is listed");
     expect((await alice.get(`${ws()}/queries`)).body.items).toHaveLength(1);
+  });
+
+  test("the list gives a query's title, and where a renamed one came from (DAT-30)", async () => {
+    const made = await alice.put(`${ws()}/drafts/reports/titled`, {
+      kind: "query",
+      schemaVersion: 1,
+      body: { sql: "select 1" },
+      create: true,
+      title: "Fees by device",
+    });
+    expect(made.status, JSON.stringify(made.body)).toBe(200);
+    const found = (await alice.get(`${ws()}/queries`)).body.items.find(
+      (one: Any) => one.path === "reports/titled",
+    );
+    expect(found).toMatchObject({ title: "Fees by device" });
+    await alice.delete(`${ws()}/drafts/reports/titled`);
   });
 
   test("it is run with its parameters by name, their defaults, and a refusal for one that does not fit", async () => {

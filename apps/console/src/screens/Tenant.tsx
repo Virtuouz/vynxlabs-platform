@@ -548,7 +548,11 @@ function WorkspaceDetail({
           />
         </Suspense>
       ) : tab === "queries" ? (
-        <Queries root={root} link={`/t/${tenantId}/workspaces/${workspaceId}`} />
+        <Queries
+          root={root}
+          link={`/t/${tenantId}/workspaces/${workspaceId}`}
+          editable={workspace.data.type === "dev"}
+        />
       ) : tab === "dashboards" && rest ? (
         <DashboardView
           key={rest}

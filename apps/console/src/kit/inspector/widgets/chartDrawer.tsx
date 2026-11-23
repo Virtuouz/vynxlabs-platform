@@ -297,7 +297,8 @@ function figures(query: Query, data: DrawerData | undefined, order?: unknown) {
       ? orderRows([...summary.rows], summary.breakdowns[0] ?? "", [name], order)
       : summary.rows
     ).map((row) => Number(row[name]) || 0),
-    count: summary.rows.length,
+    // How many different values are drawn along the bottom, not how many rows the answer has.
+    count: new Set(summary.rows.map((row) => row[summary.breakdowns[0] ?? ""])).size,
     real: data?.summary !== undefined,
   };
 }
@@ -430,6 +431,11 @@ export function ChartDisplay({ env, data }: SectionProps) {
   const filters = dateFilters(env);
   const measure = query ? drawnMeasure(query, config) : undefined;
   const along = query ? drawnGroups(query, config)[0] : undefined;
+  // A heatmap's side is the column it splits into rows; every other chart's is the measure.
+  const side =
+    mark === "heatmap" && query
+      ? (drawnGroups(query, config)[1]?.column ?? "")
+      : (measure?.column ?? measure?.as ?? "");
 
   const tiles: TileOption<ChartKind>[] = KINDS.map((one) => {
     const fit = chartFits(one.value, shape);
@@ -513,7 +519,7 @@ export function ChartDisplay({ env, data }: SectionProps) {
             on={config.axisTitles !== false}
             help={
               along && measure
-                ? `${heading(along.column)} along the bottom, ${heading(measure.column ?? measure.as)} up the side`
+                ? `${heading(along.column)} along the bottom, ${heading(side)} up the side`
                 : undefined
             }
           />

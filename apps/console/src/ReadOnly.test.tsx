@@ -83,3 +83,11 @@ test("NARROW-2: on a phone the save bar's buttons take a row of their own, kept 
     "safe-area-inset-bottom",
   );
 });
+
+test("R-last: the save bar reaches the window's bottom at the end of the scroll, over the page's own bottom padding", () => {
+  show(<SaveBar dirty onSave={() => {}} onDiscard={() => {}} />);
+  const bar = screen.getByRole("region", { name: "Unsaved changes" });
+  expect(bar.className).toContain("sticky");
+  // The page's bottom padding is 24px (`py-6` in the Shell): the bar takes it back.
+  expect(bar.className).toMatch(/(^|\s)-mb-6(\s|$)/);
+});

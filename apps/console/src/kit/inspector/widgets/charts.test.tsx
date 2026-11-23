@@ -648,3 +648,34 @@ test("WID-M6: the column along the bottom and the one up the side are chosen fro
   fireEvent.click(await screen.findByRole("radio", { name: "First value" }));
   expect(last().config?.y).toBeUndefined();
 });
+
+const byClinicAndStatus = (config?: Record<string, unknown>) =>
+  widgetOf(
+    "core/chart",
+    "rows",
+    {
+      measures: [{ fn: "sum", column: "total", as: "sum_total" }],
+      groupBy: [{ column: "clinic" }, { column: "status" }],
+    },
+    { mark: "heatmap", ...config },
+  );
+
+test("a heatmap's help names its side title: the column split into rows, not the measure (R-last)", () => {
+  show(<Harness start={byClinicAndStatus()} definition={chart} tab="display" />);
+  expect(screen.getByText("Clinic along the bottom, Status up the side")).toBeTruthy();
+});
+
+test("the count in 'Drawn as' is of distinct values, not of result rows (R-last)", () => {
+  const rows = ["north", "south", "east"].flatMap((clinic) =>
+    ["paid", "open"].map((status) => ({ clinic, status, sum_total: 1 })),
+  );
+  const summary = {
+    shape: "summary" as const,
+    columns: [],
+    breakdowns: ["clinic", "status"],
+    values: ["sum_total"],
+    rows,
+  };
+  show(<Harness start={byClinicAndStatus()} definition={chart} tab="data" data={{ summary }} />);
+  expect(screen.getByTestId("reads-as").textContent).toContain("Drawn as a heatmap; 3 clinics.");
+});

@@ -187,7 +187,7 @@ export function EffectiveAccess({
         </div>
         {checking ? (
           holds ? (
-            <p className="m-0 flex items-center gap-2" role="status">
+            <p className="m-0 flex flex-wrap items-center gap-x-2 gap-y-1" role="status">
               <StatePill state="allowed" />
               <span className="text-meta text-ink-muted">
                 {principal.name} holds <Mono>{wanted}</Mono>{" "}

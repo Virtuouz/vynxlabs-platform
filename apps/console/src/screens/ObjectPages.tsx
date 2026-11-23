@@ -1,7 +1,7 @@
 import { Button, Closing, JsonView, Notice } from "@volvel/ui";
 import { FileCode2, ListChecks } from "lucide-react";
 import { useEffect, useState } from "react";
-import { type ApiError, api, useLoad } from "../api.ts";
+import { ApiError, api, useLoad } from "../api.ts";
 import { failureText, notify } from "../ask.tsx";
 import { CodeEditor } from "../editor/CodeEditor.tsx";
 import { AttachedPages, workspaceOf } from "../help/glossary.tsx";
@@ -849,13 +849,47 @@ function ScriptSettings({
   });
   const [editing, setEditing] = useState(false);
   const [saved, setSaved] = useState(false);
-  if (found.error) {
+  // The draft, when there is one: a script never deployed has only that, and a saved change is
+  // read back from it. Production takes no drafts.
+  const [draft, setDraft] = useState<{ body: ScriptSettingsBody; revision: number }>();
+  const [looked, setLooked] = useState(production);
+  const [draftError, setDraftError] = useState<unknown>();
+  useEffect(() => {
+    if (production || editing) return;
+    let current = true;
+    readDraft<ScriptSettingsBody>(root, path)
+      .then((one) => {
+        if (!current) return;
+        setDraft(one && !one.deleted ? { body: one.body, revision: one.revision } : undefined);
+        setDraftError(undefined);
+        setLooked(true);
+      })
+      .catch((error) => {
+        if (!current) return;
+        setDraftError(error);
+        setLooked(true);
+      });
+    return () => {
+      current = false;
+    };
+  }, [root, path, production, editing]);
+  const notDeployed = found.error instanceof ApiError && found.error.status === 404;
+  if (found.error && !(notDeployed && !looked) && !(notDeployed && draft)) {
     return (
       <ErrorState what="the settings of this script" error={found.error} onRetry={found.reload} />
     );
   }
-  if (!found.data) return <Loading />;
-  const body = found.data.body;
+  if (draftError && !found.data) {
+    return (
+      <ErrorState
+        what="the draft of this script"
+        error={draftError}
+        onRetry={() => setLooked(false)}
+      />
+    );
+  }
+  if (!looked || (!found.data && !draft)) return <Loading />;
+  const body: ScriptSettingsBody = draft?.body ?? found.data?.body ?? {};
   const list = (names: string[] | undefined) =>
     names && names.length > 0 ? names.join(", ") : undefined;
   const concurrency =
@@ -895,7 +929,7 @@ function ScriptSettings({
   ];
   const set = rows.filter((row) => row.value !== undefined);
   // Code that a repository holds is changed there, and production is changed by promotion.
-  const mayChange = !production && found.data.ownership !== "repository";
+  const mayChange = !production && found.data?.ownership !== "repository";
   if (editing) {
     return (
       <ScriptSettingsForm
@@ -915,6 +949,13 @@ function ScriptSettings({
       {saved ? (
         <Notice tone="success">
           Saved as a draft. It runs this way once it is deployed.{" "}
+          <Link to={`${link}/scripts/edit/${path}`}>Open the draft</Link>
+        </Notice>
+      ) : draft ? (
+        <Notice tone="plain">
+          {found.data
+            ? "This script has a draft. These are the draft's settings: the deployed script keeps its own until the draft is deployed."
+            : "This script is only a draft and is not deployed yet. These are the draft's settings."}{" "}
           <Link to={`${link}/scripts/edit/${path}`}>Open the draft</Link>
         </Notice>
       ) : null}

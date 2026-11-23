@@ -5,11 +5,19 @@
 // `generate()` gives every file as text. It needs the packages built
 // (`tsc -b`) and nothing else: no database and no network.
 import { FRONTMATTER_SCHEMA } from "@volvel/docs-engine";
-import { ERROR_CODES, PERMISSION_KINDS, platformKinds, TENANT_KINDS } from "@volvel/manifest";
+import {
+  ERROR_CODES,
+  fileSchemas,
+  PERMISSION_KINDS,
+  platformKinds,
+  resourceFileName,
+  TENANT_KINDS,
+  tenantFileName,
+} from "@volvel/manifest";
 import { COMPONENTS, PROFILES } from "@volvel/markup";
 import { CONFIG_VARS, WORKER_VARS } from "../../../apps/control-plane/dist/config-vars.js";
 import { COMMAND_GROUPS, COMMAND_NAME, COMMAND_NOTES, COMMANDS } from "../../cli/dist/commands.js";
-import { cell, fieldsOf, fieldTable, page } from "./schema.mjs";
+import { cell, fieldsOf, fieldTable, page, tablesOf } from "./schema.mjs";
 
 const sentence = (text) => (/[.!?]$/.test(text) ? text : `${text}.`);
 const titled = (kind) => kind.replace(/_/g, " ").replace(/^./, (letter) => letter.toUpperCase());
@@ -60,9 +68,64 @@ function kindList() {
   }));
 }
 
+const article = (word) => (/^[aeiou]/i.test(word) ? "an" : "a");
+
+/** The file each kind is written to, from the names the manifest package writes with. */
+function fileNameOf(kind) {
+  if (kind.scope === "workspace") return resourceFileName(kind.kind, "<path>");
+  const definition = TENANT_KINDS.find((one) => one.kind === kind.kind);
+  return tenantFileName(definition, "<key>");
+}
+
+/** What a kind's file holds beside its body: the same for every kind of a scope. */
+function envelope(scope) {
+  const one = fileSchemas().find((entry) =>
+    scope === "workspace"
+      ? !TENANT_KINDS.some((tenant) => tenant.kind === entry.kind)
+      : TENANT_KINDS.some((tenant) => tenant.kind === entry.kind),
+  );
+  const { body: _body, ...beside } = one.schema.properties;
+  return tablesOf({
+    properties: beside,
+    required: one.schema.required.filter((name) => name !== "body"),
+  })[0].fields.map((field) =>
+    field.path === "schemaVersion"
+      ? { ...field, type: "number", limits: "The version of the kind this file is written for." }
+      : field,
+  );
+}
+
+/** A kind's fields as tables: the ones that are always there, then one for each form of a union. */
+function formTables(body) {
+  const tables = tablesOf(body);
+  if (tables.every((table) => table.fields.length === 0)) return [fieldTable([])];
+  return tables
+    .filter((table) => table.fields.length > 0)
+    .map((table, index) => {
+      const heading =
+        index === 0
+          ? ""
+          : `### ${table.root === "" ? "The body" : `\`${table.root}\``} when ${table.form}\n\n`;
+      return `${heading}${fieldTable(table.fields)}`;
+    });
+}
+
 function kinds(list) {
   const files = new Map();
   const slug = (kind) => kind.replace(/_/g, "-");
+  const schemas = new Map(fileSchemas().map((entry) => [entry.kind, entry.schema]));
+  const bodyOf = (kind) => schemas.get(kind.kind)?.properties?.body ?? kind.body;
+  const section = (heading, rows) => [
+    heading,
+    "",
+    "| Field | Holds | Needed | What it is |",
+    "| --- | --- | --- | --- |",
+    ...rows.map(
+      (field) =>
+        `| \`${field.path}\` | ${cell(field.type)} | ${field.required ? "Yes" : ""} | ${cell(`${field.description} ${field.limits ?? ""}`.trim())} |`,
+    ),
+    "",
+  ];
   files.set(
     "kinds/index.md",
     page(
@@ -73,6 +136,14 @@ function kinds(list) {
       [
         "Everything a workspace or a tenant holds is a resource of some kind. Each page here lists what a resource of that kind may say, as the instance checks it.",
         "",
+        "## The file",
+        "",
+        "A resource is kept as one file, named for its kind: `<path>.<kind>.yaml` for a workspace, where `<path>` is the resource's path, and `<folder>/<key>.<kind>.yaml` for a tenant's access, where the folder is the kind's own. A page of documentation is the exception: a Markdown file, `docs/<path>.md`. A script, a connector or a trigger source keeps its code in a `.ts` file beside its own.",
+        "",
+        "What a resource says is its body. Around the body a file may say these things, the same for every kind.",
+        "",
+        ...section("### In a workspace", envelope("workspace")),
+        ...section("### In a tenant", envelope("tenant")),
         "## In a workspace",
         "",
         ...list
@@ -88,20 +159,22 @@ function kinds(list) {
     ),
   );
   for (const kind of list) {
+    const words = kind.kind.replace(/_/g, " ");
+    const code = ["script", "connector", "trigger_source"].includes(kind.kind);
     files.set(
       `kinds/${slug(kind.kind)}.md`,
       page(
         {
           title: titled(kind.kind),
-          description: `What a ${kind.kind.replace(/_/g, " ")} may say.`,
+          description: `What ${article(words)} ${words} may say.`,
         },
         [
-          `A resource of kind \`${kind.kind}\`, in a ${kind.scope}. Its file is named \`<name>.${kind.kind}.yaml\`.`,
+          `A resource of kind \`${kind.kind}\`, in ${article(kind.scope)} ${kind.scope}. Its file is named \`${fileNameOf(kind)}\`, written for version ${kind.schemaVersion} of the kind. What a file says around its body is on the [kinds page](index).${code ? ` Its code is in the \`.ts\` file beside it.` : ""}`,
           kind.description ? `\n${sentence(kind.description)}` : "",
           "",
-          "A field with `*` in its path is inside a list, or under a name of the author's choosing.",
+          "A field with `*` in its path is inside a list, or under a name of the author's choosing. Where a field is of several forms, each form has a table of its own, and a field is needed only in the form whose table says so.",
           "",
-          fieldTable(kind.fields),
+          ...formTables(bodyOf(kind)).flatMap((table) => [table, ""]),
         ].join("\n"),
       ),
     );

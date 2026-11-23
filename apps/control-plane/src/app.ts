@@ -15,6 +15,7 @@ import {
 import type { Config, LogLevel } from "./config.js";
 import { installFrontDoor } from "./kernel/apps/front.js";
 import { SYSTEM } from "./kernel/audit.js";
+import { authOptions, signInFeatures } from "./kernel/auth.js";
 import { closeAllSources } from "./kernel/data/sources.js";
 import { consoleDirectory } from "./kernel/docs/product.js";
 import { pushTenantAccess } from "./kernel/git.js";
@@ -266,7 +267,10 @@ export async function buildApp(options: AppOptions) {
         },
       },
     };
-    finish(description as unknown as Parameters<typeof finish>[0]);
+    finish(
+      description as unknown as Parameters<typeof finish>[0],
+      signInFeatures(authOptions(kernel.db, options.config)),
+    );
     return description;
   }
 

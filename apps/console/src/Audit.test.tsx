@@ -249,7 +249,16 @@ test("the instance's log offers the instance's areas, and every action's first w
   // Every action the control plane writes starts with a word one of the lists has.
   const known = new Set([...auditAreas(false), ...auditAreas(true)]);
   const missing = new Set<string>();
+  // An action that begins with a template has no first word to read. Each is listed, with the
+  // words it can start with, so that a new one is a decision and not a hole (until the actions
+  // are one typed list, which is phase 30's reference work).
+  const templated: string[] = [];
   for (const file of sourcesOf(join(__dirname, "../../control-plane/src"))) {
+    for (const found of readFileSync(file, "utf8").matchAll(
+      /\baction: `(\$\{[^}]+\}\.[a-z_.]+)`/g,
+    )) {
+      templated.push(`${file.split("control-plane/src/")[1]}: ${found[1]}`);
+    }
     for (const found of readFileSync(file, "utf8").matchAll(
       /\baction: ["`]([a-z_]+)\.[a-z_.${}]+["`]/g,
     )) {
@@ -258,6 +267,11 @@ test("the instance's log offers the instance's areas, and every action's first w
     }
   }
   expect([...missing]).toEqual([]);
+  expect(templated).toEqual(["kernel/tenant/releases.ts: $" + "{kind}.deleted"]);
+  // `kind` there is a group, an end-user group or a service account.
+  for (const first of ["group", "end_user_group", "service_account"]) {
+    expect(known.has(first), first).toBe(true);
+  }
 });
 
 /** Words `action:` is followed by in the control plane's code that are not entries of the log. */

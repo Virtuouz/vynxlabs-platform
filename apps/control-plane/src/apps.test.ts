@@ -1597,6 +1597,17 @@ describe("a hostname of the tenant's own", () => {
       enabled: true,
     });
     expect(enabled.status, JSON.stringify(enabled.body)).toBe(200);
+    // The tenant may turn it off and on again: what an operator enabled stays theirs to use
+    // (APP-13).
+    const domainUrlPath = `/tenants/${tenant}/domains/${domainId}`;
+    expect((await alice.patch(domainUrlPath, { enabled: false })).body.enabled).toBe(false);
+    const again = await alice.patch(domainUrlPath, { enabled: true });
+    expect(again.status, JSON.stringify(again.body)).toBe(200);
+    expect(again.body.enabled).toBe(true);
+    // An operator who turns it off takes that back: only an operator enables it then.
+    await t.admin.patch(domainUrlPath, { enabled: false });
+    expect((await alice.patch(domainUrlPath, { enabled: true })).status).toBe(409);
+    expect((await t.admin.patch(domainUrlPath, { enabled: true })).status).toBe(200);
     await t.admin.delete(`/tenants/${tenant}/access-grants/${grant.body.id}`);
     expect((await alice.get(`/tenants/${tenant}/domains`)).body.items).toMatchObject([
       { hostname: DOMAIN, enabled: true },

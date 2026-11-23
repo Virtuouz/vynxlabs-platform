@@ -985,6 +985,8 @@ export interface AppDomainTable {
   hostname: string;
   enabled: Generated<boolean>;
   verified_at: Date | null;
+  /** Enabled by an operator without verifying: the tenant may enable it again after disabling it. */
+  enabled_by_operator: Generated<boolean>;
   checked_at: Date | null;
   check_error: string | null;
   created_by_type: string;

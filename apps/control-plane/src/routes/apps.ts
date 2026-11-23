@@ -930,7 +930,8 @@ export function appRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           summary: "Enable or disable a hostname, or point it at another app",
           description:
             "Enabling needs a verified hostname. An operator of the instance may enable one " +
-            "that is not verified, for a name that exists only inside a network.",
+            "that is not verified, for a name that exists only inside a network; the tenant may " +
+            "then disable it and enable it again, until an operator disables it.",
           tags: ["domains"],
           params: DomainParams,
           body: Type.Object({
@@ -942,7 +943,9 @@ export function appRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       },
       async ({ ctx, params, body }) => {
         const domain = await findDomain(params.t, params.id);
-        if (body.enabled && !domain.verified_at && !(await ctx.allowed("instance:write", {}))) {
+        const operator = await ctx.allowed("instance:write", {});
+        // A name an operator enabled may be enabled again by the tenant that turned it off.
+        if (body.enabled && !domain.verified_at && !operator && !domain.enabled_by_operator) {
           throw new HttpError(
             409,
             "domain_not_verified",
@@ -965,6 +968,12 @@ export function appRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             .updateTable("app_domain")
             .set({
               ...(body.enabled !== undefined ? { enabled: body.enabled } : {}),
+              // An operator who enables an unverified name marks it, and who disables one
+              // takes the mark back.
+              ...(operator && body.enabled && !domain.verified_at
+                ? { enabled_by_operator: true }
+                : {}),
+              ...(operator && body.enabled === false ? { enabled_by_operator: false } : {}),
               ...(body.app !== undefined ? { app_path: body.app } : {}),
             })
             .where("id", "=", domain.id)

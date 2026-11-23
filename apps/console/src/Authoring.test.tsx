@@ -338,3 +338,51 @@ test("a script drafted for removal opens as a removal: its deployed code, read o
   await new Promise((done) => setTimeout(done, 3400));
   expect(saved).toEqual([]);
 }, 15_000);
+
+test("a new script gets the SDK's wait between tries and backoff, and both can be changed (SCR-15)", async () => {
+  const saved: { body: { retries?: unknown } }[] = [];
+  routes[`PUT ${base}/drafts/hello/greet`] = (body) => {
+    saved.push(body as { body: { retries?: unknown } });
+    return { ...(body as object), path: "hello/greet", revision: 1 };
+  };
+  history.replaceState(null, "", "/t/t1/workspaces/w1/scripts/new");
+  show(<AtAddress />);
+  await screen.findByLabelText("Source of the new script");
+  expect((screen.getByLabelText("Give up after (seconds)") as HTMLInputElement).value).toBe("60");
+  expect((screen.getByLabelText("Wait between tries (seconds)") as HTMLInputElement).value).toBe(
+    "30",
+  );
+  const backoff = screen.getByLabelText("Wait longer after each failed try") as HTMLInputElement;
+  expect(backoff.checked).toBe(true);
+  fireEvent.click(backoff);
+  fireEvent.change(screen.getByLabelText("Path"), { target: { value: "hello/greet" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save draft" }));
+  await waitFor(() => expect(saved.length).toBeGreaterThan(0));
+  expect(saved[0]?.body.retries).toEqual({ limit: 0, delaySeconds: 30, backoff: false });
+});
+
+test("the list's inspector offers a script to an agent only when it is deployed (SCR-12)", async () => {
+  const row = (path: string, deployed: boolean) => ({
+    path,
+    ownership: "ui",
+    draft: !deployed,
+    deployed,
+    lastRun: null,
+    failedInARow: 0,
+    retries: 0,
+    inputSchema: { type: "object" },
+    uses: { connections: [], secrets: [], variables: [], tables: [] },
+  });
+  routes[`GET ${base}/scripts`] = () => ({
+    items: [row("hello/live", true), row("hello/new", false)],
+  });
+  history.replaceState(null, "", "/t/t1/workspaces/w1/scripts?item=hello%2Fnew");
+  show(<AtAddress />);
+  await screen.findByRole("button", { name: "Open editor" });
+  expect(screen.queryByRole("button", { name: /Offer to an agent/ })).toBeNull();
+  cleanup();
+  history.replaceState(null, "", "/t/t1/workspaces/w1/scripts?item=hello%2Flive");
+  show(<AtAddress />);
+  await screen.findByRole("button", { name: "Open editor" });
+  expect(screen.getByRole("button", { name: /Offer to an agent/ })).toBeTruthy();
+});

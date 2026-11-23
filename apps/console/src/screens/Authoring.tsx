@@ -624,7 +624,7 @@ export function ScriptEditor({
               disabled={readOnly}
               onChange={(value) =>
                 change({
-                  retries: { ...body.retries, limit: value ?? 0 },
+                  retries: { delaySeconds: 30, backoff: true, ...body.retries, limit: value ?? 0 },
                 })
               }
             />
@@ -639,7 +639,9 @@ export function ScriptEditor({
               disabled={readOnly}
               error={fieldError("/body/retries/delaySeconds")}
               onChange={(value) =>
-                change({ retries: { ...body.retries, delaySeconds: value ?? 30 } })
+                change({
+                  retries: { limit: 0, backoff: true, ...body.retries, delaySeconds: value ?? 30 },
+                })
               }
             />
           ) : null}
@@ -649,7 +651,11 @@ export function ScriptEditor({
               label="Wait longer after each failed try"
               checked={body.retries.backoff}
               disabled={readOnly}
-              onChange={(checked) => change({ retries: { ...body.retries, backoff: checked } })}
+              onChange={(checked) =>
+                change({
+                  retries: { limit: 0, delaySeconds: 30, ...body.retries, backoff: checked },
+                })
+              }
             />
           ) : null}
         </div>

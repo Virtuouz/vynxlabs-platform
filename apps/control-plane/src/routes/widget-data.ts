@@ -10,7 +10,7 @@ import { badRequest, forbidden, forbiddenBecause, notFound } from "../kernel/err
 import { access, guestLimit, type RequestContext } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
 import { locatePage, UUID } from "../kernel/pages/locate.js";
-import { isTimeZone } from "../kernel/zones.js";
+import { isTimeZone, todayIn } from "../kernel/zones.js";
 import { AnyObject, Id } from "./shared.js";
 
 /** The most values a choice filter offers. */
@@ -37,7 +37,12 @@ export function widgetDataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       "/tenants/:t/workspaces/:w/widget-data",
       {
-        config: { access: access.custom, rateLimit: guestLimit },
+        config: {
+          access: access.custom(
+            "Needs what the page needs to be opened, and `data:read` at each table a widget reads, with the row policy applied. An app may call it for someone who is not signed in only where the page and its tables are open to anyone.",
+          ),
+          rateLimit: guestLimit,
+        },
         schema: {
           summary: "What one widget of an interface or a dashboard shows",
           description:
@@ -184,7 +189,7 @@ export function widgetDataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
 
         const widget = widgets.find((one) => one.id === query.widget);
         if (!widget) throw notFound("The widget");
-        const values = resolveFilters(filters, given);
+        const values = resolveFilters(filters, given, todayIn(query.zone));
         const inputs = await readWidget(kernel, {
           ...at,
           ctx: ctx as RequestContext,
@@ -216,7 +221,12 @@ export function widgetDataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       "/tenants/:t/workspaces/:w/filter-options",
       {
-        config: { access: access.custom, rateLimit: guestLimit },
+        config: {
+          access: access.custom(
+            "Needs what the widget data of the page needs, and the values are read as the caller reads the table: `data:read` and its row policy.",
+          ),
+          rateLimit: guestLimit,
+        },
         schema: {
           summary: "The values a choice filter of a page offers",
           description:

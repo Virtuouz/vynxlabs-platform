@@ -2,7 +2,7 @@
 
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import type { Page, PageWidget } from "@volvel/manifest";
-import { button, chart } from "@volvel/widgets-core";
+import { button, chart, detail } from "@volvel/widgets-core";
 import { useState } from "react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { ActionsTab } from "./kit/inspector/ActionsTab.tsx";
@@ -98,8 +98,14 @@ function Actions({
   return <ActionsTab env={env} groupChoices={groupChoices} onOpenRules={onOpenRules} />;
 }
 
-function Rules({ start = pressMe }: { start?: PageWidget }) {
-  const env = useEnv(start, button, "app");
+function Rules({
+  start = pressMe,
+  definition = button,
+}: {
+  start?: PageWidget;
+  definition?: typeof button;
+}) {
+  const env = useEnv(start, definition, "app");
   return <RulesTab env={env} groupChoices={groupChoices} />;
 }
 
@@ -316,12 +322,37 @@ test("Rules: who can see it limits to groups, and says hiding is not security", 
   show(<Rules />);
   expect(screen.getByText("Everyone who can open the app")).toBeTruthy();
   expect(screen.getByText(/Hiding a widget isn’t security/)).toBeTruthy();
+  // WID-22: a condition can read the user and the open record; there is no condition on the page's filters.
+  expect(
+    screen.getByText(/Conditions can use the current user or the record that is open\./),
+  ).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Limit to a group" }));
   fireEvent.click(await screen.findByRole("checkbox", { name: /Managers/ }));
   expect(last().rules).toEqual({ seenBy: { groups: ["groups/managers"] } });
   expect(screen.queryByText("Everyone who can open the app")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Remove Managers" }));
   expect(last().rules).toBeUndefined();
+});
+
+test("Rules: who can edit a record in place is its own question, there only when editing in place is on (WID-19)", async () => {
+  const record: PageWidget = {
+    id: "info",
+    type: "core/detail",
+    at: place,
+    data: { record: { source: { record: "this" } } },
+    config: { edit: true },
+  };
+  show(<Rules start={record} definition={detail as never} />);
+  expect(screen.getByText("Who can edit")).toBeTruthy();
+  // The first "Limit to a group" is who can see it; the second is who can edit.
+  fireEvent.click(screen.getAllByRole("button", { name: "Limit to a group" })[1] as HTMLElement);
+  fireEvent.click(await screen.findByRole("checkbox", { name: /Billing/ }));
+  expect(last().config).toEqual({ edit: true, editBy: { groups: ["groups/billing"] } });
+  fireEvent.click(screen.getByRole("button", { name: "Remove Billing" }));
+  expect(last().config).toEqual({ edit: true });
+  cleanup();
+  show(<Rules start={{ ...record, config: {} }} definition={detail as never} />);
+  expect(screen.queryByText("Who can edit")).toBeNull();
 });
 
 test("Rules: a button's can be pressed when and who can run it write the action", async () => {

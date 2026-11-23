@@ -456,6 +456,30 @@ const thing = (key: string, count: number): string => {
 };
 
 /**
+ * What opens a page: each button or row click, on another page, with a step that opens it, named
+ * as the check names them ("Mark paid, on Money"). Removing the page leaves these opening nothing.
+ */
+export function openersOf(
+  body: InterfaceBody,
+  pageId: string,
+  definitionOf: (type: string) => WidgetDefinition | undefined,
+): string[] {
+  const names: string[] = [];
+  for (const page of body.pages) {
+    if (page.id === pageId) continue;
+    for (const widget of page.widgets) {
+      for (const one of actionsOf(widget)) {
+        if (!one.action.steps.some((step) => step.do === "open" && step.page === pageId)) continue;
+        const own = nameAlong(widget, one.at.split("/").slice(1));
+        const name = `${own ?? nameOf(widget, definitionOf(widget.type))}, on ${page.title}`;
+        if (!names.includes(name)) names.push(name);
+      }
+    }
+  }
+  return names;
+}
+
+/**
  * The nearest thing with a name on the way down a path into a widget: the button or the column
  * a problem is in, "Do it" in `config/actions/0/action/steps`.
  */

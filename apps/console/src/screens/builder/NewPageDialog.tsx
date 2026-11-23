@@ -3,6 +3,7 @@ import { Button, Dialog, SelectField, TextField } from "@volvel/ui";
 import { useEffect, useMemo, useState } from "react";
 import { useCatalog } from "../../kit/inspector/catalog.ts";
 import { heading, mainTable } from "../../kit/inspector/model.ts";
+import { NAME_MAX } from "./names.ts";
 import { useTableInfo } from "./SampleRecord.tsx";
 import {
   blankPage,
@@ -130,7 +131,7 @@ export function NewPageDialog({
           label="Name of the page"
           name="page-title"
           value={typed ?? startTitle(start, chosen)}
-          maxLength={200}
+          maxLength={NAME_MAX}
           required
           onChange={setTyped}
         />

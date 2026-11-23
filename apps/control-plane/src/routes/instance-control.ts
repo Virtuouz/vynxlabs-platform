@@ -40,6 +40,8 @@ export function instanceControlRoutes(kernel: Kernel): FastifyPluginAsyncTypebox
         config: { access: access.instance("instance:read") },
         schema: {
           summary: "Whether every trigger in the instance is paused",
+          description:
+            "The instance-wide pause for triggers. While it is on, no trigger starts a run.",
           tags: ["instance"],
           response: { 200: Triggers },
         },

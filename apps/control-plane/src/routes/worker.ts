@@ -374,6 +374,8 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config,
         schema: {
           summary: "Say that the worker is still at a task",
+          description:
+            "A worker calls this while it works. A task that is not heard from is given to another worker.",
           tags: ["worker protocol"],
           params: TaskParams,
           response: { 204: NoContent },
@@ -415,6 +417,7 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config,
         schema: {
           summary: "Report that a task could not be done",
+          description: "Ends the task as failed, with the reason the worker gives.",
           tags: ["worker protocol"],
           params: TaskParams,
           body: Type.Object({
@@ -477,6 +480,7 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config,
         schema: {
           summary: "Download a bundle",
+          description: "The bundle's bytes, for a worker that does not hold it yet.",
           tags: ["worker protocol"],
           params: RunParams,
           response: { 200: AnyObject },
@@ -543,6 +547,7 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         bodyLimit: LOGS_BODY_LIMIT,
         schema: {
           summary: "Append log lines to a run",
+          description: "Adds lines to the run's log.",
           tags: ["worker protocol"],
           params: RunParams,
           body: Type.Object({
@@ -602,6 +607,8 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config,
         schema: {
           summary: "Read a secret the running script declared",
+          description:
+            "The secret's value, for a worker that holds the run and a secret the script declared.",
           tags: ["worker protocol"],
           params: Type.Object({ id: Id, name: Type.String() }),
           querystring: AttemptQuery,
@@ -629,6 +636,8 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config,
         schema: {
           summary: "Read a variable the running script declared",
+          description:
+            "The variable's value in the run's workspace, for a variable the script declared.",
           tags: ["worker protocol"],
           params: Type.Object({ id: Id, "*": Type.String() }),
           querystring: AttemptQuery,
@@ -669,6 +678,8 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config,
         schema: {
           summary: "Read a connection the running script declared",
+          description:
+            "The connection's settings and credentials, for a worker that holds the run and a connection the script declared.",
           tags: ["worker protocol"],
           params: Type.Object({ id: Id, "*": Type.String() }),
           querystring: AttemptQuery,
@@ -762,6 +773,8 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config,
         schema: {
           summary: "Read one member of a connection group the running script declared",
+          description:
+            "One connection of the group, chosen by `key`, for a worker that holds the run.",
           tags: ["worker protocol"],
           params: Type.Object({ id: Id, key: Type.String({ maxLength: 100 }), "*": Type.String() }),
           querystring: AttemptQuery,
@@ -1043,6 +1056,7 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         bodyLimit: Math.ceil(MAX_FILE_BYTES * 1.4),
         schema: {
           summary: "Store a file for the running script",
+          description: "Keeps the bytes in the run's workspace and answers the file's id.",
           tags: ["worker protocol"],
           params: RunParams,
           body: Type.Object({
@@ -1077,6 +1091,7 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config,
         schema: {
           summary: "Read a stored file for the running script",
+          description: "The file's bytes, for the worker that holds the run.",
           tags: ["worker protocol"],
           params: Type.Object({ id: Id, fileId: Id }),
           querystring: AttemptQuery,

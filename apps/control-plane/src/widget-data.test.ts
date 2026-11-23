@@ -317,6 +317,17 @@ const board = {
         },
       },
     },
+    {
+      ...byMonth,
+      id: "monthly",
+      at: { x: 0, y: 40, w: 12, h: 5 },
+      data: {
+        rows: {
+          ...byMonth.data.rows,
+          filters: [{ filter: "when", column: "created_at" }],
+        },
+      },
+    },
   ],
 };
 
@@ -748,6 +759,53 @@ describe("a date range", () => {
     expect(await read("last_month")).toEqual([]);
     // Not set, it narrows nothing.
     expect(await read(null)).toEqual(["INV-1", "INV-2", "INV-3"]);
+  });
+});
+
+describe("a summary says the period it was cut into, and the days asked for (WID-16)", () => {
+  test("a chart can put back the periods with nothing in them by that step, to those ends", async () => {
+    const read = async (filters: object) => {
+      const answer = await asked(alice, {
+        of: "dashboard",
+        path: "boards/by-team",
+        widget: "monthly",
+        filters,
+      });
+      expect(answer.status, JSON.stringify(answer.body)).toBe(200);
+      return answer.body.inputs.rows;
+    };
+    const ranged = await read({ when: { from: "2026-01-01", to: "2026-12-31" } });
+    expect(ranged.buckets).toEqual({ created_at_month: "month" });
+    // And what each value is, so that a pivot totals only what can be totalled (WID-20).
+    expect(ranged.measures).toEqual({ n: "count" });
+    expect(ranged.span).toEqual({ from: "2026-01-01", to: "2026-12-31" });
+    // No range asked for: the period is known and there are no ends to give.
+    const open = await read({ when: null });
+    expect(open.buckets).toEqual({ created_at_month: "month" });
+    expect(open.span).toBeUndefined();
+  });
+});
+
+describe("a date range in the reader's zone (D21)", () => {
+  test("the day a row was made in is the reader's day, whatever UTC's is", async () => {
+    // Everything was made a moment ago. Of these two zones, one is on another day than UTC now.
+    for (const zone of ["Pacific/Kiritimati", "Pacific/Pago_Pago"]) {
+      const today = new Intl.DateTimeFormat("en-CA", { timeZone: zone }).format(new Date());
+      const answer = await alice.get(
+        `${ws()}/widget-data?of=dashboard&path=boards/by-team&widget=recent&zone=${zone}&filters=${encodeURIComponent(
+          JSON.stringify({ when: { from: today, to: today } }),
+        )}`,
+      );
+      expect(answer.status, JSON.stringify(answer.body)).toBe(200);
+      expect(answer.body.inputs.rows.rows.length, zone).toBe(3);
+      // And "today" by name is that day too.
+      const named = await alice.get(
+        `${ws()}/widget-data?of=dashboard&path=boards/by-team&widget=recent&zone=${zone}&filters=${encodeURIComponent(
+          JSON.stringify({ when: "today" }),
+        )}`,
+      );
+      expect(named.body.inputs.rows.rows.length, `${zone} today`).toBe(3);
+    }
   });
 });
 

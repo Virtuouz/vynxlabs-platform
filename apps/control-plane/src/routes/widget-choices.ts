@@ -22,7 +22,12 @@ export function widgetChoicesRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       "/tenants/:t/workspaces/:w/widget-choices",
       {
-        config: { access: access.custom, rateLimit: guestLimit },
+        config: {
+          access: access.custom(
+            "Needs `data:read` at the table the column belongs to, and the table's row policy applies. An app may call it for someone who is not signed in only where the table is open to anyone.",
+          ),
+          rateLimit: guestLimit,
+        },
         schema: {
           summary: "What a column of a widget's table may be set to",
           description:

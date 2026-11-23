@@ -1,6 +1,7 @@
 import { defineWidget, WidgetRegistry } from "@volvel/widgets";
 import { approvals, coreRegistry } from "@volvel/widgets-core";
 import { describe, expect, it } from "vitest";
+import { missingGroups } from "./groups.js";
 import { registerPlatformKinds } from "./kinds.js";
 import {
   checkDashboard,
@@ -81,6 +82,44 @@ describe("pages", () => {
     });
     expect(result.ok).toBe(true);
     expect(messages([chart])).toEqual([]);
+  });
+
+  it("holds who may edit a record in place, and a group named there that is gone is found (WID-19)", () => {
+    const detail: PageWidget = {
+      id: "info",
+      type: "core/detail",
+      at: { x: 0, y: 0, w: 6, h: 6 },
+      data: { record: { source: { record: "this" } } },
+      config: { edit: true, editBy: { groups: ["groups/billing"] } },
+    };
+    const record = (widget: PageWidget): InterfaceBody => ({
+      title: "Invoices",
+      pages: [
+        {
+          id: "inv",
+          title: "Invoice",
+          kind: "record",
+          record: { table: "invoices" },
+          widgets: [widget],
+        },
+      ],
+    });
+    const kinds = new KindRegistry();
+    registerPlatformKinds(kinds);
+    const result = kinds.validateManifest({
+      kind: "interface",
+      schemaVersion: 2,
+      path: "screens/invoices",
+      workspace: "sandbox",
+      ownership: "code",
+      body: record(detail),
+    });
+    expect(result.ok, JSON.stringify(result)).toBe(true);
+    expect(checkInterface(record(detail), tableOf)).toEqual([]);
+    expect(missingGroups(record(detail), ["groups/billing"])).toEqual([]);
+    expect(missingGroups(record(detail), ["groups/sales"])).toEqual([
+      expect.objectContaining({ at: "config/editBy" }),
+    ]);
   });
 
   it("refuses a type no pack declares, and draws nothing else of it", () => {
@@ -652,5 +691,33 @@ describe("approvals (phase 28, decision 0007)", () => {
     expect(issues([{ ...added, config: { fields: [{ name: "total", label: "Sum" }] } }])).toEqual(
       [],
     );
+  });
+});
+
+describe("the name of an app and of its interface (BLD-06, D52)", () => {
+  it("is at most 100 characters in both, so one limit holds for a name typed once", () => {
+    const kinds = new KindRegistry();
+    registerPlatformKinds(kinds);
+    const long = "x".repeat(101);
+    const app = (title: string) =>
+      kinds.validateManifest({
+        kind: "app",
+        schemaVersion: 1,
+        path: "sales",
+        ownership: "ui",
+        body: { title, interface: "screens/sales" },
+      });
+    const screen = (title: string) =>
+      kinds.validateManifest({
+        kind: "interface",
+        schemaVersion: 2,
+        path: "screens/sales",
+        ownership: "ui",
+        body: { title, pages: [{ id: "main", title: "Main", widgets: [] }] },
+      });
+    expect(screen("x".repeat(100)).ok).toBe(true);
+    expect(app("x".repeat(100)).ok).toBe(true);
+    expect(screen(long).ok).toBe(false);
+    expect(app(long).ok).toBe(false);
   });
 });

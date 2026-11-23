@@ -14,7 +14,7 @@ import { createMember, setMemberDisabled } from "../kernel/members.js";
 import { generateApiKey } from "../kernel/principal.js";
 import { effectivePolicy } from "../kernel/retention.js";
 import { makeRecoveryCodes, ownsATenant } from "../kernel/sso/recovery.js";
-import { likeTerm, PageQuery, pageOf, SearchPageQuery } from "../pagination.js";
+import { likeTerm, listOf, PageQuery, pageOf, SearchPageQuery } from "../pagination.js";
 import {
   AnyObject,
   Id,
@@ -467,6 +467,7 @@ export function identityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.signedIn },
         schema: {
           summary: "How many of the caller's recovery codes are left",
+          description: "A count only. The codes themselves are shown once, when they are made.",
           tags: ["identity"],
           response: {
             200: Type.Object({
@@ -640,6 +641,8 @@ export function identityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.signedInOrKey },
         schema: {
           summary: "The calling principal",
+          description:
+            "Who the instance takes the caller to be: a member, a service account or an end user. The console draws its first screen from this answer.",
           tags: ["identity"],
           response: {
             200: Type.Object({
@@ -704,6 +707,8 @@ export function identityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.signedIn },
         schema: {
           summary: "Registered resource kinds",
+          description:
+            "Every kind of resource this version of the platform knows, with the JSON Schema its body is checked against.",
           tags: ["resources"],
           response: {
             200: Type.Object({
@@ -826,8 +831,10 @@ export function identityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.signedIn },
         schema: {
           summary: "The calling member's API keys",
+          description:
+            "The keys the member made for themselves. A key's full value is shown once, when it is made, and is not in this list.",
           tags: ["identity"],
-          response: { 200: Type.Object({ items: Type.Array(ApiKey) }) },
+          response: { 200: listOf(ApiKey) },
         },
       },
       async ({ ctx }) => {
@@ -848,6 +855,8 @@ export function identityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.signedIn },
         schema: {
           summary: "Create an API key that acts as the calling member",
+          description:
+            "The key acts as the member. Its value is in the answer and is never shown again. Audited.",
           tags: ["identity"],
           body: NewApiKeyBody,
           response: { 201: NewApiKey },
@@ -875,6 +884,7 @@ export function identityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.signedIn },
         schema: {
           summary: "Revoke one of the calling member's API keys",
+          description: "The key stops working. Audited.",
           tags: ["identity"],
           params: Type.Object({ id: Id }),
           response: { 204: NoContent },
@@ -1005,6 +1015,8 @@ export function identityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.instance("member:write") },
         schema: {
           summary: "Create a member identity",
+          description:
+            "Makes a person who can sign in to the instance. Giving them access to a tenant is a binding, made separately. Audited.",
           tags: ["identity"],
           body: NewMemberBody,
           response: { 201: Member },
@@ -1022,8 +1034,9 @@ export function identityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.instance("binding:read") },
         schema: {
           summary: "Instance-scope bindings",
+          description: "The roles given at the instance, and to whom.",
           tags: ["permissions"],
-          response: { 200: Type.Object({ items: Type.Array(InstanceBinding) }) },
+          response: { 200: listOf(InstanceBinding) },
         },
       },
       async () => {
@@ -1063,6 +1076,8 @@ export function identityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.instance("binding:write") },
         schema: {
           summary: "Bind a built-in role to a member at instance scope",
+          description:
+            "Only the built-in `operator_admin` role can be given at the instance. Audited.",
           tags: ["permissions"],
           body: Type.Object({ memberId: Id, roleId: Id }),
           response: { 201: Type.Object({ id: Id }) },
@@ -1119,6 +1134,8 @@ export function identityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.instance("binding:write") },
         schema: {
           summary: "Remove an instance-scope binding",
+          description:
+            "The member loses the role at the instance. Refused when it would leave the instance without an operator. Audited.",
           tags: ["permissions"],
           params: Type.Object({ id: Id }),
           response: { 204: NoContent },

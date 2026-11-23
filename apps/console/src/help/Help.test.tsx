@@ -624,6 +624,38 @@ describe("what an error means", () => {
     await within(panel).findByRole("heading", { name: "Error codes" });
   });
 
+  test("a failure shown inside a dialog explains itself there: focus stays, Esc closes, the panel stays shut", async () => {
+    const err = new ApiError(409, {
+      code: "draft_changed",
+      detail: "Someone else saved this draft since you opened it.",
+    });
+    const onClose = vi.fn();
+    show(
+      <>
+        <Topic />
+        <Dialog open onClose={onClose} title="Create table">
+          <TextField name="name" label="Name" value="" onChange={() => {}} />
+          <Notice tone="danger">{failureText(err)}</Notice>
+        </Dialog>
+        <HelpDock />
+      </>,
+    );
+    const dialog = await screen.findByRole("dialog", { name: "Create table" });
+    const ask = within(dialog).getByRole("button", { name: "What does this mean?" });
+    ask.focus();
+    fireEvent.click(ask);
+    await within(dialog).findByText(/Nothing was overwritten/);
+    expect(screen.queryByRole("complementary", { name: "Help" })).toBeNull();
+    expect(told().split("|")[2]).not.toBe("open");
+    const more = within(dialog).getByRole("link", { name: "Open in documentation" });
+    expect(more.getAttribute("href")).toBe("/docs/develop/reference/errors#draft_changed");
+    expect(more.getAttribute("target")).toBe("_blank");
+    expect(dialog.contains(document.activeElement)).toBe(true);
+    expect(ask.getAttribute("aria-expanded")).toBe("true");
+    fireEvent.keyDown(document.activeElement ?? dialog, { key: "Escape" });
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
+  });
+
   test("a failure with no code of the API's, or none at all, offers nothing", async () => {
     show(<Topic />);
     act(() => {

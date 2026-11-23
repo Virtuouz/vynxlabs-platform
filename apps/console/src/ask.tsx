@@ -13,6 +13,7 @@ import {
 } from "@volvel/ui";
 import { type ReactNode, useState } from "react";
 import { ApiError, codeOfWords, makeQueryClient, setActiveClient, withCode } from "./api.ts";
+import { ErrorMeans, errorDocsHref } from "./help/ErrorMeans.tsx";
 import { openHelp } from "./help/store.ts";
 import { navigate, setLeaveQuestion } from "./router.tsx";
 
@@ -85,7 +86,12 @@ export function failureText(error: unknown): string {
 setFailureExplainer((words) => {
   const code = codeOfWords(words);
   return code
-    ? { label: "What does this mean?", onClick: () => openHelp(`errors#${code}`) }
+    ? {
+        label: "What does this mean?",
+        onClick: () => openHelp(`errors#${code}`),
+        // Inside a dialog or sheet the panel would open behind it: the words are shown there instead.
+        inline: { body: () => <ErrorMeans code={code} />, href: errorDocsHref(code) },
+      }
     : undefined;
 });
 

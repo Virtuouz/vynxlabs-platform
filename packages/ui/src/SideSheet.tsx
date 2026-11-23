@@ -2,6 +2,7 @@ import { Dialog as Base } from "@base-ui/react/dialog";
 import { X } from "lucide-react";
 import { type ReactNode, useEffect, useRef } from "react";
 import { firstField } from "./Dialog.tsx";
+import { InOverlay } from "./overlay.ts";
 import { useOpening } from "./presence.tsx";
 import { useReturnFocus } from "./returnFocus.ts";
 
@@ -161,68 +162,70 @@ export function SideSheet({
   const opener = useReturnFocus(open);
   useKeepFocusInside(shown, popup);
   return (
-    <Base.Root open={shown} onOpenChange={(next: boolean) => !next && onClose()}>
-      <Base.Portal>
-        <Base.Backdrop className="fixed inset-0 layer-sheet bg-scrim transition-opacity motion-slow data-[ending-style]:opacity-0 data-[starting-style]:opacity-0" />
-        <Base.Popup
-          ref={popup}
-          onKeyDown={keepTabInside}
-          // As a dialog does: what marks itself `data-autofocus`, else the first field to type in
-          // or choose from, else the first control. A form does not open with Enter on Close.
-          initialFocus={() =>
-            popup.current?.querySelector<HTMLElement>("[data-autofocus]") ??
-            firstField(popup.current) ??
-            true
-          }
-          finalFocus={() => returnFocus?.() ?? opener()}
-          className={`fixed inset-y-0 layer-sheet flex w-full flex-col border-line bg-surface shadow-modal transition-transform motion-slow ${
-            side === "left"
-              ? "left-0 sm:border-r data-[ending-style]:-translate-x-full data-[starting-style]:-translate-x-full"
-              : "right-0 sm:border-l data-[ending-style]:translate-x-full data-[starting-style]:translate-x-full"
-          } ${width}`}
-          {...(chosen !== undefined
-            ? {
-                style: {
-                  width: chosen === "full" ? "calc(100vw - 2rem)" : `${chosen}px`,
-                  maxWidth: "100vw",
-                },
-              }
-            : {})}
-        >
-          <div className="flex items-center justify-between gap-3 border-line border-b px-5 py-3">
-            <div className="flex min-w-0 items-center gap-3">
-              {icon ? (
-                <span
-                  aria-hidden="true"
-                  className="flex size-8 shrink-0 items-center justify-center rounded-control border border-action/30 bg-action-soft text-action"
-                >
-                  {icon}
-                </span>
-              ) : null}
-              <div className="flex min-w-0 flex-col">
-                <Base.Title className="m-0 text-title font-semibold">{title}</Base.Title>
-                {description ? (
-                  <Base.Description className="m-0 text-meta text-ink-muted">
-                    {description}
-                  </Base.Description>
+    <InOverlay.Provider value={true}>
+      <Base.Root open={shown} onOpenChange={(next: boolean) => !next && onClose()}>
+        <Base.Portal>
+          <Base.Backdrop className="fixed inset-0 layer-sheet bg-scrim transition-opacity motion-slow data-[ending-style]:opacity-0 data-[starting-style]:opacity-0" />
+          <Base.Popup
+            ref={popup}
+            onKeyDown={keepTabInside}
+            // As a dialog does: what marks itself `data-autofocus`, else the first field to type in
+            // or choose from, else the first control. A form does not open with Enter on Close.
+            initialFocus={() =>
+              popup.current?.querySelector<HTMLElement>("[data-autofocus]") ??
+              firstField(popup.current) ??
+              true
+            }
+            finalFocus={() => returnFocus?.() ?? opener()}
+            className={`fixed inset-y-0 layer-sheet flex w-full flex-col border-line bg-surface shadow-modal transition-transform motion-slow ${
+              side === "left"
+                ? "left-0 sm:border-r data-[ending-style]:-translate-x-full data-[starting-style]:-translate-x-full"
+                : "right-0 sm:border-l data-[ending-style]:translate-x-full data-[starting-style]:translate-x-full"
+            } ${width}`}
+            {...(chosen !== undefined
+              ? {
+                  style: {
+                    width: chosen === "full" ? "calc(100vw - 2rem)" : `${chosen}px`,
+                    maxWidth: "100vw",
+                  },
+                }
+              : {})}
+          >
+            <div className="flex items-center justify-between gap-3 border-line border-b px-5 py-3">
+              <div className="flex min-w-0 items-center gap-3">
+                {icon ? (
+                  <span
+                    aria-hidden="true"
+                    className="flex size-8 shrink-0 items-center justify-center rounded-control border border-action/30 bg-action-soft text-action"
+                  >
+                    {icon}
+                  </span>
                 ) : null}
+                <div className="flex min-w-0 flex-col">
+                  <Base.Title className="m-0 text-title font-semibold">{title}</Base.Title>
+                  {description ? (
+                    <Base.Description className="m-0 text-meta text-ink-muted">
+                      {description}
+                    </Base.Description>
+                  ) : null}
+                </div>
               </div>
+              <Base.Close
+                aria-label="Close"
+                className="flex size-8 shrink-0 items-center justify-center rounded-control text-ink-muted hover:bg-hover hover:text-ink"
+              >
+                <X aria-hidden="true" size={16} />
+              </Base.Close>
             </div>
-            <Base.Close
-              aria-label="Close"
-              className="flex size-8 shrink-0 items-center justify-center rounded-control text-ink-muted hover:bg-hover hover:text-ink"
-            >
-              <X aria-hidden="true" size={16} />
-            </Base.Close>
-          </div>
-          <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">{children}</div>
-          {footer ? (
-            <div className="flex flex-wrap items-center justify-end gap-2 border-line border-t px-5 py-3">
-              {footer}
-            </div>
-          ) : null}
-        </Base.Popup>
-      </Base.Portal>
-    </Base.Root>
+            <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">{children}</div>
+            {footer ? (
+              <div className="flex flex-wrap items-center justify-end gap-2 border-line border-t px-5 py-3">
+                {footer}
+              </div>
+            ) : null}
+          </Base.Popup>
+        </Base.Portal>
+      </Base.Root>
+    </InOverlay.Provider>
   );
 }

@@ -526,14 +526,14 @@ test("a tenant admin turns writing code in the console off and on, after being a
     return {};
   };
   show(<TenantOverview base={base} tenantId="t1" />);
-  fireEvent.click(await screen.findByRole("button", { name: "Turn off code in console" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Turn off code in the console" }));
   const dialog = await screen.findByRole("dialog");
   expect(within(dialog).getByText(/Turn off code in the console for Acme/)).toBeTruthy();
   fireEvent.click(within(dialog).getByRole("button", { name: "Turn off" }));
   await waitFor(() =>
     expect(calls.find((c) => c.method === "PATCH")?.body).toEqual({ consoleCode: false }),
   );
-  expect(await screen.findByRole("button", { name: "Turn on code in console" })).toBeTruthy();
+  expect(await screen.findByRole("button", { name: "Turn on code in the console" })).toBeTruthy();
 });
 
 test("someone who may not change the tenant is not offered the switch", async () => {
@@ -545,5 +545,5 @@ test("someone who may not change the tenant is not offered the switch", async ()
   });
   show(<TenantOverview base={base} tenantId="t1" />);
   await screen.findByRole("heading", { name: "Acme" });
-  expect(screen.queryByRole("button", { name: /code in console/ })).toBeNull();
+  expect(screen.queryByRole("button", { name: /code in the console/ })).toBeNull();
 });

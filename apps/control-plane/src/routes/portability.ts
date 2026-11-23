@@ -174,9 +174,10 @@ export function portabilityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             "cannot be imported from this one, and is uploaded again.",
           tags: ["portability"],
           response: {
-            200: Type.Object({
-              items: Type.Array(Type.Object({ ...Staged.properties, here: Type.Boolean() })),
-            }),
+            200: Type.Object(
+              { items: Type.Array(Type.Object({ ...Staged.properties, here: Type.Boolean() })) },
+              { description: "Every one there is. The list has no cursor." },
+            ),
           },
         },
       },

@@ -1607,7 +1607,7 @@ export function ConsoleCodeButton({
             ? `Turn off code in the console for ${tenant.name}?`
             : `Turn on code in the console for ${tenant.name}?`,
           text: on
-            ? "People can no longer save or test scripts and flows' code in the console. Code deployed from the repository keeps running. A tenant admin or an operator can turn it on again."
+            ? "People can no longer save or test scripts, connectors and trigger sources in the console, in any workspace of this tenant. Drafts are kept, and what is deployed keeps running. A tenant admin or an operator can turn it on again."
             : "People with the code permission can write and test code in the console again.",
           action: on ? "Turn off" : "Turn on",
           danger: on,
@@ -1629,7 +1629,7 @@ export function ConsoleCodeButton({
         }
       }}
     >
-      {on ? "Turn off code in console" : "Turn on code in console"}
+      {on ? "Turn off code in the console" : "Turn on code in the console"}
     </Button>
   );
 }

@@ -53,7 +53,7 @@ const Tenant = Type.Object({
   }),
   consoleCode: Type.Boolean({
     description:
-      "Whether people with `code:write` may write script and flow code in the console. False: code is deployed from the tenant's repository. A tenant admin or an operator can change it.",
+      "Whether people with `code:write` may write code in the console (scripts, connectors, trigger sources). False: code is deployed from the tenant's repository. A tenant admin or an operator can change it.",
   }),
   createdAt: Time,
 });
@@ -153,7 +153,7 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                 ...Tenant.properties,
                 workspaceCount: Type.Integer({ minimum: 0 }),
                 mayRename: Type.Boolean({
-                  description: "Whether the caller may change this tenant's name.",
+                  description: "Whether the caller may change this tenant (its name and settings).",
                 }),
               }),
             ),
@@ -354,7 +354,7 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             200: Type.Object({
               ...Tenant.properties,
               mayRename: Type.Boolean({
-                description: "Whether the caller may change this tenant's name.",
+                description: "Whether the caller may change this tenant (its name and settings).",
               }),
             }),
           },

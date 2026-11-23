@@ -1,3 +1,4 @@
+import { PATH_PATTERN } from "@volvel/manifest";
 import {
   Button,
   type JsonSchema,
@@ -10,7 +11,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { failureText, takenText } from "../ask.tsx";
-import { Loading } from "../kit/LoadState.tsx";
+import { Pending } from "../kit/LoadState.tsx";
 import { SectionLabel } from "../kit/layout.tsx";
 import { SecretField } from "../kit/SecretField.tsx";
 import { StatePill } from "../kit/status.tsx";
@@ -108,7 +109,8 @@ export const OAUTH_PRESETS: Record<
 };
 
 const NEW = "__new";
-const PATH = /^[a-z0-9][a-z0-9-]*(\/[a-z0-9][a-z0-9-]*)*$/;
+// The platform's own pattern for a path (the manifest's), so the wizard refuses nothing it allows.
+const PATH = new RegExp(PATH_PATTERN);
 
 /** Where a provider sends the member back, which the app registered with it must list. */
 /** Whether a connection's settings now point at another origin than the ones held (D10): the stored credential does not go along. */
@@ -287,8 +289,8 @@ export function ConnectionWizard({
     setPathTaken(undefined);
     setFound(undefined);
     if (!chosen && !PATH.test(newPath)) {
-      setProblem(
-        "Name it with lowercase letters, digits and dashes, such as crm or google/sheets.",
+      setPathTaken(
+        "Name it with lowercase letters, digits, dashes and underscores, such as crm or google/sheets.",
       );
       return;
     }
@@ -489,7 +491,7 @@ export function ConnectionWizard({
               onChange={(value) => setConfig((value ?? {}) as Record<string, unknown>)}
             />
           ) : (
-            <Loading />
+            <Pending of={kinds} what="the kinds of connection" />
           )}
         </section>
 

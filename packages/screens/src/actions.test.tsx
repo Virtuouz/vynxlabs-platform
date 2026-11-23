@@ -306,7 +306,9 @@ describe("confirming an action", () => {
     await screen.findByText("Mark paid?");
     fireEvent.click(screen.getByRole("button", { name: "Mark paid" }));
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Mark paid" }).hasAttribute("disabled")).toBe(true),
+      expect(screen.getByRole("button", { name: "Mark paid" }).getAttribute("aria-disabled")).toBe(
+        "true",
+      ),
     );
     fireEvent.click(screen.getByRole("button", { name: "Mark paid" }));
     expect(client.act).toHaveBeenCalledTimes(1);

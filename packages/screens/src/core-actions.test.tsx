@@ -142,9 +142,12 @@ describe("button", () => {
     fireEvent.click(pressed);
     expect(act).toHaveBeenCalledWith("on/click");
     await waitFor(() => expect(pressed.getAttribute("aria-busy")).toBe("true"));
-    expect((pressed as HTMLButtonElement).disabled).toBe(true);
+    // Busy keeps the focus: it is aria-disabled, and a second press does nothing.
+    expect(pressed.getAttribute("aria-disabled")).toBe("true");
+    fireEvent.click(pressed);
+    expect(act).toHaveBeenCalledTimes(1);
     finish({ ok: true });
-    await waitFor(() => expect((pressed as HTMLButtonElement).disabled).toBe(false));
+    await waitFor(() => expect(pressed.getAttribute("aria-disabled")).toBeNull());
     expect(pressed.getAttribute("aria-busy")).toBeNull();
   });
 

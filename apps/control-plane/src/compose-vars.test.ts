@@ -180,3 +180,16 @@ describe.skipIf(!docker)("compose leaves the bundled services out (HOST-12)", ()
     expect(env?.S3_ENDPOINT).toBe("http://objectstore:8333");
   });
 });
+
+describe("compose passes no setting of the worker host empty that the host refuses empty", () => {
+  test("the user and group the host starts workers as, and how many, have the defaults the host has", () => {
+    for (const [name, value] of [
+      ["MANAGED_WORKER_UID", "10001"],
+      ["MANAGED_WORKER_GID", "10001"],
+      ["MANAGED_WORKER_USERS", "256"],
+    ]) {
+      expect(compose, name).not.toContain(`${name}: \${${name}:-}`);
+      expect(compose, name).toContain(`${name}: \${${name}:-${value}}`);
+    }
+  });
+});

@@ -40,21 +40,26 @@ be able to switch to them.`);
 const log = (level: string, message: string, fields?: Record<string, unknown>) =>
   console.log(JSON.stringify({ time: new Date().toISOString(), level, message, ...fields }));
 
-const url = values.url ?? process.env.VOLVEL_URL;
-const token = process.env.WORKER_HOST_TOKEN;
+/** A setting of the environment. Empty is not set: a compose file that passes it on may pass it empty. */
+const setting = (name: string): string | undefined => {
+  const raw = process.env[name]?.trim();
+  return raw === "" ? undefined : raw;
+};
+const url = values.url ?? setting("VOLVEL_URL");
+const token = setting("WORKER_HOST_TOKEN");
 if (!url || !token) {
   console.error("volvel-worker-host needs --url, or VOLVEL_URL, and WORKER_HOST_TOKEN.");
   process.exit(2);
 }
 const id = (name: string) => {
-  const parsed = Number(process.env[name] ?? "10001");
+  const parsed = Number(setting(name) ?? "10001");
   if (!Number.isInteger(parsed) || parsed <= 0) {
     console.error(`${name} must be a positive whole number.`);
     process.exit(2);
   }
   return parsed;
 };
-const users = Number(process.env.MANAGED_WORKER_USERS ?? "256");
+const users = Number(setting("MANAGED_WORKER_USERS") ?? "256");
 if (!Number.isInteger(users) || users < 1 || users > 60000) {
   console.error("MANAGED_WORKER_USERS must be a whole number from 1 to 60000.");
   process.exit(2);
@@ -88,15 +93,15 @@ const positive = (value: string | undefined, name: string, allowZero = false) =>
   }
   return parsed;
 };
-const slots = positive(values["run-slots"] ?? process.env.RUN_SLOTS, "--run-slots");
+const slots = positive(values["run-slots"] ?? setting("RUN_SLOTS"), "--run-slots");
 const floor = positive(
-  values["memory-floor"] ?? process.env.RUN_MEMORY_FLOOR_MB,
+  values["memory-floor"] ?? setting("RUN_MEMORY_FLOOR_MB"),
   "--memory-floor",
   true,
 );
 
 const maxWorkers = positive(
-  values["max-workers"] ?? process.env.MANAGED_WORKERS_MAX,
+  values["max-workers"] ?? setting("MANAGED_WORKERS_MAX"),
   "--max-workers",
 );
 

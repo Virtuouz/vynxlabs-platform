@@ -1122,6 +1122,9 @@ export function Workers({ base }: { base: string }) {
     state: "off" | "unavailable" | "host" | "isolated" | "shared" | "refused";
   }>(`${base}/managed-workers`);
   const [adding, setAdding] = useState(false);
+  const workspaces = useLoad<{ items: { id: string; name: string }[] }>(`${base}/workspaces`);
+  const workspaceName = (id: string) =>
+    workspaces.data?.items.find((workspace) => workspace.id === id)?.name ?? "A workspace";
   const made = (pools.data?.items ?? []).filter((pool) => pool.name !== null);
   const poolOptions = [
     { value: "", label: "Default pool: scripts that name no pool" },
@@ -1322,6 +1325,11 @@ export function Workers({ base }: { base: string }) {
             header: "Pool",
             cell: (row) => (row.pool ? <Mono>{row.pool}</Mono> : "Default pool"),
           },
+          {
+            header: "Runs code of",
+            cell: (row) =>
+              row.workspaceId ? workspaceName(row.workspaceId) : "Every workspace of the tenant",
+          },
           { header: "Created", cell: (row) => <Time value={row.createdAt} mode="ago" /> },
           {
             header: "Status",
@@ -1343,11 +1351,24 @@ export function Workers({ base }: { base: string }) {
               options: poolOptions,
               hint: "The worker runs only the scripts of this pool.",
             },
+            {
+              name: "workspaceId",
+              label: "Runs code of",
+              options: [
+                { value: "", label: "Every workspace of the tenant" },
+                ...(workspaces.data?.items ?? []).map((workspace) => ({
+                  value: workspace.id,
+                  label: workspace.name,
+                })),
+              ],
+              hint: "A worker for one workspace never runs another's scripts, so a client's network holds only that client's code.",
+            },
           ],
-          submit: async ({ name, pool }) => {
+          submit: async ({ name, pool, workspaceId }) => {
             const result = await api.post(`${base}/worker-credentials`, {
               name,
               ...(pool ? { pool } : {}),
+              ...(workspaceId ? { workspaceId } : {}),
             });
             pools.reload();
             return result;

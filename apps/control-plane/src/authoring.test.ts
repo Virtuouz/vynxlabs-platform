@@ -271,7 +271,10 @@ describe("drafts", () => {
     expect(deploy.status).toBe(400);
     // It names the step and the field, and none of the shapes the step is not.
     expect(deploy.body.errors).toEqual([
-      { path: "flows/unfinished (flow)", message: expect.stringContaining("/body/nodes/run/script ") },
+      {
+        path: "flows/unfinished (flow)",
+        message: expect.stringContaining("/body/nodes/run/script "),
+      },
     ]);
     expect((await alice.get(`${ws()}/drafts/flows/unfinished`)).status).toBe(200);
     expect((await alice.delete(`${ws()}/drafts/flows/unfinished`)).status).toBe(204);

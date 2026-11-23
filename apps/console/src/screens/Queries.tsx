@@ -139,22 +139,22 @@ export function Queries({ root, link }: { root: string; link: string }) {
         root,
         target.current as string,
         {
-        kind: "query",
-        schemaVersion: 1,
-        body: {
-          ...(current?.description ? { description: current.description } : {}),
-          sql,
-          ...(parametersIn(sql) > 0
-            ? {
+          kind: "query",
+          schemaVersion: 1,
+          body: {
+            ...(current?.description ? { description: current.description } : {}),
+            sql,
+            ...(parametersIn(sql) > 0
+              ? {
                   // A parameter is sent as it is known, with all it has (such as `required`);
                   // only a name that is still `$n` is given one.
-                parameters: parametersFor(sql, current).map((one, place) => ({
+                  parameters: parametersFor(sql, current).map((one, place) => ({
                     ...one,
-                  name: one.name.startsWith("$") ? `p${place + 1}` : one.name,
-                })),
-              }
-            : {}),
-        },
+                    name: one.name.startsWith("$") ? `p${place + 1}` : one.name,
+                  })),
+                }
+              : {}),
+          },
         },
         // A query not yet named is a create: it never replaces what is at the path. One with no
         // draft yet makes its first.

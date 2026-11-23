@@ -293,13 +293,13 @@ export function ScriptEditor({
         root,
         snap.path,
         {
-        kind,
-        schemaVersion: 1,
-        // A schema read from the code is the code's: what was read is sent back as it is.
-        body:
-          about.schema && snap.body.schemaSource !== "code"
-            ? { ...snap.body, [about.schema.field]: schema }
-            : snap.body,
+          kind,
+          schemaVersion: 1,
+          // A schema read from the code is the code's: what was read is sent back as it is.
+          body:
+            about.schema && snap.body.schemaSource !== "code"
+              ? { ...snap.body, [about.schema.field]: schema }
+              : snap.body,
         },
         // A new one is a create: a path that is taken is refused, never overwritten.
         at ? { revision: at } : opened ? { first: true } : { create: true },

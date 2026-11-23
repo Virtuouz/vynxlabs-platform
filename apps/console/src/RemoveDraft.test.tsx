@@ -387,8 +387,11 @@ describe("where it is used", () => {
     );
     // The draft is saved with the unfinished step in it: nothing is held back.
     await waitFor(() => expect(sent("PUT")).toHaveLength(1), { timeout: 8000 });
-    const saved = (sent("PUT")[0]?.body as { body: { nodes: Record<string, { type: string }> } })
-      .body.nodes;
+    const saved = (
+      (sent("PUT")[0] as NonNullable<ReturnType<typeof sent>[number]>).body as {
+        body: { nodes: Record<string, { type: string }> };
+      }
+    ).body.nodes;
     expect(Object.values(saved).map((node) => node.type)).toContain("script");
   });
 

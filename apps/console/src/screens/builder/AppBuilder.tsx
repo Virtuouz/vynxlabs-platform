@@ -31,7 +31,7 @@ import { PageEditor } from "./PageEditor.tsx";
 import { PagesList } from "./PagesList.tsx";
 import { PublishCheck } from "./PublishCheck.tsx";
 import { canAddPage, inMenu, movedPage } from "./pageKinds.ts";
-import { openersOf, problemWords } from "./publishCheck.ts";
+import { openerPlaces, problemWords } from "./publishCheck.ts";
 import { ReadOnlyLine, useReadOnly } from "./ReadOnly.tsx";
 import { definitionOf } from "./registry.ts";
 import { syncSheetActions } from "./sheetActions.ts";
@@ -382,7 +382,8 @@ export function AppBuilder({
   const removePage = async () => {
     if (!page) return;
     // What opens this page would open nothing, and the publish refuses it: said before it happens.
-    const opening = openersOf(body, page.id, definitionOf);
+    const places = openerPlaces(body, page.id, definitionOf);
+    const opening = places.map((one) => one.name);
     const sure = await ask.confirm({
       title: `Remove the page ${page.title}?`,
       text: (
@@ -392,13 +393,21 @@ export function AppBuilder({
             <>
               {" "}
               {opening.length === 1 ? "This action opens" : "These actions open"} it and will open
-              nothing until you change {opening.length === 1 ? "it" : "them"}: {opening.join("; ")}.
+              nothing until you change {opening.length === 1 ? "it" : "them"}:
             </>
           ) : null}
         </>
       ),
       action: "Remove the page",
       danger: true,
+      // Each action that opens it can be gone to first, as the publish check offers.
+      links: places.map((one) => ({
+        label: one.name,
+        onSelect: () => {
+          setPageId(one.page);
+          setSelected(one.widget);
+        },
+      })),
     });
     if (!sure) return;
     change((draft) => {

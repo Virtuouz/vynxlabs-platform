@@ -20,6 +20,8 @@ export interface ConfirmOptions {
   cancel?: string;
   /** Marks an action that cannot be undone. */
   danger?: boolean;
+  /** Things the question is about, each with a way to go and see it. Going closes the question as "no". */
+  links?: { label: string; onSelect: () => void }[];
 }
 
 export interface PromptOptions extends ConfirmOptions {
@@ -133,6 +135,26 @@ export function DialogsProvider({ children }: { children: ReactNode }) {
             }}
           >
             {options?.text ? <div className="text-ink-muted">{options.text}</div> : null}
+            {options?.links && options.links.length > 0 ? (
+              <ul className="m-0 flex list-none flex-col gap-1 p-0 text-body-sm">
+                {options.links.map((one) => (
+                  <li key={one.label} className="flex items-center justify-between gap-3">
+                    <span className="min-w-0 text-ink">{one.label}</span>
+                    <button
+                      type="button"
+                      aria-label={`Show ${one.label}`}
+                      className="shrink-0 cursor-pointer border-0 bg-transparent p-0 text-meta text-action underline outline-offset-2 focus-visible:outline-2 focus-visible:outline-focus"
+                      onClick={() => {
+                        close(false);
+                        one.onSelect();
+                      }}
+                    >
+                      Show it
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
             {asked.kind === "prompt" ? (
               asked.options.multiline ? (
                 <TextAreaField

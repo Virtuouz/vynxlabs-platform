@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 import { parseArgs } from "node:util";
 import { parseMachine } from "./machine.js";
+import { readTokenFile } from "./token.js";
 import { telemetryFromEnv } from "./trace.js";
 import { Worker } from "./worker.js";
 
@@ -11,6 +12,7 @@ const { values } = parseArgs({
     url: { type: "string" },
     token: { type: "string" },
     "token-stdin": { type: "boolean" },
+    "token-file": { type: "string" },
     concurrency: { type: "string" },
     "idle-exit": { type: "string" },
     help: { type: "boolean", short: "h" },
@@ -26,6 +28,8 @@ Options:
   --token-stdin       Read the credential from the first line of standard input.
                       Kept out of the process's environment and command line, where
                       other processes of the same user could read it.
+  --token-file <path> Read the credential from the first line of a file, such as a
+                      Compose or Docker secret. Not in the environment either.
   --concurrency <n>   Runs handled at once. Default 4.
   --idle-exit <s>     Exit after this many seconds with nothing to do.
 
@@ -44,11 +48,22 @@ async function firstLine(): Promise<string | undefined> {
 }
 
 const url = values.url ?? process.env.VOLVEL_URL;
+let fromFile: string | undefined;
+if (values["token-file"]) {
+  try {
+    fromFile = readTokenFile(values["token-file"]);
+  } catch (error) {
+    console.error((error as Error).message);
+    process.exit(2);
+  }
+}
 const token = values["token-stdin"]
   ? await firstLine()
-  : (values.token ?? process.env.VOLVEL_WORKER_TOKEN);
+  : (fromFile ?? values.token ?? process.env.VOLVEL_WORKER_TOKEN);
 if (!url || !token) {
-  console.error("volvel-worker needs --url and --token, or VOLVEL_URL and VOLVEL_WORKER_TOKEN.");
+  console.error(
+    "volvel-worker needs --url and a credential: --token-file, --token-stdin or --token, or VOLVEL_URL and VOLVEL_WORKER_TOKEN.",
+  );
   process.exit(2);
 }
 // The credential is in memory now. Nothing a script spawns should inherit it.

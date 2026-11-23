@@ -11,6 +11,9 @@
 # itself is not held to them.
 set -u
 uid="${MANAGED_WORKER_UID:-10001}"
+users="${MANAGED_WORKER_USERS:-256}"
+# Each worker runs as the next free user of this range, so the rules name all of them.
+owners="$uid-$((uid + users - 1))"
 log() {
   printf '{"time":"%s","level":"%s","message":"%s"}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" "$2"
 }
@@ -18,21 +21,23 @@ log() {
 if command -v iptables >/dev/null 2>&1 && iptables -n -L OUTPUT >/dev/null 2>&1; then
   plane_host=$(printf '%s' "${VOLVEL_URL:-}" | sed -E 's#^[a-z]+://(\[[^]]+\]|[^/:]+).*#\1#')
   for address in $(getent ahostsv4 "$plane_host" 2>/dev/null | awk '{print $1}' | sort -u); do
-    iptables -A OUTPUT -m owner --uid-owner "$uid" -d "$address" -j ACCEPT
+    iptables -A OUTPUT -m owner --uid-owner "$owners" -d "$address" -j ACCEPT
   done
   # Any port: Docker's name server at 127.0.0.11 is reached on a port it rewrites 53 to,
   # before these rules see the packet.
   for server in $(awk '/^nameserver/ {print $2}' /etc/resolv.conf); do
     case "$server" in *:*) continue ;; esac
-    iptables -A OUTPUT -m owner --uid-owner "$uid" -d "$server" -j ACCEPT
+    iptables -A OUTPUT -m owner --uid-owner "$owners" -d "$server" -j ACCEPT
   done
   for network in 0.0.0.0/8 10.0.0.0/8 100.64.0.0/10 127.0.0.0/8 169.254.0.0/16 \
-    172.16.0.0/12 192.168.0.0/16 198.18.0.0/15 224.0.0.0/4 240.0.0.0/4; do
-    iptables -A OUTPUT -m owner --uid-owner "$uid" -d "$network" -j REJECT
+    172.16.0.0/12 192.0.0.0/24 192.168.0.0/16 198.18.0.0/15 224.0.0.0/4 240.0.0.0/4; do
+    iptables -A OUTPUT -m owner --uid-owner "$owners" -d "$network" -j REJECT
   done
   if command -v ip6tables >/dev/null 2>&1 && ip6tables -n -L OUTPUT >/dev/null 2>&1; then
-    for network in ::1/128 fc00::/7 fe80::/10 ::ffff:0:0/96; do
-      ip6tables -A OUTPUT -m owner --uid-owner "$uid" -d "$network" -j REJECT
+    # Mapped, NAT64, 6to4 and Teredo forms carry an IPv4 address; site-local is retired.
+    for network in ::1/128 fc00::/7 fe80::/10 fec0::/10 ::ffff:0:0/96 64:ff9b::/96 64:ff9b:1::/48 \
+      2002::/16 2001::/32; do
+      ip6tables -A OUTPUT -m owner --uid-owner "$owners" -d "$network" -j REJECT
     done
   fi
   log info "workers may not reach private, loopback or link-local addresses, other than the control plane"

@@ -1,8 +1,12 @@
 import { type ChildProcess, spawn } from "node:child_process";
+import { chown, mkdir, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import {
+  canSignalOtherUsers,
   formatMachine,
   type MachineProbe,
   type MachineShare,
@@ -28,8 +32,17 @@ export interface WorkerHostOptions {
   url: string;
   /** WORKER_HOST_TOKEN. */
   token: string;
-  /** The user workers run as. Never the host's own. */
-  user: { uid: number; gid: number };
+  /**
+   * The users workers run as. Never the host's own. Each worker has a user of its own from
+   * `count` ids starting at `uid` and `gid` (default: as many as workers may be alive), so
+   * that one tenant's script cannot read or change another tenant's worker, its files or
+   * its environment. The host's firewall rules name the same range.
+   */
+  user: { uid: number; gid: number; count?: number };
+  /** Where each worker's private directory is made. Default: the system's temporary directory. */
+  scratchRoot?: string;
+  /** Starts a worker. Replaced in tests, which cannot switch users. */
+  spawn?: typeof spawn;
   /** Workers alive at once. Default: twice the machine's run slots, as each costs memory too. */
   maxWorkers?: number;
   /** Scripts running at once on this machine, across all its workers. Default: from its memory. */
@@ -71,6 +84,8 @@ export class WorkerHost {
   readonly #guard: MemoryGuard;
   /** What this machine's workers share. */
   readonly machine: MachineShare;
+  /** The user slot each live lease holds, so that two never share one. */
+  readonly #slots = new Map<string, number>();
   #stopping = false;
   #asking: AbortController | undefined;
 
@@ -102,8 +117,26 @@ export class WorkerHost {
 
   /** Asks for leases and starts workers until stopped, or until the token is refused. */
   async run(): Promise<"stopped" | "refused"> {
-    const max = this.#options.maxWorkers ?? this.machine.slots * 2;
+    const wanted = this.#options.maxWorkers ?? this.machine.slots * 2;
+    const max = Math.min(wanted, this.#options.user.count ?? wanted);
+    if (max < wanted) {
+      this.#log(
+        "warn",
+        "fewer workers than the machine could run: the range of users is the limit",
+        {
+          wanted,
+          users: max,
+        },
+      );
+    }
     this.#log("info", "this machine's share", { ...this.machine, maxWorkers: max });
+    if (!canSignalOtherUsers()) {
+      this.#log(
+        "warn",
+        "this process may not send signals to workers of other users: it cannot stop them, " +
+          "drain them or end a script when memory runs short. Give its container CAP_KILL.",
+      );
+    }
     this.#guard.start();
     while (!this.#stopping) {
       if (this.#workers.size >= max || this.#shortOfMemory()) {
@@ -112,7 +145,7 @@ export class WorkerHost {
       }
       try {
         const lease = await this.#lease();
-        if (lease) this.#start(lease);
+        if (lease) await this.#start(lease);
       } catch (error) {
         if (error instanceof HostTokenRefused) {
           this.#log("error", "The control plane refused the worker host token.");
@@ -131,20 +164,35 @@ export class WorkerHost {
   }
 
   /** Stops asking, and asks each worker to finish what it is doing and exit. */
-  async stop(graceSeconds = 30): Promise<void> {
+  async stop(graceSeconds = 30, giveUpSeconds = 10): Promise<void> {
     this.#stopping = true;
     this.#asking?.abort();
     this.#guard.stop();
     await Promise.all(
-      [...this.#workers.values()].map(
-        (child) =>
+      [...this.#workers.entries()].map(
+        ([leaseId, child]) =>
           new Promise<void>((resolve) => {
             if (child.exitCode !== null || child.signalCode !== null) return resolve();
-            const force = setTimeout(() => child.kill("SIGKILL"), graceSeconds * 1000);
-            child.once("exit", () => {
-              clearTimeout(force);
+            const timers: NodeJS.Timeout[] = [];
+            const done = () => {
+              for (const timer of timers) clearTimeout(timer);
               resolve();
-            });
+            };
+            child.once("exit", done);
+            timers.push(setTimeout(() => child.kill("SIGKILL"), graceSeconds * 1000));
+            // A worker that cannot be signalled is left, and said: its lease stays held.
+            timers.push(
+              setTimeout(
+                () => {
+                  this.#log("error", "a worker could not be stopped and is left running", {
+                    leaseId,
+                    pid: child.pid,
+                  });
+                  done();
+                },
+                (graceSeconds + giveUpSeconds) * 1000,
+              ),
+            );
             child.kill("SIGTERM");
           }),
       ),
@@ -185,22 +233,51 @@ export class WorkerHost {
     }
   }
 
-  #start(lease: Lease) {
+  /** The lowest user slot no live lease holds. */
+  #freeSlot(): number {
+    const taken = new Set(this.#slots.values());
+    let slot = 0;
+    while (taken.has(slot)) slot += 1;
+    return slot;
+  }
+
+  async #start(lease: Lease) {
     const env: Record<string, string> = {};
     for (const name of PASSED_THROUGH) {
       const value = process.env[name];
       if (value !== undefined) env[name] = value;
     }
-    const { uid, gid } = this.#options.user;
-    const child = spawn(process.execPath, [this.#bin, "--token-stdin"], {
+    const slot = this.#freeSlot();
+    this.#slots.set(lease.id, slot);
+    const uid = this.#options.user.uid + slot;
+    const gid = this.#options.user.gid + slot;
+    // The worker's own directory: its home, its temporary files and the bundle it keeps.
+    // Nobody else's user can open it, and it is gone with the worker.
+    const home = join(this.#options.scratchRoot ?? tmpdir(), `volvel-lease-${lease.id}`);
+    try {
+      await rm(home, { recursive: true, force: true });
+      await mkdir(home, { mode: 0o700 });
+      if (process.getuid?.() === 0) await chown(home, uid, gid);
+    } catch (error) {
+      this.#slots.delete(lease.id);
+      this.#log("error", "a worker's directory could not be made", {
+        tenantId: lease.tenantId,
+        error: (error as Error).message,
+      });
+      void this.#ended(lease);
+      return;
+    }
+    const child = (this.#options.spawn ?? spawn)(process.execPath, [this.#bin, "--token-stdin"], {
       env: {
         ...env,
-        HOME: "/tmp",
+        HOME: home,
+        TMPDIR: home,
         VOLVEL_URL: this.#url,
         VOLVEL_WORKER_IDLE_EXIT: String(lease.idleExitSeconds),
         VOLVEL_WORKER_MACHINE: formatMachine(this.machine),
       },
       stdio: ["pipe", "pipe", "pipe"],
+      cwd: home,
       uid,
       gid,
     });
@@ -219,11 +296,26 @@ export class WorkerHost {
       if (ended) return;
       ended = true;
       this.#workers.delete(lease.id);
+      this.#slots.delete(lease.id);
       this.#log("info", "a worker exited", { tenantId: lease.tenantId, code });
+      void rm(home, { recursive: true, force: true }).catch(() => {});
       void this.#ended(lease);
     };
     child.once("exit", end);
-    child.once("error", (error) => {
+    let spawned = false;
+    child.once("spawn", () => {
+      spawned = true;
+    });
+    // Node reports a signal that was refused here too, as it reports a worker that could not start.
+    // A refused signal leaves the worker running and its lease held: it is not an exit.
+    child.on("error", (error) => {
+      if (spawned) {
+        this.#log("error", "a signal to a worker was refused: the worker is still running", {
+          tenantId: lease.tenantId,
+          error: error.message,
+        });
+        return;
+      }
       this.#log("error", "a worker could not be started", {
         tenantId: lease.tenantId,
         error: error.message,

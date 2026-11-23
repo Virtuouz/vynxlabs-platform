@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { newId, sql } from "@volvel/db";
+import { newId, POLICY_NAMES, sql } from "@volvel/db";
 import {
   type ColumnType,
   conditionColumn,
@@ -573,9 +573,6 @@ async function setUnique(trx: Trx, schema: string, table: string, column: string
   }
 }
 
-/** The names a table's row policies may have had. All are dropped before the wanted ones are made. */
-const POLICY_NAMES = ["rows", "rows_read", "rows_insert", "rows_update", "rows_delete"];
-
 /**
  * Who is asking, from the claim `withData` signs for the transaction. Written
  * as a subquery so that it is checked and read once for a statement, not once
@@ -671,17 +668,21 @@ async function setPolicy(
 }
 
 /**
- * Compiles again every row policy that still reads who is asking from the
- * plain settings an earlier version used. Run once for a database when it is
- * opened: after it, a policy trusts only the signed claim.
+ * Compiles again every row policy that is not as it should be for this role. Two things
+ * are wrong: a policy that still reads who is asking from the plain settings an earlier
+ * version used, and an active table that has no policy for the role at all, as a table has
+ * after `pg_dump` is restored where the role did not exist. Run once for a database when
+ * it is opened: after it, a policy trusts only the signed claim, and every table has one.
  */
 export async function upgradePolicies(owner: Db, role: string): Promise<number> {
   // Also those compiled before a request from no person was kept from owning a row: they
   // read who is asking, and lack the check that someone is.
-  const old = await sql<{ schema: string; table: string; legacy: boolean }>`
+  const old = await sql<{ schema: string; table: string; legacy: boolean; missing: boolean }>`
+    select schema, "table", bool_or(legacy) as legacy, bool_and(missing) as missing from (
     select schemaname as schema, tablename as "table",
       bool_or(coalesce(qual, '') like '%current_setting(''app.%'
-        or coalesce(with_check, '') like '%current_setting(''app.%') as legacy
+        or coalesce(with_check, '') like '%current_setting(''app.%') as legacy,
+      false as missing
     from pg_policies
     where schemaname ~ '^ws_[0-9a-f]{32}$'
     group by schemaname, tablename
@@ -689,11 +690,21 @@ export async function upgradePolicies(owner: Db, role: string): Promise<number> 
         or coalesce(with_check, '') like '%current_setting(''app.%')
       or (bool_or(coalesce(qual, '') like '%vx.claim%')
         and not bool_or(coalesce(qual, '') like ${`%${SOMEONE_STORED}%`}))
+    union all
+    select t.schemaname, t.tablename, false, true from pg_tables t
+    join data_table d on d.physical_name = t.tablename
+      and t.schemaname = 'ws_' || replace(d.workspace_id::text, '-', '')
+    where d.status = 'active'
+      and not exists (
+        select 1 from pg_policies p
+        where p.schemaname = t.schemaname and p.tablename = t.tablename and ${role} = any (p.roles)
+      )
+    ) found group by schema, "table"
   `.execute(owner);
   if (old.rows.length === 0) return 0;
   let done = 0;
   await owner.transaction().execute(async (trx) => {
-    for (const { schema, table, legacy } of old.rows) {
+    for (const { schema, table, legacy, missing } of old.rows) {
       const hex = schema.slice(3);
       const workspaceId = `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
       const row = await trx
@@ -708,7 +719,7 @@ export async function upgradePolicies(owner: Db, role: string): Promise<number> 
         kept.type === "owner" ||
         (kept.type === "rules" &&
           kept.rules.some((rule) => "is" in rule.when || "equals" in rule.when));
-      if (!legacy && !asksWho) continue;
+      if (!legacy && !missing && !asksWho) continue;
       // A retired table is read by nobody, and its policy may name a column that is gone.
       // It is then left with none, which lets nothing through, and is given its policy
       // again when the table comes back.
@@ -727,7 +738,13 @@ export async function upgradePolicies(owner: Db, role: string): Promise<number> 
         .execute();
       const whole = named.every((name) => there.some((column) => column.name === name));
       if (whole) {
+        if (missing) {
+          await sql`alter table ${sql.id(schema, table)} enable row level security`.execute(trx);
+        }
         await setPolicy(trx, role, schema, row, policy);
+      } else if (missing) {
+        // Nothing to drop, and no policy that could be made: it is left as it is.
+        continue;
       } else {
         const target = sql.id(schema, table);
         for (const name of POLICY_NAMES) {

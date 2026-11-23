@@ -111,4 +111,40 @@ describe("data stores", () => {
       await sql.raw(`drop schema ${schema} cascade`).execute(platform);
     }
   });
+
+  test("row policies of every shape are handed to the new sign-in (HOST-02)", async () => {
+    const platform = database.router.platform();
+    const schema = "ws_fedcba9876543210fedcba9876543210";
+    await sql`do $$ begin create role p29_old_role nologin; exception when duplicate_object then null; end $$`.execute(
+      platform,
+    );
+    await sql
+      .raw(`
+      create schema ${schema};
+      create table ${schema}.t_rules (id uuid primary key, note text);
+      alter table ${schema}.t_rules enable row level security;
+      grant usage on schema ${schema} to p29_old_role;
+      grant select, insert, update, delete on ${schema}.t_rules to p29_old_role;
+      create policy rows_read on ${schema}.t_rules for select to p29_old_role using (true);
+      create policy rows_insert on ${schema}.t_rules for insert to p29_old_role with check (true);
+      create policy rows_update on ${schema}.t_rules for update to p29_old_role using (true) with check (true);
+      create policy rows_delete on ${schema}.t_rules for delete to p29_old_role using (true);
+      insert into ${schema}.t_rules values ('00000000-0000-7000-8000-000000000002', 'kept');
+    `)
+      .execute(platform);
+    const store = await database.openDataStore(secret);
+    try {
+      const seen = await sql<{
+        note: string;
+      }>`select note from ${sql.id(schema, "t_rules")}`.execute(store.rows);
+      expect(seen.rows).toEqual([{ note: "kept" }]);
+      await sql`insert into ${sql.id(schema, "t_rules")} values ('00000000-0000-7000-8000-000000000003', 'new')`.execute(
+        store.rows,
+      );
+    } finally {
+      await store.close();
+      await sql.raw(`drop schema ${schema} cascade`).execute(platform);
+      await sql.raw("drop role if exists p29_old_role").execute(platform);
+    }
+  });
 });

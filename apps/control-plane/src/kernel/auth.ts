@@ -6,14 +6,25 @@ import { openAPI } from "better-auth/plugins/open-api";
 import type { FastifyBaseLogger } from "fastify";
 import { type Config, MIN_PASSWORD_LENGTH } from "../config.js";
 import { ANONYMOUS, type Db, writeAudit } from "./audit.js";
+import { countHit } from "./ratelimit.js";
 import { finish, stateCookie } from "./sso/flow.js";
 import { memberPasswordRefusedBy } from "./sso/people.js";
 import { findRecoveryCode, RECOVERY_HEADER, useRecoveryCode } from "./sso/recovery.js";
 
+/** The header the route sets for the library: the caller's address as the server worked it out. */
+export const CLIENT_ADDRESS_HEADER = "x-volvel-client-address";
+
+/** Attempts a minute from one address: the same as end users' sign-in, so there is one number to state. */
+export const SIGN_IN_ATTEMPTS_PER_MINUTE = 20;
+const SIGN_IN_RULE = { window: 60, max: SIGN_IN_ATTEMPTS_PER_MINUTE };
+
 const timestamps = { createdAt: "created_at", updatedAt: "updated_at" };
 
 /** The authentication options, shared by the running service and the schema test. */
-export function authOptions(db: Db, config: Pick<Config, "publicUrl" | "authSecret">) {
+export function authOptions(
+  db: Db,
+  config: Pick<Config, "publicUrl" | "authSecret"> & { authLimits?: boolean },
+) {
   return {
     appName: "Volvel",
     baseURL: config.publicUrl,
@@ -23,6 +34,30 @@ export function authOptions(db: Db, config: Pick<Config, "publicUrl" | "authSecr
     // Never report usage anywhere.
     telemetry: { enabled: false },
     trustedOrigins: [config.publicUrl],
+    // Counted in the same table as the routes' limits, so that every replica shares one count.
+    // Anything that checks a password or sends mail is held to what end users' sign-in is.
+    rateLimit: {
+      enabled: config.authLimits ?? true,
+      customStorage: {
+        consume: async (key: string, rule: { window: number; max: number }) => {
+          const { hits, ttl } = await countHit(db, `auth|${key}`, rule.window * 1000);
+          return hits <= rule.max
+            ? { allowed: true, retryAfter: null }
+            : { allowed: false, retryAfter: Math.max(1, Math.ceil(ttl / 1000)) };
+        },
+      },
+      customRules: Object.fromEntries(
+        [
+          "/sign-in/*",
+          "/sign-up/*",
+          "/change-password",
+          "/change-email",
+          "/request-password-reset",
+          "/send-verification-email",
+          "/forget-password/*",
+        ].map((path) => [path, SIGN_IN_RULE]),
+      ),
+    },
     emailAndPassword: {
       enabled: true,
       // Members are created by an admin. Nobody signs themselves up.
@@ -64,6 +99,9 @@ export function authOptions(db: Db, config: Pick<Config, "publicUrl" | "authSecr
     advanced: {
       // The end-user pool will use its own prefix, so the two sessions never mix.
       cookiePrefix: "vx_member",
+      // The one address of the caller is the one the server worked out, which the route
+      // passes in this header after removing any the caller sent. Nothing else is read.
+      ipAddress: { ipAddressHeaders: [CLIENT_ADDRESS_HEADER] },
       useSecureCookies: config.publicUrl.startsWith("https://"),
       database: { generateId: () => newId() },
     },

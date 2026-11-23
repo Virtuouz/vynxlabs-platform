@@ -39,6 +39,9 @@ export function testConfig(overrides: Partial<Config> = {}): Config {
     retention: { runsDays: 30, eventsDays: 30, refusalsDays: 7, auditDays: 400 },
     // The tests' stand-in services listen on this machine.
     egressAllow: { networks: ["127.0.0.0/8", "::1/128"], hosts: ["localhost"] },
+    trustedProxies: 1,
+    // Most suites sign in far more often than a person would. The limits are tested on their own.
+    authLimits: false,
     consoleDir: undefined,
     screensDir: undefined,
     appsUrl: undefined,

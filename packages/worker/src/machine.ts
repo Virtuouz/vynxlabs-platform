@@ -6,6 +6,30 @@ import { hostname } from "node:os";
  * Where there is no `/proc` (macOS in development), every answer is `undefined`
  * and the checks that use them are skipped.
  */
+/** CAP_KILL, in the effective capabilities line of `/proc/<pid>/status`. */
+const CAP_KILL = 5n;
+
+/**
+ * Whether a process may signal processes of other users: it is root with CAP_KILL. A worker
+ * host that is not cannot stop its workers, and the memory guard cannot end a script.
+ * Where this cannot be told (not Linux), it is taken to be so.
+ */
+export function canSignalOtherUsers(
+  uid: number | undefined = process.getuid?.(),
+  status?: string,
+): boolean {
+  if (uid === undefined) return true;
+  if (uid !== 0) return false;
+  try {
+    const text = status ?? readFileSync("/proc/self/status", "utf8");
+    const line = /^CapEff:\s*([0-9a-f]+)/m.exec(text);
+    if (!line) return true;
+    return ((BigInt(`0x${line[1]}`) >> CAP_KILL) & 1n) === 1n;
+  } catch {
+    return true;
+  }
+}
+
 export interface MachineProbe {
   /** Memory in MB: all of it, and what can still be had without swapping. */
   memory(): { totalMb: number; availableMb: number } | undefined;
@@ -194,7 +218,13 @@ export class MemoryGuard {
     if (!largest) return undefined;
     try {
       process.kill(largest.pid, "SIGKILL");
-    } catch {
+    } catch (error) {
+      // Refused (EPERM) where a script is another user's and there is no CAP_KILL. Said once a minute.
+      this.#quietUntil = now + 60_000;
+      this.#log("error", "the machine is low on memory and a script cannot be stopped", {
+        pid: largest.pid,
+        error: (error as Error).message,
+      });
       return undefined;
     }
     // Give the memory a moment to come back before judging again.

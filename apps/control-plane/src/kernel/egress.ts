@@ -54,6 +54,13 @@ for (const [network, prefix] of [
   ["fe80::", 10],
   ["ff00::", 8],
   ["2001:db8::", 32],
+  // Ways an IPv4 address, private or not, is carried in IPv6: NAT64 (both ranges), 6to4,
+  // Teredo. A network that translates them reaches what they name. Site-local is retired.
+  ["64:ff9b::", 96],
+  ["64:ff9b:1::", 48],
+  ["2002::", 16],
+  ["2001::", 32],
+  ["fec0::", 10],
 ] as const) {
   internal.addSubnet(network, prefix, "ipv6");
 }
@@ -102,12 +109,38 @@ export function parseEgressAllow(value: string | undefined): EgressAllow | strin
   return allow;
 }
 
-/** An IPv4 address carried in an IPv6 one (`::ffff:10.0.0.1`, NAT64), or none. */
+/** The 16 bytes of an IPv6 address, as `isIP` has accepted it (it may end in a dotted IPv4). */
+function ipv6Bytes(address: string): number[] {
+  let text = address.toLowerCase().split("%")[0] ?? "";
+  const dotted = /^(.*:)(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(text);
+  if (dotted) {
+    const [, head, a, b, c, d] = dotted as unknown as [string, string, ...string[]];
+    const hex = (x: string, y: string) => (Number(x) * 256 + Number(y)).toString(16);
+    text = `${head}${hex(a as string, b as string)}:${hex(c as string, d as string)}`;
+  }
+  const [left = "", right] = text.split("::") as [string, string | undefined];
+  const groups = (part: string) => (part === "" ? [] : part.split(":"));
+  const head = groups(left);
+  const tail = right === undefined ? [] : groups(right);
+  const words = [...head, ...Array(8 - head.length - tail.length).fill("0"), ...tail];
+  return words.flatMap((word) => {
+    const value = Number.parseInt(word as string, 16);
+    return [value >> 8, value & 255];
+  });
+}
+
+/** An IPv4 address carried in an IPv6 one (mapped, or NAT64), judged by its bits, or none. */
 function embeddedIpv4(address: string): string | undefined {
-  const mapped =
-    /^::ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(address) ??
-    /^64:ff9b::(\d+\.\d+\.\d+\.\d+)$/i.exec(address);
-  return mapped?.[1];
+  const bytes = ipv6Bytes(address);
+  const zeros = bytes.slice(0, 10).every((byte) => byte === 0);
+  const mapped = zeros && bytes[10] === 255 && bytes[11] === 255;
+  const nat64 =
+    bytes[0] === 0 &&
+    bytes[1] === 0x64 &&
+    bytes[2] === 0xff &&
+    bytes[3] === 0x9b &&
+    bytes.slice(4, 12).every((byte) => byte === 0);
+  return mapped || nat64 ? bytes.slice(12).join(".") : undefined;
 }
 
 /** Whether the instance may reach `address` for `host`. */
@@ -116,11 +149,16 @@ export function addressAllowed(host: string, address: string): boolean {
   const family = isIP(address);
   if (family === 0) return false;
   const inner = family === 6 ? embeddedIpv4(address) : undefined;
-  const [checked, kind] = inner
-    ? [inner, "ipv4" as const]
-    : [address, family === 6 ? ("ipv6" as const) : ("ipv4" as const)];
-  if (allowedNetworks.check(checked, kind)) return true;
-  return !internal.check(checked, kind);
+  // The operator's networks are checked against the IPv4 address a mapped form carries.
+  if (
+    inner
+      ? allowedNetworks.check(inner, "ipv4")
+      : allowedNetworks.check(address, family === 6 ? "ipv6" : "ipv4")
+  ) {
+    return true;
+  }
+  if (inner && internal.check(inner, "ipv4")) return false;
+  return !internal.check(address, family === 6 ? "ipv6" : "ipv4");
 }
 
 /**

@@ -578,6 +578,17 @@ describe("the flow editor, as a person uses it", () => {
     fireEvent.change(name, { target: { value: "client" } });
     expect(screen.queryByText("Give the field a name.")).toBeNull();
   });
+  test("Add a field moves the focus to the new field's name, and a second one to its own (r-build)", async () => {
+    await openAt({ nodes: { start: manual }, edges: [] }, "start", /What it takes, as JSON Schema/);
+    fireEvent.click(screen.getByRole("button", { name: "Add a field" }));
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByLabelText("Name of field 1")),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Add a field" }));
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByLabelText("Name of field 2")),
+    );
+  });
   test("a manual start's input is a form of fields, kept in step with the JSON box", async () => {
     await openAt({ nodes: { start: manual }, edges: [] }, "start", /What it takes, as JSON Schema/);
     const box = () => screen.getByLabelText(/What it takes, as JSON Schema/) as HTMLTextAreaElement;

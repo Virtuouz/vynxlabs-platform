@@ -573,7 +573,7 @@ function SchemaFields({
   onChange: (rows: SchemaRow[]) => void;
 }) {
   // A removed field takes the focus with it: it goes to the field that took its place, else the
-  // one before it, else Add a field, and never to the page.
+  // one before it, else Add a field, and never to the page. A field added takes it: its name.
   const group = useRef<HTMLFieldSetElement>(null);
   const after = useRef<number | undefined>(undefined);
   const [left, setLeft] = useState<ReadonlySet<number>>(new Set());
@@ -715,7 +715,14 @@ function SchemaFields({
         );
       })}
       <div>
-        <Button size="small" data-add-field="" onClick={() => onChange([...rows, { ...NEW_ROW }])}>
+        <Button
+          size="small"
+          data-add-field=""
+          onClick={() => {
+            after.current = rows.length;
+            onChange([...rows, { ...NEW_ROW }]);
+          }}
+        >
           Add a field
         </Button>
       </div>

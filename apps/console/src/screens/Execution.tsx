@@ -12,7 +12,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError, api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
 import { InputDialog } from "../InputDialog.tsx";
-import { Can, useMay } from "../kit/Can.tsx";
+import { Can, NotAllowed, useMay, useMayOn } from "../kit/Can.tsx";
 import { CollectionView } from "../kit/CollectionView.tsx";
 import { DataTable } from "../kit/DataTable.tsx";
 import { ago, between, count, duration } from "../kit/format.ts";
@@ -174,6 +174,17 @@ export function Scripts({
       (filter === "drafted" && row.draft === true),
   );
   const open = items.find((row) => row.path === chosen);
+  // What this person may do with the chosen script, held on the workspace or on it alone.
+  const may = useMayOn(
+    root,
+    open ? { kind: "script", path: open.path } : undefined,
+    "resource:write",
+    "run:write",
+    "binding:write",
+  );
+  const missing = (["resource:write", "run:write", "binding:write"] as const).find(
+    (permission) => !may(permission),
+  );
   const reaches = (row: ScriptRow) =>
     [...row.uses.connections, ...row.uses.tables.map((table) => `table ${table}`)].join(", ");
 
@@ -316,29 +327,35 @@ export function Scripts({
               <>
                 <Button
                   variant="primary"
+                  disabled={!may("resource:write")}
                   onClick={() => navigate(`${link}/scripts/edit/${open.path}`)}
                 >
                   Open editor
                 </Button>
-                <RunButton
-                  root={root}
-                  script={open.path}
-                  schema={open.inputSchema}
-                  runsLink={runsLink}
-                  deployed={open.deployed !== false}
-                  draft={open.draft === true}
-                />
-                <OfferButton
-                  root={root}
-                  kind="script"
-                  path={open.path}
-                  size="small"
-                  deployed={open.deployed !== false}
-                />
+                <fieldset disabled={!may("run:write")} className="contents">
+                  <RunButton
+                    root={root}
+                    script={open.path}
+                    schema={open.inputSchema}
+                    runsLink={runsLink}
+                    deployed={open.deployed !== false}
+                    draft={open.draft === true}
+                  />
+                </fieldset>
+                <fieldset disabled={!may("binding:write")} className="contents">
+                  <OfferButton
+                    root={root}
+                    kind="script"
+                    path={open.path}
+                    size="small"
+                    deployed={open.deployed !== false}
+                  />
+                </fieldset>
               </>
             }
           >
             <div className="flex flex-col gap-4">
+              {missing ? <NotAllowed permission={missing} what="this script" /> : null}
               {open.lastRun?.status === "failed" ? (
                 <Notice tone="danger">
                   {open.failedInARow > 1

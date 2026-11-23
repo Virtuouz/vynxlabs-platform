@@ -220,3 +220,48 @@ test("Tab in a side sheet goes from its last control to its first, and Shift+Tab
   name.focus();
   expect(fireEvent.keyDown(name, { key: "Tab" })).toBe(true);
 });
+
+test("the side sheet's last stop is the browser's: a hidden input or an unchecked radio after the last control does not hide it (r-screens 3)", async () => {
+  render(
+    <SideSheet
+      open
+      onClose={() => undefined}
+      title="Create group"
+      footer={
+        <>
+          <button type="button">Create</button>
+          <input type="hidden" name="kept" value="1" />
+          <input type="radio" name="kind" aria-label="First kind" defaultChecked />
+          <input type="radio" name="kind" aria-label="Second kind" />
+        </>
+      }
+    >
+      <input aria-label="Name" />
+    </SideSheet>,
+  );
+  const close = await screen.findByRole("button", { name: "Close" });
+  // The browser's last stop is the checked radio: the second is skipped, the hidden input is not one.
+  const last = screen.getByLabelText("First kind");
+  last.focus();
+  expect(fireEvent.keyDown(last, { key: "Tab" })).toBe(false);
+  expect(document.activeElement).toBe(close);
+});
+
+test("focus that Tab lets slip onto a focus guard goes back into the side sheet (r-screens 3)", async () => {
+  render(
+    <SideSheet open onClose={() => undefined} title="Create group">
+      <input aria-label="Name" />
+    </SideSheet>,
+  );
+  const close = await screen.findByRole("button", { name: "Close" });
+  const name = screen.getByLabelText("Name");
+  name.focus();
+  fireEvent.keyDown(name, { key: "Tab" });
+  const guard = document.createElement("span");
+  guard.tabIndex = 0;
+  guard.setAttribute("data-base-ui-focus-guard", "");
+  document.body.append(guard);
+  guard.focus();
+  expect(document.activeElement).toBe(close);
+  guard.remove();
+});

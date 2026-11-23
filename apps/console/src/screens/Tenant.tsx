@@ -835,6 +835,7 @@ function WorkspaceDetail({
             columns={[
               {
                 header: "Path",
+                wide: true,
                 cell: (row) => (
                   <span className="flex min-w-0 flex-col">
                     {hasHome(row.kind) ? (

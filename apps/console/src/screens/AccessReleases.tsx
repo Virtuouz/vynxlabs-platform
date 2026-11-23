@@ -466,7 +466,15 @@ export function AccessReleases({ base, framed }: { base: string; framed?: Framed
         },
         { header: "When", priority: 2, cell: (row) => <Time value={row.createdAt} mode="ago" /> },
         ...(wide
-          ? [{ header: "", align: "end" as const, cell: (row: AccessRelease) => actionsOf(row) }]
+          ? [
+              {
+                header: "",
+                align: "end" as const,
+                // "Go back to this" and Approve beside Decline, whole at the width help leaves.
+                width: "w-44",
+                cell: (row: AccessRelease) => actionsOf(row),
+              },
+            ]
           : []),
       ]}
       empty={{

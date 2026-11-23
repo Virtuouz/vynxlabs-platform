@@ -151,6 +151,7 @@ export function Flows({
       columns={[
         {
           header: "Flow",
+          wide: true,
           cell: (row) => (
             <span className="flex min-w-0 flex-col">
               <Link

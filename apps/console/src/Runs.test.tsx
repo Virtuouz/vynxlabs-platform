@@ -439,6 +439,9 @@ test("a window changed to end before it starts drops the rows of the window befo
   fireEvent.change(screen.getByLabelText("To"), { target: { value: "2026-11-09T09:30" } });
   expect(await screen.findByText("The end is before the start.")).toBeTruthy();
   expect(screen.queryByText("reminders/send")).toBeNull();
+  // The chips and the bulk buttons count that window, which holds nothing.
+  expect(screen.queryByRole("button", { name: /Cancel 2 queued/ })).toBeNull();
+  expect(document.body.textContent).not.toMatch(/Queued\s*2/);
 });
 
 test("a viewer is offered no Cancel, Cancel by age or Run again, and an operator is (OPS-35)", async () => {

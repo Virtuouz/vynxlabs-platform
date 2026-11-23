@@ -39,6 +39,11 @@ export interface DataColumn<Row> {
   /** A width class, such as `w-40`, for columns whose content has a known size. */
   width?: string;
   /**
+   * A path or a name that must stay readable: the column keeps 14rem at every width, and the
+   * table scrolls sideways before it is squeezed to a few characters.
+   */
+  wide?: boolean;
+  /**
    * Long values end in an ellipsis rather than wrapping the row, with the
    * whole value on hover. For a path or a name, put `Truncate mode="middle"`
    * in the cell instead, so its last part stays.
@@ -356,7 +361,9 @@ export function DataTable<Row>(props: DataTableProps<Row>) {
   // sideways and no cell runs under the next, and an action column is never cut off.
   const minimums: Record<string, string> = {};
   for (const level of [1, 2, 3] as const) {
-    const shown = columns.filter((column) => (column.priority ?? 1) <= level).length;
+    const shown = columns
+      .filter((column) => (column.priority ?? 1) <= level)
+      .reduce((units, column) => units + (column.wide ? 2 : 1), 0);
     const rem = shown * 7 + (checking ? 2.5 : 0) + (actions ? 3 : 0);
     minimums[`--table-min-${level}`] = `${rem}rem`;
   }
@@ -478,7 +485,7 @@ export function DataTable<Row>(props: DataTableProps<Row>) {
                         : undefined
                     }
                     // A width asked for is for a table with room: on a phone the columns take what they need, or the one beside it is squeezed.
-                    className={`whitespace-nowrap px-3 py-2 font-medium ${column.width ? `${column.width} max-sm:w-auto` : ""} ${SHOWN[column.priority ?? 1]} ${
+                    className={`whitespace-nowrap px-3 py-2 font-medium ${column.wide ? "w-[14rem]" : column.width ? `${column.width} max-sm:w-auto` : ""} ${SHOWN[column.priority ?? 1]} ${
                       column.align === "end" ? "text-right" : ""
                     } ${edges}`}
                   >

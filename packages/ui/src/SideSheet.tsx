@@ -1,6 +1,6 @@
 import { Dialog as Base } from "@base-ui/react/dialog";
 import { X } from "lucide-react";
-import { type ReactNode, useRef } from "react";
+import { type ReactNode, useEffect, useRef } from "react";
 import { firstField } from "./Dialog.tsx";
 import { useOpening } from "./presence.tsx";
 import { useReturnFocus } from "./returnFocus.ts";
@@ -32,15 +32,41 @@ export interface SideSheetProps {
 const TABBABLE =
   'a[href], button, input, select, textarea, summary, [tabindex]:not([tabindex="-1"]), [contenteditable="true"]';
 
-/** What a person can reach with Tab inside `root`, in order. */
+/** Whether the browser draws it, so that Tab can stop on it: not `display: none`, not `visibility: hidden`. */
+function drawn(element: HTMLElement): boolean {
+  if (typeof element.checkVisibility === "function") {
+    return element.checkVisibility({ visibilityProperty: true });
+  }
+  return true;
+}
+
+/**
+ * What a person can reach with Tab inside `root`, in order: the same as the browser's own, so the
+ * first and last of them are where Tab really begins and ends. A hidden input, a control that is
+ * not drawn, and every radio of a group but the one that holds the group's stop are not among them.
+ */
 function tabbables(root: HTMLElement): HTMLElement[] {
-  return [...root.querySelectorAll<HTMLElement>(TABBABLE)].filter(
+  const found = [...root.querySelectorAll<HTMLElement>(TABBABLE)].filter(
     (one) =>
       !one.matches(":disabled") &&
       one.getAttribute("tabindex") !== "-1" &&
       !one.closest("[hidden], [inert], fieldset:disabled") &&
-      one.getAttribute("aria-hidden") !== "true",
+      one.getAttribute("aria-hidden") !== "true" &&
+      !(one instanceof HTMLInputElement && one.type === "hidden") &&
+      drawn(one),
   );
+  return found.filter((one) => {
+    if (!(one instanceof HTMLInputElement) || one.type !== "radio" || !one.name) return true;
+    const group = found.filter(
+      (other): other is HTMLInputElement =>
+        other instanceof HTMLInputElement &&
+        other.type === "radio" &&
+        other.name === one.name &&
+        other.form === one.form,
+    );
+    const stop = group.find((other) => other.checked) ?? group[0];
+    return one === stop;
+  });
 }
 
 /**
@@ -65,6 +91,44 @@ function keepTabInside(event: React.KeyboardEvent<HTMLElement>) {
     event.preventDefault();
     first.focus();
   }
+}
+
+/**
+ * What keeps Tab in the sheet when the list above and the browser part: a stop the sheet did not
+ * know of. Focus that lands on the page behind it, on the body or on a focus guard, right after a
+ * Tab, goes back to the sheet's first control (Shift+Tab: its last). Focus that goes into
+ * another layer the sheet opened, such as a menu or a picker, is left alone.
+ */
+function useKeepFocusInside(open: boolean, popup: React.RefObject<HTMLDivElement | null>) {
+  useEffect(() => {
+    if (!open) return;
+    let tabbed: { shift: boolean; at: number } | undefined;
+    const noteTab = (event: KeyboardEvent) => {
+      if (event.key === "Tab") tabbed = { shift: event.shiftKey, at: Date.now() };
+    };
+    const onFocus = (event: FocusEvent) => {
+      const root = popup.current;
+      const target = event.target;
+      if (!root || !(target instanceof HTMLElement) || root.contains(target)) return;
+      if (!tabbed || Date.now() - tabbed.at > 500) return;
+      const page =
+        target === document.body ||
+        target === document.documentElement ||
+        target.hasAttribute("data-base-ui-focus-guard") ||
+        !target.closest(
+          '[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"], [role="tooltip"], [data-base-ui-portal]',
+        );
+      if (!page) return;
+      const all = tabbables(root);
+      (tabbed.shift ? all.at(-1) : all[0])?.focus();
+    };
+    document.addEventListener("keydown", noteTab, true);
+    document.addEventListener("focusin", onFocus, true);
+    return () => {
+      document.removeEventListener("keydown", noteTab, true);
+      document.removeEventListener("focusin", onFocus, true);
+    };
+  }, [open, popup]);
 }
 
 /**
@@ -95,6 +159,7 @@ export function SideSheet({
   const shown = useOpening(open);
   const popup = useRef<HTMLDivElement>(null);
   const opener = useReturnFocus(open);
+  useKeepFocusInside(shown, popup);
   return (
     <Base.Root open={shown} onOpenChange={(next: boolean) => !next && onClose()}>
       <Base.Portal>

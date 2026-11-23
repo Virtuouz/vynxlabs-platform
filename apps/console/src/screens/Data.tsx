@@ -2682,11 +2682,13 @@ function Definition({
                   {
                     header: "",
                     align: "end" as const,
+                    // Up to five buttons: they wrap inside the column, and it keeps room for two rows of them.
+                    wide: true,
                     cell: (row: TableColumn) => {
                       const actions = columnActions(row);
                       return (
                         <>
-                          <span className="hidden gap-1 sm:inline-flex">
+                          <span className="hidden flex-wrap justify-end gap-1 sm:inline-flex">
                             {actions.map((one) => (
                               <Button
                                 key={one.label}

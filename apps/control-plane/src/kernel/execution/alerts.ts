@@ -47,6 +47,8 @@ interface Failure {
   error: string;
   /** What the failed thing asks for itself. Wins over the workspace's default. */
   own?: FailureAlert | undefined;
+  /** The pool the failed run ran on: its alert is posted from where it ran. */
+  pool?: string | null;
 }
 
 /**
@@ -72,6 +74,9 @@ export async function sendAlerts(kernel: Kernel, run: FailedRun): Promise<void> 
     attempt: run.attempt,
     error: run.error?.message ?? "The run failed.",
     own: (script?.body as unknown as ScriptBody | undefined)?.onFailure,
+    pool:
+      (await kernel.db.selectFrom("run").select("pool").where("id", "=", run.id).executeTakeFirst())
+        ?.pool ?? null,
   });
   if (outcome) {
     await kernel.db
@@ -177,6 +182,7 @@ async function alert(
       await queueTask(kernel.db, {
         tenantId: failure.tenantId,
         workspaceId: failure.workspaceId,
+        pool: failure.pool ?? null,
         kind: "deliver",
         subject: `${table}:${failure.id}`,
         request: {

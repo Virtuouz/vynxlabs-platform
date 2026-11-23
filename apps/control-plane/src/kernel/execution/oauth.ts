@@ -263,7 +263,19 @@ export async function finishAuthorization(
       pending.secrets,
     ),
   ) as { verifier: string };
-  const binding = await oauthBinding(kernel, kernel.db, connection);
+  let binding: Awaited<ReturnType<typeof oauthBinding>>;
+  try {
+    binding = await oauthBinding(kernel, kernel.db, connection);
+  } catch (failure) {
+    // The connection was removed, or changed to another kind, while the member was away.
+    if (failure instanceof HttpError && failure.statusCode === 404) {
+      throw refused(
+        `The connection ${connection.path} was removed while you were at the provider. Set it up again, then press Connect.`,
+      );
+    }
+    if (failure instanceof HttpError) throw refused(failure.message);
+    throw failure;
+  }
   let tokens: Tokens;
   try {
     tokens = await tokenRequest(binding.config, binding.secret, {

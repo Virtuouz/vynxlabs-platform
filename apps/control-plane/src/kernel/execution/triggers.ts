@@ -1266,13 +1266,21 @@ export async function fireWebhook(
       workspaceId: state.workspace_id,
       name: config.verify.secret,
     });
-    // With no secret to check against, nothing can be let through.
+    // With no secret to check against, nothing can be let through. The sender is told what it is
+    // told for a wrong signature; what is kept for the operator says which secret is missing.
     const problem =
       secret === undefined
         ? "The signature does not match."
         : signatureProblem(config.verify, secret, request);
     if (problem) {
-      await recordRefusal(kernel, state, "signature", problem);
+      await recordRefusal(
+        kernel,
+        state,
+        "signature",
+        secret === undefined
+          ? `The secret ${config.verify.secret} is not set in this workspace.`
+          : problem,
+      );
       return { refused: "signature" as const, problem };
     }
   }

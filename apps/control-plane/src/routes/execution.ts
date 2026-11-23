@@ -45,7 +45,7 @@ import {
   runState,
   runStateSql,
 } from "../kernel/execution/state.js";
-import { queueTask, type TaskRow, toTask } from "../kernel/execution/tasks.js";
+import { poolOfConnection, queueTask, type TaskRow, toTask } from "../kernel/execution/tasks.js";
 import {
   fireScheduleNow,
   fireWebhook,
@@ -399,6 +399,20 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         .where("kind", "=", "connector")
         .execute();
 
+    /** The manifests of the workspace's latest uploaded bundles, newest first, deployed or not. */
+    const uploadedManifests = async (workspaceId: string) => {
+      const uploaded = await db
+        .selectFrom("bundle")
+        .select(["id", "storage_key"])
+        .where("workspace_id", "=", workspaceId)
+        .orderBy("id", "desc")
+        .limit(5)
+        .execute();
+      const loaded: { kind: string; path: string; body: unknown }[][] = [];
+      for (const stored of uploaded) loaded.push((await loadBundle(kernel, stored)).manifests);
+      return loaded;
+    };
+
     const configSchemaOf = async (
       workspaceId: string,
       kind: "connection" | "connection_group",
@@ -433,15 +447,8 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         found = from([...arriving, ...deployed]);
       }
       if (!found) {
-        const uploaded = await db
-          .selectFrom("bundle")
-          .select(["id", "storage_key"])
-          .where("workspace_id", "=", workspaceId)
-          .orderBy("id", "desc")
-          .limit(5)
-          .execute();
-        for (const stored of uploaded) {
-          found = from((await loadBundle(kernel, stored)).manifests);
+        for (const manifests of await uploadedManifests(workspaceId)) {
+          found = from(manifests);
           if (found) break;
         }
       }
@@ -2119,6 +2126,14 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       defined: Type.Boolean({
         description: "Whether a deployed resource declares this connection.",
       }),
+      draft: Type.Union(
+        [Type.Literal("new"), Type.Literal("changed"), Type.Literal("removed"), Type.Null()],
+        {
+          description:
+            "A change made in the console that waits to be deployed. `new` is a connection " +
+            "that has never been deployed: a script cannot use it yet.",
+        },
+      ),
       arrives: Type.Boolean({
         description:
           "Declared by a workspace linked to this one, and not deployed here yet: it arrives " +
@@ -2175,13 +2190,27 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         .where("kind", "=", "connection")
         .execute();
       // A connection declared in a draft is shown as what the draft says it is, until it is deployed.
-      const drafted = await db
+      const draftRows = await db
         .selectFrom("resource_draft")
-        .select(["path", "body"])
+        .select(["path", "body", "deleted"])
         .where("workspace_id", "=", params.w)
         .where("kind", "=", "connection")
-        .where("deleted", "=", false)
         .execute();
+      const drafted = draftRows.filter((row) => !row.deleted);
+      // A change made in the console that waits to be deployed, as groups say theirs.
+      const draftedState = new Map(
+        draftRows.flatMap((row) => {
+          const deployed = definitions.some((one) => one.path === row.path);
+          const state = !deployed
+            ? row.deleted
+              ? null
+              : "new"
+            : row.deleted
+              ? "removed"
+              : "changed";
+          return state ? [[row.path, state] as const] : [];
+        }),
+      );
       const bindings = await db
         .selectFrom("connection_binding")
         .select([
@@ -2207,29 +2236,73 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       const arriving = await arrivingManifests(kernel, db, params.w);
       const arrives = arriving.filter((one) => one.kind === "connection");
       const paths = [
-        ...new Set([...definitions, ...bindings, ...arrives].map((row) => row.path)),
+        ...new Set([...definitions, ...bindings, ...arrives, ...drafted].map((row) => row.path)),
       ].sort();
+      const draftedConnectors = await db
+        .selectFrom("resource_draft")
+        .select(["path", "body"])
+        .where("workspace_id", "=", params.w)
+        .where("kind", "=", "connector")
+        .where("deleted", "=", false)
+        .execute();
       const connectors = [
         ...(await deployedConnectors(params.w)),
+        ...draftedConnectors.map((one) => ({ path: one.path, body: one.body })),
         ...arriving
           .filter((one) => one.kind === "connector")
           .map((one) => ({ path: one.path, body: one.body })),
       ];
       type Declared = { connector?: string; description?: string } | undefined;
+      // A binding no deployed, drafted or arriving declaration speaks for is what the bundles
+      // uploaded here say it is: it was bound, or its declaration deployed away, as that.
+      const orphans = bindings.filter(
+        (one) =>
+          !definitions.some((row) => row.path === one.path) &&
+          !drafted.some((row) => row.path === one.path) &&
+          !arrives.some((row) => row.path === one.path),
+      );
+      const uploaded = new Map<string, Declared>();
+      if (orphans.length > 0) {
+        for (const manifests of await uploadedManifests(params.w)) {
+          for (const manifest of manifests) {
+            if (
+              manifest.kind === "connector" &&
+              !connectors.some((one) => one.path === manifest.path)
+            )
+              connectors.push({
+                path: manifest.path,
+                body: manifest.body as Record<string, unknown>,
+              });
+            if (
+              manifest.kind === "connection" &&
+              orphans.some((one) => one.path === manifest.path) &&
+              !uploaded.has(manifest.path)
+            )
+              uploaded.set(manifest.path, manifest.body as Declared);
+          }
+        }
+      }
       return {
         items: paths.map((path) => {
           const deployed = definitions.find((row) => row.path === path)?.body as Declared;
           const coming = arrives.find((row) => row.path === path)?.body as Declared;
-          const definition =
-            deployed ?? (drafted.find((row) => row.path === path)?.body as Declared) ?? coming;
+          const draftBody = drafted.find((row) => row.path === path)?.body as Declared;
+          const definition = deployed ?? draftBody ?? coming ?? uploaded.get(path);
           const binding = bindings.find((row) => row.path === path);
           const checked = health.find((row) => row.path === path);
-          const connector = definition?.connector ?? "http";
+          // Nothing declares it: it is as HTTP only when its settings fit HTTP's, else unknown.
+          const connector =
+            definition?.connector ??
+            (binding &&
+            validateJson(BUILTIN_CONFIG_SCHEMAS.http as object, binding.config ?? {}).length > 0
+              ? "unknown"
+              : "http");
           return {
             path,
             connector,
             description: definition?.description ?? "",
             defined: deployed !== undefined,
+            draft: draftedState.get(path) ?? null,
             arrives: deployed === undefined && coming !== undefined,
             bound: binding !== undefined,
             config: binding?.config ?? null,
@@ -2382,6 +2455,11 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                       },
                     ),
                   ),
+                  declared: Type.Boolean({
+                    description:
+                      "False for a group no deployed resource or draft declares any more, whose " +
+                      "members were left. Each can be removed.",
+                  }),
                   configSchema: AnyObject,
                   members: Type.Array(
                     Type.Object({
@@ -2420,12 +2498,12 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           if (!deployed.some((one) => one.path === path)) return "new";
           return draft.deleted ? "removed" : "changed";
         };
-        const groups = [
+        const declared = [
           ...deployed,
           ...drafts
             .filter((one) => !one.deleted && !deployed.some((row) => row.path === one.path))
             .map((one) => ({ path: one.path, body: one.body })),
-        ].sort((a, b) => a.path.localeCompare(b.path));
+        ];
         const members = await db
           .selectFrom("connection_group_member")
           .select([
@@ -2442,6 +2520,23 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           .where("workspace_id", "=", params.w)
           .orderBy("key")
           .execute();
+        // Members of a group nothing declares any more stay, with their credentials: listed as
+        // left over, so that each can be seen and removed.
+        const leftover = [...new Set(members.map((member) => member.group_path))].filter(
+          (path) => !declared.some((row) => row.path === path),
+        );
+        const left: { path: string; body: unknown }[] = [];
+        if (leftover.length > 0) {
+          const named = new Map<string, unknown>();
+          for (const manifests of await uploadedManifests(params.w)) {
+            for (const manifest of manifests) {
+              if (manifest.kind === "connection_group" && !named.has(manifest.path))
+                named.set(manifest.path, manifest.body);
+            }
+          }
+          for (const path of leftover) left.push({ path, body: named.get(path) ?? {} });
+        }
+        const groups = [...declared, ...left].sort((a, b) => a.path.localeCompare(b.path));
         const setBy = await credentialSetters(db, members);
         const connectors = await deployedConnectors(params.w);
         return {
@@ -2449,6 +2544,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             const body = group.body as { description?: string; connector?: string };
             return {
               path: group.path,
+              declared: !leftover.includes(group.path),
               draft: stateOf(group.path),
               description: body.description ?? "",
               connector: body.connector ?? "http",
@@ -2697,6 +2793,8 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           const queued = await queueTask(trx, {
             tenantId: params.t,
             workspaceId: params.w,
+            // From where a script that uses it runs: another pool may reach what the default cannot.
+            pool: await poolOfConnection(trx, params.w, path),
             kind: "test-connection",
             subject: path,
             request: {
@@ -2792,7 +2890,13 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           const done = await finishAuthorization(kernel, query, request.ctx.actor);
           return back(done.returnTo, { oauth: "connected", connection: done.connection.path });
         } catch (error) {
-          if (!(error instanceof AuthorizationRefused)) throw error;
+          if (!(error instanceof AuthorizationRefused)) {
+            // A browser is sent back to the console with a word, never left on a page of JSON.
+            request.log.warn({ err: error }, "an OAuth authorization failed");
+            return back(null, {
+              oauth_error: "The authorization could not be finished. Press Connect again.",
+            });
+          }
           request.log.info({ reason: error.message }, "an OAuth connection was not authorized");
           return back(error.returnTo, {
             oauth_error: error.message,

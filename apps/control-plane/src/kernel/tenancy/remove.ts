@@ -1,7 +1,7 @@
 import { sql } from "@volvel/db";
 import type { Audit, Trx } from "../audit.js";
 import { workspaceSchema } from "../data/apply.js";
-import { conflict } from "../errors.js";
+import { conflict, HttpError } from "../errors.js";
 import type { Kernel } from "../kernel.js";
 import { deleteOwned, storedKeys } from "./tables.js";
 
@@ -119,7 +119,19 @@ export async function deleteWorkspace(
  * Deletes a tenant and everything it owns on this instance. Its audit entries
  * stay, and so do its members' accounts, which belong to the instance.
  */
-export async function deleteTenant(kernel: Kernel, trx: Trx, audit: Audit, tenantId: string) {
+export async function deleteTenant(
+  kernel: Kernel,
+  trx: Trx,
+  audit: Audit,
+  tenantId: string,
+  options: {
+    /**
+     * Go on when the tenant's own database cannot be reached: its tables are left where they
+     * are, and the entry says so. Without it, an unreachable database refuses the deletion.
+     */
+    tablesLeftBehind?: boolean;
+  } = {},
+) {
   const tenant = await trx
     .selectFrom("tenant")
     .select(["slug", "name"])
@@ -133,12 +145,25 @@ export async function deleteTenant(kernel: Kernel, trx: Trx, audit: Audit, tenan
     .select("id")
     .where("tenant_id", "=", tenantId)
     .execute();
-  const tables = await dropTables(
-    kernel,
-    trx,
-    tenantId,
-    workspaces.map((workspace) => workspace.id),
-  );
+  let leftIn: string | null = null;
+  let tables = 0;
+  try {
+    tables = await dropTables(
+      kernel,
+      trx,
+      tenantId,
+      workspaces.map((workspace) => workspace.id),
+    );
+  } catch (error) {
+    if (
+      !options.tablesLeftBehind ||
+      !(error instanceof HttpError) ||
+      error.problemCode !== "data_location_unavailable"
+    ) {
+      throw error;
+    }
+    leftIn = await kernel.data.locationOf(tenantId, trx);
+  }
   await trx
     .updateTable("workspace")
     .set({ linked_workspace_id: null, active_bundle_id: null })
@@ -157,6 +182,11 @@ export async function deleteTenant(kernel: Kernel, trx: Trx, audit: Audit, tenan
       workspaces: workspaces.length,
       tables,
       files: counts.file ?? 0,
+      // Its database could not be reached: the tables are still there, and an operator of that
+      // database may drop their schemas by hand.
+      ...(leftIn
+        ? { tablesLeftIn: leftIn, schemas: workspaces.map((one) => workspaceSchema(one.id)) }
+        : {}),
     },
   });
   return keys;

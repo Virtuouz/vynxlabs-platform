@@ -1432,7 +1432,23 @@ export function DeleteTenantButton({
         });
         if (!sure) return;
         try {
-          await api.post(`/tenants/${tenant.id}/deletion`, { confirm: tenant.slug });
+          try {
+            await api.post(`/tenants/${tenant.id}/deletion`, { confirm: tenant.slug });
+          } catch (error) {
+            if ((error as ApiError).code !== "data_location_unavailable") throw error;
+            // The tenant's own database does not answer: its tables cannot be dropped now.
+            const again = await ask.confirm({
+              title: `Delete ${tenant.name} without dropping its tables?`,
+              text: `${(error as ApiError).message} If you go on, the tenant is deleted here and its tables stay in that database, where someone who runs it must drop them. The entry in the instance's log says which. If the database comes back first, cancel and delete again.`,
+              action: "Delete anyway",
+              danger: true,
+            });
+            if (!again) return;
+            await api.post(`/tenants/${tenant.id}/deletion`, {
+              confirm: tenant.slug,
+              tablesLeftBehind: true,
+            });
+          }
           onDone();
         } catch (error) {
           notify.error(error);

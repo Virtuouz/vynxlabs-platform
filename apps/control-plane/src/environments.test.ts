@@ -897,6 +897,42 @@ describe("worker pools", () => {
 });
 
 describe("database locations", () => {
+  test("a tenant whose own database is gone is deleted after a second confirmation, and then its location can go (INS-17, D47)", async () => {
+    const gone = await createTestDatabase();
+    await t.admin.put("/instance/database-locations/gone-db", {
+      connectionString: gone.connectionString,
+    });
+    const made = await t.admin.post("/tenants", {
+      slug: "lost",
+      name: "Lost",
+      dataLocation: "gone-db",
+      addCreator: true,
+    });
+    expect(made.status, JSON.stringify(made.body)).toBe(201);
+    const workspace = await t.admin.post(`/tenants/${made.body.id}/workspaces`, {
+      slug: "main",
+      name: "Main",
+      type: "production",
+    });
+    expect(workspace.status, JSON.stringify(workspace.body)).toBe(201);
+    // Its database is dropped from under it, and nothing in this process holds it open.
+    await t.kernel.data.forget("gone-db");
+    await gone.drop();
+    const refused = await t.admin.post(`/tenants/${made.body.id}/deletion`, { confirm: "lost" });
+    expect(refused.status, JSON.stringify(refused.body)).toBe(503);
+    expect(refused.body.code).toBe("data_location_unavailable");
+    expect((await t.admin.delete("/instance/database-locations/gone-db")).status).toBe(409);
+    // The second confirmation says the tables cannot be dropped, and leaves them where they are.
+    const done = await t.admin.post(`/tenants/${made.body.id}/deletion`, {
+      confirm: "lost",
+      tablesLeftBehind: true,
+    });
+    expect(done.status, JSON.stringify(done.body)).toBe(204);
+    const entry = (await t.admin.get("/audit?action=tenant.deleted")).body.items[0];
+    expect(JSON.stringify(entry.details)).toContain("gone-db");
+    expect((await t.admin.delete("/instance/database-locations/gone-db")).status).toBe(204);
+  });
+
   test("one address that cannot be opened is said on its own row, and the names alone are a light list (INS-14)", async () => {
     const extra = await createTestDatabase();
     try {

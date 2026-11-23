@@ -2,6 +2,7 @@
 import { cleanup, configure, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import {
+  DeleteTenantButton,
   Promotion,
   TenantExport,
   TenantImport,
@@ -9,7 +10,7 @@ import {
   WorkspaceSettings,
   type WorkspaceSummary,
 } from "./screens/Environments.tsx";
-import { show } from "./testing.tsx";
+import { answer, show } from "./testing.tsx";
 
 configure({ asyncUtilTimeout: 5000 });
 
@@ -48,10 +49,10 @@ beforeEach(() => {
       headers: (init.headers ?? {}) as Record<string, string>,
     });
     const handler = routes[`${method} ${url.pathname}`];
-    const [status, answer] = handler
+    const [status, reply] = handler
       ? handler(body)
       : [404, { status: 404, detail: `No mock for ${method} ${url.pathname}` }];
-    return new Response(answer === null ? "" : JSON.stringify(answer), { status });
+    return new Response(reply === null ? "" : JSON.stringify(reply), { status });
   });
 });
 afterEach(() => {
@@ -421,4 +422,32 @@ test("a workspace whose triggers the operator paused says so, not that they are 
   expect(screen.getByText("Triggers are paused by the instance")).toBeTruthy();
   expect(screen.queryByText("Triggers are on")).toBeNull();
   expect(screen.getByText(/An operator has paused every trigger in this instance/)).toBeTruthy();
+});
+
+test("a tenant whose database does not answer is deleted only after a second confirmation (INS-17, D47)", async () => {
+  const sentBodies: object[] = [];
+  routes["POST /api/v1/tenants/t9/deletion"] = (body) => {
+    sentBodies.push(body as object);
+    return (body as { tablesLeftBehind?: boolean }).tablesLeftBehind
+      ? [204, null]
+      : [
+          503,
+          {
+            status: 503,
+            code: "data_location_unavailable",
+            detail: 'The database location "acme-db" could not be reached. no route to host',
+          },
+        ];
+  };
+  const done = vi.fn();
+  show(<DeleteTenantButton tenant={{ id: "t9", slug: "acme", name: "Acme Corp" }} onDone={done} />);
+  fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+  await answer("Delete tenant", "acme");
+  const anyway = await screen.findByRole("button", { name: "Delete anyway" });
+  const second = anyway.closest('[role="dialog"]')?.textContent ?? "";
+  expect(second).toContain("could not be reached");
+  expect(second).toContain("its tables stay in that database");
+  fireEvent.click(anyway);
+  await waitFor(() => expect(done).toHaveBeenCalled());
+  expect(sentBodies).toEqual([{ confirm: "acme" }, { confirm: "acme", tablesLeftBehind: true }]);
 });

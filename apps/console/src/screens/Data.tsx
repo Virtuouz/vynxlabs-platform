@@ -3153,6 +3153,7 @@ function Definition({
 interface SourceBinding {
   path: string;
   description: string;
+  /** Some resource of the workspace declares it, so there is a declaration to edit. */
   defined: boolean;
   bound: boolean;
   /** Declared by a workspace linked to this one: it arrives with the next promotion. */
@@ -3305,6 +3306,48 @@ function ChangeSource({
   );
 }
 
+/** Connects a source that is declared and not yet reached: its own button, with its name already in. */
+function ConnectSource({
+  root,
+  row,
+  onDone,
+}: {
+  root: string;
+  row: SourceBinding;
+  onDone: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <Button
+        size="small"
+        variant="primary"
+        aria-label={`Connect ${row.path}`}
+        onClick={() => setOpen(true)}
+      >
+        Connect
+      </Button>
+      <CreateDialog
+        open={open}
+        onClose={() => setOpen(false)}
+        onCreated={() => {
+          setOpen(false);
+          onDone();
+        }}
+        config={{
+          action: `Connect ${row.path}`,
+          description:
+            "Where this workspace reaches the database. The password is stored sealed and never shown again. The platform never changes the database's structure.",
+          fields: SOURCE_FIELDS,
+          done: () => `${row.path} was connected.`,
+          submit: (values) =>
+            api.put(`${root}/data-source-bindings/${row.path}`, sourceBody(values)),
+        }}
+      />
+    </>
+  );
+}
+
 /** Tests a data source from the server. The same word and the same busy state as a connection's Test. */
 function TestSource({
   root,
@@ -3351,6 +3394,11 @@ export function Sources({ root, link }: { root: string; link: string }) {
       description="Databases outside the platform that this workspace reads and writes. The address and password are set here, never in the repository, so dev and production can point at different databases."
       path={`${root}/data-source-bindings`}
       rowKey={(row) => row.path}
+      action={
+        <Button onClick={() => navigate(`${link}/resources/new/data_source`)}>
+          Declare source
+        </Button>
+      }
       columns={[
         {
           header: "Source",
@@ -3405,17 +3453,30 @@ export function Sources({ root, link }: { root: string; link: string }) {
           cell: (row) => (row.bound ? <HealthCell health={row.health} /> : ""),
         },
       ]}
-      rowActions={(row, reload) =>
-        row.bound ? (
-          // On a phone the three buttons wrap under each other instead of widening the page.
-          <SourceActions
-            root={root}
-            row={row}
-            onDone={reload}
-            className="max-w-[9.5rem] justify-end sm:max-w-none"
-          />
-        ) : null
-      }
+      rowActions={(row, reload) => (
+        <span className="inline-flex flex-wrap items-center justify-end gap-2">
+          {row.defined ? (
+            <Link
+              to={`${link}/resources/edit/data_source/${row.path}`}
+              aria-label={`Edit ${row.path}`}
+              className="text-action"
+            >
+              Edit
+            </Link>
+          ) : null}
+          {row.bound ? (
+            // On a phone the buttons wrap under each other instead of widening the page.
+            <SourceActions
+              root={root}
+              row={row}
+              onDone={reload}
+              className="max-w-[9.5rem] justify-end sm:max-w-none"
+            />
+          ) : (
+            <ConnectSource root={root} row={row} onDone={reload} />
+          )}
+        </span>
+      )}
       empty={{
         title: "No data sources yet",
         text: "Connect a Postgres database you already have. Its tables can then be browsed here and used by scripts.",

@@ -947,6 +947,34 @@ describe("files follow the rows that name them (D22)", () => {
     expect(await exists(id)).toBe(false);
   });
 
+  test("TAB-P10: the list says which table names each file, pages by a cursor, and finds by name", async () => {
+    const first = await upload(alice, "p10-a.txt");
+    const second = await upload(alice, "p10-b.txt");
+    const third = await upload(alice, "p10-c.txt");
+    await alice.post(`${ws()}/rows/tasks`, { title: "P10 one", attachment: first });
+    await alice.post(`${ws()}/rows/tasks`, { title: "P10 two", attachment: first });
+    const page = await alice.get(`${ws()}/files?limit=2&search=P10-`);
+    expect(page.status, JSON.stringify(page.body)).toBe(200);
+    expect(page.body.items.map((one: { id: string }) => one.id)).toEqual([third, second]);
+    expect(page.body.items[0].namedBy).toEqual([]);
+    expect(typeof page.body.nextCursor).toBe("string");
+    const next = await alice.get(
+      `${ws()}/files?limit=2&search=p10-&cursor=${encodeURIComponent(page.body.nextCursor)}`,
+    );
+    expect(next.body.items.map((one: { id: string }) => one.id)).toEqual([first]);
+    expect(next.body.nextCursor).toBeNull();
+    // Named by two rows of one table: the answer says the table, the column and how many.
+    expect(next.body.items[0].namedBy).toEqual([
+      expect.objectContaining({ table: "tasks", column: "attachment", rows: 2 }),
+    ]);
+    // A wildcard typed in the search is text.
+    expect((await alice.get(`${ws()}/files?search=%25`)).body.items).toEqual([]);
+    expect((await alice.get(`${ws()}/files?limit=0`)).status).toBe(400);
+    for (const id of [first, second, third]) {
+      await alice.delete(`${ws()}/files/${id}`);
+    }
+  });
+
   test("a deleted row's files are kept for the audit period, as a replaced one is", async () => {
     const one = await upload(alice, "gone-one.txt");
     const two = await upload(alice, "gone-two.txt");

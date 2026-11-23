@@ -1845,3 +1845,46 @@ test("TAB-P11 and TAB-31: an empty choice, list, reference or day opens its own 
   fireEvent.keyDown(paid, { key: "Enter" });
   await waitFor(() => expect(patched().at(-1)).toEqual({ paid: null }));
 });
+test("QSD-MP1: the list of data sources offers a new declaration and an edit of each declared one", async () => {
+  routes[`GET /api/v1${root}/data-source-bindings`] = () => [
+    200,
+    {
+      items: [
+        { path: "erp", description: "The ERP", defined: true, bound: false, hasPassword: false },
+        { path: "legacy", description: "", defined: false, bound: true, hasPassword: false },
+      ],
+    },
+  ];
+  show(<Sources root={root} link="/t/t1/workspaces/w1" />);
+  await screen.findByText("erp");
+  fireEvent.click(screen.getByRole("button", { name: "Declare source" }));
+  expect(location.pathname).toBe("/t/t1/workspaces/w1/resources/new/data_source");
+  const edit = screen.getByRole("link", { name: "Edit erp" });
+  expect(edit.getAttribute("href")).toBe("/t/t1/workspaces/w1/resources/edit/data_source/erp");
+  // A binding that nothing declares has no declaration to edit.
+  expect(screen.queryByRole("link", { name: "Edit legacy" })).toBeNull();
+});
+
+test("QSD-MP11: a source that is declared and not connected has its own Connect, with its name in", async () => {
+  routes[`GET /api/v1${root}/data-source-bindings`] = () => [
+    200,
+    {
+      items: [
+        { path: "erp", description: "The ERP", defined: true, bound: false, hasPassword: false },
+      ],
+    },
+  ];
+  routes[`PUT /api/v1${root}/data-source-bindings/erp`] = () => [200, {}];
+  show(<Sources root={root} link="/t/t1/workspaces/w1" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Connect erp" }));
+  const dialog = await screen.findByRole("dialog");
+  fireEvent.input(within(dialog).getByLabelText("Host"), { target: { value: "erp.internal" } });
+  fireEvent.input(within(dialog).getByLabelText("Database"), { target: { value: "erp" } });
+  fireEvent.input(within(dialog).getByLabelText("User"), { target: { value: "reader" } });
+  fireEvent.submit(dialog.querySelector("form") as HTMLFormElement);
+  await waitFor(() =>
+    expect(calls.find((call) => call.method === "PUT")?.body).toMatchObject({
+      config: { host: "erp.internal", database: "erp", user: "reader" },
+    }),
+  );
+});

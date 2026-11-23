@@ -7,22 +7,14 @@ import type { DrawerIcon } from "@volvel/ui";
 import { Calendar, Hash, Link2, List, ToggleLeft, Type } from "lucide-react";
 import { useId, useRef, useState } from "react";
 import type { Env } from "./controls.tsx";
-import {
-  type CatalogColumn,
-  renamedResult,
-  tidyVisual,
-  withInput,
-  withSystemColumns,
-} from "./model.ts";
+import { type CatalogColumn, columnsNamed, renamedResult, tidyVisual, withInput } from "./model.ts";
 
 export const TEMPORAL = new Set(["date", "timestamp"]);
 export const NUMERIC = new Set(["integer", "number"]);
 
 /** The columns of the table an input reads, with the ones every table has. */
 export function columnsOf(env: Env, visual: VisualQuery | undefined): CatalogColumn[] {
-  return withSystemColumns(
-    env.catalog.tables.find((one) => one.name === visual?.table)?.columns ?? [],
-  );
+  return columnsNamed(env.catalog, visual?.table);
 }
 
 /** The icon of a column's type. */

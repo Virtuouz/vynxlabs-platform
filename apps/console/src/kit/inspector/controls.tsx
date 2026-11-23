@@ -75,12 +75,12 @@ import type {
   TabFate,
 } from "./model.ts";
 import {
+  columnsNamed,
   heading,
   isChoiceLike,
   resultNames,
   tableOfInput,
   withConfig,
-  withSystemColumns,
 } from "./model.ts";
 import { TabsControl } from "./tabsControl.tsx";
 import { type GroupChoice, groupName } from "./timelineModel.ts";
@@ -142,8 +142,7 @@ export function columnOptions(
 ): Option[] {
   const input = of ? env.widget.data?.[of] : undefined;
   const named = tableOfInput(input, env.page, env.widgets);
-  const table = named ? env.catalog.tables.find((one) => one.name === named) : undefined;
-  const columns = table ? withSystemColumns(table.columns) : [];
+  const columns = columnsNamed(env.catalog, named);
   if (types) {
     return columns
       .filter((column) => offersType(types, column))

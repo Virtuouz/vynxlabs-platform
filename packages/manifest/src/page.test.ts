@@ -308,7 +308,7 @@ describe("records and actions (phase 26)", () => {
 
   it("narrowing the page needs an event that gives a group", () => {
     const narrowing = {
-      steps: [{ do: "narrow", filter: "f", from: "clinic" }],
+      steps: [{ do: "narrow" as const, filter: "f", from: "clinic" }],
     };
     const board = checkDashboard({ widgets: [{ ...rows, on: { rowClick: narrowing } }] }, tableOf);
     expect(board.map((one) => one.message)).toContain(

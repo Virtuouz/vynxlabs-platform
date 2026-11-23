@@ -195,6 +195,15 @@ function renderOne(
   return files;
 }
 
+/**
+ * The name of a resource's file, relative to the folder the console writes to:
+ * `<path>.<kind>.yaml`, and for a page of documentation `docs/<path>.md`. The one place
+ * that says it, for the files written, the files looked for and the reference.
+ */
+export function resourceFileName(kind: string, path: string): string {
+  return kind === DOC_KIND ? `docs/${path}.md` : `${path}.${kind}.yaml`;
+}
+
 const byPath = (a: ResourceFile, b: ResourceFile) =>
   a.path < b.path ? -1 : a.path > b.path ? 1 : 0;
 
@@ -211,14 +220,7 @@ export function renderResourceFiles(
       // The platform's own nodes are added again on every compose. They are not the repository's.
       .filter((manifest) => !manifest.path.startsWith("core/"))
       .flatMap((manifest) =>
-        renderOne(
-          manifest,
-          kinds,
-          manifest.kind === DOC_KIND
-            ? `docs/${manifest.path}.md`
-            : `${manifest.path}.${manifest.kind}.yaml`,
-          false,
-        ),
+        renderOne(manifest, kinds, resourceFileName(manifest.kind, manifest.path), false),
       )
       .sort(byPath)
   );
@@ -260,11 +262,13 @@ function pathFromPlace(stem: string, roots: readonly string[]): string | undefin
 export function fileOf(manifest: BundleManifest, folder: string): string {
   const found = manifest.source && !manifest.source.generated ? manifest.source.file : undefined;
   if (manifest.kind === DOC_KIND) {
-    return found?.endsWith(".md") ? found : `${folder}/docs/${manifest.path}.md`;
+    return found?.endsWith(".md")
+      ? found
+      : `${folder}/${resourceFileName(manifest.kind, manifest.path)}`;
   }
   return found?.endsWith(`.${manifest.kind}.yaml`)
     ? found
-    : `${folder}/${manifest.path}.${manifest.kind}.yaml`;
+    : `${folder}/${resourceFileName(manifest.kind, manifest.path)}`;
 }
 
 /**
@@ -835,13 +839,13 @@ export function parseRepositoryFiles(
     notePage: (manifest, file) => {
       found.set(manifest.key ?? manifest.path, file.path);
       // Kept where the console would not have written it: it is the repository's to change.
-      if (file.path !== `${options.folder}/docs/${manifest.path}.md`) {
+      if (file.path !== `${options.folder}/${resourceFileName(manifest.kind, manifest.path)}`) {
         manifest.source = { file: file.path, generated: false };
       }
     },
     note: (manifest, file) => {
       found.set(manifest.key ?? manifest.path, file.path);
-      if (file.path !== `${options.folder}/${manifest.path}.${manifest.kind}.yaml`) {
+      if (file.path !== `${options.folder}/${resourceFileName(manifest.kind, manifest.path)}`) {
         manifest.source = { file: file.path, generated: false };
       }
     },

@@ -15,6 +15,7 @@ import {
 import type { Config, LogLevel } from "./config.js";
 import { installFrontDoor } from "./kernel/apps/front.js";
 import { SYSTEM } from "./kernel/audit.js";
+import { authOptions, signInFeatures } from "./kernel/auth.js";
 import { closeAllSources } from "./kernel/data/sources.js";
 import { consoleDirectory } from "./kernel/docs/product.js";
 import { pushTenantAccess } from "./kernel/git.js";
@@ -61,6 +62,7 @@ import { interfaceRoutes } from "./routes/interfaces.js";
 import { locationRoutes } from "./routes/locations.js";
 import { masterKeyRoutes } from "./routes/master-key.js";
 import { mcpRoutes } from "./routes/mcp.js";
+import { memberResetRoutes } from "./routes/member-resets.js";
 import { operationsRoutes } from "./routes/operations.js";
 import { pageActionRoutes } from "./routes/page-actions.js";
 import { pageApprovalRoutes } from "./routes/page-approvals.js";
@@ -266,7 +268,10 @@ export async function buildApp(options: AppOptions) {
         },
       },
     };
-    finish(description as unknown as Parameters<typeof finish>[0]);
+    finish(
+      description as unknown as Parameters<typeof finish>[0],
+      signInFeatures(authOptions(kernel.db, options.config)),
+    );
     return description;
   }
 
@@ -324,6 +329,7 @@ export async function buildApp(options: AppOptions) {
       await api.register(driftRoutes(kernel));
       await api.register(accessRoutes(kernel));
       await api.register(approvalLinkRoutes(kernel));
+      await api.register(memberResetRoutes(kernel));
       api.get(
         "/openapi.json",
         {

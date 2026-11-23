@@ -23,6 +23,8 @@ export interface AmongOptions {
   /** The product's own terms and topics, which a page may use and extend and may not take. */
   reservedTerms?: Iterable<string>;
   reservedTopics?: Iterable<string>;
+  /** Names that begin with this are the product's too: see `BuildOptions.reservedPrefix`. */
+  reservedPrefix?: string;
   /** Terms defined elsewhere in the workspace: another docs app's. */
   knownTerms?: Iterable<string>;
   /** Whether a resource is there. Left out, or answering nothing, it is not checked: a deploy says it. */
@@ -82,11 +84,13 @@ export function checkPageAmong(
   // What it says of itself, beside what the others say.
   const reservedTerms = new Set(options.reservedTerms ?? []);
   const reservedTopics = new Set(options.reservedTopics ?? []);
+  const prefixed = (name: string) =>
+    options.reservedPrefix !== undefined && name.startsWith(options.reservedPrefix);
   const topics: Record<string, string> = {};
   for (const one of rest) if (one.topic) topics[one.topic] = one.path;
   const { topic } = entry.frontmatter;
   if (topic !== undefined) {
-    if (reservedTopics.has(topic)) {
+    if (reservedTopics.has(topic) || prefixed(topic)) {
       error(
         "topic_reserved",
         `The topic "${topic}" is one of the product's own. A page can add notes to it with extends: [${topic}], and cannot take its name.`,
@@ -101,7 +105,7 @@ export function checkPageAmong(
   const defined = new Map<string, string>();
   for (const one of rest) for (const id of one.terms) defined.set(id, one.path);
   for (const term of entry.frontmatter.terms ?? []) {
-    if (reservedTerms.has(term.id)) {
+    if (reservedTerms.has(term.id) || prefixed(term.id)) {
       error(
         "term_reserved",
         `The term "${term.id}" is one of the product's own, and cannot be defined again. Give yours another id.`,

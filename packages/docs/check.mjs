@@ -11,10 +11,12 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { resolveLink } from "@volvel/docs-engine";
 import { linkKind, walk } from "@volvel/markup";
+import { topicsAsked } from "./asked.mjs";
 import { GENERATED, stale, write } from "./generate.mjs";
 import { coverage } from "./generators/reference.mjs";
 import { HERE, loadDocs, report } from "./load.mjs";
 import { shotNames } from "./screenshots.mjs";
+import { nameLines, nameProblems, pathProblems, readLock, writeLock } from "./locks.mjs";
 
 const REPO = join(HERE, "../..");
 const CONSOLE = join(REPO, "apps/console/src");
@@ -27,25 +29,17 @@ function sources(folder) {
   });
 }
 
-/** Every topic the console asks for, and where: `help: "…"`, `useHelpTopic("…")`, `<HelpTopic topic="…">`, `openHelp("…")`. */
+/** Every topic the console asks for, and where (see asked.mjs), with the arguments that cannot be read. */
 function asked() {
   const found = new Map();
-  const patterns = [
-    /\bhelp:\s*"([a-z0-9][a-z0-9/_-]*)"/g,
-    /\buseHelpTopic\(\s*"([a-z0-9][a-z0-9/_-]*)"/g,
-    /<HelpTopic\s+topic="([a-z0-9][a-z0-9/_-]*)"/g,
-    /\bopenHelp\(\s*"([a-z0-9][a-z0-9/_-]*)(?:#[^"]*)?"/g,
-  ];
+  const unreadable = [];
   for (const file of sources(CONSOLE)) {
-    const text = readFileSync(file, "utf8");
-    for (const pattern of patterns) {
-      for (const match of text.matchAll(pattern)) {
-        const line = text.slice(0, match.index).split("\n").length;
-        if (!found.has(match[1])) found.set(match[1], `${relative(REPO, file)}:${line}`);
-      }
-    }
+    const where = (line) => `${relative(REPO, file)}:${line}`;
+    const { topics, problems } = topicsAsked(readFileSync(file, "utf8"));
+    for (const { topic, line } of topics) if (!found.has(topic)) found.set(topic, where(line));
+    for (const { line, problem } of problems) unreadable.push(`${where(line)}  ${problem}`);
   }
-  return found;
+  return { found, unreadable };
 }
 
 const problems = [];
@@ -55,7 +49,7 @@ const problems = [];
 // `pnpm docs:check` asks this first (`--staleness`), before the API's generator rewrites
 // every page: asked after it, nothing could ever be old.
 if (process.argv.includes("--staleness")) {
-  const old = existsSync(GENERATED) ? stale() : [];
+  const old = existsSync(GENERATED) ? await stale() : [];
   for (const one of old) console.error(`${one} Run pnpm docs:generate.`);
   if (old.length > 0) {
     console.error(
@@ -65,8 +59,8 @@ if (process.argv.includes("--staleness")) {
   }
   process.exit(0);
 }
-if (!existsSync(GENERATED)) write();
-for (const one of stale()) {
+if (!existsSync(GENERATED)) await write();
+for (const one of await stale()) {
   problems.push(`${one} Run pnpm docs:generate.`);
 }
 
@@ -79,10 +73,46 @@ if (covered.share + 1e-9 < floor) {
   );
 }
 
-const { set, issues } = loadDocs();
+const { set, issues, redirects } = loadDocs();
 report(issues);
 
-const topics = asked();
+// What was released stays reachable and keeps its names (see locks.mjs).
+const PATHS = join(HERE, "paths.lock");
+const NAMES = join(HERE, "names.lock");
+const PREFIX = "volvel-";
+const names = nameLines(Object.keys(set.topics), Object.keys(set.terms));
+if (process.argv.includes("--lock")) {
+  // A release adds what is new. After the first one, a name that does not start volvel-
+  // is never added: the check has refused it already.
+  const first = readLock(NAMES).length === 0;
+  const fresh = names.filter((line) => first || line.split(" ")[1].startsWith(PREFIX));
+  writeLock(
+    PATHS,
+    ["Every path of the product's documentation that a release has had. See locks.mjs."],
+    [...readLock(PATHS), ...set.pages.keys()],
+  );
+  writeLock(
+    NAMES,
+    ["Every topic and term of the product's help that a release has had. See locks.mjs."],
+    [...readLock(NAMES), ...fresh],
+  );
+  console.log(
+    `Locked ${set.pages.size} paths. Names are locked as they were, with the new volvel- ones.`,
+  );
+  process.exit(0);
+}
+problems.push(...pathProblems({ released: readLock(PATHS), pages: set.pages, redirects }));
+problems.push(
+  ...nameProblems({
+    locked: readLock(NAMES),
+    topics: Object.keys(set.topics),
+    terms: Object.keys(set.terms),
+    prefix: PREFIX,
+  }),
+);
+
+const { found: topics, unreadable } = asked();
+problems.push(...unreadable);
 const opened = new Set();
 for (const [topic, where] of topics) {
   const path = set.topics[topic] ?? (set.pages.has(topic) ? topic : undefined);

@@ -1,4 +1,4 @@
-// Writes the generated pages of reference into generated/. Run by the build
+// Writes the generated of reference and of the API into generated/. Run by the build
 // and by `pnpm docs:generate`.
 import {
   existsSync,
@@ -11,13 +11,11 @@ import {
 } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
+import { apiFiles } from "./generators/api.mjs";
 import { generate, referenceIndex } from "./generators/reference.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 export const GENERATED = join(HERE, "generated");
-
-/** Pages something else writes into generated/, and this leaves alone: the API's, which needs a database. */
-const KEPT = new Set(["api.md", "openapi.json"]);
 
 function existing(folder = GENERATED) {
   if (!existsSync(folder)) return [];
@@ -30,19 +28,16 @@ function existing(folder = GENERATED) {
 }
 
 /** Every file that should be in generated/, as text. */
-export function expected() {
+export async function expected() {
   const files = generate();
-  const api = existsSync(join(GENERATED, "api.md"));
-  files.set(
-    "index.md",
-    referenceIndex(api ? ["- [The API](api): every route, and what it needs"] : []),
-  );
+  for (const [name, text] of await apiFiles()) files.set(name, text);
+  files.set("index.md", referenceIndex(["- [The API](api/index): every route, and what it needs"]));
   return files;
 }
 
 /** What differs between generated/ and what the code says now. Empty when they agree. */
-export function stale() {
-  const files = expected();
+export async function stale() {
+  const files = await expected();
   const out = [];
   for (const [name, text] of files) {
     const file = join(GENERATED, name);
@@ -51,16 +46,15 @@ export function stale() {
       out.push(`generated/${name} is not what the code says now.`);
   }
   for (const name of existing()) {
-    if (!files.has(name) && !KEPT.has(name))
-      out.push(`generated/${name} is drawn from nothing any more.`);
+    if (!files.has(name)) out.push(`generated/${name} is drawn from nothing any more.`);
   }
   return out;
 }
 
-export function write() {
-  const files = expected();
+export async function write() {
+  const files = await expected();
   for (const name of existing()) {
-    if (!files.has(name) && !KEPT.has(name)) rmSync(join(GENERATED, name));
+    if (!files.has(name)) rmSync(join(GENERATED, name));
   }
   for (const [name, text] of files) {
     const file = join(GENERATED, name);
@@ -71,5 +65,5 @@ export function write() {
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  console.log(`Wrote ${write()} pages of reference into packages/docs/generated.`);
+  console.log(`Wrote ${await write()} files of reference into packages/docs/generated.`);
 }

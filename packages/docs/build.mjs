@@ -7,7 +7,7 @@ import { fieldDescriptions } from "./generators/reference.mjs";
 import { HERE, loadDocs, report, VERSION } from "./load.mjs";
 import { readIndex } from "./screenshots.mjs";
 
-const { set, issues, assets } = loadDocs();
+const { set, issues, assets, redirects } = loadDocs();
 if (issues.some((issue) => issue.severity === "error")) {
   report(issues);
   console.error(
@@ -23,6 +23,8 @@ for (const [name, text] of packageOutput(set, { version: VERSION, productName: "
   mkdirSync(dirname(file), { recursive: true });
   writeFileSync(file, text);
 }
+// Old path to new, for what moved or was deleted. `/docs` and the static export read it.
+writeFileSync(join(out, "redirects.json"), `${JSON.stringify(redirects)}\n`);
 // What each field of each kind is, for `::field` in a page and for the console's forms.
 writeFileSync(join(out, "fields.json"), `${JSON.stringify(fieldDescriptions())}\n`);
 // Pictures of the console, taken from a running instance by `pnpm docs:screenshots`

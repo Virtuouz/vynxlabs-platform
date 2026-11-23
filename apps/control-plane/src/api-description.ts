@@ -165,6 +165,168 @@ function describeStatus(status: string, method: string): string {
   return "The answer.";
 }
 
+/** What the sign-in library's own routes are, for a reference. Written here because the library writes none. */
+type Feature = "signUp" | "social" | "changeEmail" | "deleteUser";
+interface LibraryRoute {
+  summary: string;
+  description: string;
+  /** Present only where the instance's sign-in options switch the feature on. */
+  feature?: Feature;
+}
+const SIGN_IN_ROUTES: Record<string, LibraryRoute> = {
+  "POST /sign-in/email": {
+    summary: "Sign in with an email address and a password",
+    description:
+      "Answers with the member and sets the session cookie. Held to the sign-in rate limit. A member whose sign-in is required to go through a single sign-on provider is refused.",
+  },
+  "POST /sign-out": {
+    summary: "Sign out of this session",
+    description: "Ends the session the cookie names and clears the cookie.",
+  },
+  "GET /get-session": {
+    summary: "Read the session of the caller",
+    description: "Answers with the session and its member, or null when nobody is signed in.",
+  },
+  "POST /get-session": {
+    summary: "Read the session of the caller",
+    description: "Answers with the session and its member, or null when nobody is signed in.",
+  },
+  "GET /list-sessions": {
+    summary: "List the caller's sessions",
+    description: "Every session of the signed-in member that has not ended.",
+  },
+  "POST /revoke-session": {
+    summary: "End one of the caller's sessions",
+    description: "Ends the session named by its token.",
+  },
+  "POST /revoke-sessions": {
+    summary: "End all of the caller's sessions",
+    description: "Ends every session of the signed-in member, this one included.",
+  },
+  "POST /revoke-other-sessions": {
+    summary: "End the caller's other sessions",
+    description: "Ends every session of the signed-in member except this one. It is audited.",
+  },
+  "POST /update-session": {
+    summary: "Change the current session",
+    description: "Updates fields the library keeps on the session.",
+  },
+  "POST /update-user": {
+    summary: "Change the caller's own name or image",
+    description:
+      "A name a directory pushes through SCIM is owned by the directory, and a change here is refused.",
+  },
+  "POST /change-password": {
+    summary: "Change the caller's password",
+    description:
+      "Needs the current password. It can end the member's other sessions. Held to the sign-in rate limit.",
+  },
+  "POST /request-password-reset": {
+    summary: "Ask for a password reset by email",
+    description:
+      "Sends a link to the address if a member has it. The answer is the same either way.",
+  },
+  "POST /reset-password": {
+    summary: "Set a new password with a reset token",
+    description: "The token is the one in the emailed link.",
+  },
+  "GET /reset-password/{token}": {
+    summary: "Open a password reset link",
+    description: "Checks the token and sends the browser on to the reset screen.",
+  },
+  "POST /verify-password": {
+    summary: "Check the caller's password",
+    description: "Answers whether the password is the signed-in member's.",
+  },
+  "POST /send-verification-email": {
+    summary: "Send the email that verifies an address",
+    description: "Held to the sign-in rate limit.",
+  },
+  "GET /verify-email": {
+    summary: "Verify an email address with the token from the email",
+    description: "The token is in the address of the emailed link.",
+  },
+  "GET /list-accounts": {
+    summary: "List the sign-in methods linked to the caller",
+    description: "Every account of the signed-in member, such as its password.",
+  },
+  "GET /ok": {
+    summary: "Check that the sign-in service answers",
+    description: "Answers `{ ok: true }`.",
+  },
+  "GET /error": {
+    summary: "The page a failed sign-in is sent to",
+    description: "Shows the library's error for a failed sign-in.",
+  },
+  "GET /sso/finish": {
+    summary: "Finish a sign-in through a single sign-on provider",
+    description: "Where a provider sends the browser back to. It makes the session and redirects.",
+  },
+  "POST /sign-up/email": {
+    summary: "Sign up with an email address and a password",
+    description: "Members are made by an admin, so an instance keeps this off.",
+    feature: "signUp",
+  },
+  "POST /sign-in/social": {
+    summary: "Sign in with a social provider",
+    description: "Starts the provider's sign-in.",
+    feature: "social",
+  },
+  "GET /callback/{id}": {
+    summary: "Where a social provider sends the browser back to",
+    description: "Finishes a social sign-in.",
+    feature: "social",
+  },
+  "POST /callback/{id}": {
+    summary: "Where a social provider sends the browser back to",
+    description: "Finishes a social sign-in.",
+    feature: "social",
+  },
+  "POST /link-social": {
+    summary: "Link a social provider to the caller",
+    description: "Starts linking the provider's account.",
+    feature: "social",
+  },
+  "POST /unlink-account": {
+    summary: "Unlink a provider from the caller",
+    description: "Removes a linked account.",
+    feature: "social",
+  },
+  "POST /refresh-token": {
+    summary: "Refresh a provider's access token",
+    description: "For a linked social account.",
+    feature: "social",
+  },
+  "POST /get-access-token": {
+    summary: "Read a provider's access token",
+    description: "For a linked social account.",
+    feature: "social",
+  },
+  "GET /account-info": {
+    summary: "Read a linked provider account's details",
+    description: "For a linked social account.",
+    feature: "social",
+  },
+  "POST /change-email": {
+    summary: "Change the caller's email address",
+    description: "Sends a confirmation to the new address.",
+    feature: "changeEmail",
+  },
+  "POST /delete-user": {
+    summary: "Delete the caller's own account",
+    description: "Members are removed by an admin, so an instance keeps this off.",
+    feature: "deleteUser",
+  },
+  "GET /delete-user/callback": {
+    summary: "Confirm deleting the caller's own account",
+    description: "Members are removed by an admin, so an instance keeps this off.",
+    feature: "deleteUser",
+  },
+};
+
+/** Which optional parts of the sign-in library the instance has on, read from its options. */
+export type SignInFeatures = Record<Feature, boolean>;
+
 interface Operation {
   tags?: string[];
   operationId?: string;
@@ -216,10 +378,13 @@ export function accessSentence(access: Access): string {
  * for each response. It reads only what the routes already say. The authentication library's
  * own routes, which declare no access, keep what the library wrote and share one tag.
  */
-export function finish(description: {
-  paths: Record<string, Record<string, unknown>>;
-  components?: { schemas?: Record<string, unknown> } & Record<string, unknown>;
-}) {
+export function finish(
+  description: {
+    paths: Record<string, Record<string, unknown>>;
+    components?: { schemas?: Record<string, unknown> } & Record<string, unknown>;
+  },
+  features?: SignInFeatures,
+) {
   const used = new Set<string>();
   for (const [path, item] of Object.entries(description.paths)) {
     for (const [method, value] of Object.entries(item)) {
@@ -227,6 +392,17 @@ export function finish(description: {
       const operation = value as Operation;
       const access = operation["x-access"];
       if (!access) {
+        const known =
+          SIGN_IN_ROUTES[`${method.toUpperCase()} ${path.replace(/^\/api\/v1\/auth/, "")}`];
+        // A route of a feature the instance has off is not served, so it is not described.
+        if (known?.feature && features && !features[known.feature]) {
+          delete item[method];
+          continue;
+        }
+        if (known) {
+          operation.summary = known.summary;
+          operation.description = known.description;
+        }
         operation.tags = ["sign-in"];
         operation.operationId ??= operationIdOf(method, path);
         used.add(operation.operationId);
@@ -262,5 +438,9 @@ export function finish(description: {
         );
       }
     }
+  }
+  // A path whose every route was left out is not described either.
+  for (const [path, item] of Object.entries(description.paths)) {
+    if (!Object.keys(item).some((method) => METHODS.has(method))) delete description.paths[path];
   }
 }

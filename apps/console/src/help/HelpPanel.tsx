@@ -214,6 +214,7 @@ export function HelpPanel({
             hits={hits}
             onOpen={(path) => {
               setQuery("");
+              // docs:dynamic a page path the reader chose from the search results
               openHelp(path);
             }}
           />
@@ -250,6 +251,7 @@ export function HelpPanel({
                 <button
                   type="button"
                   className="border-0 bg-transparent p-0 text-action underline"
+                  // docs:dynamic a link inside a page of the help, which the build has checked
                   onClick={() => openHelp(href.slice(INSIDE.length))}
                 >
                   More about {word}
@@ -263,6 +265,7 @@ export function HelpPanel({
                       onClick={(event) => {
                         if (event.metaKey || event.ctrlKey || event.shiftKey) return;
                         event.preventDefault();
+                        // docs:dynamic as the link above
                         openHelp(href.slice(INSIDE.length));
                       }}
                     >

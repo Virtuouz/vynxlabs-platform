@@ -543,7 +543,7 @@ describe("what an error means", () => {
       );
     });
     fireEvent.click(await screen.findByRole("button", { name: "What does this mean?" }));
-    expect(told()).toBe("none|reference/errors#draft_changed|open");
+    expect(told()).toBe("none|errors#draft_changed|open");
     const panel = screen.getByRole("complementary", { name: "Help" });
     await within(panel).findByRole("heading", { name: "Error codes" });
     await within(panel).findByText(/Nothing was overwritten/);

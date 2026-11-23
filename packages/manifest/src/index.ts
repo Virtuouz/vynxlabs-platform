@@ -62,6 +62,7 @@ export {
   type ResourceFile,
   renderRepositoryFiles,
   renderResourceFiles,
+  resourceFileName,
   resourceOfFile,
   sameResourceFile,
 } from "./files.js";
@@ -264,6 +265,7 @@ export {
   TENANT_KEY_PATTERN,
   TENANT_KINDS,
   type TenantResource,
+  tenantFileName,
   tenantName,
   tenantOrder,
 } from "./tenant.js";

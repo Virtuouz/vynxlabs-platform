@@ -23,6 +23,9 @@
     },
     {
       "path": "../docs-engine"
+    },
+    {
+      "path": "../docs-site"
     }
   ]
 }

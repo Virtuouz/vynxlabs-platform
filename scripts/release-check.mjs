@@ -33,7 +33,11 @@ export const PUBLISHED = [
   },
   { folder: "packages/app", name: "@volvel/app", holds: ["dist/index.js"], build: true },
   { folder: "packages/sdk", name: "@volvel/sdk", holds: ["dist/index.js", "dist/index.d.ts"] },
-  { folder: "packages/cli", name: "@volvel/cli", holds: ["dist/volvel.mjs"] },
+  {
+    folder: "packages/cli",
+    name: "@volvel/cli",
+    holds: ["dist/volvel.mjs", "dist/screens/index.html"],
+  },
 ];
 
 const run = (command, args, cwd) =>

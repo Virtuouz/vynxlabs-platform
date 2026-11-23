@@ -16,6 +16,7 @@ import { InstanceHealth } from "./screens/InstanceHealth.tsx";
 import { InstanceTriggers } from "./screens/InstanceTriggers.tsx";
 import { KitSheet } from "./screens/KitSheet.tsx";
 import { ForOperators, NotFound } from "./screens/NotFound.tsx";
+import { ResetPassword } from "./screens/ResetPassword.tsx";
 import { SignIn } from "./screens/SignIn.tsx";
 import { Tenant } from "./screens/Tenant.tsx";
 import { beginSession, endSession, useSessionEnded } from "./session.ts";
@@ -160,6 +161,9 @@ export function App() {
   // An approval mail's link needs no sign-in: the link is the approver's own.
   const approving = match("/approve/:token", path);
   if (approving?.token) return <ApproveLink token={approving.token} />;
+  // A password link needs no sign-in either: whoever holds it chooses the member's password.
+  const resetting = match("/reset-password/:token", path);
+  if (resetting?.token) return <ResetPassword token={resetting.token} />;
   if (me.loading && !me.data && !me.error) return null;
   if (me.error?.status === 401 || !me.data) {
     if (me.error && me.error.status !== 401) {

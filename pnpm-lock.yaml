@@ -356,6 +356,9 @@ importers:
       '@volvel/docs-engine':
         specifier: workspace:*
         version: link:../docs-engine
+      '@volvel/docs-site':
+        specifier: workspace:*
+        version: link:../docs-site
       '@volvel/example-acme':
         specifier: workspace:*
         version: link:../../examples/acme

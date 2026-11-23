@@ -695,7 +695,11 @@ export function TenantExport({ base, slug }: { base: string; slug: string }) {
           </Notice>
         ) : null}
         <div>
-          <Button type="submit" variant="primary" disabled={state === "working" || mismatch || tooShort}>
+          <Button
+            type="submit"
+            variant="primary"
+            disabled={state === "working" || mismatch || tooShort}
+          >
             {state === "working" ? "Exporting…" : "Export tenant"}
           </Button>
         </div>

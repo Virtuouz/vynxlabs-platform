@@ -804,7 +804,11 @@ export function Connections({ root, production = false }: { root: string; produc
           },
           {
             header: "Kind",
-            cell: (row) => CONNECTOR_NAMES[row.connector] ?? <Code>{row.connector}</Code>,
+            cell: (row) => (
+              <span className="whitespace-nowrap">
+                {CONNECTOR_NAMES[row.connector] ?? <Code>{row.connector}</Code>}
+              </span>
+            ),
           },
           {
             header: "Points to",

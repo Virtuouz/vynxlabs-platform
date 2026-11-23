@@ -29,7 +29,9 @@ const show = (page: Page) => {
 describe("Page settings: icon, title in the app menu, size", () => {
   test("a page has an icon picker with a preview, and it writes Page.icon", () => {
     const onChange = show({ id: "money", title: "Money", widgets: [] });
-    expect(screen.getByLabelText("Title in the app menu")).toBeTruthy();
+    expect((screen.getByLabelText("Title in the app menu") as HTMLInputElement).maxLength).toBe(
+      100,
+    );
     const icon = screen.getByLabelText("Icon") as HTMLSelectElement;
     expect(icon.value).toBe("");
     fireEvent.change(icon, { target: { value: "banknote" } });

@@ -24,3 +24,21 @@ export function pageOf<T extends TSchema>(item: T) {
     nextCursor: Type.Union([Type.String(), Type.Null()]),
   });
 }
+
+/**
+ * The response of a list route that has no cursor: it answers every item it has, or at most `cap`
+ * of them. Its description is what a reference prints, so a reader can tell a list that is whole
+ * from one that is cut short. A list that can be longer than a page takes `PageQuery` and
+ * `pageOf` instead.
+ */
+export function listOf<T extends TSchema>(item: T, cap?: number) {
+  return Type.Object(
+    { items: Type.Array(item) },
+    {
+      description:
+        cap === undefined
+          ? "Every one there is. The list has no cursor."
+          : `At most ${cap}. The list has no cursor, so what is past ${cap} is not reachable through this route.`,
+    },
+  );
+}

@@ -282,6 +282,10 @@ test("a form says what Submit says, and what happens after saving", () => {
     FormDisplaySection,
   );
   expect(screen.getByText("Required · picker")).toBeTruthy();
+  // WID-22: there is no setting for when a field shows, so the note does not offer one.
+  expect(screen.getByText(/Required and checks come from the table/).textContent).not.toMatch(
+    /when to show/,
+  );
   fireEvent.click(screen.getByRole("button", { name: /Submit says/ }));
   fireEvent.change(screen.getByLabelText("Submit says"), { target: { value: "Create invoice" } });
   expect(mine(seen).config.submitLabel).toBe("Create invoice");
@@ -431,6 +435,10 @@ test("tabs say what each holds; its chip sets which opens first; new tabs are ad
   );
   expect(screen.getByText("1 widget")).toBeTruthy();
   expect(screen.getByText("Empty")).toBeTruthy();
+  // BLD-08: renaming is in the drawer; the canvas has no double-click for a tab, so the note does not offer one.
+  expect(screen.getByText(/Click a tab on the page to fill it/).textContent).not.toMatch(
+    /double-click/i,
+  );
   fireEvent.click(screen.getByRole("button", { name: "Open Visits first" }));
   expect(mine(seen).config.opensFirst).toBe("visits");
   fireEvent.click(screen.getByRole("button", { name: /Tab$/ }));

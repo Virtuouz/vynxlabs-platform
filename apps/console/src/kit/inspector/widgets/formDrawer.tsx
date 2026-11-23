@@ -9,8 +9,7 @@ import { Check, MousePointerClick } from "lucide-react";
 import { FieldsList } from "./fieldsList.tsx";
 import { type Env, Group, setConfig } from "./recordShared.tsx";
 
-const NOTE =
-  "Required and checks come from the table. Click a field for its label, help text and when to show it.";
+const NOTE = "Required and checks come from the table. Click a field for its label and help text.";
 
 /** What the submit does at the end of its steps: whether it closes, and what it says. */
 export function afterSaving(submit: Action | undefined): { close: boolean; say: string } {

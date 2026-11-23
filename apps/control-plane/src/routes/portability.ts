@@ -168,6 +168,8 @@ export function portabilityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.instance("tenant:write") },
         schema: {
           summary: "Look at an uploaded export again, with a passphrase or a slug to try",
+          description:
+            "What the staged export holds, so a person can see whether a slug fits before importing. The upload is kept until it is imported or thrown away.",
           tags: ["portability"],
           params: StagedParams,
           querystring: Type.Object({ slug: Type.Optional(Slug) }),
@@ -230,6 +232,7 @@ export function portabilityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.instance("tenant:write") },
         schema: {
           summary: "Throw away an uploaded export",
+          description: "Deletes the staged upload. Nothing was imported.",
           tags: ["portability"],
           params: StagedParams,
           response: { 204: NoContent },

@@ -45,10 +45,21 @@ export function typedValue(op: string, text: string): unknown {
   return text;
 }
 
+/**
+ * A value that is not typed in but taken from where the page is: a column of the record the page
+ * is open on, or the person looking. Spoken as that.
+ */
+function referenceWords(value: object): string | undefined {
+  const at = value as { record?: unknown; user?: unknown };
+  if (typeof at.record === "string") return `this record's ${heading(at.record).toLowerCase()}`;
+  if (at.user === "id") return "the current user";
+  return undefined;
+}
+
 /** A value as it is read in a sentence or typed in a box. */
 export const shownValue = (value: unknown): string =>
   value !== null && typeof value === "object" && !Array.isArray(value)
-    ? lastWords(value as { count?: number; unit?: string })
+    ? (referenceWords(value) ?? lastWords(value as { count?: number; unit?: string }))
     : Array.isArray(value)
       ? value.join(", ")
       : value === undefined || value === null

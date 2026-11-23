@@ -10,6 +10,7 @@ import {
   TriangleAlert,
 } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
+import { NAME_MAX } from "./names.ts";
 
 /** The sizes the preview can be drawn at. */
 export const VIEWPORTS = {
@@ -44,7 +45,7 @@ export function RenameField({
       ref={field}
       aria-label="Name of the app"
       value={draft}
-      maxLength={200}
+      maxLength={NAME_MAX}
       size={Math.max(12, Math.min(draft.length + 2, 40))}
       onChange={(event) => setDraft(event.target.value)}
       onBlur={() => finish(true)}

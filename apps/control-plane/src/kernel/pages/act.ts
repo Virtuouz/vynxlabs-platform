@@ -32,6 +32,7 @@ import { checkFlowStart, kickFlow, startFlowRun } from "../flows/engine.js";
 import type { RequestContext } from "../http.js";
 import type { Kernel } from "../kernel.js";
 import { resolveResource } from "../resolve.js";
+import { dayIn, startOfDayIn } from "../zones.js";
 import { type LocatedPage, locatePage, type PageRequest } from "./locate.js";
 import { checkRunBy, principalEmail } from "./who.js";
 
@@ -40,6 +41,8 @@ export const MAX_RECORDS = 200;
 
 /** What the browser sends to run an action (phase 26, decision 0004). */
 export interface ActRequest extends PageRequest {
+  /** The reader's time zone: their day is what `today` is (D21). UTC when left out. */
+  zone?: string | undefined;
   widget: string;
   at: string;
   records?:
@@ -476,7 +479,7 @@ export async function runAction(
 
       const resolve = (value: ActionValue): unknown => {
         if ("value" in value) return value.value;
-        if ("today" in value) return new Date().toISOString().slice(0, 10);
+        if ("today" in value) return dayIn(request.zone);
         if ("now" in value) return new Date().toISOString();
         if ("user" in value) return value.user === "id" ? user.id : (user[value.user] ?? null);
         if ("record" in value) return records[value.of ?? "this"]?.[value.record];
@@ -490,13 +493,13 @@ export async function runAction(
         const out: Record<string, unknown> = {};
         for (const [name, value] of Object.entries(set)) {
           let resolved = resolve(value);
-          // A day given for a moment means the start of that day, in UTC: a time is stored with its zone.
+          // A day given for a moment means the start of that day in the reader's zone, kept with its zone (D21).
           if (
             typeof resolved === "string" &&
             /^\d{4}-\d{2}-\d{2}$/.test(resolved) &&
             columns?.find((column) => column.name === name)?.type === "timestamp"
           ) {
-            resolved = `${resolved}T00:00:00Z`;
+            resolved = startOfDayIn(resolved, request.zone);
           }
           if (resolved !== undefined) out[name] = resolved;
         }

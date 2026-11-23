@@ -1,6 +1,7 @@
 import { Button, OnHeading, Toggletip } from "@volvel/ui";
 import { ChevronDown, ChevronUp } from "@volvel/ui/icons";
 import type { ColumnInfo, RowsData, WidgetViewProps } from "@volvel/widgets";
+import { countText } from "@volvel/widgets";
 import { type ReactNode, useState } from "react";
 import {
   type ColumnSpec,
@@ -59,12 +60,12 @@ export function ShowMore({ data }: { data: RowsData }) {
     <div className="mt-2 flex flex-wrap items-center justify-center gap-x-3 gap-y-1">
       {data.total !== undefined ? (
         <span role="status" className="text-body-sm text-ink-muted tabular-nums">
-          Showing {data.rows.length.toLocaleString("en-US")} of {data.total.toLocaleString("en-US")}
+          Showing {countText(data.rows.length)} of {countText(data.total)}
         </span>
       ) : null}
       <Button size="small" onClick={() => data.more?.()}>
         {left !== undefined && left > 0
-          ? `Show ${Math.min(left, data.rows.length).toLocaleString("en-US")} more`
+          ? `Show ${countText(Math.min(left, data.rows.length))} more`
           : "Show more"}
       </Button>
     </div>
@@ -137,6 +138,16 @@ function TableButtons({
  * The bar that appears with rows chosen: how many, the row actions that may be run on every one
  * of them, and Clear. An action that may not be run on one of them is not offered.
  */
+/** The most rows an action is run on at once: what the server takes. */
+export const MAX_CHOSEN = 200;
+
+/** Whether an action's steps show rows or narrow the page, which the server does for one row only. */
+const forOneRow = (action: unknown): boolean =>
+  Array.isArray((action as { steps?: unknown } | undefined)?.steps) &&
+  (action as { steps: { do?: string }[] }).steps.some(
+    (step) => step.do === "rows" || step.do === "narrow",
+  );
+
 function ChosenBar({
   count,
   note,
@@ -159,8 +170,12 @@ function ChosenBar({
   const offered = actions
     .map((item, at) => ({ item, where: `config/rowActions/${at}/action` }))
     .filter(
-      ({ where }) =>
-        !props.building && props.act && rows.every((row) => props.can?.(where, row) ?? true),
+      ({ item, where }) =>
+        !props.building &&
+        props.act &&
+        // Showing rows or narrowing the page is for one row: the server refuses it for several.
+        (rows.length < 2 || !forOneRow(item.action)) &&
+        rows.every((row) => props.can?.(where, row) ?? true),
     );
   return (
     <section
@@ -169,6 +184,7 @@ function ChosenBar({
     >
       <strong className="font-medium">{count} chosen</strong>
       {note ? <span className="text-ink-muted">{note}</span> : null}
+      {count >= MAX_CHOSEN ? <span className="text-ink-muted">{MAX_CHOSEN} at most.</span> : null}
       {offered.map(({ item, where }) => (
         <Button
           key={item.id}
@@ -350,8 +366,10 @@ export function TableView(props: WithSelected<TableConfig>) {
   const tick = (id: string, on: boolean) =>
     setTicked((now) => {
       const next = new Set(now);
-      if (on) next.add(id);
-      else next.delete(id);
+      if (on) {
+        // At most what an action is run on at once.
+        if (next.size < MAX_CHOSEN) next.add(id);
+      } else next.delete(id);
       return next;
     });
   const selecting = config.select === true;
@@ -363,7 +381,7 @@ export function TableView(props: WithSelected<TableConfig>) {
         count={chosen.length}
         note={
           rows.more
-            ? `Only the ${rows.rows.length.toLocaleString("en-US")} rows shown can be chosen.`
+            ? `Only the ${countText(rows.rows.length)} rows shown can be chosen.`
             : undefined
         }
         rows={chosenRows}
@@ -398,7 +416,7 @@ export function TableView(props: WithSelected<TableConfig>) {
   const most = new Map(shown.map(({ spec }) => [spec.column, largest(rows.rows, spec.column)]));
   const pad = config.rowHeight === "compact" ? "py-1" : "py-[9px]";
   const totals = shown.some(({ spec }) => spec.total);
-  const allTicked = ordered.length > 0 && chosen.length === ordered.length;
+  const allTicked = ordered.length > 0 && chosen.length === Math.min(ordered.length, MAX_CHOSEN);
   const edge = "px-3";
   const rowOf = (row: Readonly<Record<string, unknown>>, id: string, at: number) => {
     return (
@@ -481,7 +499,9 @@ export function TableView(props: WithSelected<TableConfig>) {
                     checked={allTicked}
                     onChange={(event) =>
                       setTicked(
-                        event.currentTarget.checked ? new Set(ordered.map(idOf)) : new Set(),
+                        event.currentTarget.checked
+                          ? new Set(ordered.slice(0, MAX_CHOSEN).map(idOf))
+                          : new Set(),
                       )
                     }
                   />

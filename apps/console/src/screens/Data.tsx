@@ -35,7 +35,7 @@ import { useHistory } from "../kit/history.ts";
 import { useShortcut } from "../kit/keys.ts";
 import { ErrorState, Loading, Pending } from "../kit/LoadState.tsx";
 import { Inspector } from "../kit/layout.tsx";
-import { Code, StatePill } from "../kit/status.tsx";
+import { Code, StatePill, Tag } from "../kit/status.tsx";
 import { UndoRedo } from "../kit/UndoRedo.tsx";
 import { ColumnsMenu, ViewsMenu } from "../kit/views.tsx";
 import { type CreateConfig, CreateDialog, ListScreen, Page, RemoveButton } from "../ListScreen.tsx";
@@ -2438,6 +2438,8 @@ interface SourceBinding {
   description: string;
   defined: boolean;
   bound: boolean;
+  /** Declared by a workspace linked to this one: it arrives with the next promotion. */
+  arrives?: boolean;
   health?: {
     ok: boolean;
     problem: string | null;
@@ -2587,20 +2589,25 @@ export function Sources({ root, link }: { root: string; link: string }) {
   return (
     <ListScreen<SourceBinding>
       title="Data sources"
+      setupField="path"
       description="Databases outside the platform that this workspace reads and writes. The address and password are set here, never in the repository, so dev and production can point at different databases."
       path={`${root}/data-source-bindings`}
       rowKey={(row) => row.path}
       columns={[
         {
           header: "Source",
-          cell: (row) =>
-            row.bound ? (
-              <Link to={`${link}/sources/${row.path}`} className="font-medium text-action">
-                {row.path}
-              </Link>
-            ) : (
-              <Code>{row.path}</Code>
-            ),
+          cell: (row) => (
+            <span className="inline-flex flex-wrap items-center gap-2">
+              {row.bound ? (
+                <Link to={`${link}/sources/${row.path}`} className="font-medium text-action">
+                  {row.path}
+                </Link>
+              ) : (
+                <Code>{row.path}</Code>
+              )}
+              {row.arrives ? <Tag tone="neutral">Arrives with the next promotion</Tag> : null}
+            </span>
+          ),
         },
         // On a phone a source keeps its name and its health; where it points, from a tablet up.
         {

@@ -123,8 +123,9 @@ export function WorkspaceControls({
             </Button>
           }
         >
-          A new dev workspace with what is deployed here, and its rows and files if you choose. It
-          gets no connection, data source or secret value until you bind them.
+          A new dev workspace with what is deployed here, and its rows and files if you choose. With
+          Safety on it gets no connection, data source, group member or secret value until you bind
+          them. With Safety off it gets this workspace's.
         </SettingsRow>
         <SettingsRow
           title={<span className="text-danger">Delete workspace</span>}
@@ -247,7 +248,7 @@ export function WorkspaceSettings({
   return (
     <Page
       title="Workspace settings"
-      description="Pause what starts by itself, make a copy, or delete a dev workspace: these act at once. Its name, where it promotes to and its time zone are saved together, from the bar that appears below."
+      description="Pause what starts by itself, make a copy, or delete the workspace: these act at once. Its name, where it promotes to and its time zone are saved together, from the bar that appears below."
     >
       <section aria-labelledby="workspace-name" className="flex flex-col gap-3">
         <h2 id="workspace-name" className="m-0 text-title">
@@ -419,9 +420,12 @@ function CloneDialog({
               {counted(clone.report.rows, "row", "rows")} in{" "}
               {counted(clone.report.tables, "table", "tables")} and{" "}
               {counted(clone.report.files, "file", "files")}.{" "}
-              {clone.report.connections || clone.report.secrets
-                ? "Its connections and secrets were copied: it can reach the same systems as the original."
-                : "It has no connections or secret values, so it cannot reach a real system until you bind it."}
+              {clone.report.connections ||
+              clone.report.secrets ||
+              clone.report.dataSources ||
+              clone.report.connectionGroupMembers
+                ? "Its connections, data sources, group members and secrets were copied: it can reach the same systems as the original. A connection that signs in with OAuth is not signed in: connect it again."
+                : "It has no connections, data sources or secret values, so it cannot reach a real system until you bind it."}
             </p>
           )}
           <div className="flex justify-end gap-2">
@@ -569,6 +573,8 @@ export function Promotion({
   const [done, setDone] = useState<string>();
   if (workspace.type !== "dev") return null;
   const target = others.data?.items.find((item) => item.id === workspace.linkedWorkspaceId);
+  // A target chosen in the settings and not saved yet is not what a promotion goes to.
+  const unsaved = linked !== undefined && linked !== (workspace.linkedWorkspaceId ?? null);
 
   const review = async () => {
     setProblem(undefined);
@@ -621,7 +627,11 @@ export function Promotion({
             }}
           />
         </div>
-        {target ? (
+        {unsaved ? (
+          <p className="m-0 max-w-measure text-ink-muted">
+            Save the new target to review a promotion to it.
+          </p>
+        ) : target ? (
           <Button variant="primary" onClick={review}>
             Review and promote
           </Button>

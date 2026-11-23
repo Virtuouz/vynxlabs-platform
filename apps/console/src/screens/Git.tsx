@@ -24,6 +24,15 @@ interface Status {
   lastError: string | null;
 }
 
+/** Whether two addresses are at different hosts: the stored token is not sent to the new one. */
+function otherHost(before: string, after: string): boolean {
+  try {
+    return new URL(before).origin !== new URL(after).origin;
+  } catch {
+    return false;
+  }
+}
+
 /** The tenant's repository: where it is, and the token the server reaches it with. */
 export function RepositorySettings({ base }: { base: string }) {
   const loaded = useLoad<{ repository: Repository | null }>(`${base}/git-repository`);
@@ -87,7 +96,11 @@ export function RepositorySettings({ base }: { base: string }) {
           label="Address"
           value={url}
           placeholder="https://github.com/acme/platform.git"
-          hint="An HTTPS address, with no user name or token in it."
+          hint={
+            repository && !token && otherHost(repository.url, url)
+              ? "This is another host than the stored token was given for. Enter the access token again."
+              : "An HTTPS address, with no user name or token in it."
+          }
           onChange={setUrl}
         />
         <div className="grid grid-cols-2 gap-3">

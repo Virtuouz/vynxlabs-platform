@@ -31,6 +31,11 @@ export function objectHref(link: string, kind: string, path: string): string {
       return `${link}/screens/${at}`;
     case "app":
       return `${link}/apps`;
+    case "connection_group":
+      return `${link}/connections`;
+    // The workspace's own settings are where its default alert is set.
+    case "workspace":
+      return `${link}/alerts`;
     case "trigger":
     case "schedule":
       return `${link}/triggers?trigger=${encodeURIComponent(path)}`;

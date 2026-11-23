@@ -739,7 +739,7 @@ export async function createScimUser(
         });
         await giveRole(trx, audit, provider, provider.tenantId, principalId);
       }
-    } else if (created) await giveRole(trx, audit, provider, null, principalId);
+    }
   } else {
     const tenantId = provider.tenantId as string;
     const existing = await trx

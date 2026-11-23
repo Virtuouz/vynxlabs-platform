@@ -241,6 +241,11 @@ export function ssoRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         },
         async ({ ctx, params, body }, reply) => {
           const tenantId = tenantOf(params as { t?: string });
+          // Everyone the provider makes is given this role: whoever sets it needs the right
+          // to bind it, as `POST /bindings` asks.
+          if (body.defaultRoleId && tenantId !== null) {
+            await ctx.authorize("binding:write", { tenantId });
+          }
           const created = await ctx.mutate(async (trx, audit) => {
             const made = await createProvider(
               kernel,
@@ -289,6 +294,13 @@ export function ssoRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         },
         async ({ ctx, params, body }) => {
           const current = await provider(params as { p: string });
+          if (
+            body.defaultRoleId &&
+            body.defaultRoleId !== current.defaultRoleId &&
+            current.tenantId !== null
+          ) {
+            await ctx.authorize("binding:write", { tenantId: current.tenantId });
+          }
           const updated = await ctx.mutate(async (trx, audit) => {
             const saved = await updateProvider(kernel, trx, audit, current, body);
             if (isOidc(saved) && (body.config !== undefined || body.clientSecret !== undefined)) {
@@ -664,8 +676,21 @@ export function ssoRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           const current = await provider(params as { p: string });
           const tenantId = current.tenantId as string;
           const forMembers = current.audience === "members";
+          const wanted = [...new Set(body.items.map((item) => item.groupId))];
+          // The next sign-in puts people in these groups: that is changing the group, and
+          // what the group holds is given to them. Emptying the mapping asks for neither.
+          if (wanted.length > 0) {
+            await ctx.authorize(forMembers ? "group:write" : "end_user_group:write", { tenantId });
+            const holds = await db
+              .selectFrom("binding")
+              .select("id")
+              .where("tenant_id", "=", tenantId)
+              .where("principal_type", "=", forMembers ? "group" : "end_user_group")
+              .where("principal_id", "in", wanted)
+              .executeTakeFirst();
+            if (holds) await ctx.authorize("binding:write", { tenantId });
+          }
           await ctx.mutate(async (trx, audit) => {
-            const wanted = [...new Set(body.items.map((item) => item.groupId))];
             const known =
               wanted.length === 0
                 ? []

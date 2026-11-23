@@ -6,6 +6,7 @@ import type { Audit, Db, Trx } from "../audit.js";
 import { badRequest, conflict, HttpError, notFound } from "../errors.js";
 import { decryptFor, encryptFor } from "../execution/bindings.js";
 import type { Kernel } from "../kernel.js";
+import { INSTANCE_ONLY_ROLE } from "../kinds.js";
 import { membershipForProvider } from "../tenant/releases.js";
 import { readIdpMetadata } from "./metadata.js";
 
@@ -439,18 +440,31 @@ export interface ProviderInput {
   defaultRoleId?: string | null;
 }
 
-async function checkRole(trx: Trx, tenantId: string | null, roleId: string | null) {
+/**
+ * Whether a role can be the default role of a provider. A provider of the instance gives none:
+ * what the people who run the instance may do is given one person at a time. A tenant's gives
+ * its own roles and the built-in ones, never the instance's (`insertBinding` refuses it too).
+ * Whether the person saving it may give the role is the route's to ask: `binding:write`.
+ */
+export async function checkRole(trx: Trx, tenantId: string | null, roleId: string | null) {
   if (roleId === null) return;
+  if (tenantId === null) {
+    throw issue(
+      "/defaultRoleId",
+      "cannot be set on the instance's provider. Give the people who run the instance their access one by one.",
+    );
+  }
   const role = await trx
     .selectFrom("role")
-    .select(["id", "tenant_id", "workspace_id"])
+    .select(["id", "name", "tenant_id", "workspace_id"])
     .where("id", "=", roleId)
     .executeTakeFirst();
   // A built-in role, or one of the tenant's own that is not tied to a workspace.
   const usable =
     role &&
+    role.name !== INSTANCE_ONLY_ROLE &&
     role.workspace_id === null &&
-    (role.tenant_id === null || (tenantId !== null && role.tenant_id === tenantId));
+    (role.tenant_id === null || role.tenant_id === tenantId);
   if (!usable) throw issue("/defaultRoleId", "is not a role that can be given here");
 }
 

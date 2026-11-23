@@ -4,12 +4,13 @@ import { PERMISSION_KINDS } from "@volvel/manifest";
 import { CORE_NODES } from "@volvel/nodes";
 import { Type } from "typebox";
 import { MIN_PASSWORD_LENGTH } from "../config.js";
+import { endOperatorGrantsIfNoLonger, keepingAnOperator } from "../kernel/administer.js";
 import type { Trx } from "../kernel/audit.js";
-import { badRequest, conflict, forbidden, forbiddenBecause, notFound } from "../kernel/errors.js";
+import { badRequest, forbidden, forbiddenBecause, notFound } from "../kernel/errors.js";
 import { access } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
 import { INSTANCE_ONLY_ROLE } from "../kernel/kinds.js";
-import { createMember } from "../kernel/members.js";
+import { createMember, setMemberDisabled } from "../kernel/members.js";
 import { generateApiKey } from "../kernel/principal.js";
 import { effectivePolicy } from "../kernel/retention.js";
 import { makeRecoveryCodes, ownsATenant } from "../kernel/sso/recovery.js";
@@ -444,6 +445,8 @@ const InstanceBinding = Type.Object({
   memberEmail: Type.String(),
   roleId: Id,
   roleName: Type.String(),
+  /** An operator whose account is disabled cannot sign in, and does not count as one. */
+  memberDisabled: Type.Boolean(),
   createdAt: Time,
 });
 
@@ -625,7 +628,7 @@ export function identityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       "/me",
       {
-        config: { access: access.signedIn },
+        config: { access: access.signedInOrKey },
         schema: {
           summary: "The calling principal",
           tags: ["identity"],
@@ -971,25 +974,9 @@ export function identityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         if (body.disabled && ctx.principal.id === params.id) {
           throw badRequest("You cannot disable your own account.");
         }
-        return ctx.mutate(async (trx, audit) => {
-          const member = await trx
-            .updateTable("member")
-            .set({ disabled_at: body.disabled ? new Date() : null })
-            .where("id", "=", params.id)
-            .returning(["id", "name", "email", "created_at", "disabled_at"])
-            .executeTakeFirst();
-          if (!member) throw notFound("The member");
-          if (body.disabled) {
-            await trx.deleteFrom("member_session").where("member_id", "=", member.id).execute();
-          }
-          await audit({
-            action: body.disabled ? "member.disabled" : "member.enabled",
-            targetType: "member",
-            targetId: member.id,
-            details: { email: member.email },
-          });
-          return toMember(member);
-        });
+        return ctx.mutate(async (trx, audit) =>
+          toMember(await setMemberDisabled(trx, audit, params.id, body.disabled, ctx.principal.id)),
+        );
       },
     );
 
@@ -1029,6 +1016,7 @@ export function identityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             "binding.id",
             "binding.principal_id",
             "member.email",
+            "member.disabled_at",
             "binding.role_id",
             "role.name",
             "binding.created_at",
@@ -1043,6 +1031,7 @@ export function identityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             memberEmail: row.email,
             roleId: row.role_id,
             roleName: row.name,
+            memberDisabled: row.disabled_at !== null,
             createdAt: iso(row.created_at),
           })),
         };
@@ -1066,10 +1055,20 @@ export function identityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           .select(["id", "name", "builtin"])
           .where("id", "=", body.roleId)
           .executeTakeFirst();
-        if (!role?.builtin)
-          throw badRequest("Only a built-in role can be bound at instance scope.");
+        if (role?.name !== INSTANCE_ONLY_ROLE) {
+          throw badRequest("Only the operator admin role can be bound at instance scope.");
+        }
         const id = newId();
         await ctx.mutate(async (trx, audit) => {
+          const member = await trx
+            .selectFrom("member")
+            .select(["id", "disabled_at"])
+            .where("id", "=", body.memberId)
+            .executeTakeFirst();
+          if (!member) throw badRequest("There is no member with that ID on this instance.");
+          if (member.disabled_at) {
+            throw badRequest("That account is disabled. Enable it before making it an operator.");
+          }
           await trx
             .insertInto("binding")
             .values({
@@ -1107,33 +1106,32 @@ export function identityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         },
       },
       async ({ ctx, params }, reply) => {
-        await ctx.mutate(async (trx, audit) => {
-          const binding = await trx
-            .selectFrom("binding")
-            .innerJoin("role", "role.id", "binding.role_id")
-            .select(["binding.id", "binding.principal_id", "role.name"])
-            .where("binding.id", "=", params.id)
-            .where("binding.scope_type", "=", "instance")
-            .executeTakeFirst();
-          if (!binding) throw notFound("The binding");
-          if (binding.name === INSTANCE_ONLY_ROLE) {
-            const others = await trx
+        await ctx.mutate((trx, audit) =>
+          keepingAnOperator(trx, async () => {
+            const binding = await trx
               .selectFrom("binding")
               .innerJoin("role", "role.id", "binding.role_id")
-              .select("binding.id")
-              .where("role.name", "=", INSTANCE_ONLY_ROLE)
-              .where("binding.id", "!=", params.id)
+              .select(["binding.id", "binding.principal_id", "role.name"])
+              .where("binding.id", "=", params.id)
+              .where("binding.scope_type", "=", "instance")
               .executeTakeFirst();
-            if (!others) throw conflict("The instance must keep at least one operator admin.");
-          }
-          await trx.deleteFrom("binding").where("id", "=", params.id).execute();
-          await audit({
-            action: "binding.deleted",
-            targetType: "binding",
-            targetId: params.id,
-            details: { scope: "instance", memberId: binding.principal_id, role: binding.name },
-          });
-        });
+            if (!binding) throw notFound("The binding");
+            await trx.deleteFrom("binding").where("id", "=", params.id).execute();
+            await audit({
+              action: "binding.deleted",
+              targetType: "binding",
+              targetId: params.id,
+              details: { scope: "instance", memberId: binding.principal_id, role: binding.name },
+            });
+            // What they opened as an operator ends when they stop being one.
+            await endOperatorGrantsIfNoLonger(
+              trx,
+              audit,
+              binding.principal_id as string,
+              ctx.principal.id,
+            );
+          }),
+        );
         return reply.code(204).send(null);
       },
     );

@@ -1,6 +1,7 @@
 import { type FastifyPluginAsyncTypebox, Type } from "@fastify/type-provider-typebox";
 import type { TenantResource } from "@volvel/db";
 import { renderTenantFiles, TENANT_FOLDER } from "@volvel/manifest";
+import { tenantHolders } from "../kernel/administer.js";
 import { mutate } from "../kernel/audit.js";
 import { HttpError } from "../kernel/errors.js";
 import { access } from "../kernel/http.js";
@@ -184,22 +185,8 @@ export function accessReleaseRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       },
       async ({ ctx, params, body }) => {
         if (body.required) {
-          const holders = await kernel.db
-            .selectFrom("binding")
-            .innerJoin("role", "role.id", "binding.role_id")
-            .select(["binding.principal_type", "binding.principal_id", "role.permissions"])
-            .where("binding.tenant_id", "=", params.t)
-            .where("binding.scope_type", "=", "tenant")
-            .where("binding.principal_type", "=", "member")
-            .execute();
-          const may = new Set(
-            holders
-              .filter((row) =>
-                row.permissions.some((one) => ["*:*", "access:*", "access:write"].includes(one)),
-              )
-              .map((row) => row.principal_id),
-          );
-          if (may.size < 2) {
+          const may = await tenantHolders(kernel.db, params.t, "access:write");
+          if (may.length < 2) {
             throw new HttpError(
               409,
               "approval_needs_two",

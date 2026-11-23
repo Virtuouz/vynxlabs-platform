@@ -1,8 +1,9 @@
 import { createHash } from "node:crypto";
 import { newId, sql, type TenantResource } from "@volvel/db";
 import { checkTenantResources, tenantName, tenantOrder } from "@volvel/manifest";
+import { keepingAnAdmin } from "../administer.js";
 import type { Audit, Db, Principal, Trx } from "../audit.js";
-import { badRequest, conflict, HttpError, notFound } from "../errors.js";
+import { badRequest, conflict, forbiddenBecause, HttpError, notFound } from "../errors.js";
 
 /**
  * A tenant's access, released: its groups, service accounts, roles and what
@@ -820,7 +821,9 @@ export async function releaseAccess(
     changes: [],
     warnings: [...undone],
   };
-  for (const step of steps) await applyStep(trx, audit, tenantId, step, current, summary);
+  await keepingAnAdmin(trx, tenantId, async () => {
+    for (const step of steps) await applyStep(trx, audit, tenantId, step, current, summary);
+  });
   await trx
     .insertInto("tenant_release")
     .values({
@@ -966,6 +969,12 @@ export async function decideRelease(
     throw conflict(`This release was ${release.status.replaceAll("_", " ")} already.`);
   }
   const own = release.created_by_type === principal.type && release.created_by_id === principal.id;
+  // A second person is a person: a key of a service account does not answer for one.
+  if (decision !== "withdraw" && principal.type !== "member") {
+    throw forbiddenBecause(
+      "Only a member signed in as themselves approves or declines a change to access. A service account's key cannot.",
+    );
+  }
   if (decision === "withdraw" && !own)
     throw conflict("Only whoever asked for a release can withdraw it.");
   if (decision === "approve" && own) {
@@ -1025,7 +1034,9 @@ export async function decideRelease(
     changes: [],
     warnings: [],
   };
-  for (const step of steps) await applyStep(trx, audit, tenantId, step, current, summary);
+  await keepingAnAdmin(trx, tenantId, async () => {
+    for (const step of steps) await applyStep(trx, audit, tenantId, step, current, summary);
+  });
   await trx
     .updateTable("tenant_release")
     .set({

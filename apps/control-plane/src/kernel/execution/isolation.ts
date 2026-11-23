@@ -1,3 +1,4 @@
+import { operatorsAmong } from "../administer.js";
 import { grants } from "../authorize.js";
 import type { Kernel } from "../kernel.js";
 
@@ -55,13 +56,7 @@ export async function hasOutsideCodeWriters(kernel: Kernel, tenantId: string): P
     }
   }
   if (members.size === 0) return false;
-  const operators = await db
-    .selectFrom("binding")
-    .select("principal_id")
-    .where("scope_type", "=", "instance")
-    .where("principal_type", "=", "member")
-    .where("principal_id", "in", [...members])
-    .execute();
-  const held = new Set(operators.map((one) => one.principal_id));
+  // Only an enabled operator admin is the operator: any other role bound at the instance is not.
+  const held = new Set(await operatorsAmong(db, [...members]));
   return [...members].some((member) => !held.has(member));
 }

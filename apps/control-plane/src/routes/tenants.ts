@@ -2,6 +2,7 @@ import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import { type DataLocation, newId } from "@volvel/db";
 import { Type } from "typebox";
 import { MIN_PASSWORD_LENGTH, RETENTION_BOUNDS } from "../config.js";
+import { endSessions, keepingAnAdmin } from "../kernel/administer.js";
 import { badRequest, conflict, notFound } from "../kernel/errors.js";
 import { access } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
@@ -605,36 +606,31 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         if (body.suspended && ctx.principal.id === params.memberId) {
           throw badRequest("You cannot suspend yourself.");
         }
-        return ctx.mutate(async (trx, audit) => {
-          const changed = await trx
-            .updateTable("tenant_member")
-            .set({ suspended_at: body.suspended ? new Date() : null })
-            .where("tenant_id", "=", params.t)
-            .where("member_id", "=", params.memberId)
-            .returning("suspended_at")
-            .executeTakeFirst();
-          if (!changed) throw notFound("The member");
-          if (body.suspended) {
-            await trx
-              .deleteFrom("app_session")
+        return ctx.mutate((trx, audit) =>
+          keepingAnAdmin(trx, params.t, async () => {
+            const changed = await trx
+              .updateTable("tenant_member")
+              .set({ suspended_at: body.suspended ? new Date() : null })
               .where("tenant_id", "=", params.t)
-              .where("principal_type", "=", "member")
-              .where("principal_id", "=", params.memberId)
-              .execute();
-          }
-          await audit({
-            action: body.suspended ? "tenant_member.suspended" : "tenant_member.resumed",
-            targetType: "member",
-            targetId: params.memberId,
-            tenantId: params.t,
-          });
-          const member = await trx
-            .selectFrom("member")
-            .select(["id", "name", "email", "created_at"])
-            .where("id", "=", params.memberId)
-            .executeTakeFirstOrThrow();
-          return toMember({ ...member, suspended_at: changed.suspended_at });
-        });
+              .where("member_id", "=", params.memberId)
+              .returning("suspended_at")
+              .executeTakeFirst();
+            if (!changed) throw notFound("The member");
+            if (body.suspended) await endSessions(trx, params.memberId, { tenantId: params.t });
+            await audit({
+              action: body.suspended ? "tenant_member.suspended" : "tenant_member.resumed",
+              targetType: "member",
+              targetId: params.memberId,
+              tenantId: params.t,
+            });
+            const member = await trx
+              .selectFrom("member")
+              .select(["id", "name", "email", "created_at"])
+              .where("id", "=", params.memberId)
+              .executeTakeFirstOrThrow();
+            return toMember({ ...member, suspended_at: changed.suspended_at });
+          }),
+        );
       },
     );
 
@@ -651,49 +647,53 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         },
       },
       async ({ ctx, params }, reply) => {
-        await ctx.mutate(async (trx, audit) => {
-          const removed = await trx
-            .deleteFrom("tenant_member")
-            .where("tenant_id", "=", params.t)
-            .where("member_id", "=", params.memberId)
-            .returning("member_id")
-            .executeTakeFirst();
-          if (!removed) throw notFound("The member");
-          const bindings = await trx
-            .deleteFrom("binding")
-            .where("tenant_id", "=", params.t)
-            .where("principal_type", "=", "member")
-            .where("principal_id", "=", params.memberId)
-            .returning("id")
-            .execute();
-          await trx
-            .deleteFrom("group_member")
-            .where("member_id", "=", params.memberId)
-            .where("group_id", "in", (eb) =>
-              eb.selectFrom("principal_group").select("id").where("tenant_id", "=", params.t),
-            )
-            .execute();
-          // What the tenant's providers knew of the person goes with them.
-          await trx
-            .deleteFrom("identity_link")
-            .where("tenant_id", "=", params.t)
-            .where("principal_type", "=", "member")
-            .where("principal_id", "=", params.memberId)
-            .execute();
-          await trx
-            .deleteFrom("scim_user")
-            .where("tenant_id", "=", params.t)
-            .where("principal_type", "=", "member")
-            .where("principal_id", "=", params.memberId)
-            .execute();
-          await audit({
-            action: "tenant_member.removed",
-            targetType: "member",
-            targetId: params.memberId,
-            tenantId: params.t,
-            details: { bindingsRemoved: bindings.length },
-          });
-        });
+        await ctx.mutate((trx, audit) =>
+          keepingAnAdmin(trx, params.t, async () => {
+            const removed = await trx
+              .deleteFrom("tenant_member")
+              .where("tenant_id", "=", params.t)
+              .where("member_id", "=", params.memberId)
+              .returning("member_id")
+              .executeTakeFirst();
+            if (!removed) throw notFound("The member");
+            // Their sign-ins to this tenant's apps end with their place in it.
+            await endSessions(trx, params.memberId, { tenantId: params.t });
+            const bindings = await trx
+              .deleteFrom("binding")
+              .where("tenant_id", "=", params.t)
+              .where("principal_type", "=", "member")
+              .where("principal_id", "=", params.memberId)
+              .returning("id")
+              .execute();
+            await trx
+              .deleteFrom("group_member")
+              .where("member_id", "=", params.memberId)
+              .where("group_id", "in", (eb) =>
+                eb.selectFrom("principal_group").select("id").where("tenant_id", "=", params.t),
+              )
+              .execute();
+            // What the tenant's providers knew of the person goes with them.
+            await trx
+              .deleteFrom("identity_link")
+              .where("tenant_id", "=", params.t)
+              .where("principal_type", "=", "member")
+              .where("principal_id", "=", params.memberId)
+              .execute();
+            await trx
+              .deleteFrom("scim_user")
+              .where("tenant_id", "=", params.t)
+              .where("principal_type", "=", "member")
+              .where("principal_id", "=", params.memberId)
+              .execute();
+            await audit({
+              action: "tenant_member.removed",
+              targetType: "member",
+              targetId: params.memberId,
+              tenantId: params.t,
+              details: { bindingsRemoved: bindings.length },
+            });
+          }),
+        );
         return reply.code(204).send(null);
       },
     );
@@ -952,25 +952,27 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         },
       },
       async ({ ctx, params }, reply) => {
-        await ctx.mutate(async (trx, audit) => {
-          const removed = await trx
-            .deleteFrom("group_member")
-            .where("group_id", "=", params.g)
-            .where("member_id", "=", params.memberId)
-            .where("group_id", "in", (eb) =>
-              eb.selectFrom("principal_group").select("id").where("tenant_id", "=", params.t),
-            )
-            .returning("member_id")
-            .executeTakeFirst();
-          if (!removed) throw notFound("The group member");
-          await audit({
-            action: "group_member.removed",
-            targetType: "group",
-            targetId: params.g,
-            tenantId: params.t,
-            details: { memberId: params.memberId },
-          });
-        });
+        await ctx.mutate((trx, audit) =>
+          keepingAnAdmin(trx, params.t, async () => {
+            const removed = await trx
+              .deleteFrom("group_member")
+              .where("group_id", "=", params.g)
+              .where("member_id", "=", params.memberId)
+              .where("group_id", "in", (eb) =>
+                eb.selectFrom("principal_group").select("id").where("tenant_id", "=", params.t),
+              )
+              .returning("member_id")
+              .executeTakeFirst();
+            if (!removed) throw notFound("The group member");
+            await audit({
+              action: "group_member.removed",
+              targetType: "group",
+              targetId: params.g,
+              tenantId: params.t,
+              details: { memberId: params.memberId },
+            });
+          }),
+        );
         return reply.code(204).send(null);
       },
     );

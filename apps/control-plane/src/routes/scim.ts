@@ -5,6 +5,7 @@ import type {
 import { newId, sql } from "@volvel/db";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import { Type } from "typebox";
+import { keepingAnAdmin, keepingAnOperator } from "../kernel/administer.js";
 import { type Audit, SYSTEM, type Trx, writeAudit } from "../kernel/audit.js";
 import { notFound } from "../kernel/errors.js";
 import { access } from "../kernel/http.js";
@@ -432,19 +433,25 @@ export function scimRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           userAgent: request.headers["user-agent"],
           requestId: request.id,
         };
-        return db.transaction().execute((trx) =>
-          run(trx, (input) =>
-            writeAudit(trx, actor, {
-              ...input,
-              details: {
-                ...input.details,
-                via: "scim",
-                identityProvider: provider.name,
-                token: tokenPrefix,
-              },
-            }),
-          ),
-        );
+        return db.transaction().execute((trx) => {
+          const go = () =>
+            run(trx, (input) =>
+              writeAudit(trx, actor, {
+                ...input,
+                details: {
+                  ...input.details,
+                  via: "scim",
+                  identityProvider: provider.name,
+                  token: tokenPrefix,
+                },
+              }),
+            );
+          // A push that would take the tenant's last admin, or the instance's last operator, is
+          // refused as any other change is: 409, and it shows under the refused pushes.
+          return provider.tenantId === null
+            ? keepingAnOperator(trx, go)
+            : keepingAnAdmin(trx, provider.tenantId, go);
+        });
       };
 
       const page = (query: { startIndex?: number | undefined; count?: number | undefined }) => ({

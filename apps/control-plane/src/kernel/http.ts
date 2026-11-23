@@ -24,7 +24,8 @@ type Scope = "instance" | "tenant" | "tenant-or-instance" | "workspace";
 /** How a route decides who may call it. Every route must declare one. */
 export type Access =
   | { kind: "public" }
-  | { kind: "signed-in" }
+  /** A member's own account. A service account's key is refused, unless the route says `serviceAccounts`. */
+  | { kind: "signed-in"; serviceAccounts?: boolean }
   /** The handler calls `ctx.authorize` itself, because the target depends on the request body. */
   | { kind: "custom" }
   /** Called by a worker with a worker credential, under the worker protocol. */
@@ -38,6 +39,8 @@ export type Access =
 export const access = {
   public: { kind: "public" } as Access,
   signedIn: { kind: "signed-in" } as Access,
+  /** For a route that is not about a person, such as a batch of calls that are each checked alone. */
+  signedInOrKey: { kind: "signed-in", serviceAccounts: true } as Access,
   custom: { kind: "custom" } as Access,
   worker: { kind: "worker" } as Access,
   workerHost: { kind: "worker-host" } as Access,
@@ -252,6 +255,11 @@ export function installAccessControl(app: FastifyInstance, kernel: Kernel) {
       // to one tenant's apps is not a sign-in to that.
       if (principal.type === "end_user" || principal.appTenantId !== undefined) {
         throw forbiddenBecause("This is only for a member signed in to the workspace.");
+      }
+      if (principal.type === "service_account" && !declared.serviceAccounts) {
+        throw forbiddenBecause(
+          "This is only for a person signed in, not for a service account's key.",
+        );
       }
       return;
     }

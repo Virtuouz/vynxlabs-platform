@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash, randomBytes } from "node:crypto";
+import { readOtlpHeaders } from "@volvel/worker";
 
 /**
  * Traces and metrics in OpenTelemetry's own format, sent by OTLP over HTTP as
@@ -392,11 +393,5 @@ export class Telemetry {
 
 /** Reads `a=b,c=d`, as `OTEL_EXPORTER_OTLP_HEADERS` is written. */
 export function readHeaders(text: string | undefined): Record<string, string> {
-  const headers: Record<string, string> = {};
-  for (const pair of (text ?? "").split(",")) {
-    const at = pair.indexOf("=");
-    if (at < 1) continue;
-    headers[pair.slice(0, at).trim().toLowerCase()] = decodeURIComponent(pair.slice(at + 1).trim());
-  }
-  return headers;
+  return readOtlpHeaders(text, true);
 }

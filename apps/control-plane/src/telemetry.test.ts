@@ -2,7 +2,7 @@ import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { setTimeout as sleep } from "node:timers/promises";
 import { type Bundle, type BundleManifest, bundleDigest } from "@volvel/manifest";
-import { Worker } from "@volvel/worker";
+import { telemetryFromEnv, Worker } from "@volvel/worker";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import {
   otlpMetrics,
@@ -183,6 +183,12 @@ describe("the formats", () => {
       authorization: "Bearer abc",
       "x-team": "ops",
     });
+    // The worker reads the same setting the same way (HOST-17): it sent `Bearer%20abc`.
+    const env = {
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://collector:4318",
+      OTEL_EXPORTER_OTLP_HEADERS: "Authorization=Bearer%20abc, x-team = ops ,broken",
+    };
+    expect(telemetryFromEnv(env)?.headers).toEqual(readHeaders(env.OTEL_EXPORTER_OTLP_HEADERS));
   });
 
   test("the metrics endpoint's text becomes the same series in OTLP", () => {

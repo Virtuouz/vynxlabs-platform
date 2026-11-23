@@ -30,7 +30,7 @@ const ALLOWED: Record<string, number> = {
   "routes/authoring.ts": 1,
   "routes/data.ts": 1,
   "routes/execution.ts": 2,
-  "routes/flows.ts": 4,
+  "routes/flows.ts": 3,
   "routes/interfaces.ts": 1,
   "routes/search.ts": 1,
   "routes/worker.ts": 3,

@@ -851,13 +851,7 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       async ({ ctx, params, query }) => {
         await findWorkspace(kernel, params.t, params.w);
         const named = query.flow
-          ? await db
-              .selectFrom("resource")
-              .select("id")
-              .where("workspace_id", "=", params.w)
-              .where("kind", "=", "flow")
-              .where("path", "=", query.flow)
-              .executeTakeFirst()
+          ? (await resolveResource(db, params.w, query.flow, { kind: "flow" }))?.resource
           : undefined;
         await ctx.authorize("flow_run:read", {
           tenantId: params.t,
@@ -869,13 +863,7 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         if (query.flow) {
           // The runs of the flow that has this path now, under whatever path it had then.
           const path = query.flow;
-          const flow = await db
-            .selectFrom("resource")
-            .select("id")
-            .where("workspace_id", "=", params.w)
-            .where("kind", "=", "flow")
-            .where("path", "=", path)
-            .executeTakeFirst();
+          const flow = named;
           select = select.where((eb) =>
             flow
               ? eb.or([

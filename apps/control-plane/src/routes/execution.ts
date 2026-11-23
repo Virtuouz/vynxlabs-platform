@@ -1263,13 +1263,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           .select("bundle.version as bundle_version")
           .where("run.workspace_id", "=", params.w);
         const script = query.script
-          ? await db
-              .selectFrom("resource")
-              .select("id")
-              .where("workspace_id", "=", params.w)
-              .where("kind", "=", "script")
-              .where("path", "=", query.script)
-              .executeTakeFirst()
+          ? (await resolveResource(db, params.w, query.script, { kind: "script" }))?.resource
           : undefined;
         await ctx.authorize("run:read", {
           tenantId: params.t,

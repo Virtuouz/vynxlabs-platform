@@ -30,9 +30,10 @@ export function shadeOf(value: number | null, low: number, high: number): number
 
 interface Turned {
   /** The headings across the top: one for each value of the last breakdown. */
-  columns: string[];
+  columns: unknown[];
   rowNames: string[];
-  rows: { headers: string[]; cells: (number | null)[]; total: number | null }[];
+  /** Each heading is its stored value as it is (a number stays a number, an empty group is null), and is said by `headingWords`. */
+  rows: { headers: unknown[]; cells: (number | null)[]; total: number | null }[];
   totals: { cells: (number | null)[]; total: number | null };
 }
 
@@ -57,7 +58,9 @@ export function headingWords(
 const STUCK = "sticky left-0 bg-surface";
 
 const SEPARATOR = "\u0001";
-const shown = (value: unknown) => (value === null || value === undefined ? "—" : String(value));
+/** A heading's key: its stored value as it is, so that an empty group and the text "—" are two, and 3 and "3" are two. */
+const shown = (value: unknown) => JSON.stringify(value ?? null);
+
 const sum = (values: number[]) => (values.length === 0 ? null : values.reduce((a, b) => a + b, 0));
 
 /**
@@ -71,12 +74,23 @@ export function turn(data: SummaryData): Turned {
   const rowNames = data.breakdowns.slice(0, -1);
   const rowKeys: string[] = [];
   const columns: string[] = [];
+  const rowStored = new Map<string, unknown[]>();
+  const columnStored = new Map<string, unknown>();
   const cells = new Map<string, number>();
   for (const row of data.rows) {
     const rowKey = rowNames.map((name) => shown(row[name])).join(SEPARATOR);
     const column = shown(row[across]);
-    if (!rowKeys.includes(rowKey)) rowKeys.push(rowKey);
-    if (!columns.includes(column)) columns.push(column);
+    if (!rowKeys.includes(rowKey)) {
+      rowKeys.push(rowKey);
+      rowStored.set(
+        rowKey,
+        rowNames.map((name) => row[name] ?? null),
+      );
+    }
+    if (!columns.includes(column)) {
+      columns.push(column);
+      columnStored.set(column, row[across] ?? null);
+    }
     const number = numberOf(row[value]);
     if (number !== undefined) {
       const key = `${rowKey}${SEPARATOR}${SEPARATOR}${column}`;
@@ -88,10 +102,10 @@ export function turn(data: SummaryData): Turned {
   const present = (values: (number | undefined)[]) =>
     values.filter((one): one is number => one !== undefined);
   return {
-    columns,
+    columns: columns.map((column) => columnStored.get(column)),
     rowNames,
     rows: rowKeys.map((rowKey) => ({
-      headers: rowNames.length > 0 ? rowKey.split(SEPARATOR) : [],
+      headers: rowNames.length > 0 ? (rowStored.get(rowKey) ?? []) : [],
       cells: columns.map((column) => at(rowKey, column) ?? null),
       total: sum(present(columns.map((column) => at(rowKey, column)))),
     })),
@@ -121,12 +135,12 @@ export function PivotView(props: WidgetViewProps<PivotConfig>) {
   const cell = "rounded-[5px] px-2.5 py-1.5 text-right whitespace-nowrap tabular-nums";
   const heading = labelOf(summary.columns, summary.values[0] ?? "");
   const across = summary.breakdowns.at(-1) ?? "";
-  const say = (headers: string[], column?: string) => {
+  const say = (headers: unknown[], column?: unknown, withColumn = false) => {
     const group: Record<string, unknown> = {};
     turned.rowNames.forEach((name, at) => {
       group[name] = headers[at];
     });
-    if (column !== undefined) group[across] = column;
+    if (withColumn) group[across] = column;
     return { group };
   };
   return (
@@ -151,7 +165,11 @@ export function PivotView(props: WidgetViewProps<PivotConfig>) {
               </th>
             ))}
             {turned.columns.map((name) => (
-              <th key={name} scope="col" className={`${cell} text-meta font-medium text-ink-muted`}>
+              <th
+                key={shown(name)}
+                scope="col"
+                className={`${cell} text-meta font-medium text-ink-muted`}
+              >
                 {headingWords(summary.columns, across, name)}
               </th>
             ))}
@@ -164,7 +182,7 @@ export function PivotView(props: WidgetViewProps<PivotConfig>) {
         </thead>
         <tbody>
           {turned.rows.map((row) => (
-            <tr key={row.headers.join(SEPARATOR)}>
+            <tr key={shown(row.headers)}>
               {row.headers.map((header, at) => (
                 <th
                   key={turned.rowNames[at]}
@@ -176,7 +194,7 @@ export function PivotView(props: WidgetViewProps<PivotConfig>) {
               ))}
               {row.cells.map((value, at) => (
                 <td
-                  key={turned.columns[at]}
+                  key={shown(turned.columns[at])}
                   data-shade={
                     config.shade && value !== null
                       ? Math.round(shadeOf(value, low, high) * 100)
@@ -195,7 +213,7 @@ export function PivotView(props: WidgetViewProps<PivotConfig>) {
                     pressable && value !== null,
                     value === null
                       ? undefined
-                      : () => emit("cellClick", say(row.headers, turned.columns[at])),
+                      : () => emit("cellClick", say(row.headers, turned.columns[at], true)),
                   )}
                 >
                   {write(value)}
@@ -219,7 +237,7 @@ export function PivotView(props: WidgetViewProps<PivotConfig>) {
               </th>
               {turned.totals.cells.map((value, at) => (
                 <td
-                  key={turned.columns[at]}
+                  key={shown(turned.columns[at])}
                   className="px-2.5 py-1.5 text-right font-semibold tabular-nums"
                 >
                   {write(value)}

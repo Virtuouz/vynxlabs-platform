@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { definitionProblems, type SummaryData } from "@volvel/widgets";
 import { chart, pivot, stat } from "@volvel/widgets-core";
 import {
@@ -394,6 +394,41 @@ describe("the pivot", () => {
     expect(screen.getAllByRole("cell").every((one) => !(one as HTMLElement).dataset.shade)).toBe(
       true,
     );
+  });
+
+  test("a click on a cell gives each heading's own stored value: an empty group as nothing, a number as a number", () => {
+    const emit = vi.fn();
+    render(
+      <PivotView
+        {...({
+          config: {},
+          data: {
+            rows: {
+              shape: "summary",
+              columns: [
+                { name: "clinic", label: "Clinic", type: "string" },
+                { name: "rating", label: "Rating", type: "integer" },
+                { name: "n", label: "N", type: "number" },
+              ],
+              breakdowns: ["clinic", "rating"],
+              values: ["n"],
+              rows: [
+                { clinic: null, rating: 3, n: 4 },
+                { clinic: "—", rating: 3, n: 5 },
+              ],
+            },
+          },
+          size: { w: 6, h: 6, narrow: false },
+          emit,
+          building: false,
+          listens: () => true,
+        } as unknown as Parameters<typeof PivotView>[0])}
+      />,
+    );
+    fireEvent.click(screen.getByText("4"));
+    expect(emit).toHaveBeenCalledWith("cellClick", { group: { clinic: null, rating: 3 } });
+    fireEvent.click(screen.getByText("5"));
+    expect(emit).toHaveBeenCalledWith("cellClick", { group: { clinic: "—", rating: 3 } });
   });
 
   test("shadeOf runs from a wash to the deepest", () => {

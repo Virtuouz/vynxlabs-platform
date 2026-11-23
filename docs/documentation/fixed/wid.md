@@ -67,3 +67,9 @@ Commits are named by the row in their subject: `git log --grep "(WID-01)"`.
 - **Changed:** `packages/widgets-core/views/detail.tsx` (`canEdit` is false for a field with `hidden`).
 - **Siblings:** the server's refusal (`act.ts`) is as built; the Form has no hidden state.
 - **A person sees:** a field behind "Show another field" is read only.
+
+## WID-11 A pivot cell sent "—" for an empty group, and every number heading as text
+- **Test:** `packages/screens/src/widgetOptions.test.tsx` > "the pivot" > "a click on a cell gives each heading's own stored value..." (failed before).
+- **Changed:** `packages/widgets-core/views/pivot.tsx`: `turn` keeps each heading as its stored value (`Turned.columns`, `rows[].headers` are `unknown`), keyed by JSON so an empty group, the text "—", 3 and "3" are four headings; the words still come from `headingWords`; `cellClick` carries the stored values.
+- **Siblings looked at:** the drawer's small grid does not call `turn`; chart points already give stored values. The server side (`inputs.ts` null is "is empty") needs no change.
+- **A person sees:** Rows behind an empty group or a numbered heading finds those rows.

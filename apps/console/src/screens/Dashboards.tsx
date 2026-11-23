@@ -794,7 +794,8 @@ export function DashboardView({
       {loaded.problems && loaded.problems.length > 0 ? (
         <Notice tone="attention">
           <p className="m-0">
-            It reads what this workspace does not have. It is kept as it is, and what reads it waits:
+            It reads what this workspace does not have. It is kept as it is, and what reads it
+            waits:
           </p>
           <ul className="m-0 list-disc pl-5">
             {loaded.problems.map((one) => (

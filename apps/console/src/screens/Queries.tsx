@@ -16,7 +16,7 @@ import { RemoveDraftButton } from "../kit/RemoveDraftButton.tsx";
 import { parametersIn } from "../kit/sqlParameters.ts";
 import { Code, StatePill, Tag } from "../kit/status.tsx";
 import { Page } from "../ListScreen.tsx";
-import { useUrlParam } from "../router.tsx";
+import { navigate, useUrlParam } from "../router.tsx";
 import { ResourceIdentity } from "./ResourceIdentity.tsx";
 
 // The editor is large and is loaded when a query is first written.
@@ -396,6 +396,7 @@ export function Queries({ root, link }: { root: string; link: string }) {
                 row={{ path: current.path, kind: "query", ownership: current.ownership }}
                 label="Name and path"
                 unsaved={keep.dirty}
+                removing={removing}
                 onDone={(path) => {
                   saved.reload();
                   if (path !== current.path) {
@@ -426,7 +427,9 @@ export function Queries({ root, link }: { root: string; link: string }) {
                   if (did === "discarded" && current.draft === "new") {
                     saved.reload();
                     clearEditor();
-                    setOpen(undefined);
+                    // The query is gone, and so is its place in the history: Back must not
+                    // return to an address that names it.
+                    navigate(location.pathname, { replace: true });
                     return;
                   }
                   // A discarded draft or a removal taken back: the query is as it is deployed, and
@@ -451,6 +454,12 @@ export function Queries({ root, link }: { root: string; link: string }) {
               <Play aria-hidden="true" size={16} /> Run
             </Button>
           </div>
+          {open !== undefined && saved.data && !listed && savedAs.current !== open ? (
+            <Notice tone="attention">
+              There is no saved query at {open}. It was discarded or removed, or the address is
+              wrong. This is a new query.
+            </Notice>
+          ) : null}
           {removing ? (
             <Notice tone="attention">
               This query is removed in your drafts. Nothing changes until that draft is deployed.

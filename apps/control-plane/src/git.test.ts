@@ -1083,7 +1083,7 @@ describe("safety", () => {
       const refused = await alice.post(`${ws()}/git/${verb}`, {});
       expect(refused.body.status, JSON.stringify(refused.body)).toBe("failed");
       expect(refused.body.problem).toContain("volvel.yaml: resources");
-      expect(refused.body.problem).toContain("folder inside the repository");
+      expect(refused.body.problem).toContain("cannot climb out of it");
     }
     // Taken out of the file, the setting's folder is in force again.
     commitOnBranch({ "volvel.yaml": "roots:\n  - platform\n  - src\n" }, "Leave it to the page");

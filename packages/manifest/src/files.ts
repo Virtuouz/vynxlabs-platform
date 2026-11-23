@@ -742,10 +742,18 @@ export function parseRepositoryConfig(text: string | undefined): {
       problems.push(`${REPOSITORY_CONFIG}: ${name} is one path, as text.`);
       continue;
     }
-    config[name] = value
+    const path = value
       .trim()
       .replace(/^\.?\/+/, "")
       .replace(/\/+$/, "");
+    // The CLI builds from it and git sync writes to it: neither may leave the repository.
+    if (path.split("/").includes("..")) {
+      problems.push(
+        `${REPOSITORY_CONFIG}: ${name} is a path inside the repository: it cannot climb out of it with \`..\`.`,
+      );
+      continue;
+    }
+    config[name] = path;
   }
   return { config, problems };
 }

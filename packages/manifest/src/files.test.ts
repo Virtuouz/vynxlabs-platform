@@ -608,3 +608,21 @@ describe("a change written into a file as its author wrote it", () => {
     expect(ontoWritten("body: [unclosed", cases[0] as string)).toBe(cases[0]);
   });
 });
+
+describe("volvel.yaml's entry and resources stay inside the repository (D65)", () => {
+  test("a path that climbs out is a problem, for the CLI and git sync alike", () => {
+    for (const bad of ["../outside", "platform/../../x", ".."]) {
+      const read = parseRepositoryConfig(`resources: ${bad}\n`);
+      expect(read.problems, bad).toEqual([
+        "volvel.yaml: resources is a path inside the repository: it cannot climb out of it with `..`.",
+      ]);
+      expect(read.config.resources).toBeUndefined();
+    }
+    expect(parseRepositoryConfig("entry: ../src/index.ts\n").problems).toEqual([
+      "volvel.yaml: entry is a path inside the repository: it cannot climb out of it with `..`.",
+    ]);
+    expect(parseRepositoryConfig("resources: infra/volvel\n").config.resources).toBe(
+      "infra/volvel",
+    );
+  });
+});

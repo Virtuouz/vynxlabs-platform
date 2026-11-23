@@ -49,3 +49,10 @@ Screens to walk: Flows, Tables, App Builder, Apps list inspector, Alerts, Retent
 - Not gated at all (a viewer is offered them and the server refuses): the table definition editor (Add column, Rename, Delete table; `Data.tsx` from line 2344 offers them on `managedIn === "ui"` alone), and the New data source button on the Data sources list (it opens the resource editor, `resource:write`).
 - Runs list: Cancel and Run again ask the workspace, not the one script or flow, so someone given only one script is not offered them there (the server counts that grant).
 - `Retention` is the only `tenantOrInstance` screen the console reads; the tenant rename (`PATCH tenants/:t`, also `tenantOrInstance`) is gated by the server's `mayRename`.
+
+## Found items, now fixed (second commit)
+
+- Table definition editor (`Data.tsx` `Definition`): off, with the line, unless `resource:write` (`PUT resources/*`).
+- Data sources "Declare source": off with tooltip unless `resource:write`.
+- Runs list Cancel / Run again: `useMayEach` in `kit/Can.tsx` asks `/allowed` on each run's own script or flow, so a grant on that one resource counts, as the server does.
+- Rows added to `GateRoles.test.tsx` (264 tests), seen failing before.

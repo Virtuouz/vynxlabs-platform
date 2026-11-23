@@ -1,11 +1,11 @@
 // @vitest-environment happy-dom
-import { cleanup, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { grants, PERMISSION_KINDS } from "@volvel/manifest";
 import type { ReactElement } from "react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { BUILTIN_ROLES } from "./builtinRoles.ts";
 import { Alerts } from "./screens/Alerts.tsx";
-import { Tables } from "./screens/Data.tsx";
+import { Sources, Tables, TableView } from "./screens/Data.tsx";
 import { Scripts } from "./screens/Execution.tsx";
 import { Files } from "./screens/Files.tsx";
 import { Flows } from "./screens/Flows.tsx";
@@ -17,6 +17,7 @@ import { OfferButton } from "./screens/OfferToAgent.tsx";
 import { EventsWorkbench, TriggersWorkbench } from "./screens/Operate.tsx";
 import { RetentionSettings } from "./screens/Retention.tsx";
 import { Roles } from "./screens/Roles.tsx";
+import { RunsWorkbench } from "./screens/Runs.tsx";
 import { show } from "./testing.tsx";
 
 // The console asks for exactly what the server checks: the same permission, at the same scope,
@@ -38,7 +39,9 @@ interface Family {
   /** The control, by its name. */
   control: RegExp | string;
   /** What kind of control it is: a button, unless said. */
-  role?: "button" | "textbox";
+  role?: "button" | "textbox" | "menuitem";
+  /** The screen leaves the control out, rather than switching it off, where it is not offered. */
+  leftOut?: true;
   /** The route it calls, and its rule, as the server declares it. */
   route: string;
   /** Whether the server allows that route to someone who holds `has`, bound at `scope`. */
@@ -158,6 +161,35 @@ const FAMILIES: Family[] = [
     draw: () => <RetentionSettings base={base} bare />,
   },
   {
+    family: "Table page, Definition: Add column",
+    control: "Add column",
+    leftOut: true,
+    route: "PUT /resources/* (resource:write)",
+    scopes: WORKSPACE,
+    serves: (has) => has("resource:write"),
+    draw: () => {
+      history.replaceState(null, "", `${link}/tables/clients?view=definition`);
+      return <TableView root={root} name="clients" link={link} />;
+    },
+  },
+  {
+    family: "Data sources: Declare source",
+    control: "Declare source",
+    route: "PUT /resources/* (resource:write)",
+    scopes: WORKSPACE,
+    serves: (has) => has("resource:write"),
+    draw: () => <Sources root={root} link={link} />,
+  },
+  {
+    family: "Runs list: Run again",
+    control: "Run again…",
+    role: "menuitem",
+    route: "POST /runs (run:write at the workspace or at the script)",
+    scopes: ["tenant", "resource"],
+    serves: (has) => has("run:write"),
+    draw: () => <RunsWorkbench root={root} link={link} />,
+  },
+  {
     family: "Access: Give access",
     control: "Give access",
     route: "POST /bindings (binding:write at the tenant)",
@@ -226,6 +258,43 @@ function serve(role: string, scope: Scope) {
       if (scope === "resource" && !path.includes("&kind=")) return body({ allowed: [] });
       const asked = decodeURIComponent(path.split("permissions=")[1]?.split("&")[0] ?? "");
       return body({ allowed: asked.split(",").filter((one) => grants(permissions, one)) });
+    }
+    if (path === `${root}/tables/clients`) {
+      return body({
+        id: "tb1",
+        name: "clients",
+        status: "active",
+        managedIn: "ui",
+        policy: { type: "open" },
+        rowCount: 0,
+        stored: { schema: "s", table: "t" },
+        columns: [{ name: "name", type: "text", required: true, status: "active" }],
+      });
+    }
+    if (path.startsWith(`${root}/activity`)) {
+      return body({
+        items: [
+          {
+            kind: "script",
+            id: "r1",
+            target: "reminders/send",
+            status: "failed",
+            state: "failed",
+            trigger: "manual",
+            attempt: 1,
+            maxAttempts: 1,
+            error: null,
+            errorSummary: null,
+            tags: [],
+            bundleVersion: 1,
+            createdAt: new Date().toISOString(),
+            startedAt: new Date().toISOString(),
+            finishedAt: new Date().toISOString(),
+          },
+        ],
+        counts: { failed: 1 },
+        stateCounts: { failed: 1 },
+      });
     }
     if (path === `${root}/alert-settings`) {
       return body({ default: { notify: "ops/chat" }, overrides: [] });
@@ -301,14 +370,35 @@ for (const family of FAMILIES) {
             }
           });
           show(family.draw());
-          await screen.findAllByRole(family.role ?? "button", { name: family.control });
-          await settled();
+          if (family.role === "menuitem") {
+            // A row's menu: the item is there when it is offered, and left out when it is not.
+            const menu = await screen.findByRole("button", { name: /^Actions for/ });
+            await settled();
+            fireEvent.click(menu);
+            await screen.findAllByRole("menuitem", { name: "Open" });
+            expect(screen.queryAllByRole("menuitem", { name: family.control }).length > 0).toBe(
+              allowed,
+            );
+            return;
+          }
+          if (family.leftOut) {
+            await screen.findByText(/Rows of|Columns/i).catch(() => undefined);
+            await settled();
+          } else {
+            await screen.findAllByRole(family.role ?? "button", { name: family.control });
+            await settled();
+          }
           // Looked up again: answering what the member holds can redraw the control. Every place
           // the screen puts it (its header, its empty state) says the same.
           const seen = screen
-            .getAllByRole(family.role ?? "button", { name: family.control })
+            .queryAllByRole(family.role ?? "button", { name: family.control })
             .map(offered);
-          expect(seen).toEqual(seen.map(() => allowed));
+          if (family.leftOut && !allowed) {
+            expect(seen.some(Boolean)).toBe(false);
+          } else {
+            expect(seen.length).toBeGreaterThan(0);
+            expect(seen).toEqual(seen.map(() => allowed));
+          }
         });
       }
     }

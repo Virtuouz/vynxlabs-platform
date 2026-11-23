@@ -16,7 +16,7 @@ import { StateAnnouncer } from "../kit/Announce.tsx";
 import { useAddressBox } from "../kit/addressBox.ts";
 import { useArrivals } from "../kit/arrivals.ts";
 import { type BatchAnswer, inSlices, useBatch } from "../kit/BatchResult.tsx";
-import { useMay } from "../kit/Can.tsx";
+import { useMay, useMayEach } from "../kit/Can.tsx";
 import { CopyIcon, Identifier } from "../kit/copy.tsx";
 import {
   type DataColumn,
@@ -374,7 +374,17 @@ export function RunsWorkbench({
   const [cancelOlder, setCancelOlder] = useState(false);
   // What this person may do is asked before the controls are drawn (OPS-35).
   const may = useMay(root, "run:write", "flow_run:write");
-  const mayAct = (kind: string) => may(kind === "flow" ? "flow_run:write" : "run:write");
+  // Cancel and Run again count a grant on the run's own script or flow, as the server does.
+  const mayOn = useMayEach(
+    root,
+    items.map((one) => ({
+      kind: one.kind,
+      path: one.target,
+      permission: one.kind === "flow" ? "flow_run:write" : "run:write",
+    })),
+  );
+  const mayAct = (one: { kind: string; target: string }) =>
+    mayOn(one.kind, one.target, one.kind === "flow" ? "flow_run:write" : "run:write");
   const mayAnyRun = may("run:write") || may("flow_run:write");
   const [retryOn, setRetryOn] = useState<Activity>();
   const narrowedBy = [
@@ -554,7 +564,7 @@ export function RunsWorkbench({
         refresh();
       },
     };
-    const mine = mayAct(one.kind);
+    const mine = mayAct(one);
     return [
       { label: "Open", onSelect: () => navigate(page) },
       ...(mine && one.kind === "script" && !going && !one.source

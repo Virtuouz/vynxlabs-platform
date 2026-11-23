@@ -84,6 +84,10 @@ const DomainView = Type.Object({
   verifiedAt: NullableTime,
   checkedAt: NullableTime,
   problem: NullableString,
+  recordGoneAt: Type.Union([NullableTime], {
+    description:
+      "When a check first did not find the record of a domain that was proved. It stays proved, from `verifiedAt`; this says it may no longer be. Empty while the record is found.",
+  }),
   record: Type.Union([Type.Object({ name: Type.String(), value: Type.String() }), Type.Null()], {
     description: "The TXT record that proves the domain. Null for a provider of the instance.",
   }),
@@ -179,6 +183,7 @@ export function ssoRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         verified_at: Date | null;
         checked_at: Date | null;
         check_error: string | null;
+        record_gone_at: Date | null;
       },
     ) => ({
       id: row.id,
@@ -187,6 +192,7 @@ export function ssoRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       verifiedAt: isoOrNull(row.verified_at),
       checkedAt: isoOrNull(row.checked_at),
       problem: row.check_error,
+      recordGoneAt: isoOrNull(row.record_gone_at),
       record: provider.tenantId ? challengeOf(kernel, provider.tenantId, row.domain) : null,
     });
 
@@ -464,6 +470,12 @@ export function ssoRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                   ? null
                   : `No TXT record ${record?.name} with the value ${record?.value} was found.`,
                 ...(met && !domain.verified_at ? { verified_at: new Date() } : {}),
+                // A record not found after it was proved is said apart, from the first time it was missed.
+                record_gone_at: met
+                  ? null
+                  : domain.verified_at
+                    ? (domain.record_gone_at ?? new Date())
+                    : null,
               })
               .where("id", "=", domain.id)
               .returningAll()
@@ -479,6 +491,19 @@ export function ssoRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               tenantId: current.tenantId,
               details: { domain: domain.domain, provider: current.name, verified: met },
             });
+            if (!met && domain.verified_at && !domain.record_gone_at) {
+              await audit({
+                action: "identity_domain.record_gone",
+                targetType: "identity_domain",
+                targetId: domain.id,
+                tenantId: current.tenantId,
+                details: {
+                  domain: domain.domain,
+                  provider: current.name,
+                  verifiedAt: domain.verified_at.toISOString(),
+                },
+              });
+            }
             return updated;
           });
           return domainView(current, row);

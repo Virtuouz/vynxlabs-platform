@@ -50,6 +50,10 @@ const Domain = Type.Object({
   verifiedAt: NullableTime,
   checkedAt: NullableTime,
   checkError: NullableString,
+  recordGoneAt: Type.Union([Time, Type.Null()], {
+    description:
+      "When a check first did not find the record of a verified name. The name stays verified, from `verifiedAt`; this says it may no longer be proved. Empty while the record is found.",
+  }),
   challenge: Type.Object(
     {
       name: Type.String(),
@@ -615,6 +619,7 @@ export function appRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       verified_at: Date | null;
       checked_at: Date | null;
       check_error: string | null;
+      record_gone_at: Date | null;
       created_at: Date;
     }) => ({
       id: row.id,
@@ -626,6 +631,7 @@ export function appRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       verifiedAt: isoOrNull(row.verified_at),
       checkedAt: isoOrNull(row.checked_at),
       checkError: row.check_error,
+      recordGoneAt: isoOrNull(row.record_gone_at),
       challenge: challengeOf(row.tenant_id, row.hostname),
       createdAt: iso(row.created_at),
     });
@@ -848,7 +854,13 @@ export function appRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             .set({
               checked_at: new Date(),
               check_error: problem,
-              ...(verified ? { verified_at: new Date() } : {}),
+              // The first date it was proved stays; a record not found afterwards is said apart.
+              ...(verified && !domain.verified_at ? { verified_at: new Date() } : {}),
+              record_gone_at: verified
+                ? null
+                : domain.verified_at
+                  ? (domain.record_gone_at ?? new Date())
+                  : null,
             })
             .where("id", "=", domain.id)
             .returningAll()
@@ -861,8 +873,20 @@ export function appRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             workspaceId: domain.workspace_id,
             details: { hostname: domain.hostname, verified, reached: problem === null },
           });
+          if (!verified && domain.verified_at && !domain.record_gone_at) {
+            await audit({
+              action: "app_domain.record_gone",
+              targetType: "app_domain",
+              targetId: domain.id,
+              tenantId: params.t,
+              workspaceId: domain.workspace_id,
+              details: { hostname: domain.hostname, verifiedAt: domain.verified_at.toISOString() },
+            });
+          }
           return updated;
         });
+        // Whether the name serves nothing, or the instance, depends on whether it is proved.
+        kernel.hosts.forget(domain.hostname);
         return toDomain(row);
       },
     );

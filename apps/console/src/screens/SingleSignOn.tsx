@@ -99,6 +99,8 @@ interface Domain {
   verifiedAt: string | null;
   checkedAt: string | null;
   problem: string | null;
+  /** When a check first missed the record of a proved domain: it stays proved, and this says so. */
+  recordGoneAt?: string | null;
   record: { name: string; value: string } | null;
 }
 interface GroupMap {
@@ -491,7 +493,11 @@ function Domains({ root, instance }: { root: string; instance: boolean }) {
           <div className="flex flex-wrap items-center justify-between gap-2">
             <span className="flex flex-wrap items-center gap-2">
               <strong>{row.domain}</strong>
-              {row.verified ? (
+              {row.verified && row.recordGoneAt ? (
+                <StatePill state="warning">
+                  Proved {when(row.verifiedAt ?? "")}; record gone since {when(row.recordGoneAt)}
+                </StatePill>
+              ) : row.verified ? (
                 <StatePill state="verified">Proved</StatePill>
               ) : (
                 <StatePill state="unverified">Not proved</StatePill>

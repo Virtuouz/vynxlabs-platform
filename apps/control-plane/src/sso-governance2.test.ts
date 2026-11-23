@@ -1,5 +1,8 @@
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { newId } from "@volvel/db";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { dns } from "./kernel/apps/challenge.js";
@@ -19,7 +22,11 @@ const providers = () => `/tenants/${tenant}/identity-providers`;
 
 beforeAll(async () => {
   dns.resolveTxt = async (name) => (txt.has(name) ? [[txt.get(name) as string]] : []);
-  t = await startTestApp();
+  // A console to serve, so that a page at an address is the console or it is not.
+  const consoleDir = mkdtempSync(join(tmpdir(), "console-"));
+  mkdirSync(consoleDir, { recursive: true });
+  writeFileSync(join(consoleDir, "index.html"), "<title>Console</title>");
+  t = await startTestApp({ config: { consoleDir } });
   const roles = Object.fromEntries(
     (
       await t.db.selectFrom("role").select(["id", "name"]).where("builtin", "=", true).execute()
@@ -181,6 +188,134 @@ describe("a group mapping an access release made (GOV-19)", () => {
       expect(by).toEqual({ finance: "release", everyone: "hand" });
       const emptied = await alice.put(`${providers()}/${id}/group-maps`, { items: [] });
       expect(emptied.body.items.map((item: Any) => item.value)).toEqual(["finance"]);
+    } finally {
+      await idp.stop();
+    }
+  });
+});
+
+describe("a hostname that is registered and not enabled (GOV-24)", () => {
+  const page = async (host: string) =>
+    (await t.app.inject({ method: "GET", url: "/", headers: { host } })).statusCode;
+
+  test("a proved one is not served, and a name nobody registered is still the instance", async () => {
+    const ws = (
+      await alice.post(`/tenants/${tenant}/workspaces`, {
+        slug: "main",
+        name: "Main",
+        type: "production",
+      })
+    ).body.id as string;
+    const host = "held.portal.test";
+    const made = await alice.post(`/tenants/${tenant}/domains`, {
+      workspaceId: ws,
+      app: "",
+      hostname: host,
+    });
+    expect(made.status, JSON.stringify(made.body)).toBe(201);
+    // Not proved: the name may be anyone's, so nobody can switch it off. Words only.
+    expect(await page(host)).toBe(200);
+    txt.set(made.body.challenge.name, made.body.challenge.value);
+    const checked = await alice.post(`/tenants/${tenant}/domains/${made.body.id}/checks`);
+    expect(checked.body.verifiedAt, JSON.stringify(checked.body)).not.toBeNull();
+    // Proved and not enabled: it serves nothing, and says so.
+    const refused = await t.app.inject({ method: "GET", url: "/", headers: { host } });
+    expect(refused.statusCode).toBe(404);
+    expect(refused.body).toContain("not served");
+    // Its check address still answers, so a check can say whether the name reaches the instance.
+    expect(
+      (await t.app.inject({ method: "GET", url: "/api/v1/domain-check", headers: { host } }))
+        .statusCode,
+    ).toBe(200);
+    // A name nobody registered is the instance by another name, as before.
+    expect(await page("nobody.portal.test")).toBe(200);
+    // Removing the registration lets the name serve the console again at once.
+    expect((await alice.delete(`/tenants/${tenant}/domains/${made.body.id}`)).status).toBe(204);
+    expect(await page(host)).toBe(200);
+  });
+});
+
+describe("a verified name whose record is gone (GOV-25, D45)", () => {
+  const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  test("a hostname keeps its first date, says since when the record is gone, and is audited", async () => {
+    const ws = (
+      await alice.post(`/tenants/${tenant}/workspaces`, {
+        slug: "gone",
+        name: "Gone",
+        type: "dev",
+      })
+    ).body.id as string;
+    const made = await alice.post(`/tenants/${tenant}/domains`, {
+      workspaceId: ws,
+      app: "",
+      hostname: "gone.portal.test",
+    });
+    expect(made.status, JSON.stringify(made.body)).toBe(201);
+    const url = `/tenants/${tenant}/domains/${made.body.id}/checks`;
+    txt.set(made.body.challenge.name, made.body.challenge.value);
+    const first = (await alice.post(url)).body;
+    expect(first.verifiedAt).not.toBeNull();
+    expect(first.recordGoneAt).toBeNull();
+    await sleep(15);
+    // Checked again with the record there: the first date stays.
+    expect((await alice.post(url)).body.verifiedAt).toBe(first.verifiedAt);
+    // The record is taken away.
+    txt.delete(made.body.challenge.name);
+    const gone = (await alice.post(url)).body;
+    expect(gone.verifiedAt).toBe(first.verifiedAt);
+    expect(gone.recordGoneAt).not.toBeNull();
+    expect(gone.checkError).toContain("No TXT record");
+    await sleep(15);
+    // Gone since the first check that did not find it, not since the latest.
+    expect((await alice.post(url)).body.recordGoneAt).toBe(gone.recordGoneAt);
+    const listed = (await alice.get(`/tenants/${tenant}/domains`)).body.items.find(
+      (one: Any) => one.id === made.body.id,
+    );
+    expect(listed.recordGoneAt).toBe(gone.recordGoneAt);
+    // Shown and audited, once; nothing stops.
+    const entries = await t.db
+      .selectFrom("audit_entry")
+      .select("target_id")
+      .where("action", "=", "app_domain.record_gone")
+      .execute();
+    expect(entries.filter((entry) => entry.target_id === made.body.id)).toHaveLength(1);
+    // Found again: back to plain verified.
+    txt.set(made.body.challenge.name, made.body.challenge.value);
+    const back = (await alice.post(url)).body;
+    expect(back.recordGoneAt).toBeNull();
+    expect(back.verifiedAt).toBe(first.verifiedAt);
+  });
+
+  test("an email domain of a provider does the same", async () => {
+    const idp = await describedIssuer((origin) => origin);
+    try {
+      const made = await alice.post(providers(), {
+        audience: "members",
+        protocol: "oidc",
+        name: "Gone",
+        config: { issuer: idp.origin, clientId: "console" },
+      });
+      const id = made.body.id as string;
+      const added = await alice.post(`${providers()}/${id}/domains`, { domain: "gone.example" });
+      const url = `${providers()}/${id}/domains/${added.body.id}/checks`;
+      txt.set(added.body.record.name, added.body.record.value);
+      const first = (await alice.post(url)).body;
+      expect(first.verified).toBe(true);
+      txt.delete(added.body.record.name);
+      const gone = (await alice.post(url)).body;
+      expect(gone.verified).toBe(true);
+      expect(gone.verifiedAt).toBe(first.verifiedAt);
+      expect(gone.recordGoneAt).not.toBeNull();
+      expect(gone.problem).toContain("No TXT record");
+      const entries = await t.db
+        .selectFrom("audit_entry")
+        .select("target_id")
+        .where("action", "=", "identity_domain.record_gone")
+        .execute();
+      expect(entries.filter((entry) => entry.target_id === added.body.id)).toHaveLength(1);
+      txt.set(added.body.record.name, added.body.record.value);
+      expect((await alice.post(url)).body.recordGoneAt).toBeNull();
     } finally {
       await idp.stop();
     }

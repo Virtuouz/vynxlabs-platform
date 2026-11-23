@@ -437,3 +437,31 @@ test("after an edit, removing the last domain turns the header off with the prov
   await screen.findByRole("button", { name: "Turn on" });
   expect(screen.queryByRole("button", { name: "Stop requiring it" })).toBeNull();
 });
+
+test("a proved domain whose record is gone says since when, and stays proved (GOV-25)", async () => {
+  routes[`GET ${base}`] = () => [200, { items: [oidc] }];
+  routes[`GET ${base}/p1/group-maps`] = () => [200, { items: [] }];
+  routes[`GET ${base}/p1/domains`] = () => [
+    200,
+    {
+      items: [
+        {
+          id: "d1",
+          domain: "acme.example",
+          verified: true,
+          verifiedAt: "2026-11-01T10:00:00Z",
+          checkedAt: "2026-11-12T10:00:00Z",
+          problem: "No TXT record _vx.acme.example with the value vx was found.",
+          recordGoneAt: "2026-11-10T10:00:00Z",
+          record: { name: "_vx.acme.example", value: "vx" },
+        },
+      ],
+    },
+  ];
+  show(<SingleSignOn base="/tenants/t1" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Acme Login" }));
+  fireEvent.click(screen.getByRole("tab", { name: "Domains" }));
+  await screen.findByText("acme.example");
+  expect(document.body.textContent).toContain("record gone since");
+  expect(document.body.textContent).toContain("No TXT record");
+});

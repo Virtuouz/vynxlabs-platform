@@ -1382,8 +1382,30 @@ describe("a hostname of the tenant's own", () => {
     expect(created.body.challenge.value).toMatch(/^vx-domain=[0-9a-f]{40}$/);
     domainId = created.body.id;
 
-    // Another tenant cannot take the name, and gets a different record to publish.
+    // Another tenant may register the name too, until one of them proves it. It gets a different
+    // record to publish, and the name is not its own: nothing is served, and it cannot enable it.
     const gina = await t.signIn("gina@globex.example", PASSWORD);
+    const otherWorkspace = (
+      await gina.post(`/tenants/${other}/workspaces`, {
+        slug: "main",
+        name: "Main",
+        type: "production",
+      })
+    ).body.id as string;
+    const theirs = await gina.post(`/tenants/${other}/domains`, {
+      workspaceId: otherWorkspace,
+      app: "",
+      hostname: DOMAIN,
+    });
+    expect(theirs.status, JSON.stringify(theirs.body)).toBe(201);
+    expect(theirs.body.challenge.value).not.toBe(created.body.challenge.value);
+    expect(theirs.body).toMatchObject({ enabled: false, verifiedAt: null });
+    const taken = await gina.patch(`/tenants/${other}/domains/${theirs.body.id}`, {
+      enabled: true,
+    });
+    expect(taken.status, JSON.stringify(taken.body)).toBe(409);
+    expect(taken.body.code).toBe("domain_not_verified");
+    // And an app of the other tenant's workspace cannot be given to this tenant's name.
     expect(
       (
         await gina.post(`/tenants/${other}/domains`, {
@@ -1393,6 +1415,7 @@ describe("a hostname of the tenant's own", () => {
         })
       ).status,
     ).toBe(400);
+    await gina.delete(`/tenants/${other}/domains/${theirs.body.id}`);
 
     // Not yet enabled: the name is the instance by another name, and serves no app.
     expect((await browser(t, DOMAIN).get("/api/v1/domain-check")).status).toBe(200);

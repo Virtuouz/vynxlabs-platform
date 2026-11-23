@@ -399,6 +399,7 @@ const domain = {
   verifiedAt: null,
   checkedAt: null,
   checkError: null,
+  recordGoneAt: null,
   challenge: { name: "_vx-challenge.orders.acme.example", value: "vx-domain=0123abcd" },
   createdAt: "2026-11-12T00:00:00.000Z",
 };
@@ -524,6 +525,37 @@ test("a hostname can serve the portal and every app, even from a workspace with 
   );
   const row = (await screen.findByRole("button", { name: /Details/, hidden: true })).closest("tr");
   expect(row?.textContent).toContain("The portal and every app");
+});
+
+test("a hostname whose record is gone is not shown as plainly verified, and says what not serving means (GOV-24, GOV-25)", async () => {
+  const gone = {
+    ...domain,
+    verifiedAt: "2026-11-01T10:00:00.000Z",
+    checkedAt: "2026-11-12T10:00:00.000Z",
+    checkError: "No TXT record _vx-challenge.orders.acme.example was found.",
+    recordGoneAt: "2026-11-10T10:00:00.000Z",
+  };
+  let domains: object[] = [gone];
+  routes[`GET /api/v1${base}/domains`] = () => [200, { items: domains }];
+  routes[`GET /api/v1${base}/workspaces`] = () => [200, { items: [] }];
+  show(<Domains base={base} />);
+  const details = await screen.findByRole("button", { name: /Details/, hidden: true });
+  const row = details.closest("tr") as HTMLElement;
+  expect(row.textContent).toContain("record gone since");
+  fireEvent.click(details);
+  const dialog = await screen.findByRole("dialog");
+  expect(dialog.textContent).not.toContain("Record created and found");
+  expect(dialog.textContent).toContain("Verified");
+  expect(dialog.textContent).toContain("has not been found since");
+  // Verified and not enabled: it serves nothing.
+  expect(dialog.textContent).toContain("not served here");
+  fireEvent.click(screen.getByRole("button", { name: "Close" }));
+  // Not verified and not enabled: the name opens this instance's own address.
+  domains = [{ ...domain }];
+  cleanup();
+  show(<Domains base={base} />);
+  fireEvent.click(await screen.findByRole("button", { name: /Details/, hidden: true }));
+  expect((await screen.findByRole("dialog")).textContent).toContain("opens this instance");
 });
 
 // ----- The console's own colors -----

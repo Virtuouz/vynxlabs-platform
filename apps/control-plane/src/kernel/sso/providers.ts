@@ -1,5 +1,5 @@
 import { X509Certificate } from "node:crypto";
-import { newId } from "@volvel/db";
+import { newId, sql } from "@volvel/db";
 import { generate } from "selfsigned";
 import { portalUrl } from "../apps/address.js";
 import type { Audit, Db, Trx } from "../audit.js";
@@ -559,6 +559,8 @@ export async function updateProvider(
   audit: Audit,
   current: Provider,
   input: ProviderInput,
+  /** Whoever is saving it: their own sessions are not ended by requiring the provider. */
+  by?: { type: string; id: string | null },
 ): Promise<Provider> {
   const config =
     input.config === undefined
@@ -671,6 +673,10 @@ export async function updateProvider(
       {},
     ],
   ];
+  // Requiring the provider makes a password no way in for the people it covers. A password
+  // session that is open is a way in too, so those end now, except the one of whoever pressed it.
+  const ended =
+    !current.enforce && provider.enforce ? await endCoveredSessions(trx, provider, by) : undefined;
   for (const [changed, what, details] of notable) {
     if (!changed) continue;
     await audit({
@@ -678,10 +684,75 @@ export async function updateProvider(
       targetType: "identity_provider",
       targetId: provider.id,
       tenantId: provider.tenantId,
-      details: { name: provider.name, ...details },
+      details: {
+        name: provider.name,
+        ...details,
+        ...(what === "enforced" && ended !== undefined ? { sessionsEnded: ended } : {}),
+      },
     });
   }
   return provider;
+}
+
+/**
+ * Ends the sessions of the people a required provider covers: members with an email in a
+ * domain it has proved, or the end users of the tenant in one (every end user when it has
+ * proved none). The people who run the instance keep theirs, as they keep their passwords.
+ * Sessions made by signing in with the provider end too: those people sign in again with it.
+ * API keys and service accounts are left. Answers how many sessions ended.
+ */
+async function endCoveredSessions(
+  trx: Trx,
+  provider: Provider,
+  by: { type: string; id: string | null } | undefined,
+): Promise<number> {
+  const domains = [...(await provedDomains(trx, provider.id))];
+  const spared = by?.id ?? null;
+  if (provider.audience === "members") {
+    if (domains.length === 0) return 0;
+    const ended = await trx
+      .deleteFrom("member_session")
+      .where(
+        "member_id",
+        "in",
+        trx
+          .selectFrom("member")
+          .select("member.id")
+          .where(sql<boolean>`split_part(member.email, '@', 2) = any(${domains})`)
+          .where((eb) =>
+            eb.not(
+              eb.exists(
+                eb
+                  .selectFrom("binding")
+                  .select("binding.id")
+                  .whereRef("binding.principal_id", "=", "member.id")
+                  .where("binding.principal_type", "=", "member")
+                  .where("binding.scope_type", "=", "instance"),
+              ),
+            ),
+          ),
+      )
+      .$if(spared !== null, (q) => q.where("member_id", "!=", spared as string))
+      .returning("id")
+      .execute();
+    return ended.length;
+  }
+  if (provider.tenantId === null) return 0;
+  const covered = trx
+    .selectFrom("end_user")
+    .select("end_user.id")
+    .where("end_user.tenant_id", "=", provider.tenantId)
+    .$if(domains.length > 0, (q) =>
+      q.where(sql<boolean>`split_part(end_user.email, '@', 2) = any(${domains})`),
+    );
+  const ended = await trx
+    .deleteFrom("app_session")
+    .where("tenant_id", "=", provider.tenantId)
+    .where("principal_type", "=", "end_user")
+    .where("principal_id", "in", covered)
+    .returning("id")
+    .execute();
+  return ended.length;
 }
 
 export async function deleteProvider(trx: Trx, audit: Audit, provider: Provider) {

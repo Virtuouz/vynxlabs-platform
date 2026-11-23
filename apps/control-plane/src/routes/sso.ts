@@ -284,7 +284,9 @@ export function ssoRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             description:
               `${CONFIG_DOC} Settings left out of \`config\` keep their values. Turning a ` +
               "provider of members on needs a proved domain. `enforce` refuses passwords for " +
-              "the people the provider covers; the people who run the instance keep theirs. " +
+              "the people the provider covers, and ends their open sessions at once, except the caller's; " +
+              "the people who run the instance keep their passwords and sessions. Turning a " +
+              "provider off does not stop a directory pushing people to it. " +
               "Saving turns a paused provider back on.",
             tags,
             params: Params,
@@ -302,7 +304,7 @@ export function ssoRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             await ctx.authorize("binding:write", { tenantId: current.tenantId });
           }
           const updated = await ctx.mutate(async (trx, audit) => {
-            const saved = await updateProvider(kernel, trx, audit, current, body);
+            const saved = await updateProvider(kernel, trx, audit, current, body, ctx.principal);
             if (isOidc(saved) && (body.config !== undefined || body.clientSecret !== undefined)) {
               await reachable(
                 saved,

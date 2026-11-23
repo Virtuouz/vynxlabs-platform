@@ -1054,8 +1054,8 @@ function ProviderDetail({
                           title: "Require single sign-on?",
                           text:
                             provider.audience === "members"
-                              ? "Members with an email in this provider's proved domains can no longer sign in with a password. The operators of this instance keep theirs, so that a broken provider locks nobody out for good."
-                              : "End users this provider covers can no longer sign in with a password: those in its proved domains, or everyone when it has none.",
+                              ? "Members with an email in this provider's proved domains can no longer sign in with a password. Their open sessions end now, except yours, and they sign in again with the provider. The operators of this instance keep their passwords and sessions, so that a broken provider locks nobody out for good."
+                              : "End users this provider covers can no longer sign in with a password: those in its proved domains, or everyone when it has none. Their open sessions end now.",
                           action: "Require it",
                           danger: true,
                         },
@@ -1094,7 +1094,7 @@ function ProviderDetail({
                       provider.enforce
                         ? `It is required now, and stops being required: those ${who} can use a password again.`
                         : `Those ${who} can still use a password.`
-                    } Anyone who has no password needs one, or another provider, to get in.`,
+                    } Anyone who has no password needs one, or another provider, to get in. A directory that pushes people to it keeps pushing while it is off.`,
                     action: "Turn off",
                     danger: true,
                   });

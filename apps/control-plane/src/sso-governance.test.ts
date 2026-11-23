@@ -679,3 +679,32 @@ describe("a tenant's provider and the people who run the instance (GOV-08)", () 
     expect((await t.signIn("ops@acme.example", PASSWORD)).get).toBeDefined();
   });
 });
+
+describe("requiring single sign-on (D12)", () => {
+  test("ends the password sessions of the people it covers, but not of whoever requires it", async () => {
+    const id = await provider(alice, providers(), { audience: "members", name: "Required" });
+    await prove(alice, providers(), id, "req.example");
+    const pat = await limited("pat@req.example", ["sso:read", "sso:write"]);
+    const mia = await limited("mia@req.example", ["sso:read"]);
+    const other = await limited("other@elsewhere.example", ["sso:read"]);
+    const op = await t.admin.post("/members", {
+      email: "boss@req.example",
+      name: "Boss",
+      password: PASSWORD,
+    });
+    await t.admin.post("/bindings", { memberId: op.body.id, roleId: roles.operator_admin });
+    const boss = await t.signIn("boss@req.example", PASSWORD);
+    for (const who of [pat.client, mia.client, other.client, boss]) {
+      expect((await who.get("/me")).status).toBe(200);
+    }
+    const on = await pat.client.patch(`${providers()}/${id}`, { enabled: true, enforce: true });
+    expect(on.status, JSON.stringify(on.body)).toBe(200);
+    expect((await mia.client.get("/me")).status).toBe(401);
+    expect((await pat.client.get("/me")).status).toBe(200);
+    expect((await other.client.get("/me")).status).toBe(200);
+    expect((await boss.get("/me")).status).toBe(200);
+    expect((await audited("identity_provider.enforced")).at(-1)).toMatchObject({
+      details: { sessionsEnded: 1 },
+    });
+  });
+});

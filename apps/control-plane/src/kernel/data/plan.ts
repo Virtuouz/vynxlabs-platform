@@ -1,4 +1,5 @@
 import {
+  COLUMN_WIDENINGS,
   type ColumnType,
   type EnumValue,
   enumValues,
@@ -109,18 +110,6 @@ export interface Plan {
   /** Why the definition cannot be applied. When this is not empty, nothing is. */
   issues: { path: string; message: string }[];
 }
-
-/** Type changes that cannot lose anything. */
-const WIDENINGS: Record<string, ColumnType[]> = {
-  integer: ["number", "text"],
-  number: ["text"],
-  boolean: ["text"],
-  uuid: ["text"],
-  date: ["text"],
-  timestamp: ["text"],
-  // An enum is text that is held to a list, so letting go of the list loses nothing.
-  enum: ["text"],
-};
 
 /** A name for a table inside the workspace's schema. */
 export function physicalTableName(path: string, taken: Set<string>): string {
@@ -321,7 +310,7 @@ export function planTable(
       // Allowed when the rows already hold nothing else, which only the rows can say.
       steps.push({ op: "to_enum", ...target, values: want.values });
     } else if (current.type !== want.type) {
-      if (WIDENINGS[current.type]?.includes(want.type)) {
+      if (COLUMN_WIDENINGS[current.type]?.includes(want.type)) {
         steps.push({ op: "widen_column", ...target, to: want.type });
       } else {
         issues.push({

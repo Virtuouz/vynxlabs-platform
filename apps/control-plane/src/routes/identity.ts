@@ -13,6 +13,7 @@ import { INSTANCE_ONLY_ROLE } from "../kernel/kinds.js";
 import { createMember, setMemberDisabled } from "../kernel/members.js";
 import { generateApiKey } from "../kernel/principal.js";
 import { effectivePolicy } from "../kernel/retention.js";
+import { nameOwnedBy } from "../kernel/sso/people.js";
 import { makeRecoveryCodes, ownsATenant } from "../kernel/sso/recovery.js";
 import { likeTerm, listOf, PageQuery, pageOf, SearchPageQuery } from "../pagination.js";
 import {
@@ -222,6 +223,23 @@ export const AuditQuery = Type.Object({
   to: Type.Optional(Type.String({ format: "date-time", description: "Nothing newer than this." })),
 });
 
+const { limit: _limit, cursor: _cursor, ...filterProperties } = AuditQuery.properties;
+/** The filters of a log without paging: what facets and exports take. */
+export const AuditFilterQuery = Type.Object(filterProperties);
+const Count = Type.Integer({ minimum: 0 });
+export const AuditFacets = Type.Object({
+  actions: Type.Array(Type.Object({ value: Type.String(), count: Count })),
+  actors: Type.Array(
+    Type.Object({
+      type: Type.String(),
+      id: Type.Union([Type.String(), Type.Null()]),
+      label: Type.Union([Type.String(), Type.Null()]),
+      count: Count,
+    }),
+  ),
+  targetTypes: Type.Array(Type.Object({ value: Type.String(), count: Count })),
+});
+
 export interface AuditFilters {
   action?: string;
   area?: string;
@@ -394,7 +412,7 @@ export async function auditEntry(kernel: Kernel, tenantId: string, id: string) {
 }
 
 /** What a log holds in a range, to narrow it by: its actions, its actors and kinds of target. */
-export async function auditFacets(kernel: Kernel, tenantId: string, query: AuditFilters) {
+export async function auditFacets(kernel: Kernel, tenantId: string | null, query: AuditFilters) {
   const base = await auditSelect(kernel, tenantId, query);
   const [actions, actors, targets] = await Promise.all([
     base
@@ -667,6 +685,12 @@ export function identityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                 id: Id,
                 name: NullableString,
                 email: NullableString,
+                nameFrom: Type.Optional(
+                  Type.Union([Type.String(), Type.Null()], {
+                    description:
+                      "The identity provider whose directory sets this member's name, when one does.",
+                  }),
+                ),
               }),
               instancePermissions: Type.Array(Type.String(), {
                 description: "Permissions held at instance scope.",
@@ -710,6 +734,9 @@ export function identityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             id,
             name: principal.name ?? null,
             email: principal.email ?? null,
+            ...(principal.type === "member"
+              ? { nameFrom: (await nameOwnedBy(kernel.db, id)) ?? null }
+              : {}),
           },
           instancePermissions: [...new Set(roles.flatMap((role) => role.permissions))].sort(),
           tenants: await tenants.execute(),
@@ -1201,6 +1228,23 @@ export function identityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         },
       },
       async ({ query }) => auditPage(kernel, null, query),
+    );
+
+    app.get(
+      "/audit-facets",
+      {
+        config: { access: access.instance("audit:read") },
+        schema: {
+          summary: "What the instance's log holds, to narrow it by",
+          description:
+            "The actions, actors and kinds of target among the instance-level entries the filters " +
+            "keep, each with how many entries it has, most first. At most 100 of each.",
+          tags: ["audit"],
+          querystring: AuditFilterQuery,
+          response: { 200: AuditFacets },
+        },
+      },
+      async ({ query }) => auditFacets(kernel, null, query),
     );
   };
 }

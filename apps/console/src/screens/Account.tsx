@@ -1,12 +1,15 @@
 import { Button, Notice, TextField } from "@volvel/ui";
 import { useState } from "react";
-import { ApiError, api, useLoad } from "../api.ts";
+import { ApiError, api, type Me, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
+import { DataTable } from "../kit/DataTable.tsx";
+import { daysChosen, expiryField } from "../kit/expiry.ts";
+import { Loading } from "../kit/LoadState.tsx";
 import { KeyValues, Panel, SectionLabel } from "../kit/layout.tsx";
 import { OneTimeSecret } from "../kit/OneTimeSecret.tsx";
 import { StatePill } from "../kit/status.tsx";
 import { Time } from "../kit/Time.tsx";
-import { CopyButton, ListScreen, RemoveButton } from "../ListScreen.tsx";
+import { CopyButton, type FormField, ListScreen, RemoveButton } from "../ListScreen.tsx";
 
 export interface KeyRow {
   id: string;
@@ -44,6 +47,11 @@ export const keyColumns = [
     cell: (row: KeyRow) => (row.lastUsedAt ? <Time value={row.lastUsedAt} mode="ago" /> : "Never"),
   },
   {
+    // As "Last used": how far off, with the moment on hover. A key that does not expire says so.
+    header: "Expires",
+    cell: (row: KeyRow) => (row.expiresAt ? <Time value={row.expiresAt} mode="ago" /> : "Never"),
+  },
+  {
     header: "Status",
     cell: (row: KeyRow) =>
       row.revokedAt ? (
@@ -55,6 +63,17 @@ export const keyColumns = [
       ),
   },
 ];
+
+export const keyExpiryField: FormField = expiryField("key");
+
+/** What the create form sends for a key: its name, and the moment it ends when it does. */
+export function newKeyBody(values: Record<string, string>, now = Date.now()) {
+  const days = daysChosen(values);
+  return {
+    name: values.name,
+    ...(days ? { expiresAt: new Date(now + days * 86_400_000).toISOString() } : {}),
+  };
+}
 
 export const showNewKey = (result: unknown, dismiss?: () => void) => (
   <OneTimeSecret value={(result as { token: string }).token} noun="key" onDone={dismiss} />
@@ -250,6 +269,229 @@ export function ChangePassword() {
   );
 }
 
+/**
+ * The person's own name. Where a directory pushes it, it is read-only and says whose it is: a
+ * change here would be undone by the directory's next push.
+ */
+export function Profile() {
+  const me = useLoad<Me>("/me");
+  const principal = me.data?.principal;
+  const [typed, setTyped] = useState<string>();
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<string>();
+  const [done, setDone] = useState(false);
+  if (!principal) return me.error ? <Notice tone="danger">{me.error.message}</Notice> : null;
+  const name = typed ?? principal.name ?? "";
+  const changed = name.trim() !== "" && name.trim() !== (principal.name ?? "");
+  const owner = principal.nameFrom;
+
+  return (
+    <Panel role="region" aria-label="Profile" className="flex max-w-xl flex-col gap-4 p-4 md:p-5">
+      <SectionLabel>Profile</SectionLabel>
+      <form
+        className="flex flex-col gap-3"
+        onSubmit={async (event) => {
+          event.preventDefault();
+          if (!changed || owner) return;
+          setBusy(true);
+          setProblem(undefined);
+          setDone(false);
+          try {
+            await api.post("/auth/update-user", { name: name.trim() });
+            await me.reload();
+            setTyped(undefined);
+            setDone(true);
+          } catch (error) {
+            setProblem((error as Error).message);
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        <TextField
+          label="Name"
+          name="name"
+          value={name}
+          required
+          maxLength={200}
+          autoComplete="name"
+          disabled={Boolean(owner)}
+          hint={
+            owner
+              ? `Your name comes from ${owner}. Change it there.`
+              : "Shown to the people you work with, beside your email."
+          }
+          onChange={(value) => {
+            setTyped(value);
+            setDone(false);
+          }}
+        />
+        <KeyValues rows={[{ label: "Email", value: principal.email ?? "" }]} />
+        {problem ? <Notice tone="danger">{problem}</Notice> : null}
+        {done ? <Notice tone="attention">Your name is saved.</Notice> : null}
+        {owner ? null : (
+          <div>
+            <Button type="submit" variant="primary" loading={busy} disabled={!changed}>
+              Save name
+            </Button>
+          </div>
+        )}
+      </form>
+    </Panel>
+  );
+}
+
+/** One session as the library lists it. `token` is what ends it. */
+export interface SessionRow {
+  id: string;
+  token: string;
+  userAgent?: string | null;
+  ipAddress?: string | null;
+  createdAt: string;
+  expiresAt: string;
+}
+
+/** "Firefox on Linux", from what a browser says of itself; the whole text when it is not known. */
+export function deviceOf(userAgent: string | null | undefined): string {
+  if (!userAgent) return "Unknown device";
+  const browser = /Edg\//.test(userAgent)
+    ? "Edge"
+    : /Firefox\//.test(userAgent)
+      ? "Firefox"
+      : /Chrome\//.test(userAgent)
+        ? "Chrome"
+        : /Safari\//.test(userAgent)
+          ? "Safari"
+          : /^curl|^node|volvel/i.test(userAgent)
+            ? "Command line"
+            : undefined;
+  const system = /Windows/.test(userAgent)
+    ? "Windows"
+    : /Android/.test(userAgent)
+      ? "Android"
+      : /iPhone|iPad/.test(userAgent)
+        ? "iOS"
+        : /Mac OS X/.test(userAgent)
+          ? "macOS"
+          : /Linux/.test(userAgent)
+            ? "Linux"
+            : undefined;
+  if (!browser && !system) return userAgent;
+  return [browser ?? "A browser", system ? `on ${system}` : undefined].filter(Boolean).join(" ");
+}
+
+/**
+ * Where the person is signed in, with the one they are using marked, and the others ended one by
+ * one or all together. Ending the one in use is signing out, which the account menu does.
+ */
+export function Sessions() {
+  const list = useLoad<SessionRow[]>("/auth/list-sessions");
+  const current = useLoad<{ session?: { id: string } } | null>("/auth/get-session");
+  const [busy, setBusy] = useState(false);
+  const rows = Array.isArray(list.data) ? list.data : undefined;
+  const mine = current.data?.session?.id;
+  const others = rows?.filter((row) => row.id !== mine) ?? [];
+
+  const end = async (row: SessionRow) => {
+    const sure = await ask.confirm({
+      title: "End this session?",
+      text: `${deviceOf(row.userAgent)} is signed out and has to sign in again.`,
+      action: "End session",
+      danger: true,
+    });
+    if (!sure) return;
+    try {
+      await api.post("/auth/revoke-session", { token: row.token });
+      await list.reload();
+    } catch (error) {
+      notify.error(error);
+    }
+  };
+  const endOthers = async () => {
+    const sure = await ask.confirm({
+      title: "End all other sessions?",
+      text: `${others.length === 1 ? "The other session is" : `The other ${others.length} sessions are`} signed out. This one stays.`,
+      action: "End other sessions",
+      danger: true,
+    });
+    if (!sure) return;
+    setBusy(true);
+    try {
+      await api.post("/auth/revoke-other-sessions");
+      await list.reload();
+      notify.success("Your other sessions are ended.");
+    } catch (error) {
+      notify.error(error);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Panel role="region" aria-label="Sessions" className="flex flex-col gap-4 p-4 md:p-5">
+      <SectionLabel
+        action={
+          <Button
+            size="small"
+            variant="secondary"
+            loading={busy}
+            disabled={others.length === 0}
+            onClick={endOthers}
+          >
+            End other sessions
+          </Button>
+        }
+      >
+        Sessions
+      </SectionLabel>
+      <p className="m-0 max-w-measure text-ink-muted">
+        Where you are signed in now. A session you do not know is a reason to change your password.
+      </p>
+      {list.error ? (
+        <Notice tone="danger" action={<Button onClick={list.reload}>Try again</Button>}>
+          {list.error.message}
+        </Notice>
+      ) : rows ? (
+        <DataTable<SessionRow>
+          variant="static"
+          label="Sessions"
+          rows={rows}
+          rowKey={(row) => row.id}
+          empty="You are not signed in anywhere."
+          columns={[
+            {
+              header: "Device",
+              cell: (row) => (
+                <span className="flex flex-wrap items-center gap-2">
+                  {deviceOf(row.userAgent)}
+                  {row.id === mine ? <StatePill state="active">This session</StatePill> : null}
+                </span>
+              ),
+            },
+            { header: "Address", priority: 2, cell: (row) => row.ipAddress ?? "Not known" },
+            {
+              header: "Signed in",
+              cell: (row) => <Time value={row.createdAt} mode="ago" />,
+            },
+            {
+              header: "",
+              align: "end",
+              cell: (row) =>
+                row.id === mine ? null : (
+                  <Button variant="danger" size="small" onClick={() => end(row)}>
+                    End
+                  </Button>
+                ),
+            },
+          ]}
+        />
+      ) : (
+        <Loading />
+      )}
+    </Panel>
+  );
+}
+
 export function Account() {
   return (
     <div className="flex flex-col gap-8">
@@ -269,8 +511,9 @@ export function Account() {
               placeholder: "My laptop",
               hint: "Where the key will be used.",
             },
+            keyExpiryField,
           ],
-          submit: (values) => api.post("/api-keys", values),
+          submit: (values) => api.post("/api-keys", newKeyBody(values)),
           afterCreate: showNewKey,
         }}
         rowActions={(row, reload) =>
@@ -284,7 +527,9 @@ export function Account() {
           )
         }
       />
+      <Profile />
       <ChangePassword />
+      <Sessions />
       <RecoveryCodes />
     </div>
   );

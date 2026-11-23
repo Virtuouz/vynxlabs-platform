@@ -1111,7 +1111,7 @@ describe("refusals, retiring and purging", () => {
       currency: { type: "text", required: true, default: "USD", unique: true },
     });
     expect(unique.body.detail).toBe(
-      'The table "orders" cannot be changed: column "currency" is now unique, and some rows share a value. Make the values distinct first.',
+      'The table "orders" cannot be changed: column "currency" is now unique, and some rows share a value: "USD" is in 3 rows. Make the values distinct first.',
     );
 
     // Nothing moved: same definition, same active bundle, and the samples table untouched by the failed deploys.

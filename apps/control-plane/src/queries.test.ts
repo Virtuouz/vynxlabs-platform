@@ -640,19 +640,18 @@ describe("queries kept by name", () => {
     expect((await alice.get(`${ws()}/queries`)).body.items).toHaveLength(1);
   });
 
-  test("the list gives a query's title, and where a renamed one came from (DAT-30)", async () => {
+  test("the list gives a query's title, deployed or in a draft (DAT-30)", async () => {
     const made = await alice.put(`${ws()}/drafts/reports/titled`, {
       kind: "query",
       schemaVersion: 1,
-      body: { sql: "select 1" },
-      create: true,
+      body: { sql: "select 1 as one" },
       title: "Fees by device",
     });
     expect(made.status, JSON.stringify(made.body)).toBe(200);
-    const found = (await alice.get(`${ws()}/queries`)).body.items.find(
-      (one: Any) => one.path === "reports/titled",
-    );
-    expect(found).toMatchObject({ title: "Fees by device" });
+    const listed = (await alice.get(`${ws()}/queries`)).body.items as Any[];
+    expect(listed.find((one) => one.path === "reports/titled")).toMatchObject({
+      title: "Fees by device",
+    });
     await alice.delete(`${ws()}/drafts/reports/titled`);
   });
 

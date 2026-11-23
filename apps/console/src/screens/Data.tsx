@@ -9,6 +9,7 @@ import {
   Grid,
   type GridColumn,
   type GridSort,
+  keepsKey,
   localWall,
   Menu,
   MoveButtons,
@@ -27,7 +28,7 @@ import {
 } from "@volvel/ui";
 import { Download, Ellipsis, Keyboard } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
-import { type ApiError, api, useLoad } from "../api.ts";
+import { ApiError, api, useLoad } from "../api.ts";
 import { ask, failureText, notify } from "../ask.tsx";
 import { AttachedPages, workspaceOf } from "../help/glossary.tsx";
 import { useAddressBox } from "../kit/addressBox.ts";
@@ -38,11 +39,24 @@ import { useHistory } from "../kit/history.ts";
 import { useShortcut } from "../kit/keys.ts";
 import { ErrorState, Loading, Pending } from "../kit/LoadState.tsx";
 import { Inspector } from "../kit/layout.tsx";
+import { UsedBy, useReferences } from "../kit/references.tsx";
 import { Code, StatePill, Tag } from "../kit/status.tsx";
 import { UndoRedo } from "../kit/UndoRedo.tsx";
 import { ColumnsMenu, ViewsMenu } from "../kit/views.tsx";
 import { type CreateConfig, CreateDialog, ListScreen, Page, RemoveButton } from "../ListScreen.tsx";
 import { Link, navigate, useNavigationGuard, useUrlParam, useUrlState } from "../router.tsx";
+import {
+  ChangeTypeDialog,
+  ColumnRulesDialog,
+  DefaultField,
+  draftsOf,
+  hasNoDefault,
+  IndexDialog,
+  MAX_INDEXES,
+  MoreColumnsField,
+  typesFrom,
+} from "./ColumnControls.tsx";
+import { filterNode, toFilter } from "./gridFilter.ts";
 import { ResourceIdentity } from "./ResourceIdentity.tsx";
 import {
   type Policy,
@@ -138,24 +152,34 @@ interface RowsBrowserProps {
   readOnlyNote?: string;
   /** What the table is, whatever it is called: its saved views are kept under this. */
   tableId?: string | undefined;
+  /** Where the table's indexes are changed, when the person may: a read stopped for taking too long points there. */
+  indexesAt?: string | undefined;
 }
 
 type DataRow = Record<string, unknown>;
 
-/** What was typed in a filter box, as the filter the data API takes. */
-export function toFilter(type: string, text: string): object | null {
-  const trimmed = text.trim();
-  if (trimmed === "") return null;
-  if (/^(empty|null)$/i.test(trimmed)) return { op: "is_null", value: true };
-  if (type === "text") return { op: "contains", value: trimmed };
-  // An enum is found by a value spelled out, a list by one value it has.
-  if (type === "enum") return { op: "eq", value: trimmed };
-  if (type === "enum_list") return { op: "has", value: trimmed };
-  const compared = /^(>=|<=|>|<)\s*(.+)$/.exec(trimmed);
-  const op = compared
-    ? { ">=": "gte", "<=": "lte", ">": "gt", "<": "lt" }[compared[1] as ">"]
-    : "eq";
-  return { op, value: parseValue(type, compared ? (compared[2] as string) : trimmed) };
+export { toFilter };
+
+/**
+ * The sort after a heading is pressed, as the address and the API write it (`a,-b`). A press
+ * alone sorts by that column up, then down, then not at all. With Shift the column is added to
+ * the others, after them, and pressing it again turns it down and then takes it off.
+ */
+export function nextSort(sort: GridSort[], column: string, additive: boolean): string | undefined {
+  const here = sort.find((one) => one.column === column);
+  const write = (list: GridSort[]) =>
+    list.length > 0
+      ? list.map((one) => `${one.descending ? "-" : ""}${one.column}`).join(",")
+      : undefined;
+  if (!additive) {
+    // The column alone: another sort is let go of, and this one goes up, down, off.
+    if (!here || sort.length > 1) return write([{ column, descending: false }]);
+    return here.descending ? undefined : write([{ column, descending: true }]);
+  }
+  if (!here) return write([...sort, { column, descending: false }]);
+  if (!here.descending)
+    return write(sort.map((one) => (one.column === column ? { ...one, descending: true } : one)));
+  return write(sort.filter((one) => one.column !== column));
 }
 
 /** What the rows of a table show: in the address, so a link opens the same view. */
@@ -167,6 +191,8 @@ const ROWS_URL = {
   cols: { type: "list" },
   /** What links and saved views from before phase 18 say: the columns left out. Read, never written. */
   hide: { type: "list" },
+  /** "any" when a row needs to satisfy one filter box and not every one. */
+  match: { type: "string" },
   /** "1" when the first column scrolls away with the rest. It stays in view otherwise. */
   unlock: { type: "string" },
   density: { type: "string", default: "standard" },
@@ -184,9 +210,12 @@ function RowsBrowser(
 ) {
   const { columns, keyColumn, rowPath } = props;
   const [url, setUrl] = useUrlState(ROWS_URL);
-  const sort: GridSort | undefined = url.sort
-    ? { column: url.sort.replace(/^-/, ""), descending: url.sort.startsWith("-") }
-    : undefined;
+  const sort: GridSort[] = url.sort
+    ? url.sort
+        .split(",")
+        .filter(Boolean)
+        .map((entry) => ({ column: entry.replace(/^-/, ""), descending: entry.startsWith("-") }))
+    : [];
   const applied = (() => {
     try {
       return url.filter ? (JSON.parse(url.filter) as Record<string, string>) : {};
@@ -216,7 +245,7 @@ function RowsBrowser(
   const [adding, setAdding] = useState(false);
   // What is checked belongs to the page, order and filter it was checked on: on another, it is
   // not there to see, and a delete must not take it along.
-  const scope = `${url.page ?? ""}|${url.sort ?? ""}|${url.filter ?? ""}`;
+  const scope = `${url.page ?? ""}|${url.sort ?? ""}|${url.filter ?? ""}|${url.match ?? ""}`;
   const [picked, setPicked] = useState<{ scope: string; ids: Set<string> }>({
     scope,
     ids: new Set(),
@@ -241,7 +270,7 @@ function RowsBrowser(
   for (const column of columns) {
     try {
       const built = toFilter(column.type, applied[column.name] ?? "");
-      if (built) parts.push({ column: column.name, ...built });
+      if (built) parts.push(filterNode(column.name, built));
     } catch (error) {
       filterErrors[column.name] = (error as Error).message;
     }
@@ -249,7 +278,9 @@ function RowsBrowser(
   const filterBroken = Object.keys(filterErrors).length > 0;
   // While a box cannot be read nothing is asked for: showing every row as if it were filtered,
   // or exporting them, would say something the filter does not.
-  const filter: object | undefined = parts.length > 0 && !filterBroken ? { and: parts } : undefined;
+  const any = url.match === "any";
+  const filter: object | undefined =
+    parts.length > 0 && !filterBroken ? (any ? { or: parts } : { and: parts }) : undefined;
   const query = new URLSearchParams({ limit: String(PAGE) });
   if (filter) query.set("filter", JSON.stringify(filter));
   if (url.sort) query.set("sort", url.sort);
@@ -312,6 +343,8 @@ function RowsBrowser(
       description: column.description,
       type: column.type,
       editable: canChange && column.writable && column.type !== "file",
+      control: CELL_CONTROLS.has(column.type),
+      clearable: !column.required,
       sortable: !["json", "enum_list"].includes(column.type),
       filterable: !["json", "ARRAY"].includes(column.type),
     }));
@@ -369,10 +402,31 @@ function RowsBrowser(
               }
             >
               <p className="m-0">
-                Arrow keys move between cells; Enter or F2 changes one, Escape puts it back. In a
-                filter, type text to look for, or a comparison such as &gt; 100. Type empty to find
-                rows with no value.
+                Arrow keys move between cells; Enter or F2 changes one, Escape puts it back. Shift
+                with Enter or a click on a heading adds a column to the sort.
               </p>
+              <p className="m-0 mt-2">In a filter, type:</p>
+              <ul className="m-0 mt-1 flex flex-col gap-0.5 pl-5">
+                <li>text to look for, or a value to match</li>
+                <li>
+                  <Code>{"> 100"}</Code>, <Code>{">= 100"}</Code>, <Code>{"< 100"}</Code> or{" "}
+                  <Code>{"<= 100"}</Code>
+                </li>
+                <li>
+                  <Code>{"10..20"}</Code> for a range, both ends included. <Code>{"10.."}</Code> and{" "}
+                  <Code>{"..20"}</Code> leave one end open
+                </li>
+                <li>
+                  <Code>{"!x"}</Code> for rows that are not exactly x
+                </li>
+                <li>
+                  <Code>{"a | b"}</Code> for rows that are a or b
+                </li>
+                <li>
+                  <Code>empty</Code> for rows with no value, <Code>{"!empty"}</Code> for rows with
+                  one
+                </li>
+              </ul>
             </Popover>
           )}
           <ColumnsMenu
@@ -403,6 +457,19 @@ function RowsBrowser(
           >
             {compact ? "Standard rows" : "Compact rows"}
           </Button>
+          {parts.length > 1 ? (
+            <SelectField
+              inline
+              name="match"
+              label="Rows must match"
+              value={any ? "any" : "all"}
+              options={[
+                { value: "all", label: "every filter" },
+                { value: "any", label: "any filter" },
+              ]}
+              onChange={(next) => setUrl({ match: next === "any" ? "any" : undefined, ...toFirst })}
+            />
+          ) : null}
           {viewsOf(props.rowsPath, props.tableId) ? (
             <ViewsMenu
               {...(viewsOf(props.rowsPath, props.tableId) as ViewsOf)}
@@ -432,7 +499,23 @@ function RowsBrowser(
             .join(" ")}
         </Notice>
       ) : null}
-      {page.error ? <ErrorState error={page.error} what="the rows" onRetry={page.reload} /> : null}
+      {page.error ? (
+        <ErrorState
+          error={page.error}
+          what="the rows"
+          onRetry={page.reload}
+          help={
+            props.indexesAt && (page.error as Partial<ApiError>).code === "too_slow" ? (
+              <>
+                An index on the columns you filter and sort by makes this faster.{" "}
+                <Link to={props.indexesAt} className="text-action underline">
+                  Add an index
+                </Link>
+              </>
+            ) : undefined
+          }
+        />
+      ) : null}
       {checked.size > 0 && canBatch ? (
         <div
           role="toolbar"
@@ -466,11 +549,21 @@ function RowsBrowser(
             onSelect={(row) => void choose(keyOf(row))}
             {...(canBatch ? { checked, onCheck: setChecked } : {})}
             sort={sort}
-            onSort={(column) => {
-              const next =
-                sort?.column !== column ? column : sort.descending ? undefined : `-${column}`;
+            onSort={(column, additive) => {
               setBack([]);
-              setUrl({ sort: next, ...toFirst });
+              setUrl({ sort: nextSort(sort, column, additive), ...toFirst });
+            }}
+            editor={({ column: edited, value, save, cancel }) => {
+              const meta = columns.find((one) => one.name === edited.name);
+              return meta && CELL_CONTROLS.has(meta.type) ? (
+                <CellControl
+                  column={meta}
+                  value={value}
+                  rowsPath={props.rowsPath}
+                  save={save}
+                  cancel={cancel}
+                />
+              ) : undefined;
             }}
             filters={typed}
             filterErrors={filterErrors}
@@ -633,6 +726,135 @@ const listOf = (text: string) =>
     .split(",")
     .map((one) => one.trim())
     .filter(Boolean);
+
+/** The types whose cell is changed in the grid by a control of its own, not by typing the raw value. */
+const CELL_CONTROLS = new Set(["enum", "enum_list", "reference", "date", "timestamp"]);
+
+/**
+ * The control that changes one cell of the grid, where a value is chosen and not typed: a list's
+ * value in a select, and a several-valued list, a row of another table, a day or a moment in a
+ * small dialog that holds the field the row's inspector has. Escape puts the cell back.
+ */
+function CellControl({
+  column,
+  value,
+  rowsPath,
+  save,
+  cancel,
+}: {
+  column: RowColumn;
+  value: unknown;
+  rowsPath: string;
+  save: (next: unknown) => Promise<void>;
+  cancel: () => void;
+}) {
+  const held = Array.isArray(value) ? value.map(String) : value == null ? [] : [String(value)];
+  const [text, setText] = useState(
+    column.type === "enum_list"
+      ? held.join(",")
+      : column.type === "timestamp" && typeof value === "string"
+        ? localWall(value, "T")
+        : value == null
+          ? ""
+          : String(value),
+  );
+  const [error, setError] = useState<string>();
+  const [busy, setBusy] = useState(false);
+  // The dialog is put on the page shut and opened, so that it arrives with its motion.
+  const [arrived, setArrived] = useState(false);
+  useEffect(() => setArrived(true), []);
+  if (column.type === "enum") {
+    return (
+      <select
+        // biome-ignore lint/a11y/noAutofocus: the person just asked to change this cell
+        autoFocus
+        aria-label={column.name}
+        value={text}
+        disabled={busy}
+        className="-mx-1.5 h-7 w-[calc(100%+0.75rem)] min-w-24 rounded-inner border border-action bg-surface px-1.5 text-ink"
+        onChange={(event) => {
+          const next = event.currentTarget.value;
+          setText(next);
+          setBusy(true);
+          void save(next === "" ? null : next)
+            .catch(() => undefined)
+            .finally(() => setBusy(false));
+        }}
+        onBlur={cancel}
+        onKeyDown={(event) => {
+          // The grid's own keys are not for a cell being changed; the page's go on.
+          if (keepsKey(event)) event.stopPropagation();
+          if (event.key === "Escape") cancel();
+        }}
+      >
+        {valueOptions(column, held[0] ?? "").map((one) => (
+          <option key={one.value} value={one.value}>
+            {one.label}
+          </option>
+        ))}
+      </select>
+    );
+  }
+  const offered = valueOptions(column, "").slice(1);
+  const options = [
+    ...offered,
+    ...held
+      .filter((one) => !offered.some((known) => known.value === one))
+      .map((one) => ({ value: one, label: `${one} (no longer offered)` })),
+  ];
+  return (
+    // A press inside the dialog bubbles through the portal to the row, which would choose it.
+    // biome-ignore lint/a11y/noStaticElementInteractions: only keeps the press from reaching the row behind the dialog.
+    // biome-ignore lint/a11y/useKeyWithClickEvents: the dialog's own controls take the keys.
+    <span onClick={(event) => event.stopPropagation()}>
+      <Dialog open={arrived} onClose={cancel} title={`Change ${column.name}`}>
+        <form
+          className="flex flex-col gap-4"
+          onSubmit={async (event) => {
+            event.preventDefault();
+            setError(undefined);
+            setBusy(true);
+            try {
+              await save(parseValue(column.type, text));
+            } catch (caught) {
+              setError(failureText(caught));
+            } finally {
+              setBusy(false);
+            }
+          }}
+        >
+          {column.type === "enum_list" ? (
+            <MultiSelectField
+              label={column.name}
+              inline
+              value={listOf(text)}
+              options={options}
+              onChange={(next) => setText(next.join(","))}
+            />
+          ) : column.type === "reference" ? (
+            <ReferenceField column={column} rowsPath={rowsPath} value={text} onChange={setText} />
+          ) : (
+            <DateField
+              name={column.name}
+              label={column.name}
+              value={text}
+              required={false}
+              {...(column.type === "timestamp" ? { withTime: true, hint: "Your time zone." } : {})}
+              onChange={setText}
+            />
+          )}
+          {error ? <Notice tone="danger">{error}</Notice> : null}
+          <div className="flex justify-end gap-2">
+            <Button onClick={cancel}>Cancel</Button>
+            <Button type="submit" variant="primary" loading={busy}>
+              Save
+            </Button>
+          </div>
+        </form>
+      </Dialog>
+    </span>
+  );
+}
 
 /** A yes/no column: one control in every form, a select, since a typed word is only refused at save. */
 function BooleanField({
@@ -1265,6 +1487,8 @@ function AddRow({
 // ----- Tables -----
 
 interface TableSummary {
+  /** Tells apart two retired tables that had one name. */
+  id?: string;
   name: string;
   description: string;
   status: "active" | "retired";
@@ -1280,16 +1504,24 @@ export function Tables({ root, link }: { root: string; link: string }) {
       title="Tables"
       description="The data this workspace keeps. A table defined in the repository changes when a bundle is deployed. Nothing is ever dropped by a deploy: what leaves a definition is retired and its data kept."
       path={`${root}/tables`}
-      rowKey={(row) => `${row.name}:${row.status}`}
+      rowKey={(row) => `${row.name}:${row.status}:${row.id ?? ""}`}
       columns={[
         {
           header: "Table",
           cell: (row) => (
             <span className="inline-flex items-center gap-2">
-              <Link to={`${link}/tables/${row.name}`} className="font-medium text-action">
+              <Link
+                to={`${link}/tables/${row.name}${row.status === "retired" && row.id ? `?id=${row.id}` : ""}`}
+                className="min-w-0 truncate font-medium text-action"
+              >
                 {row.name}
               </Link>
-              {row.status === "retired" ? <StatePill state="retired" /> : null}
+              {/* The pill keeps its word whole: it is the name that gives way. */}
+              {row.status === "retired" ? (
+                <span className="shrink-0">
+                  <StatePill state="retired" />
+                </span>
+              ) : null}
             </span>
           ),
         },
@@ -1301,7 +1533,9 @@ export function Tables({ root, link }: { root: string; link: string }) {
         {
           header: "Managed in",
           priority: 3,
-          cell: (row) => (row.managedIn === "code" ? "Repository" : "Console"),
+          // A retired table has left its definition, and what it was managed in is not kept.
+          cell: (row) =>
+            row.status === "retired" ? "" : row.managedIn === "code" ? "Repository" : "Console",
         },
         { header: "Who sees rows", priority: 3, cell: (row) => policyText(row.policy) },
         { header: "Columns", priority: 2, cell: (row) => row.columnCount, align: "end" },
@@ -1322,20 +1556,81 @@ export function Tables({ root, link }: { root: string; link: string }) {
             placeholder: "notes",
             hint: "Lowercase letters, digits and dashes.",
           },
-          { name: "column", label: "First column", placeholder: "title" },
           {
-            name: "type",
-            label: "It holds",
-            options: TYPES.filter((type) => type.value !== "reference"),
+            name: "description",
+            label: "What it holds",
+            required: false,
+            placeholder: "Notes taken in meetings",
+            hint: "In plain words. Shown under the table's name. Optional.",
+          },
+          { name: "column", label: "First column", placeholder: "title" },
+          { name: "type", label: "It holds", options: TYPES },
+          {
+            name: "references",
+            label: "Which table",
+            required: false,
+            when: (values) => values.type === "reference",
+            choose: {
+              path: `${root}/tables`,
+              option: (item: { name: string; status?: string }) =>
+                item.status === "retired" ? undefined : { value: item.name, label: item.name },
+            },
           },
           VALUES_FIELD,
+          {
+            name: "more",
+            label: "More columns",
+            render: ({ value, onChange }) => (
+              <MoreColumnsField root={root} value={value} onChange={onChange} />
+            ),
+          },
+          {
+            name: "policy",
+            label: "Who sees rows",
+            options: [
+              { value: "open", label: "Everyone who may use the table sees every row" },
+              { value: "owner", label: "Each person sees only the rows they added" },
+            ],
+            hint: "Changed later, with more rules, under Definition. A table of each person's own rows gets an owner_id column that holds who added the row.",
+          },
         ],
-        submit: async ({ name = "", column = "", type = "text", values }) => {
+        submit: async ({
+          name = "",
+          description = "",
+          column = "",
+          type = "text",
+          references,
+          values,
+          more,
+          policy = "open",
+        }) => {
+          const made: Record<string, Record<string, unknown>> = {};
+          const add = (columnName: string, kind: string, listed?: string, table?: string) => {
+            if (!columnName.trim()) throw new Error("Name every column, or remove the empty one.");
+            if (made[columnName] || ["id", "created_at", "updated_at"].includes(columnName))
+              throw new Error(
+                `There is already a column called "${columnName}". Choose another name.`,
+              );
+            if (kind === "reference" && !table)
+              throw new Error(`Choose the table that "${columnName}" points to.`);
+            made[columnName] = {
+              ...newColumn(kind, listed),
+              ...(kind === "reference" ? { references: table } : {}),
+            };
+          };
+          add(column, type, values, references);
+          for (const extra of draftsOf(more ?? ""))
+            add(extra.name.trim(), extra.type, extra.values, extra.references);
+          if (policy === "owner" && !made.owner_id) made.owner_id = { type: "uuid" };
           await api.put(`${root}/resources/${name}`, {
             kind: "table",
             schemaVersion: 1,
             ownership: "ui",
-            body: { columns: { [column]: newColumn(type, values) } },
+            body: {
+              ...(description.trim() ? { description: description.trim().slice(0, 500) } : {}),
+              columns: made,
+              ...(policy === "owner" ? { policy: { type: "owner", column: "owner_id" } } : {}),
+            },
             // A new table: one already at this name is said so, not replaced.
             create: true,
           });
@@ -1376,6 +1671,8 @@ interface TableDetail {
   policy: { type: string; column?: string; rules?: Rule[] };
   /** The column that stands for a row where another table refers to it. */
   display?: string | null;
+  /** The indexes the definition lists, each a list of column names. */
+  indexes?: string[][];
   rowCount: number;
   stored: { schema: string; table: string };
   columns: TableColumn[];
@@ -1388,7 +1685,9 @@ const SYSTEM_COLUMNS: RowColumn[] = [
 ];
 
 export function TableView({ root, name, link }: { root: string; name: string; link: string }) {
-  const table = useLoad<TableDetail>(`${root}/tables/${name}`);
+  // Two retired tables can have had one name: the list opens the one it shows by its ID.
+  const [which] = useUrlParam("id");
+  const table = useLoad<TableDetail>(`${root}/tables/${name}${which ? `?id=${which}` : ""}`);
   const [view, setView] = useUrlParam<"rows" | "definition">("view", "rows", { push: true });
   // A workbench has no page padding of its own, so these two carry it.
   if (table.error) {
@@ -1424,24 +1723,31 @@ export function TableView({ root, name, link }: { root: string; name: string; li
       fill
       helpKey="table"
       title={data.name}
-      description={`${data.description ? `${data.description.replace(/\.?\s*$/, ".")} ` : ""}${count(data.rowCount)} ${data.rowCount === 1 ? "row" : "rows"}. ${policyText(data.policy)}. Managed in the ${data.managedIn === "code" ? "repository" : "console"}.`}
+      description={`${data.description ? `${data.description.replace(/\.?\s*$/, ".")} ` : ""}${count(data.rowCount)} ${data.rowCount === 1 ? "row" : "rows"}. ${policyText(data.policy)}.${retired ? "" : ` Managed in the ${data.managedIn === "code" ? "repository" : "console"}.`}`}
     >
       <AttachedPages {...workspaceOf(root)} kind="table" path={data.name} />
       {retired ? (
         <Notice
           tone="attention"
           action={
-            <PurgeButton
-              root={root}
-              table={data.name}
-              {...(data.id ? { tableId: data.id } : {})}
-              onDone={() => navigate(`${link}/tables`)}
-            />
+            <span className="flex flex-wrap gap-2">
+              {data.managedIn === "ui" ? (
+                <BringBackButton root={root} table={data} onDone={table.reload} />
+              ) : null}
+              <PurgeButton
+                root={root}
+                table={data.name}
+                {...(data.id ? { tableId: data.id } : {})}
+                onDone={() => navigate(`${link}/tables`)}
+              />
+            </span>
           }
         >
           This table is retired. It left its definition, so nothing can read or write it, and its{" "}
-          {count(data.rowCount)} rows are kept. Deploying a definition with this name brings it
-          back.
+          {count(data.rowCount)} rows are kept.{" "}
+          {data.managedIn === "ui"
+            ? "Bring it back to use it again, with its columns, its rows and who sees them as they were."
+            : "Deploying a definition with this name brings it back."}
         </Notice>
       ) : view === "rows" ? null : (
         <div className="flex shrink-0 gap-1">
@@ -1461,6 +1767,9 @@ export function TableView({ root, name, link }: { root: string; name: string; li
           key={active.map((column) => column.name).join(",")}
           label={`Rows of ${data.name}`}
           tableId={data.id}
+          {...(data.managedIn === "ui"
+            ? { indexesAt: `${link}/tables/${data.name}?view=definition&at=indexes` }
+            : {})}
           rowsPath={`${root}/rows/${data.name}`}
           rowPath={(key) => `${root}/row/${key}/${data.name}`}
           keyColumn="id"
@@ -1486,6 +1795,76 @@ export function TableView({ root, name, link }: { root: string; name: string; li
         </div>
       )}
     </Page>
+  );
+}
+
+/**
+ * The definition a retired table comes back with: its active columns as the catalog holds them,
+ * and who sees its rows. What the definition said that the catalog does not (the columns' words)
+ * is not kept, and retired columns stay retired.
+ */
+export function bodyOfRetired(table: TableDetail): TableBody {
+  const columns: TableBody["columns"] = {};
+  for (const column of table.columns.filter((one) => one.status === "active")) {
+    columns[column.name] = {
+      type: column.type,
+      ...(column.required ? { required: true } : {}),
+      ...(column.unique ? { unique: true } : {}),
+      ...(column.default !== null && column.default !== undefined
+        ? { default: column.default }
+        : {}),
+      ...(column.references ? { references: column.references } : {}),
+      ...(column.references && column.onDelete && column.onDelete !== "restrict"
+        ? { onDelete: column.onDelete }
+        : {}),
+      ...(column.values ? { values: column.values } : {}),
+      ...(column.description ? { description: column.description } : {}),
+    };
+  }
+  return {
+    columns,
+    ...(table.description ? { description: table.description } : {}),
+    policy: table.policy as TableBody["policy"],
+    ...(table.display ? { display: table.display } : {}),
+    ...(table.indexes && table.indexes.length > 0 ? { indexes: table.indexes } : {}),
+  } as TableBody;
+}
+
+/** Makes a retired table of the console active again, by saving the definition it had. */
+function BringBackButton({
+  root,
+  table,
+  onDone,
+}: {
+  root: string;
+  table: TableDetail;
+  onDone: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  return (
+    <Button
+      size="small"
+      loading={busy}
+      onClick={async () => {
+        setBusy(true);
+        try {
+          await api.put(`${root}/resources/${table.name}`, {
+            kind: "table",
+            schemaVersion: 1,
+            ownership: "ui",
+            body: bodyOfRetired(table),
+          });
+          notify.success(`The table ${table.name} is back, with its rows.`);
+          onDone();
+        } catch (error) {
+          notify.error(error);
+        } finally {
+          setBusy(false);
+        }
+      }}
+    >
+      Bring back
+    </Button>
   );
 }
 
@@ -1944,6 +2323,17 @@ function Definition({
   const [adding, setAdding] = useState(false);
   // The column whose values, or whose rule for a delete, are being changed.
   const [optionsOf, setOptionsOf] = useState<TableColumn>();
+  // The column whose rules (required, no two alike, what it is given) or whose type is being changed.
+  const [rulesOf, setRulesOf] = useState<TableColumn>();
+  const [typeOf, setTypeOf] = useState<TableColumn>();
+  const [indexing, setIndexing] = useState(false);
+  // A link from a read that was stopped for taking too long lands here, on the indexes.
+  const [at] = useUrlParam("at", "");
+  const indexesHeading = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    if (at === "indexes") indexesHeading.current?.scrollIntoView?.({ block: "start" });
+  }, [at]);
+  const indexes = table.indexes ?? [];
   const [failure, setFailure] = useState<string>();
   // What was chosen for "What stands for a row" shows at once, until the save has answered.
   const [chosenDisplay, setChosenDisplay] = useState<string>();
@@ -1988,7 +2378,12 @@ function Definition({
     } catch (error) {
       // What is saved is not what the history thinks it is: it cannot be trusted any more.
       history.clear();
-      setFailure(`${failureText(error)} Undo and redo start again from what is saved now.`);
+      // Another window's change is on the page already (it is read again below): it is not to be reloaded.
+      setFailure(
+        error instanceof ApiError && error.code === "draft_changed"
+          ? `Someone else changed ${table.name} after you opened it. This page shows what is saved now, so undo and redo start again from there.`
+          : `${failureText(error)} Undo and redo start again from what is saved now.`,
+      );
     }
     reload();
   };
@@ -2068,6 +2463,17 @@ function Definition({
           {
             label: row.values ? "Values" : "On delete",
             onSelect: () => setOptionsOf(row),
+          },
+        ]
+      : []),
+    ...(hasNoDefault(row.type) && row.type === "file"
+      ? []
+      : [{ label: "Rules", onSelect: () => setRulesOf(row) }]),
+    ...(row.references || typesFrom(row.type).length > 1
+      ? [
+          {
+            label: row.references ? "Change table" : "Change type",
+            onSelect: () => setTypeOf(row),
           },
         ]
       : []),
@@ -2398,6 +2804,86 @@ function Definition({
         )}
       </section>
 
+      <section className="flex flex-col gap-2" aria-labelledby="indexes-heading">
+        <h2
+          id="indexes-heading"
+          ref={indexesHeading}
+          tabIndex={-1}
+          className="m-0 text-title font-semibold"
+        >
+          Indexes
+        </h2>
+        <p className="m-0 max-w-measure text-ink-muted">
+          An index on the columns rows are filtered or sorted by keeps a read of a large table from
+          being stopped for taking too long. It makes writes a little slower.
+        </p>
+        {indexes.length === 0 ? (
+          <p className="m-0 text-ink-muted">No indexes. Only the ID is indexed.</p>
+        ) : (
+          <DataTable<{ columns: string[] }>
+            variant="static"
+            framed
+            label="Indexes"
+            rows={indexes.map((columns) => ({ columns }))}
+            rowKey={(row) => row.columns.join(",")}
+            empty={null}
+            columns={[
+              {
+                header: "Columns, in order",
+                cell: (row) => <Code>{row.columns.join(", ")}</Code>,
+              },
+              ...(editable
+                ? [
+                    {
+                      header: "",
+                      align: "end" as const,
+                      cell: (row: { columns: string[] }) => (
+                        <Button
+                          size="small"
+                          variant="quiet"
+                          aria-label={`Remove the index on ${row.columns.join(", ")}`}
+                          onClick={() =>
+                            void quietly(
+                              change(
+                                (body) => {
+                                  const left = (body.indexes ?? []).filter(
+                                    (one) => one.join(",") !== row.columns.join(","),
+                                  );
+                                  if (left.length > 0) body.indexes = left;
+                                  else delete body.indexes;
+                                },
+                                { label: `removing the index on ${row.columns.join(", ")}` },
+                              ),
+                            )
+                          }
+                        >
+                          Remove
+                        </Button>
+                      ),
+                    },
+                  ]
+                : []),
+            ]}
+          />
+        )}
+        {editable ? (
+          <div>
+            <Button
+              size="small"
+              disabled={indexes.length >= MAX_INDEXES}
+              onClick={() => setIndexing(true)}
+            >
+              Add an index
+            </Button>
+            {indexes.length >= MAX_INDEXES ? (
+              <span className="ml-2 text-body-sm text-ink-muted">
+                A table has at most {MAX_INDEXES} indexes. Remove one to add another.
+              </span>
+            ) : null}
+          </div>
+        ) : null}
+      </section>
+
       <section className="flex flex-col gap-3">
         <h2 className="m-0 text-title font-semibold">Who sees rows</h2>
         {editable ? (
@@ -2433,6 +2919,10 @@ function Definition({
             table={table.name}
             usersPath={`${tenantBase}/end-users`}
             columns={table.columns}
+            groupsPaths={{
+              endUsers: `${tenantBase}/end-user-groups`,
+              members: `${tenantBase}/groups`,
+            }}
           />
         ) : null}
       </section>
@@ -2497,6 +2987,65 @@ function Definition({
           )
         }
       </Closing>
+      <IndexDialog
+        key={indexes.length}
+        open={indexing}
+        columns={[...active.map((column) => column.name), "created_at", "updated_at", "id"]}
+        existing={indexes}
+        onClose={() => setIndexing(false)}
+        onSave={(columns) =>
+          change(
+            (body) => {
+              body.indexes = [...(body.indexes ?? []), columns];
+            },
+            { report: false, label: `the index on ${columns.join(", ")}` },
+          )
+        }
+      />
+      <Closing subject={rulesOf}>
+        {(column, shown) => (
+          <ColumnRulesDialog
+            key={column.name}
+            open={shown}
+            column={column}
+            onClose={() => setRulesOf(undefined)}
+            onSave={(edit) =>
+              change(
+                (body) => {
+                  const definition = body.columns[column.name];
+                  if (definition) edit(definition);
+                },
+                { report: false, label: `the rules of ${column.name}` },
+              )
+            }
+          />
+        )}
+      </Closing>
+      <Closing subject={typeOf}>
+        {(column, shown) => (
+          <ChangeTypeDialog
+            key={column.name}
+            root={root}
+            open={shown}
+            column={column}
+            onClose={() => setTypeOf(undefined)}
+            onSave={(edit) =>
+              change(
+                (body) => {
+                  const definition = body.columns[column.name];
+                  if (definition) edit(definition);
+                },
+                {
+                  report: false,
+                  label: column.references
+                    ? `the table ${column.name} points to`
+                    : `the type of ${column.name}`,
+                },
+              )
+            }
+          />
+        )}
+      </Closing>
       <CreateDialog
         open={adding}
         onClose={() => setAdding(false)}
@@ -2535,10 +3084,31 @@ function Definition({
               ],
             },
             {
+              name: "unique",
+              label: "Must every row's value be different?",
+              options: [
+                { value: "no", label: "No" },
+                { value: "yes", label: "Yes: no two rows alike" },
+              ],
+              when: (values) => !["json", "file", "enum_list"].includes(values.type ?? "text"),
+            },
+            {
               name: "fallback",
               label: "Value when none is given",
               required: false,
               hint: "Optional.",
+              when: (values) => !hasNoDefault(values.type ?? "text"),
+              render: ({ value, values, error, onChange }) => (
+                <DefaultField
+                  // A new control when the type changes: a yes/no and a date hold different text.
+                  key={values.type ?? "text"}
+                  type={values.type ?? "text"}
+                  values={listOf(values.values ?? "")}
+                  value={value}
+                  error={error}
+                  onChange={onChange}
+                />
+              ),
             },
           ],
           done: (_result, sent) => `The column ${sent.name} was added.`,
@@ -2549,6 +3119,7 @@ function Definition({
             onDelete,
             values,
             required,
+            unique,
             fallback,
           }) =>
             change(
@@ -2564,7 +3135,10 @@ function Definition({
                     ? { values: listOf(values ?? "") }
                     : {}),
                   ...(required === "yes" ? { required: true } : {}),
-                  ...(fallback ? { default: parseValue(type, fallback) } : {}),
+                  ...(unique === "yes" ? { unique: true } : {}),
+                  ...(fallback && !hasNoDefault(type)
+                    ? { default: parseValue(type, fallback) }
+                    : {}),
                 };
               },
               { label: `adding ${name}` },
@@ -2580,6 +3154,7 @@ function Definition({
 interface SourceBinding {
   path: string;
   description: string;
+  /** Some resource of the workspace declares it, so there is a declaration to edit. */
   defined: boolean;
   bound: boolean;
   /** Declared by a workspace linked to this one: it arrives with the next promotion. */
@@ -2697,7 +3272,20 @@ function ChangeSource({
         config={{
           action: `Change ${row.path}`,
           description: `How ${row.path} is reached. Leave the password empty to keep the stored one. It is dropped when the host, port or user changes or encryption is turned off: then type it again. Scripts that use it read the new details at once.`,
-          fields: SOURCE_FIELDS,
+          fields: [
+            ...SOURCE_FIELDS,
+            ...(row.hasPassword
+              ? [
+                  {
+                    name: "removePassword",
+                    label: "Remove the stored password",
+                    type: "checkbox" as const,
+                    required: false,
+                    hint: "For a database that lets this user in without one. Scripts that use it then connect with no password.",
+                  },
+                ]
+              : []),
+          ],
           done: () => `${row.path} was changed.`,
           submit: (values) => {
             // The stored password does not go to another address: it is asked for here, not lost in silence.
@@ -2705,8 +3293,56 @@ function ChangeSource({
               throw new Error(
                 "The host, port, user or encryption changed, so the stored password will not be sent there. Type the password again.",
               );
-            return api.put(`${root}/data-source-bindings/${row.path}`, sourceBody(values));
+            const body = sourceBody(values);
+            if (values.removePassword === "true" && values.password)
+              throw new Error("Either type a new password or remove the stored one, not both.");
+            return api.put(
+              `${root}/data-source-bindings/${row.path}`,
+              values.removePassword === "true" ? { ...body, password: null } : body,
+            );
           },
+        }}
+      />
+    </>
+  );
+}
+
+/** Connects a source that is declared and not yet reached: its own button, with its name already in. */
+function ConnectSource({
+  root,
+  row,
+  onDone,
+}: {
+  root: string;
+  row: SourceBinding;
+  onDone: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <Button
+        size="small"
+        variant="primary"
+        aria-label={`Connect ${row.path}`}
+        onClick={() => setOpen(true)}
+      >
+        Connect
+      </Button>
+      <CreateDialog
+        open={open}
+        onClose={() => setOpen(false)}
+        onCreated={() => {
+          setOpen(false);
+          onDone();
+        }}
+        config={{
+          action: `Connect ${row.path}`,
+          description:
+            "Where this workspace reaches the database. The password is stored sealed and never shown again. The platform never changes the database's structure.",
+          fields: SOURCE_FIELDS,
+          done: () => `${row.path} was connected.`,
+          submit: (values) =>
+            api.put(`${root}/data-source-bindings/${row.path}`, sourceBody(values)),
         }}
       />
     </>
@@ -2751,6 +3387,7 @@ function TestSource({
 }
 
 export function Sources({ root, link }: { root: string; link: string }) {
+  const sourceUses = useReferences(root, "data_source");
   return (
     <ListScreen<SourceBinding>
       title="Data sources"
@@ -2758,6 +3395,11 @@ export function Sources({ root, link }: { root: string; link: string }) {
       description="Databases outside the platform that this workspace reads and writes. The address and password are set here, never in the repository, so dev and production can point at different databases."
       path={`${root}/data-source-bindings`}
       rowKey={(row) => row.path}
+      action={
+        <Button onClick={() => navigate(`${link}/resources/new/data_source`)}>
+          Declare source
+        </Button>
+      }
       columns={[
         {
           header: "Source",
@@ -2791,6 +3433,18 @@ export function Sources({ root, link }: { root: string; link: string }) {
             ),
         },
         {
+          header: "Used by",
+          priority: 2,
+          cell: (row) => (
+            <UsedBy
+              uses={sourceUses(row.path)}
+              failed={sourceUses.failed}
+              loaded={sourceUses.loaded}
+              link={link}
+            />
+          ),
+        },
+        {
           header: "Password",
           priority: 3,
           cell: (row) => (row.hasPassword ? "Set" : row.bound ? "None" : ""),
@@ -2800,20 +3454,30 @@ export function Sources({ root, link }: { root: string; link: string }) {
           cell: (row) => (row.bound ? <HealthCell health={row.health} /> : ""),
         },
       ]}
-      rowActions={(row, reload) =>
-        row.bound ? (
-          <span className="inline-flex gap-2">
-            <TestSource root={root} row={row} onDone={reload} />
-            <ChangeSource root={root} row={row} onDone={reload} />
-            <RemoveButton
-              label="Unbind"
-              confirm={`Unbind "${row.path}"? Scripts that use it will fail until it is bound again. Nothing in that database changes.`}
-              run={() => api.delete(`${root}/data-source-bindings/${row.path}`)}
+      rowActions={(row, reload) => (
+        <span className="inline-flex flex-wrap items-center justify-end gap-2">
+          {row.defined ? (
+            <Link
+              to={`${link}/resources/edit/data_source/${row.path}`}
+              aria-label={`Edit ${row.path}`}
+              className="text-action"
+            >
+              Edit
+            </Link>
+          ) : null}
+          {row.bound ? (
+            // On a phone the buttons wrap under each other instead of widening the page.
+            <SourceActions
+              root={root}
+              row={row}
               onDone={reload}
+              className="max-w-[9.5rem] justify-end sm:max-w-none"
             />
-          </span>
-        ) : null
-      }
+          ) : (
+            <ConnectSource root={root} row={row} onDone={reload} />
+          )}
+        </span>
+      )}
       empty={{
         title: "No data sources yet",
         text: "Connect a Postgres database you already have. Its tables can then be browsed here and used by scripts.",
@@ -2845,6 +3509,35 @@ export function Sources({ root, link }: { root: string; link: string }) {
   );
 }
 
+/** Test, Change and Unbind of a bound data source: the list's row and the source's own page share them. */
+function SourceActions({
+  root,
+  row,
+  onDone,
+  onUnbound = onDone,
+  className = "",
+}: {
+  root: string;
+  row: SourceBinding;
+  onDone: () => void;
+  /** Told once the source is unbound, when that leaves nothing to show (its page). */
+  onUnbound?: () => void;
+  className?: string;
+}) {
+  return (
+    <span className={`inline-flex flex-wrap items-center gap-2 ${className}`}>
+      <TestSource root={root} row={row} onDone={onDone} />
+      <ChangeSource root={root} row={row} onDone={onDone} />
+      <RemoveButton
+        label="Unbind"
+        confirm={`Unbind "${row.path}"? Scripts that use it will fail until it is bound again. Nothing in that database changes.`}
+        run={() => api.delete(`${root}/data-source-bindings/${row.path}`)}
+        onDone={onUnbound}
+      />
+    </span>
+  );
+}
+
 interface SourceTable {
   name: string;
   key: string | null;
@@ -2856,6 +3549,9 @@ export function SourceView({ root, path, link }: { root: string; path: string; l
   const [chosen, setChosen] = useUrlParam("item", undefined, { push: true });
   const items = tables.data?.items ?? [];
   const table = items.find((candidate) => candidate.name === chosen) ?? items[0];
+  // What is done to the source is done here as in the list: its binding is read for the buttons.
+  const bindings = useLoad<{ items: SourceBinding[] }>(`${root}/data-source-bindings`);
+  const binding = bindings.data?.items.find((one) => one.path === path);
 
   return (
     <Page
@@ -2864,9 +3560,22 @@ export function SourceView({ root, path, link }: { root: string; path: string; l
       title={path}
       description="An external database. Rows are read and written there directly. The platform does not change its structure, and its own access rules apply."
       action={
-        <Link to={`${link}/sources`} className="text-action">
-          All data sources
-        </Link>
+        <span className="flex flex-wrap items-center gap-3">
+          {binding?.bound ? (
+            <SourceActions
+              root={root}
+              row={binding}
+              onDone={() => {
+                bindings.reload();
+                tables.reload();
+              }}
+              onUnbound={() => navigate(`${link}/sources`)}
+            />
+          ) : null}
+          <Link to={`${link}/sources`} className="text-action">
+            All data sources
+          </Link>
+        </span>
       }
     >
       {tables.error ? (

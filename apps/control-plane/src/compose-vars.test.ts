@@ -54,6 +54,24 @@ describe("compose lets what is running finish (HOST-10)", () => {
   });
 });
 
+describe("the standalone worker's compose passes what sizes it (HOST-MP3)", () => {
+  const worker = readFileSync(`${folder}../worker/compose.yaml`, "utf8");
+  const workerExample = readFileSync(`${folder}../worker/.env.example`, "utf8");
+
+  test("concurrency and idle exit reach the worker, and the example names them", () => {
+    for (const name of ["VOLVEL_WORKER_CONCURRENCY", "VOLVEL_WORKER_IDLE_EXIT"]) {
+      expect(worker, name).toMatch(new RegExp(`^ {6}${name}:`, "m"));
+      expect(workerExample, name).toMatch(new RegExp(`^${name}=`, "m"));
+    }
+    // Healthy while the instance answers the worker's request for work (HOST-MP7).
+    expect(worker).toMatch(/healthcheck:/);
+    expect(worker).toContain("volvel-worker-alive");
+    for (const name of ["VOLVEL_IMAGE", "VOLVEL_URL"]) {
+      expect(workerExample, name).toMatch(new RegExp(`^${name}=`, "m"));
+    }
+  });
+});
+
 describe("compose passes the settings", () => {
   const environment = (service: string) => {
     const start = compose.indexOf(`\n  ${service}:`);

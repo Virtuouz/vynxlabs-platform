@@ -100,9 +100,8 @@ test("no kind is sent to an editor that does not exist for it (REL-07)", () => {
   expect(objectHref(link, "doc", "guide/intro")).toBe(`${link}/docs/guide/intro`);
   expect(objectHref(link, "theme", "theme")).toBe(`${link}/resources`);
   expect(objectHref(link, "variable", "a/b")).toBe(`${link}/variables/a/b`);
-  expect(objectHref(link, "connection_group", "a/b")).toBe(
-    `${link}/resources/edit/connection_group/a/b`,
-  );
+  // A group's members are set on the Connections screen, where its groups are (CFG-10).
+  expect(objectHref(link, "connection_group", "a/b")).toBe(`${link}/connections`);
 });
 
 test("what uses a thing is a list of links, drafts marked, and a failed read says so", async () => {
@@ -232,4 +231,44 @@ test("a trigger inside a flow links to Triggers by its path and node, so it open
   expect(within(grid).getByRole("link", { name: "reminders/hourly" }).getAttribute("href")).toBe(
     `${link}/triggers?trigger=reminders%2Fhourly`,
   );
+});
+
+test("a bound connection's page has Unbind, which asks naming what uses it, then shows it not set up (CFG-MP1)", async () => {
+  let bound = true;
+  const calls: string[] = [];
+  vi.stubGlobal("fetch", async (address: string, init: RequestInit = {}) => {
+    const url = new URL(address, "http://console.test");
+    const path = url.pathname.replace("/api/v1", "");
+    calls.push(`${init.method ?? "GET"} ${path}`);
+    if (init.method === "DELETE") {
+      bound = false;
+      return new Response(null, { status: 204 });
+    }
+    const body = path.endsWith("/references")
+      ? { items: uses }
+      : {
+          path: "erp",
+          connector: "http",
+          description: "",
+          defined: true,
+          bound,
+          config: bound ? { baseUrl: "https://erp.example" } : null,
+          hasCredential: bound,
+          health: null,
+        };
+    return new Response(JSON.stringify(body), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  });
+  history.replaceState(null, "", `${link}/connections/erp`);
+  show(<ConnectionPage root={root} link={link} path="erp" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Unbind" }));
+  const dialog = await screen.findByRole("dialog");
+  expect(dialog.textContent).toMatch(/Used by 2: orders\/sync and orders\/reorder/);
+  fireEvent.click(within(dialog).getByRole("button", { name: "Unbind" }));
+  await screen.findByText("Not set up here");
+  expect(calls).toContain(`DELETE ${root}/connection-bindings/erp`);
+  expect(screen.queryByRole("button", { name: "Unbind" })).toBeNull();
+  history.replaceState(null, "", "/");
 });

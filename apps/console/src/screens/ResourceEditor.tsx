@@ -20,10 +20,12 @@ import { useDraftSave } from "../kit/draftSave.ts";
 import { Loading } from "../kit/LoadState.tsx";
 import { EDITED_KINDS, type EditedKind, isEditedKind, ProductionNotice } from "../kit/objects.tsx";
 import { PageHeader } from "../kit/PageHeader.tsx";
+import { listenChoices } from "../kit/platformEvents.ts";
 import { RemoveDraftButton } from "../kit/RemoveDraftButton.tsx";
 import { clearRecovery, useKeptCopy, useRecoveryCopy } from "../kit/recovery.ts";
 import { StatePill, Tag } from "../kit/status.tsx";
-import { navigate, useNavigationGuard, useQueryValue } from "../router.tsx";
+import { Link, navigate, useNavigationGuard, useQueryValue } from "../router.tsx";
+import { EventStartFields, TagsField } from "./FlowStepFields.tsx";
 import {
   FormDesigner,
   type FormTrigger,
@@ -77,6 +79,12 @@ const ABOUT: Record<EditedKind, { noun: string; example: string; says: string; f
     example: "orders/nightly",
     says: "Starts a script or a flow at times given as a cron line.",
     fresh: { script: "", cron: "0 8 * * *" },
+  },
+  data_source: {
+    noun: "data source",
+    example: "erp/orders",
+    says: "A Postgres database outside the platform that scripts, queries and pages in this workspace read and write. This declares its name and what it is for. Its address and password are set under Data sources, in each workspace, so that dev and production can point at different databases.",
+    fresh: { connector: "postgres" },
   },
   trigger: {
     noun: "trigger",
@@ -206,9 +214,9 @@ export function ResourceEditor({
   const resources = useLoad<{ items: { path: string; kind: string; body: { mode?: string } }[] }>(
     `${root}/resources`,
   );
-  const drafts = useLoad<{ items: { path: string; kind: string; deleted: boolean }[] }>(
-    `${root}/drafts`,
-  );
+  const drafts = useLoad<{
+    items: { path: string; kind: string; deleted: boolean; mode?: string }[];
+  }>(`${root}/drafts`);
   const secrets = useLoad<{ items: { name: string }[] }>(`${root}/secrets`);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: `again` reads the resource again
@@ -309,7 +317,12 @@ export function ResourceEditor({
       if (one.kind === wanted && (!mode || one.body.mode === mode)) known.set(one.path, undefined);
     }
     for (const draft of drafts.data?.items ?? []) {
-      if (draft.kind === wanted && !draft.deleted && !known.has(draft.path) && !mode) {
+      if (
+        draft.kind === wanted &&
+        !draft.deleted &&
+        !known.has(draft.path) &&
+        (!mode || draft.mode === mode)
+      ) {
         known.set(draft.path, "A draft, not yet deployed.");
       }
     }
@@ -559,6 +572,18 @@ export function ResourceEditor({
             {description}
           </>
         ) : null}
+        {kind === "data_source" ? (
+          <>
+            {description}
+            <p className="m-0 text-body-sm text-ink-muted">
+              It is a Postgres database. After it is deployed, connect it under{" "}
+              <Link to={`${link}/sources`} className="text-action">
+                Data sources
+              </Link>
+              .
+            </p>
+          </>
+        ) : null}
         {kind === "variable" ? (
           <>
             {description}
@@ -657,22 +682,19 @@ export function ResourceEditor({
             ) : null}
             {body.type === "event" ? (
               <>
-                <ComboboxField
-                  label="Event"
-                  options={ofKind("event")}
-                  value={text("event") || undefined}
-                  disabled={readOnly}
-                  onChange={(value) => change({ event: value ?? "" })}
+                <EventStartFields
+                  events={listenChoices(ofKind("event"))}
+                  event={text("event")}
+                  filter={text("filter") || undefined}
+                  readOnly={readOnly}
+                  onEvent={(event) => change({ event })}
+                  onFilter={(filter) => change({ filter })}
                 />
-                <TextAreaField
-                  name="filter"
-                  label="Only when (optional)"
-                  rows={2}
-                  value={text("filter")}
-                  required={false}
-                  disabled={readOnly}
-                  hint="An expression over event. The script starts only when it is true."
-                  onChange={(value) => change({ filter: value })}
+                <TagsField
+                  value={body.tags as string[] | undefined}
+                  readOnly={readOnly}
+                  given="the event's payload"
+                  onChange={(tags) => change({ tags })}
                 />
               </>
             ) : null}

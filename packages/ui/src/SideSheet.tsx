@@ -3,6 +3,7 @@ import { X } from "lucide-react";
 import { type ReactNode, useRef } from "react";
 import { firstField } from "./Dialog.tsx";
 import { useOpening } from "./presence.tsx";
+import { useReturnFocus } from "./returnFocus.ts";
 
 export interface SideSheetProps {
   open: boolean;
@@ -55,6 +56,7 @@ export function SideSheet({
         : "sm:w-[min(30rem,92vw)]";
   const shown = useOpening(open);
   const popup = useRef<HTMLDivElement>(null);
+  const opener = useReturnFocus(open);
   return (
     <Base.Root open={shown} onOpenChange={(next: boolean) => !next && onClose()}>
       <Base.Portal>
@@ -68,7 +70,7 @@ export function SideSheet({
             firstField(popup.current) ??
             true
           }
-          {...(returnFocus ? { finalFocus: () => returnFocus() ?? true } : {})}
+          finalFocus={() => returnFocus?.() ?? opener()}
           className={`fixed inset-y-0 layer-sheet flex w-full flex-col border-line bg-surface shadow-modal transition-transform motion-slow ${
             side === "left"
               ? "left-0 sm:border-r data-[ending-style]:-translate-x-full data-[starting-style]:-translate-x-full"

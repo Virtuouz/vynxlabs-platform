@@ -411,9 +411,9 @@ export const queryRoutes =
               items: Type.Array(
                 Type.Object({
                   path: Type.String(),
-                  title: Type.Union([Type.String(), Type.Null()], {
-                    description: "What people read for it, when it has one.",
-                  }),
+                  title: Type.Optional(
+                    Type.String({ description: "What people read, when it has one." }),
+                  ),
                   description: Type.String(),
                   sql: Type.String(),
                   parameters: Type.Array(Parameter),
@@ -453,13 +453,13 @@ export const queryRoutes =
           raw: unknown,
           ownership: string,
           draft: "new" | "changed" | "removed" | null,
-          title: string | null,
           renamedFrom?: string,
+          title?: string | null,
         ) => {
           const body = (raw ?? {}) as Partial<QueryBody>;
           return {
             path,
-            title,
+            ...(title ? { title } : {}),
             description: body.description ?? "",
             sql: body.sql ?? "",
             parameters: body.parameters ?? [],
@@ -480,14 +480,14 @@ export const queryRoutes =
               one.body,
               one.ownership,
               draft ? (draft.deleted ? "removed" : "changed") : null,
-              // A draft that does not speak of the title leaves the one the resource has.
-              draft && !draft.deleted && draft.title !== null ? draft.title : one.title,
               moved ? one.path : undefined,
+              // A draft's title is what it will have; a draft that changes none carries the old one.
+              draft && !draft.deleted ? draft.title : one.title,
             );
           }),
           ...drafts
             .filter((one) => !one.deleted && !deployed.some((row) => row.key === one.key))
-            .map((one) => item(one.path, one.body, "ui", "new", one.title)),
+            .map((one) => item(one.path, one.body, "ui", "new", undefined, one.title)),
         ].sort((a, b) => a.path.localeCompare(b.path));
         return { items };
       },

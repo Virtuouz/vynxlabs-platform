@@ -380,6 +380,7 @@ export const screens = (ctx: Polish) => [
   ["queries", `${ctx.ws}/queries`],
   ["sources", `${ctx.ws}/sources`],
   ["dashboards", `${ctx.ws}/dashboards`],
+  ["files", `${ctx.ws}/files`],
   ["variables", `${ctx.ws}/variables`],
   ["alerts", `${ctx.ws}/alerts`],
   ["retention", `/t/${ctx.tenant.id}/retention`],
@@ -405,6 +406,7 @@ export const screens = (ctx: Polish) => [
   ["databases", "/instance/databases"],
   ["import", "/instance/import"],
   ["instance triggers", "/instance/triggers"],
+  ["instance health", "/instance/health"],
   ["instance branding", "/instance/branding"],
   ["kit", "/instance/kit"],
   // A flow run, whose timeline is judged again at 390 px below.

@@ -13,12 +13,14 @@ import {
 import type { ReactNode } from "react";
 import { useEffect, useId, useState } from "react";
 import { type ApiError, useLoad } from "./api.ts";
-import { ask, notify } from "./ask.tsx";
+import { ask, noteWaiting, notify } from "./ask.tsx";
 import { type DataColumn, DataTable } from "./kit/DataTable.tsx";
+import { keepPlace } from "./kit/focus.ts";
 import { clock } from "./kit/format.ts";
 import { Loading } from "./kit/LoadState.tsx";
 import { PageHeader } from "./kit/layout.tsx";
 import { usePagedList } from "./kit/paged.tsx";
+import { READ_ONLY_WORDS, useReadOnly } from "./kit/ReadOnly.tsx";
 import { useQueryValue } from "./router.tsx";
 export interface FormField {
   name: string;
@@ -49,6 +51,16 @@ export interface FormField {
   /** Shows the field only while this holds for what has been entered so far. */
   when?: (values: Record<string, string>) => boolean;
   placeholder?: string;
+  /**
+   * Draws the field's own control, for a value no plain box says well: a choice that depends on
+   * the type just chosen. It holds its value as text, like every other field.
+   */
+  render?: (control: {
+    value: string;
+    values: Record<string, string>;
+    error: string | undefined;
+    onChange: (value: string) => void;
+  }) => ReactNode;
 }
 
 function ChoiceField({
@@ -129,7 +141,10 @@ export interface ListScreenProps<Row> {
   setupField?: string;
   /** Adds a last column of actions per row. */
   rowActions?: (row: Row, reload: () => void) => ReactNode;
-  /** A button beside the title, for a screen whose way to add something is not a dialog. */
+  /**
+   * A button beside the title, for a screen whose way to add something is not a dialog. With
+   * `create`, it stands beside that button, for a second way in.
+   */
   action?: ReactNode;
 }
 
@@ -225,10 +240,19 @@ export function CreateDialog({
   // A form of more than three fields is configuration, not a quick question: it opens as a
   // sheet beside the page, with its buttons kept in view, rather than over it.
   const roomy = config.fields.length > 3;
+  const readOnly = useReadOnly();
   const buttons = (
     <>
       <Button onClick={close}>Cancel</Button>
-      <Button type="submit" form={formId} variant="primary" loading={busy}>
+      {readOnly ? <span className="text-meta text-ink-muted">{READ_ONLY_WORDS}</span> : null}
+      <Button
+        type="submit"
+        form={formId}
+        variant="primary"
+        loading={busy}
+        disabled={readOnly}
+        {...(readOnly ? { tooltip: READ_ONLY_WORDS } : {})}
+      >
         {config.action}
       </Button>
     </>
@@ -263,14 +287,27 @@ export function CreateDialog({
           setValues(initial ?? {});
           onCreated(result);
         } catch (caught) {
-          setError(caught as ApiError);
+          // A change that waits for a second person is asked, not failed: the form is done.
+          if (noteWaiting(caught)) {
+            setValues(initial ?? {});
+            onClose();
+          } else setError(caught as ApiError);
         } finally {
           setBusy(false);
         }
       }}
     >
       {config.fields.map((field) =>
-        field.when && !field.when(values) ? null : field.type === "checkbox" ? (
+        field.when && !field.when(values) ? null : field.render ? (
+          <div key={field.name}>
+            {field.render({
+              value: values[field.name] ?? field.initial ?? "",
+              values,
+              error: fieldError(field.name),
+              onChange: (value) => setValues((v) => ({ ...v, [field.name]: value })),
+            })}
+          </div>
+        ) : field.type === "checkbox" ? (
           <CheckboxField
             key={field.name}
             name={field.name}
@@ -358,9 +395,12 @@ export function ListScreen<Row>(props: ListScreenProps<Row>) {
       ]
     : props.columns;
   const createButton = create ? (
-    <Button variant="primary" onClick={() => setCreating(true)}>
-      {create.action}
-    </Button>
+    <span className="inline-flex flex-wrap items-center gap-2">
+      {props.action}
+      <Button variant="primary" onClick={() => setCreating(true)}>
+        {create.action}
+      </Button>
+    </span>
   ) : (
     props.action
   );
@@ -478,7 +518,8 @@ export function RemoveButton({
       size="small"
       disabled={disabled !== undefined}
       {...(disabled !== undefined ? { title: disabled } : {})}
-      onClick={async () => {
+      onClick={async (event) => {
+        const settle = keepPlace(event.currentTarget);
         const text = usesUnread
           ? `${question} What uses it could not be read, so what it affects is not listed here.`
           : affected?.length
@@ -492,6 +533,7 @@ export function RemoveButton({
         try {
           await run();
           onDone();
+          settle();
         } catch (error) {
           notify.error(error);
         }

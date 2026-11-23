@@ -320,7 +320,7 @@ describe("what a file says beside its body", () => {
     expect(ignoredFolder(".platform", read.config)).toBe(true);
     expect(ignoredFolder("src/lending", read.config)).toBe(false);
     expect(parseRepositoryConfig("roots: src\nfolders: [a]\n").problems).toEqual([
-      "volvel.yaml: has keys other than roots, ignore and docs: folders.",
+      "volvel.yaml: has keys other than roots, ignore, docs, entry and resources: folders.",
       "volvel.yaml: roots is a list of folders.",
     ]);
   });

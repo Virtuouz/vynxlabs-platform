@@ -4,9 +4,9 @@ import { type ApiError, api } from "../api.ts";
 import { failureText } from "../ask.tsx";
 import { REJECTING } from "../kit/approvals.ts";
 import { BrandMark, useBrand } from "../kit/brand.tsx";
-import { clock } from "../kit/format.ts";
 import { Loading } from "../kit/LoadState.tsx";
 import { EnvTag, Mono } from "../kit/status.tsx";
+import { Time } from "../kit/Time.tsx";
 
 interface Asked {
   title: string;
@@ -128,7 +128,7 @@ export function ApproveLink({ token }: { token: string }) {
                   <h1 className="m-0 text-title break-words">{asked.title}</h1>
                   <span className="text-meta text-ink-muted">
                     The flow <Mono>{asked.flow}</Mono> waits for a decision, since{" "}
-                    {clock(asked.waitingSince)}.
+                    <Time value={asked.waitingSince} mode="stamp" zone />.
                   </span>
                 </div>
                 {asked.detail !== null && asked.detail !== undefined ? (
@@ -154,7 +154,7 @@ export function ApproveLink({ token }: { token: string }) {
                 </div>
                 <p className="m-0 text-meta text-ink-subtle">
                   Asked of {asked.approver.name}. This link is yours and works once, until{" "}
-                  {clock(asked.expiresAt)}, or until someone decides.
+                  <Time value={asked.expiresAt} mode="stamp" zone />, or until someone decides.
                 </p>
               </>
             )}

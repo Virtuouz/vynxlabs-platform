@@ -616,11 +616,13 @@ export async function deployBundle(
   const warnOnly = current.type === "dev" && options.promotedFrom === undefined;
   summary.warnings.unshift(...(warnOnly ? needed : []));
   const missing = warnOnly ? [] : needed;
+  // What was promoted is promoted again; what was deployed, to production too, is deployed again.
+  const again = options.promotedFrom !== undefined ? "promote again" : "deploy again";
   if (missing.length > 0) {
     throw new HttpError(
       409,
       "bindings_missing",
-      "The workspace is missing something this bundle needs. Bind each one, then deploy again.",
+      `The workspace is missing something this bundle needs. Set up each one, then ${again}.`,
       missing,
     );
   }
@@ -642,7 +644,7 @@ export async function deployBundle(
     throw new HttpError(
       409,
       "bindings_invalid",
-      "Something bound in this workspace does not fit the connector this bundle gives it. Bind it again, then deploy again.",
+      `Something bound in this workspace does not fit the connector this bundle gives it. Bind it again, then ${again}.`,
       unfit,
     );
   }

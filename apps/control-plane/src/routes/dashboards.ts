@@ -16,6 +16,9 @@ export const MAX_DASHBOARDS = 20;
 const Summary = Type.Object({
   id: Id,
   title: Type.String(),
+  description: Type.Optional(
+    Type.String({ description: "What the dashboard is for, from its body." }),
+  ),
   mine: Type.Boolean({ description: "False for a dashboard another member shared." }),
   owner: Type.String({ description: "Whose it is: their name, or their email." }),
   shared: Type.Boolean({
@@ -106,11 +109,17 @@ export function dashboardRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           .filter((one) => one.dashboard_id === id)
           .map((one) => ({ id: one.id, name: one.name }));
     };
+    /** What the dashboard says it is for, when it says. */
+    const describing = (body: unknown) => {
+      const description = (body as { description?: unknown } | null)?.description;
+      return typeof description === "string" && description !== "" ? { description } : {};
+    };
     const summary = (row: Row, me: string, sharedWith: { id: string; name: string }[] = []) => ({
       kind: "member" as const,
       path: null,
       id: row.id,
       title: row.title,
+      ...describing(row.body),
       mine: row.member_id === me,
       owner: row.owner_name || row.owner_email,
       shared: row.shared,
@@ -150,6 +159,7 @@ export function dashboardRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       ownership: row.ownership === "code" ? ("code" as const) : ("ui" as const),
       id: row.id,
       title: row.title || (row.body as { title?: string }).title || row.path,
+      ...describing(row.body),
       mine: false,
       owner: "The workspace",
       shared: true,

@@ -428,6 +428,27 @@ describe("a trigger that cannot start what it is for", () => {
     expect(new Date(shown.nextFireAt).getTime()).toBeGreaterThan(Date.now());
   });
 
+  test("a filter's failure that quotes a secret in the event is kept without it (mask2)", async () => {
+    await deployWith([
+      manifest("event", "orders/paid", { payload: { type: "object" } }),
+      manifest("trigger", "orders/on-paid", {
+        type: "event",
+        script: "orders/sync",
+        event: "orders/paid",
+        filter: "duration(event.payload.apiKey) > duration('1s')",
+      }),
+    ]);
+    const published = await alice.post(`${ws()}/events`, {
+      name: "orders/paid",
+      payload: { apiKey: "k-live-98765" },
+    });
+    expect(published.status, JSON.stringify(published.body)).toBe(201);
+    const refusal = (await listed("orders/on-paid")).lastRefusal;
+    expect(refusal).toMatchObject({ reason: "filter" });
+    expect(refusal.problem).toContain("could not be worked out");
+    expect(JSON.stringify(refusal)).not.toContain("k-live-98765");
+  });
+
   test("a webhook answered 400 for its input, and an event that does not fit, are kept where refusals are", async () => {
     await deployWith([
       strict,

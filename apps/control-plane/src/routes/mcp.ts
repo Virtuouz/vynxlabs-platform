@@ -12,7 +12,7 @@ import { payloadSchemas } from "../kernel/execution/bundles.js";
 import { type Known, redact, redactText } from "../kernel/execution/redact.js";
 import { startRun } from "../kernel/execution/runs.js";
 import { servedValues } from "../kernel/execution/served.js";
-import { approvalDetail } from "../kernel/flows/approval-detail.js";
+import { approvalDetail, approvalTitle } from "../kernel/flows/approval-detail.js";
 import {
   approversOf,
   approverTitles,
@@ -501,7 +501,10 @@ async function toolsFor(kernel: Kernel, ctx: Caller, workspace: WorkspaceRef): P
               flowRunId: row.flow_run_id,
               node: row.node_id,
               flow: row.flow_path,
-              title: (row.detail as { title?: string }).title,
+              title: approvalTitle(
+                (row.detail as { title?: string }).title,
+                await flowKnown(kernel, db, row.flow_run_id, cache),
+              ),
               detail: approvalDetail(
                 (row.detail as { detail?: unknown }).detail,
                 await flowKnown(kernel, db, row.flow_run_id, cache),

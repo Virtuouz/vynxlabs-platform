@@ -20,6 +20,10 @@ const READ: Record<string, string> = {
   connection: "connection:read",
   event: "event:read",
   doc: "doc:read",
+  variable: "variable:read",
+  // Saved queries are listed with `resource:read`, as `GET .../queries` does.
+  query: "resource:read",
+  data_source: "data_source:read",
 };
 const KINDS = Object.keys(READ);
 const RUN_KINDS = ["run", "flow_run"];
@@ -247,6 +251,30 @@ export function searchRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             title: row.path,
             hint: row.description,
           });
+        }
+        // Secrets are kept apart from resources, and only their names are found: the list that
+        // shows them asks `secret:read`.
+        if (items.length < limit) {
+          const named = await sql<{ id: string; workspace_id: string; name: string }>`
+            select id, workspace_id, name from secret
+            where tenant_id = ${params.t} and lower(name) like ${`%${term}%`}
+            order by (workspace_id = ${current}::uuid) desc, (lower(name) = ${term}) desc,
+              (lower(name) like ${`${term}%`}) desc, length(name), name
+            limit ${limit * 4}
+          `.execute(db);
+          for (const row of named.rows) {
+            if (items.length >= limit) break;
+            if (!(await may("secret:read", row.workspace_id))) continue;
+            items.push({
+              kind: "secret",
+              id: row.id,
+              ref: row.name,
+              workspaceId: row.workspace_id,
+              workspaceSlug: slugOf.get(row.workspace_id) ?? null,
+              title: row.name,
+              hint: null,
+            });
+          }
         }
         return { items: items.slice(0, limit) };
       },

@@ -392,7 +392,20 @@ export function FlowView({
   );
   const [saved, setSaved] = useState<"saving" | "saved" | string>();
   const [starting, setStarting] = useState(false);
-  if (flow.error) return <ErrorState error={flow.error} onRetry={flow.reload} />;
+  // A link to a flow that is only a draft (a reference, a bookmark) has no page of a deployed flow:
+  // where it can be seen is the editor, in a workspace that has one.
+  const draftOnly = useLoad<{ deleted?: boolean }>(
+    editable && flow.error?.status === 404 ? `${root}/drafts/${path}` : null,
+  );
+  const hasDraft = draftOnly.data !== undefined && !draftOnly.data.deleted;
+  useEffect(() => {
+    if (hasDraft) navigate(`${link}/flows/edit/${path}`, { replace: true });
+  }, [hasDraft, link, path]);
+  if (flow.error) {
+    if (hasDraft || (flow.error.status === 404 && editable && draftOnly.loading))
+      return <Loading />;
+    return <ErrorState error={flow.error} onRetry={flow.reload} />;
+  }
   if (!flow.data) return <Pending of={flow} />;
   const data = flow.data;
   const manualNode = Object.values(data.nodes).find(
@@ -617,6 +630,8 @@ export interface FlowRunDetail extends FlowRunRow {
   parentFlowRunId?: string | null;
   /** The trace the flow run and its runs are part of. */
   traceId?: string | null;
+  /** What became of the failure alert, once there was one. */
+  alert?: Record<string, unknown> | null;
   retries: { id: string; state: RunState; createdAt: string }[];
   startedBy: { type: string; id: string | null };
   input: unknown;

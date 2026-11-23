@@ -135,6 +135,25 @@ test("changes that cannot be deployed say why, and offer no deploy", async () =>
   ).toBe(true);
 });
 
+test("WLK-17h: a refusal is a title, a sentence and a list, and what is missing links to where it is set up", async () => {
+  preview = {
+    possible: false,
+    refusal: {
+      code: "bindings_missing",
+      detail: "The workspace is missing something this bundle needs.",
+      errors: [{ path: "/secrets/KEY", message: 'the secret "KEY" is not set in this workspace' }],
+    },
+    summary: null,
+  };
+  show(review());
+  const title = await screen.findByText(/These changes cannot be deployed yet\./);
+  // The title does not run into the sentence, and the sentence not into the list.
+  expect(title.closest("p")?.textContent).toBe("These changes cannot be deployed yet.");
+  expect(screen.getByRole("link", { name: "Set up" }).getAttribute("href")).toContain(
+    "/secrets?setup=KEY",
+  );
+});
+
 test("a draft is set aside after asking, and a production workspace has no review step", async () => {
   const { unmount } = show(review());
   fireEvent.click((await screen.findAllByRole("button", { name: "Set aside" }))[0] as HTMLElement);

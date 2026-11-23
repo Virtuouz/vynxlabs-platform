@@ -16,6 +16,8 @@ import { listOf, pageOf } from "../pagination.js";
 import { csvCell } from "./data.js";
 import {
   AuditEntry,
+  AuditFacets,
+  AuditFilterQuery,
   AuditQuery,
   auditEntries,
   auditEntry,
@@ -946,10 +948,6 @@ export function permissionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       },
     );
 
-    const { limit: _limit, cursor: _cursor, ...filterProperties } = AuditQuery.properties;
-    const AuditFilters = Type.Object(filterProperties);
-    const Count = Type.Integer({ minimum: 0 });
-
     app.get(
       "/tenants/:t/audit-facets",
       {
@@ -961,21 +959,8 @@ export function permissionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             "with how many entries it has, most first. At most 100 of each.",
           tags: ["audit"],
           params: TenantParams,
-          querystring: AuditFilters,
-          response: {
-            200: Type.Object({
-              actions: Type.Array(Type.Object({ value: Type.String(), count: Count })),
-              actors: Type.Array(
-                Type.Object({
-                  type: Type.String(),
-                  id: Type.Union([Type.String(), Type.Null()]),
-                  label: Type.Union([Type.String(), Type.Null()]),
-                  count: Count,
-                }),
-              ),
-              targetTypes: Type.Array(Type.Object({ value: Type.String(), count: Count })),
-            }),
-          },
+          querystring: AuditFilterQuery,
+          response: { 200: AuditFacets },
         },
       },
       async ({ params, query }) => auditFacets(kernel, params.t, query),
@@ -990,7 +975,7 @@ export function permissionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           description: `The entries the filters keep, newest first, at most ${AUDIT_CSV_CAP.toLocaleString("en-US")}.`,
           tags: ["audit"],
           params: TenantParams,
-          querystring: AuditFilters,
+          querystring: AuditFilterQuery,
           produces: ["text/csv"],
           response: { 200: Type.Unknown({ description: "The entries, as CSV." }) },
         },
@@ -1181,6 +1166,30 @@ export async function insertBinding(
               .where("id", "=", principalId)
               .executeTakeFirst();
     if (!found) throw badRequest("The principal does not belong to this tenant.");
+  }
+
+  // Giving what is already given changes nothing: the one that is there is the answer.
+  const held = await trx
+    .selectFrom("binding")
+    .select("id")
+    .where("tenant_id", "=", tenantId)
+    .where("role_id", "=", role.id)
+    .where("principal_type", "=", body.principalType)
+    .where("principal_id", body.principalId ? "=" : "is", body.principalId ?? null)
+    .where("workspace_id", workspaceId ? "=" : "is", workspaceId)
+    .where("resource_id", resourceId ? "=" : "is", resourceId)
+    .where("source_resource_id", "is", null)
+    .executeTakeFirst();
+  if (held) {
+    await audit({
+      action: "binding.unchanged",
+      targetType: "binding",
+      targetId: held.id,
+      tenantId,
+      workspaceId,
+      details: { role: role.name, principalType: body.principalType },
+    });
+    return held.id;
   }
 
   await trx

@@ -163,6 +163,47 @@ export function portabilityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     };
 
     app.get(
+      "/instance/tenant-imports/staged",
+      {
+        config: { access: access.instance("tenant:write") },
+        schema: {
+          summary: "The uploaded exports that wait to be imported",
+          description:
+            "Every upload not yet imported, thrown away or expired, with what its check said when it " +
+            "came. `here` is false when another replica of the control plane keeps the file: it " +
+            "cannot be imported from this one, and is uploaded again.",
+          tags: ["portability"],
+          response: {
+            200: Type.Object({
+              items: Type.Array(Type.Object({ ...Staged.properties, here: Type.Boolean() })),
+            }),
+          },
+        },
+      },
+      async () => {
+        const rows = await db
+          .selectFrom("import_staging")
+          .selectAll()
+          .where("expires_at", ">", new Date())
+          .orderBy("created_at", "desc")
+          .execute();
+        return {
+          items: await Promise.all(
+            rows.map(async (row) => ({
+              id: row.id,
+              fileName: row.file_name,
+              sizeBytes: Number(row.size_bytes),
+              expiresAt: row.expires_at.toISOString(),
+              // What the check said when it came, as it was stored.
+              inspection: row.inspection as never,
+              here: Boolean(await stat(stagedPath(row.id)).catch(() => undefined)),
+            })),
+          ),
+        };
+      },
+    );
+
+    app.get(
       "/instance/tenant-imports/staged/:id",
       {
         config: { access: access.instance("tenant:write") },

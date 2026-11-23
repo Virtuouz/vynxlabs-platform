@@ -2,6 +2,7 @@ import type {
   FastifyPluginAsyncTypebox,
   TypeBoxTypeProvider,
 } from "@fastify/type-provider-typebox";
+import { sql } from "@volvel/db";
 import { validateJson } from "@volvel/manifest";
 import { Type } from "typebox";
 import { CredentialSet, credentialSetters } from "../kernel/credentials.js";
@@ -9,6 +10,7 @@ import {
   MAX_FILE_BYTES,
   mayReadFile,
   namedFiles,
+  namingOf,
   readFile,
   storeFile,
   toStoredFile,
@@ -29,7 +31,8 @@ import { badRequest, conflict, notFound } from "../kernel/errors.js";
 import { arrivingManifests } from "../kernel/execution/arriving.js";
 import { access, type RequestContext, type WorkspaceRef } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
-import { listOf } from "../pagination.js";
+import { UUID } from "../kernel/pages/locate.js";
+import { likeTerm, listOf, pageOf, SearchPageQuery } from "../pagination.js";
 import { parseRowsQuery, RowsPage, RowsQuery, toRowsPage, WildParams, wildPath } from "./data.js";
 import {
   AnyObject,
@@ -37,7 +40,9 @@ import {
   isoOrNull,
   NoContent,
   NullableTime,
+  pageArgs,
   Time,
+  toPage,
   WorkspaceParams,
 } from "./shared.js";
 
@@ -58,6 +63,21 @@ const StoredFile = Type.Object({
   contentType: Type.String(),
   sizeBytes: Type.Integer(),
   createdAt: Time,
+});
+
+/** A file as the list gives it: with the tables whose rows hold it. */
+const ListedFile = Type.Object({
+  ...StoredFile.properties,
+  namedBy: Type.Array(
+    Type.Object({
+      table: Type.String(),
+      column: Type.String(),
+      rows: Type.Union([Type.Integer(), Type.Null()], {
+        description: "How many rows hold it. Null when the table could not be read just now.",
+      }),
+    }),
+    { description: "The tables whose rows name the file. Empty when no row does." },
+  ),
 });
 
 export function sourceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
@@ -524,22 +544,40 @@ export function sourceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         schema: {
           summary: "Files stored in a workspace, newest first",
           description:
-            "Every file of the workspace, so it also needs `data_all:read`. A person who only has `file:read` gets a file by its ID, through a row they may read or because they uploaded it.",
+            "Every file of the workspace, so it also needs `data_all:read`. A person who only has `file:read` gets a file by its ID, through a row they may read or because they uploaded it. " +
+            "Each file says which tables name it (`namedBy`): a file that a row names cannot be deleted. " +
+            "`nextCursor` is given while there are more: send it back as `cursor`. `search` matches anywhere in the name.",
           tags: ["files"],
           params: WorkspaceParams,
-          response: { 200: listOf(StoredFile, 200) },
+          querystring: SearchPageQuery,
+          response: { 200: pageOf(ListedFile) },
         },
       },
-      async ({ ctx, params }) => {
+      async ({ ctx, params, query }) => {
         await ctx.authorize("data_all:read", { tenantId: params.t, workspaceId: params.w });
-        const rows = await db
-          .selectFrom("file")
-          .selectAll()
-          .where("workspace_id", "=", params.w)
+        const args = pageArgs(query);
+        if (args.after !== undefined && !UUID.test(args.after)) {
+          throw badRequest("The cursor is not valid.");
+        }
+        let found = db.selectFrom("file").selectAll().where("workspace_id", "=", params.w);
+        if (args.after) found = found.where("id", "<", args.after);
+        if (query.search) found = found.where(sql`lower(name)`, "like", likeTerm(query.search));
+        const rows = await found
           .orderBy("id", "desc")
-          .limit(200)
+          .limit(args.limit + 1)
           .execute();
-        return { items: rows.map(toStoredFile) };
+        const naming = await namingOf(
+          kernel,
+          params.t,
+          rows.slice(0, args.limit).map((row) => row.id),
+          params.w,
+        );
+        return toPage(
+          rows,
+          args,
+          (row) => row.id,
+          (row) => ({ ...toStoredFile(row), namedBy: naming.get(row.id) ?? [] }),
+        );
       },
     );
 

@@ -19,6 +19,7 @@ import {
   GitBranch,
   GitCompareArrows,
   Globe,
+  HeartPulse,
   History,
   KeyRound,
   LayoutDashboard,
@@ -26,6 +27,7 @@ import {
   LifeBuoy,
   type LucideIcon,
   Palette,
+  Paperclip,
   Play,
   Plug,
   Radio,
@@ -130,6 +132,8 @@ export const WORKSPACE_SECTIONS: Record<
     { slug: "queries", label: "Queries", icon: FileSearch, help: "data-queries" },
     { slug: "sources", label: "Data sources", icon: Database, help: "data-sources" },
     { slug: "dashboards", label: "Dashboards", icon: Gauge, help: "data-dashboards" },
+    // The help of Tables says what a file column is; a topic of its own is for the docs lane.
+    { slug: "files", label: "Files", icon: Paperclip, help: "data-tables" },
   ],
   configure: [
     { slug: "connections", label: "Connections", icon: Plug, help: "configure-connections" },
@@ -251,6 +255,13 @@ export const INSTANCE_SECTIONS: readonly (Section & { to: string })[] = [
     label: "Triggers",
     icon: CirclePause,
     help: "instance-triggers",
+  },
+  {
+    slug: "health",
+    to: "/instance/health",
+    label: "Health",
+    icon: HeartPulse,
+    help: "instance-databases",
   },
   {
     slug: "audit",

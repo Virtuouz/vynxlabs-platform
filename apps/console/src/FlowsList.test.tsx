@@ -1,8 +1,8 @@
 // @vitest-environment happy-dom
-import { cleanup, configure, screen } from "@testing-library/react";
+import { cleanup, configure, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { FLOW_START_TYPES, STARTED_BY, STARTED_ON } from "./kit/starts.ts";
-import { Flows } from "./screens/Flows.tsx";
+import { Flows, FlowView } from "./screens/Flows.tsx";
 import { show } from "./testing.tsx";
 
 configure({ asyncUtilTimeout: 15_000 });
@@ -70,4 +70,24 @@ test("counts of the last 24 hours are called that, not today (FLW-28)", async ()
   show(<Flows root={root} link={link} editable />);
   expect(await screen.findByText(/Failed in 24 hours/)).toBeTruthy();
   expect(screen.queryByText(/Failed today/)).toBeNull();
+});
+
+test("a link to a flow that is only a draft lands in the editor, not on 'not found' (FLW-12)", async () => {
+  vi.stubGlobal("fetch", async (address: string) => {
+    const path = address.split("?")[0] as string;
+    if (path === `${api}/drafts/orders/new`)
+      return new Response(JSON.stringify({ path: "orders/new", deleted: false }), { status: 200 });
+    if (path.startsWith(`${api}/flows/`))
+      return new Response(
+        JSON.stringify({ title: "Not found", status: 404, detail: "The flow was not found." }),
+        {
+          status: 404,
+        },
+      );
+    return new Response(JSON.stringify({ items: [] }), { status: 200 });
+  });
+  history.replaceState(null, "", `${link}/flows/orders/new`);
+  show(<FlowView root={root} path="orders/new" link={link} editable />);
+  await waitFor(() => expect(location.pathname).toBe(`${link}/flows/edit/orders/new`));
+  expect(screen.queryByText(/was not found/)).toBeNull();
 });

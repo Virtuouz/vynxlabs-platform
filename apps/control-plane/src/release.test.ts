@@ -124,6 +124,39 @@ describe("deploying with something unbound", () => {
   });
 });
 
+describe("looking before deploying (CLI-MP1)", () => {
+  test("says what a deploy would do, and why it would be refused, and changes nothing", async () => {
+    const before = (await alice.get(`${ws()}/deployments`)).body.items.length;
+    const uploaded = await alice.post(`${ws()}/bundles?preview=true`, bundle("two"));
+    expect(uploaded.status).toBe(201);
+    const seen = await alice.get(`${ws()}/deployment-preview?bundleId=${uploaded.body.id}`);
+    expect(seen.status, JSON.stringify(seen.body)).toBe(200);
+    expect(seen.body).toMatchObject({ possible: true, refusal: null });
+    expect(seen.body.summary.warnings).toEqual([
+      { path: "/connections/erp", message: 'the connection "erp" is not bound in this workspace' },
+    ]);
+    // Production is told what it would refuse, as a deploy there is.
+    const toProd = await alice.post(`${ws(prod)}/bundles?preview=true`, bundle("two"));
+    const refused = await alice.get(`${ws(prod)}/deployment-preview?bundleId=${toProd.body.id}`);
+    expect(refused.status).toBe(200);
+    expect(refused.body).toMatchObject({
+      possible: false,
+      refusal: { code: "bindings_missing" },
+      summary: null,
+    });
+    // Nothing was deployed or kept, and nothing is running from it.
+    expect((await alice.get(`${ws()}/deployments`)).body.items).toHaveLength(before);
+    const active = (await alice.get(`${ws()}/bundles`)).body.items.find(
+      (one: { active: boolean }) => one.active,
+    );
+    expect(active.id).not.toBe(uploaded.body.id);
+    // Whoever may not deploy may not ask what it would do.
+    expect(
+      (await dan.get(`${ws(prod)}/deployment-preview?bundleId=${toProd.body.id}`)).status,
+    ).toBe(403);
+  });
+});
+
 describe("promoting", () => {
   test("needs promotion:write, which a developer does not hold", async () => {
     await alice.put(`${ws(prod)}/connection-bindings/erp`, {
@@ -137,9 +170,11 @@ describe("promoting", () => {
     const refused = await dan.post(`${ws()}/promotions`, {});
     expect(refused.status).toBe(403);
     expect(refused.body.detail).toContain("promotion:write");
-    const promoted = await alice.post(`${ws()}/promotions`, {});
+    const promoted = await alice.post(`${ws()}/promotions`, { message: "Ship it" });
     expect(promoted.status, JSON.stringify(promoted.body)).toBe(201);
     const ledger = (await alice.get(`${ws()}/deployments`)).body.items;
+    // What whoever promoted said is kept with the version it made (CLI-MP2).
+    expect((await alice.get(`${ws(prod)}/deployments`)).body.items[0].message).toBe("Ship it");
     expect(ledger[0].runningIn.map((one: { id: string }) => one.id).sort()).toEqual(
       [dev, prod].sort(),
     );
@@ -220,6 +255,15 @@ describe("describing a change", () => {
       "Changes input of the step send.",
       "Connects start → gate and gate → send.",
       "Disconnects start → send.",
+    ]);
+  });
+
+  test("WLK-17h: a kind is said as people say it, with no underscore", () => {
+    expect(describeChange("trigger_source", { a: 1 }, undefined)).toEqual([
+      "Removes the trigger source.",
+    ]);
+    expect(describeChange("trigger_source", undefined, { a: 1 })).toEqual([
+      "A new trigger source.",
     ]);
   });
 

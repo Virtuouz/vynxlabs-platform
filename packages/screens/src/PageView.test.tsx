@@ -1220,6 +1220,38 @@ describe("what the frame offers besides the view", () => {
     expect(screen.queryByRole("button", { name: "Download Invoices" })).toBeNull();
   });
 
+  test("a table with no heading still offers its rows as a file (WID-29)", async () => {
+    const client: PageDataClient = {
+      read: async () => ({
+        inputs: {
+          rows: {
+            shape: "rows",
+            columns: [{ name: "clinic", label: "Clinic", type: "text" }],
+            rows: [{ clinic: "northside" }],
+          },
+        },
+      }),
+    };
+    const widget: PageWidget = {
+      id: "t",
+      type: "core/table",
+      at: { x: 0, y: 0, w: 12, h: 8 },
+      data: { rows: { source: { visual: { table: "invoices" } } } },
+    };
+    render(
+      <PageView
+        widgets={[widget]}
+        filters={[]}
+        registry={viewRegistry(corePack)}
+        client={client}
+        filterValues={{}}
+        onFilterValues={() => undefined}
+      />,
+    );
+    await screen.findByText("northside");
+    expect(screen.getAllByRole("button", { name: /^Download/ })).toHaveLength(1);
+  });
+
   test("says when a saved query was read through the key a deploy recorded", async () => {
     const client: PageDataClient = {
       read: async () => ({

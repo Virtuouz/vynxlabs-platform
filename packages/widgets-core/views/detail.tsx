@@ -391,32 +391,7 @@ export function DetailView({
     const open = editing === field.column;
     const pressable = canEdit(field.column) && !open;
     return (
-      <div
-        key={field.column}
-        data-field={field.column}
-        className={`flex min-w-0 flex-col gap-0.5 rounded-inner ${
-          pressable
-            ? "-mx-2 -my-1 cursor-text px-2 py-1 hover:bg-sunken focus-visible:outline-2 focus-visible:outline-action"
-            : ""
-        }`}
-        {...(pressable
-          ? {
-              role: "button",
-              tabIndex: 0,
-              "aria-label": `Edit ${label}`,
-              onClick: () => setEditing(field.column),
-              onKeyDown: (event: KeyboardEvent<HTMLElement>) => {
-                if (
-                  event.target === event.currentTarget &&
-                  (event.key === "Enter" || event.key === " ")
-                ) {
-                  event.preventDefault();
-                  setEditing(field.column);
-                }
-              },
-            }
-          : {})}
-      >
+      <div key={field.column} data-field={field.column} className="flex min-w-0 flex-col gap-0.5">
         <dt className="text-meta text-ink-muted">{label}</dt>
         <dd className="m-0 min-w-0 break-words">
           {open ? (
@@ -430,6 +405,16 @@ export function DetailView({
               save={(value) => saveField(field.column, value)}
               stop={() => setEditing(undefined)}
             />
+          ) : pressable ? (
+            // A button inside the value, so the term and the value are still read as a term and a value.
+            <button
+              type="button"
+              onClick={() => setEditing(field.column)}
+              className="-mx-2 -my-1 block w-[calc(100%+1rem)] cursor-text rounded-inner border-0 bg-transparent px-2 py-1 text-left font-[inherit] text-[length:inherit] text-ink hover:bg-sunken focus-visible:outline-2 focus-visible:outline-action"
+            >
+              <span className="sr-only">Edit {label}: </span>
+              {showField(field, infoOf(field.column), record[field.column], rows)}
+            </button>
           ) : (
             showField(field, infoOf(field.column), record[field.column], rows)
           )}

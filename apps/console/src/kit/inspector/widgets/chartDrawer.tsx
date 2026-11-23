@@ -527,10 +527,9 @@ export function ChartDisplay({ env, data }: SectionProps) {
             idPrefix={env.widget.id}
             label="Legend"
             icon={List}
-            value={(config.legend as "auto" | "shown" | "hidden" | undefined) ?? "auto"}
+            value={(config.legend as "auto" | "hidden" | undefined) ?? "auto"}
             options={[
               { value: "auto", label: "Automatic" },
-              { value: "shown", label: "Always" },
               { value: "hidden", label: "Never" },
             ]}
             onChange={(next) => set("legend", next, "changing the legend")}

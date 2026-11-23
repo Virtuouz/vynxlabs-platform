@@ -314,11 +314,45 @@ export function Frame({
         return children;
     }
   })();
+  // Rows kept for a download: in the heading, or, with no heading, in a quiet corner (WID-29).
+  const downloads = kept ? (
+    <Menu
+      ariaLabel={`Download ${name}`}
+      align="end"
+      triggerClassName="flex items-center justify-center rounded-control p-1 text-ink-muted hover:bg-sunken hover:text-ink pointer-coarse:min-h-8 pointer-coarse:min-w-8"
+      label={<Download aria-hidden="true" size={16} />}
+      items={[
+        {
+          label: `Download as CSV${capped}`,
+          onSelect: () =>
+            void keep((whole) =>
+              download(`${fileName(name)}.csv`, toCsv(whole), "text/csv;charset=utf-8"),
+            ),
+        },
+        {
+          label: `Download as a spreadsheet${capped}`,
+          onSelect: () =>
+            void keep((whole) =>
+              download(
+                `${fileName(name)}.xlsx`,
+                toXlsx(whole, name.slice(0, 31)),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+              ),
+            ),
+        },
+      ]}
+    />
+  ) : null;
   return (
     <>
       {named ? (
         <div className="absolute -top-3 right-2 layer-sticky flex max-w-[45%] py-[3px] pl-[7px]">
           <Title widget={widget} renamable onRename={(title) => onRename(title)} />
+        </div>
+      ) : null}
+      {!heading && !bare && !container && downloads ? (
+        <div className="absolute top-1 right-1 layer-sticky opacity-60 transition-opacity hover:opacity-100 focus-within:opacity-100">
+          {downloads}
         </div>
       ) : null}
       {heading ? (
@@ -357,34 +391,7 @@ export function Frame({
                 data-heading-controls=""
                 className="flex items-center gap-2 empty:hidden"
               />
-              {kept ? (
-                <Menu
-                  ariaLabel={`Download ${name}`}
-                  align="end"
-                  triggerClassName="flex items-center justify-center rounded-control p-1 text-ink-muted hover:bg-sunken hover:text-ink pointer-coarse:min-h-8 pointer-coarse:min-w-8"
-                  label={<Download aria-hidden="true" size={16} />}
-                  items={[
-                    {
-                      label: `Download as CSV${capped}`,
-                      onSelect: () =>
-                        void keep((whole) =>
-                          download(`${fileName(name)}.csv`, toCsv(whole), "text/csv;charset=utf-8"),
-                        ),
-                    },
-                    {
-                      label: `Download as a spreadsheet${capped}`,
-                      onSelect: () =>
-                        void keep((whole) =>
-                          download(
-                            `${fileName(name)}.xlsx`,
-                            toXlsx(whole, name.slice(0, 31)),
-                            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                          ),
-                        ),
-                    },
-                  ]}
-                />
-              ) : null}
+              {downloads}
             </div>
           </div>
           {widget.subtitle ? (

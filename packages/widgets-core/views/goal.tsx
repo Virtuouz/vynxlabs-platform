@@ -5,6 +5,7 @@ import {
   type ValueFormat,
   type WidgetViewProps,
 } from "@volvel/widgets";
+import { listensTo, PRESSABLE, press } from "./press.tsx";
 
 export { formatNumber };
 
@@ -45,7 +46,8 @@ export function goalBand(share: number, config: GoalConfig): Band | "plain" {
 }
 
 /** Goal: one number, a bar toward a target, the share reached, and a line under it. */
-export function GoalView({ config, data, emit }: WidgetViewProps<GoalConfig>) {
+export function GoalView(props: WidgetViewProps<GoalConfig>) {
+  const { config, data, emit } = props;
   const input = data.value as SummaryData | undefined;
   const name = input?.values[0];
   const found = name === undefined ? undefined : numberOf(input?.rows[0]?.[name]);
@@ -56,12 +58,13 @@ export function GoalView({ config, data, emit }: WidgetViewProps<GoalConfig>) {
   const share = target > 0 ? value / target : 0;
   const shown = Math.round(share * 1000) / 10;
   const band = goalBand(share, config);
+  const pressable = listensTo(props, "click");
   const fill = Math.max(0, Math.min(100, share * 100));
   return (
-    <button
-      type="button"
-      onClick={() => emit("click", {})}
-      className="flex w-full cursor-pointer flex-col gap-1.5 border-0 bg-transparent p-0 text-left text-ink"
+    <div
+      // A button only when the page does something on a click, as the Stat is.
+      className={`flex w-full flex-col gap-1.5 text-left text-ink ${pressable ? `${PRESSABLE} -m-2 rounded-control p-2` : ""}`}
+      {...(pressable ? { role: "button", ...press(true, () => emit("click", {})) } : {})}
     >
       <span
         // Money to the cent fits a narrow cell only at the smaller size: by the cell's width, not its columns.
@@ -84,6 +87,6 @@ export function GoalView({ config, data, emit }: WidgetViewProps<GoalConfig>) {
         <span>{config.label ?? ""}</span>
         {config.percent === false ? null : <span className="tabular-nums">{shown}%</span>}
       </span>
-    </button>
+    </div>
   );
 }

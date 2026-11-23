@@ -140,6 +140,56 @@ test("ACC-26: a role is held by the roles of its own id, and two with one name a
   expect(screen.getByText("In Main")).toBeTruthy();
 });
 
+test("ACC-27: a permission only operator access gives is allowed, and says where it comes from", async () => {
+  routes.push((method, url) =>
+    method === "GET" && url.includes("/access/member/m1")
+      ? [
+          200,
+          {
+            principal: {
+              type: "member",
+              id: "m1",
+              name: "olga",
+              email: null,
+              suspended: true,
+              groups: [],
+            },
+            sources: [
+              {
+                source: "access_grant",
+                id: "g1",
+                role: { id: "r", name: "reader", permissions: ["secret:read"] },
+                scope: { type: "tenant" },
+                through: { type: "direct" },
+                expiresAt: "2099-01-01T00:00:00Z",
+                counts: true,
+              },
+            ],
+            permissions: [
+              {
+                permission: "secret:read",
+                kind: "secret",
+                verb: "read",
+                label: "Secrets",
+                meaning: "See secrets.",
+                group: "Workspace",
+                sources: ["g1"],
+              },
+            ],
+          },
+        ]
+      : undefined,
+  );
+  show(<EffectiveAccess base={base} tenantId="t1" principalType="member" id="m1" />);
+  fireEvent.change(await screen.findByLabelText("Find or check a permission"), {
+    target: { value: "secret:read" },
+  });
+  const checked = screen
+    .getAllByRole("status")
+    .find((one) => /Allowed/.test(one.textContent ?? ""));
+  expect(checked?.textContent).toContain("only from operator access");
+});
+
 test("ACC-27: a permission only a suspended member is given is denied, not allowed", async () => {
   routes.push((method, url) =>
     method === "GET" && url.includes("/access/member/m1")

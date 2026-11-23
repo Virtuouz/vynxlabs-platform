@@ -220,6 +220,9 @@ export function appRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               "lists its apps' files by checksum, and can only be uploaded once every file " +
               "it lists is here. Files are kept once per tenant.",
             tags: ["deploys"],
+            consumes: ["application/octet-stream"],
+            // Read as bytes, as sent: the schema says only that a body is taken.
+            body: Type.Unknown(),
             params: AssetParams,
             response: { 200: Asset, 201: Asset },
           },

@@ -5,7 +5,7 @@ import { axisFormat, labelOf, numberOf, type ValueFormat } from "./format.ts";
 export interface ChartConfig {
   mark?: "line" | "bar" | "area" | "pie" | "scatter" | "heatmap";
   format?: ValueFormat;
-  legend?: "auto" | "shown" | "hidden";
+  legend?: "auto" | "hidden";
   horizontal?: boolean;
   bars?: "stacked" | "grouped";
   /** Draws the period before. Stored with `compareTo`, which the server reads (see `withCompare`). */
@@ -48,6 +48,13 @@ export const PALETTES: Record<"cool" | "warm" | "mono", string[]> = {
   cool: ["#38bdf8", "#a78bfa", "#2dd4bf", "#818cf8", "#34d399", "#60a5fa"],
   warm: ["#f59e0b", "#ef4444", "#eab308", "#ec4899", "#f97316", "#a16207"],
   mono: ["#64748b", "#94a3b8", "#475569", "#cbd5e1", "#334155", "#7c8ba1"],
+};
+
+/** The heatmap's colors run from low to high: one ramp for each named palette. */
+export const RAMPS: Record<"cool" | "warm" | "mono", [string, string]> = {
+  cool: ["#e0f2fe", "#0369a1"],
+  warm: ["#fef3c7", "#b91c1c"],
+  mono: ["#e2e8f0", "#334155"],
 };
 
 /**
@@ -430,6 +437,9 @@ export function chartFor(
             field: y,
             type: "quantitative",
             title: title(y),
+            ...(config.colors && config.colors !== "theme"
+              ? { scale: { range: RAMPS[config.colors] } }
+              : {}),
             ...(config.legend === "hidden"
               ? { legend: null }
               : axis

@@ -58,7 +58,7 @@ Who settles: **M9** = the generator work changes it. **P29** = control-plane or 
 - **Where:** cp/app.ts:228-252 (merge of better-auth's description); cp/auth.ts
 - **Evidence:** 33 operations come from the library with no summary. Sign-up, social, change-email and delete-user are on the list.
 - **Fix:** M9 filters the merged description by an allow-list of the paths the instance serves. Where a feature is switched off in the auth config, the allow-list is derived from that config, not typed twice. Test: every listed auth path answers something other than 404.
-- **Size:** S-M. **Settled by:** M9. **Milestone:** phase 30 M9
+- **Size:** S-M. **Settled by:** M9. **Milestone:** phase 30 M9 (docs-generator work: left to phase 30, `fixed/fix-close.md`)
 
 ### API-08 125 of 410 routes have no description; 35 have no summary; 335 of 664 responses say "Default Response"
 - **Outcome:** confirmed by code (counts from the generated `openapi.json`, which is stale by 40 minutes against the others but is a valid reading)

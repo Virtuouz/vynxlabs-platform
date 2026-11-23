@@ -666,7 +666,7 @@ export const operations = defineInterface({
           in: { widget: "charts", tab: "status" },
           at: at(0, 0, 5, 10),
           data: visitsBy([{ column: "status" }]),
-          config: { mark: "pie", legend: "shown", colors: "theme" },
+          config: { mark: "pie", legend: "auto", colors: "theme" },
           on: { pointClick: { steps: [{ do: "rows" }] } },
         },
         {
@@ -724,7 +724,7 @@ export const operations = defineInterface({
           in: { widget: "charts", tab: "where" },
           at: at(0, 0, 6, 10),
           data: visitsBy([{ column: "clinic" }, { column: "status" }]),
-          config: { mark: "bar", bars: "stacked", legend: "shown", values: false },
+          config: { mark: "bar", bars: "stacked", legend: "auto", values: false },
           on: { pointClick: { steps: [{ do: "narrow", filter: "clinic", from: "clinic" }] } },
         },
         {
@@ -1645,7 +1645,7 @@ export const operations = defineInterface({
               filters: stockFilters(),
             },
           },
-          config: { mark: "bar", bars: "grouped", legend: "shown", order: "label" },
+          config: { mark: "bar", bars: "grouped", legend: "auto", order: "label" },
           layout: { narrow: "stack" },
         },
         {

@@ -314,6 +314,8 @@ export function portabilityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               "opens it, and whether its tenant or slug is taken here. Nothing else is written.",
             tags: ["portability"],
             consumes: ["application/x-tar"],
+            // Read as bytes, as sent: the schema says only that a body is taken.
+            body: Type.Unknown(),
             querystring: Type.Object({ name: Type.Optional(Type.String({ maxLength: 200 })) }),
             headers: OptionalPassphrase,
             response: { 201: Staged },

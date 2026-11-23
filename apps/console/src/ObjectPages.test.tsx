@@ -16,18 +16,31 @@ import { show } from "./testing.tsx";
 const root = "/tenants/t1/workspaces/w1";
 const link = "/t/t1/workspaces/w1";
 let routes: Record<string, () => [number, unknown]>;
+/** What was sent with a method other than GET: "PUT /path" and its body. */
+let sent: { call: string; body: unknown }[];
 
 beforeEach(() => {
   routes = {};
+  sent = [];
   vi.stubGlobal("matchMedia", (query: string) => ({
     matches: true,
     media: query,
     addEventListener: () => {},
     removeEventListener: () => {},
   }));
-  vi.stubGlobal("fetch", async (address: string) => {
+  vi.stubGlobal("fetch", async (address: string, init?: RequestInit) => {
     const url = new URL(address, "http://console.test");
     const path = url.pathname.replace("/api/v1", "");
+    const method = init?.method ?? "GET";
+    if (method !== "GET") {
+      const call = `${method} ${path}`;
+      sent.push({ call, body: init?.body ? JSON.parse(String(init.body)) : undefined });
+      const [status, body] = routes[call] ? routes[call]() : [404, { status: 404 }];
+      return new Response(JSON.stringify(body), {
+        status,
+        headers: { "content-type": "application/json" },
+      });
+    }
     const answer = routes[`${path}${url.search}`] ?? routes[path];
     const [status, body] = answer ? answer() : [404, { status: 404, detail: "Not found" }];
     return new Response(JSON.stringify(body), {
@@ -345,4 +358,54 @@ test("w-builder 7: a script that is never tried again says so, not '0 times, wai
   fireEvent.click(await screen.findByRole("tab", { name: "Settings" }));
   const row = (await screen.findByText("Tries again")).nextElementSibling;
   expect(row?.textContent).toBe("Never: a failed run is not tried again");
+});
+
+test("MP-1: a script's settings are changed on its page, and saved as a draft", async () => {
+  routes[`${root}/scripts`] = () => [
+    200,
+    { items: [{ path: "orders/sync", description: "", ownership: "ui", lastRun: null }] },
+  ];
+  routes[`${root}/references`] = () => [200, { items: [] }];
+  routes[`${root}/resources/orders/sync`] = () => [
+    200,
+    {
+      kind: "script",
+      path: "orders/sync",
+      ownership: "ui",
+      version: 3,
+      body: { timeoutSeconds: 90, memoryMb: 512, source: { language: "typescript", code: "x" } },
+    },
+  ];
+  routes[`PUT ${root}/drafts/orders/sync`] = () => [200, { revision: 1, body: {} }];
+  show(<ScriptPage root={root} link={link} path="orders/sync" />);
+  fireEvent.click(await screen.findByRole("tab", { name: "Settings" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Change the settings" }));
+  const memory = (await screen.findByLabelText(/^Memory/)) as HTMLInputElement;
+  expect(memory.value).toBe("512");
+  fireEvent.change(memory, { target: { value: "1024" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save as a draft" }));
+  await screen.findByText(/Saved as a draft/);
+  const put = sent.find((one) => one.call === `PUT ${root}/drafts/orders/sync`);
+  expect(put?.body).toMatchObject({
+    kind: "script",
+    body: { timeoutSeconds: 90, memoryMb: 1024, source: { code: "x" } },
+  });
+  // The first draft over what is deployed names no revision.
+  expect(put?.body).not.toHaveProperty("revision");
+});
+
+test("MP-1: in production, or for a script a repository holds, the settings are read only", async () => {
+  routes[`${root}/scripts`] = () => [
+    200,
+    { items: [{ path: "orders/sync", description: "", ownership: "ui", lastRun: null }] },
+  ];
+  routes[`${root}/references`] = () => [200, { items: [] }];
+  routes[`${root}/resources/orders/sync`] = () => [
+    200,
+    { kind: "script", path: "orders/sync", ownership: "ui", version: 3, body: {} },
+  ];
+  show(<ScriptPage root={root} link={link} path="orders/sync" production />);
+  fireEvent.click(await screen.findByRole("tab", { name: "Settings" }));
+  await screen.findByText(/reach production by promotion/);
+  expect(screen.queryByRole("button", { name: "Change the settings" })).toBeNull();
 });

@@ -152,10 +152,26 @@ describe("the Goal's view", () => {
     expect(screen.queryByText("25%")).toBeNull();
   });
 
-  test("a click is raised as the event it declares", () => {
-    const emit = draw({ target: 100 }, 10);
+  test("a click is raised as the event it declares, when the page listens to it", () => {
+    const emit = vi.fn();
+    render(
+      <GoalView
+        config={{ target: 100 }}
+        data={{ value: summary(10) }}
+        size={SIZE}
+        emit={emit}
+        building={false}
+        listens={(event) => event === "click"}
+      />,
+    );
     fireEvent.click(screen.getByRole("button"));
     expect(emit).toHaveBeenCalledWith("click", {});
+  });
+
+  test("is not a button when nothing listens to its click (WID-27)", () => {
+    draw({ target: 100 }, 10);
+    expect(screen.queryByRole("button")).toBeNull();
+    expect(screen.getByRole("progressbar")).toBeTruthy();
   });
 
   test("draws nothing reached when no value came back", () => {

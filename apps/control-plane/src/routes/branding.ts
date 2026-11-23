@@ -218,6 +218,9 @@ export function brandingRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               "The request body is the image: PNG, JPEG, WebP or SVG, up to 512 KB. It is shown " +
               "in the console's rail and on its sign-in screen.",
             tags: ["instance"],
+            consumes: ["image/png", "image/jpeg", "image/webp", "image/svg+xml"],
+            // Read as bytes, as sent: the schema says only that a body is taken.
+            body: Type.Unknown(),
             response: { 204: NoContent },
           },
         },

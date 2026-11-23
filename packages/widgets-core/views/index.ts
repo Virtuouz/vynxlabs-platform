@@ -73,6 +73,7 @@ export {
   isComparing,
   orderRows,
   PALETTES,
+  RAMPS,
   suggestedMark,
   withCompare,
 } from "./chartSpec.ts";

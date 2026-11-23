@@ -84,7 +84,7 @@ Evidence marked **server test** is a scratch vitest file on a throwaway database
 - **Size:** S. **Milestone:** M2.
 
 ### GOV-12 A wrong password costs a recovery code
-- **Outcome:** reproduced (C3), and deliberate. **Severity:** rough.
+- **Outcome:** reproduced (C3), and deliberate (D18: kept, and the form says so; the same fault as SHL-16, settled the same way, in `fixed/gov2.md`). **Severity:** rough.
 - **Where:** `C/kernel/auth.ts:181`; `docs/phases/phase-8-console-redesign.md:89`.
 - **Evidence:** server test. Wrong password with a code: 401; the same code with the right one: 403 `sso_required`; 9 left. Nobody without a code can spend one, so it is not a way to use them up. It is a typing mistake that costs, unannounced.
 - **Fix:** check the password first inside the hook (the library's verify), then spend the code in the same transaction as the sign-in; racing sign-ins still meet `useRecoveryCode`'s single update. If not changed, the sign-in screen says it.

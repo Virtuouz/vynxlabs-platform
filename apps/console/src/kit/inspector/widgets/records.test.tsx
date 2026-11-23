@@ -359,6 +359,7 @@ test("an action group adds a button, opens it, and lines up", () => {
   const seen = mount(actions, group(), ActionsDisplaySection);
   fireEvent.click(screen.getByRole("radio", { name: "Spread" }));
   expect(mine(seen).config.lineUp).toBe("spread");
+  fireEvent.click(screen.getByRole("radio", { name: "Left" }));
   fireEvent.click(screen.getByRole("radio", { name: "Top center" }));
   expect(mine(seen).config.place).toBe("top-center");
   fireEvent.click(screen.getByRole("button", { name: /Button$/ }));
@@ -371,6 +372,16 @@ test("an action group adds a button, opens it, and lines up", () => {
   expect((mine(seen).config.actions as { tone?: string }[])[3]?.tone).toBe("danger");
   fireEvent.click(screen.getByRole("button", { name: "Back" }));
   expect(screen.getByRole("radio", { name: "Left" })).toBeTruthy();
+});
+
+test("with Right or Spread the position is a row, not a grid whose columns do nothing (WID-30)", () => {
+  const seen = mount(actions, group(), ActionsDisplaySection);
+  expect(screen.getByRole("radiogroup", { name: "Where it sits in its place" }).querySelectorAll("button")).toHaveLength(9);
+  fireEvent.click(screen.getByRole("radio", { name: "Right" }));
+  expect(screen.queryByRole("radio", { name: "Top center" })).toBeNull();
+  fireEvent.click(screen.getByRole("radio", { name: "Bottom" }));
+  // The column the group had is kept: it is what Left reads again.
+  expect(mine(seen).config.place).toBe("bottom-left");
 });
 
 // ---------------------------------------------------------------------------

@@ -244,16 +244,25 @@ export const httpConnector: Connector<HttpConfig, HttpClient> = {
       post: (path, json, options) => request(path, { ...options, method: "POST", json }),
     };
   },
-  /** Asks for the base URL. Any answer below 400 means it is reachable with this credential. */
+  /**
+   * Asks for the base URL. An answer means the service was reached, whatever the status: many
+   * services answer nothing at their base while every path works. Only a refusal of the
+   * credentials (401, 403, 407) fails, with its status.
+   */
   async test(config, credential, signal) {
     const response = await httpConnector
       .create(config, credential, signal)
       .get("", { allowFailure: true });
-    if (!response.ok) {
+    if (response.status === 401 || response.status === 403 || response.status === 407) {
       throw Object.assign(new Error(`${config.baseUrl} answered ${response.status}.`), {
         status: response.status,
       });
     }
-    return { status: response.status };
+    return {
+      status: response.status,
+      ...(response.ok
+        ? {}
+        : { message: `The base address answered ${response.status}. The service was reached.` }),
+    };
   },
 };

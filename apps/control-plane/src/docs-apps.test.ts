@@ -768,7 +768,12 @@ describe("someone who writes documentation in the console, and is not a develope
         })
       ).status,
     ).toBe(200);
-    expect((await wren.get(`${devWs()}/docs`)).body).toEqual({ apps: [], pages: [], tables: [] });
+    expect((await wren.get(`${devWs()}/docs`)).body).toEqual({
+      apps: [],
+      pages: [],
+      clashes: [],
+      tables: [],
+    });
     // Someone bound to nothing is refused, by the name of what they lack.
     const refused = await nell.get(`${devWs()}/docs`);
     expect(refused.status).toBe(403);
@@ -985,7 +990,7 @@ describe("someone who writes documentation in the console, and is not a develope
     expect((await wren.delete(`${devWs()}/drafts/guide/support/exchanges`)).status).toBe(204);
   });
 
-  test("DOC-08 a draft preview, the terms and the search leave out what a deploy would refuse: a term the product owns", async () => {
+  test("DOC-08 and DOC-09 a draft preview, the terms and the search leave out what a deploy would refuse: a term the product owns", async () => {
     const at = (url: string) => t.app.inject({ url, headers: { host: MAIN, ...wren.headers } });
     expect(
       (
@@ -1004,6 +1009,14 @@ describe("someone who writes documentation in the console, and is not a develope
     expect(preview.body).not.toContain("Ours alone.");
     const known = (await wren.get(`${devWs()}/terms`)).body.terms as Any[];
     expect(known.map((one) => one.id)).not.toContain("workspace");
+    // DOC-09: and the list of pages says so, so that its writer is told before a deploy is refused.
+    expect((await wren.get(`${devWs()}/docs`)).body.clashes).toEqual([
+      expect.objectContaining({
+        app: "guide-site",
+        path: "guide/clash",
+        message: expect.stringContaining('The term "workspace" is one of the product\'s own'),
+      }),
+    ]);
     expect((await wren.delete(`${devWs()}/drafts/guide/clash`)).status).toBe(204);
   });
 

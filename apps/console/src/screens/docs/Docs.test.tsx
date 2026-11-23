@@ -239,6 +239,26 @@ describe("the Documentation screen", () => {
   const row = async (name: string) => within(await tree()).getByRole("treeitem", { name });
   const dataTransfer = () => ({ setData: () => {}, effectAllowed: "", dropEffect: "" });
 
+  test("DOC-09 says when a page takes a name the product has, before a deploy is refused", async () => {
+    routes[`GET /api/v1${root}/docs`] = () => [
+      200,
+      {
+        ...list(),
+        clashes: [
+          {
+            app: "help",
+            path: "handbook/support/refunds",
+            message: 'The term "workspace" is one of the product\'s own.',
+          },
+        ],
+      },
+    ];
+    docs();
+    const notice = await screen.findByText(/takes a name the product already has/);
+    expect(notice.textContent).toContain("handbook/support/refunds");
+    expect(notice.textContent).toContain('The term "workspace"');
+  });
+
   test("shows the first page, drawn, with the tree of pages beside it", async () => {
     docs();
     expect(await screen.findByRole("heading", { level: 2, name: "Handbook" })).toBeTruthy();

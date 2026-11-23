@@ -63,6 +63,8 @@ export interface DocsList {
   pages: DocPage[];
   /** The workspace's tables. To someone who may read only the documentation, the ones its apps name. */
   tables: DocsTable[];
+  /** Pages whose terms or topics take a name the product has. */
+  clashes?: { app: string; path: string; message: string }[];
 }
 
 /**

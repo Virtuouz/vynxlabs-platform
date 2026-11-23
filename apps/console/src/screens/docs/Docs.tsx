@@ -583,6 +583,14 @@ export function Docs({
           ) : null
         }
       />
+      {data.clashes && data.clashes.length > 0 ? (
+        <Notice tone="attention">
+          {data.clashes.length === 1
+            ? "A page takes a name the product already has, so it is left out of its site, and a deploy is refused until it is renamed."
+            : `${data.clashes.length} pages take a name the product already has, so they are left out of their site, and a deploy is refused until they are renamed.`}{" "}
+          {data.clashes[0]?.path}: {data.clashes[0]?.message}
+        </Notice>
+      ) : null}
       {data.pages.length === 0 && data.apps.length === 0 && !editing ? (
         <EmptyState
           title="No documentation yet"

@@ -176,6 +176,15 @@ export function docRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             200: Type.Object({
               apps: Type.Array(App),
               pages: Type.Array(PageSummary),
+              clashes: Type.Array(
+                Type.Object({ app: Type.String(), path: Type.String(), message: Type.String() }),
+                {
+                  description:
+                    "Each term or topic of a page that takes a name the product's own help has: it is " +
+                    "left out of the site, and a deploy is refused until it is renamed. Found now, so " +
+                    "a name the product took after the page was written is shown before the deploy.",
+                },
+              ),
               tables: Type.Array(Table, {
                 description:
                   "The workspace's tables, as its writers see them: a deploy of the documentation " +
@@ -256,6 +265,15 @@ export function docRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             .filter((one) => one.kind === "doc")
             .map((one) => summary(one, apps))
             .sort((a, b) => a.path.localeCompare(b.path)),
+          clashes: apps.flatMap((one) =>
+            buildWorkspaceApp(
+              kernel.config,
+              one,
+              resources.filter((row) => row.state !== "removed"),
+            )
+              .issues.filter((issue) => ["term_reserved", "topic_reserved"].includes(issue.code))
+              .map((issue) => ({ app: one.path, path: issue.path, message: issue.message })),
+          ),
           tables: seen.sort((a, b) => a.path.localeCompare(b.path)),
         };
       },

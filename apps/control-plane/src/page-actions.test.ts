@@ -1077,3 +1077,52 @@ describe("edit in place of a record detail", () => {
     expect((await rowOf(id)).total).toBe(10);
   });
 });
+
+describe("a detail of the user's own record", () => {
+  beforeAll(async () => {
+    const row = await t.db
+      .selectFrom("resource")
+      .select(["id", "body"])
+      .where("kind", "=", "interface")
+      .where("path", "=", "screens/invoices")
+      .executeTakeFirstOrThrow();
+    const body = row.body as unknown as { pages: { id: string; widgets: object[] }[] };
+    body.pages
+      .find((page) => page.id === "inv")
+      ?.widgets.push({
+        id: "mine",
+        type: "core/detail",
+        at: { x: 0, y: 14, w: 6, h: 6 },
+        data: { record: { source: { own: { table: "invoices", by: "paid_by" } } } },
+        config: {
+          fields: [{ column: "number" }],
+          actions: [
+            {
+              id: "note",
+              label: "Note it",
+              action: {
+                steps: [{ do: "update", record: "event", set: { note: { value: "noted" } } }],
+              },
+            },
+          ],
+        },
+      });
+    await t.db
+      .updateTable("resource")
+      .set({ body: JSON.stringify(body) })
+      .where("id", "=", row.id)
+      .execute();
+  });
+  const note = (id: string) =>
+    act(ivy, { widget: "mine", at: "config/actions/0/action", records: { event: id } });
+
+  test("a button runs on the user's own record, and on no one else's, even one they may read", async () => {
+    const theirs = await invoice({ paid_by: "someone@else.example" });
+    const mine = await invoice({ paid_by: "IVY@customer.example" });
+    expect((await note(theirs)).status).toBe(404);
+    expect((await rowOf(theirs)).note ?? null).toBeNull();
+    const done = await note(mine);
+    expect(done.status, JSON.stringify(done.body)).toBe(200);
+    expect((await rowOf(mine)).note).toBe("noted");
+  });
+});

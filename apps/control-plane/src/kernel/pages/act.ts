@@ -447,12 +447,14 @@ export async function runAction(
         roundIds[ref] = id;
       }
       ids = rounds.length === 1 ? roundIds : {};
-      // An edit in place of the user's own record is of theirs alone.
-      if (editing) {
-        const source = Object.values(widget.data ?? {})[0]?.source;
-        if (source && "own" in source) {
+      // What a widget of the user's own record runs on is theirs alone: an edit in place, and
+      // every action of the widget, on the record it shows (`this` for an edit, else `event`).
+      const owning = Object.values(widget.data ?? {})[0]?.source;
+      if (owning && "own" in owning) {
+        const shown = records[editing ? "this" : "event"];
+        if (shown) {
           const email = await principalEmail(kernel, tenantId, ctx.principal);
-          const mine = records.this?.[source.own.by];
+          const mine = shown[owning.own.by];
           if (!email || typeof mine !== "string" || mine.toLowerCase() !== email.toLowerCase()) {
             throw notFound("The record");
           }

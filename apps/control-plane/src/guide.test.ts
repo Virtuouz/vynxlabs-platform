@@ -2,18 +2,14 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { PERMISSION_KINDS } from "@volvel/manifest";
 import { expect, test } from "vitest";
+import { METRIC_LIST } from "./kernel/metric-list.js";
 
 const here = import.meta.dirname;
 const guide = readFileSync(join(here, "../../../docs/self-hosting.md"), "utf8");
 
 test("every series the metrics answer with is in the self-hosting guide (INS-29)", () => {
-  const names = new Set<string>();
-  for (const file of ["routes/execution.ts", "kernel/metrics.ts"]) {
-    const source = readFileSync(join(here, file), "utf8");
-    for (const found of source.matchAll(/(?:# TYPE |")(volvel_[a-z_]+)/g)) {
-      names.add(found[1] as string);
-    }
-  }
+  // Every series is declared once, in the typed list the metrics route answers from.
+  const names = new Set(METRIC_LIST.map((metric) => metric.name));
   expect(names.size).toBeGreaterThan(15);
   expect([...names].filter((name) => !guide.includes(name))).toEqual([]);
 });

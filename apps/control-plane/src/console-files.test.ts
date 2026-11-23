@@ -74,6 +74,7 @@ test("DOC-10 a help picture named by its path is asked for afresh; DOC-11 a help
   const missing = await get("/help/pages/nope.json");
   expect(missing.statusCode).toBe(404);
   expect(missing.body).not.toContain("<title>Console</title>");
-  // A help screen's own address is still the console's.
-  expect((await get("/help/some-topic")).body).toContain("<title>Console</title>");
+  // Help opens in the console's panel (`?help=`), not at an address of its own: anything under
+  // /help/ is a file of the documentation, and one that is not there is missing.
+  expect((await get("/help/some-topic")).statusCode).toBe(404);
 });

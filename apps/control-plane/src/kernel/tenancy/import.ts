@@ -299,7 +299,7 @@ export async function inspectImport(
       history: manifest.history,
       workspaces: manifest.workspaces.map((one) => ({ name: one.name, type: one.type })),
       rows: Object.values(manifest.counts).reduce((sum, n) => sum + n, 0),
-      members: manifest.counts.members ?? 0,
+      members: manifest.counts.member ?? 0,
       pendingRuns: manifest.pendingRuns,
       notCarried: manifest.notCarried,
       passphraseOk,
@@ -377,8 +377,9 @@ export async function importTenant(
       if (!known) throw badRequest(`No database location is registered as "${location}".`);
     }
 
-    // Members are matched by email. Someone already here keeps their account and password,
-    // and everything in the export that names them is rewritten to name the account here.
+    // Members are matched by ID first, then by email. Someone already here keeps their account
+    // and password, and everything in the export that names them is rewritten to name the
+    // account here.
     const members: ExportedMember[] = [];
     for (const entry of parts(checked, "members")) {
       for (const line of (await tarRead(file, entry)).toString("utf8").split("\n")) {
@@ -391,18 +392,36 @@ export async function importTenant(
         : await kernel.db
             .selectFrom("member")
             .select(["id", "email"])
-            .where(
-              "email",
-              "in",
-              members.map((member) => member.email),
+            .where((eb) =>
+              eb.or([
+                eb(
+                  "id",
+                  "in",
+                  members.map((member) => member.id),
+                ),
+                eb(
+                  "email",
+                  "in",
+                  members.map((member) => member.email),
+                ),
+              ]),
             )
             .execute();
     const renamed = new Map<string, string>();
+    const known = new Set<string>();
     for (const member of members) {
-      const found = here.find((candidate) => candidate.email === member.email);
-      if (found && found.id !== member.id) renamed.set(member.id, found.id);
+      const byId = here.find((candidate) => candidate.id === member.id);
+      const byEmail = here.find((candidate) => candidate.email === member.email);
+      if (byId && byEmail && byId.id !== byEmail.id) {
+        throw conflict(
+          `The member ${member.email} in this export is one account here (${byId.email}) and another by email (${byEmail.id}). Change one of their emails here, then import again.`,
+        );
+      }
+      const found = byId ?? byEmail;
+      if (!found) continue;
+      known.add(member.id);
+      if (found.id !== member.id) renamed.set(member.id, found.id);
     }
-    const known = new Set(here.map((member) => member.email));
     const rewrite = (text: string) => {
       let result = text;
       // IDs are unique everywhere, so replacing one wherever it appears is exact.
@@ -544,7 +563,7 @@ export async function importTenant(
 
       let created = 0;
       for (const member of members) {
-        if (known.has(member.email)) continue;
+        if (known.has(member.id)) continue;
         await trx
           .insertInto("member")
           .values({

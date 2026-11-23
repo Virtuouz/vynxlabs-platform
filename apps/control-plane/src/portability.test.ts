@@ -840,6 +840,7 @@ describe("an export that someone changed, who knows its passphrase", () => {
     };
     const first = await check(archive);
     expect(first, JSON.stringify(first)).toMatchObject({
+      members: 3,
       formatVersion: 2,
       authenticated: true,
       problem: null,
@@ -1261,6 +1262,12 @@ describe("back again", () => {
       ),
     ).toBe(false);
 
+    // A member's email changed here while the tenant was away (INS-16): matched by ID first.
+    await a.db
+      .updateTable("member")
+      .set({ email: "carol-new@acme.example" })
+      .where("id", "=", carolId)
+      .execute();
     const imported = await a.admin.upload(
       "/instance/tenant-imports?slug=acme-returned",
       exported.bytes,
@@ -1271,6 +1278,11 @@ describe("back again", () => {
     expect(imported.body.tenant).toMatchObject({ slug: "acme-returned", dataLocation: null });
     // Alice's account was still here, so it is linked rather than made again.
     expect(imported.body.members.linked).toBeGreaterThanOrEqual(1);
+    await a.db
+      .updateTable("member")
+      .set({ email: "carol@acme.example" })
+      .where("id", "=", carolId)
+      .execute();
     const back = await a.signIn("alice@acme.example", PASSWORD);
     expect(
       (await back.get(`${ws(main)}/rows/orders?sort=number`)).body.items.map((row: Any) => [

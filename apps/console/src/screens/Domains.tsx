@@ -323,7 +323,9 @@ function DetailsDialog({
           label: "Enabled",
           state: domain.enabled ? ("ok" as const) : ("queued" as const),
           detail: domain.enabled
-            ? "Serving."
+            ? domain.verifiedAt
+              ? "Serving."
+              : "Serving, though the name is not verified. An operator of this instance enabled it without proof, so the name opens this app for whoever points it here."
             : domain.verifiedAt
               ? "Serves nothing: the name answers “not served here” until it is enabled."
               : "Not enabled. Until it is verified, the name opens this instance's own address, as any name the instance does not know does.",

@@ -28,7 +28,7 @@ function withData(Section: DrawerSection) {
 
 const CHART = "core/chart";
 const STAT = "core/stat";
-const GOAL = "core/goal";
+const GOAL = "labs/goal";
 const PIVOT = "core/pivot";
 
 registerDrawer(CHART, {

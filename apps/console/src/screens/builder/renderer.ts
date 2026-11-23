@@ -24,3 +24,4 @@ export {
   viewRegistry,
 } from "@volvel/screens";
 export { corePack } from "@volvel/widgets-core/views";
+export { labsPack } from "@volvel/widgets-labs/views";

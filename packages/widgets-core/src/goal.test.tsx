@@ -3,8 +3,8 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { definitionProblems, type SummaryData, WidgetRegistry } from "@volvel/widgets";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { GoalView } from "../views/goal.tsx";
-import { corePack } from "../views/index.ts";
-import { CORE_WIDGETS, coreRegistry, goal } from "./index.ts";
+import { labsPack } from "../views/index.ts";
+import { goal, LABS_WIDGETS } from "./index.ts";
 
 afterEach(cleanup);
 
@@ -35,9 +35,8 @@ function draw(config: Parameters<typeof GoalView>[0]["config"], value: unknown, 
 describe("the Goal's definition", () => {
   test("is a sound definition and the pack holds it", () => {
     expect(definitionProblems(goal)).toEqual([]);
-    expect(CORE_WIDGETS).toContain(goal);
-    expect(coreRegistry().get("core/goal")).toBe(goal);
-    expect(new WidgetRegistry(CORE_WIDGETS).get("labs/goal")).toBeUndefined();
+    expect(LABS_WIDGETS).toEqual([goal]);
+    expect(new WidgetRegistry(LABS_WIDGETS).get("labs/goal")).toBe(goal);
   });
 
   test("says what the contract needs of it", () => {
@@ -68,8 +67,8 @@ describe("the Goal's definition", () => {
   });
 
   test("has a view for each definition of the pack", () => {
-    for (const definition of corePack.definitions)
-      expect(corePack.views[definition.type], definition.type).toBeDefined();
+    for (const definition of labsPack.definitions)
+      expect(labsPack.views[definition.type]).toBeDefined();
   });
 });
 

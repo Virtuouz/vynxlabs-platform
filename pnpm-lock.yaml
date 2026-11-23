@@ -73,6 +73,9 @@ importers:
       '@volvel/widgets-core':
         specifier: workspace:*
         version: link:../../packages/widgets-core
+      '@volvel/widgets-labs':
+        specifier: workspace:*
+        version: link:../../packages/widgets-labs
       '@xyflow/react':
         specifier: ^12.12.1
         version: 12.12.1(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
@@ -429,6 +432,9 @@ importers:
       '@volvel/widgets-core':
         specifier: workspace:*
         version: link:../widgets-core
+      '@volvel/widgets-labs':
+        specifier: workspace:*
+        version: link:../widgets-labs
       ajv:
         specifier: ^8.20.0
         version: 8.20.0
@@ -484,6 +490,9 @@ importers:
       '@volvel/widgets-core':
         specifier: workspace:*
         version: link:../widgets-core
+      '@volvel/widgets-labs':
+        specifier: workspace:*
+        version: link:../widgets-labs
       react:
         specifier: ^19.3.1
         version: 19.3.1
@@ -588,15 +597,9 @@ importers:
         specifier: ^19.3.1
         version: 19.3.1
     devDependencies:
-      '@testing-library/react':
-        specifier: ^16.3.3
-        version: 16.3.3(@testing-library/dom@10.4.2)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       '@types/react':
         specifier: ^19.3.0
         version: 19.3.0
-      happy-dom:
-        specifier: ^21.0.4
-        version: 21.0.4
 
   packages/widgets-labs:
     dependencies:

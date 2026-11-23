@@ -123,7 +123,7 @@ The app is one `defineInterface` in `src/operations.ts`: 6 pages in the menu and
 | Table over a saved query | Visits, "Vets" |
 | List, `list` and `cards`, the title / subtitle / right / badge places, row actions, `rowClick` | Pets (cards), Handle with care (list), Waiting room (cards with a row action), Owner sheet |
 | Stat: caption, format, `compare` with delta `percent` and `absolute`, `goodWhen` up and down, `trendBy`, `click` | Today, Money |
-| Goal (`core/goal`): a fixed amount, `goalFrom` a column, `percent`, `reached`, `bands`, `goodWhen` | Money (This month), Stock (On the shelves) |
+| Goal (`labs/goal`): a fixed amount, `goalFrom` a column, `percent`, `reached`, `bands`, `goodWhen` | Money (This month), Stock (On the shelves) |
 | Chart, every type | Pie and horizontal bar (Visits, Status and reason), area and line (Over time), stacked bars and heatmap (Where and who), scatter and a bar over a saved query (How long), line (Money), bars (Money, Stock grouped), horizontal bars (Money by vet, Breeds seen) |
 | Chart options: `horizontal`, `bars` stacked and grouped, `order` biggest / smallest / label, `fillGaps`, `compare`, `smooth`, `points`, `values`, `axisTitles`, `colors` theme / cool / warm / mono, `legend` auto / shown / hidden, `x`, `y`, number formats | Spread over the charts above |
 | Pivot: `shade`, `rowTotals`, `columnTotals`, `cellClick` | Visits (Clinic by status), Money (Month by clinic), Stock (Category by clinic) |

@@ -382,7 +382,7 @@ export const performance = defineInterface({
         },
         {
           id: "goal",
-          type: "core/goal",
+          type: "labs/goal",
           title: "This month",
           at: { x: 9, y: 4, w: 3, h: 3 },
           data: {

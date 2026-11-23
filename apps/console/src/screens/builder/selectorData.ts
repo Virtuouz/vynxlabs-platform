@@ -145,7 +145,7 @@ export const PREVIEWS: Record<string, Preview> = {
         "Stock by shelf and supplier",
       ]),
   },
-  "core/goal": {
+  "labs/goal": {
     drawing: "goal",
     about: "How far a number is toward a target, with the share reached.",
     words: "target progress quota objective kpi budget",

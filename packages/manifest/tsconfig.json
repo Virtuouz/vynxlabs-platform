@@ -11,6 +11,9 @@
     },
     {
       "path": "../widgets-core"
+    },
+    {
+      "path": "../widgets-labs"
     }
   ]
 }

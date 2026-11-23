@@ -58,7 +58,7 @@ function useSummary(
   const asked = JSON.stringify([widget.id, widget.type, widget.data, widget.config, filterValues]);
   // One not yet told what to read has nothing to ask for: the canvas asks for nothing either.
   const reads =
-    ["core/chart", "core/stat", "core/pivot", "core/goal"].includes(widget.type) &&
+    ["core/chart", "core/stat", "core/pivot", "labs/goal"].includes(widget.type) &&
     Object.keys(widget.data ?? {}).length > 0;
   // biome-ignore lint/correctness/useExhaustiveDependencies: `asked` stands for what is read
   useEffect(() => {

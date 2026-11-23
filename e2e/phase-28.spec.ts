@@ -829,7 +829,7 @@ const onlyTheWalks = () =>
 
 test("POLISH-004: Goal: a value, a goal and when it is reached are written, drawn as progress, and kept after a reload", async () => {
   await openBuilder("charts", /^Blank/);
-  const added = await addAndSave("charts", "blank", "Goal", "core/goal");
+  const added = await addAndSave("charts", "blank", "Goal", "labs/goal");
   await chooseSource("Invoices");
   await onlyTheWalks();
   // The value is the count of the walk's invoices: six. The goal is ten: sixty per cent.

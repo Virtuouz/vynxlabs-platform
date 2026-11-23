@@ -11,7 +11,7 @@ import {
   TextField,
 } from "@volvel/ui";
 import type { ReactNode } from "react";
-import { useEffect, useId, useState } from "react";
+import { Fragment, useEffect, useId, useState } from "react";
 import { type ApiError, useLoad } from "./api.ts";
 import { ask, noteWaiting, notify } from "./ask.tsx";
 import { type DataColumn, DataTable } from "./kit/DataTable.tsx";
@@ -46,6 +46,15 @@ export interface FormField {
     /** The route pages and takes `?search=`: what is typed is asked of the server. */
     search?: boolean;
   };
+  /**
+   * A field that is more than one value, drawn by the screen. It keeps what it holds as one
+   * string (the screen's own encoding) and is given the form's error for it.
+   */
+  custom?: (field: {
+    value: string | undefined;
+    onChange: (value: string) => void;
+    error: string | undefined;
+  }) => ReactNode;
   /** Shows the field only while this holds for what has been entered so far. */
   when?: (values: Record<string, string>) => boolean;
   placeholder?: string;
@@ -274,7 +283,15 @@ export function CreateDialog({
       }}
     >
       {config.fields.map((field) =>
-        field.when && !field.when(values) ? null : field.type === "checkbox" ? (
+        field.when && !field.when(values) ? null : field.custom ? (
+          <Fragment key={field.name}>
+            {field.custom({
+              value: values[field.name],
+              onChange: (value) => setValues((v) => ({ ...v, [field.name]: value })),
+              error: fieldError(field.name),
+            })}
+          </Fragment>
+        ) : field.type === "checkbox" ? (
           <CheckboxField
             key={field.name}
             name={field.name}

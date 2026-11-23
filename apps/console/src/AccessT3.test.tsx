@@ -2,6 +2,7 @@
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { EndUserGroups, Groups } from "./screens/Groups.tsx";
+import { MemberList } from "./screens/Members.tsx";
 import { show } from "./testing.tsx";
 
 const base = "/tenants/t1";
@@ -53,4 +54,37 @@ test("ACC-23: a change that waits closes the form, says it waits and leads to Re
     "/t/t1/releases",
   );
   expect(calls.filter((call) => call.method === "POST")).toHaveLength(1);
+});
+
+const roleList = [
+  { id: "r-viewer", name: "viewer", builtin: true },
+  { id: "r-editor", name: "editor", builtin: true },
+];
+
+test("ACC-32, ACC-MP7: where someone works is asked only with a role, and several roles go with the membership", async () => {
+  routes.push((method, url) => {
+    if (method === "GET" && url.includes("/roles")) return [200, { items: roleList }];
+    if (method === "GET" && url.includes("/workspaces"))
+      return [200, { items: [{ id: "w1", name: "Main" }] }];
+    if (method === "GET" && url.includes("/members?"))
+      return [200, { items: [], nextCursor: null }];
+    if (method === "POST" && url.endsWith("/members")) return [201, { id: "m9" }];
+    return undefined;
+  });
+  show(<MemberList base={base} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Add member" }));
+  const dialog = await screen.findByRole("dialog");
+  fireEvent.change(within(dialog).getByLabelText("Email"), { target: { value: "bo@acme.test" } });
+  // No role: nothing to say where it applies.
+  expect(within(dialog).queryByLabelText("Where they work")).toBeNull();
+  fireEvent.change(await within(dialog).findByLabelText("Role"), { target: { value: "r-viewer" } });
+  fireEvent.change(within(dialog).getByLabelText("Where they work"), { target: { value: "w1" } });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Add another role" }));
+  fireEvent.change(within(dialog).getByLabelText("Role 2"), { target: { value: "r-editor" } });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Add member" }));
+  await waitFor(() => expect(calls.some((c) => c.method === "POST")).toBe(true));
+  expect(calls.find((c) => c.method === "POST")?.body).toEqual({
+    email: "bo@acme.test",
+    bindings: [{ roleId: "r-viewer", workspaceId: "w1" }, { roleId: "r-editor" }],
+  });
 });

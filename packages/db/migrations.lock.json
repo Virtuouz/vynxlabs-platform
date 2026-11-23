@@ -97,5 +97,6 @@
   "0096_sweep_cols_kept_kinds.sql": "3aede979120ea9fe0ca1fbd1cf5c5dc6d0a56cdfaecadee06ab9472bcfdd90bb",
   "0097_yaml_folder_in_force.sql": "20ae6305769f4eb52a9dfc95d72cf29d1dd3cfba746ea572e01c6bd2ac12d7bf",
   "0098_reset_member_password_token.sql": "c148c06f44b52cb9c8c623e207b3c77df96404c891fd5e7d6e1dc0da775af98f",
-  "0099_truth_column_position.sql": "73e3e24ff4a7b13354f5cb04767c2997318fe8bc1f183e5330c0e9277b2acad3"
+  "0099_truth_column_position.sql": "73e3e24ff4a7b13354f5cb04767c2997318fe8bc1f183e5330c0e9277b2acad3",
+  "0100_fd_git_synced_folder.sql": "1ded907c75569c9881b8e3a323f5ce46caa00df31185a8170104a04958224b81"
 }

@@ -308,6 +308,19 @@ describe("worker pools", () => {
     expect(
       (await alice.post(`/tenants/${tenant}/worker-pools`, { name: "client-lan" })).status,
     ).toBe(409);
+    // The queue of scripts that name no pool is shown as "default": a pool called that would
+    // make two alike (GOV-38).
+    const reserved = await alice.post(`/tenants/${tenant}/worker-pools`, { name: "default" });
+    expect(reserved.status).toBe(400);
+    expect(reserved.body.detail).toContain("default");
+    expect(
+      (
+        await alice.post(`/tenants/${tenant}/worker-credentials`, {
+          name: "d-1",
+          pool: "default",
+        })
+      ).status,
+    ).toBe(400);
     const credential = await alice.post(`/tenants/${tenant}/worker-credentials`, {
       name: "lan-1",
       pool: "client-lan",

@@ -61,7 +61,11 @@ import {
   nextFireTimes,
   webhookToken,
 } from "../kernel/execution/triggers.js";
-import { createWorkerCredential, WORKER_STALE_SECONDS } from "../kernel/execution/workers.js";
+import {
+  assertPoolNameFree,
+  createWorkerCredential,
+  WORKER_STALE_SECONDS,
+} from "../kernel/execution/workers.js";
 import { awaitResponse } from "../kernel/flows/engine.js";
 import { eventSchema, publishPlatformEvent } from "../kernel/flows/events.js";
 import { pushRelease } from "../kernel/git.js";
@@ -3298,6 +3302,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         },
       },
       async ({ ctx, params, body }, reply) => {
+        if (body.pool) assertPoolNameFree(body.pool);
         const created = await ctx.mutate(async (trx, audit) => {
           if (body.workspaceId) {
             const workspace = await trx

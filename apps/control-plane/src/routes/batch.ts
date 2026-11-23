@@ -243,7 +243,7 @@ export function batchRoutes(_kernel: Kernel): FastifyPluginAsyncTypebox {
       "/tenants/:t/approvals/batch",
       {
         // Who may decide is asked of each approval by its own route.
-        config: { access: access.signedIn },
+        config: { access: access.signedInOrKey },
         schema: {
           summary: "Approve, or reject, many waiting approvals",
           description:

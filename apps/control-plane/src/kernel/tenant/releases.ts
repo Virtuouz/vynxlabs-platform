@@ -1,8 +1,9 @@
 import { createHash } from "node:crypto";
 import { newId, sql, type TenantResource } from "@volvel/db";
 import { checkTenantResources, tenantName, tenantOrder } from "@volvel/manifest";
+import { keepingAnAdmin } from "../administer.js";
 import type { Audit, Db, Principal, Trx } from "../audit.js";
-import { badRequest, conflict, HttpError, notFound } from "../errors.js";
+import { badRequest, conflict, forbiddenBecause, HttpError, notFound } from "../errors.js";
 
 /**
  * A tenant's access, released: its groups, service accounts, roles and what
@@ -111,13 +112,34 @@ const bindingIdentity = (body: Record<string, unknown>): string => {
   const principal = body.principal as { type: string; key: string };
   return `${body.role}\n${principal.type}\n${principal.key}\n${body.workspace ?? ""}`;
 };
-const bindingKey = (body: Record<string, unknown>): string => {
+const bindingBase = (body: Record<string, unknown>): string => {
   const principal = body.principal as { type: string; key: string };
   return [principal.key, body.role as string, ...(body.workspace ? [body.workspace as string] : [])]
     .join("-")
-    .replaceAll("_", "-")
-    .slice(0, 63);
+    .replaceAll("_", "-");
 };
+
+/**
+ * Gives each binding a key nobody else has. A key is only a name for a file, and is read from
+ * what the binding gives to whom: where two would be the same name, or the name was cut short,
+ * a short hash of that content is added, so that the same binding has the same key every time.
+ */
+export function withUniqueBindingKeys(resources: readonly TenantResource[]): TenantResource[] {
+  const taken = new Map<string, number>();
+  for (const one of resources) {
+    if (one.kind !== "tenant_binding") continue;
+    const base = bindingBase(one.body).slice(0, 63);
+    taken.set(base, (taken.get(base) ?? 0) + 1);
+  }
+  return resources.map((one) => {
+    if (one.kind !== "tenant_binding") return one;
+    const full = bindingBase(one.body);
+    const base = full.slice(0, 63);
+    if (full.length <= 63 && taken.get(base) === 1) return { ...one, key: base };
+    const short = createHash("sha256").update(bindingIdentity(one.body)).digest("hex").slice(0, 8);
+    return { ...one, key: `${full.slice(0, 54)}-${short}` };
+  });
+}
 const identity = (resource: TenantResource): string =>
   resource.kind === "tenant_binding"
     ? `tenant_binding ${bindingIdentity(resource.body)}`
@@ -216,9 +238,9 @@ export async function currentAccess(db: Db | Trx, tenantId: string): Promise<Ten
       principal: { type: row.type, key: row.key },
       ...(row.workspace ? { workspace: row.workspace } : {}),
     };
-    resources.push({ kind: "tenant_binding", key: bindingKey(body), body });
+    resources.push({ kind: "tenant_binding", key: "", body });
   }
-  return resources.sort(tenantOrder);
+  return withUniqueBindingKeys(resources).sort(tenantOrder);
 }
 
 /** What has to change for the tenant's access to be what is asked for. */
@@ -704,6 +726,17 @@ export interface ReleaseRequest {
   approved?: boolean;
 }
 
+/** When the change is asked with a service account's key: the member who made that key. */
+async function keyMaker(trx: Trx, principal: Principal): Promise<string | null> {
+  if (principal.type !== "service_account" || !principal.apiKeyId) return null;
+  const key = await trx
+    .selectFrom("api_key")
+    .select("created_by")
+    .where("id", "=", principal.apiKeyId)
+    .executeTakeFirst();
+  return key?.created_by ?? null;
+}
+
 /**
  * Releases a change to the tenant's access. When the tenant asks for a second
  * person, the release waits and nothing changes. Otherwise it applies at once,
@@ -723,6 +756,7 @@ export async function releaseAccess(
     .forUpdate()
     .executeTakeFirst();
   if (!tenant) throw notFound("The tenant");
+  const askedThrough = await keyMaker(trx, principal);
   const current = await currentAccess(trx, tenantId);
   const puts = request.asks.flatMap((ask) => (ask.op === "put" ? [ask.resource] : []));
   const known = [...current, ...(await providerManaged(trx, tenantId))].filter(
@@ -800,6 +834,7 @@ export async function releaseAccess(
         origin: request.origin,
         created_by_type: principal.type,
         created_by_id: principal.id,
+        asked_through: askedThrough,
       })
       .execute();
     await audit({
@@ -820,7 +855,9 @@ export async function releaseAccess(
     changes: [],
     warnings: [...undone],
   };
-  for (const step of steps) await applyStep(trx, audit, tenantId, step, current, summary);
+  await keepingAnAdmin(trx, tenantId, async () => {
+    for (const step of steps) await applyStep(trx, audit, tenantId, step, current, summary);
+  });
   await trx
     .insertInto("tenant_release")
     .values({
@@ -836,6 +873,7 @@ export async function releaseAccess(
       origin: request.origin,
       created_by_type: principal.type,
       created_by_id: principal.id,
+      asked_through: askedThrough,
       applied_at: new Date(),
     })
     .execute();
@@ -965,7 +1003,16 @@ export async function decideRelease(
   if (release.status !== "awaiting_approval") {
     throw conflict(`This release was ${release.status.replaceAll("_", " ")} already.`);
   }
-  const own = release.created_by_type === principal.type && release.created_by_id === principal.id;
+  // Asked by this person, or with a key of a service account that this person made.
+  const own =
+    (release.created_by_type === principal.type && release.created_by_id === principal.id) ||
+    (principal.type === "member" && release.asked_through === principal.id);
+  // A second person is a person: a key of a service account does not answer for one.
+  if (decision !== "withdraw" && principal.type !== "member") {
+    throw forbiddenBecause(
+      "Only a member signed in as themselves approves or declines a change to access. A service account's key cannot.",
+    );
+  }
   if (decision === "withdraw" && !own)
     throw conflict("Only whoever asked for a release can withdraw it.");
   if (decision === "approve" && own) {
@@ -1025,7 +1072,9 @@ export async function decideRelease(
     changes: [],
     warnings: [],
   };
-  for (const step of steps) await applyStep(trx, audit, tenantId, step, current, summary);
+  await keepingAnAdmin(trx, tenantId, async () => {
+    for (const step of steps) await applyStep(trx, audit, tenantId, step, current, summary);
+  });
   await trx
     .updateTable("tenant_release")
     .set({
@@ -1074,13 +1123,16 @@ export async function rollbackAsks(db: Db | Trx, tenantId: string, releaseId: st
     throw conflict("Only a release that applied can be gone back to.");
   }
   const current = await currentAccess(db, tenantId);
-  const kept = new Set(release.snapshot.map((one) => `${one.kind}/${one.key}`));
-  const removed = current.filter((one) => !kept.has(`${one.kind}/${one.key}`));
+  // A snapshot made before bindings had keys of their own may hold two under one name: it is read
+  // by what each binding gives, and given keys of today.
+  const snapshot = withUniqueBindingKeys(release.snapshot);
+  const kept = new Set(snapshot.map(identity));
+  const removed = current.filter((one) => !kept.has(identity(one)));
   return {
     /** What going back removes, each as a name a person reads. */
     removes: removed.map((one) => ({ kind: one.kind, key: one.key, label: labelOf(one) })),
     number: release.number,
-    asks: release.snapshot.map((resource): AccessAsk => ({ op: "put", resource })),
+    asks: snapshot.map((resource): AccessAsk => ({ op: "put", resource })),
     // Going back removes what was made since. That is what going back means, so each is allowed.
     allowDelete: removed.map((one) => `${one.kind}/${one.key}`),
   };

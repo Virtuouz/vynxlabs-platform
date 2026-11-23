@@ -2,8 +2,9 @@ import { Readable } from "node:stream";
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import { newId, type PrincipalType as PrincipalKind } from "@volvel/db";
 import { Type } from "typebox";
+import { keepingAnAdmin } from "../kernel/administer.js";
 import type { Audit, Db, Trx } from "../kernel/audit.js";
-import { PERMISSION_PATTERN } from "../kernel/authorize.js";
+import { holdsAppFacing, PERMISSION_PATTERN } from "../kernel/authorize.js";
 import { badRequest, conflict, notFound } from "../kernel/errors.js";
 import { access } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
@@ -547,21 +548,23 @@ export function permissionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             ? reply.code(204).send(null)
             : reply.code(202).send(waiting(released));
         }
-        await ctx.mutate(async (trx, audit) => {
-          await trx.deleteFrom("binding").where("id", "=", binding.id).execute();
-          await audit({
-            action: "binding.deleted",
-            targetType: "binding",
-            targetId: binding.id,
-            tenantId: params.t,
-            workspaceId: binding.workspace_id,
-            details: {
-              role: binding.name,
-              principalType: binding.principal_type,
-              principalId: binding.principal_id,
-            },
-          });
-        });
+        await ctx.mutate((trx, audit) =>
+          keepingAnAdmin(trx, params.t, async () => {
+            await trx.deleteFrom("binding").where("id", "=", binding.id).execute();
+            await audit({
+              action: "binding.deleted",
+              targetType: "binding",
+              targetId: binding.id,
+              tenantId: params.t,
+              workspaceId: binding.workspace_id,
+              details: {
+                role: binding.name,
+                principalType: binding.principal_type,
+                principalId: binding.principal_id,
+              },
+            });
+          }),
+        );
         return reply.code(204).send(null);
       },
     );
@@ -1038,6 +1041,19 @@ async function asTenantBinding(
   };
 }
 
+/** Anyone, every end user, and end users hold only what apps use: a role with none of it gives them nothing. */
+function refuseNothingForApps(
+  principalType: string,
+  role: { name?: string; permissions: string[] },
+) {
+  const forApps = ["anonymous", "end_users", "end_user", "end_user_group"];
+  if (forApps.includes(principalType) && !holdsAppFacing(role.permissions)) {
+    throw badRequest(
+      "People who are not members hold only what apps use, and that role gives none of it. Bind a role that has app permissions, such as viewer.",
+    );
+  }
+}
+
 export async function insertBinding(
   trx: Trx,
   audit: Audit,
@@ -1054,7 +1070,7 @@ export async function insertBinding(
   const id = newId();
   const role = await trx
     .selectFrom("role")
-    .select(["id", "name", "tenant_id", "workspace_id"])
+    .select(["id", "name", "tenant_id", "workspace_id", "permissions"])
     .where("id", "=", body.roleId)
     .executeTakeFirst();
   const usable =
@@ -1063,6 +1079,7 @@ export async function insertBinding(
     (role.tenant_id === null || role.tenant_id === tenantId) &&
     (role.workspace_id === null || role.workspace_id === workspaceId);
   if (!role || !usable) throw badRequest("That role cannot be bound at this scope.");
+  refuseNothingForApps(body.principalType, role);
 
   if (workspaceId) {
     const workspace = await trx

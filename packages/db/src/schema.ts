@@ -187,6 +187,8 @@ export interface ApiKeyTable {
   expires_at: Date | null;
   last_used_at: Date | null;
   revoked_at: Date | null;
+  /** The member who made a service account's key. */
+  created_by?: string | null;
   created_at: Generated<Date>;
 }
 
@@ -241,6 +243,8 @@ export interface TenantReleaseTable {
   origin: "cli" | "console" | "api" | "rollback";
   created_by_type: string;
   created_by_id: string | null;
+  /** When asked with a service account's key: the member who made that key. */
+  asked_through?: string | null;
   created_at: Generated<Date>;
   decided_by_type: string | null;
   decided_by_id: string | null;

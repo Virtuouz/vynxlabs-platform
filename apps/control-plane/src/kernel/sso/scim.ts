@@ -1,10 +1,12 @@
 import { randomBytes } from "node:crypto";
 import { newId, sql } from "@volvel/db";
 import type { FastifyRequest } from "fastify";
+import { endSessions } from "../administer.js";
 import type { Audit, Db, Trx } from "../audit.js";
-import { cleanEmail, createEndUser } from "../endusers.js";
+import { cleanEmail, createEndUser, endUnusedTokens } from "../endusers.js";
 import { HttpError } from "../errors.js";
 import type { Kernel } from "../kernel.js";
+import { setMemberDisabled } from "../members.js";
 import { hashApiKey } from "../principal.js";
 import { giveRole, holdsInstanceAccess, syncGroups } from "./people.js";
 import { domainOfEmail, findProvider, type Provider, provedDomains } from "./providers.js";
@@ -508,6 +510,7 @@ async function setActive(
       .where("id", "=", id)
       .execute();
     if (!active) {
+      await endUnusedTokens(trx, id);
       await trx
         .deleteFrom("app_session")
         .where("principal_type", "=", "end_user")
@@ -538,14 +541,7 @@ async function setActive(
       .where("tenant_id", "=", provider.tenantId)
       .where("member_id", "=", id)
       .execute();
-    if (!active) {
-      await trx
-        .deleteFrom("app_session")
-        .where("tenant_id", "=", provider.tenantId)
-        .where("principal_type", "=", "member")
-        .where("principal_id", "=", id)
-        .execute();
-    }
+    if (!active) await endSessions(trx, id, { tenantId: provider.tenantId });
     await audit({
       action: active ? "tenant_member.resumed" : "tenant_member.suspended",
       targetType: "member",
@@ -556,24 +552,15 @@ async function setActive(
   }
   const member = await trx
     .selectFrom("member")
-    .select(["disabled_at", "disabled_by", "email"])
+    .select(["disabled_at", "disabled_by"])
     .where("id", "=", id)
     .executeTakeFirst();
   if (!member || (member.disabled_at === null) === active) return;
+  // Someone disabled here by hand stays so until that is lifted by hand (D6).
   if (active && member.disabled_by !== "provider") return;
-  await trx
-    .updateTable("member")
-    .set({ disabled_at: active ? null : now, disabled_by: active ? null : "provider" })
-    .where("id", "=", id)
-    .execute();
-  // Every sign-in the person has ends now, on every device.
-  if (!active) await trx.deleteFrom("member_session").where("member_id", "=", id).execute();
-  await audit({
-    action: active ? "member.enabled" : "member.disabled",
-    targetType: "member",
-    targetId: id,
-    details: { email: member.email },
-  });
+  // The account's sign-ins, and an operator's open grants, end with it, and it is refused
+  // when it would take the last operator.
+  await setMemberDisabled(trx, audit, id, !active, null, "provider");
 }
 
 /** Ties the person to the provider by the field the provider signs them in by, when one is named. */

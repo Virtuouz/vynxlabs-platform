@@ -1,8 +1,8 @@
 import { sql } from "@volvel/db";
-import { APP_FACING_KINDS, isExplicitKind } from "@volvel/manifest";
+import { APP_FACING_KINDS, grants } from "@volvel/manifest";
 import type { Db, Principal, Trx } from "./audit.js";
 
-export { PERMISSION_PATTERN } from "@volvel/manifest";
+export { grants, PERMISSION_PATTERN } from "@volvel/manifest";
 
 export interface Target {
   tenantId?: string | undefined;
@@ -27,20 +27,6 @@ export interface Decision {
 }
 
 /**
- * Whether a role's permission list grants `kind:verb`. A permission marked
- * explicit is granted only by its own name: no `*` reaches it, so nobody holds
- * it by having been given everything.
- */
-export function grants(permissions: readonly string[], permission: string): boolean {
-  const [kind, verb] = permission.split(":");
-  if (isExplicitKind(kind ?? "")) return permissions.includes(permission);
-  return permissions.some((held) => {
-    const [heldKind, heldVerb] = held.split(":");
-    return (heldKind === "*" || heldKind === kind) && (heldVerb === "*" || heldVerb === verb);
-  });
-}
-
-/**
  * The kinds of permission an app needs. An end user, and a member signed in to a
  * tenant's apps only, hold nothing outside this list whatever role they are bound to:
  * a binding made too wide cannot hand a portal user the tenant's settings or secrets.
@@ -48,8 +34,16 @@ export function grants(permissions: readonly string[], permission: string): bool
 const APP_FACING = new Set(APP_FACING_KINDS);
 export const appFacing = (permission: string) => APP_FACING.has(permission.split(":")[0] as string);
 
+/**
+ * Whether a role gives anything an app uses. Someone signed in as nobody, or as every end
+ * user, holds nothing else, so a binding of a role without it to them gives nothing.
+ */
+export const holdsAppFacing = (permissions: readonly string[]) =>
+  permissions.some((one) => one.startsWith("*:") || appFacing(one));
+
 interface Held {
   permissions: string[];
+  principal_type: string | null;
   scope_type: string;
   access_grant_id: string | null;
 }
@@ -155,7 +149,7 @@ export async function check(
   const principalMatch = matchPrincipal(principal);
 
   const held = await sql<Held>`
-    select r.permissions, b.scope_type, null::uuid as access_grant_id
+    select r.permissions, b.principal_type, b.scope_type, null::uuid as access_grant_id
     from binding b
     join role r on r.id = b.role_id
     where ${principalMatch}
@@ -171,7 +165,7 @@ export async function check(
         )
       )
     union all
-    select r.permissions, 'tenant' as scope_type, g.id as access_grant_id
+    select r.permissions, null::text as principal_type, 'tenant' as scope_type, g.id as access_grant_id
     from access_grant g
     join role r on r.id = g.role_id
     where ${principal.type === "member" && !appOnly}
@@ -179,11 +173,22 @@ export async function check(
       and g.tenant_id = ${tenantId}
       and g.revoked_at is null
       and g.expires_at > now()
+      -- A grant is the operator's, and ends with being one: removed or disabled, it holds nothing.
+      and exists (
+        select 1 from binding ib
+        join role ir on ir.id = ib.role_id
+        join member im on im.id = ib.principal_id
+        where ib.scope_type = 'instance' and ib.principal_type = 'member'
+          and ib.principal_id = g.member_id and ir.name = 'operator_admin'
+          and im.disabled_at is null
+      )
   `.execute(db);
 
   const granting = held.rows.filter(
     (row) =>
       grants(row.permissions, permission) &&
+      // A binding to anyone is for apps: whoever is calling, it gives nothing outside them.
+      !(row.principal_type === "anonymous" && !appFacing(permission)) &&
       !(suspended && row.access_grant_id === null && row.scope_type !== "instance"),
   );
   // Prefer a standing binding over a grant, so ordinary access is not logged as operator access.
@@ -334,6 +339,14 @@ export async function explainAccess(
       join role r on r.id = g.role_id
       where g.member_id = ${principal.id} and g.tenant_id = ${tenantId}
         and g.revoked_at is null and g.expires_at > now()
+        and exists (
+          select 1 from binding ib
+          join role ir on ir.id = ib.role_id
+          join member im on im.id = ib.principal_id
+          where ib.scope_type = 'instance' and ib.principal_type = 'member'
+            and ib.principal_id = g.member_id and ir.name = 'operator_admin'
+            and im.disabled_at is null
+        )
     `.execute(db);
     for (const row of granted.rows) {
       sources.push({

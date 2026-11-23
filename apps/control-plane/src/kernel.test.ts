@@ -970,7 +970,7 @@ describe("resource registry", () => {
       kind: "role",
       schemaVersion: 1,
       ownership: "ui",
-      body: { name: "auditor", permissions: ["resource:read"] },
+      body: { name: "auditor", permissions: ["data:read"] },
     });
     const target = (await alice.client.get(`${base()}/access/roles/auditor`)).body;
     const binding = await alice.client.post(`/tenants/${acme}/bindings`, {
@@ -983,7 +983,7 @@ describe("resource registry", () => {
     const anyone = { type: "anonymous" as const, id: null };
     expect(
       (
-        await check(t.db, anyone, "resource:read", {
+        await check(t.db, anyone, "data:read", {
           tenantId: acme,
           workspaceId: dev,
           resourceId: target.id,
@@ -991,7 +991,7 @@ describe("resource registry", () => {
       ).allowed,
     ).toBe(true);
     expect(
-      (await check(t.db, anyone, "resource:read", { tenantId: acme, workspaceId: dev })).allowed,
+      (await check(t.db, anyone, "data:read", { tenantId: acme, workspaceId: dev })).allowed,
     ).toBe(false);
     await alice.client.delete(`/tenants/${acme}/bindings/${binding.body.id}`);
     await alice.client.delete(`${base()}/access/roles/auditor`);

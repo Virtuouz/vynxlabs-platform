@@ -203,13 +203,17 @@ export {
 } from "./page.js";
 export {
   APP_FACING_KINDS,
+  grants,
   isExplicitKind,
   isGrantablePermission,
   isKnownPermission,
+  type KindOfPermission,
   PERMISSION_KINDS,
   type PermissionKind,
   type PermissionScope,
   type PermissionVerb,
+  setEveryone,
+  setPermission,
 } from "./permissions.js";
 export { resolveKeyReferences } from "./references.js";
 export {

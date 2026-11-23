@@ -1155,6 +1155,20 @@ describe("the instance's own provider", () => {
   });
 });
 
+describe("a push cannot take the last one who administers (GOV-04)", () => {
+  test("turning off a tenant's only admin is refused with 409, and they carry on", async () => {
+    const pushed = await push(staff, "POST", "/Users", {
+      schemas: [USER],
+      userName: "alice@acme.example",
+      emails: [{ primary: true, value: "alice@acme.example" }],
+      displayName: "Alice",
+      active: false,
+    });
+    expect(pushed.status, JSON.stringify(pushed.body)).toBe(409);
+    expect((await alice.get(`/tenants/${tenant}/members`)).status).toBe(200);
+  });
+});
+
 describe("the write path", () => {
   test("every successful change left an audit entry", () => {
     expect(t.unaudited).toEqual([]);

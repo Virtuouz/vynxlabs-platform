@@ -1,4 +1,5 @@
 import { newId } from "@volvel/db";
+import { isOperator } from "../administer.js";
 import { type Actor, type Audit, type Db, type Trx, writeAudit } from "../audit.js";
 import { createEndUser } from "../endusers.js";
 import { HttpError } from "../errors.js";
@@ -557,15 +558,13 @@ export async function memberPasswordRefusedBy(
     .where("identity_domain.verified_at", "is not", null)
     .executeTakeFirst();
   if (!provider) return undefined;
-  const operator = await db
-    .selectFrom("binding")
-    .innerJoin("member", "member.id", "binding.principal_id")
-    .select("binding.id")
-    .where("binding.scope_type", "=", "instance")
-    .where("binding.principal_type", "=", "member")
-    .where("member.email", "=", email)
+  const person = await db
+    .selectFrom("member")
+    .select("id")
+    .where("email", "=", email)
     .executeTakeFirst();
-  if (operator) return undefined;
+  // Only an enabled operator admin keeps a password: any other role bound at the instance does not.
+  if (person && (await isOperator(db, person.id))) return undefined;
   return { id: provider.id, name: provider.name, tenantId: provider.tenant_id };
 }
 

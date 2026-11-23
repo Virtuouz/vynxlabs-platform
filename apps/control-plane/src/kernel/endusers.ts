@@ -76,6 +76,19 @@ export async function createEndUser(
 }
 
 /**
+ * Ends every link an end user has not used yet: invitations and resets alike. Setting or
+ * changing a password, and disabling the account, each call it, so that an older link cannot
+ * set a password after the person (or their staff) has moved on.
+ */
+export async function endUnusedTokens(trx: Trx, endUserId: string): Promise<void> {
+  await trx
+    .deleteFrom("end_user_token")
+    .where("end_user_id", "=", endUserId)
+    .where("used_at", "is", null)
+    .execute();
+}
+
+/**
  * Makes a one-time link token for setting a password. Earlier unused tokens of
  * the same purpose stop working, so only the newest link is good.
  */
@@ -177,6 +190,7 @@ export async function setPasswordWithToken(
     .returningAll()
     .executeTakeFirst();
   if (!user) throw notFound("The account");
+  await endUnusedTokens(trx, user.id);
   await trx
     .deleteFrom("app_session")
     .where("principal_type", "=", "end_user")
@@ -247,6 +261,7 @@ export async function changeEndUserPassword(
     .set({ password_hash: await hasher.hash(input.password), updated_at: new Date() })
     .where("id", "=", user.id)
     .execute();
+  await endUnusedTokens(trx, user.id);
   // Every other sign-in ends. The one that made the change stays.
   let others = trx
     .deleteFrom("app_session")

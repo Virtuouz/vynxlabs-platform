@@ -11,6 +11,7 @@ import {
   cleanEmail,
   createEndUser,
   createPasswordToken,
+  endUnusedTokens,
   endUserIdentity,
   setPasswordWithToken,
   signUpAllowed,
@@ -382,6 +383,7 @@ export function endUserRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             .executeTakeFirst();
           if (!updated) throw notFound("The end user");
           if (body.disabled) {
+            await endUnusedTokens(trx, updated.id);
             await trx
               .deleteFrom("app_session")
               .where("principal_type", "=", "end_user")

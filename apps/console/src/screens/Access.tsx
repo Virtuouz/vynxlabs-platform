@@ -202,7 +202,8 @@ export function EffectiveAccess({
         ) : null}
         {everything && !wanted ? (
           <p className="m-0 text-meta text-ink-muted">
-            A role they hold gives every permission (<Mono>*:*</Mono>): each is listed with it.
+            A role they hold gives every permission except those given by name (<Mono>*:*</Mono>):
+            each is listed with it.
           </p>
         ) : null}
         {groups.map((group) => (

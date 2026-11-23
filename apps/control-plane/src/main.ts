@@ -1,7 +1,7 @@
 import { Database } from "@volvel/db";
 import { buildApp } from "./app.js";
 import { ConfigError, loadConfig } from "./config.js";
-import { bootstrapAdmin } from "./kernel/bootstrap.js";
+import { bootstrapAdmin, recoverOperator } from "./kernel/bootstrap.js";
 import { startBackground } from "./kernel/execution/background.js";
 import { setWorkerUserMode } from "./kernel/execution/isolation.js";
 import { WorkerSupervisor } from "./kernel/execution/supervisor.js";
@@ -123,6 +123,26 @@ if (process.argv[2] === "rekey") {
   console.log(JSON.stringify({ masterKey: app.kernel.vault.fingerprints, ...result }, null, 2));
   await app.close();
   process.exit(result.unopened.length > 0 ? 1 : 0);
+}
+
+// `node dist/main.js recover-operator <email>`: the way back for an instance with no operator who
+// can sign in. Enables that account, makes it an operator admin, and prints a new password once.
+if (process.argv[2] === "recover-operator") {
+  const email = process.argv[3];
+  if (!email) {
+    console.error("Say whose account: node dist/main.js recover-operator <email>");
+    await app.close();
+    process.exit(2);
+  }
+  const done = await recoverOperator(app.kernel, email).catch(async (error) => {
+    console.error(`Recovery failed: ${error instanceof Error ? error.message : error}`);
+    await app.close();
+    process.exit(1);
+  });
+  console.log(`${done.email} is an enabled operator admin. Its password is now: ${done.password}`);
+  console.log("Sign in with it and change it. Every earlier sign-in of that account has ended.");
+  await app.close();
+  process.exit(0);
 }
 
 app.addHook("onClose", async () => {

@@ -409,10 +409,7 @@ export function TriggersWorkbench({
         ) : row.lastFiredAt ? (
           <span className="text-ink-muted">{ago(row.lastFiredAt)}</span>
         ) : (
-          <span
-            className="text-ink-subtle"
-            title="This trigger has not started anything yet."
-          >
+          <span className="text-ink-subtle" title="This trigger has not started anything yet.">
             Not fired yet
           </span>
         ),

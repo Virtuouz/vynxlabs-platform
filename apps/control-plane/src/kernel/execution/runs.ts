@@ -741,8 +741,7 @@ export async function finishFailed(kernel: Kernel, runId: string, error: RunFail
 
 /** What cancel says of a run or flow run that has ended: a sentence, in American spelling. */
 export function alreadyEnded(what: "run" | "flow run", status: string): string {
-  const said =
-    status === "cancelled" ? "was already canceled" : `already ${status}`;
+  const said = status === "cancelled" ? "was already canceled" : `already ${status}`;
   return `This ${what} ${said}.`;
 }
 

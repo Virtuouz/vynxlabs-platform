@@ -2314,3 +2314,27 @@ test("p31 fc: on a phone a source's buttons stack in one column instead of clipp
     expect(group?.className).toContain("max-sm:items-end");
   }
 });
+
+test("p31 fc: a source page whose read answers only 'Internal Server Error' while it encrypts says the server may not support encryption", async () => {
+  routes[`GET /api/v1${root}/data-source-tables/erp`] = () => [
+    500,
+    { status: 500, title: "Internal Server Error" },
+  ];
+  routes[`GET /api/v1${root}/data-source-bindings`] = () => [
+    200,
+    {
+      items: [
+        {
+          path: "erp",
+          bound: true,
+          config: { host: "h", database: "d", user: "u", ssl: true },
+          hasPassword: true,
+          health: null,
+        },
+      ],
+    },
+  ];
+  show(<SourceView root={root} path="erp" link="/t/t1/workspaces/w1" />);
+  await screen.findByText(/does not support encrypted connections|may not support encrypted/);
+  expect(document.body.textContent).not.toContain("Internal Server Error");
+});

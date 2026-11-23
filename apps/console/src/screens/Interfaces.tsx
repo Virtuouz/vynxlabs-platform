@@ -96,6 +96,7 @@ export function Interfaces({
           },
           {
             header: "Pages",
+            priority: 2,
             cell: (row) => (
               <span className="flex flex-col">
                 <Mono>{row.pages ?? "—"}</Mono>
@@ -133,6 +134,7 @@ export function Interfaces({
           },
           {
             header: "Address",
+            priority: 3,
             cell: (row) => {
               const url = apps.data?.items.find((app) => app.path === row.app)?.url;
               return url ? (

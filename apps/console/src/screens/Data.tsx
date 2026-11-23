@@ -2912,9 +2912,10 @@ function Definition({
             empty={null}
             columns={[
               { header: "Column", cell: (row) => <Code>{row.name}</Code> },
-              { header: "Held", cell: (row) => typeLabel(row.type) },
+              { header: "Held", priority: 2, cell: (row) => typeLabel(row.type) },
               {
                 header: "Still holds",
+                priority: 2,
                 cell: (row) => `${count(row.held ?? 0)} ${row.held === 1 ? "value" : "values"}`,
               },
               {
@@ -3743,7 +3744,11 @@ export function Sources({ root, link }: { root: string; link: string }) {
 
 /** What the server asks to test, connect, change or remove a source here: `data_source:write`. */
 function useSourceWrite(root: string) {
-  return useNeeds({ base: root, permission: "data_source:write", what: "this workspace's data sources" });
+  return useNeeds({
+    base: root,
+    permission: "data_source:write",
+    what: "this workspace's data sources",
+  });
 }
 
 /** Test, Change and Remove from here of a bound data source: the list's row and the source's own page share them. */
@@ -3783,6 +3788,18 @@ interface SourceTable {
   columns: (RowColumn & { hasDefault?: boolean })[];
 }
 
+/**
+ * What a source that could not be read says. An answer with no reason of its own, from a source
+ * set to encrypt, most likely met a server that does not offer encrypted connections: said so, with
+ * the way out, instead of "Internal Server Error".
+ */
+export function sourceFailure(message: string, binding: SourceBinding | undefined): string {
+  if (!/^internal server error\.?$/i.test(message.trim())) return message;
+  return binding?.config?.ssl
+    ? `${binding.path} could not be read. It is set to encrypt, and its server may not support encrypted connections. Choose Change and turn Encrypt off, or ask whoever runs the database.`
+    : message;
+}
+
 export function SourceView({ root, path, link }: { root: string; path: string; link: string }) {
   const tables = useLoad<{ items: SourceTable[] }>(`${root}/data-source-tables/${path}`);
   const [chosen, setChosen] = useUrlParam("item", undefined, { push: true });
@@ -3819,7 +3836,7 @@ export function SourceView({ root, path, link }: { root: string; path: string; l
     >
       {tables.error ? (
         <Notice tone="danger" action={<Button onClick={tables.reload}>Try again</Button>}>
-          {tables.error.message}
+          {sourceFailure(tables.error.message, binding)}
         </Notice>
       ) : !tables.data ? (
         <Loading />

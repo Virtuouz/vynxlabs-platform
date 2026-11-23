@@ -597,7 +597,8 @@ export function AttributesDialog({
     else seen.set(key, index);
   });
   // The server's rule, said at the field: lowercase letters, digits and underscores, starting with a letter.
-  const unusable = (name: string) => name.trim() !== "" && !/^[a-z][a-z0-9_]{0,62}$/.test(name.trim());
+  const unusable = (name: string) =>
+    name.trim() !== "" && !/^[a-z][a-z0-9_]{0,62}$/.test(name.trim());
   const badNames = rows.filter(([name]) => unusable(name)).length;
   const change = (index: number, at: 0 | 1, text: string) =>
     setRows((before) =>

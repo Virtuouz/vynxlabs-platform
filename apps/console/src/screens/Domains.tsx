@@ -521,6 +521,7 @@ export function Domains({ base }: { base: string }) {
             },
             {
               header: "Serves",
+              priority: 2,
               cell: (row) => (
                 <span>
                   {row.app === "" ? "The portal and every app" : <Code wrap>{row.app}</Code>}{" "}
@@ -531,6 +532,7 @@ export function Domains({ base }: { base: string }) {
             { header: "State", cell: (row) => <State domain={row} /> },
             {
               header: "Last check",
+              priority: 3,
               cell: (row) =>
                 row.verifiedAt && row.recordGoneAt ? (
                   <span className="text-danger">

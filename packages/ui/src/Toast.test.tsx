@@ -78,3 +78,12 @@ test("WLK-12f: the messages' right edge keeps clear of a panel that says how muc
   const holder = document.querySelector<HTMLElement>(".layer-toast");
   expect(holder?.style.right).toBe("calc(1rem + var(--vx-toast-inset, 0px))");
 });
+
+test("p31 fc: a success is a status message a reader and a test can find, apart from any other status on the page", () => {
+  const toasts = mount();
+  act(() => {
+    toasts.success("Saved.");
+  });
+  expect(screen.getByRole("status").textContent).toContain("Saved.");
+  expect(screen.getByRole("status").closest("[aria-live=polite]")).not.toBeNull();
+});

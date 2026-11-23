@@ -176,7 +176,7 @@ export function ToastProvider({
     // biome-ignore lint/a11y/noStaticElementInteractions: Esc on a focused message dismisses it, as a convenience beside its button
     <div
       key={toast.id}
-      role={toast.tone === "danger" ? "alert" : undefined}
+      role={toast.tone === "danger" ? "alert" : "status"}
       data-tone={toast.tone}
       onKeyDown={(event) => {
         if (event.key === "Escape") {

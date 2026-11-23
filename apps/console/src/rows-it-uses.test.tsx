@@ -560,5 +560,7 @@ test("p31 fc: switching a followed table off also takes its columns out of Displ
   show(<Harness start={start} definition={list as never} using={withCustomers} />);
   fireEvent.click(panel().getByRole("button", { name: /Customers/ }));
   expect(last().joins).toBeUndefined();
-  expect((written.at(-1) as { config?: { columns?: unknown } }).config?.columns).toEqual([{ column: "number" }]);
+  expect((written.at(-1) as { config?: { columns?: unknown } }).config?.columns).toEqual([
+    { column: "number" },
+  ]);
 });

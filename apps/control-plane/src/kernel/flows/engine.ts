@@ -1283,8 +1283,7 @@ export async function cancelFlowRun(
     .where("workspace_id", "=", workspaceId)
     .executeTakeFirst();
   if (!flowRun) throw notFound("The flow run");
-  if (flowRun.status !== "running")
-    throw conflict(alreadyEnded("flow run", flowRun.status));
+  if (flowRun.status !== "running") throw conflict(alreadyEnded("flow run", flowRun.status));
   await cancelFlowTree(kernel, trx, flowRunId);
   return flowRun;
 }

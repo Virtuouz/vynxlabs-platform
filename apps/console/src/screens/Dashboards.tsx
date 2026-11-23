@@ -243,11 +243,13 @@ export function Dashboards({ root, link }: { root: string; link: string }) {
             },
             {
               header: "Whose",
+              priority: 2,
               cell: (row) =>
                 row.kind === "resource" ? "The workspace's" : row.mine ? "Yours" : row.owner,
             },
             {
               header: "Seen by",
+              priority: 3,
               cell: (row) =>
                 row.kind === "resource" || row.shared ? (
                   "Everyone here"
@@ -259,6 +261,7 @@ export function Dashboards({ root, link }: { root: string; link: string }) {
             },
             {
               header: "Changed",
+              priority: 3,
               cell: (row) => (row.draft === "new" ? "" : <Time value={row.updatedAt} mode="ago" />),
             },
           ]}

@@ -5,7 +5,7 @@ import type { ReactElement } from "react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { BUILTIN_ROLES } from "./builtinRoles.ts";
 import { Alerts } from "./screens/Alerts.tsx";
-import { SourceView, Sources, Tables, TableView } from "./screens/Data.tsx";
+import { Sources, SourceView, Tables, TableView } from "./screens/Data.tsx";
 import { ConnectionGroups, Scripts } from "./screens/Execution.tsx";
 import { Files } from "./screens/Files.tsx";
 import { Flows } from "./screens/Flows.tsx";

@@ -987,9 +987,9 @@ export function ScriptEditor({
         </Notice>
       ) : core ? (
         <Notice tone="plain">
-          This step comes with Volvel, and is added to the workspace because a flow uses it.
-          It can be read here and not changed. To do something else, write a script of your own and
-          give it a label, and it joins the flow editor's steps.
+          This step comes with Volvel, and is added to the workspace because a flow uses it. It can
+          be read here and not changed. To do something else, write a script of your own and give it
+          a label, and it joins the flow editor's steps.
         </Notice>
       ) : !editable ? (
         <ProductionNotice
@@ -1399,10 +1399,12 @@ export function Extensions({
             },
             {
               header: "What it is",
+              priority: 3,
               cell: (row) => <DraftText root={root} row={row} part="detail" />,
             },
             {
               header: "What it does",
+              priority: 2,
               cell: (row) => (
                 <span className="text-ink-muted">
                   <DraftText root={root} row={row} part="description" />

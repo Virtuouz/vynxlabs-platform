@@ -417,6 +417,22 @@ describe("an instance with no address for apps", () => {
   });
 });
 
+describe("the portal home on an instance with no address for apps (APP-09)", () => {
+  test("lists the apps that can be opened, and not the code apps that answer 503", async () => {
+    const config = t.kernel.config;
+    const staff = browser(t, MAIN);
+    expect(await staff.signInMember("alice@acme.example", PASSWORD)).toBe(200);
+    const open = async () => (await staff.get("/portal/acme/")).body as string;
+    expect(await open()).toContain("Order status");
+    config.appsOnConsoleAddress = false;
+    try {
+      expect(await open()).not.toContain("Order status");
+    } finally {
+      config.appsOnConsoleAddress = true;
+    }
+  });
+});
+
 describe("end users", () => {
   let ed: Awaited<ReturnType<typeof endUser>>;
   let eve: Awaited<ReturnType<typeof endUser>>;

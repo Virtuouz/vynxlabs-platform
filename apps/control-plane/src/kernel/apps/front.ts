@@ -778,8 +778,17 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
         resourceId: row.id,
       });
       if (!decision.allowed) continue;
-      const body = row.body as { title?: string; description?: string; published?: boolean };
+      const body = row.body as {
+        title?: string;
+        description?: string;
+        published?: boolean;
+        interface?: string;
+        docs?: string;
+      };
       if (body.published === false) continue;
+      // An app written as code answers 503 where this instance cannot run it: not offered.
+      const generated = typeof body.interface === "string" || typeof body.docs === "string";
+      if (!generated && !kernel.hosts.runsCodeApps(place)) continue;
       apps.push({
         href: appBasePath(place, {
           tenantSlug: tenant.slug,

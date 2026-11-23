@@ -4,6 +4,9 @@ description: Learn Volvel by building something small, from start to a result yo
 type: tutorial
 pages:
   - your-first-table
+  - your-first-script
+  - your-first-approval-flow
+  - your-first-app
 ---
 
 Each tutorial is one path, done in Fernhill's Sandbox workspace, and ends with something you built.

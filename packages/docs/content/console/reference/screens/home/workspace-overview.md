@@ -11,7 +11,7 @@ The overview is where a :term[workspace]{id=workspace} opens. It answers two que
 
 The screen is reached from **Overview** on the rail, from **Open {workspace}** in the tenant overview's workspace list, from the workspace switcher in the header, and by :kbd[g] then :kbd[o]. F1 (**Help for this page**) opens the topic `workspace-overview`.
 
-::screenshot{name=console/basics-workspace-overview alt="A workspace overview with the First steps checklist, Needs attention, the Runs card, the Deploy path and What starts work here."}
+::screenshot{name=console/basics-workspace-overview alt="A workspace overview with Needs attention, the Runs card for the last 24 hours, the Deploy path and What starts work here."}
 
 ## The header
 

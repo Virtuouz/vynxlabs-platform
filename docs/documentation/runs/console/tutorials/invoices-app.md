@@ -1,0 +1,21 @@
+# Run log: console/tutorials/invoices-app
+
+- Instance `http://localhost:8091`, commit `5ebf1c80`, 2026-11-23. Maya Brooks built; Rowan Ellis and Maya used it. Fernhill Sandbox. Playwright headless, 1440 x 900, light. App `tut Invoices`, address `tut-invoices`.
+- Done in many small scripts against one app, not one continuous run. The order of the page was followed, but the sort step (4) was done last, after publishing once, and published as a second change ("Changed table Invoices on tut Invoices", "Publish 1 change"). The page puts it before the first publish, where the check lists 6 changes, as it did in the first publish with no sort.
+- A first attempt pressed **Row action** twice (an exploring script and the real one), which left an empty "Action" ("An action has no steps yet") that blocks publishing; it was removed (**Remove Action**). The page's path makes only one.
+
+## Seen
+
+1-3. Make the app; Table; **Source** > "Where it reads from" > **Invoices**; Title **Invoices** (Display > HEADING > Title). Columns: Number, Status, Appointment, Client code, Clinic, Total, Issued on, Payment ref; money as `$65.00`; the table said 2,777 invoices ("1 of 2,777" in the preview).
+4. Data tab > **Sorted by** "As they come" > dialog with **+ Then by**, **Show at most**; **+ Then by** added a **Sort by** select defaulting to Id; **Created at** made the row read "Sorted by Created at, newest first". (The select's direction control could not be driven by label; the default was Newest.)
+5. Actions tab > "When a row is clicked" > **Do** > choices "Do nothing", "Open record detail" ("Passes the clicked invoice along"), "Go to a page", "Run an action". After Open record detail: the page list gained **Invoice detail** (Side sheet); the canvas previewed INV-9001 in it; the row read "Open Invoice detail" / "Opens as Side sheet".
+6. **Row action** opened the action's editor in the settings pane with a **Back** button: Says, What it does ("Nothing yet." and **Add a step**), "CAN BE PRESSED WHEN" (Always, Only when…), "WHO CAN RUN IT" ("Anyone who can open the app", **Group**). Step menu: Ask to confirm, Update the record, Make a record, Remove the record, Run a flow, Run a script, Open a page, Show a message. After the update step: "Update the record / The clicked invoice / Status / becomes / Paid" and "Changes Status of an invoice. People who can open the app can do this, on invoices they can see."
+7. **Group** > dialog **Groups** with Billing, Practice managers (Team), Front desk (End users), hilltop, northside, riverside (End users). After Billing: "Only Billing can do this, on invoices they can see." After **Back**: "Mark paid / 1 step" and "Billing can run it."
+8. **Form** > dialog "Add a form" (What should this form do?: Create a record, Edit a record; Table; Fields with rules; Opens as Modal “New invoice”; After saving; Title of the modal and its button; Message after saving; PREVIEW). **Create form** added **New invoice** (Modal) and a **New invoice** button on the table.
+9. **Publish**: "Deploys to Sandbox for the first time...", Passed: All data sources found / 5 actions are complete / New invoice form is valid; 6 CHANGES (Added page tut Invoices, Added page Invoice detail, Added page New invoice, Added table Invoices, Added record detail, Added form); "Try as Billing first"; **Publish 6 changes**; "Published. People who open the app now see this."
+10-12. Rowan: header, table, **Mark paid** at the end of each row; **New invoice**: Status `unpaid`, Issued on "Nov 23, 2026"; **Create invoice** closed the modal; "Showing 25 of 2,778"; the first data row was `TUT-001 unpaid ... $42.00 Nov 23`; **Mark paid** changed it to `paid`.
+13. Maya: **Mark paid** is disabled on rows; the text "Only Billing can do this." appears on hover (read from the page).
+- Sam Reyes (doc writer, a member) opening the app saw "You may not see this. This reads the table "invoices", which needs the data:read permission there."; he is not the page's second person.
+
+## Not run
+The refusal on the server (an API call as Maya) was not made; the page quotes the screen's own sentence. Whether View as Billing enables the button was not seen (the menu lists Me, Billing, Practice managers, Front desk, hilltop, northside, riverside). 768 and 390 px; dark; keyboard-only.

@@ -1,0 +1,23 @@
+# Fact-check record: develop/tutorials/cli/quickstart.md
+
+Lines are current at commit `5ebf1c80` (branch phase-31-write-the-docs). Paths are under `packages/cli/src` unless they start with `apps/`, `packages/`, `examples/` or `docs/`. Written by the writer. Checked by: second agent, 2026-11-23.
+
+| Claim | Source (file:line) | Checked by | Result |
+| --- | --- | --- | --- |
+| Console fields: Create workspace takes Name, Slug, Type (Production, Dev), Promotes to (Nothing or a workspace). | `apps/console/src/screens/Tenant.tsx:405-440`; walked: dialog shows `Create workspace`, Name, Slug | second agent, 2026-11-23 (writer: writer, run on the instance 2026-11-23) | holds as run |
+| Account page, API keys, Create API key with Name and Expires (Never, In 30 days, In 90 days, In a year). | `apps/console/src/screens/Account.tsx:502-540`; walked at 1440 px | second agent, 2026-11-23 (writer: writer, run on the instance 2026-11-23) | holds as run |
+| `volvel init` output, files written, refusal of a non-empty folder. | `cli/local.ts:262-289`; run | second agent, 2026-11-23 (writer: writer, run on the instance 2026-11-23) | holds as run |
+| `login` output. | `cli/cli.ts:207-233`; run | second agent, 2026-11-23 (writer: writer, run on the instance 2026-11-23) | holds as run |
+| `volvel run hello --input` output; defaults to `world`. | run | second agent, 2026-11-23 (writer: writer, run on the instance 2026-11-23) | holds as run |
+| `volvel build` output. | run | second agent, 2026-11-23 (writer: writer, run on the instance 2026-11-23) | holds as run |
+| `deploy --preview` and `deploy` outputs. | run | second agent, 2026-11-23 (writer: writer, run on the instance 2026-11-23) | holds as run |
+| A new dev workspace starts with triggers paused. | `routes/workspaces.ts:260-300`; run | second agent, 2026-11-23 (writer: writer, run on the instance 2026-11-23) | holds as run |
+| `run --remote` output. | run | second agent, 2026-11-23 (writer: writer, run on the instance 2026-11-23) | holds as run |
+| The diff of `src/index.ts` runs: local `Hello, Ada` without `local.json`; `Good morning, Ada` with it; remote `Hello, Ada`. | run | second agent, 2026-11-23 (writer: writer, run on the instance 2026-11-23) | holds as run |
+| Deploy of the change: `1 created, 1 updated, 0 deleted, 1 unchanged`. | run | second agent, 2026-11-23 (writer: writer, run on the instance 2026-11-23) | holds as run |
+| Promote preview and promote outputs; schedule created in production and not paused. | run; `routes/workspaces.ts:260` (production default false) | second agent, 2026-11-23 (writer: writer, run on the instance 2026-11-23) | holds as run |
+| A schedule's default time zone is UTC. | `packages/sdk/src/index.ts:312` | second agent, 2026-11-23 (writer: writer, read from the code 2026-11-23 (not run)) | holds as read |
+| `volvel runs` list line format. | `cli/cli.ts:1055-1058`; run | second agent, 2026-11-23 (writer: writer, run on the instance 2026-11-23) | holds as run |
+| Maya Brooks, tenant admin, can do all of it. | run: her key did every step | second agent, 2026-11-23 (writer: writer, run on the instance 2026-11-23) | holds as run |
+| The console dialogs of steps 1 and 2: the Account page's **Create API key** dialog (Name, Expires with Never, In 30 days, In 90 days, In a year) was submitted at 390 px in dark: the key is shown once under "Copy this key now. It is shown only once, and cannot be read again."; the key was revoked. The Create workspace dialog was opened by the writer. | `apps/console/src/screens/Account.tsx`; run in a browser | second agent, 2026-11-23, run in a browser | holds as run |
+| The schedule's time zone default is UTC. | `packages/sdk/src/index.ts:312` | second agent, 2026-11-23, read | holds as read |

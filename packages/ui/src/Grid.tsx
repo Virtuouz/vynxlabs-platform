@@ -519,7 +519,7 @@ function NavigableGrid<Row extends Record<string, unknown>>(props: GridProps<Row
         // biome-ignore lint/a11y/noNoninteractiveElementToInteractiveRole: a table navigated cell by cell is a grid (WAI-ARIA grid pattern)
         role="grid"
         aria-label={props.label}
-        aria-rowcount={rows.length + 1}
+        aria-rowcount={rows.length + (filterable ? 2 : 1)}
         aria-multiselectable={checking || undefined}
         className="w-full border-separate border-spacing-0 text-left"
         onKeyDown={onKeyDown}
@@ -611,8 +611,8 @@ function NavigableGrid<Row extends Record<string, unknown>>(props: GridProps<Row
               return (
                 <tr
                   key={key}
-                  // The header row is the first of `aria-rowcount`: rows of data count from 2.
-                  aria-rowindex={r + 2}
+                  // The heading row, and the filter row when it is drawn, come first in `aria-rowcount`.
+                  aria-rowindex={rowIndex + (filterable ? 3 : 2)}
                   aria-selected={checking ? ticked : chosen}
                   className={`${ground} hover:bg-sunken/60`}
                   onClick={(event) => {

@@ -26,7 +26,7 @@ import { useDevWorkspace } from "../kit/objects.tsx";
 import { PageHeader } from "../kit/PageHeader.tsx";
 import { Reconnecting } from "../kit/Reconnecting.tsx";
 import { SplitPane } from "../kit/SplitPane.tsx";
-import { Mono, type RunState, StatePill, Tag } from "../kit/status.tsx";
+import { LIVE_STATES, Mono, type RunState, StatePill, Tag } from "../kit/status.tsx";
 import { Time } from "../kit/Time.tsx";
 import { useTitleObject } from "../kit/title.ts";
 import { useRecordRecent } from "../recent.ts";
@@ -56,7 +56,7 @@ import {
   type Version,
 } from "./runAgain.ts";
 
-const LIVE: RunState[] = ["queued", "running", "waiting_approval", "waiting_time"];
+const LIVE = LIVE_STATES;
 
 /**
  * One run on a page of its own: a script run with its attempts and its log, or
@@ -257,7 +257,7 @@ function ScriptRunPage({ root, link, id }: { root: string; link: string; id: str
   );
   if (error && !run) return <Notice tone="danger">{error}</Notice>;
   if (!run) return <Loading />;
-  const active = run.state === "queued" || run.state === "running";
+  const active = LIVE.includes(run.state);
   const diagnosis = insight.data?.diagnosis;
   // A run of a trigger source has a source, not a script: its page is the source's editor, and
   // nothing starts it by hand.

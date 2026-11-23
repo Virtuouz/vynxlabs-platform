@@ -32,7 +32,7 @@ import { FilterChips, Inspector, KeyValues, MasterDetail, NextStep } from "../ki
 import { Junction } from "../kit/motifs.tsx";
 import { PageHeader } from "../kit/PageHeader.tsx";
 import { Reconnecting } from "../kit/Reconnecting.tsx";
-import { Mono, type RunState, StatePill, Tag } from "../kit/status.tsx";
+import { LIVE_STATES, Mono, type RunState, StatePill, Tag } from "../kit/status.tsx";
 import { Time } from "../kit/Time.tsx";
 import { Truncate } from "../kit/Truncate.tsx";
 import { useTitleObject } from "../kit/title.ts";
@@ -132,7 +132,7 @@ const FILTERS: { value: "all" | Filter; label: string; states: RunState[] }[] = 
   { value: "canceled", label: "Canceled", states: ["canceled"] },
 ];
 /** States in which a run may still change. */
-const LIVE: RunState[] = ["queued", "running", "waiting_approval", "waiting_time"];
+const LIVE = LIVE_STATES;
 
 interface Page {
   items: Activity[];

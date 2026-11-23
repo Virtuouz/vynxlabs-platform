@@ -211,6 +211,8 @@ test("a run set for later says when it starts, as the list does (OPS-25)", async
   ];
   show(<RunPage root={root} link={link} id="r1" />);
   expect(await screen.findByText(/^Waiting until /)).toBeTruthy();
+  // It can be canceled, as the Runs row menu offers (P31).
+  expect(screen.getByRole("button", { name: "Cancel run" })).toBeTruthy();
 });
 
 test("a script run is run again with the same input, and the page moves to the new run", async () => {

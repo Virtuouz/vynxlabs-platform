@@ -72,7 +72,9 @@ function Harness({
   tab,
   filters = [],
   data,
+  tables = catalog.tables,
 }: {
+  tables?: Catalog["tables"];
   start: PageWidget;
   definition: WidgetDefinition;
   tab: "data" | "display";
@@ -89,7 +91,7 @@ function Harness({
     // The server's counts of how many values a column has, as the host puts them in the catalog.
     catalog: {
       ...catalog,
-      tables: catalog.tables.map((one) => ({
+      tables: tables.map((one) => ({
         ...one,
         columns: one.columns.map((column) => {
           const distinct = data?.counts?.[column.name];
@@ -609,6 +611,42 @@ test("WID-M6: a chart takes up to six measures, one row each, and a scatter tile
   const scatter = screen.getByRole("radio", { name: /^Scatter/ }) as HTMLInputElement;
   expect(scatter.disabled).toBe(true);
   expect(screen.getByText("needs a number")).toBeTruthy();
+});
+
+test("a scatter is offered for a number column that comes through Also from (P31)", async () => {
+  const tables: Catalog["tables"] = [
+    {
+      name: "visits",
+      columns: [
+        { name: "pet", type: "reference", references: "pets" },
+        { name: "total", type: "number", references: null },
+      ],
+    },
+    { name: "pets", columns: [{ name: "weight_lb", type: "number", references: null }] },
+  ];
+  const joined: PageWidget = {
+    id: "w",
+    type: "core/chart",
+    title: "Weights",
+    at: place,
+    config: { mark: "bar" },
+    data: {
+      rows: {
+        source: {
+          visual: {
+            table: "visits",
+            joins: ["pet"],
+            measures: [{ fn: "sum", column: "total", as: "sum_total" }],
+            groupBy: [{ column: "pet.weight_lb" }],
+          },
+        },
+      },
+    },
+  };
+  show(<Harness start={joined} definition={chart} tab="display" tables={tables} />);
+  const scatter = screen.getByRole("radio", { name: /^Scatter/ }) as HTMLInputElement;
+  expect(scatter.disabled).toBe(false);
+  expect(screen.queryByText("needs a number")).toBeNull();
 });
 
 test("WID-M6: a chart's sort is a row of the Data tab, written to the query", async () => {

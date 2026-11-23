@@ -587,9 +587,12 @@ export function CopyButton({
   value,
   label = "Copy",
   onCopied,
+  focused = false,
 }: {
   value: string;
   label?: string;
+  /** Takes the focus when its dialog opens, so Enter copies. */
+  focused?: boolean;
   /** Called once the value is on the clipboard. */
   onCopied?: () => void;
 }) {
@@ -597,6 +600,7 @@ export function CopyButton({
   return (
     <Button
       size="small"
+      {...(focused ? { "data-autofocus": "" } : {})}
       onClick={async () => {
         try {
           await navigator.clipboard.writeText(value);

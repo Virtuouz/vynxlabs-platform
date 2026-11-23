@@ -20,6 +20,31 @@ interface MemberRow {
   tenants?: { id: string; name: string }[];
 }
 
+/**
+ * What an operator can do to a member from the row. The route refuses a reset link for the
+ * operator's own account, so the row says where to change one's own password instead.
+ */
+function MemberRowActions({ row, onDone }: { row: MemberRow; onDone: () => void }) {
+  const me = useLoad<Me>("/me");
+  const yourself = me.data?.principal.id === row.id;
+  return (
+    <>
+      {row.disabled ? null : yourself ? (
+        <span className="text-meta text-ink-subtle">
+          Change your own password on the Account screen.
+        </span>
+      ) : (
+        <MemberResetLink
+          path={`/members/${row.id}/password-link`}
+          email={row.email}
+          needs={{ base: "/instance", permission: "member:write", what: "the members" }}
+        />
+      )}
+      <ToggleMember row={row} onDone={onDone} />
+    </>
+  );
+}
+
 function ToggleMember({ row, onDone }: { row: MemberRow; onDone: () => void }) {
   const me = useLoad<Me>("/me");
   // The server refuses it; the row says so in place of a button that can only fail.
@@ -126,18 +151,7 @@ export function InstanceMembers() {
         ],
         submit: (values) => api.post("/members", values),
       }}
-      rowActions={(row, reload) => (
-        <>
-          {row.disabled ? null : (
-            <MemberResetLink
-              path={`/members/${row.id}/password-link`}
-              email={row.email}
-              needs={{ base: "/instance", permission: "member:write", what: "the members" }}
-            />
-          )}
-          <ToggleMember row={row} onDone={reload} />
-        </>
-      )}
+      rowActions={(row, reload) => <MemberRowActions row={row} onDone={reload} />}
       inspect={{
         title: (row) => row.name,
         eyebrow: () => "Member",

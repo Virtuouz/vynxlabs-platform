@@ -128,6 +128,18 @@ export function ResourceIdentity({
   // take the dialog away mid-motion (found by the phase 23 walk, on Queries).
   const renamed = useRef<string | undefined>(undefined);
   const opener = useRef<HTMLElement | null>(null);
+  const told = useRef(onDone);
+  told.current = onDone;
+  // The list a screen draws this from can change at once on a rename, and take the screen's own
+  // button away before the dialog has gone: a rename that was saved is still told.
+  useEffect(
+    () => () => {
+      const path = renamed.current;
+      renamed.current = undefined;
+      if (path !== undefined) told.current(path);
+    },
+    [],
+  );
   const why =
     cannotRename(row) ??
     (removing

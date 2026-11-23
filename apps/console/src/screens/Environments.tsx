@@ -342,7 +342,7 @@ export function WorkspaceAccess({
         {held.error ? (
           <Notice tone="danger">{failed(held.error)}</Notice>
         ) : held.data === undefined ? (
-          <p className="m-0 text-ink-muted">Loading…</p>
+          <Loading what="who holds a role here" lines={2} />
         ) : held.data.items.length === 0 ? (
           <p className="m-0 text-ink-muted">Nobody holds a role here yet.</p>
         ) : (

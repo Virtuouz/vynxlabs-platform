@@ -398,7 +398,9 @@ export function SeeItAs({
       </div>
       {group && typeof counted === "number" ? (
         <p className="m-0 text-body-sm text-ink-muted">
-          Someone in this group would see {counted} {counted === 1 ? "row" : "rows"} in all.
+          Someone in this group would see {counted.toLocaleString("en-US")}{" "}
+          {counted === 1 ? "row" : "rows"} in all.
+          {shown.length === 20 && counted > 20 ? " The first 20 are listed." : ""}
         </p>
       ) : null}
       {users.error ? <ErrorState error={users.error} onRetry={users.reload} /> : null}
@@ -423,7 +425,8 @@ export function SeeItAs({
               cell: (row) => showValue(typeOf(name), row[name]),
             }))}
             footer={
-              shown.length === 20 ? (
+              // For a group the count above says it, with the same words once.
+              shown.length === 20 && !(group && typeof counted === "number") ? (
                 <p className="m-0 text-meta text-ink-muted">The first 20 rows.</p>
               ) : null
             }

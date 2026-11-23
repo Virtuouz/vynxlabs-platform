@@ -147,3 +147,39 @@ test("See it as finds an end user past the first page by searching, and shows ea
   expect(asked.some((one) => one.includes("as=u201"))).toBe(true);
   vi.unstubAllGlobals();
 }, 30_000);
+
+test("w-data 5: a group's count has its thousands marked and says 'the first 20' once", async () => {
+  vi.stubGlobal("fetch", async (address: string) => {
+    const url = new URL(address, "http://x");
+    if (url.pathname === "/api/v1/tenants/t1/end-users")
+      return new Response(JSON.stringify({ items: [], nextCursor: null }));
+    if (url.pathname === "/api/v1/tenants/t1/end-groups")
+      return new Response(JSON.stringify({ items: [{ id: "g1", name: "Crew" }] }));
+    if (url.pathname === "/api/v1/tenants/t1/workspaces/w1/aggregate/orders")
+      return new Response(JSON.stringify({ items: [{ values: { count: 1355 } }] }));
+    if (url.pathname === "/api/v1/tenants/t1/workspaces/w1/rows/orders")
+      return new Response(
+        JSON.stringify({
+          items: Array.from({ length: 20 }, (_, i) => ({ id: `r${i}`, note: `n${i}` })),
+          nextCursor: null,
+        }),
+      );
+    return new Response(JSON.stringify({ items: [] }));
+  });
+  show(
+    <SeeItAs
+      root="/tenants/t1/workspaces/w1"
+      table="orders"
+      usersPath="/tenants/t1/end-users"
+      groupsPaths={{ endUsers: "/tenants/t1/end-groups", members: "/tenants/t1/groups" }}
+      columns={[{ name: "note", type: "text" }]}
+    />,
+  );
+  const box = await screen.findByRole("combobox", { name: "See it as a group" });
+  fireEvent.click(box);
+  fireEvent.keyDown(box, { key: "ArrowDown" });
+  fireEvent.click(await screen.findByRole("option", { name: /Crew/ }));
+  await screen.findByText(/1,355 rows in all/);
+  expect(screen.getAllByText(/first 20/)).toHaveLength(1);
+  vi.unstubAllGlobals();
+}, 30_000);

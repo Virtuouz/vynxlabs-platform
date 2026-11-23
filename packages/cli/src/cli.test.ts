@@ -253,6 +253,41 @@ test("promote --preview says breaking changes need --confirm-breaking, and exits
   }
 });
 
+test("rollback names the version it put back and the one it made, when they differ", async () => {
+  const instance = await standIn(
+    tenantRoutes((method, path) => {
+      if (path === "/api/v1/tenants/t1/workspaces/w1/bundles")
+        return [
+          200,
+          {
+            items: [
+              { id: "b5", version: 5, active: true },
+              { id: "b3", version: 3, active: false },
+            ],
+          },
+        ];
+      if (method === "POST" && path === "/api/v1/tenants/t1/workspaces/w1/deployments")
+        return [
+          201,
+          { bundleVersion: 6, summary: { created: 0, updated: 1, deleted: 0, unchanged: 2 } },
+        ];
+      return undefined;
+    }, "dev"),
+  );
+  try {
+    const env = { VOLVEL_URL: instance.address, VOLVEL_TOKEN: "k" };
+    const target = ["--tenant", "acme", "--workspace", "main"];
+    const said = await cli(["rollback", "3", ...target], env);
+    expect(said.code, said.err).toBe(0);
+    expect(said.out).toContain("runs what version 3 had, as version 6");
+    expect(said.out).not.toContain("runs version 6 again");
+    const json = JSON.parse((await cli(["rollback", "3", ...target, "--json"], env)).out);
+    expect(json).toMatchObject({ version: 6, restoredFrom: 3 });
+  } finally {
+    await instance.close();
+  }
+});
+
 test("promote says why the instance refuses it, with or without --preview", async () => {
   const refused = await standIn(
     tenantRoutes((_method, path) => {

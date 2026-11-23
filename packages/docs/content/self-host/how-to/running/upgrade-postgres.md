@@ -20,7 +20,7 @@ This procedure was run on a Compose stack from Postgres 16 to Postgres 18, with 
 
 :::steps
 1. Stop every replica of the control plane and the worker host: `docker compose -f deploy/compose/compose.yaml stop control-plane worker-host`.
-2. Dump the instance's database with the new version's `pg_dump`, and restore it into the new server with `pg_restore --no-owner`, into a database owned by the same user. Do the same for every dedicated database. `pg_upgrade` on a server you manage yourself does the same job in place. The restore reports errors about a role named `vxd_` and a number: see [Restore an instance](restore-an-instance).
+2. Dump the instance's database with the new version's `pg_dump`, and restore it into the new server with `pg_restore --no-owner`, into a database owned by the same user. Do the same for every dedicated database. `pg_upgrade` on a server you manage yourself does the same job in place. Make the instance's data role first, as [Restore an instance](restore-an-instance) shows, so the restore ends with no error.
 3. Point `DATABASE_URL` at the new server, and start the control plane. It makes the roles it signs in as for tenants' rows again from the secret kept in the database, so the roles of the old server need not be carried over.
 4. Check `GET /api/v1/readyz` and **Instance**, then **Health**, then open a tenant's table.
 :::
@@ -32,7 +32,7 @@ docker run --rm --network <project>_data -e PGPASSWORD=<POSTGRES_PASSWORD> -v "$
   postgres:18 pg_dump -h postgres -U platform --no-owner -Fc platform -f /out/platform.dump
 ```
 
-Then stop and remove the `postgres` container, remove the volume `<project>_postgres`, change the image tag in the Compose file, start only `postgres`, and restore as in [Restore an instance](restore-an-instance) (`pg_restore ... --no-owner`, which ends with the five expected `vxd_` errors and exit status 1). Start everything.
+Then stop and remove the `postgres` container, remove the volume `<project>_postgres`, change the image tag in the Compose file, start only `postgres`, and restore as in [Restore an instance](restore-an-instance): make the data role, then `pg_restore ... --no-owner`, which ends with exit status 0. Start everything.
 
 ## The result
 

@@ -29,14 +29,19 @@ By the end an instance runs from a backup: the same tenants, tables, rows and fi
      tar xzf /backup/objectstore.tgz -C /data
    ```
 
-3. Restore the dump into the empty database:
+3. Make the instance's data role on the new server, then restore the dump into the empty database. The dump's policies and grants name that role (`vxd_` and a number), and a new server does not have it yet:
 
    ```bash
+   for role in $(docker compose -f deploy/compose/compose.yaml exec -T postgres \
+       pg_restore -f - < platform.dump | grep -oE 'vxd_[0-9a-f]{20}' | sort -u); do
+     docker compose -f deploy/compose/compose.yaml exec -T postgres \
+       psql -U platform -d postgres -c "create role $role nologin"
+   done
    docker compose -f deploy/compose/compose.yaml exec -T postgres \
      pg_restore -U platform -d platform --no-owner < platform.dump
    ```
 
-   `pg_restore` reports 5 errors and ends with "warning: errors ignored on restore: 5", exit status 1. All five are about a role that does not exist on the new server, `vxd_` and a number: a policy and four grants that name the instance's data role. That is expected. The instance makes the role and its policies again at start. Do not use `--exit-on-error`: it stops at the first of them, and leaves tables that have no policies.
+   `pg_restore` ends with no error and exit status 0. The role is made without a password and cannot sign in; the instance gives it its password when it starts. If you leave out the loop, the restore still works, but `pg_restore` reports 5 errors about that role and ends with exit status 1, which a script cannot tell from a failed restore. Do not use `--exit-on-error`: it stops at the first of them, and leaves tables that have no policies.
 4. Put back the keys. Set `MASTER_KEY` in `.env` to the key the backup was sealed with. If a rotation happened since, set that older key as `MASTER_KEY_SECONDARY` and the current one as `MASTER_KEY`. See [Rotate the master key](rotate-the-master-key). Keep `AUTH_SECRET` as it was.
 5. Start everything: `docker compose -f deploy/compose/compose.yaml up -d --wait`. Migrations run on start: a restore is a database of an earlier level, and it moves forward. The log says "row policies now read the signed claim" with the number of tables it made policies for.
 6. Check. `GET /api/v1/readyz` answers 200. Open **Instance**, then **Health**: the database and the object store answer, and **Master key** lists no value that opened with neither key. Open a tenant that holds a file and read the file: that shows the two backups agree. Add a row to a table: that shows the policies are back.

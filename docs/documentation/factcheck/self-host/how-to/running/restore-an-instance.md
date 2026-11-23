@@ -16,3 +16,7 @@ Written at commit `14f7d5b9`. Lines are those of that commit. Checked by: second
 ## Second check (2026-11-23)
 
 Restored again in the Postgres upgrade run (5 expected errors, exit 1). fault: self-host restore exit status.
+
+## Fault fixed (lane fd, 2026-11-23)
+
+Step 3 makes the `vxd_` role first: reproduced on a throwaway postgres:18 by lane fd, the restore then ends with no error and exit 0, the table, rows and policy back; the role's name is `vxd_` and the first 20 hex digits of the database name's SHA-256 (packages/db/src/datastore.ts:35), and the instance sets its password at start. The upgrade-postgres page points here. fault: self-host restore exit status — closed.

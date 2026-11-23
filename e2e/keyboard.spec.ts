@@ -134,6 +134,9 @@ test("a failed run is opened from the runs list, and access is given, from the k
   // A native select chooses by what is typed.
   await page.keyboard.type("Dev");
   await expect(sheet.getByLabel("Where")).toHaveValue(dev.id);
+  // Choosing a workspace adds "What" (everything in it, or one thing) before the role.
+  await page.keyboard.press("Tab");
+  await expect(sheet.getByLabel("What")).toBeFocused();
   await page.keyboard.press("Tab");
   await expect(sheet.getByLabel("Role")).toBeFocused();
   await page.keyboard.press("ArrowDown");

@@ -39,3 +39,10 @@ test("everything for one verb touches only its own wildcard, and keeps what is n
   );
   expect(setEveryone(["*:*"], kinds, "read", false)).toEqual(["*:write"]);
 });
+
+test("Workers: write does not claim the managed-workers switch, which needs tenant:write (GOV-29)", () => {
+  const worker = PERMISSION_KINDS.find((one) => one.kind === "worker");
+  expect(worker?.verbs.write).not.toMatch(/managed/i);
+  expect(worker?.verbs.write).toMatch(/credentials/);
+  expect(worker?.verbs.write).toMatch(/pools/);
+});

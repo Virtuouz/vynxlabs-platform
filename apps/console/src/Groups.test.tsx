@@ -77,6 +77,8 @@ test("a group of members shows who is in it, adds someone found by email, and ta
   expect(await screen.findByText("bo@acme.test")).toBeTruthy();
 
   fireEvent.click(screen.getByRole("button", { name: "Take ada@acme.test out" }));
+  // Taking someone out asks first (ACC-34).
+  await answer("Take out");
   await waitFor(() =>
     expect(calls.find((call) => call.method === "DELETE")?.url).toBe(
       `/api/v1${base}/groups/g1/members/u1`,

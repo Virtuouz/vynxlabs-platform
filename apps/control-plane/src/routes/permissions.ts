@@ -1171,6 +1171,30 @@ export async function insertBinding(
     if (!found) throw badRequest("The principal does not belong to this tenant.");
   }
 
+  // Giving what is already given changes nothing: the one that is there is the answer.
+  const held = await trx
+    .selectFrom("binding")
+    .select("id")
+    .where("tenant_id", "=", tenantId)
+    .where("role_id", "=", role.id)
+    .where("principal_type", "=", body.principalType)
+    .where("principal_id", body.principalId ? "=" : "is", body.principalId ?? null)
+    .where("workspace_id", workspaceId ? "=" : "is", workspaceId)
+    .where("resource_id", resourceId ? "=" : "is", resourceId)
+    .where("source_resource_id", "is", null)
+    .executeTakeFirst();
+  if (held) {
+    await audit({
+      action: "binding.unchanged",
+      targetType: "binding",
+      targetId: held.id,
+      tenantId,
+      workspaceId,
+      details: { role: role.name, principalType: body.principalType },
+    });
+    return held.id;
+  }
+
   await trx
     .insertInto("binding")
     .values({

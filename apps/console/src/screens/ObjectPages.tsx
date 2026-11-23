@@ -25,6 +25,7 @@ import { NotFound } from "./NotFound.tsx";
 import { type Trigger, TriggerState, useTriggerPause } from "./Operate.tsx";
 import { PublishEventButton } from "./PublishEvent.tsx";
 import { NewScheduleSheet } from "./ScheduleForm.tsx";
+import { VariableSheet } from "./VariableSheet.tsx";
 
 /**
  * A page of its own for each thing a workspace holds that had only a row in a
@@ -72,9 +73,7 @@ export function ConnectionPage({ root, link, path }: { root: string; link: strin
             title={one.path}
             state={
               <>
-                <StatePill state={one.bound ? "bound" : "unbound"}>
-                  {one.bound ? "Set up here" : "Not set up here"}
-                </StatePill>
+                <StatePill state={one.bound ? "bound" : "unbound"} />
                 <ConnectionHealth root={root} row={one} />
               </>
             }
@@ -175,40 +174,60 @@ interface Variable {
 
 export function VariablePage({ root, link, path }: { root: string; link: string; path: string }) {
   const found = useLoad<Variable>(`${root}/variable-values/${path}`);
+  const [editing, setEditing] = useState<Variable | null>(null);
   return (
     <Gate found={found} list={`${link}/variables`} noun="variable">
       {(one) => (
-        <ObjectPage
-          back={{ to: `${link}/variables`, label: "Variables" }}
-          eyebrow="Variable"
-          title={one.path}
-          meta={
-            <KeyValues
-              rows={[
-                ...(one.description ? [{ label: "What it is for", value: one.description }] : []),
-                {
-                  label: "Value here",
-                  value:
-                    one.value ?? (one.default !== null ? `The default: ${one.default}` : "Not set"),
-                  mono: one.value !== null,
-                },
-                ...(one.default !== null
-                  ? [{ label: "Default", value: one.default, mono: true }]
-                  : []),
-                ...(one.updatedAt
-                  ? [{ label: "Last set", value: <Time value={one.updatedAt} /> }]
-                  : []),
-              ]}
-            />
-          }
-          tabs={[
-            {
-              id: "used-by",
-              label: "Used by",
-              content: <ReferenceList root={root} link={link} kind="variable" name={one.path} />,
-            },
-          ]}
-        />
+        <>
+          <ObjectPage
+            back={{ to: `${link}/variables`, label: "Variables" }}
+            eyebrow="Variable"
+            title={one.path}
+            actions={
+              <Button onClick={() => setEditing(one)}>
+                {one.value !== null ? "Change value" : "Set value"}
+              </Button>
+            }
+            meta={
+              <KeyValues
+                rows={[
+                  ...(one.description ? [{ label: "What it is for", value: one.description }] : []),
+                  {
+                    label: "Value here",
+                    value:
+                      one.value ??
+                      (one.default !== null ? `The default: ${one.default}` : "Not set"),
+                    mono: one.value !== null,
+                  },
+                  ...(one.default !== null
+                    ? [{ label: "Default", value: one.default, mono: true }]
+                    : []),
+                  ...(one.updatedAt
+                    ? [{ label: "Last set", value: <Time value={one.updatedAt} /> }]
+                    : []),
+                ]}
+              />
+            }
+            tabs={[
+              {
+                id: "used-by",
+                label: "Used by",
+                content: <ReferenceList root={root} link={link} kind="variable" name={one.path} />,
+              },
+            ]}
+          />
+          <Closing subject={editing}>
+            {(variable, shown) => (
+              <VariableSheet
+                root={root}
+                variable={variable}
+                open={shown}
+                onClose={() => setEditing(null)}
+                onSaved={() => found.reload?.()}
+              />
+            )}
+          </Closing>
+        </>
       )}
     </Gate>
   );

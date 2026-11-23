@@ -1,5 +1,6 @@
+import { execFile } from "node:child_process";
 import { createReadStream, createWriteStream } from "node:fs";
-import { chmod, mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { Readable } from "node:stream";
@@ -23,6 +24,8 @@ export interface Io {
   out: (line: string) => void;
   err: (line: string) => void;
   env: Record<string, string | undefined>;
+  /** Asks a yes or no question of whoever is at the terminal. Absent when nobody can answer. */
+  confirm?: (question: string) => Promise<boolean>;
 }
 
 export interface Settings {
@@ -30,16 +33,36 @@ export interface Settings {
   token: string;
 }
 
+const PROFILE_NAME = /^[a-z0-9][a-z0-9_-]{0,39}$/i;
+
+/** The folder the CLI keeps what it saves in. */
+function settingsFolder(env: Io["env"]): string {
+  return join(env.XDG_CONFIG_HOME ?? join(env.HOME ?? homedir(), ".config"), "volvel");
+}
+
+/**
+ * Where the sign-in is saved. With a profile (`--profile <name>` or VOLVEL_PROFILE), the
+ * profile's own file, so that one machine can be signed in to several instances.
+ */
 export function settingsPath(env: Io["env"]): string {
-  const base = env.XDG_CONFIG_HOME ?? join(env.HOME ?? homedir(), ".config");
-  return join(base, "volvel", "config.json");
+  const profile = env.VOLVEL_PROFILE;
+  if (profile !== undefined && profile !== "") {
+    if (!PROFILE_NAME.test(profile)) {
+      throw new CliError(
+        `A profile name is letters, digits, "-" and "_", up to 40, not "${profile}".`,
+      );
+    }
+    return join(settingsFolder(env), `profile-${profile.toLowerCase()}.json`);
+  }
+  return join(settingsFolder(env), "config.json");
 }
 
 const sameUrl = (a: string, b: string) => a.replace(/\/+$/, "") === b.replace(/\/+$/, "");
 
 async function savedSettings(env: Io["env"]): Promise<Partial<Settings>> {
+  const path = settingsPath(env);
   try {
-    return JSON.parse(await readFile(settingsPath(env), "utf8"));
+    return JSON.parse(await readFile(path, "utf8"));
   } catch {
     // Not signed in yet. The environment may still supply everything.
     return {};
@@ -118,6 +141,35 @@ export function refusal(reply: ApiReply, doing: string): CliError {
   return new CliError([`Could not ${doing}. ${detail}`, ...problems].join("\n"));
 }
 
+/** `--json` on a command: its one answer is a JSON document on stdout, and no other line is. */
+const jsonOption = { json: { type: "boolean" as const } };
+
+/** The Io a command speaks through: every line, or none when it answers in JSON. */
+const spoken = (io: Io, json: boolean | undefined): Io => (json ? { ...io, out: () => {} } : io);
+
+/**
+ * What a deploy or a promotion says it is for: `--message`, else, in CI, the subject of the
+ * commit it was built from. Left out when there is neither.
+ */
+async function messageFor(
+  said: string | undefined,
+  directory: string,
+  env: Io["env"],
+): Promise<string | undefined> {
+  const clip = (text: string) => (text.length > 500 ? `${text.slice(0, 497)}...` : text);
+  if (said !== undefined) {
+    if (said.trim() === "") throw new CliError("--message needs some words.");
+    return clip(said.trim());
+  }
+  if (!env.CI || env.CI === "false" || env.CI === "0") return undefined;
+  const subject = await new Promise<string>((done) =>
+    execFile("git", ["log", "-1", "--format=%s"], { cwd: directory }, (error, out) =>
+      done(error ? "" : out.trim()),
+    ),
+  );
+  return subject === "" ? undefined : clip(subject);
+}
+
 async function whoami(settings: Settings) {
   const me = await request(settings.url, "/me", settings.token);
   if (me.status === 401) {
@@ -180,10 +232,24 @@ export function wholeNumber(flag: string, value: string, min: number, max?: numb
 
 const directoryOption = { dir: { type: "string" as const } };
 
+/** Where the repository keeps its code and the console's folder, when not where `volvel.yaml` or the defaults say. */
+const placesOption = {
+  ...directoryOption,
+  entry: { type: "string" as const },
+  resources: { type: "string" as const },
+};
+
+/** What a command that builds is told: the directory, and the places a flag names. */
+const buildOptionsOf = (values: { dir?: string; entry?: string; resources?: string }) => ({
+  directory: resolve(values.dir ?? "."),
+  ...(values.entry ? { entry: values.entry } : {}),
+  ...(values.resources ? { resources: values.resources } : {}),
+});
+
 async function build(args: string[], io: Io) {
-  const { values } = parseArgs({ args, options: directoryOption });
+  const { values } = parseArgs({ args, options: placesOption });
   const directory = resolve(values.dir ?? ".");
-  const { bundle } = await buildRepository({ directory });
+  const { bundle } = await buildRepository(buildOptionsOf(values));
   const file = join(directory, ".platform", "bundle.json");
   await mkdir(dirname(file), { recursive: true });
   await writeFile(file, JSON.stringify(bundle));
@@ -344,14 +410,23 @@ async function refuseToDropConsoleResources(
 async function deploy(args: string[], io: Io) {
   const { values } = parseArgs({
     args,
-    options: { ...directoryOption, ...targetOptions, ...allowDeleteOption },
+    options: {
+      ...placesOption,
+      ...targetOptions,
+      ...allowDeleteOption,
+      ...jsonOption,
+      preview: { type: "boolean" as const },
+      message: { type: "string" as const },
+    },
   });
+  const say = spoken(io, values.json);
   const settings = await loadSettings(io.env);
   const { base, workspace } = await locate(settings, values.tenant, values.workspace);
-  const built = await buildRepository({ directory: resolve(values.dir ?? ".") });
+  const built = await buildRepository(buildOptionsOf(values));
   const { bundle } = built;
-  for (const line of describeBundle(bundle)) io.out(line);
-  for (const note of built.notes) io.out(`Note: ${note}`);
+  const message = await messageFor(values.message, resolve(values.dir ?? "."), io.env);
+  for (const line of describeBundle(bundle)) say.out(line);
+  for (const note of built.notes) say.out(`Note: ${note}`);
   // The drafts the last pull took into platform/ are deployed with it: the console can let them go.
   const directory = resolve(values.dir ?? ".");
   const pulled = await readPulled(directory);
@@ -369,7 +444,41 @@ async function deploy(args: string[], io: Io) {
       [...(values["allow-delete"] ?? []), ...carried.map((one) => one.path)],
     );
   }
-  await uploadFiles(settings, base, built, io);
+  await uploadFiles(settings, base, built, say);
+
+  if (values.preview) {
+    // Stored as a bundle made to be tried, never offered for deploying, and removed after a week.
+    const tried = await request(settings.url, `${base}/bundles?preview=true`, settings.token, {
+      method: "POST",
+      body: bundle,
+    });
+    if (tried.status >= 300) throw refusal(tried, "check the bundle");
+    const allowed: string[] = values["allow-delete"] ?? [];
+    const answer = await request(
+      settings.url,
+      `${base}/deployment-preview?bundleId=${tried.body.id}${allowed.length > 0 ? `&allowDelete=${encodeURIComponent(allowed.join(","))}` : ""}`,
+      settings.token,
+    );
+    if (answer.status >= 300) throw refusal(answer, `check a deploy to ${values.workspace}`);
+    const { possible, refusal: why, summary } = answer.body;
+    if (!possible) {
+      throw new CliError(
+        [
+          `It cannot be deployed. ${why.detail}`,
+          ...(why.errors as { message: string }[]).map((problem) => `  - ${problem.message}`),
+        ].join("\n"),
+      );
+    }
+    say.out(
+      `Deploying would leave ${values.workspace} (${workspace.type}) with: ${counts(summary)}.`,
+    );
+    for (const line of describeChanges(summary, MAX_DEPLOY_LINES)) say.out(line);
+    say.out("Nothing was changed. Run it again without --preview to deploy.");
+    if (values.json) {
+      io.out(JSON.stringify({ preview: true, workspace: values.workspace, summary }));
+    }
+    return;
+  }
 
   const uploaded = await request(settings.url, `${base}/bundles`, settings.token, {
     method: "POST",
@@ -380,19 +489,20 @@ async function deploy(args: string[], io: Io) {
     method: "POST",
     body: {
       bundleId: uploaded.body.id,
+      ...(message ? { message } : {}),
       ...(carried.length > 0 ? { settleDrafts: carried } : {}),
       ...(values["allow-delete"]?.length ? { allowDelete: values["allow-delete"] } : {}),
     },
   });
   if (deployed.status >= 300) throw refusal(deployed, `deploy to ${values.workspace}`);
-  io.out(
+  say.out(
     `Deployed version ${deployed.body.bundleVersion} to ${values.workspace} (${workspace.type}): ` +
       `${counts(deployed.body.summary)}.`,
   );
-  for (const line of describeChanges(deployed.body.summary, MAX_DEPLOY_LINES)) io.out(line);
+  for (const line of describeChanges(deployed.body.summary, MAX_DEPLOY_LINES)) say.out(line);
   const settled = (deployed.body.draftsSettled ?? []) as string[];
   if (settled.length > 0) {
-    io.out(
+    say.out(
       `${settled.length} console ${settled.length === 1 ? "draft" : "drafts"} it carried ${settled.length === 1 ? "is" : "are"} cleared: ${settled.join(", ")}.`,
     );
   }
@@ -400,6 +510,18 @@ async function deploy(args: string[], io: Io) {
     await writeFile(
       pulledFile(directory),
       `${JSON.stringify({ ...pulled, drafts: {} }, null, 2)}\n`,
+    );
+  }
+  if (values.json) {
+    io.out(
+      JSON.stringify({
+        workspace: values.workspace,
+        type: workspace.type,
+        version: deployed.body.bundleVersion,
+        summary: deployed.body.summary,
+        draftsSettled: settled,
+        ...(message ? { message } : {}),
+      }),
     );
   }
 }
@@ -456,22 +578,33 @@ async function dev(args: string[], io: Io) {
   const { values, positionals } = parseArgs({
     args,
     allowPositionals: true,
-    options: { ...directoryOption, ...targetOptions, port: { type: "string" as const } },
+    options: {
+      ...placesOption,
+      ...targetOptions,
+      port: { type: "string" as const },
+      "no-strict": { type: "boolean" as const },
+    },
   });
   const port = values.port === undefined ? 5174 : wholeNumber("--port", values.port, 1, 65535);
   const settings = await loadSettings(io.env);
   const { workspace, tenant } = await locate(settings, values.tenant, values.workspace);
   const me = await whoami(settings);
   const server = await startDevServer({
-    directory: resolve(values.dir ?? "."),
+    ...buildOptionsOf(values),
     app: positionals[0],
     port,
+    strict: values["no-strict"] !== true,
     instance: settings,
     tenant: { id: tenant.id, slug: tenant.slug, name: tenant.name ?? tenant.slug },
     workspace: { id: workspace.id, slug: workspace.slug },
     principal: me.principal,
   });
   io.out(`${server.app.path} is at ${server.url}`);
+  io.out(
+    values["no-strict"]
+      ? "The page is served without the platform's content policy (--no-strict), so it may do what a deployed app cannot."
+      : "The page is served under the platform's content policy: no inline script, nothing from another site. A browser's console says what it refused; --no-strict turns this off.",
+  );
   io.out(
     `It reads and writes ${values.tenant}/${values.workspace} on ${settings.url}, as ${describe(me.principal)}. Press Ctrl+C to stop.`,
   );
@@ -488,11 +621,16 @@ async function promote(args: string[], io: Io): Promise<number> {
     options: {
       ...targetOptions,
       ...allowDeleteOption,
+      ...jsonOption,
+      ...directoryOption,
+      message: { type: "string" as const },
       preview: { type: "boolean" as const },
       "confirm-breaking": { type: "boolean" as const },
     },
   });
   const settings = await loadSettings(io.env);
+  const say = spoken(io, values.json);
+  const message = await messageFor(values.message, resolve(values.dir ?? "."), io.env);
   const { base } = await locate(settings, values.tenant, values.workspace);
   const allowed: string[] = values["allow-delete"] ?? [];
   const preview = await request(
@@ -503,7 +641,7 @@ async function promote(args: string[], io: Io): Promise<number> {
   if (preview.status >= 300) throw refusal(preview, `promote ${values.workspace}`);
   const { target, bundle, possible, refusal: why, summary } = preview.body;
   const where = `${target.slug} (${target.type})`;
-  io.out(
+  say.out(
     `Bundle ${String(bundle.digest).slice(0, 12)}, version ${bundle.version} here, to ${where}.`,
   );
   const breaking = (summary.breaking ?? []) as { message: string }[];
@@ -516,17 +654,19 @@ async function promote(args: string[], io: Io): Promise<number> {
     );
   }
   if (values.preview) {
-    io.out(`Promoting would leave ${where} with: ${counts(summary)}.`);
-    for (const line of describeChanges(summary)) io.out(line);
+    say.out(`Promoting would leave ${where} with: ${counts(summary)}.`);
+    for (const line of describeChanges(summary)) say.out(line);
     const needsConfirmation =
       breaking.length > 0 && target.type === "production" && !values["confirm-breaking"];
     if (needsConfirmation) {
       io.err(
         "Promoting would be refused: it changes a name that something outside calls. Nothing was changed. Run it again without --preview and with --confirm-breaking to promote.",
       );
+      if (values.json) io.out(JSON.stringify({ preview: true, target, summary, refused: true }));
       return 4;
     }
-    io.out("Nothing was changed. Run it again without --preview to promote.");
+    say.out("Nothing was changed. Run it again without --preview to promote.");
+    if (values.json) io.out(JSON.stringify({ preview: true, target, summary }));
     return 0;
   }
   if (breaking.length > 0 && target.type === "production" && !values["confirm-breaking"]) {
@@ -543,24 +683,101 @@ async function promote(args: string[], io: Io): Promise<number> {
     body: {
       ...(allowed.length > 0 ? { allowDelete: allowed } : {}),
       ...(values["confirm-breaking"] ? { confirmBreaking: true } : {}),
+      ...(message ? { message } : {}),
     },
   });
   if (promoted.status >= 300) throw refusal(promoted, `promote to ${target.slug}`);
-  io.out(
+  say.out(
     `Promoted to ${where} as version ${promoted.body.bundleVersion}: ${counts(promoted.body.summary)}.`,
   );
-  for (const line of describeChanges(promoted.body.summary)) io.out(line);
+  for (const line of describeChanges(promoted.body.summary)) say.out(line);
   // The release branch is committed after the promotion and never undoes it, so a failure is a warning.
   const release = promoted.body.release as
     | { status: string; branch: string | null; problem?: string }
     | undefined;
   if (release?.status === "done" && release.branch) {
-    io.out(`Committed to the release branch ${release.branch}.`);
+    say.out(`Committed to the release branch ${release.branch}.`);
   } else if (release?.status === "failed") {
     io.err(
       `Warning: the promotion is done, but Git sync did not get the release${release.branch ? ` (${release.branch})` : ""}: ${release.problem ?? "no reason was given"}. Commit it again from Git sync in the console.`,
     );
   }
+  if (values.json) {
+    io.out(
+      JSON.stringify({
+        target,
+        version: promoted.body.bundleVersion,
+        summary: promoted.body.summary,
+        ...(release ? { release } : {}),
+        ...(message ? { message } : {}),
+      }),
+    );
+  }
+  return 0;
+}
+
+/** Puts an earlier version of the code back: it is deployed again, as a deploy of that version. */
+async function rollback(args: string[], io: Io): Promise<number> {
+  const { values, positionals } = parseArgs({
+    args,
+    allowPositionals: true,
+    options: { ...targetOptions, ...jsonOption, message: { type: "string" as const } },
+  });
+  const [wanted] = positionals;
+  if (!wanted || !/^\d+$/.test(wanted)) {
+    throw new CliError(
+      "Say which version to go back to: volvel rollback <version> --tenant <slug> --workspace <slug>. `volvel runs` and the console's Versions list name them.",
+    );
+  }
+  const version = Number(wanted);
+  const settings = await loadSettings(io.env);
+  const { base, workspace } = await locate(settings, values.tenant, values.workspace);
+  const listed = await request(settings.url, `${base}/bundles`, settings.token);
+  if (listed.status !== 200) throw refusal(listed, "list the versions");
+  const versions = (listed.body.items as { id: string; version: number; active?: boolean }[]).sort(
+    (a, b) => b.version - a.version,
+  );
+  const chosen = versions.find((one) => one.version === version);
+  if (!chosen) {
+    throw new CliError(
+      `${values.workspace} has no version ${version} among its newest ${versions.length}. It has ${
+        versions.length === 0
+          ? "none"
+          : `${versions
+              .slice(0, 10)
+              .map((one) => one.version)
+              .join(", ")}${versions.length > 10 ? ", and older ones" : ""}`
+      }.`,
+    );
+  }
+  if (chosen.active) {
+    throw new CliError(
+      `Version ${version} is the one ${values.workspace} runs now. Nothing was changed.`,
+    );
+  }
+  const message =
+    (await messageFor(values.message, resolve("."), io.env)) ?? `Went back to version ${version}`;
+  const deployed = await request(settings.url, `${base}/deployments`, settings.token, {
+    method: "POST",
+    body: { bundleId: chosen.id, message },
+  });
+  if (deployed.status >= 300) throw refusal(deployed, `go back to version ${version}`);
+  if (values.json) {
+    io.out(
+      JSON.stringify({
+        workspace: values.workspace,
+        type: workspace.type,
+        version: deployed.body.bundleVersion,
+        summary: deployed.body.summary,
+        message,
+      }),
+    );
+    return 0;
+  }
+  io.out(
+    `${values.workspace} (${workspace.type}) runs version ${deployed.body.bundleVersion} again: ${counts(deployed.body.summary)}.`,
+  );
+  for (const line of describeChanges(deployed.body.summary, MAX_DEPLOY_LINES)) io.out(line);
   return 0;
 }
 
@@ -759,7 +976,7 @@ async function cancelInBulk(args: string[], io: Io) {
 async function runs(args: string[], io: Io) {
   const { values, positionals } = parseArgs({
     args,
-    options: { ...targetOptions, script: { type: "string" } },
+    options: { ...targetOptions, ...jsonOption, script: { type: "string" } },
     allowPositionals: true,
   });
   const settings = await loadSettings(io.env);
@@ -797,6 +1014,10 @@ async function runs(args: string[], io: Io) {
       });
     }
     items.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+    if (values.json) {
+      io.out(JSON.stringify({ items }));
+      return;
+    }
     if (items.length === 0) {
       io.out("No runs yet.");
       return;
@@ -812,6 +1033,11 @@ async function runs(args: string[], io: Io) {
   const found = await request(settings.url, `${base}/runs/${id}`, settings.token);
   if (found.status !== 200) throw refusal(found, "read the run");
   const run = found.body;
+  if (values.json) {
+    const lines = await request(settings.url, `${base}/runs/${id}/logs?limit=1000`, settings.token);
+    io.out(JSON.stringify({ run, logs: lines.body?.items ?? [] }));
+    return;
+  }
   io.out(
     `${run.script}: ${run.status}, attempt ${run.attempt} of ${run.maxAttempts}, bundle version ${run.bundleVersion}`,
   );
@@ -873,7 +1099,7 @@ async function runRemote(args: string[], io: Io): Promise<number> {
     args,
     allowPositionals: true,
     options: {
-      ...directoryOption,
+      ...placesOption,
       ...targetOptions,
       remote: { type: "boolean" },
       input: { type: "string" },
@@ -891,7 +1117,7 @@ async function runRemote(args: string[], io: Io): Promise<number> {
       `${values.workspace} is a ${workspace.type} workspace. A local build is tried in a dev workspace.`,
     );
   }
-  const built = await buildRepository({ directory: resolve(values.dir ?? ".") });
+  const built = await buildRepository(buildOptionsOf(values));
   const found = built.bundle.manifests.filter(
     (manifest) =>
       manifest.path === path &&
@@ -986,9 +1212,14 @@ const HANDLERS: Record<CommandName, (rest: string[], io: Io) => Promise<number>>
     await login(rest, io);
     return 0;
   },
-  whoami: async (_rest, io) => {
+  whoami: async (rest, io) => {
+    const { values } = parseArgs({ args: rest, options: jsonOption });
     const settings = await loadSettings(io.env);
     const me = await whoami(settings);
+    if (values.json) {
+      io.out(JSON.stringify({ url: settings.url, principal: me.principal, tenants: me.tenants }));
+      return 0;
+    }
     io.out(`${describe(me.principal)} on ${settings.url}`);
     io.out(
       me.tenants.length > 0
@@ -997,18 +1228,31 @@ const HANDLERS: Record<CommandName, (rest: string[], io: Io) => Promise<number>>
     );
     return 0;
   },
-  status: async (_rest, io) => {
+  status: async (rest, io) => {
+    const { values } = parseArgs({ args: rest, options: jsonOption });
     const url = await loadUrl(io.env);
     const [instance, ready] = await Promise.all([
       request(url, "/instance"),
       request(url, "/readyz"),
     ]);
     if (instance.status !== 200) throw new CliError(`${url} answered ${instance.status}.`);
-    io.out(`${url}`);
-    io.out(`Version ${instance.body.coreVersion}, migration level ${instance.body.migrationLevel}`);
     const failing = Object.entries((ready.body?.checks ?? {}) as Record<string, { ok: boolean }>)
       .filter(([, check]) => !check.ok)
       .map(([name]) => name);
+    if (values.json) {
+      io.out(
+        JSON.stringify({
+          url,
+          version: instance.body.coreVersion,
+          migrationLevel: instance.body.migrationLevel,
+          ready: failing.length === 0,
+          failing,
+        }),
+      );
+      return failing.length === 0 ? 0 : 1;
+    }
+    io.out(`${url}`);
+    io.out(`Version ${instance.body.coreVersion}, migration level ${instance.body.migrationLevel}`);
     io.out(failing.length === 0 ? "Ready" : `Not ready: ${failing.join(", ")} failing`);
     if (ready.body?.checks?.database?.readOnly) {
       io.out(
@@ -1016,6 +1260,41 @@ const HANDLERS: Record<CommandName, (rest: string[], io: Io) => Promise<number>>
       );
     }
     return failing.length === 0 ? 0 : 1;
+  },
+  logout: async (_rest, io) => {
+    const path = settingsPath(io.env);
+    const had = await stat(path).then(
+      () => true,
+      () => false,
+    );
+    await rm(path, { force: true });
+    io.out(
+      had
+        ? `Signed out: the saved key is removed from ${path}.`
+        : "Nothing was saved here, so there is nothing to sign out of.",
+    );
+    return 0;
+  },
+  profiles: async (_rest, io) => {
+    const { readdir } = await import("node:fs/promises");
+    const names = (await readdir(settingsFolder(io.env)).catch(() => [] as string[]))
+      .map((file) => /^profile-(.+)\.json$/.exec(file)?.[1])
+      .filter((name): name is string => name !== undefined)
+      .sort();
+    const lines: string[] = [];
+    for (const name of ["", ...names]) {
+      const saved = await savedSettings({ ...io.env, VOLVEL_PROFILE: name });
+      if (name === "" && !saved.url) continue;
+      lines.push(
+        `${name === "" ? "(none)".padEnd(12) : name.padEnd(12)} ${saved.url ?? "not signed in"}`,
+      );
+    }
+    io.out(
+      lines.length > 0
+        ? lines.join("\n")
+        : "No sign-in is saved. Run: volvel login --url <url> --token <api key>",
+    );
+    return 0;
   },
   instance: async (rest, io) => {
     await instanceCommand(rest, io);
@@ -1049,6 +1328,7 @@ const HANDLERS: Record<CommandName, (rest: string[], io: Io) => Promise<number>>
     return 0;
   },
   promote: (rest, io) => promote(rest, io),
+  rollback: (rest, io) => rollback(rest, io),
   tenant: async (rest, io) => {
     await tenant(rest, io);
     return 0;
@@ -1061,9 +1341,19 @@ const HANDLERS: Record<CommandName, (rest: string[], io: Io) => Promise<number>>
 };
 
 /** Runs the command line. Returns the process exit code. */
-export async function run(argv: string[], io: Io): Promise<number> {
-  const [command, ...rest] = argv;
+export async function run(given: string[], first: Io): Promise<number> {
+  let argv = given;
+  let io = first;
   try {
+    // `--profile <name>` before the command, or anywhere after it, picks the saved sign-in.
+    const at = argv.indexOf("--profile");
+    if (at >= 0) {
+      const name = argv[at + 1];
+      if (!name || name.startsWith("-")) throw new CliError("--profile needs a name.");
+      argv = [...argv.slice(0, at), ...argv.slice(at + 2)];
+      io = { ...first, env: { ...first.env, VOLVEL_PROFILE: name } };
+    }
+    const [command, ...rest] = argv;
     if (command === undefined || command === "help" || command === "--help" || command === "-h") {
       io.out(usage());
       return 0;

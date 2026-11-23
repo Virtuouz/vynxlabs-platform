@@ -97,3 +97,13 @@ test("an image from another site is loaded only when asked for", () => {
   fireEvent.click(screen.getByRole("button", { name: "Show image" }));
   expect(document.querySelector("img")?.getAttribute("src")).toBe("https://example.com/chart.png");
 });
+
+test("WLK-15: a payload the server keeps apart says so, instead of showing its address as data", () => {
+  render(<ResultView label="Input" value={{ stored: "flow-runs/abc/input.json" }} />);
+  expect(screen.getByText(/Too large to show here/)).toBeTruthy();
+  expect(screen.getByText(/flow-runs\/abc\/input\.json/)).toBeTruthy();
+  cleanup();
+  // A value that only looks like it is shown as it is.
+  render(<ResultView label="Input" value={{ stored: "yes" }} />);
+  expect(screen.queryByText(/Too large to show here/)).toBeNull();
+});

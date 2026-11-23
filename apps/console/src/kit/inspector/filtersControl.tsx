@@ -26,6 +26,7 @@ import {
   bindFilter,
   type CatalogColumn,
   type ConfigSetting,
+  columnsNamed,
   filterColumn,
   filterTypeFor,
   heading,
@@ -34,7 +35,6 @@ import {
   newSearch,
   unbindFilter,
   withConfig,
-  withSystemColumns,
 } from "./model.ts";
 
 /** What a date filter's range is called, in the words a reader sees. */
@@ -71,8 +71,7 @@ interface PageColumn extends CatalogColumn {
 function pageColumns(env: Env): PageColumn[] {
   const found = new Map<string, PageColumn>();
   for (const table of widgetTables([...env.widgets])) {
-    const columns = env.catalog.tables.find((one) => one.name === table)?.columns ?? [];
-    for (const column of withSystemColumns(columns)) {
+    for (const column of columnsNamed(env.catalog, table)) {
       if (column.name !== "id" && !found.has(column.name))
         found.set(column.name, { ...column, table });
     }

@@ -27,6 +27,7 @@ import {
   LifeBuoy,
   type LucideIcon,
   Palette,
+  Paperclip,
   Play,
   Plug,
   Radio,
@@ -103,6 +104,15 @@ export interface Section {
   help: string;
 }
 
+/**
+ * What a section is called in a workspace of this type. The release screen deploys in a dev
+ * workspace and shows versions in production, and says so in the navigation, the palette and
+ * its own title (D54).
+ */
+export function sectionLabel(section: Section, workspaceType: string | undefined): string {
+  return section.slug === "release" && workspaceType === "production" ? "Versions" : section.label;
+}
+
 /** A workspace's screens, by area. */
 export const WORKSPACE_SECTIONS: Record<
   "overview" | "build" | "operate" | "data" | "configure",
@@ -123,7 +133,7 @@ export const WORKSPACE_SECTIONS: Record<
     { slug: "events", label: "Events", icon: Radio, help: "operate-events" },
     { slug: "triggers", label: "Triggers", icon: Zap, help: "operate-triggers" },
     { slug: "approvals", label: "Approvals", icon: CircleCheck, help: "operate-approvals" },
-    { slug: "release", label: "Releases", icon: Rocket, help: "operate-release" },
+    { slug: "release", label: "Deploy", icon: Rocket, help: "operate-release" },
     { slug: "git", label: "Git sync", icon: GitCompareArrows, help: "operate-git" },
   ],
   data: [
@@ -131,6 +141,8 @@ export const WORKSPACE_SECTIONS: Record<
     { slug: "queries", label: "Queries", icon: FileSearch, help: "data-queries" },
     { slug: "sources", label: "Data sources", icon: Database, help: "data-sources" },
     { slug: "dashboards", label: "Dashboards", icon: Gauge, help: "data-dashboards" },
+    // The help of Tables says what a file column is; a topic of its own is for the docs lane.
+    { slug: "files", label: "Files", icon: Paperclip, help: "data-tables" },
   ],
   configure: [
     { slug: "connections", label: "Connections", icon: Plug, help: "configure-connections" },

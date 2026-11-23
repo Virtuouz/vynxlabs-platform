@@ -60,16 +60,22 @@ export function ago(value: When, now: When = Date.now()): string {
   return ms > 0 ? `in ${amount}` : `${amount} ago`;
 }
 
+/** The reader's zone as it is on that day: "EST", "GMT+1". */
+export function zoneName(value: When): string {
+  return (
+    new Intl.DateTimeFormat(undefined, { timeZoneName: "short" })
+      .formatToParts(at(value))
+      .find((part) => part.type === "timeZoneName")?.value ?? ""
+  );
+}
+
 /**
  * Everything about a time, for a tooltip: the reader's local time with its
  * zone, the same in UTC, and how long ago.
  */
 export function fullTime(value: When, now: When = Date.now()): string {
   const date = at(value);
-  const zone =
-    new Intl.DateTimeFormat(undefined, { timeZoneName: "short" })
-      .formatToParts(date)
-      .find((part) => part.type === "timeZoneName")?.value ?? "";
+  const zone = zoneName(date);
   const utc = date.toISOString().replace("T", " ").slice(0, 19);
   return `${stamp(date)}${zone ? ` ${zone}` : ""} · ${utc} UTC · ${ago(date, now)}`;
 }

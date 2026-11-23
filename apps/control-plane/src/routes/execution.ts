@@ -35,7 +35,12 @@ import {
 import { BUILTIN_CONFIG_SCHEMAS, connectorSchema } from "../kernel/execution/connectors.js";
 import { instanceTriggersPaused } from "../kernel/execution/control.js";
 import { deployBundle } from "../kernel/execution/deploy.js";
-import { previewPromotion, promote, promotionOf } from "../kernel/execution/promote.js";
+import {
+  previewDeployment,
+  previewPromotion,
+  promote,
+  promotionOf,
+} from "../kernel/execution/promote.js";
 import { redact, redactError, redactText } from "../kernel/execution/redact.js";
 import {
   announceCanceled,
@@ -244,6 +249,30 @@ const RunStatus = Type.Union([
   Type.Literal("failed"),
   Type.Literal("cancelled"),
 ]);
+/** What started a run: its kind, the details of that kind, and for a trigger source's run, which one. */
+const RunTrigger = Type.Unsafe<{
+  type: string;
+  relay?: { resourceId: string; node: string; mode: "webhook" | "poll" };
+  [detail: string]: unknown;
+}>({
+  type: "object",
+  additionalProperties: true,
+  properties: {
+    type: { type: "string" },
+    relay: {
+      type: "object",
+      description: "Set when the run is of a trigger source: the source and the node it starts.",
+      properties: {
+        resourceId: { type: "string", format: "uuid" },
+        node: { type: "string" },
+        mode: { enum: ["webhook", "poll"] },
+      },
+      required: ["resourceId", "node", "mode"],
+    },
+  },
+  required: ["type"],
+});
+
 const Run = Type.Object({
   id: Id,
   script: Type.String(),
@@ -251,7 +280,7 @@ const Run = Type.Object({
   state: RunStateSchema,
   attempt: Type.Integer(),
   maxAttempts: Type.Integer(),
-  trigger: AnyObject,
+  trigger: RunTrigger,
   startedBy: Type.Object({ type: Type.String(), id: NullableId }),
   bundleId: Id,
   bundleVersion: Type.Integer(),
@@ -662,6 +691,54 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       },
     );
 
+    app.get(
+      `${base}/deployment-preview`,
+      {
+        config: { access: access.workspace("deployment:write") },
+        schema: {
+          summary: "What deploying a bundle here would do",
+          description:
+            "Found by carrying the deploy out and taking it all back, so it is exactly what " +
+            "the deploy would do: the resources and tables it would change, or why it would be refused. " +
+            "Nothing is changed.",
+          tags: ["deploys"],
+          params: WorkspaceParams,
+          querystring: Type.Object({
+            bundleId: Id,
+            allowDelete: Type.Optional(
+              Type.String({
+                maxLength: 4000,
+                description:
+                  "Paths the deploy may delete although it looks like a rename, separated by commas.",
+              }),
+            ),
+          }),
+          response: {
+            200: Type.Object({
+              possible: Type.Boolean(),
+              refusal: Type.Union([
+                Type.Object({
+                  code: Type.String(),
+                  detail: Type.String(),
+                  errors: Type.Array(Type.Object({ path: Type.String(), message: Type.String() })),
+                }),
+                Type.Null(),
+              ]),
+              summary: Type.Union([Summary, Type.Null()]),
+            }),
+          },
+        },
+      },
+      async ({ ctx, query }) =>
+        previewDeployment(
+          kernel,
+          ctx.actor,
+          ctx.workspace as WorkspaceRef,
+          query.bundleId,
+          query.allowDelete?.split(",").filter(Boolean),
+        ),
+    );
+
     app.post(
       `${base}/deployments`,
       {
@@ -909,6 +986,9 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                   "it, when there is one, is refused with `breaking_changes`.",
               }),
             ),
+            message: Type.Optional(
+              Type.String({ maxLength: 500, description: "What changed, in a few words." }),
+            ),
             allowDelete: Type.Optional(
               Type.Array(Type.String({ maxLength: 255 }), {
                 maxItems: 200,
@@ -952,6 +1032,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           promote(kernel, trx, audit, workspace, ctx.principal, {
             ...(body?.allowDelete ? { allowDelete: body.allowDelete } : {}),
             ...(body?.confirmBreaking ? { confirmBreaking: true } : {}),
+            ...(body?.message ? { message: body.message } : {}),
           }),
         );
         await publishPlatformEvent(kernel, {

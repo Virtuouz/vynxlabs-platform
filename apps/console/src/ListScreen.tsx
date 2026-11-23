@@ -13,7 +13,7 @@ import {
 import type { ReactNode } from "react";
 import { useEffect, useId, useState } from "react";
 import { type ApiError, useLoad } from "./api.ts";
-import { ask, notify } from "./ask.tsx";
+import { ask, noteWaiting, notify } from "./ask.tsx";
 import { type DataColumn, DataTable } from "./kit/DataTable.tsx";
 import { keepPlace } from "./kit/focus.ts";
 import { clock } from "./kit/format.ts";
@@ -51,6 +51,16 @@ export interface FormField {
   /** Shows the field only while this holds for what has been entered so far. */
   when?: (values: Record<string, string>) => boolean;
   placeholder?: string;
+  /**
+   * Draws the field's own control, for a value no plain box says well: a choice that depends on
+   * the type just chosen. It holds its value as text, like every other field.
+   */
+  render?: (control: {
+    value: string;
+    values: Record<string, string>;
+    error: string | undefined;
+    onChange: (value: string) => void;
+  }) => ReactNode;
 }
 
 function ChoiceField({
@@ -131,7 +141,10 @@ export interface ListScreenProps<Row> {
   setupField?: string;
   /** Adds a last column of actions per row. */
   rowActions?: (row: Row, reload: () => void) => ReactNode;
-  /** A button beside the title, for a screen whose way to add something is not a dialog. */
+  /**
+   * A button beside the title, for a screen whose way to add something is not a dialog. With
+   * `create`, it stands beside that button, for a second way in.
+   */
   action?: ReactNode;
 }
 
@@ -274,14 +287,27 @@ export function CreateDialog({
           setValues(initial ?? {});
           onCreated(result);
         } catch (caught) {
-          setError(caught as ApiError);
+          // A change that waits for a second person is asked, not failed: the form is done.
+          if (noteWaiting(caught)) {
+            setValues(initial ?? {});
+            onClose();
+          } else setError(caught as ApiError);
         } finally {
           setBusy(false);
         }
       }}
     >
       {config.fields.map((field) =>
-        field.when && !field.when(values) ? null : field.type === "checkbox" ? (
+        field.when && !field.when(values) ? null : field.render ? (
+          <div key={field.name}>
+            {field.render({
+              value: values[field.name] ?? field.initial ?? "",
+              values,
+              error: fieldError(field.name),
+              onChange: (value) => setValues((v) => ({ ...v, [field.name]: value })),
+            })}
+          </div>
+        ) : field.type === "checkbox" ? (
           <CheckboxField
             key={field.name}
             name={field.name}
@@ -369,9 +395,12 @@ export function ListScreen<Row>(props: ListScreenProps<Row>) {
       ]
     : props.columns;
   const createButton = create ? (
-    <Button variant="primary" onClick={() => setCreating(true)}>
-      {create.action}
-    </Button>
+    <span className="inline-flex flex-wrap items-center gap-2">
+      {props.action}
+      <Button variant="primary" onClick={() => setCreating(true)}>
+        {create.action}
+      </Button>
+    </span>
   ) : (
     props.action
   );

@@ -1042,8 +1042,8 @@ export interface TableOptions<C extends Record<string, ColumnSpec<unknown, boole
             | { column: Extract<keyof C, string>; equals: { attribute: string } };
         }[];
       };
-  /** Columns to index, each entry one index. */
-  indexes?: Extract<keyof C, string>[][];
+  /** Columns to index, each entry one index. `id`, `created_at` and `updated_at` may be named. */
+  indexes?: (Extract<keyof C, string> | "id" | "created_at" | "updated_at")[][];
   /** The table's previous path. Its rows are kept. */
   renamedFrom?: string;
 }

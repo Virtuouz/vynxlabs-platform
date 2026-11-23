@@ -2,7 +2,7 @@ import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import { Type } from "typebox";
 import { writeAudit } from "../kernel/audit.js";
 import { badRequest } from "../kernel/errors.js";
-import { approvalDetail } from "../kernel/flows/approval-detail.js";
+import { approvalDetail, approvalTitle } from "../kernel/flows/approval-detail.js";
 import { linkActor, linkGone, readLink, takeLink } from "../kernel/flows/approval-links.js";
 import { decideApproval, kickFlow } from "../kernel/flows/engine.js";
 import { flowKnown } from "../kernel/flows/known.js";
@@ -61,7 +61,10 @@ export function approvalLinkRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         const { link, step } = found;
         const detail = (step.detail ?? {}) as { title?: string; detail?: unknown };
         return {
-          title: detail.title ?? "",
+          title: approvalTitle(
+            detail.title ?? "",
+            await flowKnown(kernel, kernel.db, step.flow_run_id),
+          ),
           detail: approvalDetail(
             detail.detail,
             await flowKnown(kernel, kernel.db, step.flow_run_id),

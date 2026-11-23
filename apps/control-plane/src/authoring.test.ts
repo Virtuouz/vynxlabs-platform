@@ -171,6 +171,28 @@ describe("drafts", () => {
     );
   });
 
+  test("the list of drafts says how a trigger source's draft is asked, to offer it where one of that mode is chosen", async () => {
+    const saved = await draft(
+      "sources/inbox-draft",
+      {
+        entry: "inbox",
+        mode: "poll",
+        timeoutSeconds: 30,
+        source: {
+          language: "typescript",
+          code: "export const inbox = async () => ({ items: [] });\n",
+        },
+      },
+      "trigger_source",
+    );
+    expect(saved.status, JSON.stringify(saved.body)).toBe(200);
+    const listed = (await alice.get(`${ws()}/drafts`)).body.items.find(
+      (item: { path: string }) => item.path === "sources/inbox-draft",
+    );
+    expect(listed).toMatchObject({ kind: "trigger_source", mode: "poll" });
+    await alice.delete(`${ws()}/drafts/sources/inbox-draft`);
+  });
+
   test("the keys of the tenant's groups, members' and end users', are listed for the publish check", async () => {
     const managers = await alice.post(`/tenants/${tenant}/groups`, { name: "Billing team" });
     expect(managers.status, JSON.stringify(managers.body)).toBe(201);

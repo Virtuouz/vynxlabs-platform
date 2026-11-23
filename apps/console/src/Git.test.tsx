@@ -312,3 +312,105 @@ test("WLK-17h: the branch is shown as it is written, not in capitals", async () 
   const branch = await screen.findByText("console/dev", { selector: "span" });
   expect(branch.className).not.toContain("uppercase");
 });
+
+test("REL-MP3: the repository form has the user name, the release and access branches, and a check that reaches it again", async () => {
+  const stored = {
+    ...repository,
+    releaseBranch: null,
+    tenantBranch: "volvel/access",
+    verifiedAt: "2026-11-20T10:00:00.000Z",
+  };
+  routes["GET /api/v1/tenants/t1/git-repository"] = () => [200, { repository: stored }];
+  routes["PUT /api/v1/tenants/t1/git-repository"] = () => [200, stored];
+  routes["POST /api/v1/tenants/t1/git-repository/check"] = () => [
+    200,
+    { ok: false, problem: "The repository refused the access token.", repository: stored },
+  ];
+  show(<RepositorySettings base="/tenants/t1" />);
+  expect(((await screen.findByLabelText("Access branch")) as HTMLInputElement).value).toBe(
+    "volvel/access",
+  );
+  fireEvent.change(screen.getByLabelText("Release branch"), { target: { value: "releases" } });
+  fireEvent.change(screen.getByLabelText("User name"), { target: { value: "ci-bot" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  await waitFor(() => expect(sent("PUT")).toHaveLength(1));
+  expect(sent("PUT")[0]?.body).toEqual({
+    url: repository.url,
+    defaultBranch: "main",
+    folder: "platform",
+    username: "ci-bot",
+    releaseBranch: "releases",
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Check the connection" }));
+  expect((await screen.findByText(/refused the access token/)).textContent).toBeTruthy();
+  expect(sent("POST")).toHaveLength(1);
+});
+
+test("REL-MP4: Git sync lists the workspace's pushes and pulls and every branch of the tenant", async () => {
+  routes[`GET /api/v1${root}/git`] = () => [
+    200,
+    { repository, branch: "console/dev", state: "synced", syncedCommit: "abc1234def" },
+  ];
+  routes[`GET /api/v1${root}/git/compare`] = () => [200, compare(false)];
+  routes[`GET /api/v1${root}/git/operations`] = () => [
+    200,
+    {
+      items: [
+        {
+          id: "o3",
+          kind: "pull",
+          status: "failed",
+          commit: null,
+          message: "The branch was not reachable.",
+          detail: {},
+          createdByType: "user",
+          createdById: "u1",
+          createdAt: "2026-11-21T10:00:00.000Z",
+        },
+        {
+          id: "o2",
+          kind: "push",
+          status: "done",
+          commit: "9f8e7d6c5b",
+          message: "Deploy from the console",
+          detail: {},
+          createdByType: "user",
+          createdById: "u1",
+          createdAt: "2026-11-20T10:00:00.000Z",
+        },
+      ],
+    },
+  ];
+  routes["GET /api/v1/tenants/t1/git-branches"] = () => [
+    200,
+    {
+      items: [
+        {
+          workspaceId: "w1",
+          workspace: "Dev",
+          type: "dev",
+          branch: "console/dev",
+          mode: "follows",
+          state: "synced",
+          lastError: null,
+        },
+        {
+          workspaceId: "w2",
+          workspace: "Main",
+          type: "production",
+          branch: "release/main",
+          mode: "release",
+          state: null,
+          lastError: null,
+        },
+      ],
+    },
+  ];
+  show(<GitSync root={root} link="/t/t1/workspaces/w1" />);
+  const history = await screen.findByRole("region", { name: "History" });
+  await waitFor(() => expect(history.textContent).toContain("The branch was not reachable."));
+  expect(history.textContent).toContain("9f8e7d6");
+  const branches = await screen.findByRole("region", { name: "Branches" });
+  await waitFor(() => expect(branches.textContent).toContain("release/main"));
+  expect(branches.textContent).toContain("Dev");
+});

@@ -14,6 +14,7 @@ export const EDITED_KINDS = [
   "event",
   "schedule",
   "trigger",
+  "data_source",
 ] as const;
 export type EditedKind = (typeof EDITED_KINDS)[number];
 export const isEditedKind = (kind: string): kind is EditedKind =>

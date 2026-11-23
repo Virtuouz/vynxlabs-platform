@@ -160,10 +160,12 @@ export const tenantName = (resource: { kind: string; key: string }): string =>
  * Everything wrong with a set of tenant resources that can be seen without the
  * tenant: bodies, keys used twice, and bindings to what is not in the set.
  * `known` names what the tenant has beside the set, for a set that is one change.
+ * `held` is what the tenant has now: a role keeps a permission it holds even if retired.
  */
 export function checkTenantResources(
   resources: readonly TenantResource[],
   known: readonly { kind: string; key: string }[] = [],
+  held: readonly TenantResource[] = [],
 ): string[] {
   const problems: string[] = [];
   const seen = new Set<string>();
@@ -193,8 +195,17 @@ export function checkTenantResources(
       problems.push(`${name}: ${issue.path} ${issue.message}`);
     }
     if (resource.kind === "tenant_role") {
+      // A permission the role already holds stays, even once it is retired: only what is added is checked.
+      const kept = new Set(
+        (held.find((one) => one.kind === "tenant_role" && one.key === resource.key)?.body
+          .permissions as string[] | undefined) ?? [],
+      );
       for (const permission of (resource.body.permissions as string[] | undefined) ?? []) {
-        if (typeof permission === "string" && !isGrantablePermission(permission)) {
+        if (
+          typeof permission === "string" &&
+          !kept.has(permission) &&
+          !isGrantablePermission(permission)
+        ) {
           problems.push(
             `${name}: /body/permissions "${permission}" is not a permission a role can give.`,
           );

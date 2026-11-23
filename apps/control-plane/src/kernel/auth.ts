@@ -9,7 +9,7 @@ import {
 import { setSessionCookie } from "better-auth/cookies";
 import { openAPI } from "better-auth/plugins/open-api";
 import type { FastifyBaseLogger } from "fastify";
-import { type Config, MIN_PASSWORD_LENGTH } from "../config.js";
+import { CONSOLE_SESSION_DAYS, type Config, MIN_PASSWORD_LENGTH } from "../config.js";
 import { ANONYMOUS, type Db, writeAudit } from "./audit.js";
 import { countHit } from "./ratelimit.js";
 import { finish, stateCookie } from "./sso/flow.js";
@@ -78,6 +78,8 @@ export function authOptions(
       // library would ask for one made in the last day to list them.
       freshAge: 0,
       modelName: "member_session",
+      // Said here and in SECURITY.md, so that a change of the library's default is a choice.
+      expiresIn: CONSOLE_SESSION_DAYS * 86_400,
       fields: {
         userId: "member_id",
         expiresAt: "expires_at",

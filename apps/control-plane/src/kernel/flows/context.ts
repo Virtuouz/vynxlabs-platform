@@ -19,6 +19,29 @@ export interface ContextStep {
   child_flow_run_id: string | null;
 }
 
+const isTooLarge = (value: unknown): boolean =>
+  typeof value === "object" &&
+  value !== null &&
+  typeof (value as { stored?: unknown }).stored === "string" &&
+  typeof (value as { note?: unknown }).note === "string";
+
+/**
+ * What an expression could not read because it was too large to be loaded: the flow's input, or
+ * a step's output. A missing key beside one of these is the large value's, not a typing mistake.
+ */
+export function tooLargeIn(context: Record<string, unknown>): string[] {
+  const found: string[] = [];
+  if (isTooLarge(context.trigger)) found.push("The input the flow was started with");
+  const steps = (context.steps ?? {}) as Record<string, { output?: unknown }>;
+  const own = (context.trigger as { stored?: string } | undefined)?.stored;
+  for (const [id, one] of Object.entries(steps)) {
+    // The trigger's own step holds the same input again.
+    if (isTooLarge(one?.output) && (one.output as { stored: string }).stored !== own)
+      found.push(`The output of ${id}`);
+  }
+  return found;
+}
+
 /** What a finished step produced. Something too large to hold in a row is not loaded. */
 export async function readOutput(db: Db | Trx, step: ContextStep): Promise<unknown> {
   const tooLarge = (ref: string) => ({

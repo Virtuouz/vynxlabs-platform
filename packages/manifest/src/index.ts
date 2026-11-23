@@ -1,4 +1,5 @@
 export * from "./action.js";
+export { APP_POLICY, appPolicy } from "./app-policy.js";
 export {
   ASSET_PATH_PATTERN,
   assetPathProblem,
@@ -231,6 +232,7 @@ export {
   validateJson,
 } from "./registry.js";
 export {
+  COLUMN_WIDENINGS,
   checkTable,
   conditionColumn,
   displayGuess,

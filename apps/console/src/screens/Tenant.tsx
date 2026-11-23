@@ -1,6 +1,6 @@
-import { Button, EmptyState, Menu, Notice, TextField } from "@volvel/ui";
+import { Button, EmptyState, Menu, Notice, SelectField, TextField } from "@volvel/ui";
 import { lazy, Suspense, useEffect, useState } from "react";
-import { api, isOperator, type Me, useLoad } from "../api.ts";
+import { ApiError, api, isOperator, type Me, useLoad } from "../api.ts";
 import { notify } from "../ask.tsx";
 import { CollectionView } from "../kit/CollectionView.tsx";
 import { useEditorKey } from "../kit/editorKey.ts";
@@ -30,6 +30,7 @@ import { Domains } from "./Domains.tsx";
 import { EndUsers } from "./EndUsers.tsx";
 import { TenantExport, WorkspaceSettings } from "./Environments.tsx";
 import { ConnectionGroups, Connections, Scripts, Variables, Workers } from "./Execution.tsx";
+import { Files } from "./Files.tsx";
 import { GitSync } from "./GitSync.tsx";
 import { NotFound } from "./NotFound.tsx";
 import { OldPaths } from "./OldPaths.tsx";
@@ -144,20 +145,78 @@ const grantForm = (tenantId: string, roles: Role[]): CreateConfig => ({
     {
       name: "durationMinutes",
       label: "Duration",
-      options: [
-        { value: "60", label: "1 hour" },
-        { value: "240", label: "4 hours" },
-        { value: "1440", label: "24 hours" },
-      ],
+      render: ({ value, onChange, error }) => (
+        <GrantLength value={value || undefined} onChange={onChange} error={error} />
+      ),
     },
   ],
   submit: (values) =>
     api.post(`/tenants/${tenantId}/access-grants`, {
       reason: values.reason,
       roleId: values.roleId,
-      durationMinutes: Number(values.durationMinutes),
+      durationMinutes: grantMinutes(values.durationMinutes),
     }),
 });
+
+const LONGEST_GRANT = 1440;
+const GRANT_LENGTHS = [
+  { value: "60", label: "1 hour" },
+  { value: "240", label: "4 hours" },
+  { value: "1440", label: "24 hours" },
+];
+
+/** A grant's length in minutes: one of the offered, or `other:<minutes>` typed by the person. */
+function grantMinutes(value: string | undefined): number {
+  const minutes = Number((value ?? "60").replace(/^other:/, ""));
+  if (!Number.isInteger(minutes) || minutes < 1 || minutes > LONGEST_GRANT) {
+    throw new ApiError(400, {
+      detail: `The length is 1 to ${LONGEST_GRANT} minutes.`,
+      errors: [
+        {
+          path: "/body/durationMinutes",
+          message: `Give a whole number of minutes, from 1 to ${LONGEST_GRANT} (24 hours).`,
+        },
+      ],
+    });
+  }
+  return minutes;
+}
+
+function GrantLength({
+  value,
+  onChange,
+  error,
+}: {
+  value: string | undefined;
+  onChange: (value: string) => void;
+  error: string | undefined;
+}) {
+  const current = value ?? "60";
+  const other = current.startsWith("other:");
+  return (
+    <div className="flex flex-col gap-3">
+      <SelectField
+        name="duration"
+        label="Duration"
+        options={[...GRANT_LENGTHS, { value: "other", label: "Other" }]}
+        value={other ? "other" : current}
+        {...(other ? {} : error ? { error } : {})}
+        onChange={(next) => onChange(next === "other" ? "other:" : next)}
+      />
+      {other ? (
+        <TextField
+          name="durationMinutes"
+          label="Minutes"
+          type="number"
+          value={current.slice("other:".length)}
+          hint={`A whole number, from 1 to ${LONGEST_GRANT} (24 hours).`}
+          {...(error ? { error } : {})}
+          onChange={(text) => onChange(`other:${text}`)}
+        />
+      ) : null}
+    </div>
+  );
+}
 
 /** Built-in roles an operator can pick before having any access to the tenant. */
 const BUILTIN_ROLES: Role[] = [
@@ -407,6 +466,7 @@ const WORKSPACE_TABS = new Set([
   "docs",
   "events",
   "extensions",
+  "files",
   "flow-runs",
   "flows",
   "git",
@@ -554,6 +614,7 @@ function WorkspaceDetail({
           key={rest}
           root={root}
           id={rest}
+          editable={workspace.data.type === "dev"}
           link={`/t/${tenantId}/workspaces/${workspaceId}`}
         />
       ) : tab === "dashboards" ? (
@@ -612,6 +673,8 @@ function WorkspaceDetail({
         />
       ) : tab === "sources" ? (
         <Sources root={root} link={`/t/${tenantId}/workspaces/${workspaceId}`} />
+      ) : tab === "files" ? (
+        <Files root={root} />
       ) : null}
       {tab === "apps" ? (
         <Apps root={root} />
@@ -918,6 +981,8 @@ function ServiceAccounts({ base, path }: { base: string; path: string }) {
 
 interface ServiceAccount {
   id: string;
+  /** What code and a repository name it by. It never changes. */
+  key?: string;
   name: string;
   description: string;
   createdAt: string;
@@ -1133,7 +1198,7 @@ function ServiceAccountList({ base }: { base: string }) {
   );
 }
 
-/** What a service account is for, in a sentence, changed in place. */
+/** What a service account is called and what it is for, changed in place. Its key stays. */
 function DescriptionForm({
   base,
   account,
@@ -1144,8 +1209,10 @@ function DescriptionForm({
   onSaved: () => void;
 }) {
   const [text, setText] = useState(account.description);
+  const [name, setName] = useState(account.name);
   const [busy, setBusy] = useState(false);
-  const changed = text.trim() !== account.description;
+  const renamed = name.trim() !== account.name;
+  const changed = renamed || text.trim() !== account.description;
   return (
     <form
       className="flex flex-col gap-3"
@@ -1153,8 +1220,16 @@ function DescriptionForm({
         event.preventDefault();
         setBusy(true);
         try {
-          await api.patch(`${base}/service-accounts/${account.id}`, { description: text });
-          notify.success(`What ${account.name} is for is saved.`);
+          if (name.trim() === "") return;
+          await api.patch(`${base}/service-accounts/${account.id}`, {
+            ...(renamed ? { name: name.trim() } : {}),
+            ...(text.trim() !== account.description ? { description: text } : {}),
+          });
+          notify.success(
+            renamed
+              ? `${account.name} is now called ${name.trim()}.`
+              : `What ${account.name} is for is saved.`,
+          );
           onSaved();
         } catch (error) {
           notify.error(error);
@@ -1163,7 +1238,19 @@ function DescriptionForm({
         }
       }}
     >
-      <KeyValues rows={[{ label: "Created", value: <Time value={account.createdAt} /> }]} />
+      <KeyValues
+        rows={[
+          ...(account.key ? [{ label: "Key", value: account.key, mono: true }] : []),
+          { label: "Created", value: <Time value={account.createdAt} /> },
+        ]}
+      />
+      <TextField
+        name="name"
+        label="Name"
+        hint="What people see. Its key, which code and repositories name it by, never changes, and access given to it and its keys are not touched."
+        value={name}
+        onChange={setName}
+      />
       <TextField
         name="description"
         label="What it is for"

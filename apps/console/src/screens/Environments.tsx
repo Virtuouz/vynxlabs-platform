@@ -1,4 +1,12 @@
-import { Button, ComboboxField, Notice, SelectField, SideSheet, TextField } from "@volvel/ui";
+import {
+  Button,
+  ComboboxField,
+  Notice,
+  NumberField,
+  SelectField,
+  SideSheet,
+  TextField,
+} from "@volvel/ui";
 import { type ReactNode, useEffect, useState } from "react";
 import { ApiError, api, apiFetch, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
@@ -207,8 +215,10 @@ export function WorkspaceSettings({
   reload: () => void;
 }) {
   const root = `${base}/workspaces/${workspace.id}`;
-  const detail = useLoad<{ timeZone?: string }>(root);
+  const detail = useLoad<{ timeZone?: string; concurrencyLimit?: number }>(root);
   const storedZone = detail.data?.timeZone ?? "UTC";
+  const storedLimit = detail.data?.concurrencyLimit;
+  const [limit, setLimit] = useState<number | undefined | null>(null);
   const [zone, setZone] = useState<string>();
   const [linked, setLinked] = useState<string | null>();
   const [name, setName] = useState<string>();
@@ -218,8 +228,14 @@ export function WorkspaceSettings({
     timeZone: zone ?? storedZone,
     linkedWorkspaceId: linked !== undefined ? linked : workspace.linkedWorkspaceId,
   };
-  const blank = draft.name.trim() === "";
+  const shownLimit = limit === null ? storedLimit : limit;
+  const limitBad =
+    limit !== null &&
+    (limit === undefined || !Number.isInteger(limit) || limit < 1 || limit > 1000);
+  const limitChanged = limit !== null && limit !== storedLimit;
+  const blank = draft.name.trim() === "" || limitBad;
   const dirty =
+    limitChanged ||
     draft.name.trim() !== workspace.name ||
     draft.timeZone !== storedZone ||
     draft.linkedWorkspaceId !== workspace.linkedWorkspaceId;
@@ -227,6 +243,7 @@ export function WorkspaceSettings({
     setName(undefined);
     setZone(undefined);
     setLinked(undefined);
+    setLimit(null);
   };
   const save = async () => {
     if (blank) return;
@@ -235,6 +252,9 @@ export function WorkspaceSettings({
       await api.patch(root, {
         ...(draft.name.trim() !== workspace.name ? { name: draft.name.trim() } : {}),
         ...(draft.timeZone !== storedZone ? { timeZone: draft.timeZone } : {}),
+        ...(limitChanged && limit !== null && limit !== undefined
+          ? { concurrencyLimit: limit }
+          : {}),
         ...(draft.linkedWorkspaceId !== workspace.linkedWorkspaceId
           ? { linkedWorkspaceId: draft.linkedWorkspaceId }
           : {}),
@@ -290,6 +310,29 @@ export function WorkspaceSettings({
         }
       />
       <TimeZoneSetting zone={draft.timeZone} onZone={setZone} />
+      <section aria-labelledby="run-limit" className="flex flex-col gap-3">
+        <h2 id="run-limit" className="m-0 text-title">
+          Run limit
+        </h2>
+        <Panel className="flex flex-col gap-3 p-4">
+          <p className="m-0 text-ink-muted">
+            How many runs of this workspace may be in progress at once. The rest wait their turn.
+          </p>
+          <div className="w-full max-w-xs">
+            <NumberField
+              name="concurrencyLimit"
+              label="Runs at once"
+              value={shownLimit}
+              min={1}
+              max={1000}
+              step={1}
+              onChange={setLimit}
+              hint="1 to 1000."
+              {...(limitBad ? { error: "A whole number from 1 to 1000." } : {})}
+            />
+          </div>
+        </Panel>
+      </section>
       <WorkspaceAccess base={base} workspace={workspace} />
       <SaveBar
         dirty={dirty}
@@ -910,9 +953,9 @@ export function DatabaseLocations() {
           header: "Status",
           cell: (row) =>
             row.reachable ? (
-              <StatePill state="reachable" />
+              <StatePill state="ok">Reached</StatePill>
             ) : (
-              <StatePill state="unreachable" detail={row.problem ?? undefined} />
+              <StatePill state="failed" detail={row.problem ?? undefined} />
             ),
         },
       ]}
@@ -972,7 +1015,9 @@ export function DatabaseLocations() {
                 },
                 {
                   label: "Status",
-                  value: row.reachable ? "Answers" : (row.problem ?? "Does not answer"),
+                  value: row.reachable
+                    ? "Reached"
+                    : `Failed${row.problem ? `: ${row.problem}` : ""}`,
                 },
                 { label: "Tenants", value: String(row.tenants) },
               ]}

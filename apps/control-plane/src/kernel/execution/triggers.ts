@@ -11,6 +11,7 @@ import { observe } from "../metrics.js";
 import { revealSecret } from "../secrets.js";
 import { decryptFor, encryptFor } from "./bindings.js";
 import { instanceTriggersPaused } from "./control.js";
+import { maskFor, redactText, secretStrings } from "./redact.js";
 import { type Relay, startRun, TAG_PATTERN } from "./runs.js";
 
 interface ScheduleConfig {
@@ -1418,7 +1419,14 @@ export async function fireWebhook(
     )
     .catch(async (error) => {
       // A request that does not fit what it starts is answered with why, and kept where refusals are shown.
-      if (error instanceof HttpError) await recordRefusal(kernel, state, "input", error.message);
+      // What is kept says why, without a secret of the request that the message quotes.
+      if (error instanceof HttpError)
+        await recordRefusal(
+          kernel,
+          state,
+          "input",
+          redactText(error.message, maskFor(secretStrings(input))),
+        );
       throw error;
     });
   await kernel.db

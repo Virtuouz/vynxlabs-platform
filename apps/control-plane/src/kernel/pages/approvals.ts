@@ -5,7 +5,7 @@ import type { Db, Principal } from "../audit.js";
 import { check } from "../authorize.js";
 import { badRequest, conflict, forbiddenBecause, HttpError, notFound } from "../errors.js";
 import type { Known } from "../execution/redact.js";
-import { approvalDetail } from "../flows/approval-detail.js";
+import { approvalDetail, approvalTitle } from "../flows/approval-detail.js";
 import { approversOf, approverTitles, describeApprovers, isApprover } from "../flows/approvers.js";
 import { decideApproval, kickFlow } from "../flows/engine.js";
 import { flowKnown } from "../flows/known.js";
@@ -342,7 +342,7 @@ export async function readApprovals(
   for (const { row, named, may } of mayList) {
     waiting.push({
       id: itemId(row.flow_run_id, row.node_id),
-      title: String(row.detail.title),
+      title: approvalTitle(row.detail.title, await flowKnown(kernel, db, row.flow_run_id, cache)),
       flow: { path: row.flow_path, title: titleOfFlow(titles, row.flow_path) },
       fields: fieldsOf(
         row.detail.detail,
@@ -359,7 +359,7 @@ export async function readApprovals(
   const decided: ApprovalItem[] = await Promise.all(
     decidedRows.map(async (row) => ({
       id: itemId(row.flow_run_id, row.node_id),
-      title: String(row.detail.title),
+      title: approvalTitle(row.detail.title, await flowKnown(kernel, db, row.flow_run_id, cache)),
       flow: { path: row.flow_path, title: titleOfFlow(titles, row.flow_path) },
       fields: fieldsOf(
         row.detail.detail,
@@ -654,7 +654,7 @@ export async function decideFromPage(
     .executeTakeFirst();
   return {
     decision: request.decision,
-    title: result.title,
+    title: approvalTitle(result.title, await flowKnown(kernel, db, wanted.flowRunId)),
     flow: { path: result.flow, title: titleOfFlow(titles, result.flow) },
     by: who?.name || who?.email || "You",
   };

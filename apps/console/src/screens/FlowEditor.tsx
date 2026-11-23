@@ -1,4 +1,9 @@
-import { FORM_RESERVED_NAMES, RESPONSE_HEADERS_REFUSED } from "@volvel/manifest";
+import {
+  checkFlow,
+  FORM_RESERVED_NAMES,
+  type FlowBody as ManifestFlow,
+  RESPONSE_HEADERS_REFUSED,
+} from "@volvel/manifest";
 import {
   Appear,
   Button,
@@ -31,6 +36,7 @@ import {
   type ReactFlowInstance,
   useEdgesState,
   useNodesState,
+  useUpdateNodeInternals,
   type Viewport,
 } from "@xyflow/react";
 import { ago } from "../kit/format.ts";
@@ -61,9 +67,10 @@ import { formatCombo, isTyping, keysOf, useShortcut } from "../kit/keys.ts";
 import { Loading } from "../kit/LoadState.tsx";
 import { PageHeader } from "../kit/PageHeader.tsx";
 import { RemoveDraftButton } from "../kit/RemoveDraftButton.tsx";
+import { inWords } from "../kit/refusalWords.ts";
 import { retryAfter } from "../kit/retry.ts";
 import { SplitPane } from "../kit/SplitPane.tsx";
-import { type RunState, STATE_STROKE, StatePill, stateLabel, Tag } from "../kit/status.tsx";
+import { type RunState, STATE_STROKE, StatePill, Tag } from "../kit/status.tsx";
 import { navigate, useNavigationGuard, useUrlParam } from "../router.tsx";
 import { outlineIcon } from "./builder/widgetIcons.ts";
 import { ExpressionField, ExpressionPreview } from "./ExpressionField.tsx";
@@ -289,6 +296,14 @@ function FlowNodeCard({ data, selected }: NodeProps<CanvasNode>) {
   const sides = out.filter((one) => one.id !== "error");
   const named = useContext(NodeNames).get(String(node.script ?? ""));
   const ran = useContext(NodeRuns).get(id);
+  // React Flow measures a node's handles once. A case renamed makes new handle ids, and an edge
+  // to a handle it has not measured is not drawn until a reload.
+  const updateInternals = useUpdateNodeInternals();
+  const handleIds = out.map((handle) => handle.id).join("\u0000");
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the ids are the trigger
+  useEffect(() => {
+    updateInternals(id);
+  }, [id, handleIds, updateInternals]);
   return (
     <div
       className={`w-52 rounded-control border bg-surface px-3 py-2 [.dragging_&]:shadow-drag ${
@@ -468,6 +483,33 @@ export interface Problem {
   node?: string;
   /** The inspector field it is about: `script`, `title`, `inputs/<name>`… */
   field?: string;
+}
+
+/**
+ * What the build and a deploy check about a flow's graph that the editor's own list did not
+ * name, in words. A step the editor already names is left to it, so one fault is said once.
+ */
+export function manifestProblems(
+  nodes: Record<string, FlowNode>,
+  edges: GraphEdge[],
+  named: Problem[],
+): Problem[] {
+  let issues: { path: string; message: string }[];
+  try {
+    issues = checkFlow({ nodes, edges } as unknown as ManifestFlow);
+  } catch {
+    return [];
+  }
+  const seen = new Set(named.map((one) => one.node).filter(Boolean));
+  const out: Problem[] = [];
+  for (const issue of issues) {
+    const node = /^\/body\/nodes\/([^/]+)/.exec(issue.path)?.[1];
+    if (node && seen.has(node)) continue;
+    // A fault of the flow as a whole is said once, and only when nothing else is.
+    if (!node && named.length > 0) continue;
+    out.push({ message: inWords(`${issue.path} ${issue.message}`), ...(node ? { node } : {}) });
+  }
+  return out;
 }
 
 /** What is wrong with a flow that can be seen without asking the server, as words. */
@@ -790,9 +832,9 @@ export function FlowEditor({
   const core = useLoad<{ items: PickableNode[] }>("/core-nodes");
   const secrets = useLoad<{ items: { name: string }[] }>(`${root}/secrets`);
   const flows = useLoad<{ items: { path: string; description: string }[] }>(`${root}/flows`);
-  const drafts = useLoad<{ items: { path: string; kind: string; deleted: boolean }[] }>(
-    `${root}/drafts`,
-  );
+  const drafts = useLoad<{
+    items: { path: string; kind: string; deleted: boolean; mode?: string }[];
+  }>(`${root}/drafts`);
   const events = useLoad<{ items: { path: string; kind: string; body?: { mode?: string } }[] }>(
     `${root}/resources?limit=200`,
   );
@@ -819,7 +861,13 @@ export function FlowEditor({
       if (one.kind === kind && (!mode || one.body?.mode === mode)) known.set(one.path, undefined);
     }
     for (const draft of drafts.data?.items ?? []) {
-      if (draft.kind === kind && !draft.deleted && !known.has(draft.path) && !mode)
+      // A draft of a source says how it is asked, so it is offered where that kind is wanted.
+      if (
+        draft.kind === kind &&
+        !draft.deleted &&
+        !known.has(draft.path) &&
+        (!mode || draft.mode === mode)
+      )
         known.set(draft.path, "A draft, not yet deployed.");
     }
     return [...known].map(([value, hint]) => ({ value, label: value, ...(hint ? { hint } : {}) }));
@@ -951,7 +999,13 @@ export function FlowEditor({
           `${root}/resources/${opened}`,
         );
         if (!current) return;
-        open(resource.body);
+        // Where the flow was arranged on its page since is newer than the positions in its body.
+        const arranged = await api
+          .get<{ layout?: FlowBody["layout"] }>(`${root}/flows/${opened}`)
+          .then((page) => page.layout)
+          .catch(() => undefined);
+        if (!current) return;
+        open(arranged ? { ...resource.body, layout: arranged } : resource.body);
         setState(resource.ownership === "ui" ? "deployed" : "repository");
       }
     })().catch((error) => current && setProblem(failureText(error)));
@@ -965,10 +1019,12 @@ export function FlowEditor({
     [nodes],
   );
   const flowEdges = useMemo(() => edges.map(toFlowEdge), [edges]);
-  const found = useMemo(
-    () => problemsAt(flowNodes, flowEdges, specs),
-    [flowNodes, flowEdges, specs],
-  );
+  const found = useMemo(() => {
+    const own = problemsAt(flowNodes, flowEdges, specs);
+    // What a deploy refuses is told here too, in the same words, so the two lists agree.
+    const refused = manifestProblems(flowNodes, flowEdges, own);
+    return [...own, ...refused];
+  }, [flowNodes, flowEdges, specs]);
   const chosen = nodes.find((node) => node.id === selected);
 
   const add = (entry: { base: string; make: () => FlowNode }) => {
@@ -1534,7 +1590,7 @@ export function FlowEditor({
             : "Saving…"
     : savedAt
       ? `Draft saved ${ago(savedAt)}`
-      : stateLabel(state === "removed" ? "draft" : state);
+      : "";
 
   const keepViewport = (viewport: Viewport) => {
     if (!path) return;
@@ -1714,8 +1770,8 @@ export function FlowEditor({
                   >
                     <Background />
                     <Controls />
-                    {/* With the test panel open the canvas is short, and the map would cover the graph. */}
-                    {testing ? null : <MiniMap pannable zoomable />}
+                    {/* With the test panel open the canvas is short, and on a phone it is small: the map would cover the graph. */}
+                    {testing ? null : <MiniMap pannable zoomable className="max-sm:hidden" />}
                   </ReactFlow>
                 </NodeRuns.Provider>
               </NodeNames.Provider>
@@ -2334,7 +2390,7 @@ export function FlowEditor({
                         disabled={dirty && starterId !== starter.id}
                         onClick={() => {
                           setStarterId(starter.id);
-                          open(starter.body as unknown as FlowBody);
+                          open(starter.body as unknown as ManifestFlow);
                         }}
                       >
                         {starter.label}

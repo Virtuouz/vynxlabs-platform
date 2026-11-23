@@ -1,5 +1,12 @@
-import { useLoad, useLoadOf } from "../../api.ts";
-import { type Catalog, EMPTY_CATALOG, type FlowChoice, type ScriptChoice } from "./model.ts";
+import { useEffect, useState } from "react";
+import { api, useLoad, useLoadOf } from "../../api.ts";
+import {
+  type Catalog,
+  type CatalogTable,
+  EMPTY_CATALOG,
+  type FlowChoice,
+  type ScriptChoice,
+} from "./model.ts";
 
 interface Schema {
   tables: {
@@ -20,6 +27,58 @@ interface Schema {
   maySql: boolean;
 }
 
+/** A name a page can write in a table's path: the data source's tables with a space or a capital are left out. */
+const PAGE_NAME = /^[a-z0-9][a-z0-9_-]*$/;
+
+/**
+ * The tables of the data sources bound here, each as `<source>/<table>`, for whoever may read
+ * data sources: someone who may not is offered none, and nothing says so (their pages cannot
+ * name one, and the server would refuse the save).
+ */
+function useSourceTables(root: string): CatalogTable[] {
+  const bound = useLoad<{ items: { path: string; bound: boolean }[] }>(
+    `${root}/data-source-bindings`,
+  );
+  const paths = (bound.data?.items ?? []).filter((one) => one.bound).map((one) => one.path);
+  const key = paths.join("\n");
+  const [found, setFound] = useState<CatalogTable[]>([]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `key` is the list of paths
+  useEffect(() => {
+    if (paths.length === 0) {
+      setFound([]);
+      return;
+    }
+    let current = true;
+    Promise.all(
+      paths.map((path) =>
+        api
+          .get<{
+            items: { name: string; columns: { name: string; type: string; required: boolean }[] }[];
+          }>(`${root}/data-source-tables/${path}`)
+          .then((read) =>
+            read.items
+              .filter((table) => PAGE_NAME.test(table.name))
+              .map((table) => ({
+                name: `${path}/${table.name}`,
+                columns: table.columns.map((column) => ({
+                  name: column.name,
+                  type: column.type,
+                  references: null,
+                  required: column.required,
+                })),
+              })),
+          )
+          // A source that cannot be reached offers nothing: the page still says where it reads from.
+          .catch(() => []),
+      ),
+    ).then((all) => current && setFound(all.flat()));
+    return () => {
+      current = false;
+    };
+  }, [root, key]);
+  return found;
+}
+
 /**
  * What a widget in this workspace can ask questions of, as far as the reader
  * may read it: the tables and their columns, the saved queries, and whether
@@ -32,10 +91,12 @@ export function useCatalog(root: string): {
 } {
   const schema = useLoad<Schema>(`${root}/queries/schema`);
   const saved = useLoad<{ items: { path: string; description: string }[] }>(`${root}/queries`);
+  const sources = useSourceTables(root);
   const catalog: Catalog =
     schema.data || saved.data
       ? {
           root,
+          sources,
           tables: schema.data?.tables ?? EMPTY_CATALOG.tables,
           queries: saved.data?.items ?? [],
           maySql: schema.data?.maySql === true,
@@ -56,7 +117,7 @@ export function useCatalog(root: string): {
  */
 export function useActionLists(root: string): {
   flows: FlowChoice[];
-  /** The workflows with an approval step, which an Approvals widget may ask of. */
+  /** The flows with an approval step, which an Approvals widget may ask of. */
   approvals: { path: string; title: string | null }[];
   /** Every flow, with whether it has an approval step: for checking what an Approvals widget names. */
   everyFlow: { path: string; title: string | null; asks: boolean }[];

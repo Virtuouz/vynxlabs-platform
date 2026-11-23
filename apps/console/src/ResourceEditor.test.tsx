@@ -8,9 +8,12 @@ const root = "/tenants/t1/workspaces/w1";
 const link = "/t/t1/workspaces/w1";
 let calls: { method: string; url: string; body: Record<string, unknown> | undefined }[];
 let stored: Record<string, { ownership: string; body: Record<string, unknown> }>;
+/** The workspace's only trigger source is a draft, not yet deployed. */
+let sourceIsDraft = false;
 
 beforeEach(() => {
   calls = [];
+  sourceIsDraft = false;
   stored = {
     "orders/nightly": {
       ownership: "code",
@@ -29,11 +32,19 @@ beforeEach(() => {
           { path: "orders/sync", kind: "script", body: {} },
           { path: "orders/placed", kind: "event", body: {} },
           { path: "connectors/shop", kind: "connector", body: {} },
-          { path: "sources/inbox", kind: "trigger_source", body: { mode: "poll" } },
+          ...(sourceIsDraft
+            ? []
+            : [{ path: "sources/inbox", kind: "trigger_source", body: { mode: "poll" } }]),
         ],
       });
     }
-    if (address.endsWith("/drafts")) return json({ items: [] });
+    if (address.endsWith("/drafts")) {
+      return json({
+        items: sourceIsDraft
+          ? [{ path: "sources/new-inbox", kind: "trigger_source", deleted: false, mode: "poll" }]
+          : [],
+      });
+    }
     if (address.endsWith("/scripts")) {
       return json({
         items: [
@@ -164,6 +175,12 @@ test("a schedule from the repository opens with its settings, and saving takes i
   });
 });
 
+test("a trigger source that is only a draft is offered where a polling source is chosen (EXT-02)", async () => {
+  sourceIsDraft = true;
+  show(<ResourceEditor root={root} link={link} kind="schedule" path="orders/nightly" editable />);
+  expect(await screen.findByText("Trigger source (optional)")).toBeTruthy();
+});
+
 test("a schedule the repository's code defines is moved to a file as it is, by a draft that takes it over", async () => {
   show(<ResourceEditor root={root} link={link} kind="schedule" path="orders/nightly" editable />);
   await screen.findByLabelText("When, as a cron line");
@@ -283,4 +300,27 @@ test("a production workspace shows a resource and offers no way to change it", a
   await screen.findByText(/This is a production workspace/);
   expect(screen.queryByRole("button", { name: "Save draft" })).toBeNull();
   expect((screen.getByLabelText("When, as a cron line") as HTMLInputElement).disabled).toBe(true);
+});
+
+test("a data source is declared with a path and a purpose, and saved as a draft (QSD-MP1)", async () => {
+  show(<ResourceEditor root={root} link={link} kind="data_source" path={undefined} editable />);
+  fireEvent.change(await screen.findByLabelText("Path of the new data source"), {
+    target: { value: "erp/orders" },
+  });
+  fireEvent.change(screen.getByLabelText("What it is for"), {
+    target: { value: "The order database." },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Save draft" }));
+  await waitFor(() => expect(saved()).toBeTruthy());
+  expect(saved()).toEqual({
+    method: "PUT",
+    url: `/api/v1${root}/drafts/erp/orders`,
+    body: {
+      kind: "data_source",
+      schemaVersion: 1,
+      body: { connector: "postgres", description: "The order database." },
+      create: true,
+    },
+  });
+  await screen.findByText("Draft");
 });

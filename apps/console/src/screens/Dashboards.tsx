@@ -12,18 +12,23 @@ import {
   EmptyState,
   Menu,
   MultiSelectField,
+  Notice,
   SelectField,
+  TextAreaField,
+  TextField,
 } from "@volvel/ui";
 import { Ellipsis, RefreshCw } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { type ApiError, api, useLoad } from "../api.ts";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ApiError, api, useLoad } from "../api.ts";
 import { ask, failureText, notify, takenText } from "../ask.tsx";
 import { useHelpTopic } from "../help/store.ts";
 import { DataTable } from "../kit/DataTable.tsx";
+import { putDraft, readDraft } from "../kit/draftApi.ts";
 import { useHistory } from "../kit/history.ts";
 import { useShortcut } from "../kit/keys.ts";
 import { ErrorState, Loading } from "../kit/LoadState.tsx";
-import { Tag } from "../kit/status.tsx";
+import { RemoveDraftButton } from "../kit/RemoveDraftButton.tsx";
+import { StatePill, Tag } from "../kit/status.tsx";
 import { Time } from "../kit/Time.tsx";
 import { useTitleObject } from "../kit/title.ts";
 import { useBleedWhile } from "../kit/workbench.ts";
@@ -34,6 +39,7 @@ import { pageClient } from "./builder/client.ts";
 import { PageEditor } from "./builder/PageEditor.tsx";
 import { definitionOf, views } from "./builder/registry.ts";
 import { type FilterValues, PageView } from "./builder/renderer.ts";
+import { ResourceIdentity } from "./ResourceIdentity.tsx";
 
 const REFRESH_WORDS: Record<Exclude<DashboardRefresh, "off">, string> = {
   1: "minute",
@@ -49,6 +55,8 @@ interface Summary {
   /** For a resource: who keeps it, the repository (`code`) or the console (`ui`). */
   ownership?: "ui" | "code" | null;
   title: string;
+  /** What it is for, from its body. */
+  description?: string;
   mine: boolean;
   owner: string;
   shared: boolean;
@@ -56,13 +64,76 @@ interface Summary {
   revision: number;
   updatedAt: string;
 }
+
+/** Where a dashboard the workspace keeps stands: what is deployed, and what a draft does to it. */
+type Stand = "deployed" | "draft" | "new" | "removed" | "repository";
+
 interface Dashboard extends Summary {
   body: DashboardBody;
+  /** For a resource, in a dev workspace: its draft is read with it. */
+  stand?: Stand;
+}
+
+/** A draft of a dashboard, as the list of drafts gives it. */
+interface DraftRow {
+  path: string;
+  kind: string;
+  key: string;
+  title: string | null;
+  deleted: boolean;
+  renamedFrom?: string;
+}
+
+/** The address of a dashboard the workspace keeps: by its path, which a draft has and an ID does not. */
+const AT = "at/";
+const resourceAddress = (link: string, path: string) => `${link}/dashboards/${AT}${path}`;
+
+/** A dashboard row in the list, and what a draft does to it. */
+interface ListRow extends Summary {
+  draft: "new" | "changed" | "removed" | null;
+  renamedFrom?: string;
+}
+
+/** The list the workspace shows: its dashboards, the drafts that change them, and the drafts of ones not deployed yet. */
+function withDrafts(items: Summary[], drafts: DraftRow[]): ListRow[] {
+  const mine = drafts.filter((one) => one.kind === "dashboard");
+  const rows: ListRow[] = items.map((row) => {
+    if (row.kind !== "resource") return { ...row, draft: null };
+    const draft = mine.find((one) => one.path === row.path || one.renamedFrom === row.path);
+    if (!draft) return { ...row, draft: null };
+    return {
+      ...row,
+      path: draft.path,
+      title: draft.title ?? row.title,
+      draft: draft.deleted ? "removed" : "changed",
+      ...(draft.renamedFrom ? { renamedFrom: draft.renamedFrom } : {}),
+    };
+  });
+  const deployed = new Set(items.map((row) => row.path));
+  for (const draft of mine) {
+    if (draft.deleted || draft.renamedFrom || deployed.has(draft.path)) continue;
+    rows.push({
+      id: draft.path,
+      kind: "resource",
+      path: draft.path,
+      ownership: "ui",
+      title: draft.title ?? draft.path,
+      mine: false,
+      owner: "The workspace",
+      shared: true,
+      revision: 1,
+      updatedAt: new Date().toISOString(),
+      draft: "new",
+    });
+  }
+  return rows;
 }
 
 /** Dashboards in a workspace: the reader's own, those shared with them, and those the workspace keeps. */
 export function Dashboards({ root, link }: { root: string; link: string }) {
   const list = useLoad<{ items: Summary[] }>(`${root}/dashboards`);
+  // Someone who may not read drafts sees the dashboards as deployed.
+  const drafts = useLoad<{ items: DraftRow[] }>(`${root}/drafts`);
   const create = async () => {
     const title = await ask.prompt({
       title: "New dashboard",
@@ -91,14 +162,14 @@ export function Dashboards({ root, link }: { root: string; link: string }) {
     >
       {list.error ? (
         <ErrorState what="dashboards" error={list.error} onRetry={list.reload} />
-      ) : !list.data ? (
+      ) : !list.data || (drafts.loading && !drafts.data && !drafts.error) ? (
         <Loading what="dashboards" />
       ) : (
-        <DataTable<Summary>
+        <DataTable<ListRow>
           variant="static"
           framed
           label="Dashboards"
-          rows={list.data.items}
+          rows={withDrafts(list.data.items, drafts.data?.items ?? [])}
           rowKey={(row) => row.id}
           empty={
             <EmptyState title="No dashboards yet" action={action}>
@@ -109,11 +180,35 @@ export function Dashboards({ root, link }: { root: string; link: string }) {
             {
               header: "Dashboard",
               cell: (row) => (
-                <span className="inline-flex flex-wrap items-center gap-2">
-                  <Link to={`${link}/dashboards/${row.id}`} className="font-medium text-action">
-                    {row.title}
-                  </Link>
-                  {row.kind === "resource" ? <Tag>Resource</Tag> : null}
+                <span className="flex min-w-0 flex-col">
+                  <span className="inline-flex flex-wrap items-center gap-2">
+                    <Link
+                      to={
+                        row.kind === "resource" && row.path
+                          ? resourceAddress(link, row.path)
+                          : `${link}/dashboards/${row.id}`
+                      }
+                      className="font-medium text-action"
+                    >
+                      {row.title}
+                    </Link>
+                    {row.kind === "resource" ? <Tag>Resource</Tag> : null}
+                    {row.draft === "new" ? (
+                      <StatePill state="draft">Draft, never deployed</StatePill>
+                    ) : row.draft === "removed" ? (
+                      <StatePill state="draft">Removing</StatePill>
+                    ) : row.draft ? (
+                      <StatePill state="draft" />
+                    ) : null}
+                  </span>
+                  {row.renamedFrom ? (
+                    <span className="text-meta text-ink-muted">
+                      Renamed from {row.renamedFrom}, once deployed.
+                    </span>
+                  ) : null}
+                  {row.description ? (
+                    <span className="text-meta text-ink-muted">{row.description}</span>
+                  ) : null}
                 </span>
               ),
             },
@@ -133,7 +228,10 @@ export function Dashboards({ root, link }: { root: string; link: string }) {
                   <span className="text-ink-muted">Only you</span>
                 ),
             },
-            { header: "Changed", cell: (row) => <Time value={row.updatedAt} mode="ago" /> },
+            {
+              header: "Changed",
+              cell: (row) => (row.draft === "new" ? "" : <Time value={row.updatedAt} mode="ago" />),
+            },
           ]}
         />
       )}
@@ -146,7 +244,19 @@ export function Dashboards({ root, link }: { root: string; link: string }) {
  * Changing it is the one page editor (`builder/PageEditor`), the one an app's builder uses.
  * What is only about dashboards is here: sharing, how often it refreshes, and how old what it shows is.
  */
-export function DashboardView({ root, link, id }: { root: string; link: string; id: string }) {
+export function DashboardView({
+  root,
+  link,
+  id,
+  editable = false,
+}: {
+  root: string;
+  link: string;
+  /** A member's dashboard by its ID, or one the workspace keeps by `at/<path>` (or its ID). */
+  id: string;
+  /** A dev workspace: a dashboard the workspace keeps is changed here, as a draft. */
+  editable?: boolean;
+}) {
   const [loaded, setLoaded] = useState<Dashboard>();
   const [missing, setMissing] = useState<ApiError>();
   /** Counted up by Try again, so the read is made once more. */
@@ -156,6 +266,7 @@ export function DashboardView({ root, link, id }: { root: string; link: string; 
   const [set, setSet] = useUrlParam("f");
   const [selected, setSelected] = useState<string>();
   const [sharing, setSharing] = useState(false);
+  const [describing, setDescribing] = useState(false);
   /** Saves that have been asked for and not yet answered. */
   const [pending, setPending] = useState(0);
   /** Counted up when a save is kept, when it is time to refresh, and by "Refresh now". */
@@ -172,20 +283,74 @@ export function DashboardView({ root, link, id }: { root: string; link: string; 
   const forget = history.clear;
   const queue = useRef({ waiting: 0, revision: 0, last: Promise.resolve() });
 
+  /**
+   * The dashboard as it stands: a member's as it is kept; one the workspace keeps as its draft
+   * when it has one in a dev workspace, and as it is deployed otherwise.
+   */
+  const fetchDashboard = useCallback(async (): Promise<Dashboard> => {
+    const byPath = id.startsWith(AT) ? id.slice(AT.length) : undefined;
+    const base =
+      byPath === undefined ? await api.get<Dashboard>(`${root}/dashboards/${id}`) : undefined;
+    const path = byPath ?? (base?.kind === "resource" ? base.path : null);
+    if (!path || (!editable && base)) return base as Dashboard;
+    // A dashboard the workspace keeps: what is deployed, and the draft over it.
+    const draft = editable ? await readDraft<DashboardBody>(root, path) : undefined;
+    const deployed = await api
+      .get<{
+        id: string;
+        kind: string;
+        body: DashboardBody;
+        title: string | null;
+        ownership: "ui" | "code";
+        updatedAt: string;
+      }>(`${root}/resources/${draft?.renamedFrom ?? path}`)
+      .catch((error: ApiError) => {
+        if (error.status === 404) return undefined;
+        throw error;
+      });
+    const kept = deployed && deployed.kind === "dashboard" ? deployed : undefined;
+    if (!kept && !draft) throw new ApiError(404, { detail: "There is no dashboard here." });
+    const shown = draft && !draft.deleted ? draft.body : (kept?.body as DashboardBody);
+    const stand: Stand = !draft
+      ? kept?.ownership === "code"
+        ? "repository"
+        : "deployed"
+      : draft.deleted
+        ? "removed"
+        : kept
+          ? "draft"
+          : "new";
+    return {
+      id: kept?.id ?? path,
+      kind: "resource",
+      path,
+      ownership: kept?.ownership ?? "ui",
+      title: (draft && !draft.deleted ? draft.title : null) ?? kept?.title ?? shown.title ?? path,
+      mine: false,
+      owner: "The workspace",
+      shared: true,
+      sharedWith: [],
+      revision: draft?.revision ?? 0,
+      updatedAt: kept?.updatedAt ?? new Date().toISOString(),
+      body: shown,
+      stand,
+    };
+  }, [root, id, editable]);
+
   // biome-ignore lint/correctness/useExhaustiveDependencies: `attempt` is Try again: it asks once more
   useEffect(() => {
     let current = true;
     setLoaded(undefined);
     setMissing(undefined);
     forget();
-    api.get<Dashboard>(`${root}/dashboards/${id}`).then(
+    fetchDashboard().then(
       (dashboard) => current && setLoaded(dashboard),
       (error: ApiError) => current && setMissing(error),
     );
     return () => {
       current = false;
     };
-  }, [root, id, forget, attempt]);
+  }, [fetchDashboard, forget, attempt]);
 
   // What the filters are set to, kept in the address so a link shows the same thing.
   const filterValues = useMemo<FilterValues>(() => {
@@ -197,7 +362,17 @@ export function DashboardView({ root, link, id }: { root: string; link: string; 
     }
   }, [set]);
   const body = loaded?.body;
-  const editingNow = loaded?.kind === "member" && loaded.mine && mode === "1";
+  const resource = loaded?.kind === "resource" ? loaded : undefined;
+  /** Whoever is here may change it: the member whose it is, or anyone in a dev workspace for one the workspace keeps. */
+  const changeable =
+    (loaded?.kind === "member" && loaded.mine) ||
+    (resource !== undefined && editable && resource.stand !== "removed");
+  const editingNow = changeable && mode === "1";
+  // A dashboard the workspace keeps is read as its draft while it has one, or is being changed.
+  const draftReads =
+    resource !== undefined &&
+    editable &&
+    (editingNow || resource.stand === "draft" || resource.stand === "new");
   useBleedWhile(editingNow);
   useHelpTopic(editingNow ? "data-dashboards-editor" : undefined);
   useShortcut("undo", history.undo, { enabled: editingNow });
@@ -205,8 +380,10 @@ export function DashboardView({ root, link, id }: { root: string; link: string; 
 
   // When each widget's answer was read. The dashboard is as old as the oldest of them.
   const [readAt, setReadAt] = useState<Record<string, number>>({});
+  // What the widgets are asked of: a member's by its ID, one the workspace keeps by its path.
+  const asked = resource?.path ?? id;
   const client = useMemo(() => {
-    const inner = pageClient(root, { of: "dashboard", id });
+    const inner = pageClient(root, { of: "dashboard", id: asked }, draftReads === true);
     // Everything the page client does (actions, the rows behind, a filter's values), with
     // each read noted for how old the dashboard is.
     return {
@@ -229,7 +406,7 @@ export function DashboardView({ root, link, id }: { root: string; link: string; 
         }
       },
     };
-  }, [root, id]);
+  }, [root, asked, draftReads]);
 
   const refresh = body?.refresh ?? DEFAULT_DASHBOARD_REFRESH;
   // Nothing asks again under someone who is changing it.
@@ -247,7 +424,7 @@ export function DashboardView({ root, link, id }: { root: string; link: string; 
   }
   if (!loaded || !body) return <Loading />;
   const mine = loaded.kind === "member" && loaded.mine;
-  const edit = mine && mode === "1";
+  const edit = editingNow;
 
   /**
    * Every save goes through one queue, one after another, each on the revision the one before it
@@ -264,6 +441,35 @@ export function DashboardView({ root, link, id }: { root: string; link: string; 
     setPending((n) => n + 1);
     const run = line.last.then(async () => {
       try {
+        if (resource) {
+          // A dashboard the workspace keeps is saved as a draft, on the draft it read (or on none).
+          const saved = await putDraft<{ body: DashboardBody; revision: number }>(
+            root,
+            resource.path as string,
+            {
+              kind: "dashboard",
+              schemaVersion: 3,
+              body: (change.body ?? resource.body) as unknown as Record<string, unknown>,
+            },
+            line.revision > 0 ? { revision: line.revision } : { first: true },
+          );
+          line.revision = saved.revision;
+          line.waiting -= 1;
+          if (line.waiting === 0) {
+            setLoaded((now) =>
+              now
+                ? {
+                    ...now,
+                    body: saved.body,
+                    revision: saved.revision,
+                    stand: now.stand === "new" ? "new" : "draft",
+                  }
+                : now,
+            );
+            setRefreshKey((n) => n + 1);
+          }
+          return true;
+        }
         const saved = await api.put<Dashboard>(`${root}/dashboards/${id}`, {
           ...change,
           revision: line.revision,
@@ -289,7 +495,7 @@ export function DashboardView({ root, link, id }: { root: string; link: string; 
   };
   /** After a save that was refused: what was drawn was not kept, so show what the server has. */
   const showWhatIsKept = async () => {
-    const kept = await api.get<Dashboard>(`${root}/dashboards/${id}`).catch(() => undefined);
+    const kept = await fetchDashboard().catch(() => undefined);
     if (kept && queue.current.waiting === 0) setLoaded(kept);
   };
   /** Saves the dashboard with what changed, and shows it as saved. */
@@ -327,76 +533,71 @@ export function DashboardView({ root, link, id }: { root: string; link: string; 
   const asOf = times.length > 0 ? Math.min(...times) : undefined;
   const reading = answered.length < asking.length;
 
+  const describeLabel = resource ? "Description…" : "Name and description…";
+  const menuItems = [
+    {
+      label: describeLabel,
+      onSelect: () => setDescribing(true),
+    },
+    {
+      label: "Keep it as a resource of the workspace…",
+      onSelect: async () => {
+        let made = "";
+        const path = await ask.prompt({
+          title: "Keep it as a resource",
+          text: "A copy is saved as a draft of a dashboard resource: versioned, deployed and promoted with the rest of the workspace, and open to everyone who may see dashboards. Yours stays as it is.",
+          label: "Its path, such as boards/lending",
+          action: "Save the draft",
+          submit: async (value) => {
+            try {
+              await api.put(`${root}/drafts/${value.trim()}`, {
+                kind: "dashboard",
+                schemaVersion: 3,
+                body: { ...body, title: loaded.title },
+                create: true,
+              });
+              made = value.trim();
+              return undefined;
+            } catch (error) {
+              return takenText(error) ?? failureText(error);
+            }
+          },
+        });
+        if (!path || !made) return;
+        notify.success(`${made} is saved as a draft. Deploy it to keep it.`, {
+          link: { label: "Review and deploy", href: `${link}/release` },
+        });
+      },
+    },
+    {
+      label: "Delete…",
+      danger: true,
+      separated: true,
+      onSelect: async () => {
+        const sure = await ask.confirm({
+          title: `Delete ${loaded.title}?`,
+          text: "The dashboard is removed for you and for anyone it is shared with. No table and no row is touched.",
+          action: "Delete",
+          danger: true,
+        });
+        if (!sure) return;
+        try {
+          await api.delete(`${root}/dashboards/${id}`);
+          navigate(`${link}/dashboards`);
+        } catch (error) {
+          notify.error(error);
+        }
+      },
+    },
+  ];
   const menu = (
     <Menu
       ariaLabel="More"
       align="end"
       triggerClassName="inline-flex size-8 items-center justify-center rounded-control border border-line-control hover:bg-sunken"
       label={<Ellipsis aria-hidden="true" size={16} />}
-      items={[
-        {
-          label: "Rename…",
-          onSelect: async () => {
-            const title = await ask.prompt({
-              title: "Rename the dashboard",
-              label: "Name",
-              initial: loaded.title,
-              action: "Rename",
-            });
-            if (title) void save({ title });
-          },
-        },
-        {
-          label: "Keep it as a resource of the workspace…",
-          onSelect: async () => {
-            let made = "";
-            const path = await ask.prompt({
-              title: "Keep it as a resource",
-              text: "A copy is saved as a draft of a dashboard resource: versioned, deployed and promoted with the rest of the workspace, and open to everyone who may see dashboards. Yours stays as it is.",
-              label: "Its path, such as boards/lending",
-              action: "Save the draft",
-              submit: async (value) => {
-                try {
-                  await api.put(`${root}/drafts/${value.trim()}`, {
-                    kind: "dashboard",
-                    schemaVersion: 3,
-                    body: { ...body, title: loaded.title },
-                    create: true,
-                  });
-                  made = value.trim();
-                  return undefined;
-                } catch (error) {
-                  return takenText(error) ?? failureText(error);
-                }
-              },
-            });
-            if (!path || !made) return;
-            notify.success(`${made} is saved as a draft. Deploy it to keep it.`, {
-              link: { label: "Review and deploy", href: `${link}/release` },
-            });
-          },
-        },
-        {
-          label: "Delete…",
-          danger: true,
-          separated: true,
-          onSelect: async () => {
-            const sure = await ask.confirm({
-              title: `Delete ${loaded.title}?`,
-              text: "The dashboard is removed for you and for anyone it is shared with. No table and no row is touched.",
-              action: "Delete",
-              danger: true,
-            });
-            if (!sure) return;
-            try {
-              await api.delete(`${root}/dashboards/${id}`);
-              navigate(`${link}/dashboards`);
-            } catch (error) {
-              notify.error(error);
-            }
-          },
-        },
-      ]}
+      // A dashboard the workspace keeps is named by its path and removed as a resource: those are beside Edit.
+      items={menuItems.filter((one) => !resource || one.label === describeLabel)}
     />
   );
   const sharingDialog = (
@@ -421,6 +622,25 @@ export function DashboardView({ root, link, id }: { root: string; link: string; 
         </div>
       </div>
     </Dialog>
+  );
+  const describeDialog = (
+    <DescribeDialog
+      open={describing}
+      onClose={() => setDescribing(false)}
+      name={resource ? undefined : loaded.title}
+      description={body.description ?? ""}
+      onSave={(next) => {
+        setDescribing(false);
+        const { description: _was, ...rest } = body;
+        const description = next.description.trim();
+        void save({
+          ...(next.name !== undefined && next.name !== loaded.title ? { title: next.name } : {}),
+          ...(description !== (body.description ?? "")
+            ? { body: { ...rest, ...(description ? { description } : {}) } }
+            : {}),
+        });
+      }}
+    />
   );
   const refreshSelect = (
     <div className="w-56">
@@ -448,7 +668,8 @@ export function DashboardView({ root, link, id }: { root: string; link: string; 
           root={root}
           link={link}
           surface="dashboard"
-          source={{ of: "dashboard", id }}
+          source={{ of: "dashboard", id: asked }}
+          draft={draftReads === true}
           value={{ widgets: body.widgets }}
           selected={selected}
           onSelect={setSelected}
@@ -471,29 +692,38 @@ export function DashboardView({ root, link, id }: { root: string; link: string; 
             roomyMore: (
               <>
                 {refreshSelect}
-                <Button onClick={() => setSharing(true)}>Share</Button>
+                {resource ? null : <Button onClick={() => setSharing(true)}>Share</Button>}
                 {menu}
               </>
             ),
           }}
         />
         {sharingDialog}
+        {describeDialog}
       </>
     );
   }
 
+  const whose =
+    loaded.kind === "resource"
+      ? `Kept by the workspace, at ${loaded.path}. You see the rows you may read.`
+      : mine
+        ? `Yours. Seen by: ${audience.toLowerCase()}.`
+        : `${loaded.owner}'s, shared with you. You see the rows you may read.`;
+  const stand = resource?.stand;
   return (
     <Page
       title={loaded.title}
-      description={
-        loaded.kind === "resource"
-          ? `Kept by the workspace, at ${loaded.path}. You see the rows you may read.`
-          : mine
-            ? `Yours. Seen by: ${audience.toLowerCase()}.`
-            : `${loaded.owner}'s, shared with you. You see the rows you may read.`
-      }
+      description={body.description || whose}
       action={
         <span className="flex flex-wrap items-center gap-2">
+          {stand === "new" ? (
+            <StatePill state="draft">Draft, never deployed</StatePill>
+          ) : stand === "draft" ? (
+            <StatePill state="draft" />
+          ) : stand === "removed" ? (
+            <StatePill state="draft">Removing</StatePill>
+          ) : null}
           {mine ? (
             <>
               <Button onClick={() => setSharing(true)}>Share</Button>
@@ -502,10 +732,65 @@ export function DashboardView({ root, link, id }: { root: string; link: string; 
               </Button>
               {menu}
             </>
+          ) : resource && editable ? (
+            <>
+              {stand === "removed" ? null : (
+                <Button variant="secondary" onClick={() => setMode("1")}>
+                  Edit
+                </Button>
+              )}
+              {stand === "removed" || stand === "repository" ? null : (
+                <ResourceIdentity
+                  root={root}
+                  link={link}
+                  row={{ path: resource.path as string, kind: "dashboard", ownership: "ui" }}
+                  label="Name and path"
+                  onDone={(next) => {
+                    if (next !== resource.path) navigate(resourceAddress(link, next));
+                    else setAttempt((n) => n + 1);
+                  }}
+                />
+              )}
+              <RemoveDraftButton
+                root={root}
+                kind="dashboard"
+                path={resource.path as string}
+                noun="dashboard"
+                state={
+                  stand === "new" || stand === "draft"
+                    ? "draft"
+                    : stand === "removed"
+                      ? "removed"
+                      : stand === "repository"
+                        ? "repository"
+                        : "deployed"
+                }
+                onDone={(did) => {
+                  if (did === "discarded" && stand === "new") navigate(`${link}/dashboards`);
+                  else setAttempt((n) => n + 1);
+                }}
+              />
+              {stand === "removed" ? null : menu}
+            </>
           ) : null}
         </span>
       }
     >
+      {body.description ? <p className="-mt-3 m-0 text-body-sm text-ink-muted">{whose}</p> : null}
+      {resource && editable && stand === "repository" ? (
+        <Notice tone="attention">
+          This dashboard is defined by the code in the tenant's repository. Changing it here saves a
+          draft that takes it over: once deployed it is a file the console and the repository both
+          edit. Then remove its definition from the code, or the next deploy from the repository
+          takes it back.
+        </Notice>
+      ) : null}
+      {stand === "removed" ? (
+        <Notice tone="attention">
+          This dashboard is removed in your drafts. Nothing changes until that draft is deployed.
+          What is shown is what is deployed now. Keep this dashboard to take the removal back.
+        </Notice>
+      ) : null}
       {asking.length > 0 ? (
         <p
           className="-mt-3 m-0 flex flex-wrap items-center gap-x-2 gap-y-1 text-body-sm text-ink-muted"
@@ -571,7 +856,79 @@ export function DashboardView({ root, link, id }: { root: string; link: string; 
         />
       )}
       {sharingDialog}
+      {describeDialog}
     </Page>
+  );
+}
+
+/** What a dashboard is called and what it is for. A dashboard the workspace keeps is named by its path elsewhere, so only its description is asked. */
+function DescribeDialog({
+  open,
+  onClose,
+  name,
+  description,
+  onSave,
+}: {
+  open: boolean;
+  onClose: () => void;
+  /** Its name, when it can be changed here. */
+  name: string | undefined;
+  description: string;
+  onSave: (next: { name: string | undefined; description: string }) => void;
+}) {
+  const [named, setNamed] = useState(name ?? "");
+  const [about, setAbout] = useState(description);
+  // Opened again, it starts from what is kept now.
+  useEffect(() => {
+    if (!open) return;
+    setNamed(name ?? "");
+    setAbout(description);
+  }, [open, name, description]);
+  const missing = name !== undefined && named.trim() === "";
+  return (
+    <Dialog
+      open={open}
+      onClose={onClose}
+      title={name === undefined ? "What this dashboard is for" : "Name and description"}
+    >
+      <form
+        className="flex flex-col gap-4"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (missing) return;
+          onSave({ name: name === undefined ? undefined : named.trim(), description: about });
+        }}
+      >
+        {name === undefined ? null : (
+          <TextField
+            name="name"
+            label="Name"
+            value={named}
+            maxLength={100}
+            {...(missing ? { error: "Give the dashboard a name." } : {})}
+            onChange={setNamed}
+          />
+        )}
+        <TextAreaField
+          name="description"
+          label="What it is for"
+          rows={3}
+          required={false}
+          maxLength={500}
+          value={about}
+          hint="Shown under its name, and in the list of dashboards."
+          onChange={setAbout}
+        />
+        <div className="flex justify-end gap-2">
+          <Button type="button" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="submit" variant="primary" disabled={missing}>
+            Save
+          </Button>
+        </div>
+      </form>
+    </Dialog>
   );
 }
 

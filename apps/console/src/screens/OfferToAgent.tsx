@@ -1,7 +1,7 @@
 import { Button, Dialog, Notice, SelectField } from "@volvel/ui";
 import { useState } from "react";
 import { api, useLoad } from "../api.ts";
-import { failureText } from "../ask.tsx";
+import { failureText, noteWaiting } from "../ask.tsx";
 import { Loading } from "../kit/LoadState.tsx";
 import { CopyButton } from "../ListScreen.tsx";
 import { Link } from "../router.tsx";
@@ -13,6 +13,7 @@ interface Account {
 
 interface Binding {
   resourceId: string | null;
+  roleId?: string;
   principalType: string;
   principalId: string | null;
   roleName: string;
@@ -89,7 +90,9 @@ function OfferForm({
             binding.principalType === "service_account" &&
             binding.principalId === id &&
             binding.resourceId === resource.data?.id &&
-            binding.roleName === "agent_runner",
+            // The built-in role, by identity: a role of a workspace may be called the same.
+            runner !== undefined &&
+            binding.roleId === runner.id,
         ),
     );
   const failed = accounts.error ?? roles.error ?? resource.error;
@@ -167,7 +170,8 @@ function OfferForm({
           );
           setDone({ account: chosenAccount, address: offered.address });
         } catch (error) {
-          setProblem(failureText(error));
+          if (noteWaiting(error)) onClose();
+          else setProblem(failureText(error));
         } finally {
           setBusy(false);
         }

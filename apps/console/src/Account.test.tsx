@@ -639,3 +639,14 @@ test("removing yourself as an operator says it is you (INS-27)", async () => {
   fireEvent.click(within(mine).getByRole("button", { name: "Remove yourself" }));
   expect(await screen.findByText(/Remove yourself as an operator\?/)).toBeTruthy();
 });
+
+test("Add operator with nobody chosen says so at the field and sends nothing (P31)", async () => {
+  routes["GET /api/v1/bindings"] = () => [200, { items: [], nextCursor: null }];
+  routes["GET /api/v1/me"] = () => [200, me("m1", "ada@ops.example")];
+  show(<Operators />);
+  fireEvent.click((await screen.findAllByRole("button", { name: "Add operator" }))[0] as HTMLElement);
+  const dialog = await screen.findByRole("dialog");
+  fireEvent.click(within(dialog).getByRole("button", { name: "Add operator" }));
+  expect(await within(dialog).findByText("Choose one.")).toBeTruthy();
+  expect(calls.filter((call) => call.method === "POST")).toEqual([]);
+});

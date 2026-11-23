@@ -128,3 +128,9 @@ export function inZone(value: When, timeZone: string): string {
     minute: "2-digit",
   }).format(at(value));
 }
+
+/** A refusal's words ended with a full stop, for a sentence that goes on after them. */
+export function endSentence(text: string): string {
+  const trimmed = text.trimEnd();
+  return /[.!?]$/.test(trimmed) ? trimmed : `${trimmed}.`;
+}

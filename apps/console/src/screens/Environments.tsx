@@ -11,7 +11,7 @@ import { type ReactNode, useEffect, useState } from "react";
 import { ApiError, api, apiFetch, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
 import { Can, useNeeds } from "../kit/Can.tsx";
-import { count } from "../kit/format.ts";
+import { count, endSentence } from "../kit/format.ts";
 import { ListCollection } from "../kit/ListCollection.tsx";
 import { ErrorState, Loading } from "../kit/LoadState.tsx";
 import {
@@ -1312,12 +1312,16 @@ export function TenantImport() {
                 ? `the database location "${report.tenant.dataLocation}".`
                 : "the instance's own database."}
             </li>
-            <li>
-              {report.pausedWorkspaces === 1
-                ? "The workspace arrived with its triggers paused. Resume it"
-                : `All ${report.pausedWorkspaces} workspaces arrived with their triggers paused. Resume each one`}{" "}
-              when the instance it came from has stopped.
-            </li>
+            {report.pausedWorkspaces > 0 ? (
+              <li>
+                {report.pausedWorkspaces === 1
+                  ? "The workspace arrived with its triggers paused. Resume it"
+                  : `All ${report.pausedWorkspaces} workspaces arrived with their triggers paused. Resume each one`}{" "}
+                when the instance it came from has stopped.
+              </li>
+            ) : (
+              <li>The tenant had no workspaces, so there are no triggers to resume.</li>
+            )}
             {report.cancelled.runs + report.cancelled.flowRuns > 0 ? (
               <li>
                 {report.cancelled.runs} {report.cancelled.runs === 1 ? "run" : "runs"} and{" "}
@@ -1694,7 +1698,7 @@ export function DeleteTenantButton({
             // The tenant's own database does not answer: its tables cannot be dropped now.
             const again = await ask.confirm({
               title: `Delete ${tenant.name} without dropping its tables?`,
-              text: `${(error as ApiError).message} If you go on, the tenant is deleted here and its tables stay in that database, where someone who runs it must drop them. The entry in the instance's log says which. If the database comes back first, cancel and delete again.`,
+              text: `${endSentence((error as ApiError).message)} If you go on, the tenant is deleted here and its tables stay in that database, where someone who runs it must drop them. The entry in the instance's log says which. If the database comes back first, cancel and delete again.`,
               action: "Delete anyway",
               danger: true,
             });

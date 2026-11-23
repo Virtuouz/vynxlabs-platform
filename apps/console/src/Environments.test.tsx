@@ -295,6 +295,46 @@ test("an import is uploaded and checked first, then imported with its passphrase
   expect(page).toContain("Not carried: API keys");
 });
 
+test("an import of a tenant with no workspaces does not say All 0 workspaces arrived (P31)", async () => {
+  routes["GET /api/v1/instance/database-locations/names"] = () => [200, { items: [] }];
+  routes["POST /api/v1/instance/tenant-imports/staged"] = () => [201, staged()];
+  routes["GET /api/v1/instance/tenant-imports/staged/s1"] = () => [
+    200,
+    staged({ passphraseOk: true, slugTaken: false }),
+  ];
+  routes["POST /api/v1/instance/tenant-imports/staged/s1/import"] = () => [
+    201,
+    {
+      tenant: { id: "t9", slug: "acme-2", name: "Acme Corp", dataLocation: null },
+      counts: {},
+      members: { created: 0, linked: 0 },
+      objects: 0,
+      cancelled: { runs: 0, flowRuns: 0 },
+      pausedWorkspaces: 0,
+      notCarried: [],
+    },
+  ];
+  show(<TenantImport />);
+  const file = new File(["tar bytes"], "acme.tar", { type: "application/x-tar" });
+  fireEvent.change(screen.getByLabelText("Export file"), { target: { files: [file] } });
+  fireEvent.submit(screen.getByLabelText("Export file").closest("form") as HTMLFormElement);
+  await screen.findByText("Acme Corp");
+  fireEvent.input(screen.getByLabelText("Its passphrase"), { target: { value: "the passphrase" } });
+  fireEvent.input(screen.getByLabelText("Slug on this instance"), { target: { value: "acme-2" } });
+  fireEvent.click(screen.getByRole("button", { name: "Check again" }));
+  await screen.findByText("The passphrase opens it");
+  await waitFor(() =>
+    expect(
+      (screen.getByRole("button", { name: "Import tenant" }) as HTMLButtonElement).disabled,
+    ).toBe(false),
+  );
+  fireEvent.submit(screen.getByLabelText("Its passphrase").closest("form") as HTMLFormElement);
+  await screen.findByText(/was imported/);
+  const page = document.body.textContent ?? "";
+  expect(page).not.toContain("All 0 workspaces");
+  expect(page).toContain("no workspaces");
+});
+
 test("an upload kept by another replica is said so, and asked for again", async () => {
   routes["GET /api/v1/instance/database-locations/names"] = () => [200, { items: [] }];
   routes["POST /api/v1/instance/tenant-imports/staged"] = () => [201, staged()];
@@ -414,6 +454,8 @@ test("a tenant whose database does not answer is deleted only after a second con
   const anyway = await screen.findByRole("button", { name: "Delete anyway" });
   const second = anyway.closest('[role="dialog"]')?.textContent ?? "";
   expect(second).toContain("could not be reached");
+  // The refusal's words end in a full stop before ours begin (P31).
+  expect(second).toContain("no route to host. If you go on");
   expect(second).toContain("its tables stay in that database");
   fireEvent.click(anyway);
   await waitFor(() => expect(done).toHaveBeenCalled());

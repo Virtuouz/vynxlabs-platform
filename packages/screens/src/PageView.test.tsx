@@ -1089,7 +1089,7 @@ describe("the canvas", () => {
       expect(at(lastList(s), "total")).toEqual(place(2, 2, 3, 3));
     });
 
-    test("Esc, a cancelled pointer and a window that loses the pointer put a drag back, and say so", async () => {
+    test("Esc, a canceled pointer and a window that loses the pointer put a drag back, and say so", async () => {
       const s = spies();
       render(<Builder spies={s} />);
       await screen.findByText("INV-1");
@@ -1098,17 +1098,17 @@ describe("the canvas", () => {
       expect(screen.getByText("3 × 3 · col 3 · row 3")).toBeTruthy();
       fireEvent.keyDown(window, { key: "Escape" });
       expect(screen.queryByText("3 × 3 · col 3 · row 3")).toBeNull();
-      expect(screen.getByText(/Move cancelled\. Invoiced is back where it was\./)).toBeTruthy();
+      expect(screen.getByText(/Move canceled\. Invoiced is back where it was\./)).toBeTruthy();
       // Letting go after that writes nothing.
       drop();
       expect(s.onChange).not.toHaveBeenCalled();
 
-      // A resize, ended by the pointer being cancelled.
+      // A resize, ended by the pointer being canceled.
       fireEvent.click(group("By clinic"));
       press(screen.getByTitle("Drag to change its size"), 500, 300);
       move(500 + 202, 300 + 52);
       fireEvent.pointerCancel(window, { pointerId: 1 });
-      expect(screen.getByText(/Resize cancelled\./)).toBeTruthy();
+      expect(screen.getByText(/Resize canceled\./)).toBeTruthy();
       drop();
       expect(s.onChange).not.toHaveBeenCalled();
 

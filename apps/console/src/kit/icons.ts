@@ -28,7 +28,7 @@ function loaded(file: Blob): Promise<HTMLImageElement> {
 }
 
 /**
- * The logo at each size, as PNGs: whole, centred, and never stretched. A logo
+ * The logo at each size, as PNGs: whole, centered, and never stretched. A logo
  * that is wider than it is tall is fitted by its width. An SVG with no size of
  * its own is drawn as a square.
  */

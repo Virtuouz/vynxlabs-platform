@@ -14,7 +14,7 @@ export const TONE_WORDS: Record<Tone, string> = {
   success: "Green",
   attention: "Amber",
   danger: "Red",
-  neutral: "Grey",
+  neutral: "Gray",
   action: "Blue",
 };
 

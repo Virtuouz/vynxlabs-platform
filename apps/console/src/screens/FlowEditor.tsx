@@ -884,7 +884,7 @@ export function FlowEditor({
   }));
   /**
    * Every script a step can run, each with a form for its input: the platform's,
-   * the workspace's labelled ones, then the rest by their path. A plain script's
+   * the workspace's labeled ones, then the rest by their path. A plain script's
    * form is drawn from its input schema.
    */
   const pickable = useMemo<PickableNode[]>(

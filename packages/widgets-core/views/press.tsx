@@ -77,7 +77,7 @@ export function useRunning() {
 /**
  * A row's actions, at the end of the row. Shown on hover and focus of the row on a screen that
  * points. On a phone (`always`) or a touch screen they are not three buttons on every row: several
- * are one ⋯ that opens them, each greyed with its reason (the person is outside its group, or its
+ * are one ⋯ that opens them, each grayed with its reason (the person is outside its group, or its
  * `when` does not hold for this row), and one is its own button. Each runs with the row. The row
  * must be a `group/row`.
  */

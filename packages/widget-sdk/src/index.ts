@@ -360,7 +360,7 @@ export interface ColumnInfo {
   type: string;
   /** What the column holds, as its table's definition says: the help behind its heading. */
   description?: string;
-  /** For an enum: its values, and the colour each is drawn in. */
+  /** For an enum: its values, and the color each is drawn in. */
   values?: readonly { value: string; label?: string; color?: string }[];
   /** Whether a row must have a value here, as its table's definition says. Left out for what is not a column of a table. */
   required?: boolean;
@@ -539,7 +539,7 @@ export interface WidgetViewProps<Config = Record<string, unknown>> {
   building: boolean;
   /**
    * While building, "View as" a group: an action the group may run is drawn pressable (it still
-   * runs nothing here), and one it may not is greyed with the reason, as it will be served.
+   * runs nothing here), and one it may not is grayed with the reason, as it will be served.
    */
   viewing?: boolean;
   /** The widget's title, as the page draws it over the view: what a view names its own parts by ("Visits", for a tab strip). */

@@ -553,7 +553,7 @@ What happened, counted by the replica that saw it. Each replica answers for its 
 
 | Series | What it is |
 | --- | --- |
-| `volvel_runs_finished_total{tenant,workspace,state}` | Script runs that ended: `succeeded`, `failed`, `cancelled` |
+| `volvel_runs_finished_total{tenant,workspace,state}` | Script runs that ended: `succeeded`, `failed`, or canceled (the label reads `cancelled`) |
 | `volvel_run_duration_seconds{tenant,workspace}` | A histogram of how long runs took |
 | `volvel_run_queue_wait_seconds{tenant,workspace}` | A histogram of how long runs waited for a worker, from when they were due |
 | `volvel_flow_runs_finished_total{state}` | Flow runs that ended |

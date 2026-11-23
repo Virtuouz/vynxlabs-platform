@@ -211,7 +211,7 @@ export function KitDrawer() {
         <div className="flex flex-col gap-4 rounded-overlay border border-line bg-surface p-3">
           <DrawerGroup
             label="Chart type"
-            note="Greyed types don't fit this data; the note says what they would need."
+            note="Grayed types don't fit this data; the note says what they would need."
           >
             <DrawerBlock>
               <TilePicker

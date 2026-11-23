@@ -26,7 +26,7 @@ interface ApprovalsConfig {
   advance?: boolean;
 }
 
-/** What the widget says when nothing waits, and why a button is greyed. */
+/** What the widget says when nothing waits, and why a button is grayed. */
 export const NOTHING_WAITS = "Nothing waits for you.";
 const PENDING_MS = 220;
 
@@ -96,7 +96,7 @@ export function valueWords(name: string, value: unknown): string {
   return JSON.stringify(value);
 }
 
-/** Why the buttons are greyed, in the reader's words, or nothing when they may decide. */
+/** Why the buttons are grayed, in the reader's words, or nothing when they may decide. */
 export function whyNot(item: ApprovalItem, may: { building: boolean; can: boolean }): string {
   if (may.building) return "Buttons don't run while you're building.";
   if (!may.can) return "Deciding isn't available here.";

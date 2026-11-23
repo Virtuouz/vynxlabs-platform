@@ -37,10 +37,25 @@ beforeEach(() => {
         ],
       });
     }
+    if (address.endsWith("/drafts/sources/payments")) {
+      return json({
+        path: "sources/payments",
+        kind: "trigger_source",
+        body: { mode: "poll", description: "Looks for new payments." },
+      });
+    }
+    if (address.endsWith("/drafts/sources/inbox")) {
+      return json({
+        path: "sources/inbox",
+        kind: "trigger_source",
+        body: { mode: "webhook", description: "Takes mail pushed to us." },
+      });
+    }
     if (address.endsWith("/drafts")) {
       return json({
         items: [
           { path: "sources/payments", kind: "trigger_source", deleted: false, change: "create" },
+          { path: "sources/inbox", kind: "trigger_source", deleted: false, change: "update" },
           { path: "sources/gone", kind: "trigger_source", deleted: true, change: "delete" },
           { path: "orders/sync", kind: "script", deleted: false, change: "update" },
         ],
@@ -61,11 +76,16 @@ test("a workspace's connectors and trigger sources are listed, deployed or still
   expect(screen.getByRole("link", { name: "sources/inbox" }).getAttribute("href")).toBe(
     `${link}/extensions/trigger_source/edit/sources/inbox`,
   );
-  expect(screen.getByText("Trigger source for a schedule")).toBeTruthy();
   expect(screen.getByText("From the repository")).toBeTruthy();
   // A draft that was never deployed is listed too. One that removes, and a script, are not.
   expect(screen.getByRole("link", { name: "sources/payments" })).toBeTruthy();
-  expect(screen.getByText("Draft")).toBeTruthy();
+  expect(screen.getAllByText("Draft")).toHaveLength(2);
+  // A draft says what it is now (EXT-13): its mode, and its own description, not the deployed one.
+  expect(await screen.findByText("Looks for new payments.")).toBeTruthy();
+  expect(await screen.findByText("Takes mail pushed to us.")).toBeTruthy();
+  expect(screen.queryByText("Looks for new mail.")).toBeNull();
+  expect(screen.getAllByText("Trigger source for a webhook")).toHaveLength(1);
+  expect(screen.getAllByText("Trigger source for a schedule")).toHaveLength(1);
   expect(screen.queryByText("sources/gone")).toBeNull();
   expect(screen.queryByText("orders/sync")).toBeNull();
   expect(screen.getByRole("button", { name: "New connector" })).toBeTruthy();

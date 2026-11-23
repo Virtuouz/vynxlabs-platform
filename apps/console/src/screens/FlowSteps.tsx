@@ -45,6 +45,8 @@ interface InputProperty {
 export interface PickableNode {
   path: string;
   label: string;
+  /** The name of an icon from the kit's set: drawn beside the label in the palette. */
+  icon?: string;
   category: string;
   description: string;
   takes: string[];

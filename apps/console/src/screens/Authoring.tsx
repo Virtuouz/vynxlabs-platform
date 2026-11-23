@@ -35,6 +35,7 @@ import { Page } from "../ListScreen.tsx";
 import { usePreference } from "../prefs.ts";
 import { Link, navigate, useNavigationGuard, useUrlParam } from "../router.tsx";
 import { useTaskEnd } from "../tasks.ts";
+import { STEP_ICONS } from "./builder/widgetIcons.ts";
 import { OfferButton } from "./OfferToAgent.tsx";
 import { ResourceIdentity } from "./ResourceIdentity.tsx";
 import { ScriptRunPanel } from "./Runs.tsx";
@@ -73,6 +74,24 @@ export default (
     return response.json();
   },
 });
+
+/**
+ * Optional. What the Test button on a connection of this kind runs: reach the
+ * outside system without doing anything with it, and say what was found.
+ * Without it, Test only builds the client above.
+ */
+export async function test(
+  config: { baseUrl: string },
+  credential: string | undefined,
+  signal: AbortSignal,
+) {
+  const response = await fetch(config.baseUrl, {
+    method: "HEAD",
+    signal,
+    headers: credential ? { authorization: \`Bearer \${credential}\` } : {},
+  });
+  return { status: response.status };
+}
 `;
 
 const WEBHOOK_SOURCE_STARTER = `import type { ScriptContext, WebhookRequest, WebhookSourceResult } from "@volvel/sdk";
@@ -129,6 +148,8 @@ interface ScriptBody {
   };
   /** A connector's: what a connection's configuration must fit. */
   configSchema?: unknown;
+  /** A script's: set, it is a step people pick in the flow editor, under this label. */
+  node?: { label: string; icon?: string; category?: string; takes?: string[] };
   /** A trigger source's: whether it takes a webhook's requests or a schedule's ticks. */
   mode?: "webhook" | "poll";
   source?: { language: "typescript"; code: string };
@@ -498,6 +519,18 @@ export function ScriptEditor({
       body: merged,
     });
   };
+  /** Sets or, given nothing, clears the script's place among the flow editor's steps. */
+  const changeNode = (node: ScriptBody["node"]) => {
+    const now = draft.value();
+    const { node: _was, ...rest } = now?.body ?? body;
+    const merged: ScriptBody = node ? { ...rest, node } : rest;
+    setBody(merged);
+    draft.edit({
+      path: now?.path ?? path,
+      schemaText: now?.schemaText ?? schemaText,
+      body: merged,
+    });
+  };
   const changePath = (next: string) => {
     setPath(next);
     const now = draft.value();
@@ -664,6 +697,70 @@ export function ScriptEditor({
           />
         </>
       )}
+      {kind === "script" ? (
+        <fieldset className="m-0 flex flex-col gap-3 border-0 p-0">
+          <legend className="mb-1 text-body-sm font-medium">Use as a flow step</legend>
+          <TextField
+            name="stepLabel"
+            label="Step name"
+            value={body.node?.label ?? ""}
+            required={false}
+            maxLength={60}
+            disabled={readOnly}
+            hint="Give the script a name and it joins the flow editor's steps under it. Leave it empty to keep the script out of them."
+            onChange={(label) => changeNode(label === "" ? undefined : { ...body.node, label })}
+          />
+          {body.node ? (
+            <>
+              <div className="grid grid-cols-2 gap-3">
+                <SelectField
+                  name="stepIcon"
+                  label="Icon"
+                  value={body.node.icon ?? ""}
+                  disabled={readOnly}
+                  options={[{ value: "", label: "None" }, ...STEP_ICONS]}
+                  onChange={(icon) => {
+                    const { icon: _gone, ...rest } = body.node as NonNullable<ScriptBody["node"]>;
+                    changeNode(icon === "" ? rest : { ...rest, icon });
+                  }}
+                />
+                <TextField
+                  name="stepCategory"
+                  label="Group"
+                  value={body.node.category ?? ""}
+                  placeholder="This workspace's"
+                  required={false}
+                  maxLength={40}
+                  disabled={readOnly}
+                  hint="The heading it is listed under."
+                  onChange={(category) => {
+                    const { category: _gone, ...rest } = body.node as NonNullable<
+                      ScriptBody["node"]
+                    >;
+                    changeNode(category === "" ? rest : { ...rest, category });
+                  }}
+                />
+              </div>
+              <MultiSelectField
+                label="A step may hand it"
+                options={[
+                  { value: "connection", label: "A connection" },
+                  { value: "table", label: "A table" },
+                  { value: "event", label: "An event" },
+                ]}
+                value={body.node.takes ?? []}
+                disabled={readOnly}
+                placeholder="None"
+                hint="What a flow may give the script that it does not name itself."
+                onChange={(takes) => {
+                  const { takes: _gone, ...rest } = body.node as NonNullable<ScriptBody["node"]>;
+                  changeNode(takes.length === 0 ? rest : { ...rest, takes });
+                }}
+              />
+            </>
+          ) : null}
+        </fieldset>
+      ) : null}
       {kind === "script" && body.schemaSource === "code" ? (
         <div className="flex flex-col gap-1">
           <TextAreaField
@@ -712,8 +809,9 @@ export function ScriptEditor({
       ) : null}
       {kind === "connector" ? (
         <p className="m-0 text-body-sm text-ink-muted">
-          A connection names this connector by its path. To try it, deploy it, set up a connection
-          of this kind, and use the connection from a script.
+          A connection names this connector by its path. To try it, deploy it and set up a
+          connection of this kind: Test on the connection runs the code's <code>test</code> export,
+          or only builds its client when there is none.
         </p>
       ) : null}
     </div>
@@ -993,7 +1091,9 @@ export function ScriptEditor({
         <summary className="cursor-pointer px-4 py-2 font-medium">
           Settings
           <span className="ml-2 font-normal text-meta text-ink-muted">
-            {kind === "script" ? "What it does, its limits, what it uses and its input" : ""}
+            {kind === "script"
+              ? "What it does, its limits, what it uses, its input and whether flows can pick it"
+              : ""}
           </span>
         </summary>
         <div className="border-line border-t p-4">{settings}</div>
@@ -1186,6 +1286,38 @@ interface ExtensionRow {
   state: "deployed" | "draft" | "repository";
 }
 
+/** What kind of extension it is, in a word or a few. */
+function extensionDetail(kind: "connector" | "trigger_source", mode: string | undefined): string {
+  return kind === "connector"
+    ? "Connector"
+    : `Trigger source for ${mode === "poll" ? "a schedule" : "a webhook"}`;
+}
+
+/**
+ * A row's text. A draft's is read from the draft itself: what is deployed under the
+ * same path may be older, or absent, and says nothing of what a draft is now.
+ */
+function DraftText({
+  root,
+  row,
+  part,
+}: {
+  root: string;
+  row: ExtensionRow;
+  part: "detail" | "description";
+}) {
+  const draft = useLoad<DraftDetail>(row.state === "draft" ? `${root}/drafts/${row.path}` : null);
+  const body = row.state === "draft" ? draft.data?.body : undefined;
+  if (!body) return <>{row[part]}</>;
+  return (
+    <>
+      {part === "detail"
+        ? extensionDetail(row.kind as "connector" | "trigger_source", body.mode)
+        : (body.description ?? "")}
+    </>
+  );
+}
+
 /**
  * The workspace's own connectors and trigger sources: the code that lets
  * connections and triggers reach outside systems the platform does not know.
@@ -1218,10 +1350,7 @@ export function Extensions({
       path: one.path,
       kind: one.kind,
       description: one.body.description ?? "",
-      detail:
-        one.kind === "connector"
-          ? "Connector"
-          : `Trigger source for ${one.body.mode === "poll" ? "a schedule" : "a webhook"}`,
+      detail: extensionDetail(one.kind, one.body.mode),
       state: one.ownership === "ui" ? "deployed" : "repository",
     });
   }
@@ -1281,10 +1410,17 @@ export function Extensions({
                 </Link>
               ),
             },
-            { header: "What it is", cell: (row) => row.detail },
+            {
+              header: "What it is",
+              cell: (row) => <DraftText root={root} row={row} part="detail" />,
+            },
             {
               header: "What it does",
-              cell: (row) => <span className="text-ink-muted">{row.description}</span>,
+              cell: (row) => (
+                <span className="text-ink-muted">
+                  <DraftText root={root} row={row} part="description" />
+                </span>
+              ),
             },
             {
               header: "State",

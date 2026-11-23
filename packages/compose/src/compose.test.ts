@@ -221,4 +221,47 @@ describe("composing a bundle", () => {
       "orders/check (script) is not console-managed.",
     );
   });
+
+  test("EXT-07: a console connector that exports `test` carries it, as the worker's Test button reads it", async () => {
+    const connector: BundleManifest = {
+      kind: "connector",
+      schemaVersion: 1,
+      path: "shop",
+      ownership: "ui",
+      body: {
+        entry: entryFor("connector", "shop"),
+        configSchema: {},
+        source: {
+          language: "typescript",
+          code:
+            "export default (config: { baseUrl: string }) => ({ url: config.baseUrl });\n" +
+            "export async function test(config: { baseUrl: string }) {\n" +
+            "  return { status: 204, message: 'Reached ' + config.baseUrl };\n" +
+            "}\n",
+        },
+      },
+    };
+    const plain: BundleManifest = {
+      ...connector,
+      path: "plain",
+      body: {
+        ...connector.body,
+        entry: entryFor("connector", "plain"),
+        source: { language: "typescript", code: "export default () => ({});\n" },
+      },
+    };
+    const bundle = await composeBundle(base, [connector, plain], options);
+    const module = (await load(bundle.code)) as unknown as Record<
+      string,
+      { create: (config: unknown) => unknown; test?: (config: unknown) => Promise<unknown> }
+    >;
+    const mine = module[connector.body.entry as string];
+    expect(mine?.create({ baseUrl: "https://x.test" })).toEqual({ url: "https://x.test" });
+    expect(await mine?.test?.({ baseUrl: "https://x.test" })).toEqual({
+      status: 204,
+      message: "Reached https://x.test",
+    });
+    // One without a test keeps being tested by building its client.
+    expect(module[plain.body.entry as string]?.test).toBeUndefined();
+  });
 });

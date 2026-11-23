@@ -15,6 +15,7 @@ const link = "/t/t1/workspaces/w1";
 let puts: { body: { body: FlowBody } }[];
 let zone: string | undefined;
 let deployed: FlowBody;
+let scripts: unknown[] = [];
 
 interface FlowBody {
   nodes: Record<string, Record<string, unknown>>;
@@ -39,6 +40,7 @@ const sendEmail = {
 beforeEach(() => {
   puts = [];
   zone = undefined;
+  scripts = [];
   history.replaceState(null, "", "/");
   vi.stubGlobal("fetch", async (address: string, init: RequestInit = {}) => {
     const method = init.method ?? "GET";
@@ -54,6 +56,7 @@ beforeEach(() => {
     if (path === `${api}/resources/orders/sync`)
       return send(200, { ownership: "ui", body: deployed });
     if (path === api) return send(200, { timeZone: zone });
+    if (path === `${api}/scripts`) return send(200, { items: scripts });
     if (path === "/api/v1/core-nodes") return send(200, { items: [sendEmail] });
     return send(200, { items: [] });
   });
@@ -240,5 +243,29 @@ describe("the flow editor, as a person uses it", () => {
     fireEvent.click(screen.getAllByRole("button", { name: "Remove case" })[1] as HTMLElement);
     const saved = await lastSaved();
     expect(saved.edges.some((edge) => edge.output === "maybe")).toBe(false);
+  });
+
+  test("a step's icon is drawn beside its label in the palette, and an unknown name is a puzzle piece (EXT-09, EXT-17)", async () => {
+    const own = (path: string, icon: string, label: string) => ({
+      path,
+      description: "",
+      timeoutSeconds: 60,
+      inputSchema: { type: "object" },
+      node: { label, icon },
+    });
+    scripts = [
+      own("orders/ship", "truck", "Ship it"),
+      own("orders/call", "globe", "Call out"),
+      own("orders/odd", "no-such-icon", "Odd one"),
+    ];
+    await openAt({ nodes: { start: manual }, edges: [] }, "start", /Press Enter to rename/);
+    fireEvent.click(screen.getByRole("button", { name: /Add step/ }));
+    const iconOf = async (label: string) => {
+      const row = (await screen.findByText(label)).closest("span") as HTMLElement;
+      return row.querySelector("svg")?.getAttribute("class") ?? "";
+    };
+    expect(await iconOf("Ship it")).toContain("lucide-truck");
+    expect(await iconOf("Call out")).toContain("lucide-globe");
+    expect(await iconOf("Odd one")).toContain("lucide-puzzle");
   });
 });

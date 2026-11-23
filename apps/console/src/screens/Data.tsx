@@ -200,6 +200,8 @@ const ROWS_URL = {
   unlock: { type: "string" },
   density: { type: "string", default: "standard" },
   row: { type: "string", push: true },
+  /** The cursors of the pages before this one, nearest last (`-` for the first page), so Previous survives a reload. */
+  back: { type: "list" },
 } as const;
 
 const NONE_CHECKED: Set<string> = new Set();
@@ -253,10 +255,8 @@ function RowsBrowser(
       const kept = Object.fromEntries(Object.entries(boxes).filter(([, text]) => text.trim()));
       return Object.keys(kept).length > 0 ? JSON.stringify(kept) : undefined;
     },
-    (next) => setUrl({ filter: next, page: undefined }),
+    (next) => setUrl({ filter: next, page: undefined, back: [] }),
   );
-  /** The cursors of the pages before this one, so "Previous" has somewhere to go. */
-  const [back, setBack] = useState<string[]>([]);
   const [adding, setAdding] = useState(false);
   // What is checked belongs to the page, order and filter it was checked on: on another, it is
   // not there to see, and a delete must not take it along.
@@ -328,7 +328,7 @@ function RowsBrowser(
   const [saved, setSaved] = useState<{ of: unknown; rows: Record<string, DataRow> }>();
   const changed = saved && saved.of === pageData ? saved.rows : {};
   const rows = (pageData?.items ?? []).map((row) => changed[keyOf(row)] ?? row);
-  const toFirst = { page: undefined } as const;
+  const toFirst = { page: undefined, back: [] as string[] };
   // How many rows the filters leave, from the totals of a custom table. A source has none.
   const custom = props.rowsPath.includes("/rows/");
   const totalPath = custom
@@ -336,7 +336,13 @@ function RowsBrowser(
     : null;
   const total = useLoad<{ items: { values: { count?: number } }[] }>(totalPath);
   const counted = (filterBroken ? undefined : total.data)?.items[0]?.values.count;
-  const open = rows.find((row) => keyOf(row) === url.row);
+  const shown = rows.find((row) => keyOf(row) === url.row);
+  // A link to a row that is not on the page shown reads the row by its ID, where a table can.
+  const lookup = useLoad<DataRow>(
+    url.row && !shown && pageData && rowPath && custom ? rowPath(url.row) : null,
+  );
+  const open = shown ?? lookup.data;
+  const goneRow = url.row && !shown && lookup.error ? lookup.error : undefined;
   // Edits typed in the inspector and not saved: another row, or closing it, asks first.
   const unsaved = useRef(false);
   const choose = async (next: string | undefined) => {
@@ -501,7 +507,7 @@ function RowsBrowser(
           {viewsOf(props.rowsPath, props.tableId) ? (
             <ViewsMenu
               {...(viewsOf(props.rowsPath, props.tableId) as ViewsOf)}
-              omit={["row", "page"]}
+              omit={["row", "page", "back"]}
             />
           ) : null}
           {exportHref ? (
@@ -525,6 +531,22 @@ function RowsBrowser(
           ) : null}
         </span>
       </div>
+      {url.row && !shown && pageData && !open && (goneRow || !custom || !rowPath) ? (
+        <Notice
+          tone="attention"
+          action={
+            <Button size="small" onClick={() => void choose(undefined)}>
+              Close
+            </Button>
+          }
+        >
+          {goneRow && (goneRow as { status?: number }).status !== 404
+            ? "That row could not be read. Try the link again."
+            : custom && rowPath
+              ? "That row is gone: it was deleted, or its ID is not one of this table's."
+              : "That row is not on this page, and this source cannot read one row alone."}
+        </Notice>
+      ) : null}
       {filterBroken ? (
         <Notice tone="danger">
           {Object.entries(filterErrors)
@@ -583,7 +605,6 @@ function RowsBrowser(
             {...(canBatch ? { checked, onCheck: setChecked } : {})}
             sort={sort}
             onSort={(column, additive) => {
-              setBack([]);
               setUrl({ sort: nextSort(sort, column, additive), ...toFirst });
             }}
             editor={({ column: edited, value, save, cancel }) => {
@@ -601,7 +622,6 @@ function RowsBrowser(
             filters={typed}
             filterErrors={filterErrors}
             onFilter={(column, text) => {
-              setBack([]);
               setTyped((current) => ({ ...current, [column]: text }));
             }}
             {...(canChange
@@ -704,9 +724,11 @@ function RowsBrowser(
             size="small"
             disabled={!url.page}
             onClick={() => {
-              const before = back.at(-1);
-              setBack((current) => current.slice(0, -1));
-              setUrl({ page: before || undefined });
+              const before = url.back.at(-1);
+              setUrl({
+                back: url.back.slice(0, -1),
+                page: before && before !== "-" ? before : undefined,
+              });
             }}
           >
             Previous
@@ -716,8 +738,10 @@ function RowsBrowser(
             disabled={!pageData?.nextCursor}
             onClick={() => {
               // One step forward: the page shown now is where Previous comes back to.
-              setBack((current) => [...current, url.page ?? ""]);
-              setUrl({ page: pageData?.nextCursor ?? undefined });
+              setUrl({
+                back: [...url.back, url.page ?? "-"],
+                page: pageData?.nextCursor ?? undefined,
+              });
             }}
           >
             Next

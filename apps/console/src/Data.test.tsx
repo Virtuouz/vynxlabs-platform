@@ -2021,3 +2021,34 @@ test("TAB-36: the names of referenced rows are asked for the columns shown, and 
   expect(calls.slice(before).some((call) => call.url.includes("filter="))).toBe(false);
   navigate("/t/t1/workspaces/w1/tables/orders");
 });
+
+test("TAB-34: Previous survives a reload, and a link to a row opens it when its page is not shown", async () => {
+  // The address of page 2 says where Previous goes, so a reload keeps it.
+  navigate("/t/t1/workspaces/w1/tables/orders?page=NTA&back=-");
+  show(<TableView root={root} name="orders" link="/t/t1/workspaces/w1" />);
+  await screen.findByText("A-1");
+  const previous = screen.getByRole("button", { name: "Previous" }) as HTMLButtonElement;
+  expect(previous.disabled).toBe(false);
+  fireEvent.click(previous);
+  await waitFor(() => expect(lastRows().get("cursor")).toBeNull());
+  expect(location.search).not.toContain("back=");
+  cleanup();
+
+  // A row that is not on the page shown is read by its ID.
+  routes[`GET /api/v1${root}/row/r9/orders`] = () => [200, { ...rows[0], id: "r9", number: "Z-9" }];
+  navigate("/t/t1/workspaces/w1/tables/orders?row=r9");
+  show(<TableView root={root} name="orders" link="/t/t1/workspaces/w1" />);
+  expect(await screen.findByLabelText("number")).toBeTruthy();
+  expect((screen.getByLabelText("number") as HTMLInputElement).value).toBe("Z-9");
+  cleanup();
+
+  // One that is gone says so.
+  routes[`GET /api/v1${root}/row/r8/orders`] = () => [
+    404,
+    { status: 404, detail: "The row was not found." },
+  ];
+  navigate("/t/t1/workspaces/w1/tables/orders?row=r8");
+  show(<TableView root={root} name="orders" link="/t/t1/workspaces/w1" />);
+  expect(await screen.findByText(/That row is gone/)).toBeTruthy();
+  navigate("/t/t1/workspaces/w1/tables/orders");
+});

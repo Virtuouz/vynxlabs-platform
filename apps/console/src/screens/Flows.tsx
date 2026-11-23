@@ -630,6 +630,8 @@ export interface FlowRunDetail extends FlowRunRow {
   parentFlowRunId?: string | null;
   /** The trace the flow run and its runs are part of. */
   traceId?: string | null;
+  /** What became of the failure alert, once there was one. */
+  alert?: Record<string, unknown> | null;
   retries: { id: string; state: RunState; createdAt: string }[];
   startedBy: { type: string; id: string | null };
   input: unknown;

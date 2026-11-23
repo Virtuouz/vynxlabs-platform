@@ -9,12 +9,10 @@
  */
 import {
   childrenOf,
-  containerHeight,
   MAX_PAGE_WIDGETS,
   PAGE_COLUMNS,
   type PageWidget,
   tabsOf,
-  topLevel,
 } from "@volvel/manifest";
 import { isContainer } from "@volvel/manifest/parts";
 import { withoutWidget } from "../../kit/inspector/model.ts";

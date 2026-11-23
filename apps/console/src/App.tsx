@@ -12,6 +12,7 @@ import { ApproveLink } from "./screens/ApproveLink.tsx";
 import { DatabaseLocations, TenantImport } from "./screens/Environments.tsx";
 import { InstanceAudit, InstanceMembers, Operators } from "./screens/Instance.tsx";
 import { InstanceBranding } from "./screens/InstanceBranding.tsx";
+import { InstanceHealth } from "./screens/InstanceHealth.tsx";
 import { InstanceTriggers } from "./screens/InstanceTriggers.tsx";
 import { KitSheet } from "./screens/KitSheet.tsx";
 import { ForOperators, NotFound } from "./screens/NotFound.tsx";
@@ -187,6 +188,7 @@ export function App() {
   else if (path === "/instance/import") screen = <TenantImport />;
   else if (path === "/instance/branding") screen = <InstanceBranding />;
   else if (path === "/instance/triggers") screen = <InstanceTriggers />;
+  else if (path === "/instance/health") screen = <InstanceHealth />;
   else if (path === "/instance/kit") screen = <KitSheet />;
 
   return (

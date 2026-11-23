@@ -256,6 +256,29 @@ describe("the Documentation screen", () => {
     expect(location.pathname).toBe(`${link}/docs/handbook/support/index`);
   });
 
+  test("says when a page takes a name the product's own help has", async () => {
+    docs();
+    expect(await row("Handbook")).toBeTruthy();
+    expect(screen.queryByText(/the product's own help has/)).toBeNull();
+    cleanup();
+    const clashing = {
+      ...list(),
+      issues: [
+        {
+          app: "help",
+          path: "handbook/faq",
+          code: "term_reserved",
+          message: 'The term "workspace" is one of the product\'s own.',
+        },
+      ],
+    };
+    routes[`GET /api/v1${root}/docs`] = () => [200, clashing];
+    docs();
+    expect((await screen.findByText(/the product's own help has/)).textContent).toContain(
+      "handbook/faq",
+    );
+  });
+
   test("a row says its file's name, under its title, and a draft says so right of it", async () => {
     docs();
     expect((await row("Refund an order")).textContent).toContain("refunds.md");
@@ -980,6 +1003,39 @@ describe("what is taken out can be brought back", () => {
     withRemoved();
     docs("handbook/faq");
     expect(await screen.findByText(/A draft removes this page/)).toBeTruthy();
+    fireEvent.click(await screen.findByRole("button", { name: "Keep this page" }));
+    await answer("Keep");
+    await waitFor(() => expect(sent("DELETE")).toHaveLength(1));
+  });
+
+  test("WLK-17d: a page drafted for removal opens in its editor as removed, read only, with Keep", async () => {
+    routes[`GET /api/v1${root}/docs/page/handbook/support/returns`] = () => [
+      200,
+      {
+        page: {
+          ...list().pages.find((one) => one.path === "handbook/support/returns"),
+          state: "removed",
+        },
+        source: sources["handbook/support/returns"],
+        revision: 2,
+        deployedSource: null,
+      },
+    ];
+    show(
+      <DocEditor
+        root={root}
+        link={link}
+        tenantId="acme"
+        workspaceId="dev"
+        path="handbook/support/returns"
+      />,
+    );
+    expect(await screen.findByText(/A draft removes this page/)).toBeTruthy();
+    expect(screen.getAllByText("To be removed").length).toBeGreaterThan(0);
+    expect(
+      ((await screen.findByLabelText("Source of handbook/support/returns")) as HTMLTextAreaElement)
+        .readOnly,
+    ).toBe(true);
     fireEvent.click(await screen.findByRole("button", { name: "Keep this page" }));
     await answer("Keep");
     await waitFor(() => expect(sent("DELETE")).toHaveLength(1));

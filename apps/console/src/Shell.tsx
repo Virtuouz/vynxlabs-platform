@@ -15,6 +15,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Search,
+  ShieldCheck,
   Sun,
   UsersRound,
 } from "lucide-react";
@@ -36,6 +37,7 @@ import { LiveIndicator } from "./kit/LiveIndicator.tsx";
 import { useWide, WIDE } from "./kit/layout.tsx";
 import { Junction, Wire } from "./kit/motifs.tsx";
 import { OperatorMark, OperatorStrip } from "./kit/OperatorStrip.tsx";
+import { ReadOnlyStrip } from "./kit/ReadOnly.tsx";
 import { EnvTag, StatePill, Tag } from "./kit/status.tsx";
 import { pageTitle, useNamedObject } from "./kit/title.ts";
 import { useBleeding } from "./kit/workbench.ts";
@@ -57,7 +59,7 @@ import {
 } from "./nav.ts";
 import { usePreference } from "./prefs.ts";
 import { openedAt, useRecordRecent } from "./recent.ts";
-import { Link, navigate, navigationKind, useRestoredScroll } from "./router.tsx";
+import { Link, navigate, navigationKind, useQueryValue, useRestoredScroll } from "./router.tsx";
 import { useTenantStream } from "./stream.ts";
 import { type ThemeChoice, useThemeChoice } from "./theme.ts";
 
@@ -642,7 +644,16 @@ function useGoTo(
   });
 }
 
-function AccountMenu({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
+function AccountMenu({
+  me,
+  tenantId,
+  onSignOut,
+}: {
+  me: Me;
+  /** The tenant the person is in, when they are in one. */
+  tenantId?: string | undefined;
+  onSignOut: () => void;
+}) {
   const name = me.principal.email ?? me.principal.name ?? "?";
   return (
     <Menu
@@ -660,6 +671,16 @@ function AccountMenu({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
           icon: <KeyRound aria-hidden="true" size={16} />,
           onSelect: () => navigate("/account/api-keys"),
         },
+        // Read by the person about themselves, so it needs no permission to read access.
+        ...(tenantId
+          ? [
+              {
+                label: "What I may do here",
+                icon: <ShieldCheck aria-hidden="true" size={16} />,
+                onSelect: () => navigate(`/t/${tenantId}/members/${me.principal.id}`),
+              },
+            ]
+          : []),
         {
           label: "Help for this page",
           icon: <CircleHelp aria-hidden="true" size={16} />,
@@ -717,7 +738,8 @@ export function Shell({
     tenantId ? `/tenants/${tenantId}/workspaces` : null,
   );
   const workspace = workspaces.data?.items.find((candidate) => candidate.id === workspaceId);
-  const opened = openedAt(path);
+  const [openedQuery] = useQueryValue("query");
+  const opened = openedAt(path, openedQuery);
   useRecordRecent(tenantId ?? undefined, workspaceId ?? undefined, opened?.kind, opened?.ref);
   const wsCounts = useLoad<WorkspaceCounts>(
     tenantId && workspaceId ? `/tenants/${tenantId}/workspaces/${workspaceId}/summary` : null,
@@ -1000,7 +1022,7 @@ export function Shell({
         <div className="flex-1" />
         <ThemeMenu compact />
         <div className="mt-2">
-          <AccountMenu me={me} onSignOut={onSignOut} />
+          <AccountMenu me={me} tenantId={tenantId} onSignOut={onSignOut} />
         </div>
       </nav>
 
@@ -1272,6 +1294,7 @@ export function Shell({
           <div data-production-rule="" aria-hidden="true" className="h-0.5 shrink-0 bg-attention" />
         ) : null}
         {tenantId ? <OperatorStrip /> : null}
+        <ReadOnlyStrip />
 
         <main
           id="main"
@@ -1334,7 +1357,7 @@ export function Shell({
           ) : null}
           {workspaceId && ws ? <ReleasePath counts={ws} /> : null}
           <div className="flex items-center gap-3 border-line border-t pt-3 md:hidden">
-            <AccountMenu me={me} onSignOut={onSignOut} />
+            <AccountMenu me={me} tenantId={tenantId} onSignOut={onSignOut} />
             <span className="min-w-0 flex-1 truncate text-meta text-ink-muted">
               {me.principal.email ?? me.principal.name}
             </span>

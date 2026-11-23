@@ -18,6 +18,7 @@ import type { RequestContext } from "../../http.js";
 import type { Kernel } from "../../kernel.js";
 import { type ApprovalsWire, readApprovals } from "../../pages/approvals.js";
 import { principalEmail } from "../../pages/who.js";
+import { todayIn } from "../../zones.js";
 import {
   describeTable,
   type Filter,
@@ -79,6 +80,12 @@ export type WireData =
       rows: Record<string, unknown>[];
       /** The same values for the period before, when the widget compares. */
       previous?: Record<string, unknown>[];
+      /** The function each value is, by the value's name: what a total of it can be made of. */
+      measures?: Record<string, string>;
+      /** The period each date breakdown is cut into, by the breakdown's name. */
+      buckets?: Record<string, "day" | "week" | "month" | "quarter" | "year">;
+      /** The days the page's date filter gives the first date breakdown, both ends. */
+      span?: { from: string; to: string };
       /** A figure's number over the time it covers, oldest first. */
       trend?: { at: string; value: number }[];
       followed?: { names: string; now: string };
@@ -601,7 +608,11 @@ export async function readWidget(
             }
             const range =
               one.op === "last"
-                ? lastRange((one.value as LastValue).count, (one.value as LastValue).unit)
+                ? lastRange(
+                    (one.value as LastValue).count,
+                    (one.value as LastValue).unit,
+                    todayIn(request.zone),
+                  )
                 : {
                     from: (one.value as string[])[0] as string,
                     to: (one.value as string[])[1] as string,
@@ -794,6 +805,7 @@ export async function readWidget(
       filters: request.filters,
       values: request.values,
       catalog: catalog.visual,
+      zone: request.zone,
       ...(request.follow ? { follow: { pageId: request.follow.pageId, place } } : {}),
     };
     const offset = decodeCursor(request.only?.input === name ? request.only.cursor : undefined);
@@ -901,6 +913,27 @@ export async function readWidget(
         rows,
       };
       if (asked.followed) wire.followed = asked.followed;
+      // The period of each date breakdown, and the days the page asks for it, so that a chart can
+      // put back the periods with nothing in them by the step the query took, to the page's ends.
+      if (visual) {
+        if ((visual.measures ?? []).length > 0) {
+          wire.measures = Object.fromEntries(
+            (visual.measures ?? []).map((measure) => [measure.as, measure.fn]),
+          );
+        }
+        const cut = (visual.groupBy ?? []).filter((group) => group.bucket !== undefined);
+        if (cut.length > 0) {
+          wire.buckets = Object.fromEntries(
+            cut.flatMap((group) =>
+              group.bucket ? [[groupName(group), group.bucket] as const] : [],
+            ),
+          );
+          const first = cut[0];
+          const filter = (input.filters ?? []).find((one) => one.column === first?.column);
+          const range = filter ? rangeOf(request.values[filter.filter]) : undefined;
+          if (range?.from && range.to) wire.span = { from: range.from, to: range.to };
+        }
+      }
 
       // The same figures for the period before, when the widget compares and this input follows that range.
       const compared =

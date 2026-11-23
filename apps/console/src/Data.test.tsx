@@ -635,6 +635,35 @@ test("a connected data source is changed from what it is, and the stored passwor
   );
 });
 
+test("a data source's stored password is removed from its Change form: password null (DAT-MP5)", async () => {
+  routes[`GET /api/v1${root}/data-source-bindings`] = () => [
+    200,
+    {
+      items: [
+        {
+          path: "erp",
+          description: "The ERP",
+          bound: true,
+          config: { host: "erp.internal", port: 5433, database: "erp", user: "reader", ssl: true },
+          hasPassword: true,
+          health: null,
+        },
+      ],
+    },
+  ];
+  routes[`PUT /api/v1${root}/data-source-bindings/erp`] = () => [200, {}];
+  show(<Sources root={root} link="/t/t1/workspaces/w1" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Change" }));
+  const dialog = await screen.findByRole("dialog");
+  fireEvent.click(within(dialog).getByLabelText("Remove the stored password"));
+  fireEvent.submit(dialog.querySelector("form") as HTMLFormElement);
+  await waitFor(() =>
+    expect(
+      ((calls.find((call) => call.method === "PUT")?.body ?? {}) as { password?: null }).password,
+    ).toBe(null),
+  );
+});
+
 test("WLK-07: another host asks for the password again instead of dropping it in silence", async () => {
   routes[`GET /api/v1${root}/data-source-bindings`] = () => [
     200,
@@ -834,7 +863,15 @@ test("TAB-12: a save names the version it read, and an undo after someone else's
   routes[`PUT /api/v1${root}/resources/orders`] = (sent) => {
     const asked = sent as { body: Record<string, unknown>; version?: number };
     if (refuse || asked.version !== version)
-      return [409, { status: 409, detail: "Someone else saved orders after you opened it." }];
+      return [
+        409,
+        {
+          status: 409,
+          code: "draft_changed",
+          detail:
+            "Someone else saved orders after you opened it. Reload it, then make your change again.",
+        },
+      ];
     stored = asked.body;
     version += 1;
     return [200, { version }];
@@ -850,7 +887,9 @@ test("TAB-12: a save names the version it read, and an undo after someone else's
   // Someone else saves in between.
   version += 1;
   fireEvent.click(screen.getByRole("button", { name: /^Undo/ }));
-  expect(await screen.findByText(/Someone else saved orders/)).toBeTruthy();
+  // The page is read again, so it already shows their change: it is not told to reload.
+  expect(await screen.findByText(/Someone else changed orders after you opened it/)).toBeTruthy();
+  expect(screen.queryByText(/Reload it/)).toBeNull();
   expect(Object.keys((stored as { columns: object }).columns)).toContain("amount");
   await waitFor(() =>
     expect(screen.getByRole("button", { name: /^Undo/ }).hasAttribute("disabled")).toBe(true),
@@ -1070,4 +1109,123 @@ test("TAB-28: a time is shown, typed and read in the reader's zone, with UTC on 
   show(<TableView root={root} name="orders" link="/t/t1/workspaces/w1" />);
   await screen.findByText("A-1");
   expect(await screen.findAllByTitle("2026-11-01T10:00:00.000Z (UTC)")).not.toHaveLength(0);
+});
+
+test("a data source's row says which scripts use it (REL-MP7)", async () => {
+  routes[`GET /api/v1${root}/data-source-bindings`] = () => [
+    200,
+    {
+      items: [
+        {
+          path: "erp",
+          description: "",
+          bound: true,
+          config: { host: "erp.internal", port: 5433, database: "erp", user: "reader", ssl: true },
+          hasPassword: true,
+          health: null,
+        },
+      ],
+    },
+  ];
+  routes[`GET /api/v1${root}/references`] = () => [
+    200,
+    {
+      items: [
+        {
+          target: { kind: "data_source", name: "erp" },
+          by: { kind: "script", path: "orders/sync" },
+          how: "reads and writes it",
+        },
+      ],
+    },
+  ];
+  show(<Sources root={root} link="/t/t1/workspaces/w1" />);
+  expect(await screen.findByRole("link", { name: "orders/sync" })).toBeTruthy();
+});
+
+const bound = {
+  path: "erp",
+  description: "The ERP",
+  bound: true,
+  config: { host: "erp.internal", port: 5433, database: "erp", user: "reader", ssl: true },
+  hasPassword: true,
+  health: null,
+};
+
+test("cfg2: the page of a data source has Test, Change and Unbind, as its list row has", async () => {
+  routes[`GET /api/v1${root}/data-source-tables/erp`] = () => [
+    200,
+    { items: [{ name: "customers", key: "id", columns: [{ name: "id", type: "integer" }] }] },
+  ];
+  routes[`GET /api/v1${root}/source-rows/customers/erp`] = () => [
+    200,
+    { items: [], nextCursor: null },
+  ];
+  routes[`GET /api/v1${root}/data-source-bindings`] = () => [200, { items: [bound] }];
+  routes[`DELETE /api/v1${root}/data-source-bindings/erp`] = () => [204, null];
+  show(<SourceView root={root} path="erp" link="/t/t1/workspaces/w1" />);
+  expect(await screen.findByRole("button", { name: "Test" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Change" }));
+  const dialog = await screen.findByRole("dialog");
+  expect((within(dialog).getByLabelText("Host") as HTMLInputElement).value).toBe("erp.internal");
+  fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+  fireEvent.click(screen.getByRole("button", { name: "Unbind" }));
+  await answer("Unbind");
+  await waitFor(() => expect(calls.some((call) => call.method === "DELETE")).toBe(true));
+});
+
+test("WLK-09d: the buttons of a source's row wrap on a phone instead of widening the page", async () => {
+  routes[`GET /api/v1${root}/data-source-bindings`] = () => [200, { items: [bound] }];
+  show(<Sources root={root} link="/t/t1/workspaces/w1" />);
+  const unbind = await screen.findByRole("button", { name: "Unbind" });
+  expect(unbind.parentElement?.className).toMatch(/flex-wrap/);
+  expect(unbind.parentElement?.className).toMatch(/max-w-/);
+});
+
+test("WLK-09b: a retired table keeps its pill whole and does not claim to be managed in the repository", async () => {
+  const item = (name: string, status: string, id?: string) => ({
+    ...(id ? { id } : {}),
+    name,
+    status,
+    managedIn: "code",
+    description: "",
+    columnCount: 1,
+    rowCount: 3,
+    policy: { type: "open" },
+  });
+  routes[`GET /api/v1${root}/tables`] = () => [
+    200,
+    {
+      items: [
+        item("notes", "retired", "id-1"),
+        item("notes", "retired", "id-2"),
+        item("orders", "active"),
+      ],
+    },
+  ];
+  show(<Tables root={root} link="/t/t1/workspaces/w1" />);
+  // Two retired tables of one name are two rows, each opened by its own ID.
+  const links = (await screen.findAllByRole("link", { name: "notes" })).map((one) =>
+    one.getAttribute("href"),
+  );
+  expect(links).toEqual([
+    "/t/t1/workspaces/w1/tables/notes?id=id-1",
+    "/t/t1/workspaces/w1/tables/notes?id=id-2",
+  ]);
+  const pill = (await screen.findAllByText("Retired"))[0] as HTMLElement;
+  expect(pill.closest("span.shrink-0")).toBeTruthy();
+  // The one that is live says where it is managed; the retired one says nothing it does not know.
+  expect(screen.getAllByText("Repository")).toHaveLength(1);
+  cleanup();
+  history.replaceState(null, "", "/?id=id-2");
+  routes[`GET /api/v1${root}/tables/orders`] = () => [
+    200,
+    { ...orders("code"), status: "retired" },
+  ];
+  show(<TableView root={root} name="orders" link="/t/t1/workspaces/w1" />);
+  await screen.findByText(/This table is retired/);
+  expect(screen.queryByText(/Managed in the/)).toBeNull();
+  // Opened with its ID, the page asks for that table.
+  expect(calls.some((call) => call.url.endsWith("/tables/orders?id=id-2"))).toBe(true);
+  history.replaceState(null, "", "/");
 });

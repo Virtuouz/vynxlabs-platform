@@ -406,7 +406,7 @@ The proxy must pass the `Host` header through unchanged, and say whether the req
 | --- | --- | --- | --- | --- |
 | `PUBLIC_URL` | Yes | All of it | Counts | By path, unless `APPS_URL` is set. Apps written as code only with `APPS_ON_CONSOLE_ADDRESS=true` |
 | `APPS_URL` | No | All of it, by API key or app sign-in | Ignored | By path |
-| A registered hostname | No | That tenant only | Ignored | The one app, at the root |
+| A registered hostname | No | That tenant only | Ignored | One app at the root, or, for a hostname of the portal, the tenant's sign-in pages under `/_` and every app of its workspace by path beneath it |
 
 ## End users
 
@@ -414,10 +414,10 @@ A tenant's end users are its customers and portal users. They are a pool of the 
 
 - **Mail is optional.** Set `SMTP_URL` and `MAIL_FROM` and the instance sends invitations and reset links itself. Without them it sends nothing, the person who made the link is shown it to pass on, and "Forgot your password" tells people to ask.
 - **Sign-up** is off. A tenant's admin can turn it on under **Branding**.
-- **What they can reach** is decided by bindings, like everything else: bind the built-in `portal_user` role to `end_users`, or to one end user, at an app and at the tables it shows. A table's owner rule then keeps each person to their own rows. An end user never holds more than what apps use, whatever they are bound to.
-- **Files have no owner.** Whoever may read files in a workspace may read all of them, so `portal_user` does not include them.
+- **What they can reach** is decided by bindings, like everything else: bind the built-in `portal_user` role (reads and writes rows) or `portal_reader` role (reads only) to `end_users`, or to one end user, at an app and at the tables it shows. A table's owner rule then keeps each person to their own rows. An end user never holds more than what apps use, whatever they are bound to.
+- **Files have no owner.** Whoever may read files in a workspace may read all of them, so neither portal role includes them.
 
-Someone who is not signed in reaches only what is bound to `anonymous`, and is limited in how often they may ask. The limit is counted by address, in each replica.
+Someone who is not signed in reaches only what is bound to `anonymous`, and is limited in how often they may ask. The limit is counted by address in the database, so it holds across every replica. Downloads of an app's files are limited separately, in each replica's memory.
 
 ## Approval mail
 

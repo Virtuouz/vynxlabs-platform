@@ -5,12 +5,23 @@ import { type ReactNode, useMemo, useRef, useState } from "react";
 import type { NavigateTo } from "./actions.tsx";
 import { filtersFromSearch, searchWithFilters } from "./filterAddress.ts";
 import { overlayWidth } from "./layout.ts";
-import { Stepper, tabsOfAddress, type useAddress } from "./navigation.tsx";
+import { type Address, Stepper, tabsOfAddress, type useAddress } from "./navigation.tsx";
 import { PageView } from "./PageView.tsx";
 import type { FilterValues, PageDataClient, ViewRegistry } from "./types.ts";
 
 /** Pages that are in the app's menu: a record page, a side sheet and a modal are only opened on something. */
 export const inMenu = (page: Page) => page.kind === undefined || page.kind === "page";
+
+/**
+ * The page whose Help topic the app's Help button opens: the modal that is open, else the side
+ * sheet, else the page, taking the topmost that names a topic (a modal with none leaves the one
+ * under it). Without a page in the address, the first of the menu (BLD-11).
+ */
+export function helpingPage(pages: readonly Page[], address: Address): Page | undefined {
+  const by = (id: string | undefined) => (id ? pages.find((one) => one.id === id) : undefined);
+  const page = by(address.page) ?? pages.filter(inMenu)[0];
+  return [by(address.modal?.page), by(address.sheet?.page), page].find((one) => one?.help);
+}
 
 /**
  * One page of the app, open on a record or not. A new page, or a new record, starts with its

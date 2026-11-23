@@ -227,6 +227,7 @@ export async function pull(args: string[], io: Io): Promise<number> {
     args,
     options: {
       dir: { type: "string" },
+      resources: { type: "string" },
       tenant: { type: "string" },
       workspace: { type: "string" },
       deployed: { type: "boolean" },
@@ -236,6 +237,7 @@ export async function pull(args: string[], io: Io): Promise<number> {
   const directory = resolve(values.dir ?? ".");
   // A file under one of the repository's roots is named for its path, and is not made to say it.
   const config = await readRepositoryConfig(directory);
+  const resources = values.resources ?? config.resources ?? RESOURCE_FOLDER;
   const settings = await loadSettings(io.env);
   const { base, workspace } = await locate(settings, values.tenant, values.workspace);
   const query = new URLSearchParams({
@@ -255,10 +257,9 @@ export async function pull(args: string[], io: Io): Promise<number> {
     drafts: { path: string; revision: number; deleted: boolean }[];
     bundleVersion: number | null;
   };
-  const folder = join(directory, RESOURCE_FOLDER);
+  const folder = join(directory, resources);
   // From the repository's root: a file in the folder, or one kept anywhere, written `/so`.
-  const shown = (path: string) =>
-    path.startsWith("/") ? path.slice(1) : `${RESOURCE_FOLDER}/${path}`;
+  const shown = (path: string) => (path.startsWith("/") ? path.slice(1) : `${resources}/${path}`);
   const report = await pullInto(
     folder,
     pulledFile(directory),
@@ -294,7 +295,7 @@ export async function pull(args: string[], io: Io): Promise<number> {
   }
   if (files.length > 0) {
     io.out(
-      `${RESOURCE_FOLDER}/ holds the workspace's whole set of console resources: a deploy of this repository replaces the set with it.`,
+      `${resources}/ holds the workspace's whole set of console resources: a deploy of this repository replaces the set with it.`,
     );
   }
   return 0;

@@ -1,4 +1,11 @@
-import { type ColumnInfo, choiceWords, formatDay, type RowsData } from "@volvel/widgets";
+import {
+  type ColumnInfo,
+  choiceWords,
+  countText,
+  formatDay,
+  type RowsData,
+  readerLocale,
+} from "@volvel/widgets";
 import type { ReactNode } from "react";
 import { cellOf, rowId } from "./cells.tsx";
 
@@ -59,7 +66,7 @@ function periodOf(value: unknown, type: string, by: "day" | "week" | "month"): s
 
 const said = (key: string, now: Date, options: Intl.DateTimeFormatOptions) => {
   const at = dateOf(key);
-  return at.toLocaleDateString("en-US", {
+  return at.toLocaleDateString(readerLocale(), {
     ...options,
     ...(at.getFullYear() === now.getFullYear() ? {} : { year: "numeric" }),
   });
@@ -205,7 +212,7 @@ export function GroupHeading({ group }: { group: RowGroup }) {
     <span className="flex min-w-0 items-center gap-2">
       <span className="min-w-0 truncate">{group.heading}</span>
       <span className="ml-auto shrink-0 text-meta font-normal text-ink-muted tabular-nums">
-        {group.count.toLocaleString("en-US")}
+        {countText(group.count)}
         <span className="sr-only"> {group.count === 1 ? "row" : "rows"}</span>
       </span>
     </span>

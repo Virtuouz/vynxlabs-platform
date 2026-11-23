@@ -91,5 +91,7 @@
   "0090_step_decided_by.sql": "4766625c9722977c939a4805859598bd5134b2de13d4a92b79739009011e9738",
   "0091_operator_enabled.sql": "10252043cf98e25922260aefa6b931a347137038dc0e98adec3569c808e6e61a",
   "0092_managed_workers_lock.sql": "fe2c4f1368b854059387af22fc4ec38876f4c252dac8a2372f8442194534c72d",
-  "0093_gov2_record_gone.sql": "6a2c33acd144590f1cd929be0a1a732b0fb151d104f70d4955df018927301a0c"
+  "0093_gov2_record_gone.sql": "6a2c33acd144590f1cd929be0a1a732b0fb151d104f70d4955df018927301a0c",
+  "0094_acc2_binding_source_and_workspace_admin.sql": "6b2cf564813782fec3699ba6f3f6e56b5fe784cb07fea7b49a41eca0c1df2bee",
+  "0095_t3_account_recent_kinds.sql": "a6d47e0d6478628219a55e94f2fb5867ed1ef3102b72ced57ab34d18fe35e706"
 }

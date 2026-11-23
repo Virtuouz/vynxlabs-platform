@@ -2,6 +2,7 @@
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { AttributesDialog, EndUserGroups, Groups } from "./screens/Groups.tsx";
+import { ACCESS_TABS, SectionTabs } from "./screens/Members.tsx";
 import { answer, show } from "./testing.tsx";
 
 const base = "/tenants/t1";
@@ -141,4 +142,19 @@ test("a group of end users is renamed and described from its row", async () => {
       description: "Pays invoices.",
     }),
   );
+});
+
+test("WLK-12g: at a phone's width a group's actions wrap in their cell, and the tab strip wraps instead of hiding its last tabs", async () => {
+  show(<Groups base={base} />);
+  const del = await screen.findByRole("button", { name: "Delete" });
+  expect(del.parentElement?.className).toContain("flex-wrap");
+});
+
+test("WLK-12g: the section tabs wrap instead of hiding the last ones behind a scroll", () => {
+  show(
+    <SectionTabs label="Members and access" tenantId="t1" tabs={ACCESS_TABS} current="groups" />,
+  );
+  const tabs = screen.getByRole("navigation", { name: "Members and access" });
+  expect(tabs.className).toContain("flex-wrap");
+  expect(tabs.className).not.toContain("overflow-x-auto");
 });

@@ -290,6 +290,20 @@ function DockedInspector({
       back();
     };
   }, []);
+  // Messages keep clear of it: the toasts' right edge is moved in by its width while it is open.
+  useEffect(() => {
+    const root = document.documentElement;
+    const node = region.current;
+    if (!node || leaving) return;
+    const say = () => root.style.setProperty("--vx-toast-inset", `${node.offsetWidth}px`);
+    say();
+    const watch = typeof ResizeObserver === "function" ? new ResizeObserver(say) : undefined;
+    watch?.observe(node);
+    return () => {
+      watch?.disconnect();
+      root.style.removeProperty("--vx-toast-inset");
+    };
+  }, [leaving]);
   // Focus goes back as it starts to shut, not when it has gone.
   useEffect(() => {
     if (leaving) giveBack.current();

@@ -53,7 +53,7 @@ const open = (extra: Partial<Parameters<typeof AddToPage>[0]> = {}) => {
 };
 
 describe("the widget selector (board 7)", () => {
-  test("groups the widgets in the boards' categories, with Text under Organize and explain, and Labs marked", () => {
+  test("groups the widgets in the boards' categories, with Text under Organize and explain, and Goal unmarked", () => {
     const { dialog } = open();
     for (const title of [
       "Work with records",
@@ -66,8 +66,9 @@ describe("the widget selector (board 7)", () => {
     const organize = within(dialog.getByRole("region", { name: "Organize and explain" }));
     expect(organize.getByRole("button", { name: /^Text/ })).toBeTruthy();
     expect(organize.getByRole("button", { name: /^Section/ })).toBeTruthy();
+    // Goal is a core widget (decision D37): offered with the others, and not marked as labs.
     const goal = dialog.getByRole("button", { name: /^Goal/ });
-    expect(within(goal).getByText("Labs")).toBeTruthy();
+    expect(within(goal).queryByText("Labs")).toBeNull();
     expect(dialog.getByText("Suggested for this page")).toBeTruthy();
   });
 

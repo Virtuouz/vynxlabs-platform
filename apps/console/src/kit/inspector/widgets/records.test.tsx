@@ -282,6 +282,10 @@ test("a form says what Submit says, and what happens after saving", () => {
     FormDisplaySection,
   );
   expect(screen.getByText("Required · picker")).toBeTruthy();
+  // WID-22: there is no setting for when a field shows, so the note does not offer one.
+  expect(screen.getByText(/Required and checks come from the table/).textContent).not.toMatch(
+    /when to show/,
+  );
   fireEvent.click(screen.getByRole("button", { name: /Submit says/ }));
   fireEvent.change(screen.getByLabelText("Submit says"), { target: { value: "Create invoice" } });
   expect(mine(seen).config.submitLabel).toBe("Create invoice");
@@ -431,6 +435,10 @@ test("tabs say what each holds; its chip sets which opens first; new tabs are ad
   );
   expect(screen.getByText("1 widget")).toBeTruthy();
   expect(screen.getByText("Empty")).toBeTruthy();
+  // BLD-08: renaming is in the drawer; the canvas has no double-click for a tab, so the note does not offer one.
+  expect(screen.getByText(/Click a tab on the page to fill it/).textContent).not.toMatch(
+    /double-click/i,
+  );
   fireEvent.click(screen.getByRole("button", { name: "Open Visits first" }));
   expect(mine(seen).config.opensFirst).toBe("visits");
   fireEvent.click(screen.getByRole("button", { name: /Tab$/ }));
@@ -576,4 +584,38 @@ test("setting After saving changes the close and the message in place, and does 
     { do: "open", page: "p" },
     { do: "message", text: "Made", tone: "info" },
   ]);
+});
+
+test("a form field says what it starts as: today, the person filling it in, or a value (WID-M1)", () => {
+  const seen = mount(
+    form,
+    {
+      data: { record: { source: { visual: { table: "invoices" } } } },
+      config: {
+        mode: "create",
+        fields: [
+          { column: "issued_at" },
+          { column: "notes" },
+          { column: "total", format: { style: "currency", currency: "USD", minorUnits: true } },
+        ],
+      },
+    },
+    FormDisplaySection,
+  );
+  const fields = () => mine(seen).config.fields as { initial?: unknown }[];
+  fireEvent.click(screen.getByRole("button", { name: /^Issued at/ }));
+  fireEvent.change(screen.getByLabelText("Starts as"), { target: { value: "today" } });
+  expect(fields()[0]?.initial).toEqual({ kind: "today" });
+  fireEvent.change(screen.getByLabelText("Starts as"), { target: { value: "none" } });
+  expect(fields()[0]).not.toHaveProperty("initial");
+  fireEvent.click(screen.getByRole("button", { name: /^Back/ }));
+  fireEvent.click(screen.getByRole("button", { name: /^Notes/ }));
+  fireEvent.change(screen.getByLabelText("Starts as"), { target: { value: "me" } });
+  fireEvent.change(screen.getByLabelText("Their"), { target: { value: "name" } });
+  expect(fields()[1]?.initial).toEqual({ kind: "me", as: "name" });
+  fireEvent.click(screen.getByRole("button", { name: /^Back/ }));
+  fireEvent.click(screen.getByRole("button", { name: /^Total/ }));
+  fireEvent.change(screen.getByLabelText("Starts as"), { target: { value: "value" } });
+  fireEvent.change(screen.getByLabelText(/^Value/), { target: { value: "12.50" } });
+  expect(fields()[2]?.initial).toEqual({ kind: "value", value: 1250 });
 });

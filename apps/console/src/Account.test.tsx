@@ -337,6 +337,207 @@ test("a person changes their own password on Account, and the form says what wen
   expect((form.getByLabelText("New password") as HTMLInputElement).value).toBe("");
 });
 
+const aSession = (id: string, userAgent: string, ipAddress: string) => ({
+  id,
+  token: `token-${id}`,
+  userAgent,
+  ipAddress,
+  createdAt: new Date(Date.now() - 3_600_000).toISOString(),
+  expiresAt: new Date(Date.now() + 6 * 86_400_000).toISOString(),
+});
+const FIREFOX = "Mozilla/5.0 (X11; Linux x86_64; rv:130.0) Gecko/20100101 Firefox/130.0";
+const SAFARI =
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15";
+
+function accountRoutes() {
+  routes["GET /api/v1/api-keys"] = () => [200, { items: [] }];
+  routes["GET /api/v1/me/recovery-codes"] = () => [200, { eligible: false, left: 0, madeAt: null }];
+  routes["GET /api/v1/me"] = () => [
+    200,
+    {
+      principal: { type: "member", id: "m1", name: "Ada Lovelace", email: "ada@acme.example" },
+      instancePermissions: [],
+      tenants: [],
+    },
+  ];
+}
+
+test("a person sees where they are signed in, ends one session, and ends the others (SHL-MP2)", async () => {
+  accountRoutes();
+  let listed = [aSession("s1", FIREFOX, "10.0.0.2"), aSession("s2", SAFARI, "10.0.0.9")];
+  routes["GET /api/v1/auth/list-sessions"] = () => [200, listed];
+  routes["GET /api/v1/auth/get-session"] = () => [200, { session: { id: "s1" }, user: {} }];
+  routes["POST /api/v1/auth/revoke-session"] = (body) => {
+    listed = listed.filter((one) => one.token !== (body as { token: string }).token);
+    return [200, { status: true }];
+  };
+  routes["POST /api/v1/auth/revoke-other-sessions"] = () => {
+    listed = listed.filter((one) => one.id === "s1");
+    return [200, { status: true }];
+  };
+  show(<Account />);
+  const panel = await screen.findByRole("region", { name: "Sessions" });
+  const inPanel = within(panel);
+  await inPanel.findByText("Firefox on Linux");
+  expect(inPanel.getByText("Safari on macOS")).toBeTruthy();
+  expect(inPanel.getByText("10.0.0.9")).toBeTruthy();
+  expect(inPanel.getByText("This session")).toBeTruthy();
+  // The one in use is ended by signing out, so it has no End of its own.
+  expect(inPanel.getAllByRole("button", { name: "End" })).toHaveLength(1);
+
+  fireEvent.click(inPanel.getByRole("button", { name: "End" }));
+  expect(await answer("Cancel")).toContain("Safari on macOS is signed out");
+  expect(calls.some((call) => call.url.endsWith("/revoke-session"))).toBe(false);
+  fireEvent.click(inPanel.getByRole("button", { name: "End" }));
+  await answer("End session");
+  await waitFor(() => expect(inPanel.queryByText("Safari on macOS")).toBeNull());
+  expect(calls.find((call) => call.url.endsWith("/revoke-session"))?.body).toEqual({
+    token: "token-s2",
+  });
+  // Nothing else is signed in: there is nothing left to end together.
+  expect(
+    (inPanel.getByRole("button", { name: "End other sessions" }) as HTMLButtonElement).disabled,
+  ).toBe(true);
+});
+
+test("a person ends every other session at once, after being asked (SHL-MP2)", async () => {
+  accountRoutes();
+  let listed = [aSession("s1", FIREFOX, "10.0.0.2"), aSession("s2", SAFARI, "10.0.0.9")];
+  routes["GET /api/v1/auth/list-sessions"] = () => [200, listed];
+  routes["GET /api/v1/auth/get-session"] = () => [200, { session: { id: "s1" }, user: {} }];
+  routes["POST /api/v1/auth/revoke-other-sessions"] = () => {
+    listed = listed.filter((one) => one.id === "s1");
+    return [200, { status: true }];
+  };
+  show(<Account />);
+  const panel = await screen.findByRole("region", { name: "Sessions" });
+  await within(panel).findByText("Safari on macOS");
+  fireEvent.click(within(panel).getByRole("button", { name: "End other sessions" }));
+  expect(await answer("Cancel")).toContain("The other session is signed out");
+  expect(calls.some((call) => call.url.endsWith("/revoke-other-sessions"))).toBe(false);
+  fireEvent.click(within(panel).getByRole("button", { name: "End other sessions" }));
+  await answer("End other sessions");
+  await waitFor(() => expect(within(panel).queryByText("Safari on macOS")).toBeNull());
+  expect(within(panel).getByText("Firefox on Linux")).toBeTruthy();
+});
+
+test("sessions that cannot be read say so, and can be asked for again (SHL-MP2)", async () => {
+  accountRoutes();
+  let refuse = true;
+  routes["GET /api/v1/auth/list-sessions"] = () =>
+    refuse
+      ? [500, { status: 500, detail: "The sessions could not be read." }]
+      : [200, [aSession("s1", FIREFOX, "10.0.0.2")]];
+  routes["GET /api/v1/auth/get-session"] = () => [200, { session: { id: "s1" }, user: {} }];
+  show(<Account />);
+  const panel = await screen.findByRole("region", { name: "Sessions" });
+  await within(panel).findByText("The sessions could not be read.");
+  refuse = false;
+  fireEvent.click(within(panel).getByRole("button", { name: "Try again" }));
+  await within(panel).findByText("Firefox on Linux");
+});
+
+test("a person changes their name, and cannot where a directory sets it (SHL-MP3)", async () => {
+  accountRoutes();
+  routes["GET /api/v1/auth/list-sessions"] = () => [200, []];
+  routes["POST /api/v1/auth/update-user"] = () => [200, { status: true }];
+  show(<Account />);
+  const panel = await screen.findByRole("region", { name: "Profile" });
+  const form = within(panel);
+  const field = (await form.findByLabelText("Name")) as HTMLInputElement;
+  expect(field.value).toBe("Ada Lovelace");
+  expect(form.getByText("ada@acme.example")).toBeTruthy();
+  const save = form.getByRole("button", { name: "Save name" }) as HTMLButtonElement;
+  expect(save.disabled).toBe(true);
+  fireEvent.input(field, { target: { value: "Ada King" } });
+  expect(save.disabled).toBe(false);
+  fireEvent.click(save);
+  await form.findByText("Your name is saved.");
+  expect(calls.find((call) => call.url.endsWith("/update-user"))?.body).toEqual({
+    name: "Ada King",
+  });
+});
+
+test("a name a directory pushes is shown with whose it is, and is not offered for change (SHL-MP3)", async () => {
+  accountRoutes();
+  routes["GET /api/v1/me"] = () => [
+    200,
+    {
+      principal: {
+        type: "member",
+        id: "m1",
+        name: "Ada Lovelace",
+        email: "ada@acme.example",
+        nameFrom: "Acme Staff",
+      },
+      instancePermissions: [],
+      tenants: [],
+    },
+  ];
+  routes["GET /api/v1/auth/list-sessions"] = () => [200, []];
+  show(<Account />);
+  const panel = await screen.findByRole("region", { name: "Profile" });
+  const field = (await within(panel).findByLabelText("Name")) as HTMLInputElement;
+  expect(field.disabled).toBe(true);
+  expect(within(panel).getByText("Your name comes from Acme Staff. Change it there.")).toBeTruthy();
+  expect(within(panel).queryByRole("button", { name: "Save name" })).toBeNull();
+});
+
+test("an API key is made with an expiry, and the list says when each ends (SHL-MP4)", async () => {
+  accountRoutes();
+  const soon = new Date(Date.now() + 3 * 86_400_000).toISOString();
+  routes["GET /api/v1/auth/list-sessions"] = () => [200, []];
+  routes["GET /api/v1/api-keys"] = () => [
+    200,
+    {
+      items: [
+        {
+          id: "k1",
+          name: "Laptop",
+          prefix: "vx_abc",
+          suffix: "9f2e",
+          expiresAt: null,
+          lastUsedAt: null,
+          revokedAt: null,
+          createdAt: "2026-11-01T00:00:00.000Z",
+        },
+        {
+          id: "k2",
+          name: "Deploy",
+          prefix: "vx_dep",
+          suffix: "1a2b",
+          expiresAt: soon,
+          lastUsedAt: null,
+          revokedAt: null,
+          createdAt: "2026-11-01T00:00:00.000Z",
+        },
+      ],
+    },
+  ];
+  routes["POST /api/v1/api-keys"] = () => [201, { token: "vx_new", id: "k3" }];
+  show(<Account />);
+  await screen.findByText("vx_dep…1a2b");
+  expect(screen.getByRole("columnheader", { name: "Expires" })).toBeTruthy();
+  // The Laptop key was never used and never expires.
+  expect(screen.getAllByText("Never")).toHaveLength(3);
+  expect(screen.getByText("in 3d")).toBeTruthy();
+
+  fireEvent.click(screen.getByRole("button", { name: "Create API key" }));
+  const dialog = await screen.findByRole("dialog");
+  fireEvent.input(within(dialog).getByLabelText("Name"), { target: { value: "CI" } });
+  fireEvent.change(within(dialog).getByLabelText("Expires"), { target: { value: "30" } });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Create API key" }));
+  await waitFor(() => expect(calls.some((call) => call.method === "POST")).toBe(true));
+  const sent = calls.find((call) => call.method === "POST")?.body as {
+    name: string;
+    expiresAt: string;
+  };
+  expect(sent.name).toBe("CI");
+  const days = (new Date(sent.expiresAt).getTime() - Date.now()) / 86_400_000;
+  expect(days).toBeGreaterThan(29.9);
+  expect(days).toBeLessThan(30.1);
+});
+
 test("an operator who is disabled says so on the Operators list, and cannot be mistaken for one who can sign in (ACC)", async () => {
   routes["GET /api/v1/bindings"] = () => [
     200,

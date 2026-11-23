@@ -110,6 +110,71 @@ test("the apps of a workspace are listed with their addresses and who they are o
   expect(sheet.textContent).toContain("12, 340 KB");
 });
 
+const appRow = (id: string, path: string, title: string, more: object = {}) => ({
+  id,
+  path,
+  title,
+  description: null,
+  url: `https://apps.example.test/apps/acme/main/${path}/`,
+  domains: [],
+  files: 0,
+  bytes: 0,
+  access: [],
+  builtWith: "builder",
+  ownership: "ui",
+  ...more,
+});
+
+test("APP-MP3: apps are searched, filtered by how they are built, sorted, and a console-made one is removed", async () => {
+  routes[`GET /api/v1${base}/workspaces/w1/apps`] = () => [
+    200,
+    {
+      items: [
+        appRow("a1", "portal/orders", "Orders"),
+        appRow("a2", "back-office", "Back office", { builtWith: "code", ownership: "code" }),
+        appRow("a3", "alpha", "Alpha"),
+      ],
+    },
+  ];
+  routes[`PUT /api/v1${base}/workspaces/w1/drafts/portal/orders`] = () => [200, {}];
+  show(<Apps root={`${base}/workspaces/w1`} />);
+  await screen.findByText("Orders");
+  // Search by title or path.
+  fireEvent.input(screen.getByLabelText("Find an app"), { target: { value: "office" } });
+  expect(screen.queryByText("Orders")).toBeNull();
+  expect(screen.getByText("Back office")).toBeTruthy();
+  fireEvent.input(screen.getByLabelText("Find an app"), { target: { value: "" } });
+  // Filter by how it is built.
+  fireEvent.click(screen.getByRole("radio", { name: /^Repository/ }));
+  expect(screen.queryByText("Orders")).toBeNull();
+  fireEvent.click(screen.getByRole("radio", { name: /^All/ }));
+  // Sort by the title's header.
+  fireEvent.click(screen.getByRole("button", { name: /App/ }));
+  const titles = () =>
+    screen
+      .getAllByRole("row")
+      .slice(1)
+      .map((row) => row.textContent ?? "");
+  expect(titles()[0]).toContain("Alpha");
+  // A repository app is removed there; a console-made one is removed from its inspector.
+  fireEvent.click(screen.getByText("Back office"));
+  expect((await screen.findByRole("dialog")).textContent).toContain("Managed in the repository");
+  cleanup();
+  show(<Apps root={`${base}/workspaces/w1`} />);
+  fireEvent.click(await screen.findByText("Orders"));
+  const sheet = await screen.findByRole("dialog");
+  fireEvent.click(within(sheet).getByRole("button", { name: "Remove" }));
+  await answer("Remove");
+  await waitFor(() =>
+    expect(
+      sent("PUT").find((call) => call.url.endsWith("/drafts/portal/orders"))?.body,
+    ).toMatchObject({
+      kind: "app",
+      deleted: true,
+    }),
+  );
+});
+
 test("a workspace with no apps says where apps come from", async () => {
   routes[`GET /api/v1${base}/workspaces/w1/apps`] = () => [200, { items: [] }];
   show(<Apps root={`${base}/workspaces/w1`} />);
@@ -205,7 +270,7 @@ test("a link that was emailed says so, and the search is sent to the server", as
   );
 });
 
-test("an end user is disabled and deleted through their own routes, and deleting asks first", async () => {
+test("an end user is disabled and deleted through their own routes, and both ask first", async () => {
   let users = [ada];
   routes[`GET /api/v1${base}/end-users`] = () => [200, { items: users, nextCursor: null }];
   routes[`PATCH /api/v1${base}/end-users/u1`] = (body) => {
@@ -220,6 +285,8 @@ test("an end user is disabled and deleted through their own routes, and deleting
   show(<EndUsers base={base} />);
   fireEvent.click(await screen.findByText(ada.email));
   fireEvent.click(await screen.findByRole("button", { name: "Disable" }));
+  // Disabling signs them out of every app, so it is asked first.
+  expect(await answer("Disable")).toContain(`Disable ${ada.email}?`);
   await screen.findAllByText("Disabled");
   expect(sent("PATCH")[0]?.url).toBe(`/api/v1${base}/end-users/u1`);
   expect(sent("PATCH")[0]?.body).toEqual({ disabled: true });
@@ -631,4 +698,44 @@ test("the end users screen keeps its search and the person open in the address, 
   expect(location.pathname).toBe("/t/t1/end-users");
   expect(new URLSearchParams(location.search).get("q")).toBe("ada");
   history.replaceState(null, "", "/");
+});
+
+test("a hostname is pointed at another app, or at the portal, without being removed (GOV-P6)", async () => {
+  let domains: (typeof domain)[] = [domain];
+  routes[`GET /api/v1${base}/domains`] = () => [200, { items: domains }];
+  routes[`GET /api/v1${base}/workspaces`] = () => [200, { items: [{ id: "w1", name: "Main" }] }];
+  routes[`GET /api/v1${base}/workspaces/w1/apps`] = () => [
+    200,
+    {
+      items: [
+        { id: "a1", path: "portal/orders", title: "Orders" },
+        { id: "a2", path: "portal/billing", title: "Billing" },
+      ],
+    },
+  ];
+  routes[`PATCH /api/v1${base}/domains/d1`] = (body) => {
+    domains = [{ ...domain, app: (body as { app: string }).app }];
+    return [200, domains[0]];
+  };
+  show(<Domains base={base} />);
+  fireEvent.click(await screen.findByRole("button", { name: /Details/, hidden: true }));
+  const dialog = await screen.findByRole("dialog");
+  const change = (await within(dialog).findByRole("button", {
+    name: "Change what it serves",
+  })) as HTMLButtonElement;
+  // Nothing is different yet, so nothing can be sent.
+  expect(change.disabled).toBe(true);
+  const app = (await within(dialog).findByLabelText("App")) as HTMLSelectElement;
+  await within(dialog).findByRole("option", { name: "Billing (portal/billing)" });
+  expect(app.value).toBe("portal/orders");
+  fireEvent.change(app, { target: { value: "portal/billing" } });
+  expect(change.disabled).toBe(false);
+  fireEvent.click(change);
+  await waitFor(() => expect(sent("PATCH")[0]?.body).toEqual({ app: "portal/billing" }));
+  await waitFor(() => expect(document.body.textContent).toContain("Serves portal/billing"));
+
+  fireEvent.change(await within(dialog).findByLabelText("Serves"), { target: { value: "portal" } });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Change what it serves" }));
+  await waitFor(() => expect(sent("PATCH")[1]?.body).toEqual({ app: "" }));
+  await waitFor(() => expect(document.body.textContent).toContain("The portal and every app"));
 });

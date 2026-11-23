@@ -587,7 +587,7 @@ export async function completeRun(
   });
 }
 
-interface EndedRun {
+export interface EndedRun {
   id: string;
   tenant_id: string;
   workspace_id: string;
@@ -608,7 +608,6 @@ async function afterRun(
   let status = reportedStatus;
   let detail = reportedDetail;
   const { kickFlow } = await import("../flows/engine.js");
-  const { publishPlatformEvent } = await import("../flows/events.js");
   if (run.flow_run_id) kickFlow(kernel, run.flow_run_id);
   // What a trigger source gave back is what starts the trigger's script or flow. It is passed on
   // before the run is announced, because passing it on may fail the run, and the platform says
@@ -634,20 +633,52 @@ async function afterRun(
     }
   }
   settled?.(status, status === "failed" ? (detail as { message?: string }).message : undefined);
+  const error = status === "failed" ? { error: (detail as { message: string }).message } : {};
+  // The two events for a run that ended well or badly stay. The third says how any run ended,
+  // including one that was canceled.
+  await publishRunEvent(
+    kernel,
+    run,
+    status === "succeeded" ? "platform/run-succeeded" : "platform/run-failed",
+    error,
+  );
+  await publishRunEvent(kernel, run, "platform/run-finished", { status, ...error });
+}
+
+async function publishRunEvent(
+  kernel: Kernel,
+  run: EndedRun,
+  name: string,
+  more: Record<string, unknown>,
+) {
+  const { publishPlatformEvent } = await import("../flows/events.js");
   await publishPlatformEvent(kernel, {
     tenantId: run.tenant_id,
     workspaceId: run.workspace_id,
-    name: status === "succeeded" ? "platform/run-succeeded" : "platform/run-failed",
-    payload: {
-      runId: run.id,
-      script: run.script_path,
-      ...(status === "failed" ? { error: (detail as { message: string }).message } : {}),
-    },
+    name,
+    payload: { runId: run.id, script: run.script_path, ...more },
     sourceId: run.id,
     depth: Number(run.trigger_detail.depth ?? 0),
   }).catch((error) =>
     kernel.log.error({ err: error, runId: run.id }, "a platform event could not be published"),
   );
+}
+
+/** Runs canceled inside a transaction, kept until it has committed and they can be announced. */
+const canceledIn = new WeakMap<object, EndedRun[]>();
+
+/** The runs this transaction canceled so far, handed over once, to be announced after it commits. */
+export function takeCanceled(trx: Trx): EndedRun[] {
+  const runs = canceledIn.get(trx) ?? [];
+  canceledIn.delete(trx);
+  return runs;
+}
+
+/** Says that runs ended as canceled: `platform/run-finished` with `status: "cancelled"`. */
+export async function announceCanceled(kernel: Kernel, runs: EndedRun[]) {
+  for (const run of runs) {
+    await publishRunEvent(kernel, run, "platform/run-finished", { status: "cancelled" });
+  }
 }
 
 export interface RunFailure {
@@ -732,6 +763,7 @@ export async function cancelRun(kernel: Kernel, trx: Trx, workspaceId: string, r
     .executeTakeFirstOrThrow();
   observe.runEnded(kernel.metrics, cancelled, "cancelled");
   traceRun(kernel, cancelled, "cancelled");
+  canceledIn.set(trx, [...(canceledIn.get(trx) ?? []), cancelled]);
   return cancelled;
 }
 

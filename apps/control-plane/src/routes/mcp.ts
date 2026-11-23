@@ -783,7 +783,11 @@ export function mcpRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.post(
       "/tenants/:t/workspaces/:w/mcp",
       {
-        config: { access: access.custom },
+        config: {
+          access: access.custom(
+            "Needs an API key, usually a service account's, that holds `workspace:read`. Each tool then asks for what it does.",
+          ),
+        },
         schema: {
           summary: "The Model Context Protocol, for an agent",
           description:

@@ -24,7 +24,10 @@ export function approvalLinkRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       "/approval-links/:token",
       {
-        config: { access: access.public, rateLimit: LINK_LIMIT },
+        config: {
+          access: access.publicWith("Needs the approval link's token, which is in the address."),
+          rateLimit: LINK_LIMIT,
+        },
         schema: {
           summary: "What an approval link asks",
           description:
@@ -85,7 +88,10 @@ export function approvalLinkRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.post(
       "/approval-links/:token",
       {
-        config: { access: access.public, rateLimit: LINK_LIMIT },
+        config: {
+          access: access.publicWith("Needs the approval link's token, which is in the address."),
+          rateLimit: LINK_LIMIT,
+        },
         schema: {
           summary: "Approve or reject from an approval link",
           description:

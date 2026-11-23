@@ -2,6 +2,7 @@ import { Dialog as Base } from "@base-ui/react/dialog";
 import { X } from "lucide-react";
 import { type ReactNode, useEffect, useRef } from "react";
 import { useOpening } from "./presence.tsx";
+import { useReturnFocus } from "./returnFocus.ts";
 
 export interface DialogProps {
   open: boolean;
@@ -71,6 +72,7 @@ export function Dialog({
 }: DialogProps) {
   const shown = useOpening(open);
   const popup = useRef<HTMLDivElement>(null);
+  const returnFocus = useReturnFocus(open);
   // A form that is read after the dialog opened (a page's modal) has no field yet when the focus
   // is placed, and the focus waits on Close. When its first field arrives, and the person has not
   // moved the focus themselves, the field takes it.
@@ -139,6 +141,7 @@ export function Dialog({
             firstField(popup.current) ??
             true
           }
+          finalFocus={returnFocus}
           className={`fixed layer-dialog flex flex-col overflow-hidden border-line bg-surface shadow-modal transition-[opacity,scale] motion-slow data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0 ${
             size === "table"
               ? "inset-0 flex flex-col md:inset-auto md:top-[8vh] md:left-1/2 md:h-[84vh] md:w-[min(76rem,calc(100vw-3rem))] md:-translate-x-1/2 md:rounded-overlay md:border"

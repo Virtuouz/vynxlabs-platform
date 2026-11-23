@@ -83,6 +83,8 @@ export function pageClient(
           records: { ...(record ? { this: record } : {}), ...given.records },
           ...(given.inputs ? { inputs: given.inputs } : {}),
           ...(draft ? { draft: true } : {}),
+          // "Today" is the reader's day (D21).
+          zone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         });
       } catch (error) {
         // A refusal says what was wrong with what was typed, by field, as the served app's does.

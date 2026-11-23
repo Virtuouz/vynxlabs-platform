@@ -6,6 +6,7 @@ import { ApiError, api, useLoad } from "../../api.ts";
 import { Loading } from "../../kit/LoadState.tsx";
 import { PageHeader } from "../../kit/PageHeader.tsx";
 import { navigate } from "../../router.tsx";
+import { useViewer } from "../../viewer.ts";
 import { DeviceSwitch, VIEWPORTS } from "./BuilderHeader.tsx";
 import { pageClient } from "./client.ts";
 import { views } from "./registry.ts";
@@ -34,8 +35,12 @@ export function AppPreview({
   const [problem, setProblem] = useState<string>();
   const [device, setDevice] = useState<keyof typeof VIEWPORTS>("desktop");
   const nav = useAddress(`${link}/screens/${path}/preview/`);
-  const apps = useLoad<{ items: { path: string; url: string }[] }>(`${root}/apps`);
-  const published = apps.data?.items.find((one) => one.path === path)?.url;
+  const apps = useLoad<{ items: { path: string; interface?: string | null; url: string }[] }>(
+    `${root}/apps`,
+  );
+  // The app that serves this interface: an app made here has a path of its own.
+  const published = apps.data?.items.find((one) => one.interface === path)?.url;
+  const viewer = useViewer(root);
 
   useEffect(() => {
     let current = true;
@@ -108,7 +113,7 @@ export function AppPreview({
               <AppView
                 nav={nav}
                 pages={body.pages}
-                user={undefined}
+                user={viewer}
                 registry={views}
                 clientFor={clientFor}
                 appKey={`preview.${path}`}

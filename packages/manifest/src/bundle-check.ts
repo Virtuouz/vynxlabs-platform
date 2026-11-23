@@ -25,6 +25,70 @@ import { checkTable, type TableBody } from "./table.js";
 /** Events the platform publishes itself. No repository declares them. */
 export const PLATFORM_EVENT_PREFIX = "platform/";
 
+/** One field of a platform event's payload. */
+export interface PlatformEventField {
+  name: string;
+  type: "string" | "number" | "boolean";
+  /** Left out of the payload on some occasions. */
+  optional?: boolean;
+  description: string;
+}
+
+/**
+ * The events the platform publishes, with what each says and what its payload holds: the one
+ * list the editors offer a trigger and a flow to listen for. Nobody declares these in a
+ * repository, so nothing else lists them.
+ */
+export const PLATFORM_EVENTS: readonly {
+  name: string;
+  description: string;
+  payload: readonly PlatformEventField[];
+}[] = [
+  {
+    name: "platform/run-succeeded",
+    description: "A script run ended well.",
+    payload: [
+      { name: "runId", type: "string", description: "The run." },
+      { name: "script", type: "string", description: "The script's path." },
+    ],
+  },
+  {
+    name: "platform/run-failed",
+    description: "A script run failed for the last time.",
+    payload: [
+      { name: "runId", type: "string", description: "The run." },
+      { name: "script", type: "string", description: "The script's path." },
+      { name: "error", type: "string", optional: true, description: "Why it failed." },
+    ],
+  },
+  {
+    name: "platform/flow-run-finished",
+    description: "A flow run ended, however it ended.",
+    payload: [
+      { name: "flowRunId", type: "string", description: "The flow run." },
+      { name: "flow", type: "string", description: "The flow's path." },
+      { name: "status", type: "string", description: "succeeded, failed or cancelled." },
+    ],
+  },
+  {
+    name: "platform/deployment-created",
+    description: "A version was deployed to the workspace.",
+    payload: [
+      { name: "deploymentId", type: "string", description: "The deployment." },
+      { name: "bundleVersion", type: "number", description: "The version deployed." },
+    ],
+  },
+  {
+    name: "platform/row-changed",
+    description: "A row of a table was inserted, updated or deleted.",
+    payload: [
+      { name: "table", type: "string", description: "The table's path." },
+      { name: "change", type: "string", description: "inserted, updated or deleted." },
+      { name: "id", type: "string", description: "The row's ID." },
+    ],
+  },
+];
+
 /**
  * Paths under this are the platform's own: the core nodes it adds to a bundle
  * whose flows use them. Nothing of a tenant's may live there.

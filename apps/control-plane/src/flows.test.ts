@@ -71,6 +71,7 @@ export const double = { execute: async (input, ctx) => { ctx.log.info("Doubling"
 export const risky = { execute: async (input) => { if (input.fail) throw new Error("The ERP said no"); return { ok: true }; } };
 export const slow = { execute: async (input, ctx) => { await wait(input.ms, ctx.signal); return { label: "${label}" }; } };
 export const sink = { execute: async (input) => ({ got: input }) };
+export const finished = { execute: async (input) => ({ got: input }) };
 export const publisher = { execute: async (input, ctx) => { await ctx.events.publish(input.event, input.payload); return { published: true }; } };
 export const leaky = { execute: async (input) => ({ echo: input.say }) };
 export const big = { execute: async () => ({ blob: "x".repeat(300 * 1024) }) };
@@ -96,6 +97,7 @@ function bundle(
     script("risky", "risky"),
     script("slow", "slow"),
     script("sink", "sink"),
+    script("finished-sink", "finished"),
     script("publisher", "publisher", {
       uses: { connections: [], secrets: [], variables: [], events: ["orders/placed"] },
     }),
@@ -108,6 +110,13 @@ function bundle(
       script: "sink",
       event: "orders/placed",
       filter: "event.payload.total > 100.0",
+    }),
+    // Hears of every run that did not succeed, by the one event that carries how a run ended.
+    manifest("trigger", "on-not-succeeded", {
+      type: "event",
+      script: "finished-sink",
+      event: "platform/run-finished",
+      filter: "event.payload.status != 'succeeded'",
     }),
     manifest("trigger", "on-failure", {
       type: "event",
@@ -853,6 +862,12 @@ describe("running a flow", () => {
     const alerts = notified.slice(before).map((body) => JSON.parse(body));
     expect(alerts).toHaveLength(1);
     expect(alerts[0]).toMatchObject({ run: { id, script: "unhandled" } });
+    // The flow run says what became of the alert, as a script run does (OPS-MP10).
+    const alerted = await until(
+      () => read(id),
+      (r) => r.alert !== null && r.alert !== undefined,
+    );
+    expect(alerted.alert).toMatchObject({ alertedAt: expect.any(String) });
 
     const stopped = await finished(await start("stopping", { reason: "out of stock" }));
     expect(stopped.error.message).toBe('The step "stop" failed: Stopped: out of stock');
@@ -1699,6 +1714,39 @@ describe("events and triggers", () => {
     expect(detail.trigger).toMatchObject({ type: "event", event: "platform/run-failed" });
     // Nothing listens for runs that succeed, so no such event is stored.
     expect((await alice.get(`${ws()}/events?name=platform/run-succeeded`)).body.items).toEqual([]);
+  });
+
+  test("one event says how any run ended, a canceled one too, and the two older events stay", async () => {
+    const heardOf = async (runId: string) =>
+      until(
+        async () => {
+          const heard = (
+            await alice.get(`${ws()}/runs?script=finished-sink&limit=100`)
+          ).body.items.filter((r: Any) => r.status === "succeeded");
+          for (const candidate of heard) {
+            const found = (await alice.get(`${ws()}/runs/${candidate.id}`)).body;
+            if (found.input.runId === runId) return found;
+          }
+          return undefined;
+        },
+        (found) => found !== undefined,
+      );
+    const failing = (await alice.post(`${ws()}/runs`, { script: "risky", input: { fail: true } }))
+      .body.id;
+    expect((await heardOf(failing))?.input).toMatchObject({
+      runId: failing,
+      script: "risky",
+      status: "failed",
+      error: "The ERP said no",
+    });
+    const slow = (await alice.post(`${ws()}/runs`, { script: "slow", input: { ms: 1500 } })).body
+      .id;
+    expect((await alice.post(`${ws()}/runs/${slow}/cancel`)).body.status).toBe("cancelled");
+    expect((await heardOf(slow))?.input).toMatchObject({
+      runId: slow,
+      script: "slow",
+      status: "cancelled",
+    });
   });
 });
 

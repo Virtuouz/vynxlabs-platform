@@ -203,19 +203,51 @@ export async function announceRows(
   table: string,
   change: string,
   ids: string[],
+  /** How many events led to this change: a script's run passes its own, so that a chain stops. */
+  depth = 0,
 ) {
+  // Only a change to a row that has an id is announced; anything else would store an event naming no row.
+  if (!["inserted", "updated", "deleted"].includes(change)) return;
   for (const id of ids) {
+    if (typeof id !== "string" || id.length === 0) continue;
     await publishPlatformEvent(kernel, {
       tenantId,
       workspaceId,
       name: "platform/row-changed",
       payload: { table, change, id },
       sourceId: id,
-      depth: 0,
+      depth,
     }).catch((error) =>
       kernel.log.error({ err: error }, "a platform event could not be published"),
     );
   }
+}
+
+/**
+ * Announces what a script's row operation changed: only an insert, update or
+ * delete is a change, and only a row with an id can be named.
+ */
+export async function announceScriptRows(
+  kernel: Kernel,
+  run: { tenant_id: string; workspace_id: string; trigger_detail: Record<string, unknown> },
+  table: string,
+  op: string,
+  result: unknown,
+  id: unknown,
+) {
+  const change = { insert: "inserted", update: "updated", delete: "deleted" }[op];
+  if (!change) return;
+  const ids =
+    op === "insert" ? ((result as { id?: unknown }[] | null) ?? []).map((row) => row?.id) : [id];
+  await announceRows(
+    kernel,
+    run.tenant_id,
+    run.workspace_id,
+    table,
+    change,
+    ids.filter((one): one is string => typeof one === "string" && one.length > 0),
+    Number(run.trigger_detail.depth ?? 0),
+  );
 }
 
 export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {

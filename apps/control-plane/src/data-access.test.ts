@@ -90,6 +90,8 @@ export const swapper = { execute: async (input, ctx) => {
   return { attachment: row.attachment };
 } };
 export const sink = { execute: async (input) => ({ got: input }) };
+export const looper = { execute: async (input, ctx) => ({ id: (await ctx.table("tasks").insert({ title: "again" })).id }) };
+export const counter = { execute: async (input, ctx) => (await ctx.table("tasks").aggregate({ measures: ["count"] })) };
 `;
 
 function bundle(extra: BundleManifest[] = []): Bundle {
@@ -123,6 +125,8 @@ function bundle(extra: BundleManifest[] = []): Bundle {
       script("filer", "filer", { tables: ["tasks"] }),
       script("swapper", "swapper", { tables: ["tasks"] }),
       script("sink", "sink"),
+      script("looper", "looper", { tables: ["tasks"] }),
+      script("counter", "counter", { tables: ["tasks"] }),
       ...extra,
     ],
     code,
@@ -491,6 +495,60 @@ describe("scripts and data", () => {
       "inserted",
       "updated",
     ]);
+  });
+});
+
+describe("a script that writes the table it listens to", () => {
+  test("a chain of its own changes stops, as a chain of events does", async () => {
+    const listening = bundle([
+      manifest("trigger", "on-any-task", {
+        type: "event",
+        script: "looper",
+        event: "platform/row-changed",
+        filter: "event.payload.table == 'tasks' && event.payload.change == 'inserted'",
+      }),
+    ]);
+    expect((await deploy(listening)).status).toBe(201);
+    await alice.post(`${ws()}/rows/tasks`, { title: "Start the chain" });
+    let count = 0;
+    for (let i = 0; i < 60; i++) {
+      await sleep(100);
+      const runs = (await alice.get(`${ws()}/runs?script=looper&limit=100`)).body.items as Any[];
+      count = runs.length;
+      if (
+        runs.length > 0 &&
+        runs.every((run) => run.status !== "queued" && run.status !== "running")
+      ) {
+        await sleep(300);
+        count = ((await alice.get(`${ws()}/runs?script=looper&limit=100`)).body.items as Any[])
+          .length;
+        break;
+      }
+    }
+    // The first change is by a person, at depth 0; each run it causes writes one more, a step deeper.
+    expect(count).toBe(10);
+  });
+
+  test("an aggregate is no change, so it announces nothing and logs no error", async () => {
+    const before = (await alice.get(`${ws()}/events?name=platform/row-changed&limit=200`)).body
+      .items.length;
+    const errors: unknown[][] = [];
+    const log = t.kernel.log.error.bind(t.kernel.log);
+    t.kernel.log.error = ((...given: unknown[]) => {
+      errors.push(given);
+      return log(...(given as [object, string]));
+    }) as typeof t.kernel.log.error;
+    try {
+      const done = await ran("counter");
+      expect(done.status, JSON.stringify(done.error)).toBe("succeeded");
+      await sleep(300);
+    } finally {
+      t.kernel.log.error = log;
+    }
+    expect(JSON.stringify(errors)).not.toContain("platform event could not be published");
+    const after = (await alice.get(`${ws()}/events?name=platform/row-changed&limit=200`)).body.items
+      .length;
+    expect(after).toBe(before);
   });
 });
 

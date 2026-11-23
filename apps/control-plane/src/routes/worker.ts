@@ -53,7 +53,7 @@ import type { Kernel } from "../kernel/kernel.js";
 import { pathNow } from "../kernel/resolve.js";
 import { revealSecret } from "../kernel/secrets.js";
 import { runTraceparent } from "../kernel/trace.js";
-import { announceRows } from "./data.js";
+import { announceScriptRows } from "./data.js";
 import { AnyObject, Id, NoContent, Time } from "./shared.js";
 
 const Attempt = Type.Integer({ minimum: 1 });
@@ -941,10 +941,12 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         if (!may.table(body.table)) {
           throw forbiddenBecause(`This needs a declared use of the table "${body.table}".`);
         }
+        // The table's path now: the name a script was built with may be from before a rename.
+        const tablePath = await pathNow(db, run.workspace_id, body.table, "table");
         const target = await describeTable(
           (await kernel.data.forTenant(run.tenant_id)).owner,
           run.workspace_id,
-          await pathNow(db, run.workspace_id, body.table, "table"),
+          tablePath,
         );
         // A script is the workspace's own code. Acting for a person, it is held to what they may see.
         const person = body.as ? await personType(run.tenant_id, body.as) : undefined;
@@ -959,20 +961,7 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         const result = await withData(kernel, run.tenant_id, scope, (data) =>
           perform(data, target, scope, true),
         );
-        if (body.op !== "find" && body.op !== "get") {
-          const ids =
-            body.op === "insert"
-              ? (result as { id: string }[]).map((row) => row.id)
-              : [String(args.id)];
-          await announceRows(
-            kernel,
-            run.tenant_id,
-            run.workspace_id,
-            body.table,
-            body.op === "insert" ? "inserted" : body.op === "update" ? "updated" : "deleted",
-            ids,
-          );
-        }
+        await announceScriptRows(kernel, run, tablePath, body.op, result, args.id);
         return { result };
       },
     );

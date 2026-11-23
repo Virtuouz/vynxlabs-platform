@@ -99,9 +99,13 @@ export function Interfaces({
             cell: (row) => (
               <span className="flex flex-wrap items-center gap-1.5">
                 {row.deployed ? (
-                  <Tag tone="live">Published{row.version ? ` v${row.version}` : ""}</Tag>
+                  <span title="Published means deployed here">
+                    <Tag tone="live">Published{row.version ? ` v${row.version}` : ""}</Tag>
+                  </span>
                 ) : (
-                  <Tag tone="draft">Not published</Tag>
+                  <span title="Not published means not deployed here yet">
+                    <Tag tone="draft">Not published</Tag>
+                  </span>
                 )}
                 {row.removing ? (
                   <Tag tone="danger">Being removed</Tag>

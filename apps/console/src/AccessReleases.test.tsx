@@ -137,7 +137,9 @@ test("going back says it waits for a second person when it does, and that it app
   fireEvent.click(await screen.findByRole("button", { name: "Go back to this" }));
   await answer("Go back");
   expect(
-    await screen.findByText(/release 9, and waits for a second person\. Nothing has changed yet\./),
+    await screen.findByText(
+      /access change 9, and waits for a second person\. Nothing has changed yet\./,
+    ),
   ).toBeTruthy();
   cleanup();
   approval = false;
@@ -145,7 +147,7 @@ test("going back says it waits for a second person when it does, and that it app
   show(<AccessReleases base={base} />);
   fireEvent.click(await screen.findByRole("button", { name: "Go back to this" }));
   await answer("Go back");
-  expect(await screen.findByText("The tenant's access is what release 1 left.")).toBeTruthy();
+  expect(await screen.findByText("The tenant's access is what access change 1 left.")).toBeTruthy();
 });
 
 test("an applied release can be gone back to, and asking for a second person can be stopped", async () => {
@@ -167,7 +169,7 @@ test("an applied release can be gone back to, and asking for a second person can
   fireEvent.click(screen.getByRole("button", { name: "Stop asking for a second person" }));
   const said = await answer("Cancel");
   expect(said).toContain("applies as soon as it is made, with nobody else approving it");
-  expect(said).toContain("The 1 release that waits now stays waiting");
+  expect(said).toContain("The 1 access change that waits now stays waiting");
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   expect(calls.some((call) => call.method === "PUT")).toBe(false);
   fireEvent.click(screen.getByRole("button", { name: "Stop asking for a second person" }));
@@ -246,16 +248,18 @@ test("going back that waits is said to wait, not to be done (ACC-14)", async () 
       id: "r9",
       number: 9,
       status: "awaiting_approval",
-      detail: "Release 9 waits for a second person. Nothing changed yet.",
+      detail: "Access change 9 waits for a second person. Nothing changed yet.",
     },
   };
   show(<AccessReleases base={base} />);
   fireEvent.click(await screen.findByRole("button", { name: "Go back to this" }));
   await answer("Go back");
-  const said = await screen.findByText("Release 9 waits for a second person. Nothing changed yet.");
+  const said = await screen.findByText(
+    "Access change 9 waits for a second person. Nothing changed yet.",
+  );
   // A notice among the changes, not a failure under the list.
   expect(said.closest('[aria-live="polite"]')).not.toBeNull();
-  expect(screen.queryByText("The tenant's access is what release 1 left.")).toBeNull();
+  expect(screen.queryByText("The tenant's access is what access change 1 left.")).toBeNull();
 });
 
 test("whoever asked may withdraw it with no right to answer, and is not told they may only read (ACC-16)", async () => {
@@ -267,15 +271,16 @@ test("whoever asked may withdraw it with no right to answer, and is not told the
 });
 
 test("what a release warned of is in the row and in the dialog that approves it (ACC-36)", async () => {
-  warnings = ["the group night-shift was last changed in release 1, outside the repository."];
+  warnings = ["the group night-shift was last changed in access change 1, outside the repository."];
   show(<AccessReleases base={base} />);
   expect(
-    (await screen.findAllByText(/was last changed in release 1, outside the repository/)).length,
+    (await screen.findAllByText(/was last changed in access change 1, outside the repository/))
+      .length,
   ).toBeGreaterThan(0);
   fireEvent.click(screen.getByRole("button", { name: "Approve" }));
   const said = await answer("Cancel");
   expect(said).toContain("Read before you answer:");
-  expect(said).toContain("was last changed in release 1");
+  expect(said).toContain("was last changed in access change 1");
 });
 
 test("a refusal names its cause, not only that the access is not valid (ACC-21)", async () => {
@@ -304,13 +309,13 @@ test("ACC-MP14: one release is opened from its address, with its changes and war
   history.replaceState(null, "", "/t/t1/releases?release=r2");
   show(<AccessReleases base={base} />);
   const dialog = await screen.findByRole("dialog");
-  expect(dialog.textContent).toContain("Release 2");
+  expect(dialog.textContent).toContain("Access change 2");
   expect(dialog.textContent).toContain("Makes the group Night shift");
   fireEvent.click(within(dialog).getByRole("button", { name: "Back" }));
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   expect(location.search).not.toContain("release=");
   // A number in the list opens the same.
-  fireEvent.click(await screen.findByRole("button", { name: "Open release 1" }));
-  expect((await screen.findByRole("dialog")).textContent).toContain("Release 1");
+  fireEvent.click(await screen.findByRole("button", { name: "Open access change 1" }));
+  expect((await screen.findByRole("dialog")).textContent).toContain("Access change 1");
   expect(location.search).toContain("release=r1");
 });

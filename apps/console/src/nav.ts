@@ -114,7 +114,7 @@ export const WORKSPACE_SECTIONS: Record<
     { slug: "flows", label: "Flows", icon: Workflow, help: "build-flows" },
     { slug: "scripts", label: "Scripts", icon: FileCode2, help: "build-scripts" },
     { slug: "screens", label: "App Builder", icon: LayoutDashboard, help: "build-screens" },
-    { slug: "apps", label: "Published apps", icon: AppWindow, help: "build-apps" },
+    { slug: "apps", label: "Apps", icon: AppWindow, help: "build-apps" },
     { slug: "extensions", label: "Extensions", icon: Shapes, help: "build-extensions" },
     { slug: "docs", label: "Documentation", icon: BookOpen, help: "build-docs" },
     { slug: "resources", label: "All resources", icon: Boxes, help: "build-resources" },
@@ -344,7 +344,7 @@ const INSTANCE_WORKBENCHES = new Set([
 
 /**
  * A tenant's addresses that belong to another entry in the navigation: groups,
- * roles, access and releases are tabs of Members & access, groups of end users
+ * roles, access and access changes are tabs of Members & access, groups of end users
  * are a tab of End users, and the tenant itself opens on its overview.
  */
 export const TENANT_ALIASES: Record<string, string> = {

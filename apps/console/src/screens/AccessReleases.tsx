@@ -28,7 +28,7 @@ interface AccessRelease {
     updated: number;
     deleted: number;
     changes: Change[];
-    /** What the release did not do, or does that its asker should have read before approving. */
+    /** What the access change did not do, or does that its asker should have read before approving. */
     warnings?: string[];
   };
   createdBy: string | null;
@@ -62,7 +62,7 @@ const KIND: Record<string, string> = {
 };
 const VERB: Record<string, string> = { created: "Makes", updated: "Changes", deleted: "Removes" };
 
-/** What a release did, or would do, in words: at most three, then how many more. */
+/** What an access change did, or would do, in words: at most three, then how many more. */
 function what(release: AccessRelease): string {
   const changes = release.summary.changes;
   if (changes.length === 0) return "Changed nothing";
@@ -73,7 +73,7 @@ function what(release: AccessRelease): string {
     );
   return `${said.join(". ")}${changes.length > 3 ? `, and ${changes.length - 3} more` : ""}.`;
 }
-/** Every change a release made or would make, one to a line. */
+/** Every change an access change made or would make, one to a line. */
 function Changes({ release, intro }: { release: AccessRelease; intro: string }) {
   const changes = release.summary.changes;
   const warnings = release.summary.warnings ?? [];
@@ -116,7 +116,7 @@ export function AccessReleases({ base, framed }: { base: string; framed?: Framed
   const releases = useLoad<{ items: AccessRelease[] }>(`${base}/access/releases`);
   const access = useLoad<{ approval: boolean; mayChange?: boolean }>(`${base}/access`);
   const [problem, setProblem] = useState<string>();
-  // One release, with all its changes and what it warns of, has an address: `?release=<id>`.
+  // One access change, with all its changes and what it warns of, has an address: `?release=<id>`.
   const [openId, setOpenId] = useUrlParam<string>("release", undefined, { push: true });
   const shown = useRef<string | undefined>(undefined);
   const me = useLoad<Me>("/me");
@@ -152,9 +152,9 @@ export function AccessReleases({ base, framed }: { base: string; framed?: Framed
     let comment: string | undefined;
     if (decision === "decline") {
       const why = await ask.prompt({
-        title: `Decline release ${release.number}?`,
+        title: `Decline access change ${release.number}?`,
         text: <Changes release={release} intro="Nothing of it is applied. It would have:" />,
-        label: "Why (kept with the release, shown to whoever asked)",
+        label: "Why (kept with the access change, shown to whoever asked)",
         action: "Decline",
         danger: true,
         required: false,
@@ -166,8 +166,8 @@ export function AccessReleases({ base, framed }: { base: string; framed?: Framed
       const sure = await ask.confirm({
         title:
           decision === "approve"
-            ? `Approve release ${release.number}?`
-            : `Withdraw release ${release.number}?`,
+            ? `Approve access change ${release.number}?`
+            : `Withdraw access change ${release.number}?`,
         text: (
           <Changes
             release={release}
@@ -190,8 +190,8 @@ export function AccessReleases({ base, framed }: { base: string; framed?: Framed
       });
       notify.success(
         decision === "approve"
-          ? `Release ${release.number} is applied.`
-          : `Release ${release.number} is ${decision === "decline" ? "declined" : "withdrawn"}.`,
+          ? `Access change ${release.number} is applied.`
+          : `Access change ${release.number} is ${decision === "decline" ? "declined" : "withdrawn"}.`,
       );
       releases.reload();
       setRefocus(true);
@@ -199,7 +199,7 @@ export function AccessReleases({ base, framed }: { base: string; framed?: Framed
       setProblem(failed(error));
     }
   };
-  /** What can be done with a release: answer it, withdraw it, or go back to it. */
+  /** What can be done with an access change: answer it, withdraw it, or go back to it. */
   const actionsOf = (row: AccessRelease) => {
     if (row.status === "awaiting_approval") {
       if (!mayChange && !askedByMe(row))
@@ -241,16 +241,16 @@ export function AccessReleases({ base, framed }: { base: string; framed?: Framed
     shown.current = openId;
     const release = releases.data.items.find((one) => one.id === openId);
     if (!release) {
-      setProblem("There is no release with that address. It may belong to another tenant.");
+      setProblem("There is no access change with that address. It may belong to another tenant.");
       setOpenId(undefined);
       return;
     }
     void showAll(release).then(() => setOpenId(undefined));
   });
-  /** Every change of a release, whatever its status: the list shows three. */
+  /** Every change of an access change, whatever its status: the list shows three. */
   const showAll = (release: AccessRelease) =>
     ask.confirm({
-      title: `Release ${release.number}`,
+      title: `Access change ${release.number}`,
       text: <Changes release={release} intro="It changed:" />,
       action: "Close",
       cancel: "Back",
@@ -273,12 +273,12 @@ export function AccessReleases({ base, framed }: { base: string; framed?: Framed
     }
     const removing = removes.length > 0;
     const sure = await ask.confirm({
-      title: `Go back to release ${release.number}?`,
+      title: `Go back to access change ${release.number}?`,
       text: (
         <span className="flex flex-col gap-2">
           <Changes
             release={release}
-            intro={`The tenant's groups, service accounts, roles and what they are given become what they were after release ${release.number}. Who is in each group is not changed, and groups an identity provider made are left alone. A service account that is gone is made again with no API keys: keys belong to the account, not to a release.${approval ? " It waits for a second person." : ""} Release ${release.number} itself did:`}
+            intro={`The tenant's groups, service accounts, roles and what they are given become what they were after access change ${release.number}. Who is in each group is not changed, and groups an identity provider made are left alone. A service account that is gone is made again with no API keys: keys belong to the account, not to an access change.${approval ? " It waits for a second person." : ""} Access change ${release.number} itself did:`}
           />
           {removing ? (
             <span>
@@ -315,11 +315,11 @@ export function AccessReleases({ base, framed }: { base: string; framed?: Framed
         `${base}/access/releases/${release.id}/rollback`,
         {},
       );
-      // With a second person asked for, going back is a release that waits: nothing has changed yet.
+      // With a second person asked for, going back is an access change that waits: nothing has changed yet.
       notify.success(
         made.status === "awaiting_approval"
-          ? `Going back to release ${release.number} is release ${made.number}, and waits for a second person. Nothing has changed yet.`
-          : `The tenant's access is what release ${release.number} left.`,
+          ? `Going back to access change ${release.number} is access change ${made.number}, and waits for a second person. Nothing has changed yet.`
+          : `The tenant's access is what access change ${release.number} left.`,
       );
       releases.reload();
     } catch (error) {
@@ -336,7 +336,7 @@ export function AccessReleases({ base, framed }: { base: string; framed?: Framed
   return (
     <div ref={holder} className="contents">
       <CollectionView<AccessRelease>
-        title={framed?.title ?? "Releases"}
+        title={framed?.title ?? "Access changes"}
         description="Every change to the tenant's groups, service accounts, roles and what they are given, from the console or from the repository, with who made it and who approved it."
         actions={
           <Button
@@ -350,10 +350,10 @@ export function AccessReleases({ base, framed }: { base: string; framed?: Framed
                   title: "Stop asking for a second person?",
                   text: `From now on, a change to the tenant's groups, service accounts and roles, and to what they are given, applies as soon as it is made, with nobody else approving it. ${
                     waiting === undefined || waiting === 0
-                      ? "Releases that wait now stay waiting"
+                      ? "Access changes that wait now stay waiting"
                       : waiting === 1
-                        ? "The 1 release that waits now stays waiting"
-                        : `The ${count(waiting)} releases that wait now stay waiting`
+                        ? "The 1 access change that waits now stays waiting"
+                        : `The ${count(waiting)} access changes that wait now stay waiting`
                   } until someone answers them. Asking again needs two people who may release access.`,
                   action: "Stop asking",
                   danger: true,
@@ -387,7 +387,7 @@ export function AccessReleases({ base, framed }: { base: string; framed?: Framed
             {problem ? <Notice tone="danger">{problem}</Notice> : null}
           </>,
         )}
-        label="Releases"
+        label="Access changes"
         rows={releases.data?.items}
         error={releases.error}
         onRetry={releases.reload}
@@ -399,7 +399,7 @@ export function AccessReleases({ base, framed }: { base: string; framed?: Framed
               <Button
                 size="small"
                 variant="quiet"
-                aria-label={`Open release ${row.number}`}
+                aria-label={`Open access change ${row.number}`}
                 onClick={() => setOpenId(row.id)}
               >
                 {row.number}
@@ -466,8 +466,8 @@ export function AccessReleases({ base, framed }: { base: string; framed?: Framed
             : []),
         ]}
         empty={{
-          title: "No releases yet",
-          text: "A release is recorded when a group, a service account, a role or what one is given changes.",
+          title: "No access changes yet",
+          text: "An access change is recorded when a group, a service account, a role or what one is given changes.",
         }}
       />
     </div>

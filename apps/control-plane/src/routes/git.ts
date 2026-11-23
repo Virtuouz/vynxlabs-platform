@@ -45,7 +45,7 @@ const Repository = Type.Object({
   }),
   tenantBranch: Type.Union([Type.String(), Type.Null()], {
     description:
-      "Each release of the tenant's access commits it to this branch, under `tenant/`. Never the default branch: a developer merges it. Null: off.",
+      "Each access change commits it to this branch, under `tenant/`. Never the default branch: a developer merges it. Null: off.",
   }),
   ...CredentialSet,
 });

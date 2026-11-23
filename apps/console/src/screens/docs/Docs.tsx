@@ -762,7 +762,7 @@ export function Docs({
             });
             list.reload();
             const made = publishing;
-            notify.success(`${made.title} will be published as a site when you deploy.`, {
+            notify.success(`${made.title} will be a site once deployed.`, {
               action: {
                 label: "Undo",
                 onClick: async () => {

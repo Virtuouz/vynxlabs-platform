@@ -21,7 +21,7 @@ export const ACCESS_TABS = [
   { slug: "groups", label: "Groups" },
   { slug: "roles", label: "Roles" },
   { slug: "access", label: "Access" },
-  { slug: "releases", label: "Releases" },
+  { slug: "releases", label: "Access changes" },
 ] as const;
 export type AccessTab = (typeof ACCESS_TABS)[number]["slug"];
 

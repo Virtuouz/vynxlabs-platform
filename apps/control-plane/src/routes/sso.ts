@@ -107,7 +107,7 @@ const GroupMapView = Type.Object({
   groupName: Type.String(),
   managedBy: Type.Union([Type.Literal("hand"), Type.Literal("release")], {
     description:
-      "`release` for a mapping a release of the tenant's access made: it is changed by another release, not here.",
+      "`release` for a mapping an access change made: it is changed by another access change, not here.",
   }),
 });
 const LinkView = Type.Object({
@@ -753,7 +753,7 @@ export function ssoRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                 `A group in the mapping is not a group of ${forMembers ? "members" : "end users"} of this tenant.`,
               );
             }
-            // What a release of the tenant's access mapped is that release's: it is neither
+            // What an access change mapped is that change's: it is neither
             // removed here nor written a second time. The list sent back includes it.
             await trx
               .deleteFrom("identity_group_map")

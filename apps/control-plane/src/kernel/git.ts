@@ -1735,7 +1735,7 @@ export async function pushTenantAccess(
       commit: {
         tree: tree ?? (await git.writeTree({ fs, gitdir: tip.gitdir, tree: [] })),
         parent: [tip.commit],
-        message: `${release.message?.trim() || `Access release ${release.number}`}\n\nAccess release: ${release.number}\n`,
+        message: `${release.message?.trim() || `Access change ${release.number}`}\n\nAccess change: ${release.number}\n`,
         author: { ...author, timestamp: now, timezoneOffset: 0 },
         committer: {
           name: "Platform",

@@ -32,8 +32,8 @@ interface Entry {
   requestId: string | null;
 }
 
-/** The areas of the log a person can narrow to. Each is the word an action starts with. */
-const AREAS: [string, string][] = [
+/** The areas of a tenant's log a person can narrow to. Each is the word an action starts with. */
+const TENANT_AREAS: [string, string][] = [
   ["", "Everything"],
   ["member", "Members and sign-ins"],
   ["tenant_member", "Tenant membership"],
@@ -62,8 +62,47 @@ const AREAS: [string, string][] = [
   ["portal", "Branding and portal"],
   ["app_domain", "Hostnames"],
   ["worker_credential", "Worker credentials"],
+  ["worker_pool", "Worker pools"],
+  ["promotion", "Promotions"],
+  ["dashboard", "Dashboards"],
+  ["git_repository", "Git repositories"],
+  ["access", "Access checks"],
+  ["trigger", "Triggers"],
+  ["schedule", "Schedules"],
+  ["approval", "Approvals"],
+  ["workspace_git", "Workspace repositories"],
+  ["page_action", "Page actions"],
+  ["alert", "Alerts"],
+  ["bundle_asset", "Bundle assets"],
+  ["end_user_group", "End user groups"],
+  ["connection_group", "Connection groups"],
+  ["group_member", "Group members"],
   ["tenant", "Tenant"],
 ];
+
+/** The areas of the instance's own log: what operators do, not what happens inside a tenant. */
+const INSTANCE_AREAS: [string, string][] = [
+  ["", "Everything"],
+  ["member", "Members and sign-ins"],
+  ["binding", "Instance access"],
+  ["api_key", "API keys"],
+  ["operator", "Operator access"],
+  ["access_grant", "Operator access grants"],
+  ["tenant", "Tenants"],
+  ["tenant_import", "Tenant imports"],
+  ["instance", "Instance settings"],
+  ["identity_provider", "Identity providers"],
+  ["identity_domain", "Identity domains"],
+  ["identity_link", "Identity links"],
+  ["sso", "Single sign-on"],
+  ["scim", "Directory sync"],
+  ["scim_token", "Directory sync tokens"],
+  ["database_location", "Database locations"],
+];
+
+/** The words an area can be, for the log of a tenant or of the instance. */
+export const auditAreas = (tenantLog: boolean) =>
+  (tenantLog ? TENANT_AREAS : INSTANCE_AREAS).map(([value]) => value).filter(Boolean);
 
 type Verb = "Create" | "Update" | "Delete" | "Execute" | "Read" | "Other";
 const VERB_TONE: Record<Verb, TagTone> = {
@@ -349,7 +388,7 @@ export function AuditTable({
                 onChange={(event) => setUrl({ area: event.currentTarget.value || undefined })}
                 className={select}
               >
-                {AREAS.map(([value, label]) => (
+                {(tenantLog ? TENANT_AREAS : INSTANCE_AREAS).map(([value, label]) => (
                   <option key={value} value={value}>
                     {label}
                   </option>

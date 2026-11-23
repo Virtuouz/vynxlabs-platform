@@ -456,8 +456,12 @@ function Domains({ root, instance }: { root: string; instance: boolean }) {
         onSubmit={(event) => {
           event.preventDefault();
           void run(async () => {
-            await api.post(`${root}/domains`, { domain: domain.trim() });
-            notify.success(`${domain.trim()} is added. Prove it is yours with the record shown.`);
+            const added = await api.post<Domain>(`${root}/domains`, { domain: domain.trim() });
+            notify.success(
+              added.verified
+                ? `${added.domain} is added. It needs no proof here.`
+                : `${added.domain} is added. Prove it is yours with the record shown.`,
+            );
             setDomain("");
           });
         }}

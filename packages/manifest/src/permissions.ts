@@ -40,7 +40,7 @@ export const PERMISSION_KINDS: readonly PermissionKind[] = [
     scope: "instance",
     verbs: {
       read: "See the instance's settings, database locations and metrics.",
-      write: "Change the instance's settings and import tenants.",
+      write: "Change the instance's settings.",
     },
   },
   {
@@ -50,7 +50,7 @@ export const PERMISSION_KINDS: readonly PermissionKind[] = [
     scope: "tenant",
     verbs: {
       read: "See a tenant's name and settings.",
-      write: "Create, rename and delete tenants.",
+      write: "Create, rename, import and delete tenants.",
     },
   },
   {

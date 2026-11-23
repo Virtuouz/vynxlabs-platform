@@ -9,9 +9,11 @@ import { show } from "./testing.tsx";
 type Handler = (body: unknown) => [number, unknown];
 let routes: Record<string, Handler>;
 let signedIn: boolean;
+let permissions: string[];
 
 beforeEach(() => {
   signedIn = false;
+  permissions = [];
   history.replaceState(null, "", "/");
   routes = {
     "GET /api/v1/me": () =>
@@ -20,7 +22,7 @@ beforeEach(() => {
             200,
             {
               principal: { type: "member", id: "m1", name: "Alice", email: "alice@acme.example" },
-              instancePermissions: [],
+              instancePermissions: permissions,
               tenants: [{ id: "t1", slug: "acme", name: "Acme Corp" }],
             },
           ]
@@ -167,4 +169,20 @@ test("a member with nowhere remembered stays on the tenant list", async () => {
   renderHook(() => useReopenLastPlace(true));
   await new Promise((resolve) => setTimeout(resolve, 20));
   expect(location.pathname).toBe("/");
+});
+
+test("the instance's screens open for an operator and say whom they are for to anyone else (INS-20)", async () => {
+  signedIn = true;
+  routes["GET /api/v1/members?limit=50"] = () => [200, { items: [], nextCursor: null }];
+  history.replaceState(null, "", "/instance/members");
+  show(<App />);
+  await screen.findByText("For operators");
+  expect(screen.queryByRole("button", { name: "Create member" })).toBeNull();
+  expect(document.body.textContent).not.toContain("Ask a member who can give access");
+  cleanup();
+  // A role that gives everything, bound at the instance, is an operator too.
+  permissions = ["*:*"];
+  show(<App />);
+  await screen.findByRole("button", { name: "Create member" });
+  expect(screen.queryByText("For operators")).toBeNull();
 });

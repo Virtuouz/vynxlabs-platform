@@ -3,7 +3,7 @@ import { cleanup, fireEvent, renderHook, screen, waitFor, within } from "@testin
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { useRememberPlace } from "./App.tsx";
 import { Account } from "./screens/Account.tsx";
-import { InstanceMembers } from "./screens/Instance.tsx";
+import { InstanceMembers, Operators } from "./screens/Instance.tsx";
 import { SignIn } from "./screens/SignIn.tsx";
 import { Tenants } from "./screens/Tenants.tsx";
 import { answer, show } from "./testing.tsx";
@@ -272,4 +272,75 @@ test("a tenant is renamed from the inspector, keeping its slug", async () => {
       body: { name: "Acme Inc" },
     }),
   );
+});
+
+test("a person changes their own password on Account, and the form says what went wrong (INS-13)", async () => {
+  routes["GET /api/v1/api-keys"] = () => [200, { items: [] }];
+  routes["GET /api/v1/me/recovery-codes"] = () => [200, { eligible: false, left: 0, madeAt: null }];
+  let answerWith: [number, unknown] = [200, {}];
+  routes["POST /api/v1/auth/change-password"] = () => answerWith;
+  show(<Account />);
+  const panel = await screen.findByRole("region", { name: "Password" });
+  const form = within(panel);
+  const change = form.getByRole("button", { name: "Change password" }) as HTMLButtonElement;
+  expect(change.disabled).toBe(true);
+  fireEvent.input(form.getByLabelText("Current password"), {
+    target: { value: "the old one 123" },
+  });
+  fireEvent.input(form.getByLabelText("New password"), { target: { value: "short" } });
+  fireEvent.input(form.getByLabelText("New password again"), { target: { value: "short" } });
+  // Twelve characters, as the server asks: said before anything is sent.
+  expect(change.disabled).toBe(true);
+  fireEvent.input(form.getByLabelText("New password"), {
+    target: { value: "a much longer one" },
+  });
+  expect(change.disabled).toBe(true);
+  expect(form.getByText("The two do not match.")).toBeTruthy();
+  fireEvent.input(form.getByLabelText("New password again"), {
+    target: { value: "a much longer one" },
+  });
+  answerWith = [400, { status: 400, detail: "Invalid password" }];
+  fireEvent.click(change);
+  await within(panel).findByText("The current password is not right.");
+  answerWith = [200, {}];
+  fireEvent.click(form.getByRole("button", { name: "Change password" }));
+  await within(panel).findByText("Your password is changed. Your other sessions were signed out.");
+  const sent = calls.filter((call) => call.url === "/api/v1/auth/change-password");
+  expect(sent[1]?.body).toEqual({
+    currentPassword: "the old one 123",
+    newPassword: "a much longer one",
+    revokeOtherSessions: true,
+  });
+  // What was typed is gone once it is used.
+  expect((form.getByLabelText("New password") as HTMLInputElement).value).toBe("");
+});
+
+test("an operator who is disabled says so on the Operators list, and cannot be mistaken for one who can sign in (ACC)", async () => {
+  routes["GET /api/v1/bindings"] = () => [
+    200,
+    {
+      items: [
+        {
+          id: "b1",
+          memberEmail: "ada@ops.example",
+          roleName: "operator_admin",
+          createdAt: "2026-11-01T00:00:00Z",
+          memberDisabled: false,
+        },
+        {
+          id: "b2",
+          memberEmail: "bo@ops.example",
+          roleName: "operator_admin",
+          createdAt: "2026-11-01T00:00:00Z",
+          memberDisabled: true,
+        },
+      ],
+      nextCursor: null,
+    },
+  ];
+  show(<Operators />);
+  const row = (await screen.findByText("bo@ops.example")).closest("tr") as HTMLElement;
+  expect(within(row).getByText("Disabled")).toBeTruthy();
+  const other = screen.getByText("ada@ops.example").closest("tr") as HTMLElement;
+  expect(within(other).queryByText("Disabled")).toBeNull();
 });

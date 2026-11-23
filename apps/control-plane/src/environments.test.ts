@@ -835,6 +835,29 @@ describe("worker pools", () => {
     expect(listed.find((item: Any) => item.name === "on the plant floor").pool).toBe("plant-floor");
   });
 
+  test("what an operator turned off, a tenant admin cannot turn on (D16)", async () => {
+    // The tenant admin's own switch goes both ways.
+    expect((await alice.patch(`/tenants/${tenant}`, { managedWorkers: true })).status).toBe(200);
+    // The operator's off is the machine's: the tenant admin is refused, in words.
+    const off = await t.admin.patch(`/tenants/${tenant}`, { managedWorkers: false });
+    expect(off.body.managedWorkers).toBe(false);
+    const refused = await alice.patch(`/tenants/${tenant}`, { managedWorkers: true });
+    expect(refused.status, JSON.stringify(refused.body)).toBe(403);
+    expect(refused.body.detail).toMatch(/An operator of this instance turned this off/);
+    expect((await alice.get(`/tenants/${tenant}`)).body).toMatchObject({
+      managedWorkers: false,
+      managedWorkersLocked: true,
+    });
+    // Switching it off again, or renaming, is not refused.
+    expect((await alice.patch(`/tenants/${tenant}`, { managedWorkers: false })).status).toBe(200);
+    expect((await alice.get(`/tenants/${tenant}`)).body.managedWorkersLocked).toBe(true);
+    // Only an operator turns it on, and then it is the tenant's again.
+    expect((await t.admin.patch(`/tenants/${tenant}`, { managedWorkers: true })).status).toBe(200);
+    expect((await alice.get(`/tenants/${tenant}`)).body.managedWorkersLocked).toBe(false);
+    expect((await alice.patch(`/tenants/${tenant}`, { managedWorkers: false })).status).toBe(200);
+    expect((await alice.patch(`/tenants/${tenant}`, { managedWorkers: true })).status).toBe(200);
+  });
+
   test("a pool's name is checked when the bundle is uploaded", async () => {
     const bad = script("bad");
     (bad.body as Any).worker = "Plant Floor";
@@ -874,6 +897,94 @@ describe("worker pools", () => {
 });
 
 describe("database locations", () => {
+  test("a tenant whose own database is gone is deleted after a second confirmation, and then its location can go (INS-17, D47)", async () => {
+    const gone = await createTestDatabase();
+    await t.admin.put("/instance/database-locations/gone-db", {
+      connectionString: gone.connectionString,
+    });
+    const made = await t.admin.post("/tenants", {
+      slug: "lost",
+      name: "Lost",
+      dataLocation: "gone-db",
+      addCreator: true,
+    });
+    expect(made.status, JSON.stringify(made.body)).toBe(201);
+    const workspace = await t.admin.post(`/tenants/${made.body.id}/workspaces`, {
+      slug: "main",
+      name: "Main",
+      type: "production",
+    });
+    expect(workspace.status, JSON.stringify(workspace.body)).toBe(201);
+    // Its database is dropped from under it, and nothing in this process holds it open.
+    await t.kernel.data.forget("gone-db");
+    await gone.drop();
+    const refused = await t.admin.post(`/tenants/${made.body.id}/deletion`, { confirm: "lost" });
+    expect(refused.status, JSON.stringify(refused.body)).toBe(503);
+    expect(refused.body.code).toBe("data_location_unavailable");
+    expect((await t.admin.delete("/instance/database-locations/gone-db")).status).toBe(409);
+    // The second confirmation says the tables cannot be dropped, and leaves them where they are.
+    const done = await t.admin.post(`/tenants/${made.body.id}/deletion`, {
+      confirm: "lost",
+      tablesLeftBehind: true,
+    });
+    expect(done.status, JSON.stringify(done.body)).toBe(204);
+    const entry = (await t.admin.get("/audit?action=tenant.deleted")).body.items[0];
+    expect(JSON.stringify(entry.details)).toContain("gone-db");
+    expect((await t.admin.delete("/instance/database-locations/gone-db")).status).toBe(204);
+  });
+
+  test("one address that cannot be opened is said on its own row, and the names alone are a light list (INS-14)", async () => {
+    const extra = await createTestDatabase();
+    try {
+      await t.admin.put("/instance/database-locations/good", {
+        connectionString: extra.connectionString,
+      });
+      await t.db
+        .insertInto("database_location")
+        .values({
+          name: "sealed-by-another-key",
+          description: "",
+          connection_encrypted: Buffer.from("not something this instance sealed at all, no"),
+        })
+        .execute();
+      await t.db
+        .insertInto("database_location")
+        .values({
+          name: "gone",
+          description: "",
+          connection_encrypted: t.kernel.data.seal(
+            "gone",
+            "postgres://nobody:nothing@127.0.0.1:1/none",
+          ),
+        })
+        .execute();
+      const listed = await t.admin.get("/instance/database-locations");
+      expect(listed.status, JSON.stringify(listed.body)).toBe(200);
+      const byName = new Map(listed.body.items.map((one: Any) => [one.name, one]));
+      expect(byName.get("good")).toMatchObject({ reachable: true, problem: null });
+      expect(byName.get("gone")).toMatchObject({ reachable: false });
+      expect(byName.get("sealed-by-another-key")).toMatchObject({
+        reachable: false,
+        host: "",
+        problem: "Its address cannot be opened with this instance's master key.",
+      });
+      const names = await t.admin.get("/instance/database-locations/names");
+      expect(names.status, JSON.stringify(names.body)).toBe(200);
+      expect(names.body.items.map((one: Any) => one.name)).toEqual([
+        "gone",
+        "good",
+        "sealed-by-another-key",
+      ]);
+      await t.db
+        .deleteFrom("database_location")
+        .where("name", "in", ["gone", "sealed-by-another-key"])
+        .execute();
+      await t.admin.delete("/instance/database-locations/good");
+    } finally {
+      await extra.drop();
+    }
+  });
+
   test("an operator registers one, sees whether it answers, and removes it", async () => {
     const extra = await createTestDatabase();
     try {

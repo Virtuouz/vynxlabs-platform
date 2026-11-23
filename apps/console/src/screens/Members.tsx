@@ -352,7 +352,7 @@ export function MemberList({ base, framed }: { base: string; framed?: Framed }) 
               label: "Initial password",
               type: "password",
               required: false,
-              hint: "Only for a new account. At least 12 characters.",
+              hint: "Only for a new account. At least 12 characters. They can change it on their Account screen after signing in.",
             },
             {
               name: "workspaceId",

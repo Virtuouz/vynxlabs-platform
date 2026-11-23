@@ -1111,7 +1111,7 @@ export function Workers({ base }: { base: string }) {
   // The address a worker is given, as the operator set it, or else the one this page is at.
   const instance = useLoad<{ publicUrl?: string | null }>("/instance");
   const instanceUrl = instance.data?.publicUrl ?? location.origin;
-  const tenant = useLoad<{ managedWorkers: boolean }>(base);
+  const tenant = useLoad<{ managedWorkers: boolean; managedWorkersLocked?: boolean }>(base);
   const managed = useLoad<{ state: "off" | "host" | "isolated" | "shared" | "refused" }>(
     `${base}/managed-workers`,
   );
@@ -1230,28 +1230,34 @@ export function Workers({ base }: { base: string }) {
                 ? "The instance starts workers for the default pool when there is work."
                 : "The instance starts no workers for this tenant."}
             </span>
-            <Button
-              size="small"
-              onClick={async () => {
-                const on = !tenant.data?.managedWorkers;
-                await api
-                  .patch(base, { managedWorkers: on })
-                  .then(
-                    () =>
-                      notify.success(
-                        on
-                          ? "The instance starts workers for this tenant when there is work."
-                          : "The instance no longer starts workers for this tenant.",
-                      ),
-                    notify.error,
-                  );
-                tenant.reload();
-              }}
-            >
-              {tenant.data.managedWorkers
-                ? "Run only on our own workers"
-                : "Let the instance run workers"}
-            </Button>
+            {!tenant.data.managedWorkers && tenant.data.managedWorkersLocked ? (
+              <span className="text-ink-muted">
+                An operator turned this off. Only an operator can turn it on again.
+              </span>
+            ) : (
+              <Button
+                size="small"
+                onClick={async () => {
+                  const on = !tenant.data?.managedWorkers;
+                  await api
+                    .patch(base, { managedWorkers: on })
+                    .then(
+                      () =>
+                        notify.success(
+                          on
+                            ? "The instance starts workers for this tenant when there is work."
+                            : "The instance no longer starts workers for this tenant.",
+                        ),
+                      notify.error,
+                    );
+                  tenant.reload();
+                }}
+              >
+                {tenant.data.managedWorkers
+                  ? "Run only on our own workers"
+                  : "Let the instance run workers"}
+              </Button>
+            )}
           </div>
         ) : null}
         <CreateDialog

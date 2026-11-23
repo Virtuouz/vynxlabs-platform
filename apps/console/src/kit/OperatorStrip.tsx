@@ -1,6 +1,7 @@
 import { Button, Menu } from "@volvel/ui";
 import { ShieldAlert } from "lucide-react";
 import { useSyncExternalStore } from "react";
+import { notify } from "../ask.tsx";
 import { usePreference } from "../prefs.ts";
 import { ago } from "./format.ts";
 import { Time } from "./Time.tsx";
@@ -57,6 +58,15 @@ function useHidden(): [string | undefined, (grantId: string | undefined) => void
 }
 
 /** The strip, under the shell's header. Nothing while there is no grant, or it is hidden. */
+/** Ends the access, and says so when it could not be ended: the strip then stays, as it was true. */
+const endNow = async (end: () => Promise<void>) => {
+  try {
+    await end();
+  } catch (error) {
+    notify.error(error);
+  }
+};
+
 export function OperatorStrip() {
   const access = useOperatorAccess();
   const [hidden, setHidden] = useHidden();
@@ -81,7 +91,7 @@ export function OperatorStrip() {
         <Truncate>{`${grant.reason}. Everything you do here is recorded for the tenant.`}</Truncate>
       </span>
       <span className="ml-auto flex shrink-0 items-center gap-1">
-        <Button size="small" variant="quiet" onClick={() => void end()}>
+        <Button size="small" variant="quiet" onClick={() => void endNow(end)}>
           End now
         </Button>
         <Button size="small" variant="quiet" onClick={() => setHidden(grant.id)}>
@@ -112,7 +122,7 @@ export function OperatorMark() {
       }
       items={[
         { label: "Show the notice", onSelect: () => setHidden(undefined) },
-        { label: "End access now", danger: true, onSelect: () => void end() },
+        { label: "End access now", danger: true, onSelect: () => void endNow(end) },
       ]}
     />
   );

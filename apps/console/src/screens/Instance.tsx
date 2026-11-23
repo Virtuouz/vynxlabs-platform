@@ -105,7 +105,7 @@ export function InstanceMembers() {
             name: "password",
             label: "Initial password",
             type: "password",
-            hint: "At least 12 characters. They can change it after signing in.",
+            hint: "At least 12 characters. They can change it on their Account screen after signing in.",
           },
         ],
         submit: (values) => api.post("/members", values),
@@ -138,18 +138,33 @@ export function InstanceMembers() {
 
 export function Operators() {
   return (
-    <ListCollection<{ id: string; memberEmail: string; roleName: string; createdAt: string }>
+    <ListCollection<{
+      id: string;
+      memberEmail: string;
+      roleName: string;
+      createdAt: string;
+      memberDisabled?: boolean;
+    }>
       title="Operators"
       description="Members who run this instance. An operator manages tenants and members, and sees inside a tenant only through an access grant."
       path="/bindings"
       rowKey={(row) => row.id}
       search={(row) => row.memberEmail}
       columns={[
-        { header: "Member", cell: (row) => row.memberEmail },
+        {
+          header: "Member",
+          cell: (row) => (
+            <span className="flex flex-wrap items-center gap-2">
+              {row.memberEmail}
+              {row.memberDisabled ? <Tag tone="danger">Disabled</Tag> : null}
+            </span>
+          ),
+        },
         { header: "Role", priority: 2, cell: (row) => row.roleName },
         { header: "Since", priority: 3, cell: (row) => <Time value={row.createdAt} mode="ago" /> },
       ]}
       empty={{ title: "No operators" }}
+      // A disabled operator keeps the role but cannot sign in, so it does not count as one who can.
       create={{
         action: "Add operator",
         fields: [

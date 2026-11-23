@@ -25,6 +25,8 @@ export interface WorkspaceSummary {
   type: "production" | "dev";
   linkedWorkspaceId: string | null;
   triggersPaused: boolean;
+  /** An operator has paused every trigger in the instance. */
+  pausedByInstance?: boolean;
 }
 
 const failed = (error: unknown) => {
@@ -80,7 +82,9 @@ export function WorkspaceControls({
       <SettingsRows label="Workspace actions">
         <SettingsRow
           title={
-            workspace.triggersPaused ? (
+            workspace.pausedByInstance ? (
+              <StatePill state="paused">Triggers are paused by the instance</StatePill>
+            ) : workspace.triggersPaused ? (
               <StatePill state="paused">Triggers are paused</StatePill>
             ) : (
               <StatePill state="on">Triggers are on</StatePill>
@@ -98,13 +102,19 @@ export function WorkspaceControls({
             )
           }
         >
-          {workspace.triggersPaused
-            ? `No schedule, webhook or event starts anything in this workspace. Runs you start by hand still work.${
-                workspace.type === "dev"
-                  ? " A dev workspace starts this way, so a schedule you try here does not run beside production's."
-                  : ""
+          {workspace.pausedByInstance
+            ? `An operator has paused every trigger in this instance, so nothing starts in this workspace until they resume them.${
+                workspace.triggersPaused
+                  ? " This workspace is paused on its own as well, and stays paused after that."
+                  : " Runs you start by hand still work."
               }`
-            : "Pausing stops every schedule, webhook and event here at once. One trigger can be paused alone under Triggers."}
+            : workspace.triggersPaused
+              ? `No schedule, webhook or event starts anything in this workspace. Runs you start by hand still work.${
+                  workspace.type === "dev"
+                    ? " A dev workspace starts this way, so a schedule you try here does not run beside production's."
+                    : ""
+                }`
+              : "Pausing stops every schedule, webhook and event here at once. One trigger can be paused alone under Triggers."}
         </SettingsRow>
         <SettingsRow
           title="Copy workspace"
@@ -862,7 +872,7 @@ function Check({ ok, children }: { ok: boolean | null; children: ReactNode }) {
 }
 
 export function TenantImport() {
-  const locations = useLoad<{ items: Location[] }>("/instance/database-locations");
+  const locations = useLoad<{ items: { name: string }[] }>("/instance/database-locations/names");
   const [file, setFile] = useState<File>();
   const [passphrase, setPassphrase] = useState("");
   const [slug, setSlug] = useState("");
@@ -871,6 +881,8 @@ export function TenantImport() {
   const [problem, setProblem] = useState<string>();
   const [staged, setStaged] = useState<Staged>();
   const [report, setReport] = useState<ImportReport>();
+  /** What the verdict on the screen was made with: a changed slug or passphrase makes it old. */
+  const [checkedWith, setCheckedWith] = useState<{ slug: string; passphrase: string }>();
   const step = report ? "done" : staged ? "inspect" : "upload";
 
   const lost = (error: unknown) => {
@@ -906,7 +918,35 @@ export function TenantImport() {
     !inspection.problem &&
     inspection.levelMatches &&
     inspection.passphraseOk === true &&
-    !inspection.slugTaken;
+    !inspection.tenantPresent &&
+    !inspection.slugTaken &&
+    checkedWith?.slug === slug &&
+    checkedWith.passphrase === passphrase;
+  const recheck = () =>
+    run(async () => {
+      if (!staged) return;
+      const answer = await withPassphrase<Staged>(
+        "GET",
+        `/instance/tenant-imports/staged/${staged.id}${query({ slug })}`,
+        passphrase,
+      );
+      setStaged(answer);
+      setCheckedWith({ slug, passphrase });
+    });
+  // The check is made again a moment after the slug or the passphrase stops changing.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only what was typed starts it
+  useEffect(() => {
+    if (!staged || !passphrase || working) return;
+    if (checkedWith?.slug === slug && checkedWith.passphrase === passphrase) return;
+    const timer = setTimeout(() => void recheck(), 600);
+    return () => clearTimeout(timer);
+  }, [slug, passphrase, staged?.id, checkedWith]);
+  const startOver = () => {
+    setSlug("");
+    setLocation("");
+    setPassphrase("");
+    setCheckedWith(undefined);
+  };
 
   return (
     <Page
@@ -954,7 +994,14 @@ export function TenantImport() {
             <Button variant="primary" onClick={() => navigate(`/t/${report.tenant.id}/workspaces`)}>
               Open the tenant
             </Button>
-            <Button onClick={() => setReport(undefined)}>Import another</Button>
+            <Button
+              onClick={() => {
+                setReport(undefined);
+                startOver();
+              }}
+            >
+              Import another
+            </Button>
           </div>
         </div>
       ) : staged && inspection ? (
@@ -1062,7 +1109,7 @@ export function TenantImport() {
                 );
                 setReport(body);
                 setStaged(undefined);
-                setPassphrase("");
+                startOver();
                 setFile(undefined);
               });
             }}
@@ -1093,26 +1140,13 @@ export function TenantImport() {
                 { value: "", label: "The instance's own database" },
                 ...(locations.data?.items ?? []).map((item) => ({
                   value: item.name,
-                  label: `${item.name}: ${item.database} on ${item.host}`,
+                  label: item.name,
                 })),
               ]}
             />
             {problem ? <Notice tone="danger">{problem}</Notice> : null}
             <div className="flex flex-wrap gap-2">
-              <Button
-                disabled={working}
-                onClick={() =>
-                  run(async () =>
-                    setStaged(
-                      await withPassphrase<Staged>(
-                        "GET",
-                        `/instance/tenant-imports/staged/${staged.id}${query({ slug })}`,
-                        passphrase,
-                      ),
-                    ),
-                  )
-                }
-              >
+              <Button disabled={working} onClick={() => void recheck()}>
                 Check again
               </Button>
               <Button type="submit" variant="primary" loading={working} disabled={!ready}>
@@ -1125,6 +1159,7 @@ export function TenantImport() {
                   run(async () => {
                     await api.delete(`/instance/tenant-imports/staged/${staged.id}`);
                     setStaged(undefined);
+                    startOver();
                   })
                 }
               >
@@ -1147,6 +1182,7 @@ export function TenantImport() {
                   passphrase,
                 ),
               );
+              setCheckedWith({ slug: "", passphrase });
             });
           }}
         >
@@ -1244,7 +1280,23 @@ export function DeleteTenantButton({
         });
         if (!sure) return;
         try {
-          await api.post(`/tenants/${tenant.id}/deletion`, { confirm: tenant.slug });
+          try {
+            await api.post(`/tenants/${tenant.id}/deletion`, { confirm: tenant.slug });
+          } catch (error) {
+            if ((error as ApiError).code !== "data_location_unavailable") throw error;
+            // The tenant's own database does not answer: its tables cannot be dropped now.
+            const again = await ask.confirm({
+              title: `Delete ${tenant.name} without dropping its tables?`,
+              text: `${(error as ApiError).message} If you go on, the tenant is deleted here and its tables stay in that database, where someone who runs it must drop them. The entry in the instance's log says which. If the database comes back first, cancel and delete again.`,
+              action: "Delete anyway",
+              danger: true,
+            });
+            if (!again) return;
+            await api.post(`/tenants/${tenant.id}/deletion`, {
+              confirm: tenant.slug,
+              tablesLeftBehind: true,
+            });
+          }
           onDone();
         } catch (error) {
           notify.error(error);

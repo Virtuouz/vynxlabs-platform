@@ -102,6 +102,8 @@ interface Workspace {
   type: "production" | "dev";
   linkedWorkspaceId: string | null;
   triggersPaused: boolean;
+  /** An operator has paused every trigger in the instance. */
+  pausedByInstance?: boolean;
 }
 interface Grant {
   id: string;
@@ -184,6 +186,15 @@ export function Tenant({ tenantId, me, path }: { tenantId: string; me: Me; path:
   );
 
   const reloadGrants = grants.reload;
+  // The strip says access is open, so it is read again when the grant runs out.
+  const endsAt = mine ? new Date(mine.expiresAt).getTime() : null;
+  useEffect(() => {
+    if (endsAt === null) return;
+    const wait = endsAt - Date.now();
+    // A grant the clock says is over but the server still lists is asked about slowly, not at once.
+    const timer = setTimeout(reloadGrants, Math.min(wait > 0 ? wait + 500 : 5000, 2_147_000_000));
+    return () => clearTimeout(timer);
+  }, [endsAt, reloadGrants]);
   // The shell says it under its header on every screen while the grant lasts.
   useEffect(() => {
     setOperatorAccess(
@@ -201,6 +212,13 @@ export function Tenant({ tenantId, me, path }: { tenantId: string; me: Me; path:
   useEffect(() => () => setOperatorAccess(null), []);
 
   if (operator && !isMember && !grants.data && !grants.error) return null;
+  if (operator && !isMember && !grants.data && grants.error) {
+    return (
+      <Page title="Your access to this tenant could not be read">
+        <ErrorState error={grants.error} onRetry={grants.reload} />
+      </Page>
+    );
+  }
   if (operator && !isMember && !mine) {
     return (
       <Page title="You have no access to this tenant">
@@ -673,6 +691,7 @@ function WorkspaceDetail({
           root={root}
           link={`/t/${tenantId}/workspaces/${workspaceId}`}
           workspacePaused={workspace.data.triggersPaused}
+          instancePaused={workspace.data.pausedByInstance === true}
           production={workspace.data.type === "production"}
         />
       ) : tab === "connections" && rest ? (

@@ -31,6 +31,8 @@ interface Workspace {
   name: string;
   type: "production" | "dev";
   triggersPaused: boolean;
+  /** An operator has paused every trigger in the instance. */
+  pausedByInstance?: boolean;
 }
 
 const TRIGGER_ICON: Record<string, typeof Timer> = {
@@ -408,18 +410,24 @@ export function Overview({
           />
         ),
       });
-    if (workspace.triggersPaused)
+    if (workspace.triggersPaused || workspace.pausedByInstance)
       attention.push({
         key: "paused",
         node: (
           <NextStep
             tone="attention"
             icon={<CirclePause aria-hidden="true" size={16} />}
-            title="Triggers are paused"
+            title={
+              workspace.pausedByInstance
+                ? "Triggers are paused by the instance"
+                : "Triggers are paused"
+            }
             detail={
-              workspace.type === "dev"
-                ? "Dev workspaces start this way, so a schedule you try here does not run beside production's. Runs started by hand still work."
-                : "No schedule, webhook or event starts anything here. Runs started by hand still work."
+              workspace.pausedByInstance
+                ? "An operator has paused every trigger in this instance. Nothing starts here until they resume them. Runs started by hand still work."
+                : workspace.type === "dev"
+                  ? "Dev workspaces start this way, so a schedule you try here does not run beside production's. Runs started by hand still work."
+                  : "No schedule, webhook or event starts anything here. Runs started by hand still work."
             }
             action={
               <Button size="small" onClick={() => navigate(`${link}/settings`)}>
@@ -450,8 +458,10 @@ export function Overview({
         meta={
           <>
             <EnvTag type={workspace.type} />
-            {workspace.triggersPaused ? (
-              <StatePill state="paused">Triggers paused</StatePill>
+            {workspace.triggersPaused || workspace.pausedByInstance ? (
+              <StatePill state="paused">
+                {workspace.pausedByInstance ? "Triggers paused by the instance" : "Triggers paused"}
+              </StatePill>
             ) : null}
             {counts?.version !== null && counts?.version !== undefined ? (
               <span className="text-ink-muted">
@@ -630,7 +640,11 @@ export function Overview({
                       </span>
                     </div>
                     <span className="shrink-0 text-meta">
-                      <TriggerState row={trigger} workspacePaused={workspace.triggersPaused} />
+                      <TriggerState
+                        row={trigger}
+                        workspacePaused={workspace.triggersPaused}
+                        instancePaused={workspace.pausedByInstance === true}
+                      />
                     </span>
                   </Link>
                 );

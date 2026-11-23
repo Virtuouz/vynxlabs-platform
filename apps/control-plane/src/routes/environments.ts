@@ -297,10 +297,16 @@ export function environmentRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             "For operators. Every workspace, resource, secret, custom table and file of the " +
             "tenant is removed for good. Export the tenant first if anything should be kept. " +
             "Its audit entries stay, and so do its members' accounts. Send the tenant's slug " +
-            "as `confirm`. Refused while runs are in progress.",
+            "as `confirm`. Refused while runs are in progress. When the tenant's own database " +
+            "cannot be reached the answer is 503 `data_location_unavailable`; send " +
+            "`tablesLeftBehind: true` as a second confirmation to delete the tenant anyway, " +
+            "leaving its tables in that database, which the entry names.",
           tags: ["tenancy"],
           params: TenantParams,
-          body: Type.Object({ confirm: Type.String() }),
+          body: Type.Object({
+            confirm: Type.String(),
+            tablesLeftBehind: Type.Optional(Type.Boolean()),
+          }),
           response: { 204: NoContent },
         },
       },
@@ -314,7 +320,11 @@ export function environmentRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         if (body.confirm !== tenant.slug) {
           throw badRequest("To delete this tenant, send its slug as confirm.");
         }
-        const keys = await ctx.mutate((trx, audit) => deleteTenant(kernel, trx, audit, params.t));
+        const keys = await ctx.mutate((trx, audit) =>
+          deleteTenant(kernel, trx, audit, params.t, {
+            ...(body.tablesLeftBehind ? { tablesLeftBehind: true } : {}),
+          }),
+        );
         kernel.data.forgetTenant(params.t);
         await removeStored(kernel, keys);
         return reply.code(204).send(null);

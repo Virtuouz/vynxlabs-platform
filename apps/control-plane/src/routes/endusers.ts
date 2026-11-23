@@ -2,6 +2,7 @@ import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import { sql } from "@volvel/db";
 import { Type } from "typebox";
 import { MIN_PASSWORD_LENGTH } from "../config.js";
+import { endEndUserSignIns } from "../kernel/administer.js";
 import { portalUrl } from "../kernel/apps/address.js";
 import { actorOf, endAppSession, signInEndUser } from "../kernel/apps/sessions.js";
 import { ANONYMOUS, writeAudit } from "../kernel/audit.js";
@@ -384,11 +385,7 @@ export function endUserRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           if (!updated) throw notFound("The end user");
           if (body.disabled) {
             await endUnusedTokens(trx, updated.id);
-            await trx
-              .deleteFrom("app_session")
-              .where("principal_type", "=", "end_user")
-              .where("principal_id", "=", updated.id)
-              .execute();
+            await endEndUserSignIns(trx, updated.id);
           }
           await audit({
             action:

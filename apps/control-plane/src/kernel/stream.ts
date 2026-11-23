@@ -1,5 +1,6 @@
-import type { Database, Listener } from "@volvel/db";
+import { type Database, type Listener, sql } from "@volvel/db";
 import type { FastifyBaseLogger } from "fastify";
+import type { Trx } from "./audit.js";
 
 /** What a browser is told: something changed, and what. Never the data itself. */
 export interface RunEvent {
@@ -48,12 +49,18 @@ export interface Subscriber {
   close?(): void;
 }
 
-/** Every hub in this process, so that ending someone's sign-in can end their open streams. */
-const hubs = new Set<StreamHub>();
+/** The channel on which a person's open streams are told to end, on every replica. */
+const ENDED = "vx_ended";
 
-/** Closes the open streams of `principal` (`member:<id>`), in one tenant or in all. This replica only. */
-export function endStreamsOf(principal: string, tenantId?: string) {
-  for (const hub of hubs) hub.endFor(principal, tenantId);
+/**
+ * Says, once the transaction commits, that the open streams of `principal` (`member:<id>` or
+ * `end_user:<id>`), in one tenant or in all, end. Every replica hears it, this one too, and closes
+ * what it holds: a stream is closed only if the change that ended the sign-in was kept.
+ */
+export async function endStreamsOf(trx: Trx, principal: string, tenantId?: string) {
+  await sql`select pg_notify(${ENDED}, ${JSON.stringify({ p: principal, t: tenantId ?? null })})`.execute(
+    trx,
+  );
 }
 
 /** Streams one principal may hold open at once, on one replica. */
@@ -83,7 +90,6 @@ export class StreamHub {
   constructor(database: Database, log: FastifyBaseLogger) {
     this.#database = database;
     this.#log = log;
-    hubs.add(this);
   }
 
   /** Closes the streams a principal holds open. */
@@ -103,8 +109,16 @@ export class StreamHub {
 
   #listen(): Promise<Listener> {
     this.#listener ??= this.#database.listen({
-      channels: ["vx_runs", "vx_logs"],
-      onMessage: (_channel, payload) => this.#receive(payload),
+      channels: ["vx_runs", "vx_logs", ENDED],
+      onMessage: (channel, payload) => {
+        if (channel !== ENDED) return this.#receive(payload);
+        try {
+          const ended = JSON.parse(payload) as { p: string; t: string | null };
+          this.endFor(ended.p, ended.t ?? undefined);
+        } catch {
+          // Not something this version wrote: nothing to end.
+        }
+      },
       onReconnect: () => {
         this.#log.info("the run event stream reconnected; subscribers are told to refresh");
         for (const set of this.#subscribers.values()) {
@@ -242,7 +256,6 @@ export class StreamHub {
 
   async close() {
     this.#closed = true;
-    hubs.delete(this);
     for (const entry of this.#pings.values()) if (entry.timer) clearTimeout(entry.timer);
     const listener = this.#listener;
     this.#listener = undefined;

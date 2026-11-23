@@ -21,6 +21,8 @@ interface Workspace {
   type: "production" | "dev";
   linkedWorkspaceId: string | null;
   triggersPaused: boolean;
+  /** An operator has paused every trigger in the instance. */
+  pausedByInstance?: boolean;
 }
 
 interface AuditEntry {
@@ -326,7 +328,11 @@ function WorkspaceLine({
         <span className="text-meta text-ink-muted">
           {s?.version ? `Running v${s.version}` : "Nothing deployed"}
           {target ? ` · promotes to ${target.name}` : ""}
-          {workspace.triggersPaused ? " · triggers paused" : ""}
+          {workspace.pausedByInstance
+            ? " · triggers paused by the instance"
+            : workspace.triggersPaused
+              ? " · triggers paused"
+              : ""}
         </span>
       </div>
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-meta">

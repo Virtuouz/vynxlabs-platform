@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { Workers } from "./screens/Execution.tsx";
 import { MembersAndAccess } from "./screens/Members.tsx";
 import { Tenant } from "./screens/Tenant.tsx";
 import { TenantOverview } from "./screens/TenantOverview.tsx";
@@ -378,4 +379,59 @@ test("the workspaces list names where a clone promotes to, and Create offers eve
     "Dev (dev)",
     "Dev copy (dev)",
   ]);
+});
+
+const operatorMe = {
+  principal: { type: "member", id: "m9", name: "Olga", email: "olga@ops.example" },
+  instancePermissions: ["tenant:*"],
+  tenants: [],
+};
+const grantFor = (expiresAt: string) => ({
+  id: "g1",
+  memberId: "m9",
+  memberEmail: "olga@ops.example",
+  roleName: "tenant_admin",
+  reason: "Ticket 1042",
+  createdAt: "2026-11-22T10:00:00.000Z",
+  expiresAt,
+  active: true,
+});
+
+test("operator access that ends while the screen is open is read again, and the screen says so (INS-26)", async () => {
+  let reads = 0;
+  routes[`GET ${base}/access-grants`] = () => {
+    reads += 1;
+    // The second read is after the grant ended: the server no longer lists it as active.
+    return {
+      items: reads === 1 ? [grantFor(new Date(Date.now() + 1200).toISOString())] : [],
+    };
+  };
+  routes[`GET ${base}/summary`] = () => ({ workspaces: 0, members: 0 });
+  show(<Tenant tenantId="t1" me={operatorMe} path="/t/t1" />);
+  await waitFor(() => expect(reads).toBe(1));
+  await screen.findByRole(
+    "heading",
+    { name: "You have no access to this tenant" },
+    { timeout: 4000 },
+  );
+  expect(reads).toBe(2);
+});
+
+test("a failed read of the access grants is said as that, not as having no access (INS-26)", async () => {
+  routes[`GET ${base}/access-grants`] = () =>
+    new Response(JSON.stringify({ status: 500, detail: "The database is not answering." }), {
+      status: 500,
+    });
+  show(<Tenant tenantId="t1" me={operatorMe} path="/t/t1" />);
+  await screen.findByText(/The database is not answering/);
+  expect(screen.queryByText("You have no access to this tenant")).toBeNull();
+});
+
+test("Workers does not offer a tenant admin the switch an operator turned off (D16)", async () => {
+  routes[`GET ${base}`] = () => ({ managedWorkers: false, managedWorkersLocked: true });
+  routes[`GET ${base}/managed-workers`] = () => ({ state: "off" });
+  routes[`GET ${base}/worker-pools`] = () => ({ items: [] });
+  show(<Workers base={base} />);
+  await screen.findByText("An operator turned this off. Only an operator can turn it on again.");
+  expect(screen.queryByRole("button", { name: "Let the instance run workers" })).toBeNull();
 });

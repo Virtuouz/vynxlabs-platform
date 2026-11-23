@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { newId, sql } from "@volvel/db";
 import type { FastifyRequest } from "fastify";
-import { endSessions } from "../administer.js";
+import { endEndUserSignIns, endSessions } from "../administer.js";
 import type { Audit, Db, Trx } from "../audit.js";
 import { cleanEmail, createEndUser, endUnusedTokens } from "../endusers.js";
 import { HttpError } from "../errors.js";
@@ -511,11 +511,7 @@ async function setActive(
       .execute();
     if (!active) {
       await endUnusedTokens(trx, id);
-      await trx
-        .deleteFrom("app_session")
-        .where("principal_type", "=", "end_user")
-        .where("principal_id", "=", id)
-        .execute();
+      await endEndUserSignIns(trx, id);
     }
     await audit({
       action: active ? "end_user.enabled" : "end_user.disabled",

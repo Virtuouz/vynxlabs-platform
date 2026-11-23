@@ -127,10 +127,14 @@ export function nextFireOf(
 export function TriggerState({
   row,
   workspacePaused = false,
+  instancePaused = false,
 }: {
-  row: Pick<Trigger, "paused" | "enabled" | "nextFireAt" | "draft" | "pausedBy">;
+  row: Pick<Trigger, "paused" | "enabled" | "nextFireAt" | "draft"> &
+    Partial<Pick<Trigger, "pausedBy">>;
   /** For a list that was not given what holds each trigger: the server says it as `pausedBy`. */
   workspacePaused?: boolean;
+  /** An operator has paused every trigger in the instance. */
+  instancePaused?: boolean;
 }) {
   if (row.draft === "new") return <StatePill state="draft">Draft, never deployed</StatePill>;
   if (row.draft)
@@ -151,7 +155,7 @@ export function TriggerState({
       {held}
     </span>
   );
-  if (row.pausedBy === "instance")
+  if (instancePaused || row.pausedBy === "instance")
     return holding(<StatePill state="paused">Instance paused</StatePill>);
   if (row.paused && row.pausedBy === "workspace")
     return holding(<StatePill state="paused">Workspace paused</StatePill>);
@@ -228,11 +232,14 @@ export function TriggersWorkbench({
   root,
   link,
   workspacePaused,
+  instancePaused = false,
   production,
 }: {
   root: string;
   link: string;
   workspacePaused: boolean;
+  /** An operator has paused every trigger in the instance. */
+  instancePaused?: boolean;
   production: boolean;
 }) {
   const list = useLoad<{ items: Trigger[] }>(`${root}/triggers`);
@@ -367,7 +374,9 @@ export function TriggersWorkbench({
     },
     {
       header: "State",
-      cell: (row) => <TriggerState row={row} workspacePaused={workspacePaused} />,
+      cell: (row) => (
+        <TriggerState row={row} workspacePaused={workspacePaused} instancePaused={instancePaused} />
+      ),
     },
     {
       header: "Last fired",
@@ -411,7 +420,12 @@ export function TriggersWorkbench({
         title="Triggers"
         description="What starts work here without anyone asking. Pause one to stop just it, in any workspace; the pause lasts through deploys until it is resumed."
         state={
-          workspacePaused ? (
+          instancePaused ? (
+            <HeadNote>
+              An operator has paused every trigger in this instance, so nothing here starts until
+              they resume them. Only an operator can.
+            </HeadNote>
+          ) : workspacePaused ? (
             <HeadNote>
               Every trigger here is paused. Resume them under{" "}
               <Link to={`${link}/settings`}>Workspace settings</Link>.

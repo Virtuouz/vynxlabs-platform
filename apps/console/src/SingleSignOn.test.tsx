@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { notify } from "./ask.tsx";
 import { SignIn } from "./screens/SignIn.tsx";
 import { type IdentityProvider, SingleSignOn } from "./screens/SingleSignOn.tsx";
 import { answer, show } from "./testing.tsx";
@@ -277,4 +278,34 @@ test("a sign-in the provider refused says why, once", async () => {
   );
   // The reason is taken out of the address. Where to go back to stays.
   expect(window.location.search).toBe("?return=%2Fx");
+});
+
+test("adding a domain says what happened: proved at once at the instance, a record to publish in a tenant (INS-18)", async () => {
+  const toast = vi.spyOn(notify, "success").mockImplementation(() => 0);
+  const instanceBase = "/api/v1/instance/identity-providers";
+  routes[`GET ${instanceBase}`] = () => [200, { items: [oidc] }];
+  routes[`GET ${instanceBase}/p1`] = () => [200, oidc];
+  routes[`GET ${instanceBase}/p1/domains`] = () => [200, { items: [] }];
+  routes[`POST ${instanceBase}/p1/domains`] = (body) => [
+    201,
+    {
+      id: "d1",
+      domain: (body as { domain: string }).domain,
+      verified: true,
+      verifiedAt: "2026-11-22T10:00:00Z",
+      checkedAt: null,
+      problem: null,
+      record: null,
+    },
+  ];
+  history.replaceState(null, "", "/?provider=p1");
+  show(<SingleSignOn base="/instance" />);
+  fireEvent.click(await screen.findByRole("tab", { name: "Domains" }));
+  fireEvent.change(await screen.findByLabelText("Email domain"), {
+    target: { value: "acme.example" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Add domain" }));
+  await waitFor(() => expect(toast).toHaveBeenCalled());
+  expect(toast.mock.calls[0]?.[0]).toBe("acme.example is added. It needs no proof here.");
+  expect(String(toast.mock.calls[0]?.[0])).not.toContain("record");
 });

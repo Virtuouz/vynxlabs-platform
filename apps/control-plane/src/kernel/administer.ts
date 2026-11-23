@@ -139,7 +139,26 @@ export async function endSessions(
       .where("finished_at", "is", null)
       .execute();
   }
-  endStreamsOf(`member:${memberId}`, scope.tenantId);
+  await endStreamsOf(trx, `member:${memberId}`, scope.tenantId);
+}
+
+/**
+ * Ends an end user's sign-ins to the tenant's apps, the sign-ins through a provider they started
+ * and did not finish, and their open event streams, on every replica. For disabling them, by
+ * hand or by a directory.
+ */
+export async function endEndUserSignIns(trx: Trx, endUserId: string): Promise<void> {
+  await trx
+    .deleteFrom("app_session")
+    .where("principal_type", "=", "end_user")
+    .where("principal_id", "=", endUserId)
+    .execute();
+  await trx
+    .deleteFrom("sso_state")
+    .where("principal_id", "=", endUserId)
+    .where("finished_at", "is", null)
+    .execute();
+  await endStreamsOf(trx, `end_user:${endUserId}`);
 }
 
 /**

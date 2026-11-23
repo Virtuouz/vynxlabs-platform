@@ -5,6 +5,7 @@ import {
   openDataStore,
   type PlatformSchema,
   type PoolStats,
+  sql,
   type Transaction,
 } from "@volvel/db";
 import type { FastifyBaseLogger } from "fastify";
@@ -145,6 +146,29 @@ export class DataStores {
   /** Opens a connection string as a data store, setting it up if it is new. Does not remember it. */
   async connect(connectionString: string): Promise<DataStore> {
     return this.#upgraded(await this.#open(connectionString));
+  }
+
+  /**
+   * Whether a database answers, without making it ready for use: no catalog, role or policy is
+   * written, and nothing is remembered. One that is already open answers on its own connection.
+   */
+  async probe(name: string, connectionString: string): Promise<void> {
+    const open = this.#dedicated.get(name);
+    if (open) {
+      const store = await open.catch(() => null);
+      if (store) return store.ping();
+    }
+    const store = await openDataStore({
+      connectionString,
+      secret: await this.#secret(),
+      setUp: false,
+      maxConnections: 1,
+    });
+    try {
+      await sql`select 1`.execute(store.owner);
+    } finally {
+      await store.close();
+    }
   }
 
   async #open(connectionString: string): Promise<DataStore> {

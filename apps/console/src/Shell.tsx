@@ -76,6 +76,7 @@ interface WorkspaceSummary {
   slug: string;
   type: "production" | "dev";
   triggersPaused?: boolean;
+  pausedByInstance?: boolean;
   linkedWorkspaceId?: string | null;
 }
 
@@ -1122,9 +1123,11 @@ export function Shell({
                     }))}
                   />
                   {workspace ? <EnvTag type={workspace.type} /> : null}
-                  {workspace?.triggersPaused ? (
+                  {workspace?.triggersPaused || workspace?.pausedByInstance ? (
                     <span className="hidden lg:inline-flex">
-                      <StatePill state="paused" />
+                      <StatePill state="paused">
+                        {workspace.pausedByInstance ? "Paused by the instance" : "Paused"}
+                      </StatePill>
                     </span>
                   ) : null}
                   {ws?.linked ? (

@@ -526,6 +526,28 @@ test("a row's unsaved edits are not dropped by choosing another row without aski
   expect(screen.queryByText("Leave without saving?")).toBeNull();
 });
 
+test("a table's Definition keeps room for a column's actions, and they wrap rather than run past the card (r-build)", async () => {
+  const body = {
+    columns: { number: { type: "text" }, total: { type: "number" } },
+    policy: { type: "owner", column: "owner_id" },
+  };
+  routes[`GET /api/v1${root}/tables/orders`] = () => [200, orders("ui")];
+  routes[`GET /api/v1${root}/resources/orders`] = () => [
+    200,
+    { kind: "table", schemaVersion: 1, key: "k1", title: null, body },
+  ];
+  routes[`GET /api/v1${root}/drafts/orders`] = () => [404, { status: 404, detail: "none" }];
+  show(<TableView root={root} name="orders" link="/t/t1/workspaces/w1" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Definition" }));
+  const describe = (await screen.findAllByRole("button", { name: "Describe" }))[0] as HTMLElement;
+  const buttons = describe.parentElement as HTMLElement;
+  expect(buttons.className).toContain("flex-wrap");
+  const cell = describe.closest("td") as HTMLElement;
+  const index = [...(cell.parentElement as HTMLElement).children].indexOf(cell);
+  const header = (describe.closest("table") as HTMLElement).querySelectorAll("thead th")[index];
+  expect(header?.className).toContain("w-[14rem]");
+});
+
 test("a table made in the console is renamed and described where it is edited", async () => {
   const body = {
     description: "What customers bought.",

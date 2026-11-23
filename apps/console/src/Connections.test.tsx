@@ -368,6 +368,22 @@ test("WLK-17a: at a phone's width the health, used-by and kind cells keep room, 
   expect(kind?.className).toContain("whitespace-nowrap");
 });
 
+test("at a phone's width a row keeps its name and its state, and the table does not scroll for the rest (P31)", async () => {
+  show(<Connections root={root} />);
+  await screen.findByText("HTTP 401: answered 401.");
+  const header = (name: string) => screen.getByRole("columnheader", { name });
+  for (const hidden of ["Used by", "Kind", "Points to"]) {
+    expect(header(hidden).className).toContain("hidden");
+  }
+  expect(header("Health").className).not.toContain("hidden");
+  // A connection not set up here says so in the column a phone keeps.
+  const outbox = screen.getByText("outbox").closest("tr") as HTMLElement;
+  const column = [...(outbox.parentElement?.parentElement?.querySelectorAll("th") ?? [])].findIndex(
+    (th) => th.textContent === "Health",
+  );
+  expect(outbox.querySelectorAll("td")[column]?.textContent).toContain("Not set up here");
+});
+
 test("WLK-17g: in production with nothing arriving, Set up a connection says so and opens no empty form", async () => {
   rows = [row({ path: "shop", connector: "http" })];
   show(<Connections root={root} production />);

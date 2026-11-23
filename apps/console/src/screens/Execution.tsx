@@ -865,13 +865,20 @@ export function Connections({ root, production = false }: { root: string; produc
               </span>
             ),
           },
-          // Second, so a phone shows it without scrolling the table.
+          // Second, so a phone shows it without scrolling the table: a phone keeps the name and the
+          // state, so a connection not set up here says so in this column too.
           {
             header: "Health",
-            cell: (row) => <ConnectionHealth root={root} row={row} mayConnect={mayWrite} />,
+            cell: (row) =>
+              row.bound ? (
+                <ConnectionHealth root={root} row={row} mayConnect={mayWrite} />
+              ) : (
+                <StatePill state="unbound" />
+              ),
           },
           {
             header: "Used by",
+            priority: 2,
             cell: (row) => (
               <UsedBy
                 uses={connectionUses(row.path)}
@@ -884,6 +891,7 @@ export function Connections({ root, production = false }: { root: string; produc
           },
           {
             header: "Kind",
+            priority: 2,
             cell: (row) => (
               <span className="whitespace-nowrap">
                 {CONNECTOR_NAMES[row.connector] ?? <Code>{row.connector}</Code>}
@@ -892,6 +900,7 @@ export function Connections({ root, production = false }: { root: string; produc
           },
           {
             header: "Points to",
+            priority: 2,
             cell: (row) =>
               row.bound ? (
                 <span
@@ -900,9 +909,7 @@ export function Connections({ root, production = false }: { root: string; produc
                 >
                   {row.config?.baseUrl ?? row.config?.host ?? ""}
                 </span>
-              ) : (
-                <StatePill state="unbound" />
-              ),
+              ) : null,
           },
         ]}
         empty={{

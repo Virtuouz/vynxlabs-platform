@@ -33,7 +33,7 @@ import {
   withTrace,
 } from "./kernel/telemetry.js";
 import { takeReleased } from "./kernel/tenant/releases.js";
-import { errorHandler, notFoundHandler, Problem } from "./problem.js";
+import { errorHandler, notFoundHandler, Problem, publicPath } from "./problem.js";
 import { accessRoutes } from "./routes/access.js";
 import { accessReleaseRoutes } from "./routes/access-releases.js";
 import { alertRoutes } from "./routes/alerts.js";
@@ -115,7 +115,20 @@ export function trustProxy(trusted: number | string[]) {
 /** The built console, when there is one to serve. */
 export async function buildApp(options: AppOptions) {
   const app = Fastify({
-    logger: options.logLevel ? { level: options.logLevel } : false,
+    logger: options.logLevel
+      ? {
+          level: options.logLevel,
+          // An address can hold a secret: the log says the route, not the token.
+          serializers: {
+            req: (request) => ({
+              method: request.method,
+              url: publicPath(request),
+              host: request.host,
+              remoteAddress: request.ip,
+            }),
+          },
+        }
+      : false,
     requestIdHeader: false,
     // On shutdown, do not wait for idle connections or for workers that are long-polling.
     forceCloseConnections: true,
@@ -200,7 +213,7 @@ export async function buildApp(options: AppOptions) {
         "http.request.method": request.method,
         "http.route": route,
         "http.response.status_code": reply.statusCode,
-        "url.path": request.url.split("?")[0],
+        "url.path": publicPath(request),
         "platform.request.id": request.id,
         "platform.tenant.id": (request.params as { t?: string } | undefined)?.t,
       },

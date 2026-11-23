@@ -32,7 +32,7 @@ export const ERROR_CODES = {
   validation_failed: code(
     400,
     "Something sent does not fit",
-    "The response lists each value that is wrong and why, under `issues`. Fix them and send it again.",
+    "The response lists each value that is wrong and why, under `errors`. Fix them and send it again.",
   ),
   unauthenticated: code(
     401,

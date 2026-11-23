@@ -16,3 +16,8 @@ test("VOC-52: the access permission is named access changes", () => {
   expect(access?.label).toBe("Access changes");
   expect(`${access?.verbs.read} ${access?.verbs.write}`).not.toMatch(/\breleas/i);
 });
+
+test("the help for validation_failed names the field the response uses: errors", () => {
+  expect(ERROR_CODES.validation_failed.help).toContain("under `errors`");
+  expect(ERROR_CODES.validation_failed.help).not.toContain("issues");
+});

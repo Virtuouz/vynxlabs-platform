@@ -16,27 +16,27 @@ You will have a flow that waits for a person when an amount is over 100, a test 
 :::steps
 1. **Open the flow editor.** Sign in as Maya and check that the bar at the top shows **Sandbox**. Press **Build**, then choose **Flows** in the menu beside it. Press **New flow**. The editor opens with **New flow**, **Draft**, and the buttons **Tidy up**, **Test** and **Save draft**.
 
-2. **Start from a starter.** In **Path** type `tut-approve`. Under **Start from** press **Decide, then answer**. The list **Steps in order** reads `start` (trigger), `size` (branch), `large` (set) and `small` (set). The branch `size` sends a run to `large` when `trigger.amount > 100` and to `small` otherwise.
+2. **Start from a starter.** In **Path** type `tut-approve`. Under **Start from** press **Decide, then answer**. The list headed **Steps (4)**, at the top of the panel on the right, reads `start` (trigger), `size` (branch), `large` (set) and `small` (set). The branch `size` sends a run to `large` when `trigger.amount > 100` and to `small` otherwise.
 
-3. **Choose the step the approval follows.** In **Steps in order** press `large`.
+3. **Choose the step the approval follows.** In the **Steps** list press `large`.
 
-4. **Add the approval.** Press **Add step**. In the list **Steps to add**, under **LOGIC**, press **Approval**, which says "Pauses until a person decides." The list now ends `approve` (approval), and the new step is chosen. The editor has connected `large` to it.
+4. **Add the approval.** Press **Add step**. In the menu that opens, under **LOGIC**, press **Approval**, which says "Pauses until a person decides." The list now ends `approve` (approval), and the new step is chosen. The editor has connected `large` to it.
 
 5. **Say what is being approved.** In the panel **The chosen step**, set:
    - **What is being approved**: `Approve a large amount`
    - **Detail to show**: `trigger.amount`. This is an expression, so the approver sees the amount.
 
-6. **Say who may decide.** Under **Who may decide**, open **Groups** and choose **Practice managers**. Leave **Give up after (optional)** empty, and **Where it waits** at **This workspace**.
+6. **Say who may decide.** Under **Who may decide**, open **Groups** and choose **Practice managers**: the option reads `practice-managers`, its key, with the name under it, and the choice shows as `practice-managers`. Press :kbd[Esc] to close the list. Leave **Give up after (optional)** empty, and **Where it waits** at **This workspace**.
 
    ::screenshot{name=start/tut-approve-step alt="The flow editor with the approve step chosen: What is being approved, Detail to show, and Who may decide with the group Practice managers"}
 
 7. **Save the draft.** Press **Save draft**. The address becomes `…/flows/edit/tut-approve` and the status reads "Draft saved just now".
 
-8. **Test it.** Press **Test**. The panel **Test the draft** opens, with the field **Amount**. Type `250` and press **Run a test**. The steps list shows `start` **Succeeded**, `large` **Succeeded**, `size` **Succeeded**, `small` **Skipped**, and `approve` **Waiting for approval**. The run waits. Leave the panel open.
+8. **Test it.** Press **Test**. The panel **Test the draft** opens, with the field **Amount**. Type `250` and press **Run a test**. The steps are listed with `start` **Succeeded**, `size` **Succeeded**, `large` **Succeeded**, `small` **Skipped** and `approve` **Waiting for approval**, in no fixed order, and the panel offers **Open the run**. The run waits. Leave the panel open.
 
-9. **Decide it as Rowan.** In another window sign in as Rowan, make sure **Sandbox** is the workspace, and press **Operate**, then **Approvals**. Under **Waiting for you** there is 1. The row reads "Approve a large amount", **250**, "tut-approve · Sandbox", and **the Practice managers group** under **Who decides**.
+9. **Decide it as Rowan.** In another window sign in as Rowan, make sure **Sandbox** is the workspace, and press **Operate**, then **Approvals**. Under **Waiting for you** there is a row that reads "Approve a large amount", **250**, "tut-approve · Sandbox", and **the Practice managers group** under **Who decides**.
 
-10. **Approve.** Press **Approve** on the row. The dialog "Approve “Approve a large amount”?" has an optional **Note**. Type `Fine for a practice manager.` and press **Approve**. **Waiting for you** is 0. In the test panel, as Maya, `approve` now reads **Succeeded** and the whole run reads **Succeeded**.
+10. **Approve.** Press **Approve** on the row. The dialog "Approve “Approve a large amount”?" has an optional **Note**. Type `Fine for a practice manager.` and press **Approve**. The row leaves **Waiting for you**. In the test panel, as Maya, `approve` now reads **Succeeded** and the whole run reads **Succeeded**.
 
 11. **Open the run.** As Maya, press **Open the run** in the test panel, or choose **Operate**, then **Runs**, and open the latest run of `tut-approve`. It says **Succeeded**. The timeline shows `approve` as the long bar. The output of `approve` reads `"approved": true` and your note as `"comment"`.
 :::

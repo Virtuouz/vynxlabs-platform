@@ -21,7 +21,7 @@ You will have a published app with one page, a table of Fernhill's appointments 
 
 4. **Choose where it reads from.** In the settings, under **ROWS IT USES**, press **Source**. In the dialog **Where it reads from**, choose **Appointments**. The canvas fills with appointments: Number, Pet name, Status, Starts at, Pet, Species, Client code and Clinic.
 
-5. **Give it a title.** Choose the **Display** tab. Press **Title** under **HEADING**, type `Visits` and press :kbd[Enter]. The table is headed **Visits**.
+5. **Give it a title.** Choose the **Display** tab. Press **Title** under **HEADING**. The field already holds `Table`: press :kbd[Ctrl+A] to select it, type `Visits` and press :kbd[Enter]. The table is headed **Visits**.
 
 6. **Hide two columns.** Under **COLUMNS**, which says "8 of 8 shown", press the eye beside **Pet** (**Hide Pet**), then the eye beside **Client code**. It now says "6 of 8 shown". The table keeps Number, Pet name, Status, Starts at, Species and Clinic.
 
@@ -29,7 +29,7 @@ You will have a published app with one page, a table of Fernhill's appointments 
 
 7. **Publish.** Press **Publish** at the top. The check reads "Deploys to Sandbox for the first time. Nobody sees it until then.", with "All data sources found" passed and "2 CHANGES": "Added page tut Visits" and "Added table Visits". Press **Publish 2 changes**. The message "Published. People who open the app now see this." appears.
 
-8. **Open the app.** The address is `/apps/fernhill/sandbox/tut-visits/` on the instance. Open it in the same browser. The header shows **tut Visits** and Maya's address, and the page shows the table headed **Visits** with 25 rows. The foot of the table reads "Showing 25 of" the number of appointments, and **Show 25 more** brings more.
+8. **Open the app.** The address is `/apps/fernhill/sandbox/tut-visits/` on the instance. Open it in the same browser. The header shows **tut Visits** and Maya's address, and the page shows the table headed **Visits** with 25 rows. The foot of the table reads "Showing 25 of" the number of appointments, and **Show 25 more** brings more. On a phone-width screen the rows show as cards, without column headings.
 :::
 
 ## What you built

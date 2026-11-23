@@ -19,3 +19,7 @@
 
 ## Not run
 Opening the app as Rowan or a phone width; 768 and 390 px; dark; keyboard-only; promoting the app. The app was later marked for removal in the list (**Remove**: "This saves a draft that removes it. Nothing changes until that draft is deployed.") to see the dialog; the removal draft was not deployed.
+
+## Second check (2026-11-23)
+
+Checked by: second agent, 2026-11-23. Second pass: steps 1-8 run as tut Visits 2; the app opened at 1440, 390 and in dark.

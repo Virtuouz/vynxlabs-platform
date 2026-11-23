@@ -13,7 +13,7 @@ You will have a script that adds up a list of amounts, a version of it deployed 
 - A browser at least as wide as a laptop screen.
 
 :::steps
-1. **Make a tenant.** Sign in as the operator admin. The first screen is **Instance**, with the list **Tenants**. Press **Create tenant**. In **Name** type `Tut First`. In **Slug** type `tut-first`. Leave **Make me a member, as tenant admin** checked. Press **Create tenant**. The tenant opens on its overview, and under **AT A GLANCE** it shows **Workspaces** 0 and **Members** 1. You are inside as a member, so you do not need an access grant.
+1. **Make a tenant.** Sign in as the operator admin. The first screen is **Instance**, with the list **Tenants**. (If you already belong to a tenant, the console opens in it: choose **Instance** in the narrow bar on the left.) Press **Create tenant**. In **Name** type `Tut First`. In **Slug** type `tut-first`. Leave **Make me a member, as tenant admin** checked. Press **Create tenant**. The tenant opens on its overview, and under **AT A GLANCE** it shows **Workspaces** 0 and **Members** 1. You are inside as a member, so you do not need an access grant.
 
 2. **Make a dev workspace.** In the tenant's overview press **Create one** beside "No workspaces yet", or choose **Workspaces** in the menu on the left and press **Create workspace**. Fill in:
    - **Name**: `Dev`
@@ -31,17 +31,17 @@ You will have a script that adds up a list of amounts, a version of it deployed 
 
 6. **Name it.** In **Path** type `tut-totals`.
 
-7. **Run the draft.** Click in the code, then press :kbd[Ctrl+Enter] (:kbd[⌘↵] on a Mac). This saves the draft and runs it on a worker without deploying. The **Test pane** under the code shows **Succeeded**, and a line "waited … ms · ran … ms". Its log reads `Added up` with `{"count":3,"total":49.75}`. The starter has an example list, `12.5`, `30` and `7.25`, so it needs no input.
+7. **Run the draft.** Click in the code, then press :kbd[Ctrl+Enter] (:kbd[⌘↵] on a Mac). This saves the draft and runs it on a worker without deploying. The **Test pane**, the panel to the right of the code (under it on a narrow screen), shows the result below **Run the draft**: scroll down in the panel if it is out of view. It reads **Succeeded**, and a line "waited … ms · ran … ms". Its log reads `Added up` with `{"count":3,"total":49.75}`. The starter has an example list, `12.5`, `30` and `7.25`, so it needs no input.
 
 8. **Look at the result.** In the **Test pane**, under **Run of tut-totals: Succeeded**, choose **Input and output**. The output reads `count` 3, `total` 49.75 and `average` 16.583333333333332. **Logs** has the log line and **Details** says how the run went.
 
 9. **Go to Deploy.** Choose **Overview** in the menu on the left. In **First steps** (now "3 of 4 done") press **Deploy**. The **Deploy** screen opens. Its steps are **Review draft**, with "1 change", and **Deploy to dev**. The list names `tut-totals` and marks it **NEW**.
 
-10. **Deploy it.** In **What changed** type `First script`. Press **Deploy 1 change**. The step **Deploy to dev** now says "0 changes" and the list **VERSIONS OF DEV** has a new version at the top with the note "First script".
+10. **Deploy it.** In **What changed** type `First script`. Press **Deploy 1 change**. The message "Deployed as version 2: tut-totals." appears. The step **Review draft** now says "0 changes", and the list **VERSIONS OF DEV** has a new version, `v2`, with the note "First script".
 
 11. **Find the script.** In the narrow bar on the left press **Build**, then choose **Scripts** in the menu beside it. The list has `tut-totals`, **Uses** reads "Nothing outside", and **Source** reads **CONSOLE**. Press `tut-totals`. The page shows **Last run**, **Succeeded**, and lists the test run as "test".
 
-12. **Run the deployed script.** Press **Run**. In the dialog leave **Start** at **Now**, and press **Run**. The run page opens. It says **Succeeded**, **By hand** and the version number you just made. Choose **Output**. It reads `count` 3, `total` 49.75, `average` 16.583333333333332.
+12. **Run the deployed script.** Press **Run**. In the dialog leave **Start** at **Now**, and press **Run**. The run page opens. It says **Succeeded**, **By hand** and the version you just made, `version 2`. Choose **Output**. It reads `count` 3, `total` 49.75, `average` 16.583333333333332.
 
 13. **See that the steps ticked.** Open **Overview** again. The **First steps** list is gone, and **Running** shows the version.
 :::

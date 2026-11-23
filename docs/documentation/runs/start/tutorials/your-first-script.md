@@ -28,3 +28,7 @@
 ## Not run
 
 768 and 390 px, dark theme, keyboard-only. On a Mac the shortcut is Command-Return; only Ctrl+Enter was pressed.
+
+## Second check (2026-11-23)
+
+Checked by: second agent, 2026-11-23. Second pass 2026-11-23, one pass 1-13 on a new tenant tut-first (old one deleted), 1440 light; then 390 and dark of the editor (no horizontal scroll, code area 462 px at 390, pane under the code). Keyboard: Ctrl+Enter. Steps 11-13 now run on the same tenant.

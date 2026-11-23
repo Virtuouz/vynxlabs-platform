@@ -13,3 +13,7 @@ Code as of commit `5ebf1c80`, 2026-11-23. Written by the page's writer; run 2026
 | An app is served at `/apps/<tenant>/<workspace>/<address>/` | run (Apps list address) | writer, run | holds |
 | Publishing needs `deployment:write`, making needs `resource:write` | `packages/docs/generated/administer/reference` permissions list | writer | unchecked against the route; the second agent confirms |
 | "Staff only" is the default of a new app | Apps list shows "Staff only" for the other apps | writer, run (Apps list row: Staff only, APP BUILDER) | holds |
+
+## Second check (2026-11-23)
+
+Checked by: second agent, 2026-11-23. Walked as Maya in Fernhill Sandbox with the name 'tut Visits 2' (tut Visits existed, being removed). Corrected: the Title field opens holding 'Table', so typing Visits gives TableVisits: select all first (fault: the field should open selected; Display > Title). Published app opened at 1440, 390 (rows as cards, no headings) and dark; 'Showing 25 of 3,708'.

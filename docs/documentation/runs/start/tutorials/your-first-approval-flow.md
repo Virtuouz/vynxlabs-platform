@@ -25,3 +25,7 @@
 ## Not run
 
 Deploying the flow and starting it by hand; 768 and 390 px; dark; keyboard-only; mail to approvers (the instance has `MAIL_CAPTURE_DIR`, not looked at).
+
+## Second check (2026-11-23)
+
+Checked by: second agent, 2026-11-23. Second pass: steps 1-11 run on tut-approve2 as Maya and Rowan, 1440 light. 390 and dark not walked for the editor; keyboard: Escape closes the groups list.

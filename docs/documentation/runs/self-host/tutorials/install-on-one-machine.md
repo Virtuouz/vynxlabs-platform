@@ -21,3 +21,7 @@
 
 ## Not run
 The stock image build from source; a restore from the backup; the object store's backup; TLS and a proxy; the bundled `MANAGED_WORKERS=host` containers for a tenant's workers (the run used the default, which started the worker through the host); 768/390 px; dark; keyboard. The throwaway project was taken down with `docker compose -p tut-install … down -v` after the run.
+
+## Second check (2026-11-23)
+
+Checked by: second agent, 2026-11-23. Second pass: not run, the permission to start the Compose project p31tut was denied. The previous run stands.

@@ -6,6 +6,8 @@ subjects: [install, backup, instance]
 
 You will have an instance running on your machine with its own database, object store and worker host, signed in as its first operator, with a script that ran and a backup of its database. It takes about 30 minutes. Nothing here is for production: see [the proxy how-to](../how-to/running/put-a-proxy-in-front) before anyone else can reach it.
 
+If you only need the steps of an installation, the how-to [Install an instance with Compose](../how-to/running/install-with-compose) is shorter. This tutorial adds to it a first script that runs, a backup and the checks on the way, and it runs the commands in `deploy/compose`, where the how-to runs them from the repository root.
+
 ## Before you start
 
 - A machine with Docker and Docker Compose, 2 GB of memory free, and a checkout of this repository. Run the commands in the folder `deploy/compose` of the checkout.

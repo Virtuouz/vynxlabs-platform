@@ -72,4 +72,6 @@ Next:
 - **Sign-in fails.** The instance made the first operator only at its first start, and only with both settings. If the instance has members and nobody can sign in, see [Recover an operator](recover-an-operator).
 - **"The instance has no members. Set BOOTSTRAP_ADMIN_EMAIL and BOOTSTRAP_ADMIN_PASSWORD and restart..."** in the log: add them and restart.
 
+To be led through it from a fresh checkout, with a script run and a backup, and to see what each screen says, follow the tutorial [Install Volvel on one machine](../../tutorials/install-on-one-machine). This page is the short form for someone who knows what they want: it does not run a script or take a backup.
+
 Related: [Settings](../../reference/settings), [Configuration groups](../../reference/running/configuration), [Install on Fly.io](install-on-fly).

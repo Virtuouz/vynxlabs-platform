@@ -6,6 +6,7 @@ import {
   EmptyState,
   Notice,
   type Option,
+  pastLimit,
   SelectField,
   SideSheet,
   TextField,
@@ -32,6 +33,8 @@ export interface FormField {
   initial?: string;
   hint?: string;
   required?: boolean;
+  /** The most characters the field takes: said at the field, and a longer text is refused, never cut. */
+  maxLength?: number;
   options?: { value: string; label: string }[];
   /**
    * With `options`: nothing is chosen for the person, who has to pick one. For a
@@ -281,6 +284,16 @@ export function CreateDialog({
           .map((f) => f.name);
         setUnpicked(missing);
         if (missing.length > 0) return;
+        // A text past its limit is said at its field (it shows how far over), and nothing is sent.
+        if (
+          config.fields.some(
+            (f) =>
+              f.maxLength !== undefined &&
+              !(f.when && !f.when(values)) &&
+              pastLimit(values[f.name] ?? "", f.maxLength),
+          )
+        )
+          return;
         setBusy(true);
         setError(undefined);
         try {
@@ -360,6 +373,7 @@ export function CreateDialog({
             type={field.type ?? "text"}
             value={values[field.name] ?? ""}
             required={field.required ?? true}
+            {...(field.maxLength !== undefined ? { maxLength: field.maxLength } : {})}
             {...(field.placeholder ? { placeholder: field.placeholder } : {})}
             {...(field.hint ? { hint: field.hint } : {})}
             error={fieldError(field.name)}

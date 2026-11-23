@@ -47,7 +47,8 @@ const ready = async (page: Page, looks: Look[]) => {
       ? scope.locator(look.css).first()
       : look.role
         ? scope.getByRole(look.role as never, {
-            ...(look.name ? { name: look.name } : {}),
+            // Exactly: "Tables" is not "The Tables list".
+            ...(look.name ? { name: look.name, exact: true } : {}),
             ...(look.level ? { level: look.level } : {}),
           })
         : look.text
@@ -160,13 +161,94 @@ test("the pictures the documentation shows are taken", async ({ browser }) => {
       { number: "A-1043", status: "shipped", total: 86 },
     ],
   });
-  const at = `/t/${tenant.id}/workspaces/${dev.id}`;
+  // A table made in the console, as a person makes it (not deployed from a repository): its
+  // Definition shows the actions on its columns, which a repository's table does not.
+  await call(page, "PUT", `${W}/resources/customers`, {
+    kind: "table",
+    schemaVersion: 1,
+    ownership: "ui",
+    create: true,
+    body: {
+      description: "The people who buy from the shop.",
+      columns: {
+        name: { type: "text", required: true, description: "What they are called." },
+        email: { type: "text", unique: true, description: "Where their receipts go." },
+        tier: { type: "enum", values: ["standard", "member"], default: "standard" },
+        joined: { type: "date" },
+      },
+      display: "name",
+      indexes: [["tier"]],
+    },
+  });
+  await call(page, "POST", `${W}/rows/customers`, {
+    rows: [
+      { name: "Ada Okafor", email: "ada@example.com", tier: "member", joined: "2026-01-12" },
+      { name: "Ben Ito", email: "ben@example.com", tier: "standard", joined: "2026-02-03" },
+    ],
+  });
+
+  // The scene of the tutorial "Your first table": a table made in the console in the Sandbox,
+  // as the tutorial builds it: three columns, two rules, five rows, and a saved view.
+  const sandbox = await call(page, "POST", `/tenants/${tenant.id}/workspaces`, {
+    slug: "sandbox",
+    name: "Sandbox",
+    type: "dev",
+  });
+  const S = `/tenants/${tenant.id}/workspaces/${sandbox.id}`;
+  await call(page, "PUT", `${S}/resources/visit-notes`, {
+    kind: "table",
+    schemaVersion: 1,
+    ownership: "ui",
+    create: true,
+    body: {
+      description: "What the vet wrote down after a visit.",
+      columns: {
+        summary: { type: "text", required: true },
+        minutes: { type: "integer" },
+        clinic: {
+          type: "enum",
+          values: ["Northside", "Riverside", "Hilltop"],
+          required: true,
+          default: "Northside",
+        },
+      },
+    },
+  });
+  await call(page, "POST", `${S}/rows/visit-notes`, {
+    rows: [
+      { summary: "Biscuit: ear check, drops sent home", minutes: 15, clinic: "Northside" },
+      { summary: "Juniper: booster shot", minutes: 10, clinic: "Riverside" },
+      { summary: "Pepper: limping on the left hind leg", minutes: 40, clinic: "Hilltop" },
+      { summary: "Moss: dental clean", minutes: 55, clinic: "Riverside" },
+      { summary: "Olive: annual check", minutes: 25, clinic: "Northside" },
+    ],
+  });
+  // The saved view "Long visits": the filter and the sort, kept under a name, for the person who is signed in.
+  const notes = await call(page, "GET", `${S}/tables/visit-notes`);
+  const list = `rows-${String(notes.id)
+    .replace(/[^a-z0-9]/gi, "")
+    .toLowerCase()
+    .slice(-20)}`;
+  await call(page, "POST", "/me/views", {
+    tenantId: tenant.id,
+    workspaceId: sandbox.id,
+    list,
+    name: "Long visits",
+    state: {
+      query: new URLSearchParams([
+        ["filter", JSON.stringify({ minutes: ">=20" })],
+        ["sort", "-minutes"],
+      ]).toString(),
+    },
+  });
+  const atOf: Record<string, string> = {
+    handbook: `/t/${tenant.id}/workspaces/${dev.id}`,
+    "visit-notes": `/t/${tenant.id}/workspaces/${sandbox.id}`,
+  };
   await first.context().close();
 
   // The scenes the list's `setup` names. Each is built above, once, before any is taken.
-  const scenes = new Set(["handbook"]);
-  for (const shot of SHOTS)
-    expect(scenes.has(shot.setup), `${shot.name}: unknown setup`).toBe(true);
+  for (const shot of SHOTS) expect(atOf[shot.setup], `${shot.name}: unknown setup`).toBeTruthy();
 
   // A clean folder: a file left from an earlier run is never mistaken for one of this.
   rmSync(OUT, { recursive: true, force: true });
@@ -181,7 +263,7 @@ test("the pictures the documentation shows are taken", async ({ browser }) => {
     await signInWithPassword(shown, ADMIN.email, ADMIN.password);
     for (const shot of SHOTS.filter((one) => one.themes.includes(theme))) {
       await shown.setViewportSize(shot.viewport);
-      await shown.goto(`${at}/${shot.address}`);
+      await shown.goto(`${atOf[shot.setup]}/${shot.address}`);
       await shown.reload();
       await ready(shown, shot.ready);
       for (const step of shot.steps as Step[]) await act(shown, step);

@@ -1068,6 +1068,23 @@ function ReferenceField({
   );
 }
 
+/** The button of a file field, in the inspector and in Add row: it chooses a file, or replaces the one there is. */
+function ChooseFileButton({
+  chosen,
+  loading,
+  onClick,
+}: {
+  chosen: boolean;
+  loading?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <Button {...(loading !== undefined ? { loading } : {})} onClick={onClick}>
+      {chosen ? "Replace" : "Choose a file"}
+    </Button>
+  );
+}
+
 /**
  * The file in a file column, replaced or removed from the inspector. Each is asked about first,
  * and says that the old file stays in the row's history, so nothing is lost by saying yes.
@@ -1089,14 +1106,19 @@ function FileField({
   const input = useRef<HTMLInputElement>(null);
   const has = typeof value === "string" && value !== "";
   const change = async (next: File | null) => {
-    const sure = await ask.confirm({
-      title: next ? `Replace the file in ${column.name}?` : `Remove the file from ${column.name}?`,
-      text: `${
-        next ? `${next.name} takes its place. ` : "The row will have no file. "
-      }The old file stays in this row's history, until that history expires.`,
-      action: next ? "Replace" : "Remove",
-      danger: next === null,
-    });
+    // With no file there is nothing to replace and no history to say: choosing one just adds it.
+    const sure =
+      (!has && next) ||
+      (await ask.confirm({
+        title: next
+          ? `Replace the file in ${column.name}?`
+          : `Remove the file from ${column.name}?`,
+        text: `${
+          next ? `${next.name} takes its place. ` : "The row will have no file. "
+        }The old file stays in this row's history, until that history expires.`,
+        action: next ? "Replace" : "Remove",
+        danger: next === null,
+      }));
     if (!sure) return;
     setBusy(true);
     try {
@@ -1107,7 +1129,7 @@ function FileField({
           )
         : null;
       await onSave({ [column.name]: stored ? stored.id : null });
-      notify.success(next ? "File replaced." : "File removed.");
+      notify.success(next ? (has ? "File replaced." : "File added.") : "File removed.");
     } catch (error) {
       notify.error(error);
     } finally {
@@ -1138,9 +1160,7 @@ function FileField({
                 if (file) void change(file);
               }}
             />
-            <Button loading={busy} onClick={() => input.current?.click()}>
-              Replace
-            </Button>
+            <ChooseFileButton chosen={has} loading={busy} onClick={() => input.current?.click()} />
             {has ? (
               <Button disabled={busy} onClick={() => void change(null)}>
                 Remove
@@ -1535,9 +1555,10 @@ function AddRow({
                     });
                   }}
                 />
-                <Button onClick={() => fileInputs.current[column.name]?.click()}>
-                  {files[column.name] ? "Replace" : "Choose a file"}
-                </Button>
+                <ChooseFileButton
+                  chosen={Boolean(files[column.name])}
+                  onClick={() => fileInputs.current[column.name]?.click()}
+                />
                 {files[column.name] ? (
                   <>
                     <span className="font-mono text-code break-all">
@@ -1680,6 +1701,7 @@ export function Tables({ root, link }: { root: string; link: string }) {
             required: false,
             placeholder: "Notes taken in meetings",
             hint: "In plain words. Shown under the table's name.",
+            maxLength: 500,
           },
           { name: "column", label: "First column", placeholder: "title" },
           { name: "type", label: "It holds", options: TYPES },
@@ -1745,7 +1767,7 @@ export function Tables({ root, link }: { root: string; link: string }) {
             schemaVersion: 1,
             ownership: "ui",
             body: {
-              ...(description.trim() ? { description: description.trim().slice(0, 500) } : {}),
+              ...(description.trim() ? { description: description.trim() } : {}),
               columns: made,
               ...(policy === "owner" ? { policy: { type: "owner", column: "owner_id" } } : {}),
             },
@@ -2436,6 +2458,18 @@ interface ColumnAction {
   disabled?: boolean;
 }
 
+/**
+ * A value as text with its keys in order, so that two that say the same compare equal whatever order
+ * the store returned their keys in (a rule comes back with `when` before `allow`).
+ */
+function sameJson(value: unknown): string {
+  return JSON.stringify(value, (_key, each) =>
+    each && typeof each === "object" && !Array.isArray(each)
+      ? Object.fromEntries(Object.entries(each).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)))
+      : each,
+  );
+}
+
 function Definition({
   root,
   link,
@@ -2476,11 +2510,11 @@ function Definition({
   // The rules editor is started afresh when the rules change from elsewhere (an undo, a deploy),
   // and not when its own save comes back: it would lose its "Saved" and its place.
   const rules = useRef<{ json: string; own: string | undefined; version: number }>({
-    json: JSON.stringify(table.policy),
+    json: sameJson(table.policy),
     own: undefined,
     version: 0,
   });
-  const policyNow = JSON.stringify(table.policy);
+  const policyNow = sameJson(table.policy);
   if (policyNow !== rules.current.json) {
     rules.current.json = policyNow;
     if (policyNow !== rules.current.own) rules.current.version += 1;
@@ -2534,9 +2568,10 @@ function Definition({
       action: "Save",
       required: false,
       multiline: true,
+      maxLength: 500,
     });
     if (next === null) return;
-    const said = next.trim().slice(0, 500);
+    const said = next.trim();
     if (said === (table.description ?? "")) return;
     await change(
       (body) => {
@@ -2624,9 +2659,10 @@ function Definition({
           action: "Save",
           required: false,
           multiline: true,
+          maxLength: 500,
         });
         if (next === null) return;
-        const said = next.trim().slice(0, 500);
+        const said = next.trim();
         if (said === (row.description ?? "")) return;
         void quietly(
           change(
@@ -3031,7 +3067,7 @@ function Definition({
             policy={table.policy as Policy}
             columns={active}
             onSave={(policy) => {
-              rules.current.own = JSON.stringify(policy);
+              rules.current.own = sameJson(policy);
               return change(
                 (body) => {
                   body.policy = policy;

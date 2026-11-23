@@ -2169,3 +2169,80 @@ test("Phase 30 walk-fix F: a refusal with a code shown in Add row's sheet offers
   await within(dialog).findByText("Someone else saved this since you opened it.");
   expect(within(dialog).getByRole("button", { name: "What does this mean?" })).toBeTruthy();
 });
+
+test("m1fix: a file field with no file offers choosing one, and adding it asks nothing about a history", async () => {
+  routes[`POST /api/v1${root}/files`] = () => [201, { id: "f2", name: "new.txt" }];
+  routes[`PATCH /api/v1${root}/row/r1/orders`] = (body) => [
+    200,
+    { ...rows[0], ...(body as object) },
+  ];
+  openOrderWithCustomerAndFile({});
+  await screen.findByLabelText("New file for attachment");
+  expect(screen.queryByRole("button", { name: "Replace" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Remove" })).toBeNull();
+  expect(screen.getByRole("button", { name: "Choose a file" })).toBeTruthy();
+  const input = screen.getByLabelText("New file for attachment") as HTMLInputElement;
+  fireEvent.change(input, { target: { files: [new File(["hi"], "new.txt")] } });
+  await waitFor(() =>
+    expect(calls.find((call) => call.method === "PATCH")?.body).toEqual({ attachment: "f2" }),
+  );
+  expect(screen.queryByText(/old file stays/)).toBeNull();
+});
+
+test("m1fix: Who sees rows says it is saved in rules mode as in owner mode, when the server answers with the keys in its own order", async () => {
+  const saved = editable();
+  const table = orders("ui");
+  (table as { policy: unknown }).policy = { type: "open" };
+  routes[`GET /api/v1${root}/tables/orders`] = () => [200, table];
+  routes[`PUT /api/v1${root}/resources/orders`] = (body) => {
+    const policy = (body as { body: { policy: { rules?: { allow: string; when: object }[] } } })
+      .body.policy;
+    // The store keeps an object's keys in an order of its own: `when` comes before `allow`.
+    table.policy = {
+      type: "rules",
+      rules: (policy.rules ?? []).map((rule) => ({ when: rule.when, allow: rule.allow })),
+    } as never;
+    return [200, { version: 4 }];
+  };
+  show(<TableView root={root} name="orders" link="/t/t1/workspaces/w1" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Definition" }));
+  fireEvent.change(await screen.findByLabelText("Who sees rows"), { target: { value: "rules" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save who sees rows" }));
+  await waitFor(() => expect(saved().body).toBeTruthy());
+  expect(await screen.findByText("Saved. It applies from the next request.")).toBeTruthy();
+  // It stays, after the screen has read the table again.
+  await new Promise((done) => setTimeout(done, 300));
+  expect(screen.getByText("Saved. It applies from the next request.")).toBeTruthy();
+}, 15000);
+
+test("m1fix: a table's description past 500 characters is refused at the field, in Create table and when it is edited, and is never cut", async () => {
+  const long = "x".repeat(501);
+  // Create table.
+  routes[`GET /api/v1${root}/tables`] = () => [200, { items: [] }];
+  routes[`PUT /api/v1${root}/resources/visits`] = () => [201, {}];
+  show(<Tables root={root} link="/t/t1/workspaces/w1" />);
+  fireEvent.click(
+    (await screen.findAllByRole("button", { name: "Create table" }))[0] as HTMLElement,
+  );
+  const dialog = await screen.findByRole("dialog");
+  fireEvent.input(within(dialog).getByLabelText("Name"), { target: { value: "visits" } });
+  fireEvent.input(within(dialog).getByLabelText("What it holds"), { target: { value: long } });
+  fireEvent.input(within(dialog).getByLabelText("First column"), { target: { value: "title" } });
+  fireEvent.submit(dialog.querySelector("form") as HTMLFormElement);
+  expect(await within(dialog).findByText("Use at most 500 characters. This is 501.")).toBeTruthy();
+  expect(calls.some((call) => call.method === "PUT")).toBe(false);
+  cleanup();
+
+  // Editing it from Definition.
+  const saved = editable();
+  show(<TableView root={root} name="orders" link="/t/t1/workspaces/w1" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Definition" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Describe the table" }));
+  const asked = await screen.findByRole("dialog");
+  fireEvent.change(within(asked).getByRole("textbox"), { target: { value: long } });
+  expect(await within(asked).findByText("Use at most 500 characters. This is 501.")).toBeTruthy();
+  expect((within(asked).getByRole("button", { name: "Save" }) as HTMLButtonElement).disabled).toBe(
+    true,
+  );
+  expect(saved()).toBeUndefined();
+}, 20000);

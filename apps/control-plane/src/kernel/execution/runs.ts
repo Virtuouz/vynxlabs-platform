@@ -119,6 +119,52 @@ export interface StartRun {
   relay?: Relay | undefined;
 }
 
+/** Where a value has text that the database cannot hold: a NUL, or half of a character. */
+export function unstorable(value: unknown, path = ""): string | undefined {
+  const bad = (text: string) => text.includes("\u0000") || !text.isWellFormed();
+  if (typeof value === "string") return bad(value) ? path || "the value" : undefined;
+  if (Array.isArray(value)) {
+    for (const [index, item] of value.entries()) {
+      const found = unstorable(item, `${path}[${index}]`);
+      if (found) return found;
+    }
+  } else if (typeof value === "object" && value !== null) {
+    for (const [key, item] of Object.entries(value)) {
+      if (bad(key)) return path ? `${path}.${key}` : key;
+      const found = unstorable(item, path ? `${path}.${key}` : key);
+      if (found) return found;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * The value as the database can hold it: half a character becomes U+FFFD, and a NUL is
+ * left out. A step whose expression cuts text in the middle of a character gives such text.
+ */
+export function storable<T>(value: T): T {
+  const clean = (text: string) => text.toWellFormed().replaceAll("\u0000", "");
+  const walk = (one: unknown): unknown => {
+    if (typeof one === "string") return clean(one);
+    if (Array.isArray(one)) return one.map(walk);
+    if (typeof one === "object" && one !== null) {
+      return Object.fromEntries(Object.entries(one).map(([key, item]) => [clean(key), walk(item)]));
+    }
+    return one;
+  };
+  return walk(value) as T;
+}
+
+/** Refuses an input that cannot be stored, naming where, so that a start answers 400 and not 500. */
+export function refuseUnstorable(input: unknown): void {
+  const found = unstorable(input);
+  if (found) {
+    throw badRequest(
+      `The input has text the platform cannot store, at ${found}: a null character, or half of a character. Remove it and send again.`,
+    );
+  }
+}
+
 /** Keeps a small payload for the row, and puts a large one in file storage. */
 export async function storePayload(
   kernel: Kernel,
@@ -127,7 +173,7 @@ export async function storePayload(
   value: unknown,
   folder = "runs",
 ) {
-  const text = JSON.stringify(value ?? null);
+  const text = JSON.stringify(storable(value ?? null));
   if (Buffer.byteLength(text) <= INLINE_PAYLOAD_BYTES) return { inline: text, ref: null };
   const ref = `${folder}/${runId}/${name}.json`;
   await kernel.storage.put(ref, text, "application/json");
@@ -275,6 +321,7 @@ export async function startRun(kernel: Kernel, trx: Trx, request: StartRun) {
   const trace = traceFor(
     request.step ? { traceId: flowRun?.trace_id ?? null, ...request.step } : undefined,
   );
+  refuseUnstorable(request.input);
   const input = await storePayload(kernel, id, "input", request.input ?? {});
   const jobId = await kernel.queue.enqueue(
     queueName(request.workspaceId, body.worker),

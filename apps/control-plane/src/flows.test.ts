@@ -408,14 +408,10 @@ function bundle(
       ],
     ),
     // Two ends, each under the inline limit and together over it: this flow's own output is stored.
-    flow(
-      "wide",
-      { start: manual, a: set({ x: "trigger.blob" }), b: set({ y: "trigger.blob" }) },
-      [
-        ["start", "a"],
-        ["start", "b"],
-      ],
-    ),
+    flow("wide", { start: manual, a: set({ x: "trigger.blob" }), b: set({ y: "trigger.blob" }) }, [
+      ["start", "a"],
+      ["start", "b"],
+    ]),
     flow(
       "wide-parent",
       {
@@ -430,6 +426,9 @@ function bundle(
         ["use", "note"],
       ],
     ),
+    flow("cutting", { start: manual, half: set({ half: "trigger.text.substring(0, 2)" }) }, [
+      ["start", "half"],
+    ]),
     flow(
       "heavy",
       { start: manual, make: run("big"), use: set({ note: "steps.make.output.note" }) },
@@ -844,7 +843,9 @@ describe("running a flow", () => {
     const failed = await finished(await start("wide-parent", { blob, failUntil }));
     expect(failed.status).toBe("failed");
     const child = await read(step(failed, "child").childFlowRunId);
-    expect(child.output).toEqual({ stored: expect.stringMatching(/^flow-runs\/.+\/output\.json$/) });
+    expect(child.output).toEqual({
+      stored: expect.stringMatching(/^flow-runs\/.+\/output\.json$/),
+    });
     // The next step's expressions see the note, as they do for a script's large output.
     const next = await alice.post(`${ws()}/flow-runs`, {
       flow: "wide-parent",
@@ -861,6 +862,20 @@ describe("running a flow", () => {
     expect(step(again, "child").output).toEqual({
       stored: expect.stringContaining(`flow-runs/${retried.body.id}/`),
     });
+  });
+
+  test("a value the database cannot hold does not leave the run going for ever (FLW-02)", async () => {
+    // The second character is an emoji: cut after two units, half of it is left.
+    const done = await finished(await start("cutting", { text: "a\u{1F600}b" }));
+    expect(done.status, JSON.stringify(done.error)).toBe("succeeded");
+    expect(done.output.half.half).toBeTypeOf("string");
+    // A NUL in what a start is given is refused, naming where, and is not a 500.
+    const refused = await alice.post(`${ws()}/flow-runs`, {
+      flow: "cutting",
+      input: { text: "a\u0000b" },
+    });
+    expect(refused.status).toBe(400);
+    expect(refused.body.detail).toContain("at text");
   });
 
   test("a sub-flow runs as a step, and a foreach can run a flow per item", async () => {

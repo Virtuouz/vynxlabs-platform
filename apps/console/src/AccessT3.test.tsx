@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { EndUsers } from "./screens/EndUsers.tsx";
 import { AttributesDialog, EndUserGroups, Groups } from "./screens/Groups.tsx";
 import { MemberList } from "./screens/Members.tsx";
 import { Tenant } from "./screens/Tenant.tsx";
@@ -217,4 +218,88 @@ test("ACC-MP9: a service account is renamed in place, and its fixed key is shown
   fireEvent.click(screen.getByRole("button", { name: "Save" }));
   await waitFor(() => expect(calls.some((c) => c.method === "PATCH")).toBe(true));
   expect(calls.find((c) => c.method === "PATCH")?.body).toEqual({ name: "pipeline" });
+});
+
+const pat = {
+  id: "u1",
+  email: "pat@x.test",
+  name: "Pat",
+  hasPassword: true,
+  attributes: {},
+  groups: [],
+  disabled: false,
+  lastSignedInAt: "2026-11-02T00:00:00Z",
+  createdAt: "2026-11-01T00:00:00Z",
+};
+
+test("ACC-MP10, ACC-MP11: an end user is renamed, and a link is built on the address chosen", async () => {
+  history.replaceState(null, "", "/t/t1/end-users?user=u1");
+  routes.push((method, url) => {
+    if (method === "GET" && url.includes("/end-users?"))
+      return [200, { items: [pat], nextCursor: null }];
+    if (method === "GET" && url.endsWith("/domains"))
+      return [
+        200,
+        {
+          items: [
+            { id: "d1", hostname: "portal.acme.test", enabled: true },
+            { id: "d2", hostname: "old.acme.test", enabled: false },
+          ],
+        },
+      ];
+    if (method === "POST" && url.endsWith("/links"))
+      return [
+        201,
+        {
+          url: "https://portal.acme.test/reset/abc",
+          expiresAt: "2026-11-30T00:00:00Z",
+          emailed: false,
+        },
+      ];
+    return undefined;
+  });
+  show(<EndUsers base={base} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Rename" }));
+  await answer("Rename", "Patricia");
+  await waitFor(() => expect(calls.some((c) => c.method === "PATCH")).toBe(true));
+  expect(calls.find((c) => c.method === "PATCH")?.body).toEqual({ name: "Patricia" });
+  fireEvent.click(await screen.findByRole("button", { name: "Password reset link" }));
+  const dialog = await screen.findByRole("dialog");
+  const choices = within(dialog).getByLabelText("On which address") as HTMLSelectElement;
+  expect([...choices.options].map((o) => o.text)).toEqual([
+    "This instance's own address",
+    "portal.acme.test",
+  ]);
+  fireEvent.change(choices, { target: { value: "d1" } });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Make link" }));
+  await waitFor(() => expect(calls.some((c) => c.method === "POST")).toBe(true));
+  expect(calls.find((c) => c.method === "POST")?.body).toEqual({
+    purpose: "reset",
+    domainId: "d1",
+  });
+});
+
+test("ACC-MP12: a group of end users shows its key and who made it", async () => {
+  routes.push((method, url) =>
+    method === "GET" && url.endsWith("/end-user-groups")
+      ? [
+          200,
+          {
+            items: [
+              {
+                id: "e1",
+                key: "front-desk",
+                name: "Front desk",
+                description: "",
+                memberCount: 2,
+                managedBy: "provider",
+              },
+            ],
+          },
+        ]
+      : undefined,
+  );
+  show(<EndUserGroups base={base} />);
+  expect(await screen.findByText("front-desk")).toBeTruthy();
+  expect(screen.getByText("Identity provider")).toBeTruthy();
 });

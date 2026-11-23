@@ -513,6 +513,7 @@ export function endUserRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     });
     const Group = Type.Object({
       id: Id,
+      key: Type.String({ description: "What code and a repository name it by. It never changes." }),
       name: Type.String(),
       description: Type.String(),
       memberCount: Type.Integer(),
@@ -563,6 +564,7 @@ export function endUserRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         return {
           items: rows.map((row) => ({
             id: row.id,
+            key: row.key,
             name: row.name,
             description: row.description,
             memberCount: Number(row.member_count ?? 0),
@@ -632,6 +634,7 @@ export function endUserRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         if (!made.row) return reply.code(202).send(waiting(made.released));
         return reply.code(201).send({
           id: made.row.id,
+          key: made.row.key,
           name: made.row.name,
           description: made.row.description,
           memberCount: 0,
@@ -741,6 +744,7 @@ export function endUserRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         if (!changed.row) return reply.code(202).send(waiting(changed.released));
         return {
           id: changed.row.id,
+          key: changed.row.key,
           name: changed.row.name,
           description: changed.row.description,
           memberCount: changed.members ?? 0,

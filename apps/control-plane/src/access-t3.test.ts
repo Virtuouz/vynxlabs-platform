@@ -115,4 +115,15 @@ describe("tenant access, lane t3-access", () => {
     });
     expect(added.status).toBe(400);
   });
+
+  test("ACC-MP12: a group of end users is served with its key", async () => {
+    const made = await alice.post(`/tenants/${tenant}/end-user-groups`, { name: "Front desk" });
+    expect(made.status, JSON.stringify(made.body)).toBe(201);
+    expect(made.body.key).toBe("front-desk");
+    const listed = await alice.get(`/tenants/${tenant}/end-user-groups`);
+    expect(listed.body.items.find((one: Any) => one.id === made.body.id)).toMatchObject({
+      key: "front-desk",
+      managedBy: "release",
+    });
+  });
 });

@@ -338,6 +338,8 @@ export function Groups({ base, framed }: { base: string; framed?: Framed }) {
 
 interface EndUserGroup {
   id: string;
+  /** What code and a table's rules name it by. It never changes. */
+  key?: string;
   name: string;
   description: string;
   memberCount: number;
@@ -369,6 +371,16 @@ export function EndUserGroups({ base, framed }: { base: string; framed?: Framed 
         rowKey={(row) => row.id}
         columns={[
           { header: "Name", cell: (row) => <Mono>{row.name}</Mono> },
+          {
+            header: "Key",
+            priority: 2,
+            cell: (row) => (
+              <span className="inline-flex flex-wrap items-center gap-2">
+                {row.key ? <Code>{row.key}</Code> : null}
+                {row.managedBy === "provider" ? <Tag tone="neutral">Identity provider</Tag> : null}
+              </span>
+            ),
+          },
           {
             header: "What it is for",
             priority: 2,

@@ -6,6 +6,7 @@ import { DataTable } from "../kit/DataTable.tsx";
 import { ErrorState, Loading } from "../kit/LoadState.tsx";
 import { FilterChips, SectionLabel } from "../kit/layout.tsx";
 import { OneTimeSecret } from "../kit/OneTimeSecret.tsx";
+import { LoadMore } from "../kit/paged.tsx";
 import { SaveBar } from "../kit/SaveBar.tsx";
 import { Mono, StatePill } from "../kit/status.tsx";
 import { Time } from "../kit/Time.tsx";
@@ -284,10 +285,39 @@ interface Refusal {
 
 /** Who the provider has pushed, and the pushes that were refused with why. */
 function Pushed({ root }: { root: string }) {
-  const pushed = useLoad<{ people: PushedPerson[]; refusals: Refusal[] }>(`${root}/pushed`);
+  const pushed = useLoad<{
+    people: PushedPerson[];
+    refusals: Refusal[];
+    nextCursor: string | null;
+  }>(`${root}/pushed?limit=200`);
+  // The pages after the first, which a reload of the first drops.
+  const [more, setMore] = useState<{ people: PushedPerson[]; nextCursor: string | null }>();
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [moreError, setMoreError] = useState<Error>();
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only a new first page resets
+  useEffect(() => setMore(undefined), [pushed.data]);
+  const nextCursor = more ? more.nextCursor : (pushed.data?.nextCursor ?? null);
+  const loadMore = async () => {
+    if (!nextCursor) return;
+    setLoadingMore(true);
+    setMoreError(undefined);
+    try {
+      const next = await api.get<{ people: PushedPerson[]; nextCursor: string | null }>(
+        `${root}/pushed?limit=200&cursor=${encodeURIComponent(nextCursor)}`,
+      );
+      setMore((current) => ({
+        people: [...(current?.people ?? []), ...next.people],
+        nextCursor: next.nextCursor,
+      }));
+    } catch (error) {
+      setMoreError(error instanceof Error ? error : new Error(String(error)));
+    } finally {
+      setLoadingMore(false);
+    }
+  };
   const [filter, setFilter] = useUrlParam<"all" | "active" | "off">("people", "all");
   if (pushed.error) return <ErrorState error={pushed.error} onRetry={pushed.reload} />;
-  const people = pushed.data?.people ?? [];
+  const people = [...(pushed.data?.people ?? []), ...(more?.people ?? [])];
   const refusals = pushed.data?.refusals ?? [];
   const shown = people.filter((person) =>
     filter === "all" ? true : filter === "active" ? person.active : !person.active,
@@ -331,6 +361,14 @@ function Pushed({ root }: { root: string }) {
             },
             { header: "Last change", cell: (row) => <Time value={row.updatedAt} mode="ago" /> },
           ]}
+        />
+        <LoadMore
+          shown={people.length}
+          hasMore={nextCursor !== null}
+          loading={loadingMore}
+          error={moreError}
+          noun="people"
+          onMore={() => void loadMore()}
         />
       </section>
       <section className="flex flex-col gap-3">

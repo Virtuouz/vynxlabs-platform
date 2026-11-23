@@ -8,6 +8,7 @@ import {
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { inflateRawSync } from "node:zlib";
+import { newId } from "@volvel/db";
 import { generate } from "selfsigned";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { SignedXml } from "xml-crypto";
@@ -549,6 +550,31 @@ describe("a tenant's members signing in over OIDC", () => {
     expect(links).toMatchObject([
       { subject: "u-alice", email: "alice@acme.example", principalType: "member" },
     ]);
+    // A list longer than a page says where it goes on (GOV-34).
+    for (const subject of ["x-1", "x-2"]) {
+      await t.db
+        .insertInto("identity_link")
+        .values({
+          id: newId(),
+          provider_id: provider,
+          tenant_id: tenant,
+          subject,
+          principal_type: "end_user",
+          principal_id: newId(),
+        })
+        .execute();
+    }
+    const first = (await alice.get(`${providers()}/${provider}/links?limit=2`)).body;
+    expect(first.items).toHaveLength(2);
+    expect(typeof first.nextCursor).toBe("string");
+    const rest = (
+      await alice.get(
+        `${providers()}/${provider}/links?limit=2&cursor=${encodeURIComponent(first.nextCursor)}`,
+      )
+    ).body;
+    expect(rest.items).toHaveLength(1);
+    expect(rest.nextCursor).toBeNull();
+    await t.db.deleteFrom("identity_link").where("subject", "in", ["x-1", "x-2"]).execute();
     expect((await audit("sso.signed_in")).at(-1)?.details).toMatchObject({
       linked: true,
       created: false,

@@ -43,7 +43,7 @@ beforeEach(() => {
       return new Response(null, { status: 204 });
     }
     if (method === "PUT") state = { ...state, settings: body };
-    if (address.endsWith("/pushed")) {
+    if (address.includes("/pushed")) {
       return json({
         people: [
           {
@@ -205,4 +205,31 @@ test("a token says when it expires, and an expired one does not look live (GOV-2
   expect(rowOf("Old").textContent).toContain("Expired");
   expect(rowOf("Fresh").textContent).toContain("Active");
   expect(rowOf("Forever").textContent).toContain("Never");
+});
+
+test("people pushed past the first page say so and load on (GOV-34)", async () => {
+  const person = (n: number) => ({
+    userName: `u${n}@acme.example`,
+    email: `u${n}@acme.example`,
+    displayName: `Person ${n}`,
+    active: true,
+    updatedAt: "2026-11-12T10:00:00Z",
+  });
+  const fetched = globalThis.fetch;
+  vi.stubGlobal("fetch", async (address: string, init?: RequestInit) => {
+    if (address.endsWith("/pushed?limit=200"))
+      return new Response(JSON.stringify({ people: [person(1)], refusals: [], nextCursor: "c1" }), {
+        status: 200,
+      });
+    if (address.endsWith("/pushed?limit=200&cursor=c1"))
+      return new Response(JSON.stringify({ people: [person(2)], refusals: [], nextCursor: null }), {
+        status: 200,
+      });
+    return fetched(address, init);
+  });
+  show(<Provisioning root={root} instance={false} audience="members" />);
+  await screen.findByText("Person 1");
+  await screen.findByText("Showing the first 1 people.");
+  fireEvent.click(screen.getByRole("button", { name: "Load more" }));
+  await screen.findByText("Person 2");
 });

@@ -546,3 +546,56 @@ test("settings and a group mapping left unsaved say so, and can be put back (GOV
   fireEvent.click(within(mapping).getByRole("button", { name: "Discard" }));
   expect(screen.queryByLabelText("Group at the provider")).toBeNull();
 });
+
+test("a list that stops at its limit says so, and goes on (GOV-34)", async () => {
+  routes[`GET ${base}`] = () => [200, { items: [oidc] }];
+  routes[`GET ${base}/p1/group-maps`] = () => [200, { items: [] }];
+  routes["GET /api/v1/tenants/t1/groups?limit=200"] = () => [
+    200,
+    { items: [{ id: "g1", name: "Finance" }], nextCursor: "g-next" },
+  ];
+  routes["GET /api/v1/tenants/t1/groups?limit=200&search=ops"] = () => [
+    200,
+    { items: [{ id: "g9", name: "Ops" }], nextCursor: null },
+  ];
+  show(<SingleSignOn base="/tenants/t1" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Acme Login" }));
+
+  fireEvent.click(screen.getByRole("tab", { name: "Groups" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Add a mapping" }));
+  await screen.findByText("Showing the first 1 groups.");
+  const picker = screen.getByRole("combobox");
+  fireEvent.click(picker);
+  fireEvent.keyDown(picker, { key: "ArrowDown" });
+  fireEvent.change(screen.getByRole("combobox"), { target: { value: "ops" } });
+  await waitFor(() =>
+    expect(calls.some((call) => call.url.endsWith("/groups?limit=200&search=ops"))).toBe(true),
+  );
+});
+
+test("the people who signed in are paged, and say so (GOV-34)", async () => {
+  const link = (n: number) => ({
+    id: `l${n}`,
+    subject: `s-${n}`,
+    principalType: "member",
+    principalId: `m${n}`,
+    email: `p${n}@acme.example`,
+    name: null,
+    createdAt: "2026-11-01T10:00:00Z",
+    lastSignedInAt: null,
+  });
+  routes[`GET ${base}`] = () => [200, { items: [oidc] }];
+  routes[`GET ${base}/p1/group-maps`] = () => [200, { items: [] }];
+  routes[`GET ${base}/p1/links?limit=200`] = () => [200, { items: [link(1)], nextCursor: "c1" }];
+  routes[`GET ${base}/p1/links?limit=200&cursor=c1`] = () => [
+    200,
+    { items: [link(2)], nextCursor: null },
+  ];
+  show(<SingleSignOn base="/tenants/t1" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Acme Login" }));
+  fireEvent.click(screen.getByRole("tab", { name: "People" }));
+  await screen.findAllByText("p1@acme.example");
+  await screen.findByText("Showing the first 1 people.");
+  fireEvent.click(screen.getByRole("button", { name: "Load more" }));
+  await screen.findAllByText("p2@acme.example");
+});

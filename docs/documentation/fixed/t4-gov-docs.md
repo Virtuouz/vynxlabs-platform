@@ -46,3 +46,13 @@ Migration: none.
 - Siblings looked at: Branding, Retention, InstanceBranding, Environments, KitSheet (already use SaveBar); Domains tab and tokens act at once and say so.
 - Not done: field errors there are still one notice, not at the field.
 - Screens: provider Settings, Groups and Provisioning at 390/768/1440, light and dark: change a field, bar appears, reload leaves nothing; leave with a change asks; Discard; Ctrl+S.
+
+## GOV-34
+- Tests failed before: `sso.test.ts` (links `limit=2` answered 3), `scim.test.ts` "what cannot be taken in is refused..." (pushed `limit=2` answered 3), console `SingleSignOn.test.tsx` "a list that stops at its limit says so, and goes on (GOV-34)" and "the people who signed in are paged, and say so (GOV-34)", `Provisioning.test.tsx` "people pushed past the first page say so and load on (GOV-34)".
+- Routes: `GET .../identity-providers/:p/links` now takes `limit` and `cursor` and answers `nextCursor` (was a bare list cut at 1000); `GET .../provisioning/:p/pushed` takes the same and answers `nextCursor` for `people` (refusals unchanged). Default page 50, at most 200. API change, additive in shape. No bundle, schema or worker change.
+- Console: People and People pushed use `usePagedList` / the same cursor with "Showing the first N people." and Load more (`kit/paged.tsx` `LoadMore`); the group picker in Groups is searched on the server (`?search=`) with "Showing the first N groups." and Load more, and keeps a group already chosen as an option when a search leaves it out (options are held stable, or the box resets what is typed).
+- Siblings looked at: Members, End users, Operate events (already page); the role picker in Settings (`roles?limit=200`, workspace-less roles only) is still cut at 200 without saying: see Found.
+- Screens: provider > Groups (Add a mapping, type in the picker), People, Provisioning > People pushed; 390 px; keyboard in the picker.
+
+## Found
+- The role picker in provider Settings (`SingleSignOn.tsx`, `roles?limit=200`) is cut at 200 roles without saying.

@@ -14,7 +14,7 @@ import {
   TextField,
 } from "@volvel/ui";
 import { Plus, Trash2 } from "lucide-react";
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, failureText, notify } from "../ask.tsx";
 import { DataTable } from "../kit/DataTable.tsx";
@@ -22,6 +22,7 @@ import { listOf } from "../kit/format.ts";
 import { ErrorState, Loading } from "../kit/LoadState.tsx";
 import { Stepper } from "../kit/layout.tsx";
 import { PageHeader } from "../kit/PageHeader.tsx";
+import { LoadMore, usePagedList } from "../kit/paged.tsx";
 import { SaveBar } from "../kit/SaveBar.tsx";
 import { SecretField } from "../kit/SecretField.tsx";
 import { Mono, StatePill, Tag } from "../kit/status.tsx";
@@ -555,8 +556,11 @@ function Domains({ root, instance }: { root: string; instance: boolean }) {
 }
 
 function Groups({ base, root, audience }: { base: string; root: string; audience: Audience }) {
-  const groups = useLoad<{ items: { id: string; name: string }[] }>(
-    `${base}/${audience === "members" ? "groups" : "end-user-groups"}?limit=200`,
+  // The picker is searched on the server, so a group past the first page can still be chosen.
+  const [typed, setTyped] = useState("");
+  const groups = usePagedList<{ id: string; name: string }>(
+    `${base}/${audience === "members" ? "groups" : "end-user-groups"}`,
+    { search: typed, limit: 200 },
   );
   const stored = useLoad<{ items: GroupMap[] }>(`${root}/group-maps`);
   const [edited, setEdited] = useState<GroupMap[]>();
@@ -568,10 +572,22 @@ function Groups({ base, root, audience }: { base: string; root: string; audience
   const tenantId = base.split("/").pop();
   const change = (index: number, patch: Partial<GroupMap>) =>
     setEdited(rows.map((row, at) => (at === index ? { ...row, ...patch } : row)));
-  const options = (groups.data?.items ?? []).map((group) => ({
-    value: group.id,
-    label: group.name,
-  }));
+  // A group already chosen stays an option when a search leaves it out of the list. The same
+  // list until something changes: a list that changes under the box resets what is typed in it.
+  const chosenKey = JSON.stringify([
+    (groups.items ?? []).map((group) => [group.id, group.name]),
+    rows.map((row) => [row.groupId, row.groupName ?? null]),
+  ]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: chosenKey stands for both lists
+  const options = useMemo(() => {
+    const listed = groups.items ?? [];
+    return [
+      ...listed.map((group) => ({ value: group.id, label: group.name })),
+      ...rows
+        .filter((row) => row.groupId && !listed.some((one) => one.id === row.groupId))
+        .map((row) => ({ value: row.groupId, label: row.groupName ?? row.groupId })),
+    ];
+  }, [chosenKey]);
   const saveMapping = async () => {
     // A row left empty is nothing; one half filled in is not saved quietly without its half.
     const half = rows.findIndex((row) => !!row.value.trim() !== !!row.groupId);
@@ -648,7 +664,13 @@ function Groups({ base, root, audience }: { base: string; root: string; audience
               label="Group here"
               options={options}
               value={row.groupId || undefined}
-              onChange={(value) => change(index, { groupId: value ?? "" })}
+              onSearch={setTyped}
+              onChange={(value) =>
+                change(index, {
+                  groupId: value ?? "",
+                  groupName: options.find((option) => option.value === value)?.label ?? "",
+                })
+              }
             />
           </div>
           <Button
@@ -659,6 +681,14 @@ function Groups({ base, root, audience }: { base: string; root: string; audience
           </Button>
         </div>
       ))}
+      <LoadMore
+        shown={groups.items?.length ?? 0}
+        hasMore={groups.hasMore}
+        loading={groups.loadingMore}
+        error={groups.moreError}
+        noun="groups"
+        onMore={groups.loadMore}
+      />
       <div className="flex flex-wrap gap-2">
         <Button onClick={() => setEdited([...rows, { value: "", groupId: "" }])}>
           <Plus size={16} aria-hidden="true" /> Add a mapping
@@ -675,7 +705,7 @@ function Groups({ base, root, audience }: { base: string; root: string; audience
         }}
         what="this group mapping"
       />
-      {groups.data && options.length === 0 ? (
+      {groups.items && options.length === 0 && !typed ? (
         <Notice tone="attention">
           {audience === "members"
             ? "This tenant has no groups yet. Create one under Groups."
@@ -1040,59 +1070,69 @@ function Settings({
 }
 
 function People({ root }: { root: string }) {
-  const list = useLoad<{ items: Link[] }>(`${root}/links`);
+  const list = usePagedList<Link>(`${root}/links`, { limit: 200 });
   return list.error ? (
     <ErrorState error={list.error} onRetry={list.reload} />
   ) : (
-    <DataTable<Link>
-      variant="static"
-      framed
-      label="People who signed in"
-      rows={list.data?.items ?? []}
-      rowKey={(row) => row.id}
-      empty={
-        <EmptyState title="Nobody yet">
-          People appear here the first time they sign in through this provider.
-        </EmptyState>
-      }
-      columns={[
-        { header: "Person", cell: (row) => row.name || row.email || "Unknown" },
-        { header: "Email at the provider", cell: (row) => row.email ?? "" },
-        {
-          header: "Subject",
-          cell: (row) => <code className="font-mono text-code break-all">{row.subject}</code>,
-        },
-        {
-          header: "Last signed in",
-          cell: (row) => (row.lastSignedInAt ? when(row.lastSignedInAt) : "Never"),
-        },
-        {
-          header: "",
-          cell: (row) => (
-            <Button
-              onClick={async () => {
-                const sure = await ask.confirm({
-                  title: `Untie ${row.email ?? row.subject}?`,
-                  text: "For when this person's identity at the provider was replaced. Their next sign-in ties them again by email, under the rules of a first sign-in.",
-                  action: "Untie",
-                  danger: true,
-                });
-                if (!sure) return;
-                try {
-                  await api.delete(`${root}/links/${row.id}`);
-                  notify.success("Untied. Their next sign-in ties them again by email.");
-                  list.reload();
-                } catch (error) {
-                  notify.error(error);
-                }
-              }}
-            >
-              Untie
-            </Button>
-          ),
-        },
-      ]}
-    />
+    <div className="flex flex-col gap-3">
+      <DataTable<Link>
+        variant="static"
+        framed
+        label="People who signed in"
+        rows={list.items ?? []}
+        rowKey={(row) => row.id}
+        empty={
+          <EmptyState title="Nobody yet">
+            People appear here the first time they sign in through this provider.
+          </EmptyState>
+        }
+        columns={[
+          { header: "Person", cell: (row) => row.name || row.email || "Unknown" },
+          { header: "Email at the provider", cell: (row) => row.email ?? "" },
+          {
+            header: "Subject",
+            cell: (row) => <code className="font-mono text-code break-all">{row.subject}</code>,
+          },
+          {
+            header: "Last signed in",
+            cell: (row) => (row.lastSignedInAt ? when(row.lastSignedInAt) : "Never"),
+          },
+          {
+            header: "",
+            cell: (row) => (
+              <Button
+                onClick={async () => {
+                  const sure = await ask.confirm({
+                    title: `Untie ${row.email ?? row.subject}?`,
+                    text: "For when this person's identity at the provider was replaced. Their next sign-in ties them again by email, under the rules of a first sign-in.",
+                    action: "Untie",
+                    danger: true,
+                  });
+                  if (!sure) return;
+                  try {
+                    await api.delete(`${root}/links/${row.id}`);
+                    notify.success("Untied. Their next sign-in ties them again by email.");
+                    list.reload();
+                  } catch (error) {
+                    notify.error(error);
+                  }
+                }}
+              >
+                Untie
+              </Button>
+            ),
+          },
+        ]}
+      />
+      <LoadMore
+        shown={list.items?.length ?? 0}
+        hasMore={list.hasMore}
+        loading={list.loadingMore}
+        error={list.moreError}
+        noun="people"
+        onMore={list.loadMore}
+      />
+    </div>
   );
 }
 

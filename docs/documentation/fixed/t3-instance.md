@@ -16,3 +16,9 @@ Items: INS-MP3, 4, 5, 7, 9, 10, 11, 12; HOST-MP2, 3/4, 5, 7. Each test was seen 
 - Siblings: `/instance/databases` (locations) is not changed. Help topic: the screen uses `instance-databases` because a topic of its own would be a new file in `packages/docs/content`, not mine to edit: the docs lane should add `instance-health` and point `nav.ts` at it.
 - Left out: "a standalone worker's settings" are not on this screen (a worker is another process; HOST-MP7).
 - Walk: Instance > Health at 1440/768/390, light and dark, keyboard (Check again), reload; with the database down (stop it) and with a second key set (`rekey` mid-way). States: loading, each section's error with Try again, not ready, read only.
+
+## INS-MP7 (an operator's powers on a tenant, without a grant)
+- `apps/console/src/screens/TenantPowers.tsx` (new), drawn by the tenant inspector in `Tenants.tsx` for operators only: "Workers the instance starts" (PATCH `/tenants/:t` `managedWorkers`; an operator's off locks it, as D16 says; said in the words) and "History kept" (the effective days; "Change how long" opens a side sheet with `RetentionSettings`, which now takes `bare` so the page's own title is not drawn twice). No API changed: both routes already allow an operator at the instance.
+- Test: `TenantScreens.test.tsx` "an operator turns workers off for a tenant and reads its retention from the list, with no grant (INS-MP7)".
+- Siblings: the same switch stays on the tenant's Workers screen and retention on its Retention screen (same routes). Not added to the mobile list's row menu.
+- Walk: Tenants, pick a row (inspector at 1440, dialog at 390), turn workers off and on, open the sheet, shorten a period (confirm), reload. Keyboard: both buttons and the sheet (Esc closes). Copy as written. Not signed in with a grant: no tenant data is shown.

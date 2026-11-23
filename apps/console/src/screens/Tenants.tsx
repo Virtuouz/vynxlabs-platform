@@ -6,6 +6,7 @@ import { Mono, Tag } from "../kit/status.tsx";
 import { Time } from "../kit/Time.tsx";
 import { Link, navigate } from "../router.tsx";
 import { DeleteTenantButton, RenameTenantButton } from "./Environments.tsx";
+import { TenantPowers } from "./TenantPowers.tsx";
 
 interface TenantRow {
   id: string;
@@ -81,28 +82,31 @@ export function Tenants({ me }: { me: Me }) {
         title: (row) => row.name,
         eyebrow: () => "Tenant",
         body: (row) => (
-          <KeyValues
-            rows={[
-              { label: "Slug", value: row.slug, mono: true },
-              { label: "Workspaces", value: String(row.workspaceCount ?? "—") },
-              ...(operator
-                ? [
-                    {
-                      label: "Your access",
-                      value: member(row)
-                        ? "A member"
-                        : "Through an operator access grant, which needs a reason",
-                    },
-                    {
-                      label: "Tables kept in",
-                      value: row.dataLocation ?? "The instance's database",
-                    },
-                  ]
-                : []),
-              { label: "Created", value: <Time value={row.createdAt} /> },
-              { label: "ID", value: row.id, mono: true },
-            ]}
-          />
+          <div className="flex flex-col gap-5">
+            <KeyValues
+              rows={[
+                { label: "Slug", value: row.slug, mono: true },
+                { label: "Workspaces", value: String(row.workspaceCount ?? "—") },
+                ...(operator
+                  ? [
+                      {
+                        label: "Your access",
+                        value: member(row)
+                          ? "A member"
+                          : "Through an operator access grant, which needs a reason",
+                      },
+                      {
+                        label: "Tables kept in",
+                        value: row.dataLocation ?? "The instance's database",
+                      },
+                    ]
+                  : []),
+                { label: "Created", value: <Time value={row.createdAt} /> },
+                { label: "ID", value: row.id, mono: true },
+              ]}
+            />
+            {operator ? <TenantPowers tenant={row} /> : null}
+          </div>
         ),
         footer: (row, reload, close) => (
           <>

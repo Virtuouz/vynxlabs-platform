@@ -556,13 +556,13 @@ export const chart = defineWidget({
         }),
       },
       legend: {
-        enum: ["auto", "shown", "hidden"],
+        enum: ["auto", "hidden"],
         "x-volvel": hint({
           tab: "display",
           group: "Look",
           control: "choice",
           label: "Legend",
-          choices: { auto: "Automatic", shown: "Always", hidden: "Never" },
+          choices: { auto: "Automatic", hidden: "Never" },
           order: 6,
         }),
       },

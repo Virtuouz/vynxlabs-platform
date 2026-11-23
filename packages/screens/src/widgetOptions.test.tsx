@@ -120,6 +120,24 @@ describe("the chart draws each option", () => {
     expect(axis).toContain("!isValid(datum.value) ? 'None'");
   });
 
+  test("the heatmap's scale takes the palette; the legend is Automatic or Never (WID-28)", () => {
+    const split: SummaryData = {
+      shape: "summary",
+      columns,
+      breakdowns: ["issued", "clinic"],
+      values: ["total"],
+      rows: [
+        { issued: "2026-11-01", clinic: "a", total: 5 },
+        { issued: "2026-11-02", clinic: "b", total: 50 },
+      ],
+    };
+    const plain = spec({ mark: "heatmap", colors: "theme" }, split).encoding.color;
+    const warm = spec({ mark: "heatmap", colors: "warm" }, split).encoding.color;
+    expect(warm).not.toEqual(plain);
+    expect(warm.scale.range).toBeTruthy();
+    expect(chart.config.properties.legend?.enum).toEqual(["auto", "hidden"]);
+  });
+
   test("an area is filled under its line", () => {
     expect(spec({ mark: "area" }, dated).mark).toMatchObject({
       type: "area",

@@ -909,6 +909,8 @@ function ServiceAccounts({ base, path }: { base: string; path: string }) {
 
 interface ServiceAccount {
   id: string;
+  /** What code and a repository name it by. It never changes. */
+  key?: string;
   name: string;
   description: string;
   createdAt: string;
@@ -1121,7 +1123,7 @@ function ServiceAccountList({ base }: { base: string }) {
   );
 }
 
-/** What a service account is for, in a sentence, changed in place. */
+/** What a service account is called and what it is for, changed in place. Its key stays. */
 function DescriptionForm({
   base,
   account,
@@ -1132,8 +1134,10 @@ function DescriptionForm({
   onSaved: () => void;
 }) {
   const [text, setText] = useState(account.description);
+  const [name, setName] = useState(account.name);
   const [busy, setBusy] = useState(false);
-  const changed = text.trim() !== account.description;
+  const renamed = name.trim() !== account.name;
+  const changed = renamed || text.trim() !== account.description;
   return (
     <form
       className="flex flex-col gap-3"
@@ -1141,8 +1145,16 @@ function DescriptionForm({
         event.preventDefault();
         setBusy(true);
         try {
-          await api.patch(`${base}/service-accounts/${account.id}`, { description: text });
-          notify.success(`What ${account.name} is for is saved.`);
+          if (name.trim() === "") return;
+          await api.patch(`${base}/service-accounts/${account.id}`, {
+            ...(renamed ? { name: name.trim() } : {}),
+            ...(text.trim() !== account.description ? { description: text } : {}),
+          });
+          notify.success(
+            renamed
+              ? `${account.name} is now called ${name.trim()}.`
+              : `What ${account.name} is for is saved.`,
+          );
           onSaved();
         } catch (error) {
           notify.error(error);
@@ -1151,7 +1163,19 @@ function DescriptionForm({
         }
       }}
     >
-      <KeyValues rows={[{ label: "Created", value: <Time value={account.createdAt} /> }]} />
+      <KeyValues
+        rows={[
+          ...(account.key ? [{ label: "Key", value: account.key, mono: true }] : []),
+          { label: "Created", value: <Time value={account.createdAt} /> },
+        ]}
+      />
+      <TextField
+        name="name"
+        label="Name"
+        hint="What people see. Its key, which code and repositories name it by, never changes, and access given to it and its keys are not touched."
+        value={name}
+        onChange={setName}
+      />
       <TextField
         name="description"
         label="What it is for"

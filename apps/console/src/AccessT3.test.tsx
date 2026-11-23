@@ -3,6 +3,7 @@ import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/re
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { AttributesDialog, EndUserGroups, Groups } from "./screens/Groups.tsx";
 import { MemberList } from "./screens/Members.tsx";
+import { Tenant } from "./screens/Tenant.tsx";
 import { answer, show } from "./testing.tsx";
 
 const base = "/tenants/t1";
@@ -184,4 +185,36 @@ test("ACC-MP8: a group can say what it is for when made and afterwards", async (
   expect(calls.find((c) => c.method === "PATCH")?.body).toEqual({
     description: "Front desk staff",
   });
+});
+
+test("ACC-MP9: a service account is renamed in place, and its fixed key is shown", async () => {
+  routes.push((method, url) =>
+    method === "GET" && url.endsWith("/service-accounts")
+      ? [
+          200,
+          {
+            items: [
+              {
+                id: "s1",
+                key: "ci",
+                name: "ci",
+                description: "Deploys",
+                createdAt: "2026-11-01T00:00:00Z",
+              },
+            ],
+          },
+        ]
+      : undefined,
+  );
+  const me = {
+    principal: { id: "m1", type: "member" },
+    tenants: [{ id: "t1", name: "Acme", slug: "acme" }],
+    instancePermissions: [],
+  } as never;
+  show(<Tenant tenantId="t1" me={me} path="/t/t1/service-accounts/s1" />);
+  expect(await screen.findByText("Key")).toBeTruthy();
+  fireEvent.change(await screen.findByLabelText("Name"), { target: { value: "pipeline" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  await waitFor(() => expect(calls.some((c) => c.method === "PATCH")).toBe(true));
+  expect(calls.find((c) => c.method === "PATCH")?.body).toEqual({ name: "pipeline" });
 });

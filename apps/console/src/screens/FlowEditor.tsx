@@ -31,6 +31,7 @@ import {
   type ReactFlowInstance,
   useEdgesState,
   useNodesState,
+  useUpdateNodeInternals,
   type Viewport,
 } from "@xyflow/react";
 import { ago } from "../kit/format.ts";
@@ -253,6 +254,14 @@ function FlowNodeCard({ data, selected }: NodeProps<CanvasNode>) {
   const out = outputs(node);
   const named = useContext(NodeNames).get(String(node.script ?? ""));
   const ran = useContext(NodeRuns).get(id);
+  // React Flow measures a node's handles once. A case renamed makes new handle ids, and an edge
+  // to a handle it has not measured is not drawn until a reload.
+  const updateInternals = useUpdateNodeInternals();
+  const handleIds = out.map((handle) => handle.id).join("\u0000");
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the ids are the trigger
+  useEffect(() => {
+    updateInternals(id);
+  }, [id, handleIds, updateInternals]);
   return (
     <div
       className={`w-52 rounded-control border bg-surface px-3 py-2 [.dragging_&]:shadow-drag ${

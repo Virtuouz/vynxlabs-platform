@@ -7,6 +7,22 @@ import { show } from "./testing.tsx";
 // What a person does in the flow editor, and what it then saves: the editor is drawn, a
 // step is chosen as the address says, a field is changed, and the autosaved draft is read.
 
+// The canvas measures a step's handles when told to; what it is told is read here.
+const measured = vi.hoisted(() => [] as string[]);
+vi.mock("@xyflow/react", async (original) => {
+  const real = await original<typeof import("@xyflow/react")>();
+  return {
+    ...real,
+    useUpdateNodeInternals: () => {
+      const update = real.useUpdateNodeInternals();
+      return (id: string | string[]) => {
+        measured.push(String(id));
+        update(id);
+      };
+    },
+  };
+});
+
 configure({ asyncUtilTimeout: 15_000 });
 
 const root = "/tenants/t1/workspaces/w1";
@@ -120,6 +136,27 @@ describe("the flow editor, as a person uses it", () => {
     expect(
       (saved.nodes.daily as { trigger: { timezone?: string } }).trigger.timezone,
     ).toBeUndefined();
+  });
+
+  test("WLK-15: a renamed case has its handle measured again, so its edge stays drawn", async () => {
+    await openAt(
+      {
+        nodes: {
+          start: manual,
+          route: { type: "branch", cases: [{ name: "a", when: "true" }] },
+          x: { type: "join" },
+        },
+        edges: [
+          { from: "start", to: "route" },
+          { from: "route", to: "x", output: "a" },
+        ],
+      },
+      "route",
+      "Cases, tried in order",
+    );
+    measured.length = 0;
+    rename("Name", 1, "b");
+    await waitFor(() => expect(measured).toContain("route"));
   });
 
   test("renaming a webhook start keeps its address by the old name as its key (FLW-04)", async () => {

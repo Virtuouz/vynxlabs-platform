@@ -331,6 +331,15 @@ function SetUp({
             </>
           )}
         </div>
+        {provider.audience === "members" ? (
+          <div className="flex flex-col gap-1">
+            <CopyLine label="Sign-in address" value={provider.addresses.start} />
+            <p className="m-0 text-meta text-ink-subtle">
+              For a tile in the provider's app list, or a bookmark: it opens this provider's sign-in
+              and brings the person back here. It works once the provider is turned on.
+            </p>
+          </div>
+        ) : null}
         <p className="m-0 text-ink-muted">
           {provider.protocol === "oidc"
             ? "Register an application of the web kind, with the authorization code flow. Have it send the email, and a groups claim if you will map groups."
@@ -689,6 +698,18 @@ const SIGNED = [
   { value: "both", label: "Both" },
 ];
 
+/** The name ID formats providers are usually asked for. A stored one that is not here is kept. */
+const NAME_ID_FORMATS = [
+  { value: "", label: "Not asked: the provider chooses" },
+  {
+    value: "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress",
+    label: "Email address",
+  },
+  { value: "urn:oasis:names:tc:SAML:2.0:nameid-format:persistent", label: "Persistent" },
+  { value: "urn:oasis:names:tc:SAML:2.0:nameid-format:transient", label: "Transient" },
+  { value: "urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified", label: "Unspecified" },
+];
+
 function Settings({
   base,
   root,
@@ -731,258 +752,352 @@ function Settings({
     />
   );
   const saml = provider.protocol === "saml";
+  const [metadataUrl, setMetadataUrl] = useState("");
+  const [metadataXml, setMetadataXml] = useState("");
+  const [reading, setReading] = useState(false);
+  const [readError, setReadError] = useState<ApiError | string>();
+  const readAgain = async () => {
+    setReadError(undefined);
+    const sure = await ask.confirm({
+      title: "Read the metadata again?",
+      text: "The sign-in address, the provider's entity ID and the signing certificates are replaced by what the metadata says. If the entity ID is another, the ties between people and this provider's sign-ins are removed.",
+      action: "Read the metadata",
+    });
+    if (!sure) return;
+    setReading(true);
+    try {
+      // Only the metadata is sent: the three values it describes would win over it if sent too.
+      const saved = await api.patch<IdentityProvider>(root, {
+        config: metadataXml.trim()
+          ? { metadataXml: metadataXml.trim() }
+          : { metadataUrl: metadataUrl.trim() },
+      });
+      setConfig(saved.config);
+      setCertificates((saved.config.certificates ?? []).join("\n"));
+      setMetadataUrl("");
+      setMetadataXml("");
+      onChanged(saved);
+      notify.success("The metadata was read. The sign-in address and certificates are as it says.");
+    } catch (caught) {
+      setReadError(caught as ApiError);
+    } finally {
+      setReading(false);
+    }
+  };
 
   return (
-    <form
-      className="flex max-w-measure flex-col gap-3"
-      onSubmit={async (event) => {
-        event.preventDefault();
-        setError(undefined);
-        // Subjects belong to the issuer that gave them: another issuer may use one for another
-        // person. Saying so first is what lets the ties go with the old one.
-        const moved = saml
-          ? (config.idpIssuer ?? "") !== (provider.config.idpIssuer ?? "")
-          : (config.issuer ?? "") !== (provider.config.issuer ?? "");
-        if (moved) {
-          const sure = await ask.confirm({
-            title: saml ? "Change the identity provider's entity ID?" : "Change the issuer?",
-            text: `The ties between people and this provider's sign-ins are removed. The next time each person signs in, they are found by their email again.${
-              saml
-                ? ""
-                : " A client secret stored for the old address is not sent to a new one: give it again if the address changes."
-            }`,
-            action: "Change it",
-            danger: true,
-          });
-          if (!sure) return;
-        }
-        // One a line, split at the first equals sign: a claim may hold one. A line that is not
-        // whole is said, not dropped.
-        const pairs: [string, string][] = [];
-        const lines = attributes.split("\n");
-        for (const [at, line] of lines.entries()) {
-          if (!line.trim()) continue;
-          const cut = line.indexOf("=");
-          const attribute = cut < 0 ? "" : line.slice(0, cut).trim();
-          const claimName = cut < 0 ? "" : line.slice(cut + 1).trim();
-          if (!attribute || !claimName) {
-            setError(
-              `Line ${at + 1} is not complete: write the attribute here, an equals sign, then the claim it is read from.`,
-            );
-            return;
-          }
-          pairs.push([attribute, claimName]);
-        }
-        setBusy(true);
-        try {
-          const { spCertificate: _ours, ...sent } = config;
-          const saved = await api.patch<IdentityProvider>(root, {
-            name: name.trim(),
-            config: {
-              ...sent,
-              ...(saml
-                ? {
-                    certificates: certificates
-                      .split(/(?<=-----END CERTIFICATE-----)/)
-                      .map((certificate) => certificate.trim())
-                      .filter(Boolean),
-                  }
-                : {}),
-              ...(saml ? {} : { scopes: scopes.split(/\s+/).filter(Boolean) }),
-              attributes: Object.fromEntries(pairs),
-            },
-            ...(clientSecret ? { clientSecret } : removeSecret ? { clientSecret: null } : {}),
-            provision,
-            ...(provider.audience === "members" && !instance
-              ? { defaultRoleId: roleId ?? null }
-              : {}),
-          });
-          setClientSecret("");
-          setRemoveSecret(false);
-          onChanged(saved);
-          // A secret stored for the old issuer is not sent to a new one: said, not lost in silence.
-          if (provider.hasSecret && !saved.hasSecret)
-            notify.info(
-              "The provider was saved. Its client secret was dropped because the issuer changed: give it again in Settings.",
-            );
-          else notify.success("The provider was saved.");
-        } catch (caught) {
-          setError(caught as ApiError);
-        } finally {
-          setBusy(false);
-        }
-      }}
-    >
-      <TextField label="Name" name="name" value={name} required maxLength={80} onChange={setName} />
+    <div className="flex max-w-measure flex-col gap-6">
       {saml ? (
-        <>
+        <section className="flex flex-col gap-3" aria-label="Read the metadata again">
+          <h2 className="m-0 text-title font-semibold">Read the metadata again</h2>
+          <p className="m-0 text-ink-muted">
+            When the provider changes its certificate or its address, have it be read here instead
+            of copied by hand.
+          </p>
           <TextField
-            label="Sign-in address"
-            name="entryPoint"
-            value={config.entryPoint ?? ""}
-            required
-            hint="Where people are sent to sign in."
-            onChange={(entryPoint) => set({ entryPoint })}
-          />
-          <TextField
-            label="Provider's entity ID"
-            name="idpIssuer"
-            value={config.idpIssuer ?? ""}
-            required
-            onChange={(idpIssuer) => set({ idpIssuer })}
+            label="Metadata address"
+            name="readMetadataUrl"
+            value={metadataUrl}
+            placeholder="https://login.example.com/saml/metadata"
+            disabled={metadataXml.trim() !== ""}
+            hint="Where the provider publishes its metadata."
+            onChange={setMetadataUrl}
           />
           <TextAreaField
-            label="Signing certificates"
-            name="certificates"
-            value={certificates}
-            rows={5}
-            hint="One or more, in PEM form. List the new one beside the old one while a certificate is being replaced."
-            onChange={setCertificates}
+            label="Or paste the metadata"
+            name="readMetadataXml"
+            value={metadataXml}
+            rows={4}
+            hint="The provider's metadata file. Used instead of the address when filled in."
+            onChange={setMetadataXml}
           />
-          <SelectField
-            label="What must be signed"
-            name="signed"
-            value={config.signed ?? "either"}
-            options={SIGNED}
-            onChange={(signed) => set({ signed })}
-          />
-          <CheckboxField
-            label="Sign the requests sent to the provider"
-            name="signRequests"
-            checked={config.signRequests ?? true}
-            onChange={(signRequests) => set({ signRequests })}
-          />
-          <CheckboxField
-            label="Ask the provider to encrypt assertions"
-            name="encryptAssertions"
-            checked={config.encryptAssertions ?? false}
-            hint="Publishes this side's certificate in the metadata for the provider to encrypt to. The provider must wrap the key with RSA-OAEP with MGF1 (rsa-oaep-mgf1p) and the SHA-1 digest. Keycloak's defaults differ: set both on its client."
-            onChange={(encryptAssertions) => set({ encryptAssertions })}
-          />
-          <CheckboxField
-            label="Accept SHA-1 signatures"
-            name="allowSha1"
-            checked={config.allowSha1 ?? false}
-            hint="Weak. Only for a provider that cannot sign with SHA-256. Turning this on is written to the audit log."
-            onChange={(allowSha1) => set({ allowSha1 })}
-          />
-          <CheckboxField
-            label="Accept sign-ins the provider begins"
-            name="allowIdpInitiated"
-            checked={config.allowIdpInitiated ?? false}
-            hint="For a tile on the provider's own start page. Such a sign-in answers no request of ours, so it is off unless you need it. Turning this on is written to the audit log."
-            onChange={(allowIdpInitiated) => set({ allowIdpInitiated })}
-          />
-        </>
-      ) : (
-        <>
-          <TextField
-            label="Issuer"
-            name="issuer"
-            value={config.issuer ?? ""}
-            required
-            onChange={(issuer) => set({ issuer })}
-          />
-          <TextField
-            label="Client ID"
-            name="clientId"
-            value={config.clientId ?? ""}
-            required
-            onChange={(clientId) => set({ clientId })}
-          />
-          <SecretField
-            label="Client secret"
-            name="clientSecret"
-            stored={provider.hasSecret}
-            setAt={provider.credentialSetAt}
-            setBy={provider.credentialSetBy}
-            autoComplete="off"
-            value={clientSecret}
-            onChange={setClientSecret}
-          />
-          {provider.hasSecret && !clientSecret ? (
-            <CheckboxField
-              label="Remove the stored client secret"
-              name="removeSecret"
-              checked={removeSecret}
-              hint="For a public client: the provider is then signed in with PKCE alone. Applies when you save."
-              onChange={setRemoveSecret}
-            />
-          ) : null}
-          <TextField
-            label="Scopes"
-            name="scopes"
-            value={scopes}
-            hint="Separated by spaces."
-            onChange={setScopes}
-          />
-          <CheckboxField
-            label="Also read the user-info address"
-            name="userinfo"
-            checked={config.userinfo ?? false}
-            hint="For a provider that leaves groups or email out of the ID token."
-            onChange={(userinfo) => set({ userinfo })}
-          />
-        </>
-      )}
-      <h2 className="mt-3 mb-0 text-title font-semibold">Which claims to read</h2>
-      <p className="m-0 text-ink-muted">Leave a field empty to use the usual name.</p>
-      <div className="grid gap-3 sm:grid-cols-2">
-        {claim("subject", "Subject", saml ? "The name ID" : "sub")}
-        {claim("email", "Email", saml ? "email, mail" : "email")}
-        {claim("name", "Name", saml ? "name, displayName" : "name")}
-        {claim("groups", "Groups", saml ? "groups, memberOf" : "groups")}
-      </div>
-      {provider.audience === "end_users" ? (
-        <>
-          <TextAreaField
-            label="Attributes"
-            name="attributes"
-            value={attributes}
-            rows={3}
-            placeholder="customer_id = customerId"
-            hint="One a line: the attribute here, an equals sign, the claim it is read from. A table's row rules can match on these."
-            onChange={setAttributes}
-          />
-          <CheckboxField
-            label="Take the provider's word on emails"
-            name="trustEmail"
-            checked={config.trustEmail ?? false}
-            hint="Lets a first sign-in take over an existing account with the same email, in a domain that has not been proved here. Only for a provider that verifies emails itself."
-            onChange={(trustEmail) => set({ trustEmail })}
-          />
-        </>
+          {readError ? <Notice tone="danger">{failureText(readError)}</Notice> : null}
+          <div>
+            <Button
+              variant="secondary"
+              loading={reading}
+              disabled={metadataUrl.trim() === "" && metadataXml.trim() === ""}
+              onClick={readAgain}
+            >
+              Read the metadata
+            </Button>
+          </div>
+        </section>
       ) : null}
-      <h2 className="mt-3 mb-0 text-title font-semibold">New people</h2>
-      <CheckboxField
-        label="Create people the first time they sign in"
-        name="provision"
-        checked={provision}
-        hint={
-          provider.audience === "members"
-            ? "Off, only members who already exist can sign in."
-            : "Off, only end users who already exist can sign in."
-        }
-        onChange={setProvision}
-      />
-      {provider.audience === "members" && !instance ? (
-        <ComboboxField
-          label="Role given to a new member"
-          options={(roles.data?.items ?? [])
-            .filter((role) => !role.workspaceId)
-            .map((role) => ({ value: role.id, label: role.name }))}
-          value={roleId}
-          hint="Leave empty to give nothing. A new member can then sign in and see nothing until someone gives them a role."
-          onChange={setRoleId}
+      <form
+        className="flex flex-col gap-3"
+        onSubmit={async (event) => {
+          event.preventDefault();
+          setError(undefined);
+          // Subjects belong to the issuer that gave them: another issuer may use one for another
+          // person. Saying so first is what lets the ties go with the old one.
+          const moved = saml
+            ? (config.idpIssuer ?? "") !== (provider.config.idpIssuer ?? "")
+            : (config.issuer ?? "") !== (provider.config.issuer ?? "");
+          if (moved) {
+            const sure = await ask.confirm({
+              title: saml ? "Change the identity provider's entity ID?" : "Change the issuer?",
+              text: `The ties between people and this provider's sign-ins are removed. The next time each person signs in, they are found by their email again.${
+                saml
+                  ? ""
+                  : " A client secret stored for the old address is not sent to a new one: give it again if the address changes."
+              }`,
+              action: "Change it",
+              danger: true,
+            });
+            if (!sure) return;
+          }
+          // One a line, split at the first equals sign: a claim may hold one. A line that is not
+          // whole is said, not dropped.
+          const pairs: [string, string][] = [];
+          const lines = attributes.split("\n");
+          for (const [at, line] of lines.entries()) {
+            if (!line.trim()) continue;
+            const cut = line.indexOf("=");
+            const attribute = cut < 0 ? "" : line.slice(0, cut).trim();
+            const claimName = cut < 0 ? "" : line.slice(cut + 1).trim();
+            if (!attribute || !claimName) {
+              setError(
+                `Line ${at + 1} is not complete: write the attribute here, an equals sign, then the claim it is read from.`,
+              );
+              return;
+            }
+            pairs.push([attribute, claimName]);
+          }
+          setBusy(true);
+          try {
+            const { spCertificate: _ours, ...sent } = config;
+            const saved = await api.patch<IdentityProvider>(root, {
+              name: name.trim(),
+              config: {
+                ...sent,
+                ...(saml
+                  ? {
+                      certificates: certificates
+                        .split(/(?<=-----END CERTIFICATE-----)/)
+                        .map((certificate) => certificate.trim())
+                        .filter(Boolean),
+                    }
+                  : {}),
+                ...(saml ? {} : { scopes: scopes.split(/\s+/).filter(Boolean) }),
+                attributes: Object.fromEntries(pairs),
+              },
+              ...(clientSecret ? { clientSecret } : removeSecret ? { clientSecret: null } : {}),
+              provision,
+              ...(provider.audience === "members" && !instance
+                ? { defaultRoleId: roleId ?? null }
+                : {}),
+            });
+            setClientSecret("");
+            setRemoveSecret(false);
+            onChanged(saved);
+            // A secret stored for the old issuer is not sent to a new one: said, not lost in silence.
+            if (provider.hasSecret && !saved.hasSecret)
+              notify.info(
+                "The provider was saved. Its client secret was dropped because the issuer changed: give it again in Settings.",
+              );
+            else notify.success("The provider was saved.");
+          } catch (caught) {
+            setError(caught as ApiError);
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        <TextField
+          label="Name"
+          name="name"
+          value={name}
+          required
+          maxLength={80}
+          onChange={setName}
         />
-      ) : null}
-      {error ? <Notice tone="danger">{failureText(error)}</Notice> : null}
-      <div className="mt-1 flex justify-end">
-        <Button type="submit" variant="primary" loading={busy}>
-          Save
-        </Button>
-      </div>
-    </form>
+        {saml ? (
+          <>
+            <TextField
+              label="Sign-in address"
+              name="entryPoint"
+              value={config.entryPoint ?? ""}
+              required
+              hint="Where people are sent to sign in."
+              onChange={(entryPoint) => set({ entryPoint })}
+            />
+            <TextField
+              label="Provider's entity ID"
+              name="idpIssuer"
+              value={config.idpIssuer ?? ""}
+              required
+              onChange={(idpIssuer) => set({ idpIssuer })}
+            />
+            <TextAreaField
+              label="Signing certificates"
+              name="certificates"
+              value={certificates}
+              rows={5}
+              hint="One or more, in PEM form. List the new one beside the old one while a certificate is being replaced."
+              onChange={setCertificates}
+            />
+            <SelectField
+              label="Name ID format"
+              name="nameIdFormat"
+              value={config.nameIdFormat ?? ""}
+              options={
+                config.nameIdFormat && !NAME_ID_FORMATS.some((f) => f.value === config.nameIdFormat)
+                  ? [...NAME_ID_FORMATS, { value: config.nameIdFormat, label: config.nameIdFormat }]
+                  : NAME_ID_FORMATS
+              }
+              hint="What this side asks the provider to send as the person's name ID. Persistent keeps one person to one name ID; email address is for a provider that has no lasting one."
+              onChange={(value) => set({ nameIdFormat: value === "" ? null : value })}
+            />
+            <SelectField
+              label="What must be signed"
+              name="signed"
+              value={config.signed ?? "either"}
+              options={SIGNED}
+              onChange={(signed) => set({ signed })}
+            />
+            <CheckboxField
+              label="Sign the requests sent to the provider"
+              name="signRequests"
+              checked={config.signRequests ?? true}
+              onChange={(signRequests) => set({ signRequests })}
+            />
+            <CheckboxField
+              label="Ask the provider to encrypt assertions"
+              name="encryptAssertions"
+              checked={config.encryptAssertions ?? false}
+              hint="Publishes this side's certificate in the metadata for the provider to encrypt to. The provider must wrap the key with RSA-OAEP with MGF1 (rsa-oaep-mgf1p) and the SHA-1 digest. Keycloak's defaults differ: set both on its client."
+              onChange={(encryptAssertions) => set({ encryptAssertions })}
+            />
+            <CheckboxField
+              label="Accept SHA-1 signatures"
+              name="allowSha1"
+              checked={config.allowSha1 ?? false}
+              hint="Weak. Only for a provider that cannot sign with SHA-256. Turning this on is written to the audit log."
+              onChange={(allowSha1) => set({ allowSha1 })}
+            />
+            <CheckboxField
+              label="Accept sign-ins the provider begins"
+              name="allowIdpInitiated"
+              checked={config.allowIdpInitiated ?? false}
+              hint="For a tile on the provider's own start page. Such a sign-in answers no request of ours, so it is off unless you need it. Turning this on is written to the audit log."
+              onChange={(allowIdpInitiated) => set({ allowIdpInitiated })}
+            />
+          </>
+        ) : (
+          <>
+            <TextField
+              label="Issuer"
+              name="issuer"
+              value={config.issuer ?? ""}
+              required
+              onChange={(issuer) => set({ issuer })}
+            />
+            <TextField
+              label="Client ID"
+              name="clientId"
+              value={config.clientId ?? ""}
+              required
+              onChange={(clientId) => set({ clientId })}
+            />
+            <SecretField
+              label="Client secret"
+              name="clientSecret"
+              stored={provider.hasSecret}
+              setAt={provider.credentialSetAt}
+              setBy={provider.credentialSetBy}
+              autoComplete="off"
+              value={clientSecret}
+              onChange={setClientSecret}
+            />
+            {provider.hasSecret && !clientSecret ? (
+              <CheckboxField
+                label="Remove the stored client secret"
+                name="removeSecret"
+                checked={removeSecret}
+                hint="For a public client: the provider is then signed in with PKCE alone. Applies when you save."
+                onChange={setRemoveSecret}
+              />
+            ) : null}
+            <TextField
+              label="Scopes"
+              name="scopes"
+              value={scopes}
+              hint="Separated by spaces."
+              onChange={setScopes}
+            />
+            <CheckboxField
+              label="Also read the user-info address"
+              name="userinfo"
+              checked={config.userinfo ?? false}
+              hint="For a provider that leaves groups or email out of the ID token."
+              onChange={(userinfo) => set({ userinfo })}
+            />
+          </>
+        )}
+        <h2 className="mt-3 mb-0 text-title font-semibold">Which claims to read</h2>
+        <p className="m-0 text-ink-muted">Leave a field empty to use the usual name.</p>
+        <div className="grid gap-3 sm:grid-cols-2">
+          {claim("subject", "Subject", saml ? "The name ID" : "sub")}
+          {claim("email", "Email", saml ? "email, mail" : "email")}
+          {claim("name", "Name", saml ? "name, displayName" : "name")}
+          {claim("groups", "Groups", saml ? "groups, memberOf" : "groups")}
+        </div>
+        {provider.audience === "end_users" ? (
+          <>
+            <TextAreaField
+              label="Attributes"
+              name="attributes"
+              value={attributes}
+              rows={3}
+              placeholder="customer_id = customerId"
+              hint="One a line: the attribute here, an equals sign, the claim it is read from. A table's row rules can match on these."
+              onChange={setAttributes}
+            />
+            <CheckboxField
+              label="Take the provider's word on emails"
+              name="trustEmail"
+              checked={config.trustEmail ?? false}
+              hint="Lets a first sign-in take over an existing account with the same email, in a domain that has not been proved here. Only for a provider that verifies emails itself."
+              onChange={(trustEmail) => set({ trustEmail })}
+            />
+          </>
+        ) : null}
+        <h2 className="mt-3 mb-0 text-title font-semibold">New people</h2>
+        <CheckboxField
+          label="Create people the first time they sign in"
+          name="provision"
+          checked={provision}
+          hint={
+            provider.audience === "members"
+              ? `Off, only members who already exist can sign in.${
+                  instance
+                    ? " A person made here has no access until an operator gives it, one person at a time."
+                    : ""
+                }`
+              : "Off, only end users who already exist can sign in."
+          }
+          onChange={setProvision}
+        />
+        {provider.audience === "members" && !instance ? (
+          <ComboboxField
+            label="Role given to a new member"
+            options={(roles.data?.items ?? [])
+              .filter((role) => !role.workspaceId)
+              .map((role) => ({ value: role.id, label: role.name }))}
+            value={roleId}
+            hint="Leave empty to give nothing. A new member can then sign in and see nothing until someone gives them a role."
+            onChange={setRoleId}
+          />
+        ) : null}
+        {error ? <Notice tone="danger">{failureText(error)}</Notice> : null}
+        <div className="mt-1 flex justify-end">
+          <Button type="submit" variant="primary" loading={busy}>
+            Save
+          </Button>
+        </div>
+      </form>
+    </div>
   );
 }
 

@@ -306,3 +306,36 @@ test("access is given starting from the person, found by name on the server, wit
   );
   await waitFor(() => expect(given).toHaveBeenCalled());
 });
+
+test("a tenant whose workers the instance starts is not told that no worker is online (SHL-10)", async () => {
+  const summary = (online: number) => ({
+    workspaces: 1,
+    approvalsWaiting: 0,
+    domainsToFix: 0,
+    workersOnline: online,
+    operatorAccessActive: null,
+    members: 1,
+  });
+  routes[`GET ${base}/summary`] = () => summary(0);
+  routes[`GET ${base}`] = () => ({ name: "Acme", slug: "acme", managedWorkers: true });
+  const view = show(<TenantOverview base={base} tenantId="t1" />);
+  await screen.findByText("Nothing needs you");
+  expect(screen.queryByText("No worker is online")).toBeNull();
+  view.unmount();
+  // Without managed workers, none online is a fault, as it was.
+  routes[`GET ${base}`] = () => ({ name: "Acme", slug: "acme", managedWorkers: false });
+  show(<TenantOverview base={base} tenantId="t1" />);
+  await screen.findByText("No worker is online");
+});
+
+test("Rename is offered on the overview only to someone who may rename the tenant (SHL-11)", async () => {
+  routes[`GET ${base}/summary`] = () => ({ workspaces: 0, approvalsWaiting: 0, domainsToFix: 0 });
+  routes[`GET ${base}`] = () => ({ name: "Acme", slug: "acme", mayRename: false });
+  const view = show(<TenantOverview base={base} tenantId="t1" />);
+  await screen.findByRole("heading", { name: "Acme" });
+  expect(screen.queryByRole("button", { name: "Rename" })).toBeNull();
+  view.unmount();
+  routes[`GET ${base}`] = () => ({ name: "Acme", slug: "acme", mayRename: true });
+  show(<TenantOverview base={base} tenantId="t1" />);
+  await screen.findByRole("button", { name: "Rename" });
+});

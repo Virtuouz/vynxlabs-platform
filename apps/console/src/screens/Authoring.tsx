@@ -21,7 +21,7 @@ import { DeployMenu } from "../kit/DeployMenu.tsx";
 import { useDraftSave } from "../kit/draftSave.ts";
 import { Elapsed } from "../kit/Elapsed.tsx";
 import { ago } from "../kit/format.ts";
-import { useShortcut } from "../kit/keys.ts";
+import { formatCombo, useShortcut } from "../kit/keys.ts";
 import { ErrorState, Loading } from "../kit/LoadState.tsx";
 import { ProductionNotice } from "../kit/objects.tsx";
 import { PageHeader } from "../kit/PageHeader.tsx";
@@ -722,7 +722,9 @@ export function ScriptEditor({
           />
           <p className="m-0 text-body-sm text-ink-muted">
             Runs the script as its draft has it, on a worker, without deploying anything.{" "}
-            <kbd className="rounded-inner border border-line px-1 font-mono text-tag">⌘↵</kbd>
+            <kbd className="rounded-inner border border-line px-1 font-mono text-tag">
+              {formatCombo("Mod+Enter")}
+            </kbd>
           </p>
         </>
       )}

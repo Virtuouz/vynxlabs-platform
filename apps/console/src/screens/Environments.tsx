@@ -8,7 +8,7 @@ import {
   TextField,
 } from "@volvel/ui";
 import { type ReactNode, useEffect, useState } from "react";
-import { ApiError, api, useLoad } from "../api.ts";
+import { ApiError, api, apiFetch, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
 import { count } from "../kit/format.ts";
 import {
@@ -777,9 +777,8 @@ export function TenantExport({ base, slug }: { base: string; slug: string }) {
           setProblem(undefined);
           setState("working");
           try {
-            const response = await fetch(`/api/v1${base}/exports`, {
+            const response = await apiFetch(`${base}/exports`, {
               method: "POST",
-              credentials: "same-origin",
               headers: { "content-type": "application/json" },
               body: JSON.stringify({ passphrase, history: history === "yes" }),
             });
@@ -973,9 +972,8 @@ const bytes = (size: number) =>
 
 /** Sends the export's bytes as they are, with its passphrase in a header when one is given. */
 async function sendTar<T>(path: string, file: File, passphrase: string): Promise<T> {
-  const response = await fetch(`/api/v1${path}`, {
+  const response = await apiFetch(path, {
     method: "POST",
-    credentials: "same-origin",
     headers: {
       "content-type": "application/x-tar",
       ...(passphrase ? { "x-export-passphrase": passphrase } : {}),
@@ -993,9 +991,8 @@ async function withPassphrase<T>(
   path: string,
   passphrase: string,
 ): Promise<T> {
-  const response = await fetch(`/api/v1${path}`, {
+  const response = await apiFetch(path, {
     method,
-    credentials: "same-origin",
     headers: passphrase ? { "x-export-passphrase": passphrase } : {},
   });
   const text = await response.text();
@@ -1336,9 +1333,11 @@ export function RenameTenantButton({
   tenant,
   onDone,
 }: {
-  tenant: { id: string; slug: string; name: string };
+  tenant: { id: string; slug: string; name: string; mayRename?: boolean };
   onDone: () => void;
 }) {
+  // Offered only to someone the server lets rename it, wherever the button is drawn.
+  if (tenant.mayRename === false) return null;
   return (
     <Button
       size="small"

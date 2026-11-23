@@ -241,3 +241,14 @@ export function resetPreferences() {
   waitingValues.clear();
   snapshots.clear();
 }
+
+/**
+ * Forgets everything of one member's settings that this browser holds, for the next person to
+ * sign in here: the copies kept in storage, what waits to be sent, and the once-per-page load, so
+ * the next member's own settings are read from the server.
+ */
+export function forgetPreferences() {
+  for (const key of localKeys()) writeLocal(key, undefined);
+  resetPreferences();
+  notify();
+}

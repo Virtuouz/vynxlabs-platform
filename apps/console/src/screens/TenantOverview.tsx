@@ -47,7 +47,12 @@ const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? o
  * and its failures, who is here, and what changed last.
  */
 export function TenantOverview({ base, tenantId }: { base: string; tenantId: string }) {
-  const tenant = useLoad<{ name: string; slug: string }>(base);
+  const tenant = useLoad<{
+    name: string;
+    slug: string;
+    managedWorkers?: boolean;
+    mayRename?: boolean;
+  }>(base);
   const counts = useLoad<TenantCounts>(`${base}/summary`);
   const instance = useLoad<{ mail?: boolean }>("/instance");
   const workspaces = useLoad<{ items: Workspace[] }>(`${base}/workspaces`);
@@ -59,6 +64,8 @@ export function TenantOverview({ base, tenantId }: { base: string; tenantId: str
   const c = counts.data;
   const t = (slug: string) => `/t/${tenantId}/${slug}`;
 
+  // A count the viewer may not read is not zero.
+  const unseen = c !== undefined && (c.approvalsWaiting == null || c.domainsToFix == null);
   const attention: ReactNode[] = [];
   const waiting = c?.approvalsWaiting ?? 0;
   // An older server does not say which are the viewer's: then none is claimed.
@@ -119,7 +126,8 @@ export function TenantOverview({ base, tenantId }: { base: string; tenantId: str
       />,
     );
   }
-  if (c?.workersOnline === 0) {
+  // Workers the instance starts on demand exit when idle: none online is then the normal state.
+  if (c?.workersOnline === 0 && tenant.data && tenant.data.managedWorkers !== true) {
     attention.push(
       <NextStep
         key="workers"
@@ -166,10 +174,16 @@ export function TenantOverview({ base, tenantId }: { base: string; tenantId: str
                   attention
                 ) : (
                   <NextStep
-                    tone="success"
+                    tone={unseen ? "action" : "success"}
                     icon={<CircleCheck aria-hidden="true" size={16} />}
-                    title="Nothing needs you"
-                    detail="No approvals or promotions waiting, every hostname works, and workers are online."
+                    title={unseen ? "Nothing you can see needs you" : "Nothing needs you"}
+                    detail={
+                      unseen
+                        ? "Some counts here are not yours to read. Ask an administrator for read access if you need them."
+                        : tenant.data?.managedWorkers
+                          ? "No approvals or promotions waiting, every hostname works, and the instance starts workers when there is work."
+                          : "No approvals or promotions waiting, every hostname works, and workers are online."
+                    }
                   />
                 )}
               </Panel>

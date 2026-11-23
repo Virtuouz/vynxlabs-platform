@@ -123,6 +123,9 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               Type.Object({
                 ...Tenant.properties,
                 workspaceCount: Type.Integer({ minimum: 0 }),
+                mayRename: Type.Boolean({
+                  description: "Whether the caller may change this tenant's name.",
+                }),
               }),
             ),
           },
@@ -141,7 +144,9 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                   eb
                     .selectFrom("tenant_member")
                     .select("tenant_id")
-                    .where("member_id", "=", principal.id as string),
+                    .where("member_id", "=", principal.id as string)
+                    // Nothing in a tenant a member is suspended in would open, so it is not listed.
+                    .where("suspended_at", "is", null),
                 )
               : select.where("id", "=", principal.tenantId as string);
         }
@@ -169,6 +174,10 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                 )
                 .groupBy("tenant_id")
                 .execute();
+        const mayRename = new Map<string, boolean>();
+        for (const row of rows.slice(0, args.limit)) {
+          mayRename.set(row.id, await ctx.allowed("tenant:write", { tenantId: row.id }));
+        }
         return toPage(
           rows,
           args,
@@ -176,6 +185,7 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           (row) => ({
             ...toTenant(row),
             workspaceCount: Number(counts.find((one) => one.tenant_id === row.id)?.count ?? 0),
+            mayRename: mayRename.get(row.id) ?? false,
           }),
         );
       },
@@ -288,16 +298,26 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           summary: "One tenant",
           tags: ["tenancy"],
           params: TenantParams,
-          response: { 200: Tenant },
+          response: {
+            200: Type.Object({
+              ...Tenant.properties,
+              mayRename: Type.Boolean({
+                description: "Whether the caller may change this tenant's name.",
+              }),
+            }),
+          },
         },
       },
-      async ({ params }) => {
+      async ({ ctx, params }) => {
         const row = await db
           .selectFrom("tenant")
           .select(["id", "slug", "name", "data_location", "managed_workers", "created_at"])
           .where("id", "=", params.t)
           .executeTakeFirstOrThrow();
-        return toTenant(row);
+        return {
+          ...toTenant(row),
+          mayRename: await ctx.allowed("tenant:write", { tenantId: params.t }),
+        };
       },
     );
 

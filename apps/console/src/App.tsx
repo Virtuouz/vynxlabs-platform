@@ -1,8 +1,11 @@
 import { Notice } from "@volvel/ui";
 import { lazy, Suspense, useEffect, useRef } from "react";
 import { api, type Me, useLoad } from "./api.ts";
+import { notify } from "./ask.tsx";
+import { clearSession } from "./clearSession.ts";
 import { loadPreferences } from "./prefs.ts";
-import { match, navigate, usePath } from "./router.tsx";
+import { confirmLeave, match, navigate, usePath } from "./router.tsx";
+import { SessionSheet } from "./SessionSheet.tsx";
 import { Shell } from "./Shell.tsx";
 import { Account } from "./screens/Account.tsx";
 import { ApproveLink } from "./screens/ApproveLink.tsx";
@@ -14,6 +17,7 @@ import { KitSheet } from "./screens/KitSheet.tsx";
 import { NotFound } from "./screens/NotFound.tsx";
 import { SignIn } from "./screens/SignIn.tsx";
 import { Tenant } from "./screens/Tenant.tsx";
+import { beginSession, endSession, useSessionEnded } from "./session.ts";
 
 const SingleSignOn = lazy(() =>
   import("./screens/SingleSignOn.tsx").then((m) => ({ default: m.SingleSignOn })),
@@ -42,6 +46,8 @@ export function returnTarget(search: string): string | null {
  */
 export function useRememberPlace(signedIn: boolean, path: string) {
   const sent = useRef<string | undefined>(undefined);
+  // The next person to sign in is told where they are, even if it is the same place.
+  if (!signedIn) sent.current = undefined;
   const inWorkspace = match("/t/:t/workspaces/:w/*", path);
   const tenantId = match("/t/:t/*", path)?.t;
   const workspaceId = inWorkspace?.w;
@@ -98,6 +104,10 @@ export function App() {
   useEffect(() => {
     if (signedIn && me.data?.principal.type === "member") void loadPreferences();
   }, [signedIn, me.data?.principal.type]);
+  const ended = useSessionEnded();
+  const holder = me.data?.principal.id;
+  // From here on a 401 means the session ended, not that nobody signed in.
+  if (holder) beginSession(holder);
   const tenant = match("/t/:tenantId/*", path);
   const target = me.data ? returnTarget(location.search) : null;
   useEffect(() => {
@@ -122,7 +132,16 @@ export function App() {
   if (target) return null;
 
   const signOut = async () => {
-    await api.post("/auth/sign-out");
+    // Unsaved changes are asked about first: once the session is gone they cannot be kept.
+    if (!(await confirmLeave())) return;
+    try {
+      await api.post("/auth/sign-out");
+    } catch {
+      notify.error(new Error("You could not be signed out. Check your connection and try again."));
+      return;
+    }
+    endSession();
+    clearSession();
     navigate("/", { replace: true });
     me.reload();
   };
@@ -146,6 +165,7 @@ export function App() {
     <Shell me={me.data} path={path} tenantId={tenant?.tenantId} onSignOut={signOut}>
       {/* Some screens are fetched when first opened. */}
       <Suspense fallback={<Loading />}>{screen}</Suspense>
+      {ended && me.data.principal.email ? <SessionSheet email={me.data.principal.email} /> : null}
     </Shell>
   );
 }

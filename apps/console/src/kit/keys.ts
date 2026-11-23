@@ -65,7 +65,15 @@ function pressed(event: KeyboardEvent, combo: string): boolean {
 /** Whether a combination is a single key a person may turn off: no ⌘, Ctrl or Alt. */
 export const isSingle = (combo: string) =>
   // A function key types nothing, so it is safe in a field and is no "single key" to turn off.
-  !/(^|\+)(Mod|Ctrl|Alt)\+/.test(combo) && combo !== "Escape" && !/^F\d+$/.test(combo);
+  !/(^|\+)(Mod|Ctrl|Alt)\+/.test(combo) && combo !== "Escape" && !/^(Shift\+)?F\d+$/.test(combo);
+
+/**
+ * Whether turning single keys off turns this combination off. Enter, Space and the arrows
+ * belong to the list the focus is in, and work either way.
+ */
+export const turnsOff = (combo: string) =>
+  isSingle(combo) &&
+  !/^(Shift\+)?(Enter| |Arrow\w+|Home|End|Page\w+|Tab|Backspace|Delete)$/.test(combo);
 
 interface Binding {
   id: ShortcutId;

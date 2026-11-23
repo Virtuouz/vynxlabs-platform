@@ -262,7 +262,9 @@ export function DataTable<Row>(props: DataTableProps<Row>) {
     // Typing in a field inside a cell is the field's business.
     if (isTyping(target) || target.closest("[role=menu]")) return;
     // j, k and x are single-key shortcuts, which a person may turn off (WCAG 2.1.4).
-    if (["j", "k", "x", "J", "K"].includes(event.key) && !singleKeysOn()) return;
+    // With Shift held a letter arrives in capitals: `J` is Shift+j.
+    const letter = event.key.length === 1 ? event.key.toLowerCase() : event.key;
+    if (["j", "k", "x"].includes(letter) && !singleKeysOn()) return;
     const { row, column } = focus;
     const page = Math.max(1, Math.floor((region.current?.clientHeight ?? 360) / HEIGHT[density]));
     const current = shown[row];
@@ -271,7 +273,7 @@ export function DataTable<Row>(props: DataTableProps<Row>) {
       event.preventDefault();
       placeFocus(to, col);
     };
-    switch (event.key) {
+    switch (letter) {
       case "ArrowDown":
       case "j":
         if (event.shiftKey && checking && key !== undefined) {

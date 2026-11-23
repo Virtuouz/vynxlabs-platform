@@ -320,3 +320,19 @@ test("inside anything an editor has open, the section before it is a link back t
     cleanup();
   }
 });
+
+test("the search box names the shortcut for this computer, not a Mac's (SHL-04)", () => {
+  const search = () => {
+    show(
+      <Shell me={me} path="/t/t1/roles" tenantId="t1" onSignOut={() => {}}>
+        <p>Screen</p>
+      </Shell>,
+    );
+    return screen.getByRole("button", { name: "Search or jump to" }).textContent;
+  };
+  vi.stubGlobal("navigator", { platform: "Linux x86_64", userAgent: "Linux" });
+  expect(search()).toContain("Ctrl+K");
+  cleanup();
+  vi.stubGlobal("navigator", { platform: "MacIntel", userAgent: "Mac" });
+  expect(search()).toContain("⌘K");
+});

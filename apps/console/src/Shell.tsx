@@ -31,7 +31,7 @@ import {
   useCommandKey,
 } from "./kit/CommandPalette.tsx";
 import { ErrorBoundary } from "./kit/ErrorBoundary.tsx";
-import { openShortcuts, useShortcut } from "./kit/keys.ts";
+import { formatCombo, openShortcuts, useShortcut } from "./kit/keys.ts";
 import { LiveIndicator } from "./kit/LiveIndicator.tsx";
 import { useWide, WIDE } from "./kit/layout.tsx";
 import { Junction, Wire } from "./kit/motifs.tsx";
@@ -1259,7 +1259,7 @@ export function Shell({
               <Search aria-hidden="true" size={16} className="mx-1.5 md:mx-0" />
               <span className="hidden flex-1 text-left md:inline">Search or jump to…</span>
               <kbd className="hidden rounded-inner border border-line px-1 font-mono text-tag md:inline">
-                ⌘K
+                {formatCombo("Mod+K")}
               </kbd>
             </button>
           </div>

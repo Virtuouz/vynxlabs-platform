@@ -66,7 +66,10 @@ export function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
   const [ways, setWays] = useState<Ways>();
   const [error, setError] = useState<string | undefined>(takeSsoError);
   const [busy, setBusy] = useState(false);
-  const back = new URLSearchParams(window.location.search).get("return");
+  // Single sign-on sends the person back to where they were: an app's `?return=`, or this console page.
+  const here = `${window.location.pathname}${window.location.search}`;
+  const back =
+    new URLSearchParams(window.location.search).get("return") ?? (here === "/" ? null : here);
   const withReturn = (url: string) => (back ? `${url}?return=${encodeURIComponent(back)}` : url);
   const [reveal, setReveal] = useState(false);
   /** An owner signing in with a recovery code while their organization's sign-in is required. */
@@ -116,9 +119,10 @@ export function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
                 try {
                   if (!ways) {
                     // A password is asked for only once it is known that one is any use.
-                    const found = await api
-                      .get<Ways>(`/sso/providers?email=${encodeURIComponent(email.trim())}`)
-                      .catch((): Ways => ({ providers: [], password: true }));
+                    // A lookup that fails is shown, not turned into a password form that may be refused.
+                    const found = await api.get<Ways>(
+                      `/sso/providers?email=${encodeURIComponent(email.trim())}`,
+                    );
                     setWays(found);
                     return;
                   }
@@ -128,11 +132,13 @@ export function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
                 } catch (caught) {
                   const failure = caught as ApiError;
                   setError(
-                    failure.status === 401
-                      ? "That email and password do not match an account."
-                      : recovering && failure.status === 403
-                        ? "That recovery code is not right, or was already used. Each code works once."
-                        : failure.message,
+                    !ways
+                      ? `We could not check how this address signs in. ${failure.message} Press Continue to try again.`
+                      : failure.status === 401
+                        ? "That email and password do not match an account."
+                        : recovering && failure.status === 403
+                          ? "That recovery code is not right, or was already used. Each code works once."
+                          : failure.message,
                   );
                 } finally {
                   setBusy(false);

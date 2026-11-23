@@ -32,10 +32,10 @@ import { type Pinnable, useCurrent } from "./current.ts";
 import {
   formatCombo,
   isMac,
-  isSingle,
   OPEN_PALETTE,
   OPEN_SHORTCUTS,
   openShortcuts,
+  turnsOff,
   useShortcut,
   useSingleKeys,
 } from "./keys.ts";
@@ -964,7 +964,8 @@ export function ShortcutSheet() {
                 <dl className="m-0 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5">
                   {here.map((id) => {
                     const shortcut = SHORTCUTS[id];
-                    const off = !singles && shortcut.keys.every(isSingle);
+                    // Only a shortcut every key of which the toggle turns off is off; a key that still works is not struck.
+                    const off = !singles && shortcut.keys.every(turnsOff);
                     return (
                       <div key={id} className={`contents ${off ? "text-ink-subtle" : ""}`}>
                         <dt className="flex flex-wrap gap-1">
@@ -974,7 +975,11 @@ export function ShortcutSheet() {
                         </dt>
                         <dd className={`m-0 ${off ? "" : "text-ink-muted"}`}>
                           {shortcut.label}
-                          {off ? " (off)" : ""}
+                          {off
+                            ? " (off)"
+                            : !singles && shortcut.keys.some(turnsOff)
+                              ? " (single keys off)"
+                              : ""}
                         </dd>
                       </div>
                     );

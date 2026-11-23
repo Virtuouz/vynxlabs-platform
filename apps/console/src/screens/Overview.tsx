@@ -3,6 +3,7 @@ import {
   CircleCheck,
   CirclePause,
   CircleX,
+  EyeOff,
   FileInput,
   GitCompareArrows,
   GitMerge,
@@ -15,6 +16,7 @@ import {
 import type { ReactNode } from "react";
 import { useLoad } from "../api.ts";
 import { duration, hm } from "../kit/format.ts";
+import { formatCombo } from "../kit/keys.ts";
 import { ErrorState, Loading } from "../kit/LoadState.tsx";
 import { EmptyCanvas, NextStep, PageHeader, Panel, SectionLabel } from "../kit/layout.tsx";
 import { Junction, Wire } from "../kit/motifs.tsx";
@@ -201,7 +203,7 @@ function FirstRun({
       key: "run",
       done: counts.everRan === true,
       title: "A first run",
-      detail: "Run it from its editor with ⌘↵, or start it from the scripts list.",
+      detail: `Run it from its editor with ${formatCombo("Mod+Enter")}, or start it from the scripts list.`,
       to: `${link}/scripts`,
       action: "Scripts",
     },
@@ -273,7 +275,22 @@ export function Overview({
   const firstRun =
     counts !== undefined &&
     counts.scripts !== undefined &&
+    // A count the viewer may not read is not zero: the checklist waits for the ones it needs.
+    counts.scripts != null &&
+    counts.everRan != null &&
     (counts.everRan === false || counts.version === null);
+
+  // What the server left out because the viewer may not read it: said, not turned into zero.
+  const unseen: string[] = [];
+  if (counts) {
+    if (counts.failedRuns?.count == null) unseen.push("failed runs");
+    if (counts.approvalsWaiting == null) unseen.push("approvals");
+    if (counts.unboundConnections == null) unseen.push("connections");
+    if (counts.drafts == null) unseen.push("drafts");
+  }
+  const unseenText = `You cannot see ${
+    unseen.length > 1 ? `${unseen.slice(0, -1).join(", ")} and ${unseen.at(-1)}` : unseen[0]
+  }. Ask an administrator for read access if you need them.`;
 
   const attention: { key: string; node: ReactNode }[] = [];
   if (counts) {
@@ -469,15 +486,31 @@ export function Overview({
                 <Panel className="divide-y divide-line">
                   {!counts ? (
                     <p className="m-0 px-4 py-3 text-ink-muted">Checking…</p>
-                  ) : attention.length === 0 ? (
-                    <NextStep
-                      tone="success"
-                      icon={<CircleCheck aria-hidden="true" size={16} />}
-                      title="Nothing needs you here"
-                      detail="No failed runs in the last 24 hours, nothing waiting, everything bound."
-                    />
                   ) : (
-                    attention.map((item) => <div key={item.key}>{item.node}</div>)
+                    <>
+                      {attention.map((item) => (
+                        <div key={item.key}>{item.node}</div>
+                      ))}
+                      {unseen.length > 0 ? (
+                        <NextStep
+                          tone="action"
+                          icon={<EyeOff aria-hidden="true" size={16} />}
+                          title={
+                            attention.length === 0
+                              ? "Nothing you can see needs you here"
+                              : "Some of this you cannot see"
+                          }
+                          detail={unseenText}
+                        />
+                      ) : attention.length === 0 ? (
+                        <NextStep
+                          tone="success"
+                          icon={<CircleCheck aria-hidden="true" size={16} />}
+                          title="Nothing needs you here"
+                          detail="No failed runs in the last 24 hours, nothing waiting, everything bound."
+                        />
+                      ) : null}
+                    </>
                   )}
                 </Panel>
               </section>

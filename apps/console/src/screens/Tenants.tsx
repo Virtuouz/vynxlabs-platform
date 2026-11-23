@@ -13,6 +13,7 @@ interface TenantRow {
   name: string;
   dataLocation: string | null;
   workspaceCount?: number;
+  mayRename?: boolean;
   createdAt: string;
 }
 

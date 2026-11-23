@@ -212,3 +212,31 @@ test("an inset table shows ten rows, then all of them on request", () => {
   fireEvent.click(screen.getByRole("button", { name: "Show all 12" }));
   expect(document.querySelectorAll("tr[data-row]").length).toBe(12);
 });
+
+test("Shift+J and Shift+K check the rows they pass, as the shortcut sheet says (SHL-02)", async () => {
+  function Checked() {
+    const [checked, setChecked] = useState<Set<string>>(new Set());
+    return (
+      <DataTable
+        label="Runs"
+        columns={COLUMNS}
+        rows={ROWS}
+        rowKey={(row) => row.id}
+        onOpen={() => {}}
+        checked={checked}
+        onCheck={setChecked}
+        batch={(keys) => <button type="button">Cancel {keys.size}</button>}
+        empty={{ title: "None" }}
+      />
+    );
+  }
+  render(<Checked />);
+  const first = screen.getByRole("grid").querySelector('[tabindex="0"]') as HTMLElement;
+  first.focus();
+  // With Shift held a browser reports the capital letter.
+  fireEvent.keyDown(first, { key: "J", shiftKey: true });
+  await act(frame);
+  fireEvent.keyDown(document.activeElement as Element, { key: "J", shiftKey: true });
+  await act(frame);
+  expect(screen.getByText("3 selected")).toBeTruthy();
+});

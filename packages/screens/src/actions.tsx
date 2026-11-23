@@ -436,7 +436,27 @@ export function useActions(host: ActionsHost): {
               held.resolve({ ok: false, cancelled: true });
               setAsking(undefined);
             }}
-            submit={(inputs) => call(held.request, held.action, inputs)}
+            submit={async (inputs) => {
+              // What the form typed goes with what the confirmation asked for.
+              const given = { ...held.request.inputs, ...inputs };
+              try {
+                await call(held.request, held.action, given);
+              } catch (error) {
+                // A refusal of what the form holds is the form's to draw, beside the field.
+                const asked = new Set((held.action.confirm?.ask ?? []).map((one) => one.name));
+                const fields = error instanceof ActionError ? error.fields : undefined;
+                if (
+                  held.request.inputs &&
+                  fields &&
+                  Object.keys(fields).some((name) => !asked.has(name))
+                ) {
+                  held.resolve({ ok: false, message: errorWords(error), fields });
+                  setAsking(undefined);
+                  return;
+                }
+                throw error;
+              }
+            }}
           />
         )}
       </Closing>

@@ -307,7 +307,7 @@ describe("record detail", () => {
         <Page
           client={{
             ...clientOf({ record: recordInput }),
-            act: vi.fn(async () => ({ ok: true as const })),
+            act: vi.fn(async () => ({ client: [] })),
           }}
           widgets={[detail(config)]}
           registry={viewRegistry(corePack)}

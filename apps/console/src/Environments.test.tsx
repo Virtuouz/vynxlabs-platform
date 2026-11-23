@@ -408,3 +408,17 @@ test("a verdict made for another slug or passphrase does not enable the import, 
   await screen.findByRole("button", { name: "Upload and check" });
   expect((screen.getByLabelText("Its passphrase") as HTMLInputElement).value).toBe("");
 });
+
+test("a workspace whose triggers the operator paused says so, not that they are on (INS-24)", () => {
+  render(
+    <WorkspaceControls
+      base={base}
+      tenantId="t1"
+      workspace={{ ...main, triggersPaused: false, pausedByInstance: true }}
+      reload={() => {}}
+    />,
+  );
+  expect(screen.getByText("Triggers are paused by the instance")).toBeTruthy();
+  expect(screen.queryByText("Triggers are on")).toBeNull();
+  expect(screen.getByText(/An operator has paused every trigger in this instance/)).toBeTruthy();
+});

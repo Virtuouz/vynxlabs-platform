@@ -34,6 +34,8 @@ export interface WorkspaceSummary {
   type: "production" | "dev";
   linkedWorkspaceId: string | null;
   triggersPaused: boolean;
+  /** An operator has paused every trigger in the instance. */
+  pausedByInstance?: boolean;
 }
 
 const failed = (error: unknown) => {
@@ -89,7 +91,9 @@ export function WorkspaceControls({
       <SettingsRows label="Workspace actions">
         <SettingsRow
           title={
-            workspace.triggersPaused ? (
+            workspace.pausedByInstance ? (
+              <StatePill state="paused">Triggers are paused by the instance</StatePill>
+            ) : workspace.triggersPaused ? (
               <StatePill state="paused">Triggers are paused</StatePill>
             ) : (
               <StatePill state="on">Triggers are on</StatePill>
@@ -107,13 +111,19 @@ export function WorkspaceControls({
             )
           }
         >
-          {workspace.triggersPaused
-            ? `No schedule, webhook or event starts anything in this workspace. Runs you start by hand still work.${
-                workspace.type === "dev"
-                  ? " A dev workspace starts this way, so a schedule you try here does not run beside production's."
-                  : ""
+          {workspace.pausedByInstance
+            ? `An operator has paused every trigger in this instance, so nothing starts in this workspace until they resume them.${
+                workspace.triggersPaused
+                  ? " This workspace is paused on its own as well, and stays paused after that."
+                  : " Runs you start by hand still work."
               }`
-            : "Pausing stops every schedule, webhook and event here at once. One trigger can be paused alone under Triggers."}
+            : workspace.triggersPaused
+              ? `No schedule, webhook or event starts anything in this workspace. Runs you start by hand still work.${
+                  workspace.type === "dev"
+                    ? " A dev workspace starts this way, so a schedule you try here does not run beside production's."
+                    : ""
+                }`
+              : "Pausing stops every schedule, webhook and event here at once. One trigger can be paused alone under Triggers."}
         </SettingsRow>
         <SettingsRow
           title="Copy workspace"

@@ -151,9 +151,18 @@ test("an operator stops every trigger in the instance at once, and starts them a
   });
   expect(await fireIn(2)).toBe(0);
   expect(await flowRuns(ws, "skips")).toBe(0);
+  // The tenant's own screens can say so (INS-24), without the operator's reason.
+  const seen = await t.admin.get(ws);
+  expect(seen.body).toMatchObject({ triggersPaused: false, pausedByInstance: true });
+  expect(JSON.stringify(seen.body)).not.toContain("Falling behind");
+  const listed = await t.admin.get(`/tenants/${tenant}/workspaces`);
+  expect(
+    listed.body.items.every((one: { pausedByInstance: boolean }) => one.pausedByInstance),
+  ).toBe(true);
 
   const resumed = await t.admin.put("/instance/triggers", { paused: false });
   expect(resumed.body).toMatchObject({ paused: false, reason: null });
+  expect((await t.admin.get(ws)).body.pausedByInstance).toBe(false);
   // A schedule kept its time while paused, and fires once on resuming.
   expect(await fireIn(2)).toBeGreaterThan(0);
   expect(await flowRuns(ws, "skips")).toBe(1);

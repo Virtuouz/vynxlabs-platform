@@ -5,6 +5,7 @@ import { Type } from "typebox";
 import { refuseDirectProductionWrite } from "../kernel/authoring.js";
 import { check } from "../kernel/authorize.js";
 import { badRequest, conflict, HttpError, notFound } from "../kernel/errors.js";
+import { instanceTriggersPaused } from "../kernel/execution/control.js";
 import { access, type WorkspaceRef } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
 import { requireStanding } from "../kernel/pages/standing.js";
@@ -38,6 +39,10 @@ const Workspace = Type.Object({
     description:
       "While true, no schedule, webhook or event starts anything here. Runs started by hand still work.",
   }),
+  pausedByInstance: Type.Boolean({
+    description:
+      "True while an operator has paused every trigger in the instance, whatever `triggersPaused` says. The operator's reason is not given here.",
+  }),
   concurrencyLimit: Type.Integer({ description: "How many runs may be in progress at once." }),
   timeZone: Type.String({
     description:
@@ -62,7 +67,7 @@ interface WorkspaceRow {
   failure_alert: { script?: string; notify?: string };
   created_at: Date;
 }
-const toWorkspace = (row: WorkspaceRow) => ({
+const toWorkspace = (row: WorkspaceRow, pausedByInstance: boolean) => ({
   id: row.id,
   tenantId: row.tenant_id,
   slug: row.slug,
@@ -70,6 +75,7 @@ const toWorkspace = (row: WorkspaceRow) => ({
   type: row.type,
   linkedWorkspaceId: row.linked_workspace_id,
   triggersPaused: row.triggers_paused,
+  pausedByInstance,
   concurrencyLimit: row.concurrency_limit,
   timeZone: row.time_zone ?? "UTC",
   failureAlert: row.failure_alert,
@@ -196,11 +202,12 @@ export function workspaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           .where("tenant_id", "=", params.t)
           .orderBy("slug")
           .execute();
+        const byInstance = await instanceTriggersPaused(kernel);
         const whole = await check(db, ctx.principal, "workspace:read", { tenantId: params.t });
         if (whole.allowed) {
           // Goes through authorize so that operator access is recorded.
           await ctx.authorize("workspace:read", { tenantId: params.t });
-          return { items: rows.map(toWorkspace) };
+          return { items: rows.map((row) => toWorkspace(row, byInstance)) };
         }
         const readable = [];
         for (const row of rows) {
@@ -210,7 +217,7 @@ export function workspaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         }
         // Nothing readable here: answer exactly as the tenant-level check would.
         if (readable.length === 0) await ctx.authorize("workspace:read", { tenantId: params.t });
-        return { items: readable.map(toWorkspace) };
+        return { items: readable.map((row) => toWorkspace(row, byInstance)) };
       },
     );
 
@@ -270,7 +277,7 @@ export function workspaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           });
           return row;
         });
-        return reply.code(201).send(toWorkspace(workspace));
+        return reply.code(201).send(toWorkspace(workspace, await instanceTriggersPaused(kernel)));
       },
     );
 
@@ -291,7 +298,7 @@ export function workspaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           .selectAll()
           .where("id", "=", params.w)
           .executeTakeFirstOrThrow();
-        return toWorkspace(row);
+        return toWorkspace(row, await instanceTriggersPaused(kernel));
       },
     );
 
@@ -387,7 +394,7 @@ export function workspaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           });
           return updated;
         });
-        return toWorkspace(row);
+        return toWorkspace(row, await instanceTriggersPaused(kernel));
       },
     );
 

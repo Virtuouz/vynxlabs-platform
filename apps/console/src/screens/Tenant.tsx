@@ -102,6 +102,8 @@ interface Workspace {
   type: "production" | "dev";
   linkedWorkspaceId: string | null;
   triggersPaused: boolean;
+  /** An operator has paused every trigger in the instance. */
+  pausedByInstance?: boolean;
 }
 interface Grant {
   id: string;
@@ -684,6 +686,7 @@ function WorkspaceDetail({
           root={root}
           link={`/t/${tenantId}/workspaces/${workspaceId}`}
           workspacePaused={workspace.data.triggersPaused}
+          instancePaused={workspace.data.pausedByInstance === true}
           production={workspace.data.type === "production"}
         />
       ) : tab === "connections" && rest ? (

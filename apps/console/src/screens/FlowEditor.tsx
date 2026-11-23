@@ -244,7 +244,7 @@ export function stepNameFor(path: string): string {
 }
 
 /** What the flow kind's schema allows in a step's text. */
-const MAX_EXPRESSION = 2000;
+const MAX_EXPRESSION = 2000; // said as "2,000" in the problem below
 const MAX_APPROVAL_TITLE = 200;
 const MAX_CASES = 20;
 export const MAX_DESCRIPTION = 500;
@@ -745,7 +745,7 @@ export function problemsAt(
     const tooLong = expressionsOf(node).some((text) => text.length > MAX_EXPRESSION);
     if (tooLong)
       problems.push({
-        message: `${id} has an expression longer than ${MAX_EXPRESSION.toLocaleString("en-US")} letters. Move part of it to a Set step.`,
+        message: `${id} has an expression longer than 2,000 letters. Move part of it to a Set step.`,
         node: id,
       });
     if (node.type === "fail" && empty(node.message))

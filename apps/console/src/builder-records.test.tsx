@@ -347,7 +347,7 @@ test("a table that does nothing on a click can be made to open an Invoice detail
   });
   expect(
     (detail?.config?.fields as { column: string }[] | undefined)?.map((field) => field.column),
-  ).toEqual(["total", "customer"]);
+  ).toEqual(["number", "total", "status", "customer"]);
   // The row actions go with it, and read the record it is open on.
   expect((detail?.config?.actions as { action: unknown }[] | undefined)?.[0]?.action).toMatchObject(
     {

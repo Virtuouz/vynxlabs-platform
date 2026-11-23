@@ -4,7 +4,7 @@ import { type Indexed, OPTIONS } from "./search-query.js";
 import { type DocSet, pagesInOrder, urlOf } from "./set.js";
 
 export type { Marked, PageHit, PlaceHit, SearchHit } from "./search-query.js";
-export { loadSearchIndex, mark } from "./search-query.js";
+export { loadSearchIndex, mark, RESULT_LIMIT } from "./search-query.js";
 
 /** The most characters of a page's or a section's words an index keeps for a result's snippet. */
 export const PASSAGE_LENGTH = 400;
@@ -41,7 +41,10 @@ function sections(tree: Root): { heading?: { id: string; text: string }; nodes: 
  * words of every page of the set, so it is given only to someone who may open
  * the whole set.
  */
-export function buildSearchIndex(set: DocSet, options: { productName?: string } = {}): string {
+export function buildSearchIndex(
+  set: DocSet,
+  options: { productName?: string; generated?: ReadonlySet<string> } = {},
+): string {
   const index = new MiniSearch<Indexed>(OPTIONS);
   const order = pagesInOrder(set.nav).map((page) => page.path);
   const rest = [...set.pages.keys()].filter((path) => !order.includes(path)).sort();
@@ -66,6 +69,7 @@ export function buildSearchIndex(set: DocSet, options: { productName?: string } 
       description: entry.frontmatter.description ?? "",
       collection,
       docType: set.types[path] ?? "",
+      ...(options.generated ? { generated: options.generated.has(path) ? "1" : "0" } : {}),
     };
     const parts = sections(entry.tree);
     // A page's own words are those before its first heading: the rest is its sections'.

@@ -70,6 +70,7 @@ export {
   loadSearchIndex,
   type Marked,
   mark,
+  RESULT_LIMIT,
   type PageHit,
   type PlaceHit,
   type SearchHit,

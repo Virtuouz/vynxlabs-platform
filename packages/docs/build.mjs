@@ -7,7 +7,7 @@ import { fieldDescriptions } from "./generators/reference.mjs";
 import { HERE, loadDocs, report, VERSION } from "./load.mjs";
 import { readIndex } from "./screenshots.mjs";
 
-const { set, issues, assets, redirects, sources } = loadDocs();
+const { set, issues, assets, redirects, sources, written } = loadDocs();
 if (issues.some((issue) => issue.severity === "error")) {
   report(issues);
   console.error(
@@ -18,7 +18,13 @@ if (issues.some((issue) => issue.severity === "error")) {
 
 const out = join(HERE, "dist");
 rmSync(out, { recursive: true, force: true });
-for (const [name, text] of packageOutput(set, { version: VERSION, productName: "Volvel" })) {
+// A page not written by hand is generated: search puts those after the pages that were written.
+const generated = new Set([...set.pages.keys()].filter((path) => !written.has(path)));
+for (const [name, text] of packageOutput(set, {
+  version: VERSION,
+  productName: "Volvel",
+  generated,
+})) {
   const file = join(out, name);
   mkdirSync(dirname(file), { recursive: true });
   writeFileSync(file, text);

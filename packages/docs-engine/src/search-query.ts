@@ -17,6 +17,11 @@ export interface Indexed {
   collection: string;
   /** The page's type, stored and never searched. Empty for a page with none. */
   docType: string;
+  /**
+   * Whether the page was made by a generator and not written: "1" or "0". Absent in a set
+   * that did not say, and in an index built before it was kept.
+   */
+  generated?: string;
   headings: string;
   /** For a section: its heading, and what a link to it ends in. */
   heading: string;
@@ -70,6 +75,9 @@ export interface PageHit {
   places: PlaceHit[];
 }
 
+/** How many pages a search shows when it is not told: the server and the help panel answer alike. */
+export const RESULT_LIMIT = 12;
+
 export const OPTIONS = {
   fields: ["title", "description", "headings", "heading", "text"],
   storeFields: [
@@ -80,6 +88,7 @@ export const OPTIONS = {
     "description",
     "collection",
     "docType",
+    "generated",
     "heading",
     "anchor",
     "passage",
@@ -182,10 +191,15 @@ export function loadSearchIndex(json: string): {
         const exact =
           titleOf(path).toLowerCase() === asked ||
           String(hit.heading ?? "").toLowerCase() === asked;
-        const reference = isReference(path, index.getStoredFields(path)?.docType);
-        return { hit, score: reference && !exact ? hit.score * 0.6 : hit.score };
+        const own = index.getStoredFields(path);
+        // Where the set says which pages are generated, those come after every page written,
+        // unless asked for by name: a page written keeps its weight, reference or not.
+        // Otherwise reference is marked down.
+        const tier = own?.generated === "1" && !exact ? 1 : 0;
+        const down = own?.generated === undefined && isReference(path, own?.docType) && !exact;
+        return { hit, tier, score: down ? hit.score * 0.6 : hit.score };
       })
-      .sort((a, b) => b.score - a.score)
+      .sort((a, b) => a.tier - b.tier || b.score - a.score)
       .map((one) => one.hit);
   };
   return {
@@ -227,7 +241,7 @@ export function loadSearchIndex(json: string): {
         const path = hit.path as string;
         let page = pages.get(path);
         if (!page) {
-          if (pages.size >= (options.limit ?? 8)) continue;
+          if (pages.size >= (options.limit ?? RESULT_LIMIT)) continue;
           // The page's own title, from whichever of its hits came first.
           const own = hit.kind === "page" ? hit : index.getStoredFields(path);
           const terms = [...words, ...hit.terms];

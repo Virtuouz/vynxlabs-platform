@@ -279,6 +279,7 @@ export function RulesTab({
   const ctx = { ...actionContext(env), eventTable: undefined, defaultRef: "this" as const };
   const showWhen = env.widget.rules?.showWhen;
   const seenBy = env.widget.rules?.seenBy?.groups ?? [];
+  const editBy = (env.widget.config?.editBy as { groups?: string[] } | undefined)?.groups ?? [];
   const setRules = (
     patch: { showWhen?: typeof showWhen; seenBy?: SeenBy | undefined },
     key?: string,
@@ -375,6 +376,32 @@ export function RulesTab({
           </p>
         </div>
       </DrawerGroup>
+
+      {env.widget.type === "core/detail" && env.widget.config?.edit === true ? (
+        <DrawerGroup
+          label="Who can edit"
+          note="Who may change its fields in place. Checked on the server too: hiding the editor is not what stops other people."
+        >
+          <DrawerBlock>
+            <GroupChips
+              paths={editBy}
+              choices={choices}
+              everyone={`Everyone who can open the ${noun}`}
+              addLabel={editBy.length === 0 ? "Limit to a group" : "Group"}
+              onChange={(groups) => {
+                const { editBy: _before, ...config } = env.widget.config ?? {};
+                env.write(
+                  {
+                    ...env.widget,
+                    config: groups.length > 0 ? { ...config, editBy: { groups } } : config,
+                  },
+                  "changing who can edit",
+                );
+              }}
+            />
+          </DrawerBlock>
+        </DrawerGroup>
+      ) : null}
 
       {runnable.map((slot) => (
         <div key={slot.key} className="flex flex-col gap-5">

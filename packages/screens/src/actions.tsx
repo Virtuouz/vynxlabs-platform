@@ -58,7 +58,12 @@ export function actionAt(widget: PageWidget, at: string): Action | undefined {
   if (parts[0] !== "config") return undefined;
   // A record detail that lets people edit in place: the edit is an action of its own, with no
   // steps to run here. The server checks the fields as it does an action's.
-  if (at === "config/edit") return widget.config?.edit === true ? EDIT_IN_PLACE : undefined;
+  if (at === "config/edit") {
+    if (widget.config?.edit !== true) return undefined;
+    // Who may edit in place is named as who may run an action is (`editBy`), and the server checks it.
+    const by = widget.config.editBy as { groups?: string[] } | undefined;
+    return by?.groups?.length ? { ...EDIT_IN_PLACE, runBy: { groups: by.groups } } : EDIT_IN_PLACE;
+  }
   const property = widget.config?.[parts[1] as string];
   if (parts.length === 2) return isAction(property) ? property : undefined;
   if (parts.length === 4 && parts[3] === "action" && Array.isArray(property)) {
@@ -132,9 +137,11 @@ export function whyNotRun(
   action: Action | undefined,
   user: ActingUser | undefined,
   names?: Readonly<Record<string, string>>,
+  /** What the groups can do: "do this", or "edit this" for a record edited in place. */
+  what = "do this",
 ): string | undefined {
   if (mayRun(action, user)) return undefined;
-  return `Only ${listOf((action?.runBy?.groups ?? []).map((path) => groupTitle(path, names)))} can do this.`;
+  return `Only ${listOf((action?.runBy?.groups ?? []).map((path) => groupTitle(path, names)))} can ${what}.`;
 }
 
 /** Whether a widget is drawn to this person by `rules.seenBy`; drawing only, never security. */

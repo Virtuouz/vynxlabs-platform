@@ -1034,6 +1034,29 @@ export const detail = defineWidget({
           order: 5,
         }),
       },
+      editBy: {
+        type: "object",
+        description:
+          "Who may edit fields in place: the groups, by path. Left out: anyone who can open the page. Checked on the server.",
+        properties: {
+          groups: {
+            type: "array",
+            minItems: 1,
+            maxItems: 10,
+            items: { type: "string", maxLength: 255 },
+          },
+        },
+        required: ["groups"],
+        additionalProperties: false,
+        // Drawn by the Rules tab, as who may run an action is.
+        "x-volvel": hint({
+          tab: "rules",
+          control: "groups",
+          label: "Who can edit",
+          when: { edit: true },
+          order: 1,
+        }),
+      },
       actions: {
         type: "array",
         maxItems: 6,

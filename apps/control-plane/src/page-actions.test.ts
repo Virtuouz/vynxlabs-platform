@@ -1154,6 +1154,21 @@ describe("edit in place of a record detail", () => {
           fields: [{ column: "number" }, { column: "total" }, { column: "status", hidden: true }],
         },
       });
+    // The same, limited to a group: the groups of the end users are keyed (ivy is in "finance").
+    for (const [id, groups] of [
+      ["info_sales", ["sales"]],
+      ["info_finance", ["finance"]],
+    ] as const) {
+      body.pages
+        .find((page) => page.id === "inv")
+        ?.widgets.push({
+          id,
+          type: "core/detail",
+          at: { x: 0, y: 14, w: 6, h: 6 },
+          data: { record: { source: { record: "this" } } },
+          config: { edit: true, editBy: { groups }, fields: [{ column: "total" }] },
+        });
+    }
     await t.db
       .updateTable("resource")
       .set({ body: JSON.stringify(body) })
@@ -1173,6 +1188,17 @@ describe("edit in place of a record detail", () => {
       targetId: id,
       details: { fields: expect.arrayContaining(["total", "number"]), action: "config/edit" },
     });
+  });
+
+  test("is limited to the groups the detail names, and refused to everyone else (WID-19)", async () => {
+    const id = await invoice();
+    const as = (widget: string) =>
+      act(ivy, { widget, at: "config/edit", records: { this: id }, inputs: { total: 77 } });
+    const refused = await as("info_sales");
+    expect(refused.status, JSON.stringify(refused.body)).toBe(403);
+    expect((await rowOf(id)).total).toBe(10);
+    expect((await as("info_finance")).status).toBe(200);
+    expect((await rowOf(id)).total).toBe(77);
   });
 
   test("refuses a column it does not show, or hides, and a value of the wrong type", async () => {

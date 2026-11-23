@@ -277,9 +277,7 @@ describe("record detail", () => {
     render(
       <Page
         client={clientOf({ record: withLists })}
-        widgets={[
-          detail({ edit: true, fields: [{ column: "tags" }, { column: "attachment" }] }),
-        ]}
+        widgets={[detail({ edit: true, fields: [{ column: "tags" }, { column: "attachment" }] })]}
         registry={registryWith({ act, can: () => true })}
       />,
     );
@@ -296,6 +294,33 @@ describe("record detail", () => {
         inputs: { tags: ["late", "vip"] },
       }),
     );
+  });
+
+  test("editing in place is limited to the groups that may, and the others read it with the reason (WID-19)", async () => {
+    const config = {
+      edit: true,
+      editBy: { groups: ["groups/billing"] },
+      fields: [{ column: "total" }],
+    };
+    const draw = (groups: string[]) =>
+      render(
+        <Page
+          client={{
+            ...clientOf({ record: recordInput }),
+            act: vi.fn(async () => ({ ok: true as const })),
+          }}
+          widgets={[detail(config)]}
+          registry={viewRegistry(corePack)}
+          user={{ id: "u1", groups }}
+        />,
+      );
+    draw(["billing"]);
+    expect(await screen.findByRole("button", { name: "Edit Total" })).toBeTruthy();
+    cleanup();
+    draw(["sales"]);
+    await screen.findByText("INV-1", { exact: false });
+    expect(screen.queryByRole("button", { name: "Edit Total" })).toBeNull();
+    expect(screen.getByText("Only Billing can edit this.")).toBeTruthy();
   });
 
   test("actions are buttons: disabled by can, run with the record, in their tone", async () => {

@@ -1,6 +1,7 @@
 import { defineWidget, WidgetRegistry } from "@volvel/widgets";
 import { approvals, coreRegistry } from "@volvel/widgets-core";
 import { describe, expect, it } from "vitest";
+import { missingGroups } from "./groups.js";
 import { registerPlatformKinds } from "./kinds.js";
 import {
   checkDashboard,
@@ -81,6 +82,44 @@ describe("pages", () => {
     });
     expect(result.ok).toBe(true);
     expect(messages([chart])).toEqual([]);
+  });
+
+  it("holds who may edit a record in place, and a group named there that is gone is found (WID-19)", () => {
+    const detail: PageWidget = {
+      id: "info",
+      type: "core/detail",
+      at: { x: 0, y: 0, w: 6, h: 6 },
+      data: { record: { source: { record: "this" } } },
+      config: { edit: true, editBy: { groups: ["groups/billing"] } },
+    };
+    const record = (widget: PageWidget): InterfaceBody => ({
+      title: "Invoices",
+      pages: [
+        {
+          id: "inv",
+          title: "Invoice",
+          kind: "record",
+          record: { table: "invoices" },
+          widgets: [widget],
+        },
+      ],
+    });
+    const kinds = new KindRegistry();
+    registerPlatformKinds(kinds);
+    const result = kinds.validateManifest({
+      kind: "interface",
+      schemaVersion: 2,
+      path: "screens/invoices",
+      workspace: "sandbox",
+      ownership: "code",
+      body: record(detail),
+    });
+    expect(result.ok, JSON.stringify(result)).toBe(true);
+    expect(checkInterface(record(detail), tableOf)).toEqual([]);
+    expect(missingGroups(record(detail), ["groups/billing"])).toEqual([]);
+    expect(missingGroups(record(detail), ["groups/sales"])).toEqual([
+      expect.objectContaining({ at: "config/editBy" }),
+    ]);
   });
 
   it("refuses a type no pack declares, and draws nothing else of it", () => {

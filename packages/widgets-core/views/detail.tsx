@@ -370,7 +370,9 @@ export function DetailView({
   const actions = config.actions ?? [];
   const wanted = Number(config.across);
   const across: 1 | 2 | 3 = wanted === 1 || wanted === 3 ? wanted : 2;
-  const editable = config.edit === true && !building && act !== undefined;
+  // Who may edit in place is the host's to say (`can`), for the groups the page names.
+  const mayEdit = can?.("config/edit") !== false;
+  const editable = config.edit === true && !building && act !== undefined && mayEdit;
   // The server edits only the fields shown: a hidden one is read, not changed, here.
   const canEdit = (column: string) =>
     editable &&
@@ -503,6 +505,11 @@ export function DetailView({
             );
           })}
         </div>
+      ) : null}
+      {config.edit === true && !building && act !== undefined && !mayEdit ? (
+        <p className="m-0 text-meta text-ink-muted">
+          {why?.("config/edit", record) ?? "You may not edit this."}
+        </p>
       ) : null}
       {sectionsOf(shown).map((section) => (
         <section key={section.name} className="flex flex-col gap-2">

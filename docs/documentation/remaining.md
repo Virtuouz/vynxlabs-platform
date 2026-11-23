@@ -16,3 +16,4 @@ Each item was in a lane's brief and was not built, or was found by a lane. The f
 - A binding older than the 200 newest uploads still reads as its old kind (cfg2 limit; needs a column) (t2-walk-shell).
 - A retired table's `managedIn` is always `code` from the server (t2-walk-data).
 - `CreateDialog`s with no `done` still say "Created." (t2-walk-data).
+- The manual start's input schema is a raw JSON box, and invalid text is lost when another step is chosen; "To fix" does not check that an approver group still exists (t3-flow-editor).

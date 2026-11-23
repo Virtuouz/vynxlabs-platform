@@ -3,6 +3,7 @@ import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { TableView } from "./screens/Data.tsx";
 import { WorkspaceAccess } from "./screens/Environments.tsx";
+import { Scripts } from "./screens/Execution.tsx";
 import { EventPage, ScriptPage } from "./screens/ObjectPages.tsx";
 import { EventsWorkbench, TriggersWorkbench } from "./screens/Operate.tsx";
 import { RunPage } from "./screens/RunPage.tsx";
@@ -110,6 +111,32 @@ test("a script page says why Run is off, and its triggers offer no Add a schedul
   fireEvent.click(await screen.findByRole("tab", { name: /Triggers/ }));
   await screen.findByRole("button", { name: "Add a schedule" });
   expect(off("Add a schedule")).toBe(true);
+});
+
+test("the script peek in the list offers a viewer no Open editor, Run or Offer", async () => {
+  history.replaceState(null, "", `${link}/scripts?item=jobs%2Fnightly`);
+  answers[`${root}/scripts`] = {
+    items: [
+      {
+        path: "jobs/nightly",
+        description: "",
+        timeoutSeconds: 30,
+        inputSchema: {},
+        deployed: true,
+        lastRun: null,
+        failedInARow: 0,
+        ownership: "code",
+        retries: 0,
+        uses: { connections: [], secrets: [], variables: [], tables: [] },
+      },
+    ],
+  };
+  show(<Scripts root={root} link={link} editable={false} />);
+  await screen.findByRole("button", { name: "Open editor" });
+  await says("resource:write");
+  expect(off("Open editor")).toBe(true);
+  expect(off(/^Run/)).toBe(true);
+  expect(off(/Offer to an agent/)).toBe(true);
 });
 
 test("an event page says what publishing and changing it take", async () => {

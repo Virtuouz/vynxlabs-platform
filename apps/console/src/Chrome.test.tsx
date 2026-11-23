@@ -4,7 +4,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { notify } from "./ask.tsx";
 import { OperatorMark, OperatorStrip, setOperatorAccess } from "./kit/OperatorStrip.tsx";
 import { PageHeader } from "./kit/PageHeader.tsx";
-import { readPreference, resetPreferences } from "./prefs.ts";
+import { loadPreferences, readPreference, resetPreferences } from "./prefs.ts";
 import { show } from "./testing.tsx";
 
 /**
@@ -41,6 +41,27 @@ test("a description shows on the first visit, and is behind help on the next", a
   expect(screen.queryByText("Scripts and flows that ran here.")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "About Runs" }));
   expect(await screen.findByText("Scripts and flows that ran here.")).toBeTruthy();
+});
+
+test("a description read in another browser is folded once the settings arrive, not shown again (P31)", async () => {
+  // A new browser holds nothing; the server says the list was read. The page draws before the
+  // settings arrive: the description is folded when they do, as on any later visit.
+  let answer: (response: Response) => void = () => {};
+  vi.stubGlobal("fetch", (address: string) =>
+    String(address).endsWith("/me/preferences")
+      ? new Promise<Response>((resolve) => {
+          answer = resolve;
+        })
+      : Promise.resolve(new Response(null, { status: 204 })),
+  );
+  const loading = loadPreferences();
+  show(header());
+  await act(async () => {
+    answer(Response.json({ items: [{ key: "seen:runs", value: true }] }));
+    await loading;
+  });
+  expect(screen.queryByText("Scripts and flows that ran here.")).toBeNull();
+  expect(screen.getByRole("button", { name: "About Runs" })).toBeTruthy();
 });
 
 test("operator access is a strip that hides to a mark, and comes back from it", async () => {

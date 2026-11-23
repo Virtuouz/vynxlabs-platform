@@ -207,6 +207,10 @@ export function adoptLegacy(): string[] {
  * a setting moved from the old keys, is sent to the server.
  */
 export function loadPreferences(): Promise<void> {
+  if (!loaded) {
+    waiting = true;
+    notify();
+  }
   loaded ??= (async () => {
     adoptLegacy();
     try {
@@ -227,14 +231,33 @@ export function loadPreferences(): Promise<void> {
       notify();
     } catch {
       // The server can't be reached: this browser's settings stand.
+    } finally {
+      waiting = false;
+      notify();
     }
   })();
   return loaded;
 }
 
+/** Whether the member's settings are on their way from the server. */
+let waiting = false;
+
+/**
+ * Whether the member's settings are on their way from the server: something
+ * decided once per visit from a setting waits until they are here.
+ */
+export function usePreferencesWaiting(): boolean {
+  return useSyncExternalStore(
+    subscribe,
+    () => waiting,
+    () => false,
+  );
+}
+
 /** For tests: forgets what was loaded, so the next test loads again. */
 export function resetPreferences() {
   loaded = undefined;
+  waiting = false;
   moved.clear();
   for (const timer of pending.values()) clearTimeout(timer);
   pending.clear();

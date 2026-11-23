@@ -2,7 +2,7 @@ import { Popover, TermText } from "@volvel/ui";
 import { Info } from "lucide-react";
 import { type ReactNode, useEffect, useRef } from "react";
 import { openHelp, useHelp } from "../help/store.ts";
-import { usePreference } from "../prefs.ts";
+import { usePreference, usePreferencesWaiting } from "../prefs.ts";
 
 /**
  * The one heading every screen has (08 §3.1). Where it is in the console is
@@ -199,15 +199,19 @@ export function PageHeader({
 /**
  * Whether a member has read a list's description. It is marked read the first
  * time it is shown, and stays shown for the whole of that visit: it folds on
- * the next one, never under the reader's eyes.
+ * the next one, never under the reader's eyes. Whether this is the first time
+ * is decided once the member's settings are here: a list read in another
+ * browser is not shown again because this one had not heard yet.
  */
 export function useSeen(key: string | undefined, has: boolean): [boolean] {
   const [seen, setSeen] = usePreference<boolean>(`seen:${key ?? "none"}`, false);
-  const first = useRef(!seen);
+  const waiting = usePreferencesWaiting();
+  const first = useRef<boolean | undefined>(undefined);
+  if (first.current === undefined && !waiting) first.current = !seen;
   useEffect(() => {
     if (key && has && first.current) setSeen(true);
-  }, [key, has, setSeen]);
-  return [seen && !first.current];
+  }, [key, has, setSeen, waiting]);
+  return [first.current === undefined ? seen : seen && !first.current];
 }
 
 /** The ⓘ beside a list's title that holds what the list is for, and leads to the page's help. */

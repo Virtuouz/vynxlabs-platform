@@ -57,8 +57,10 @@ const row = (more: Record<string, unknown>) => ({
   ...more,
 });
 
+let ownConnectors: object[] = [];
 beforeEach(() => {
   calls = [];
+  ownConnectors = [];
   history.replaceState(null, "", "/t/t1/workspaces/w1/connections");
   testEnds = { status: "succeeded", result: { ok: true, status: 200, latencyMs: 42 } };
   rows = [
@@ -119,6 +121,7 @@ beforeEach(() => {
           { name: "http", builtin: true, configSchema: http },
           { name: "smtp", builtin: true, configSchema: smtp },
           { name: "oauth2", builtin: true, configSchema: oauth2 },
+          ...ownConnectors,
         ],
       });
     }
@@ -192,6 +195,33 @@ test("a new connection is declared in a draft, bound, and tested; a refusal says
     path: "crm",
   });
   expect(within(sheet).getByRole("button", { name: "Change the token or key" })).toBeTruthy();
+});
+
+test("a new connection can be of the workspace's own connector, with the form that connector gives (P31)", async () => {
+  ownConnectors = [
+    {
+      name: "billing/ledger",
+      builtin: false,
+      configSchema: {
+        type: "object",
+        properties: { region: { type: "string", title: "Region" } },
+        required: ["region"],
+      },
+    },
+  ];
+  show(<Connections root={root} />);
+  fireEvent.click(await screen.findByRole("button", { name: "New connection" }));
+  const sheet = await screen.findByRole("dialog");
+  fireEvent.change(within(sheet).getByLabelText("Connection"), { target: { value: "__new" } });
+  fireEvent.change(within(sheet).getByLabelText("Name"), { target: { value: "books" } });
+  fireEvent.change(await within(sheet).findByLabelText("Kind"), {
+    target: { value: "billing/ledger" },
+  });
+  fireEvent.change(await within(sheet).findByLabelText("Region"), { target: { value: "eu" } });
+  fireEvent.click(within(sheet).getByRole("button", { name: "Save" }));
+  await waitFor(() => expect(put("/connection-bindings/books")).toBeTruthy());
+  expect(put("/drafts/books")?.body).toMatchObject({ body: { connector: "billing/ledger" } });
+  expect(put("/connection-bindings/books")?.body).toMatchObject({ config: { region: "eu" } });
 });
 
 test("a declared connection of another kind is set up with the form its connector gives", async () => {

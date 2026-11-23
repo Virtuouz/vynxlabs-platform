@@ -424,12 +424,13 @@ export function ConnectionWizard({
                     label="Kind"
                     name="kind"
                     value={newKind}
-                    options={(kinds.data?.items ?? [])
-                      .filter((kind) => kind.builtin)
-                      .map((kind) => ({
-                        value: kind.name,
-                        label: CONNECTOR_NAMES[kind.name] ?? kind.name,
-                      }))}
+                    // The kinds every worker has, then the workspace's own connectors.
+                    options={(kinds.data?.items ?? []).map((kind) => ({
+                      value: kind.name,
+                      label: kind.builtin
+                        ? (CONNECTOR_NAMES[kind.name] ?? kind.name)
+                        : `${kind.name} (this workspace's own)`,
+                    }))}
                     onChange={(value) => {
                       setNewKind(value);
                       setConfig({});

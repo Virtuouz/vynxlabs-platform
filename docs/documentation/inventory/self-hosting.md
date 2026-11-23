@@ -15,7 +15,7 @@ Today `packages/docs/content` has `build configure data instance operate start t
 
 Wiring:
 - Add the collection to the root `index.md` `pages`; each folder needs an `index.md` with `pages`. Every page must be opened by the console or linked from another page (`packages/docs/check.mjs:80-94`).
-- Vocabulary in the pages: Volvel, canceled (the metric label still reads `cancelled`: `volvel_runs_finished_total`, SH:597), Deploy and Versions, access changes. SH:5 still says "Vynxlabs" and SH:3 "Last updated: 2026-11-12"; `deploy/fly/README.md:3` says "Vynxlabs-run instances". Fix when splitting.
+- Vocabulary in the pages: Volvel, canceled (the metric label still reads `cancelled`: `volvel_runs_finished_total`, SH:597), Deploy and Versions, access changes. SH:3 still says "Last updated: 2026-11-12". Fix when splitting.
 
 | # | Page | Type | Purpose | Sources |
 |---|---|---|---|---|
@@ -132,7 +132,7 @@ Keep an SH redirect stub, or update its references: `packages/manifest/src/name.
 
 **Licences and publishing:** Apache-2.0 "pending legal review" (earlier); allowlist `scripts/check-licenses.mjs`. `release.yml`: a tag `v*` publishes `@volvel/widgets, markup, docs-engine, docs, ui, app, sdk, cli` under `latest` and the image `volvel/volvel:<version>` and `:latest`; a push to `main` publishes `<base>-next.<commit>` under `next`; nothing is published unless the variable `RELEASE_ENABLED` is `true`; it needs `NPM_TOKEN`, `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN`, and tells the website repository when `DOCS_SITE_REPOSITORY` is set. There are no git tags and the changelog says "Unreleased"; the first publish date is not set (D62). Say the image and packages are not published yet, and document building from source (`docker compose` builds locally when `VOLVEL_IMAGE` is not set).
 
-**Fly** (`deploy/fly/README.md`, an example, D59): `fly.toml` sets `HOST = "::"` (`.internal` is IPv6), `processes = ["app"]`, `kill_timeout = 60`; the `workers` group is added by the reader (`volvel-worker-host --url http://<app>.internal:8080`) and must run as root. Not proved: whether Fly runs that group as root while the image says `USER node` (HOST-06 left this open); no image was built. README line 3 says "Vynxlabs-run instances".
+**Fly** (`deploy/fly/README.md`, an example, D59): `fly.toml` sets `HOST = "::"` (`.internal` is IPv6), `processes = ["app"]`, `kill_timeout = 60`; the `workers` group is added by the reader (`volvel-worker-host --url http://<app>.internal:8080`) and must run as root. Not proved: whether Fly runs that group as root while the image says `USER node` (HOST-06 left this open); no image was built. README line 3 says "the operator-run instances".
 
 ## C. Gotchas
 

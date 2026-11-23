@@ -1,6 +1,6 @@
-import { Button, EmptyState, Menu, Notice, TextField } from "@volvel/ui";
+import { Button, EmptyState, Menu, Notice, SelectField, TextField } from "@volvel/ui";
 import { lazy, Suspense, useEffect, useState } from "react";
-import { api, isOperator, type Me, useLoad } from "../api.ts";
+import { ApiError, api, isOperator, type Me, useLoad } from "../api.ts";
 import { notify } from "../ask.tsx";
 import { CollectionView } from "../kit/CollectionView.tsx";
 import { useEditorKey } from "../kit/editorKey.ts";
@@ -144,20 +144,78 @@ const grantForm = (tenantId: string, roles: Role[]): CreateConfig => ({
     {
       name: "durationMinutes",
       label: "Duration",
-      options: [
-        { value: "60", label: "1 hour" },
-        { value: "240", label: "4 hours" },
-        { value: "1440", label: "24 hours" },
-      ],
+      custom: ({ value, onChange, error }) => (
+        <GrantLength value={value} onChange={onChange} error={error} />
+      ),
     },
   ],
   submit: (values) =>
     api.post(`/tenants/${tenantId}/access-grants`, {
       reason: values.reason,
       roleId: values.roleId,
-      durationMinutes: Number(values.durationMinutes),
+      durationMinutes: grantMinutes(values.durationMinutes),
     }),
 });
+
+const LONGEST_GRANT = 1440;
+const GRANT_LENGTHS = [
+  { value: "60", label: "1 hour" },
+  { value: "240", label: "4 hours" },
+  { value: "1440", label: "24 hours" },
+];
+
+/** A grant's length in minutes: one of the offered, or `other:<minutes>` typed by the person. */
+function grantMinutes(value: string | undefined): number {
+  const minutes = Number((value ?? "60").replace(/^other:/, ""));
+  if (!Number.isInteger(minutes) || minutes < 1 || minutes > LONGEST_GRANT) {
+    throw new ApiError(400, {
+      detail: `The length is 1 to ${LONGEST_GRANT} minutes.`,
+      errors: [
+        {
+          path: "/body/durationMinutes",
+          message: `Give a whole number of minutes, from 1 to ${LONGEST_GRANT} (24 hours).`,
+        },
+      ],
+    });
+  }
+  return minutes;
+}
+
+function GrantLength({
+  value,
+  onChange,
+  error,
+}: {
+  value: string | undefined;
+  onChange: (value: string) => void;
+  error: string | undefined;
+}) {
+  const current = value ?? "60";
+  const other = current.startsWith("other:");
+  return (
+    <div className="flex flex-col gap-3">
+      <SelectField
+        name="duration"
+        label="Duration"
+        options={[...GRANT_LENGTHS, { value: "other", label: "Other" }]}
+        value={other ? "other" : current}
+        {...(other ? {} : error ? { error } : {})}
+        onChange={(next) => onChange(next === "other" ? "other:" : next)}
+      />
+      {other ? (
+        <TextField
+          name="durationMinutes"
+          label="Minutes"
+          type="number"
+          value={current.slice("other:".length)}
+          hint={`A whole number, from 1 to ${LONGEST_GRANT} (24 hours).`}
+          {...(error ? { error } : {})}
+          onChange={(text) => onChange(`other:${text}`)}
+        />
+      ) : null}
+    </div>
+  );
+}
 
 /** Built-in roles an operator can pick before having any access to the tenant. */
 const BUILTIN_ROLES: Role[] = [

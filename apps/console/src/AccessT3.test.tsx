@@ -303,3 +303,27 @@ test("ACC-MP12: a group of end users shows its key and who made it", async () =>
   expect(await screen.findByText("front-desk")).toBeTruthy();
   expect(screen.getByText("Identity provider")).toBeTruthy();
 });
+
+test("ACC-MP19: an operator's grant takes any length from 1 to 1440 minutes, by choosing Other", async () => {
+  routes.push((method, url) =>
+    method === "POST" && url.endsWith("/access-grants") ? [201, { id: "g1" }] : undefined,
+  );
+  const me = {
+    principal: { id: "op1", type: "member" },
+    tenants: [],
+    instancePermissions: ["tenant:write"],
+  } as never;
+  show(<Tenant tenantId="t1" me={me} path="/t/t1/overview" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Open operator access" }));
+  const dialog = await screen.findByRole("dialog");
+  fireEvent.change(within(dialog).getByLabelText("Reason"), { target: { value: "Ticket 7" } });
+  fireEvent.change(within(dialog).getByLabelText("Duration"), { target: { value: "other" } });
+  fireEvent.change(within(dialog).getByLabelText("Minutes"), { target: { value: "2000" } });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Open operator access" }));
+  expect(await within(dialog).findByText(/Give a whole number/)).toBeTruthy();
+  expect(calls.some((c) => c.method === "POST")).toBe(false);
+  fireEvent.change(within(dialog).getByLabelText("Minutes"), { target: { value: "90" } });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Open operator access" }));
+  await waitFor(() => expect(calls.some((c) => c.method === "POST")).toBe(true));
+  expect(calls.find((c) => c.method === "POST")?.body).toMatchObject({ durationMinutes: 90 });
+});

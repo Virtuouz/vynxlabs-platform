@@ -244,10 +244,116 @@ test("a SAML provider's settings say what lowering the bar means, and group mapp
   fireEvent.click(screen.getByRole("button", { name: "Add a mapping" }));
   const values = screen.getAllByLabelText("Group at the provider");
   fireEvent.change(values[1] as HTMLElement, { target: { value: " gold " } });
-  // A row with no group chosen is left out.
+  // A row with no group chosen is not saved, and says so (GOV-18).
+  fireEvent.click(screen.getByRole("button", { name: "Save mapping" }));
+  expect((await screen.findByRole("alert")).textContent).toContain("Row 2");
+  expect(sent("PUT")).toHaveLength(0);
+  // Taken out, the rest is saved.
+  fireEvent.click(screen.getByRole("button", { name: "Remove mapping 2" }));
   fireEvent.click(screen.getByRole("button", { name: "Save mapping" }));
   await waitFor(() => expect(sent("PUT")).toHaveLength(1));
   expect(sent("PUT")[0]?.body).toEqual({ items: [{ value: "*", groupId: "g1" }] });
+});
+
+test("a mapping an access release made is shown read only, with the way to the release (GOV-19)", async () => {
+  routes[`GET ${base}`] = () => [200, { items: [saml] }];
+  routes["GET /api/v1/tenants/t1/end-user-groups?limit=200"] = () => [
+    200,
+    { items: [{ id: "g1", name: "customers" }] },
+  ];
+  routes[`GET ${base}/p2/group-maps`] = () => [
+    200,
+    {
+      items: [
+        { value: "gold", groupId: "g1", groupName: "customers", managedBy: "release" },
+        { value: "*", groupId: "g1", groupName: "customers", managedBy: "hand" },
+      ],
+    },
+  ];
+  routes[`PUT ${base}/p2/group-maps`] = (body) => [200, body];
+  show(<SingleSignOn base="/tenants/t1" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Customers" }));
+  fireEvent.click(screen.getByRole("tab", { name: "Groups" }));
+  await screen.findByLabelText("Group at the provider");
+  // Only the one made by hand has fields and a remove button.
+  expect(screen.getAllByLabelText("Group at the provider")).toHaveLength(1);
+  expect(screen.getAllByRole("button", { name: /Remove mapping/ })).toHaveLength(1);
+  const link = screen.getByRole("link", { name: /release/i }) as HTMLAnchorElement;
+  expect(link.getAttribute("href")).toBe("/t/t1/releases");
+  expect(screen.getByText("gold")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Remove mapping 1" }));
+  fireEvent.click(screen.getByRole("button", { name: "Save mapping" }));
+  await waitFor(() => expect(sent("PUT")).toHaveLength(1));
+  expect(sent("PUT")[0]?.body).toEqual({ items: [] });
+});
+
+test("attributes keep a value with an equals sign, and a line that is not whole is said (GOV-18)", async () => {
+  let current = saml;
+  routes[`GET ${base}`] = () => [200, { items: [current] }];
+  routes[`PATCH ${base}/p2`] = (body) => {
+    current = { ...current, config: (body as { config: object }).config };
+    return [200, current];
+  };
+  routes[`GET ${base}/p2/group-maps`] = () => [200, { items: [] }];
+  show(<SingleSignOn base="/tenants/t1" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Customers" }));
+  fireEvent.click(screen.getByRole("tab", { name: "Settings" }));
+  const field = await screen.findByLabelText("Attributes");
+  fireEvent.change(field, { target: { value: "customer_id = urn:x?a=b\nregion: r" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  expect((await screen.findByRole("alert")).textContent).toContain("Line 2");
+  expect(sent("PATCH")).toHaveLength(0);
+  fireEvent.change(field, { target: { value: "customer_id = urn:x?a=b" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  await waitFor(() => expect(sent("PATCH")).toHaveLength(1));
+  expect(sent("PATCH")[0]?.body).toMatchObject({
+    config: { attributes: { customer_id: "urn:x?a=b" } },
+  });
+});
+
+test("scopes keep the space that was typed (GOV-14)", async () => {
+  routes[`GET ${base}`] = () => [200, { items: [oidc] }];
+  routes[`GET ${base}/p1/group-maps`] = () => [200, { items: [] }];
+  routes[`PATCH ${base}/p1`] = (body) => [200, { ...oidc, ...(body as object) }];
+  show(<SingleSignOn base="/tenants/t1" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Acme Login" }));
+  fireEvent.click(screen.getByRole("tab", { name: "Settings" }));
+  const field = (await screen.findByLabelText("Scopes")) as HTMLInputElement;
+  for (const typed of ["openid", "openid ", "openid g", "openid groups"]) {
+    fireEvent.change(field, { target: { value: typed } });
+    expect(field.value).toBe(typed);
+  }
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  await waitFor(() => expect(sent("PATCH")).toHaveLength(1));
+  expect(sent("PATCH")[0]?.body).toMatchObject({ config: { scopes: ["openid", "groups"] } });
+});
+
+test("a domain of the instance that needs no proof is not asked for it (GOV-21)", async () => {
+  const instanceProvider = { ...oidc, tenantId: null };
+  routes["GET /api/v1/instance/identity-providers"] = () => [200, { items: [instanceProvider] }];
+  routes["GET /api/v1/instance/identity-providers/p1/domains"] = () => [200, { items: [] }];
+  routes["POST /api/v1/instance/identity-providers/p1/domains"] = (body) => [
+    201,
+    {
+      id: "d1",
+      domain: (body as { domain: string }).domain,
+      verified: true,
+      verifiedAt: "2026-11-01T10:00:00Z",
+      checkedAt: null,
+      problem: null,
+      record: null,
+    },
+  ];
+  show(<SingleSignOn base="/instance" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Acme Login" }));
+  fireEvent.click(screen.getByRole("tab", { name: "Domains" }));
+  fireEvent.change(await screen.findByLabelText("Email domain"), {
+    target: { value: "ops.example" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Add domain" }));
+  await waitFor(() => expect(sent("POST")).toHaveLength(1));
+  await waitFor(() => expect(document.body.textContent).toContain("ops.example is added."));
+  expect(document.body.textContent).not.toContain("Prove it is yours");
 });
 
 test("signing in asks for the email first, then offers the organization's sign-in", async () => {
@@ -277,4 +383,17 @@ test("a sign-in the provider refused says why, once", async () => {
   );
   // The reason is taken out of the address. Where to go back to stays.
   expect(window.location.search).toBe("?return=%2Fx");
+});
+
+test("a stored client secret can be removed, for a public client (GOV-13)", async () => {
+  routes[`GET ${base}`] = () => [200, { items: [oidc] }];
+  routes[`GET ${base}/p1/group-maps`] = () => [200, { items: [] }];
+  routes[`PATCH ${base}/p1`] = (body) => [200, { ...oidc, ...(body as object) }];
+  show(<SingleSignOn base="/tenants/t1" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Acme Login" }));
+  fireEvent.click(screen.getByRole("tab", { name: "Settings" }));
+  fireEvent.click(await screen.findByLabelText("Remove the stored client secret"));
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  await waitFor(() => expect(sent("PATCH")).toHaveLength(1));
+  expect(sent("PATCH")[0]?.body).toMatchObject({ clientSecret: null });
 });

@@ -1,5 +1,6 @@
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
+import { newId } from "@volvel/db";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { dns } from "./kernel/apps/challenge.js";
 import { type Client, startTestApp, type TestApp } from "./testing.js";
@@ -145,4 +146,43 @@ describe("connecting an OIDC provider (GOV-13, GOV-15)", () => {
   });
 });
 
-export type { Any };
+describe("a group mapping an access release made (GOV-19)", () => {
+  test("is listed as the release's, and an empty save leaves it", async () => {
+    const idp = await describedIssuer((origin) => origin);
+    try {
+      const made = await alice.post(providers(), {
+        audience: "members",
+        protocol: "oidc",
+        name: "Mapped",
+        config: { issuer: idp.origin, clientId: "console" },
+      });
+      const id = made.body.id as string;
+      const group = await alice.post(`/tenants/${tenant}/groups`, { name: "Finance" });
+      expect(group.status, JSON.stringify(group.body)).toBe(201);
+      const other = await alice.post(`/tenants/${tenant}/groups`, { name: "Staff" });
+      await t.db
+        .insertInto("identity_group_map")
+        .values({
+          id: newId(),
+          provider_id: id,
+          tenant_id: tenant,
+          claim_value: "finance",
+          member_group_id: group.body.id,
+          managed_by: "release",
+        })
+        .execute();
+      const put = await alice.put(`${providers()}/${id}/group-maps`, {
+        items: [{ value: "everyone", groupId: other.body.id }],
+      });
+      expect(put.status, JSON.stringify(put.body)).toBe(200);
+      const by = Object.fromEntries(
+        put.body.items.map((item: Any) => [item.value, item.managedBy]),
+      );
+      expect(by).toEqual({ finance: "release", everyone: "hand" });
+      const emptied = await alice.put(`${providers()}/${id}/group-maps`, { items: [] });
+      expect(emptied.body.items.map((item: Any) => item.value)).toEqual(["finance"]);
+    } finally {
+      await idp.stop();
+    }
+  });
+});

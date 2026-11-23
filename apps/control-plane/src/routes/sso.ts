@@ -96,7 +96,15 @@ const GroupMap = Type.Object({
   }),
   groupId: Id,
 });
-const GroupMapView = Type.Object({ value: Type.String(), groupId: Id, groupName: Type.String() });
+const GroupMapView = Type.Object({
+  value: Type.String(),
+  groupId: Id,
+  groupName: Type.String(),
+  managedBy: Type.Union([Type.Literal("hand"), Type.Literal("release")], {
+    description:
+      "`release` for a mapping a release of the tenant's access made: it is changed by another release, not here.",
+  }),
+});
 const LinkView = Type.Object({
   id: Id,
   subject: Type.String(),
@@ -634,6 +642,7 @@ export function ssoRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             "identity_group_map.claim_value",
             "identity_group_map.member_group_id",
             "identity_group_map.end_user_group_id",
+            "identity_group_map.managed_by",
             "principal_group.name as member_group",
             "end_user_group.name as end_user_group",
           ])
@@ -645,6 +654,7 @@ export function ssoRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           value: row.claim_value,
           groupId: (row.member_group_id ?? row.end_user_group_id) as string,
           groupName: row.member_group ?? row.end_user_group ?? "",
+          managedBy: row.managed_by,
         }));
       };
 

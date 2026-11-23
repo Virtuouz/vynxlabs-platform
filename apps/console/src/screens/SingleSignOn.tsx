@@ -23,9 +23,9 @@ import { ErrorState, Loading } from "../kit/LoadState.tsx";
 import { Stepper } from "../kit/layout.tsx";
 import { PageHeader } from "../kit/PageHeader.tsx";
 import { SecretField } from "../kit/SecretField.tsx";
-import { StatePill, Tag } from "../kit/status.tsx";
+import { Mono, StatePill, Tag } from "../kit/status.tsx";
 import { CopyButton, Page, when } from "../ListScreen.tsx";
-import { useUrlParam } from "../router.tsx";
+import { Link as RouteLink, useUrlParam } from "../router.tsx";
 import { Provisioning } from "./Provisioning.tsx";
 
 type Audience = "members" | "end_users";
@@ -103,6 +103,8 @@ interface Domain {
 interface GroupMap {
   value: string;
   groupId: string;
+  /** `release` for one an access release made: it is changed by a release, not here. */
+  managedBy?: "hand" | "release";
 }
 interface Link {
   id: string;
@@ -456,8 +458,13 @@ function Domains({ root, instance }: { root: string; instance: boolean }) {
         onSubmit={(event) => {
           event.preventDefault();
           void run(async () => {
-            await api.post(`${root}/domains`, { domain: domain.trim() });
-            notify.success(`${domain.trim()} is added. Prove it is yours with the record shown.`);
+            const added = await api.post<Domain>(`${root}/domains`, { domain: domain.trim() });
+            // An instance's own domain needs no proof: the answer carries no record to publish.
+            notify.success(
+              added.record && !added.verified
+                ? `${domain.trim()} is added. Prove it is yours with the record shown.`
+                : `${domain.trim()} is added.`,
+            );
             setDomain("");
           });
         }}
@@ -542,7 +549,11 @@ function Groups({ base, root, audience }: { base: string; root: string; audience
   const stored = useLoad<{ items: GroupMap[] }>(`${root}/group-maps`);
   const [edited, setEdited] = useState<GroupMap[]>();
   const [busy, setBusy] = useState(false);
-  const rows = edited ?? stored.data?.items ?? [];
+  const all = stored.data?.items ?? [];
+  const released = all.filter((row) => row.managedBy === "release");
+  const rows = edited ?? all.filter((row) => row.managedBy !== "release");
+  const [problem, setProblem] = useState<string>();
+  const tenantId = base.split("/").pop();
   const change = (index: number, patch: Partial<GroupMap>) =>
     setEdited(rows.map((row, at) => (at === index ? { ...row, ...patch } : row)));
   const options = (groups.data?.items ?? []).map((group) => ({
@@ -557,6 +568,28 @@ function Groups({ base, root, audience }: { base: string; root: string; audience
         never touched. Use <code className="font-mono text-code">*</code> for everyone the provider
         signs in.
       </p>
+      {released.length > 0 ? (
+        <div className="flex flex-col gap-2">
+          <p className="m-0 text-ink-muted">
+            These come from a{" "}
+            <RouteLink to={`/t/${tenantId}/releases`} className="text-action">
+              release of the tenant's access
+            </RouteLink>
+            . Change them there.
+          </p>
+          {released.map((row) => (
+            <div
+              key={`${row.value}\n${row.groupId}`}
+              className="flex flex-wrap items-center gap-2 rounded-control bg-structure px-3 py-2"
+            >
+              <Mono>{row.value}</Mono>
+              <span className="text-ink-muted">goes to</span>
+              <strong>{row.groupName ?? row.groupId}</strong>
+              <Tag tone="neutral">Release</Tag>
+            </div>
+          ))}
+        </div>
+      ) : null}
       {rows.map((row, index) => (
         // biome-ignore lint/suspicious/noArrayIndexKey: rows have no identity until saved
         <div key={index} className="flex flex-wrap items-end gap-2">
@@ -594,6 +627,19 @@ function Groups({ base, root, audience }: { base: string; root: string; audience
           loading={busy}
           disabled={edited === undefined}
           onClick={async () => {
+            // A row left empty is nothing; one half filled in is not saved quietly without its half.
+            const half = rows.findIndex((row) => !!row.value.trim() !== !!row.groupId);
+            if (half >= 0) {
+              setProblem(
+                `Row ${half + 1} is not complete. ${
+                  rows[half]?.value.trim()
+                    ? "Choose the group here for it"
+                    : "Write the group at the provider for it"
+                }, or remove the row.`,
+              );
+              return;
+            }
+            setProblem(undefined);
             const items = rows.filter((row) => row.value.trim() && row.groupId);
             setBusy(true);
             try {
@@ -613,6 +659,7 @@ function Groups({ base, root, audience }: { base: string; root: string; audience
           Save mapping
         </Button>
       </div>
+      {problem ? <Notice tone="danger">{problem}</Notice> : null}
       {groups.data && options.length === 0 ? (
         <Notice tone="attention">
           {audience === "members"
@@ -656,9 +703,11 @@ function Settings({
       .join("\n"),
   );
   const [clientSecret, setClientSecret] = useState("");
+  const [removeSecret, setRemoveSecret] = useState(false);
+  const [scopes, setScopes] = useState((provider.config.scopes ?? []).join(" "));
   const [provision, setProvision] = useState(provider.provision);
   const [roleId, setRoleId] = useState(provider.defaultRoleId ?? undefined);
-  const [error, setError] = useState<ApiError>();
+  const [error, setError] = useState<ApiError | string>();
   const [busy, setBusy] = useState(false);
   const set = (patch: Partial<Config>) => setConfig((current) => ({ ...current, ...patch }));
   const claim = (key: keyof Claims, label: string, usual: string) => (
@@ -696,6 +745,23 @@ function Settings({
           });
           if (!sure) return;
         }
+        // One a line, split at the first equals sign: a claim may hold one. A line that is not
+        // whole is said, not dropped.
+        const pairs: [string, string][] = [];
+        const lines = attributes.split("\n");
+        for (const [at, line] of lines.entries()) {
+          if (!line.trim()) continue;
+          const cut = line.indexOf("=");
+          const attribute = cut < 0 ? "" : line.slice(0, cut).trim();
+          const claimName = cut < 0 ? "" : line.slice(cut + 1).trim();
+          if (!attribute || !claimName) {
+            setError(
+              `Line ${at + 1} is not complete: write the attribute here, an equals sign, then the claim it is read from.`,
+            );
+            return;
+          }
+          pairs.push([attribute, claimName]);
+        }
         setBusy(true);
         try {
           const { spCertificate: _ours, ...sent } = config;
@@ -711,20 +777,17 @@ function Settings({
                       .filter(Boolean),
                   }
                 : {}),
-              attributes: Object.fromEntries(
-                attributes
-                  .split("\n")
-                  .map((line) => line.split("=").map((part) => part.trim()))
-                  .filter((parts) => parts.length === 2 && parts[0] && parts[1]),
-              ),
+              ...(saml ? {} : { scopes: scopes.split(/\s+/).filter(Boolean) }),
+              attributes: Object.fromEntries(pairs),
             },
-            ...(clientSecret ? { clientSecret } : {}),
+            ...(clientSecret ? { clientSecret } : removeSecret ? { clientSecret: null } : {}),
             provision,
             ...(provider.audience === "members" && !instance
               ? { defaultRoleId: roleId ?? null }
               : {}),
           });
           setClientSecret("");
+          setRemoveSecret(false);
           onChanged(saved);
           notify.success("The provider was saved.");
         } catch (caught) {
@@ -821,12 +884,21 @@ function Settings({
             value={clientSecret}
             onChange={setClientSecret}
           />
+          {provider.hasSecret && !clientSecret ? (
+            <CheckboxField
+              label="Remove the stored client secret"
+              name="removeSecret"
+              checked={removeSecret}
+              hint="For a public client: the provider is then signed in with PKCE alone. Applies when you save."
+              onChange={setRemoveSecret}
+            />
+          ) : null}
           <TextField
             label="Scopes"
             name="scopes"
-            value={(config.scopes ?? []).join(" ")}
+            value={scopes}
             hint="Separated by spaces."
-            onChange={(value) => set({ scopes: value.split(/\s+/).filter(Boolean) })}
+            onChange={setScopes}
           />
           <CheckboxField
             label="Also read the user-info address"

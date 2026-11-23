@@ -55,3 +55,9 @@ Commits are named by the row in their subject: `git log --grep "(WID-01)"`.
 - **A person sees:** a member in the group sees the widget on the dashboard; one outside does not; folds are remembered per dashboard.
 - **Walk:** a dashboard with a widget limited to a group and a Section folded; as a member in and out of the group; 1440/390, light/dark, reload (the fold stays). Not run in a browser.
 - **Left out:** end users have no dashboards, so only members are handled; the user is read once per page load.
+
+## WID-18 "The user's own record" found only when the email's capitals matched
+- **Test:** `apps/control-plane/src/widget-data.test.ts` > "the user's own row is found whatever the capitals of the email held" (failed before: empty).
+- **Changed:** `kernel/data/query/inputs.ts` (the own source's filter is `ieq`), `kernel/data/query/visual.ts` (`ieq`: `lower(col::text) = lower($n)`). `ieq` is the server's own and not in the SDK's `VISUAL_OPERATORS`, so no manifest can write it and no schema changed. The edit's check in `act.ts` was already case-blind (and now also guards every action: WID-01), so both agree.
+- **Siblings looked at:** other `eq` filters on text are exact on purpose.
+- **A person sees:** their own record when the stored email has other capitals.

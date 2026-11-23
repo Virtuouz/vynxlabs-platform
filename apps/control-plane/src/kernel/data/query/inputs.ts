@@ -719,7 +719,11 @@ export async function readWidget(
         source: {
           visual: {
             table: own.table,
-            filters: [email !== undefined ? { column: own.by, op: "eq", value: email } : NOTHING],
+            filters: [
+              email !== undefined
+                ? ({ column: own.by, op: "ieq", value: email } as unknown as VisualCondition)
+                : NOTHING,
+            ],
           },
         },
       };

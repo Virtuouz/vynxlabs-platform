@@ -201,7 +201,7 @@ describe("promotion", () => {
         errors: [
           {
             path: "/connections/api",
-            message: 'the connection "api" is not bound in this workspace',
+            message: 'the connection "api" is not set up in this workspace',
           },
         ],
       },

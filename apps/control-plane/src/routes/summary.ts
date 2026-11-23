@@ -101,7 +101,7 @@ export function summaryRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         schema: {
           summary: "What needs attention in a workspace",
           description:
-            "Drafts, failed runs over the last 24 hours, connections with nothing bound, " +
+            "Drafts, failed runs over the last 24 hours, connections not set up here, " +
             "approvals waiting, git state and the version that runs here and where it promotes to. " +
             "A count the caller may not read is null.",
           tags: ["tenancy"],

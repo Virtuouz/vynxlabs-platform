@@ -258,7 +258,7 @@ describe("an external Postgres database as a data source", () => {
     const deployed = await deploy(bundle());
     expect(deployed.status, JSON.stringify(deployed.body)).toBe(201);
     expect(deployed.body.summary.warnings).toEqual([
-      { path: "/sources/erp", message: 'the data source "erp" is not bound in this workspace' },
+      { path: "/sources/erp", message: 'the data source "erp" is not set up in this workspace' },
     ]);
   });
 

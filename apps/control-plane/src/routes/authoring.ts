@@ -1033,7 +1033,7 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           description:
             "Found by deploying them and taking it all back, so the answer is exactly what a " +
             "deploy would then do, including every refusal: code that does not build, a " +
-            "manifest that is not valid, a connection that is not bound. Needs " +
+            "manifest that is not valid, a connection that is not set up here. Needs " +
             "`deployment:read`; `interface:write` is enough for the interfaces and apps named in " +
             "`paths`, as it is to deploy them.",
           tags: ["authoring"],

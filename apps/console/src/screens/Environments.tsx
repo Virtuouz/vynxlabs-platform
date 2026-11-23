@@ -137,8 +137,8 @@ export function WorkspaceControls({
           }
         >
           A new dev workspace with what is deployed here, and its rows and files if you choose. With
-          Safety on it gets no connection, data source, group member or secret value until you bind
-          them. With Safety off it gets this workspace's.
+          Safety on it gets no connection, data source, group member or secret value until you set
+          them up. With Safety off it gets this workspace's.
         </SettingsRow>
         <SettingsRow
           title={<span className="text-danger">Delete workspace</span>}
@@ -579,7 +579,7 @@ function CloneDialog({
               clone.report.dataSources ||
               clone.report.connectionGroupMembers
                 ? "Its connections, data sources, group members and secrets were copied: it can reach the same systems as the original. A connection that signs in with OAuth is not signed in: connect it again."
-                : "It has no connections, data sources or secret values, so it cannot reach a real system until you bind it."}
+                : "It has no connections, data sources or secret values, so it cannot reach a real system until you set it up."}
             </p>
           )}
           <div className="flex justify-end gap-2">

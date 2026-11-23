@@ -158,7 +158,7 @@ export function sourceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                   arrives: Type.Boolean({
                     description:
                       "Declared by a workspace linked to this one, and not deployed here yet: it " +
-                      "arrives with the next promotion, and can be bound here before.",
+                      "arrives with the next promotion, and can be set up here before.",
                   }),
                   bound: Type.Boolean(),
                   config: Type.Union([AnyObject, Type.Null()]),

@@ -170,7 +170,7 @@ test("cloning asks about data and safety, and says what the copy can reach", asy
     { timeout: 5000 },
   );
   expect(screen.getByRole("dialog").textContent).toContain(
-    "it cannot reach a real system until you bind it",
+    "it cannot reach a real system until you set it up",
   );
   expect(screen.getByRole("button", { name: "Open the copy" })).toBeTruthy();
 });

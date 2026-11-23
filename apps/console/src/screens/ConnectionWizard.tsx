@@ -385,8 +385,8 @@ export function ConnectionWizard({
                 value={choice}
                 hint={
                   production
-                    ? "One the next promotion brings, or that is declared here, and nothing has bound yet."
-                    : "One the workspace's resources declare and nothing has bound yet, or a new one."
+                    ? "One the next promotion brings, or that is declared here, and not set up here yet."
+                    : "One the workspace's resources declare and not set up here yet, or a new one."
                 }
                 options={[
                   ...declared.map((candidate) => ({

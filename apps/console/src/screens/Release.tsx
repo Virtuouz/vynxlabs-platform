@@ -469,7 +469,7 @@ function ReviewStep({
                 {(preview.data.summary.warnings ?? []).length > 0 ? (
                   <Notice tone="attention">
                     <span className="flex items-center gap-1.5 font-medium">
-                      <TriangleAlert aria-hidden="true" size={14} /> Not bound here, and the deploy
+                      <TriangleAlert aria-hidden="true" size={14} /> Not set up here, and the deploy
                       still works
                     </span>
                     <ul className="mt-1 mb-0 pl-5">

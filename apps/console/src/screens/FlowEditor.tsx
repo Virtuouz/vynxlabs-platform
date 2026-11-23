@@ -35,6 +35,7 @@ import {
 } from "@xyflow/react";
 import { ago } from "../kit/format.ts";
 import { glide } from "../kit/motion.ts";
+import { listenChoices } from "../kit/platformEvents.ts";
 import "@xyflow/react/dist/style.css";
 import { Play, Plus, Redo2, TriangleAlert, Undo2 } from "lucide-react";
 import {
@@ -1757,7 +1758,7 @@ export function FlowEditor({
                       {(node.trigger as { type: string }).type === "event" ? (
                         <ComboboxField
                           label="Event"
-                          options={eventOptions}
+                          options={listenChoices(eventOptions)}
                           value={(node.trigger as { event?: string }).event || undefined}
                           onChange={(event) =>
                             update(chosen.id, {

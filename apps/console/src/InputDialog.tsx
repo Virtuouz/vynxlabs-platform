@@ -57,6 +57,89 @@ export const isStoredInput = (value: unknown): boolean =>
   typeof (value as { stored?: unknown }).stored === "string" &&
   /^flow-runs\/.+\.json$/.test((value as { stored: string }).stored);
 
+/** When and how first a run starts, if the person chose: both left out start it now, at 0. */
+export interface RunTimingChoice {
+  startAfter?: string;
+  priority?: number;
+}
+
+/** The time a date-time field holds as one instant, or undefined when it holds none. */
+const instantOf = (value: string): string | undefined => {
+  const at = value ? new Date(value) : undefined;
+  return at && !Number.isNaN(at.getTime()) ? at.toISOString() : undefined;
+};
+
+/**
+ * "Start: Now or Later" and a priority, for a dialog that starts a script run. Read when the
+ * form is sent: a time that has passed, or a priority outside -100 to 100, is refused in words.
+ */
+function useRunTiming(enabled: boolean) {
+  const [start, setStart] = useState<"now" | "later">("now");
+  const [at, setAt] = useState("");
+  const [priority, setPriority] = useState("");
+  const read = (): RunTimingChoice => {
+    const choice: RunTimingChoice = {};
+    if (start === "later") {
+      const instant = instantOf(at);
+      if (!instant) throw new Error("Choose when it starts, or start it now.");
+      if (Date.parse(instant) <= Date.now()) throw new Error("Choose a time that has not passed.");
+      choice.startAfter = instant;
+    }
+    if (priority.trim() !== "") {
+      const number = Number(priority);
+      if (!Number.isInteger(number) || number < -100 || number > 100) {
+        throw new Error("Priority is a whole number from -100 to 100.");
+      }
+      if (number !== 0) choice.priority = number;
+    }
+    return choice;
+  };
+  const fields = enabled ? (
+    <div className="flex flex-wrap items-end gap-3">
+      <label className="flex flex-col gap-1 text-meta text-ink-muted">
+        Start
+        <select
+          value={start}
+          onChange={(event) => setStart(event.currentTarget.value === "later" ? "later" : "now")}
+          className="h-9 rounded-control border border-line-control bg-surface px-2 text-body-sm text-ink"
+        >
+          <option value="now">Now</option>
+          <option value="later">Later</option>
+        </select>
+      </label>
+      {start === "later" ? (
+        <label className="flex flex-col gap-1 text-meta text-ink-muted">
+          Starts at
+          <input
+            type="datetime-local"
+            value={at}
+            onChange={(event) => setAt(event.currentTarget.value)}
+            className="h-9 rounded-control border border-line-control bg-surface px-2 text-body-sm text-ink"
+          />
+        </label>
+      ) : null}
+      <label className="flex flex-col gap-1 text-meta text-ink-muted">
+        Priority
+        <input
+          type="number"
+          inputMode="numeric"
+          min={-100}
+          max={100}
+          placeholder="0"
+          value={priority}
+          onChange={(event) => setPriority(event.currentTarget.value)}
+          className="h-9 w-24 rounded-control border border-line-control bg-surface px-2 text-body-sm text-ink"
+        />
+      </label>
+      <p className="m-0 basis-full text-meta text-ink-subtle">
+        A later run waits as queued until its time. A higher priority goes first when runs wait for
+        a worker.
+      </p>
+    </div>
+  ) : null;
+  return { fields, read };
+}
+
 export function InputDialog({
   open,
   onClose,
@@ -64,6 +147,7 @@ export function InputDialog({
   action,
   schema,
   initial,
+  timing,
   onSame,
   onSubmit,
 }: {
@@ -75,9 +159,11 @@ export function InputDialog({
   schema?: Record<string, unknown> | undefined;
   /** What the fields start with, such as the input of a run being run again. */
   initial?: unknown;
+  /** Asks when it starts and with what priority; `onSubmit` is given the choice as a second argument. */
+  timing?: boolean;
   /** Starts it again with the input it had, for an input too large to be shown and edited. */
   onSame?: () => Promise<void>;
-  onSubmit: (input: unknown) => Promise<void>;
+  onSubmit: (input: unknown, timing: RunTimingChoice) => Promise<void>;
 }) {
   return (
     <Dialog open={open} onClose={onClose} title={title}>
@@ -89,6 +175,7 @@ export function InputDialog({
           schema={schema}
           initial={initial}
           action={action}
+          timing={timing}
           onCancel={onClose}
           onSubmit={onSubmit}
         />
@@ -138,14 +225,16 @@ function MaskedAware({
   schema,
   initial,
   action,
+  timing,
   onCancel,
   onSubmit,
 }: {
   schema?: Record<string, unknown> | undefined;
   initial?: unknown;
   action: string;
+  timing?: boolean | undefined;
   onCancel: () => void;
-  onSubmit: (input: unknown) => Promise<void>;
+  onSubmit: (input: unknown, timing: RunTimingChoice) => Promise<void>;
 }) {
   const { value, masked } = withoutMasked(initial);
   const top = masked.filter((path) => path && !/[.[]/.test(path));
@@ -170,12 +259,14 @@ function MaskedAware({
         schema={asked}
         initial={masked.length > 0 ? value : initial}
         action={action}
+        timing={timing}
         onCancel={onCancel}
-        onSubmit={async (input) => {
+        onSubmit={async (input, choice) => {
           if (JSON.stringify(input ?? null).includes(JSON.stringify(MASKED))) {
             throw new Error(`Replace each "${MASKED}" with its real value first.`);
           }
-          await onSubmit(input);
+          if (timing) await onSubmit(input, choice);
+          else await (onSubmit as (input: unknown) => Promise<void>)(input);
         }}
       />
     </div>
@@ -187,21 +278,25 @@ export function InputForm({
   schema,
   initial,
   action,
+  timing,
   onCancel,
   onSubmit,
 }: {
   schema?: Record<string, unknown> | undefined;
   initial?: unknown;
   action: string;
+  timing?: boolean | undefined;
   onCancel?: () => void;
-  onSubmit: (input: unknown) => Promise<void>;
+  onSubmit: (input: unknown, timing: RunTimingChoice) => Promise<void>;
 }) {
+  const later = useRunTiming(Boolean(timing));
   const [problem, setProblem] = useState<string>();
   const [errors, setErrors] = useState<Record<string, string>>({});
   const drawn = schema && Object.keys(schema).length > 0 ? (schema as JsonSchema) : {};
   return (
     <div className="flex flex-col gap-3">
       {problem ? <Notice tone="danger">{problem}</Notice> : null}
+      {later.fields}
       <SchemaForm
         schema={drawn}
         value={initial ?? (drawn.type === "object" || !schema ? {} : undefined)}
@@ -212,7 +307,9 @@ export function InputForm({
           setProblem(undefined);
           setErrors({});
           try {
-            await onSubmit(input ?? {});
+            // Only a dialog that asks about timing says anything about it.
+            if (timing) await onSubmit(input ?? {}, later.read());
+            else await (onSubmit as (input: unknown) => Promise<void>)(input ?? {});
           } catch (error) {
             const placed = inputErrors(error);
             setErrors(placed);

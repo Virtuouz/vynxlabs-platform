@@ -18,7 +18,7 @@ import {
   ActionError,
   AppSkeleton,
   AppView,
-  inMenu,
+  helpingPage,
   type PageDataClient,
   useAddress,
   viewRegistry,
@@ -204,9 +204,9 @@ function App() {
 
   const who = context.principal;
   const pages = view?.body.pages ?? [];
-  const menu = pages.filter(inMenu);
-  // The page that is open, and its help: a page of documentation, when it names one this person may read.
-  const open = pages.find((one) => one.id === address.page) ?? menu[0];
+  // The page that is open, and its help: a page of documentation, when it names one this person may
+  // read. A side sheet or modal that is open and names a topic of its own is asked for it first.
+  const open = helpingPage(pages, address);
   const help = open?.help ? topics[open.help] : undefined;
   // Who is acting, for what a page draws by who it is. A condition names a group by its name or
   // its key, as the server reads it.

@@ -660,7 +660,6 @@ async function promote(args: string[], io: Io): Promise<number> {
   say.out(
     `Bundle ${String(bundle.digest).slice(0, 12)}, version ${bundle.version} here, to ${where}.`,
   );
-  const breaking = (summary.breaking ?? []) as { message: string }[];
   if (!possible) {
     throw new CliError(
       [
@@ -669,6 +668,7 @@ async function promote(args: string[], io: Io): Promise<number> {
       ].join("\n"),
     );
   }
+  const breaking = (summary.breaking ?? []) as { message: string }[];
   if (values.preview) {
     say.out(`Promoting would leave ${where} with: ${counts(summary)}.`);
     for (const line of describeChanges(summary)) say.out(line);

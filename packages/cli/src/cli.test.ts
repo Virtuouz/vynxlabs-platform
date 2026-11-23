@@ -253,6 +253,44 @@ test("promote --preview says breaking changes need --confirm-breaking, and exits
   }
 });
 
+test("promote says why the instance refuses it, with or without --preview", async () => {
+  const refused = await standIn(
+    tenantRoutes((_method, path) => {
+      if (path === "/api/v1/tenants/t1/workspaces/w1/promotion-preview")
+        return [
+          200,
+          {
+            target: { slug: "live", type: "production" },
+            bundle: { digest: "abcdef0123456789", version: 4 },
+            possible: false,
+            refusal: {
+              code: "validation_failed",
+              detail: "Nothing is deployed to promote.",
+              errors: [{ path: "/", message: "Deploy the workspace first." }],
+            },
+            summary: null,
+          },
+        ];
+      return undefined;
+    }, "dev"),
+  );
+  try {
+    const env = { VOLVEL_URL: refused.address, VOLVEL_TOKEN: "k" };
+    for (const extra of [[], ["--preview"]]) {
+      const result = await cli(
+        ["promote", "--tenant", "acme", "--workspace", "main", ...extra],
+        env,
+      );
+      expect(result.code).toBe(1);
+      expect(result.err).not.toContain("Unexpected");
+      expect(result.err).toContain("It cannot be promoted. Nothing is deployed to promote.");
+      expect(result.err).toContain("Deploy the workspace first.");
+    }
+  } finally {
+    await refused.close();
+  }
+});
+
 test("promote shows a failed release push as a warning and a done one as the branch (CLI-11, D49)", async () => {
   const summary = { created: 0, updated: 1, deleted: 0, unchanged: 2 };
   const target = ["--tenant", "acme", "--workspace", "main", "--confirm-breaking"];

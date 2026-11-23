@@ -226,6 +226,18 @@ function SourceRow({
           icon: Table2,
         }))
       : []),
+    // A table of a bound data source is read as a list: only an input that is rows offers it.
+    ...(offered.includes("table") && declared?.shape === "rows"
+      ? (catalog.sources ?? []).map((one) => {
+          const at = one.name.lastIndexOf("/");
+          return {
+            value: `table:${one.name}`,
+            label: `${one.name.slice(at + 1)} in ${one.name.slice(0, at)}`,
+            icon: Database,
+            hint: "A table of a data source: listed as it is, not totalled.",
+          };
+        })
+      : []),
     ...(offered.includes("query")
       ? catalog.queries.map((one) => ({
           value: `query:${one.path}`,

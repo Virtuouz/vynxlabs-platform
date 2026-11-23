@@ -620,3 +620,58 @@ test("QSD-MP9: the list shows what each dashboard is for under its name", async 
   show(<Dashboards root={root} link="/t/t1/workspaces/w1" />);
   await screen.findByText("Everything held, by item.");
 });
+
+test("QSD-MP10: a table of a data source is offered as where a list reads from, and not to a figure", async () => {
+  let stored: Any = mine;
+  routes[`GET ${api}/dashboards/d1`] = () => [200, stored];
+  routes[`PUT ${api}/dashboards/d1`] = (body) => {
+    stored = { ...stored, ...(body as object), revision: stored.revision + 1 };
+    return [200, stored];
+  };
+  routes[`GET ${api}/data-source-bindings`] = () => [
+    200,
+    {
+      items: [
+        { path: "erp", bound: true },
+        { path: "unreached", bound: false },
+      ],
+    },
+  ];
+  routes[`GET ${api}/data-source-tables/erp`] = () => [
+    200,
+    {
+      items: [
+        {
+          name: "orders",
+          key: "id",
+          columns: [
+            { name: "number", type: "text", required: true, writable: true },
+            { name: "total", type: "integer", required: false, writable: true },
+          ],
+        },
+        // A name with a space cannot be written in a page's path.
+        { name: "order items", key: null, columns: [] },
+      ],
+    },
+  ];
+  history.replaceState(null, "", "/?edit=1");
+  show(<DashboardView root={root} link="/t/t1/workspaces/w1" id="d1" />);
+  fireEvent.click(await screen.findByLabelText("Held", { selector: "section" }));
+  const settings = within(screen.getByRole("complementary", { name: "Settings" }));
+  fireEvent.click(settings.getByRole("tab", { name: /^Data/ }));
+  fireEvent.click(await settings.findByRole("button", { name: /^Source/ }));
+  const listbox = within(await screen.findByRole("dialog", { name: "Where it reads from" }));
+  await listbox.findByText("orders in erp");
+  expect(listbox.queryByText(/order items/)).toBeNull();
+  fireEvent.click(listbox.getByText("orders in erp"));
+  await waitFor(() => expect(sent("PUT")).toHaveLength(1));
+  expect(
+    put(0).body.widgets.find((one: Any) => one.id === "held").data.rows.source.visual.table,
+  ).toBe("erp/orders");
+  // A figure is totalled, which a data source's table is not read for.
+  fireEvent.click(screen.getByLabelText("In stock", { selector: "section" }));
+  fireEvent.click(await settings.findByRole("button", { name: /^Source/ }));
+  const figure = within(await screen.findByRole("dialog", { name: "Where it reads from" }));
+  await figure.findByText("Stock");
+  expect(figure.queryByText("orders in erp")).toBeNull();
+});

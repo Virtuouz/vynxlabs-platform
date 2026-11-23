@@ -68,7 +68,7 @@ test("a trigger named in the address opens, and choosing another changes the add
   expect(await screen.findByText("schedule trigger · node nightly")).toBeTruthy();
 });
 
-test("a schedule fires now from its inspector, and only a resource's schedule offers it", async () => {
+test("a schedule fires now from its inspector, and so does a flow's schedule, naming its node", async () => {
   const posted: { url: string; body: unknown }[] = [];
   vi.stubGlobal("fetch", async (address: string, init: RequestInit = {}) => {
     if (init.method === "POST") {
@@ -92,12 +92,13 @@ test("a schedule fires now from its inspector, and only a resource's schedule of
   });
   await vi.waitFor(() => expect(location.pathname).toBe(`${link}/runs/r1`));
 
-  // A schedule node inside a flow fires with its flow.
+  // A schedule node inside a flow fires with its flow, naming the node (OPS-MP3).
   history.replaceState(null, "", `${link}/triggers?trigger=inventory%2Freorder%23nightly`);
   cleanup();
   show(<TriggersWorkbench root={root} link={link} workspacePaused={false} production={false} />);
-  await screen.findByRole("button", { name: "Pause this trigger" });
-  expect(screen.queryByRole("button", { name: "Fire now" })).toBeNull();
+  fireEvent.click(await screen.findByRole("button", { name: "Fire now" }));
+  await vi.waitFor(() => expect(posted).toHaveLength(2));
+  expect(posted[1]?.body).toEqual({ path: "inventory/reorder", node: "nightly" });
 });
 
 test("new triggers are made in a dev workspace; production says where instead", async () => {

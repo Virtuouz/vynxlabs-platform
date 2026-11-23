@@ -130,6 +130,10 @@ const FlowRun = Type.Object({
   traceId: Type.Union([Type.String(), Type.Null()], {
     description: "The trace the flow run and every run it starts are part of.",
   }),
+  alert: Type.Union([AnyObject, Type.Null()], {
+    description:
+      "What became of the failure alert: `handlerRunId`, `handlerError`, `notified`, `notifyError`, `repeats` (failures counted on this alert), or `suppressed` with `sameAs`.",
+  }),
   createdAt: Time,
   finishedAt: NullableTime,
 });
@@ -151,6 +155,7 @@ interface FlowRunRow {
   retry_of: string | null;
   parent_flow_run_id: string | null;
   trace_id?: string | null;
+  alert?: Record<string, unknown> | null;
   created_at: Date;
   finished_at: Date | null;
 }
@@ -170,6 +175,7 @@ const toFlowRun = (row: FlowRunRow) => ({
   retryOf: row.retry_of,
   parentFlowRunId: row.parent_flow_run_id,
   traceId: row.trace_id ?? null,
+  alert: row.alert ?? null,
   createdAt: iso(row.created_at),
   finishedAt: isoOrNull(row.finished_at),
 });

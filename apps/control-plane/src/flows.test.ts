@@ -850,6 +850,12 @@ describe("running a flow", () => {
     const alerts = notified.slice(before).map((body) => JSON.parse(body));
     expect(alerts).toHaveLength(1);
     expect(alerts[0]).toMatchObject({ run: { id, script: "unhandled" } });
+    // The flow run says what became of the alert, as a script run does (OPS-MP10).
+    const alerted = await until(
+      () => read(id),
+      (r) => r.alert !== null && r.alert !== undefined,
+    );
+    expect(alerted.alert).toMatchObject({ alertedAt: expect.any(String) });
 
     const stopped = await finished(await start("stopping", { reason: "out of stock" }));
     expect(stopped.error.message).toBe('The step "stop" failed: Stopped: out of stock');

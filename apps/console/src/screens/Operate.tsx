@@ -508,10 +508,7 @@ export function TriggersWorkbench({
                           icon: CirclePause,
                           run: () => pause(open),
                         },
-                        ...(open.type === "schedule" &&
-                        !open.node &&
-                        !workspacePaused &&
-                        !open.pausedBy
+                        ...(open.type === "schedule" && !workspacePaused && !open.pausedBy
                           ? [
                               {
                                 key: "fire",
@@ -568,10 +565,7 @@ export function TriggersWorkbench({
                           <Pencil aria-hidden="true" size={16} /> Edit
                         </Button>
                       )}
-                      {open.type === "schedule" &&
-                      !open.node &&
-                      !workspacePaused &&
-                      !open.pausedBy ? (
+                      {open.type === "schedule" && !workspacePaused && !open.pausedBy ? (
                         <Button variant="primary" onClick={() => void fireNow(open)}>
                           <Zap aria-hidden="true" size={16} /> Fire now
                         </Button>

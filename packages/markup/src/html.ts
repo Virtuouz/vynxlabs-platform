@@ -14,7 +14,7 @@ export function escapeHtml(text: string): string {
   return text.replace(/[&<>"']/g, (char) => ESCAPES[char] as string);
 }
 
-const VOID = new Set(["br", "hr", "img", "input"]);
+const VOID = new Set(["br", "hr", "img", "input", "source"]);
 
 export function serialize(drawn: readonly Drawn[]): string {
   let out = "";

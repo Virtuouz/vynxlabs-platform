@@ -338,6 +338,37 @@ describe("tabs options", () => {
     await screen.findByRole("tab", { name: "Alpha" });
     expect(selected("Alpha")).toBe(true);
   });
+
+  test("remember: two pages with a Tabs of one id keep their own tab (WID-21)", async () => {
+    const one = render(
+      <Page
+        widgets={[tabsWidget({ remember: true })]}
+        user={{ id: "u1", groups: [] }}
+        foldKey="app.visits"
+      />,
+    );
+    fireEvent.click(await screen.findByRole("tab", { name: "Beta" }));
+    one.unmount();
+    render(
+      <Page
+        widgets={[tabsWidget({ remember: true })]}
+        user={{ id: "u1", groups: [] }}
+        foldKey="app.orders"
+      />,
+    );
+    await screen.findByRole("tab", { name: "Alpha" });
+    expect(selected("Alpha")).toBe(true);
+    cleanup();
+    render(
+      <Page
+        widgets={[tabsWidget({ remember: true })]}
+        user={{ id: "u1", groups: [] }}
+        foldKey="app.visits"
+      />,
+    );
+    await screen.findByRole("tab", { name: "Alpha" });
+    expect(selected("Beta")).toBe(true);
+  });
 });
 
 describe("record detail options", () => {

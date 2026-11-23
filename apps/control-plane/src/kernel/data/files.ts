@@ -10,6 +10,7 @@ import {
   findRows,
   getRow,
   insertRows,
+  isKey,
   type Row,
   type RowTarget,
   scopeFor,
@@ -425,7 +426,12 @@ export async function deleteRowsKeepingFiles(
     }
   }
   // Rows another table's `cascade` rule takes with them are read now, and noted once they are gone.
-  const cascaded = await cascadedRows(kernel, workspace, target.name, ids);
+  const cascaded = await cascadedRows(
+    kernel,
+    workspace,
+    target.name,
+    ids.filter((id) => isKey(target, id)),
+  );
   const done = await deleteRows(data, target, ids);
   const gone = new Set(done.deleted);
   for (const one of cascaded) {

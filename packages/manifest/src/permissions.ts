@@ -279,7 +279,7 @@ export const PERMISSION_KINDS: readonly PermissionKind[] = [
     scope: "workspace",
     verbs: {
       read: "See what was deployed and when.",
-      write: "Activate a bundle and roll back. Promoting needs promotion:write.",
+      write: "Deploy a version and roll back. Promoting needs promotion:write.",
     },
   },
   {

@@ -128,7 +128,8 @@ export interface PageViewProps {
   ask?: { open: string | undefined; set(ref: string | undefined): void };
   /**
    * Names where a folded Section is kept in this browser (`volvel.fold.<foldKey>.<widget>`): the
-   * app's path and the page. Left out, a fold lasts until the page is left.
+   * app's path and the page. Left out, a fold lasts until the page is left. A remembered tab is kept
+   * under it too, so two pages with a Tabs of one id do not share one.
    */
   foldKey?: string;
   /**
@@ -1330,14 +1331,15 @@ export function PageView({
     const wanted = tabsNow[container.id];
     if (wanted !== undefined && ids.includes(wanted)) return wanted;
     const config = container.config as { remember?: boolean; opensFirst?: string } | undefined;
-    const last = !editing && config?.remember ? recallTab(user?.id, container.id) : undefined;
+    const last =
+      !editing && config?.remember ? recallTab(user?.id, container.id, foldKey) : undefined;
     for (const one of [last, config?.opensFirst])
       if (one !== undefined && ids.includes(one)) return one;
     return ids[0];
   };
   const chooseTab = (container: string, tab: string) => {
     if (!editing && byId.get(container)?.config?.remember === true)
-      rememberTab(user?.id, container, tab);
+      rememberTab(user?.id, container, tab, foldKey);
     if (!editing && tabHost) tabHost.choose(container, tab);
     else setOpenTabs((now) => ({ ...now, [container]: tab }));
   };

@@ -168,6 +168,37 @@ describe("API description", () => {
     });
   });
 
+  test("P30: rows are not audited, and the text says so; the text uses the product's words", async () => {
+    const description = (await app.inject({ url: "/api/v1/openapi.json" })).json();
+    const w = "/api/v1/tenants/{t}/workspaces/{w}";
+    // Rows are business data: the platform announces them as events and writes no audit entry.
+    for (const [path, method] of [
+      [`${w}/row/{id}/{*}`, "patch"],
+      [`${w}/row/{id}/{*}`, "delete"],
+      [`${w}/source-rows/{table}/{*}`, "post"],
+      [`${w}/source-row/{table}/{key}/{*}`, "patch"],
+      [`${w}/source-row/{table}/{key}/{*}`, "delete"],
+    ] as const) {
+      const operation = description.paths[path]?.[method];
+      expect(operation, `${method} ${path}`).toBeDefined();
+      expect(operation.description, `${method} ${path}`).not.toMatch(/Audited/);
+    }
+    // The console says Deploy and Roll back where the text said Activate, and access changes
+    // where it said releases.
+    const words: string[] = [];
+    for (const operations of Object.values(description.paths) as Record<string, unknown>[])
+      for (const operation of Object.values(operations) as {
+        summary?: string;
+        description?: string;
+      }[])
+        words.push(`${operation.summary ?? ""} ${operation.description ?? ""}`);
+    expect(words.filter((text) => /\bactivat/i.test(text))).toEqual([]);
+    expect(words.filter((text) => /releasing a set/i.test(text))).toEqual([]);
+    expect(description.paths[`${w}/deployments`].post.summary).toBe(
+      "Deploy a version, or roll back to an earlier one",
+    );
+  });
+
   test("WLK-15: a run says in its schema that a trigger source's run names its source", async () => {
     const description = (await app.inject({ url: "/api/v1/openapi.json" })).json();
     const run =

@@ -22,6 +22,7 @@ import {
   folderItems,
   glossaryOf,
   type Marked,
+  neighboursOf,
   type PageHit,
   type PageRef,
   pagesInOrder,
@@ -77,6 +78,8 @@ export interface SiteLook {
   logoHref?: string | undefined;
   /** Where the icons are, by size. Without it a page names no icon. */
   iconsHref?: string | undefined;
+  /** A script of the host's own, run before the page is drawn: the reader's choice of light or dark. */
+  scriptHref?: string | undefined;
 }
 
 /**
@@ -102,6 +105,8 @@ export interface SiteView {
     asset?: (path: string) => string | undefined;
     /** Where a screenshot is served from, by its name. */
     screenshot?: (name: string) => string | null | undefined;
+    /** Where the dark look's picture of a screenshot is served from. Left out, a screenshot is one picture. */
+    screenshotDark?: (name: string) => string | null | undefined;
     /** What a field of a resource means. */
     field?: (path: string) => FieldInfo | null | undefined;
     /** What a term means, when the site's own glossary does not say. */
@@ -111,6 +116,8 @@ export interface SiteView {
   search?: { kind: "server" } | { kind: "static"; index: string };
   /** Whether a page's address ends in a slash, as a static site's does. */
   trailingSlash?: boolean;
+  /** The version of what the pages describe, shown at the foot of the navigation. Left out, none is. */
+  version?: string;
   /** Said across the top of every page: that this is a preview, and for whom. */
   notice?: string;
   /**
@@ -232,7 +239,9 @@ function side(
 ${brand(at)}
 <a class="find" href="${href(at, "_search")}" data-search>${icon("search", 16)}<span class="grow">Search</span><kbd class="key">⌘</kbd><kbd class="key">K</kbd></a>
 ${switcher}
-<nav aria-label="${attr(collection?.title ?? at.title)}">${tree}</nav>
+<nav aria-label="${attr(collection?.title ?? at.title)}">${tree}</nav>${
+    at.version ? `\n<p class="version">Version ${escapeHtml(at.version)}</p>` : ""
+  }
 </aside>`;
 }
 
@@ -272,7 +281,7 @@ function head(at: SiteView, title: string, noindex: boolean): string {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">${noindex || at.notice ? '\n<meta name="robots" content="noindex">' : ""}
 <title>${escapeHtml(title === site ? site : `${title} · ${site}`)}</title>
-<link rel="stylesheet" href="${attr(look.themeHref)}">
+<link rel="stylesheet" href="${attr(look.themeHref)}">${look.scriptHref ? `\n<script src="${attr(look.scriptHref)}"></script>` : ""}
 <link rel="stylesheet" href="${attr(docsAssetHref(platform, "css"))}">${iconLinks(look.iconsHref)}
 <script src="${attr(docsAssetHref(platform, "js"))}" defer></script>
 </head>`;
@@ -357,6 +366,7 @@ function draw(at: SiteView, path: string, tree: Root): string {
     ...(at.productName ? { productName: at.productName } : {}),
     ...(at.resolve?.field ? { field: at.resolve.field } : {}),
     ...(at.resolve?.screenshot ? { screenshot: at.resolve.screenshot } : {}),
+    ...(at.resolve?.screenshotDark ? { screenshotDark: at.resolve.screenshotDark } : {}),
     // Classes only, drawn here: no script and no policy to change.
     highlight: highlightCode,
     // The page's title is its first heading. What the author wrote as `#` comes under it.
@@ -456,10 +466,7 @@ export function docPage(at: SiteView, path: string): string {
   const collection = collectionOf(set, path);
   const body = draw(at, path, entry.tree);
 
-  const order = pagesInOrder(set.nav);
-  const index = order.findIndex((one) => one.path === path);
-  const before = index > 0 ? order[index - 1] : undefined;
-  const after = index >= 0 ? order[index + 1] : undefined;
+  const { before, after } = neighboursOf(set.nav, path);
   const pager =
     before || after
       ? `<nav class="pager" aria-label="Pages before and after">${
@@ -606,7 +613,7 @@ ${own}
 ${cards}
 ${recent}
 </main>
-<footer class="sitefoot"><p>${escapeHtml(at.title)}</p></footer>
+<footer class="sitefoot"><p>${escapeHtml(at.title)}${at.version ? ` · Version ${escapeHtml(at.version)}` : ""}</p></footer>
 ${data(at, { collection: "" })}
 </body>
 </html>

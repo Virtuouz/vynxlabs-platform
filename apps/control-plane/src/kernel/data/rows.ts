@@ -87,6 +87,7 @@ export async function describeTable(
     .selectAll()
     .where("table_id", "=", table.id)
     .where("status", "=", "active")
+    .orderBy(sql`coalesce(position, 0)`)
     .orderBy("created_at")
     .orderBy("name")
     .execute();
@@ -994,6 +995,16 @@ function keyValue(target: RowTarget, id: string): unknown {
   }
 }
 
+/** Whether `id` could be the key of a row of the table: a malformed one names no row. */
+export function isKey(target: RowTarget, id: string): boolean {
+  try {
+    keyParam(keyColumn(target), id);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function getRow(db: AnyDb, target: RowTarget, id: string): Promise<Row> {
   const result = await sql<Row>`
     select ${selectList(target)} from ${sql.id(target.schema, target.table)}
@@ -1173,9 +1184,14 @@ export async function deleteRows(
   ids: string[],
 ): Promise<{ deleted: string[]; missing: string[] }> {
   const key = keyColumn(target);
-  const result = await sql<{ id: unknown }>`
+  // A key that cannot be one names no row: it is missing, and does not stop the others.
+  const keys = ids.filter((id) => isKey(target, id));
+  const result =
+    keys.length === 0
+      ? { rows: [] as { id: unknown }[] }
+      : await sql<{ id: unknown }>`
     delete from ${sql.id(target.schema, target.table)}
-    where ${sql.ref(key.physicalName)} in (${sql.join(ids.map((id) => sql`${keyValue(target, id)}`))})
+    where ${sql.ref(key.physicalName)} in (${sql.join(keys.map((id) => sql`${keyValue(target, id)}`))})
     returning ${sql.ref(key.physicalName)} as id
   `.execute(db);
   const deleted = new Set(result.rows.map((row) => String(row.id)));

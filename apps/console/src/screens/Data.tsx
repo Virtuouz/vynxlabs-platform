@@ -200,9 +200,23 @@ const ROWS_URL = {
   unlock: { type: "string" },
   density: { type: "string", default: "standard" },
   row: { type: "string", push: true },
+  /** The cursors of the pages before this one, nearest last (`-` for the first page), so Previous survives a reload. */
+  back: { type: "list" },
 } as const;
 
 const NONE_CHECKED: Set<string> = new Set();
+
+const ROW_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** Whether text in a reference's filter box is what the server takes: IDs, `empty`, or `!` of them. */
+function referenceFilterOk(text: string): boolean {
+  const trimmed = text.trim();
+  if (trimmed === "" || /^(!\s*empty|!\s*null|not\s+empty|not\s+null|empty|null)$/i.test(trimmed))
+    return true;
+  return trimmed
+    .split("|")
+    .map((one) => one.trim().replace(/^(?:!=|!|not\s+)\s*/i, ""))
+    .every((one) => ROW_ID.test(one));
+}
 
 function RowsBrowser(
   props: RowsBrowserProps & {
@@ -241,10 +255,8 @@ function RowsBrowser(
       const kept = Object.fromEntries(Object.entries(boxes).filter(([, text]) => text.trim()));
       return Object.keys(kept).length > 0 ? JSON.stringify(kept) : undefined;
     },
-    (next) => setUrl({ filter: next, page: undefined }),
+    (next) => setUrl({ filter: next, page: undefined, back: [] }),
   );
-  /** The cursors of the pages before this one, so "Previous" has somewhere to go. */
-  const [back, setBack] = useState<string[]>([]);
   const [adding, setAdding] = useState(false);
   // What is checked belongs to the page, order and filter it was checked on: on another, it is
   // not there to see, and a delete must not take it along.
@@ -272,7 +284,13 @@ function RowsBrowser(
   const filterErrors: Record<string, string> = {};
   for (const column of columns) {
     try {
-      const built = toFilter(column.type, applied[column.name] ?? "");
+      const text = applied[column.name] ?? "";
+      // The server finds a reference by its row's ID alone; a name would be refused there.
+      if (column.references && !referenceFilterOk(text))
+        throw new Error(
+          "A reference is found by its row's ID, or by empty. Open the row to copy its ID.",
+        );
+      const built = toFilter(column.type, text);
       if (built) parts.push(filterNode(column.name, built));
     } catch (error) {
       filterErrors[column.name] = (error as Error).message;
@@ -288,8 +306,12 @@ function RowsBrowser(
   if (filter) query.set("filter", JSON.stringify(filter));
   if (url.sort) query.set("sort", url.sort);
   if (url.page) query.set("cursor", url.page);
-  // What stands for the rows a reference points to comes with the page, for up to five of them.
-  const pointing = columns.filter((column) => column.references).slice(0, 5);
+  // What stands for the rows a reference points to comes with the page, for up to five of the
+  // columns shown, in the order shown.
+  const pointing = order
+    .flatMap((name) => columns.find((column) => column.name === name) ?? [])
+    .filter((column) => column.references)
+    .slice(0, 5);
   if (pointing.length > 0) query.set("expand", pointing.map((column) => column.name).join(","));
   const page = useLoad<{
     items: DataRow[];
@@ -306,7 +328,7 @@ function RowsBrowser(
   const [saved, setSaved] = useState<{ of: unknown; rows: Record<string, DataRow> }>();
   const changed = saved && saved.of === pageData ? saved.rows : {};
   const rows = (pageData?.items ?? []).map((row) => changed[keyOf(row)] ?? row);
-  const toFirst = { page: undefined } as const;
+  const toFirst = { page: undefined, back: [] as string[] };
   // How many rows the filters leave, from the totals of a custom table. A source has none.
   const custom = props.rowsPath.includes("/rows/");
   const totalPath = custom
@@ -314,7 +336,13 @@ function RowsBrowser(
     : null;
   const total = useLoad<{ items: { values: { count?: number } }[] }>(totalPath);
   const counted = (filterBroken ? undefined : total.data)?.items[0]?.values.count;
-  const open = rows.find((row) => keyOf(row) === url.row);
+  const shown = rows.find((row) => keyOf(row) === url.row);
+  // A link to a row that is not on the page shown reads the row by its ID, where a table can.
+  const lookup = useLoad<DataRow>(
+    url.row && !shown && pageData && rowPath && custom ? rowPath(url.row) : null,
+  );
+  const open = shown ?? lookup.data;
+  const goneRow = url.row && !shown && lookup.error ? lookup.error : undefined;
   // Edits typed in the inspector and not saved: another row, or closing it, asks first.
   const unsaved = useRef(false);
   const choose = async (next: string | undefined) => {
@@ -479,7 +507,7 @@ function RowsBrowser(
           {viewsOf(props.rowsPath, props.tableId) ? (
             <ViewsMenu
               {...(viewsOf(props.rowsPath, props.tableId) as ViewsOf)}
-              omit={["row", "page"]}
+              omit={["row", "page", "back"]}
             />
           ) : null}
           {exportHref ? (
@@ -503,6 +531,22 @@ function RowsBrowser(
           ) : null}
         </span>
       </div>
+      {url.row && !shown && pageData && !open && (goneRow || !custom || !rowPath) ? (
+        <Notice
+          tone="attention"
+          action={
+            <Button size="small" onClick={() => void choose(undefined)}>
+              Close
+            </Button>
+          }
+        >
+          {goneRow && (goneRow as { status?: number }).status !== 404
+            ? "That row could not be read. Try the link again."
+            : custom && rowPath
+              ? "That row is gone: it was deleted, or its ID is not one of this table's."
+              : "That row is not on this page, and this source cannot read one row alone."}
+        </Notice>
+      ) : null}
       {filterBroken ? (
         <Notice tone="danger">
           {Object.entries(filterErrors)
@@ -561,7 +605,6 @@ function RowsBrowser(
             {...(canBatch ? { checked, onCheck: setChecked } : {})}
             sort={sort}
             onSort={(column, additive) => {
-              setBack([]);
               setUrl({ sort: nextSort(sort, column, additive), ...toFirst });
             }}
             editor={({ column: edited, value, save, cancel }) => {
@@ -579,7 +622,6 @@ function RowsBrowser(
             filters={typed}
             filterErrors={filterErrors}
             onFilter={(column, text) => {
-              setBack([]);
               setTyped((current) => ({ ...current, [column]: text }));
             }}
             {...(canChange
@@ -682,9 +724,11 @@ function RowsBrowser(
             size="small"
             disabled={!url.page}
             onClick={() => {
-              const before = back.at(-1);
-              setBack((current) => current.slice(0, -1));
-              setUrl({ page: before || undefined });
+              const before = url.back.at(-1);
+              setUrl({
+                back: url.back.slice(0, -1),
+                page: before && before !== "-" ? before : undefined,
+              });
             }}
           >
             Previous
@@ -694,8 +738,10 @@ function RowsBrowser(
             disabled={!pageData?.nextCursor}
             onClick={() => {
               // One step forward: the page shown now is where Previous comes back to.
-              setBack((current) => [...current, url.page ?? ""]);
-              setUrl({ page: pageData?.nextCursor ?? undefined });
+              setUrl({
+                back: [...url.back, url.page ?? "-"],
+                page: pageData?.nextCursor ?? undefined,
+              });
             }}
           >
             Next
@@ -1110,6 +1156,13 @@ function FileField({
 /** Text longer than this is edited in a text area, as the kit's forms do. */
 const LONG_TEXT = 200;
 
+/** What a refused save says of each field it names, by the column's name: for the field itself. */
+function fieldMessages(error: unknown): Record<string, string> {
+  return Object.fromEntries(
+    ((error as ApiError).fields ?? []).map((field) => [field.path.slice(1), field.message]),
+  );
+}
+
 function RowEditor({
   row,
   columns,
@@ -1179,7 +1232,11 @@ function RowEditor({
           notify.success("Row saved.");
           setText({});
         } catch (error) {
-          notify.error(error);
+          // A refusal that names fields says so under each; one that names none is a toast.
+          const named = fieldMessages(error);
+          setErrors(named);
+          if (Object.keys(named).length === 0) notify.error(error);
+          else notify.error(new Error((error as Error).message));
         } finally {
           setBusy(false);
         }
@@ -1319,6 +1376,15 @@ function AddRow({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [failure, setFailure] = useState<string>();
   const [busy, setBusy] = useState(false);
+  // The files this form has stored, by column, so a try that is refused does not store them again.
+  const uploaded = useRef<Record<string, { file: File; id: string }>>({});
+  // Opened again, it does not still hold what the last try was refused for.
+  useEffect(() => {
+    if (open) {
+      setErrors({});
+      setFailure(undefined);
+    }
+  }, [open]);
 
   const submit = async () => {
     const row: DataRow = {};
@@ -1342,25 +1408,28 @@ function AddRow({
     setBusy(true);
     try {
       for (const [column, file] of Object.entries(files)) {
-        const stored = await api.upload<{ id: string }>(
-          `${filesPath}?name=${encodeURIComponent(file.name)}`,
-          file,
-        );
+        // A file already stored for this form is kept between tries: a refused row does not
+        // upload it again and leave one that no row names.
+        let stored = uploaded.current[column];
+        if (stored?.file !== file) {
+          const made = await api.upload<{ id: string }>(
+            `${filesPath}?name=${encodeURIComponent(file.name)}`,
+            file,
+          );
+          stored = { file, id: made.id };
+          uploaded.current[column] = stored;
+        }
         row[column] = stored.id;
       }
       await api.post(rowsPath, row);
       notify.success("Row added.");
       setValues({});
       setFiles({});
+      uploaded.current = {};
       onAdded();
     } catch (caught) {
-      const error = caught as ApiError;
-      setErrors(
-        Object.fromEntries(
-          (error.fields ?? []).map((field) => [field.path.slice(1), field.message]),
-        ),
-      );
-      setFailure(error.message);
+      setErrors(fieldMessages(caught));
+      setFailure((caught as Error).message);
     } finally {
       setBusy(false);
     }
@@ -1865,10 +1934,13 @@ function BringBackButton({
   onDone: () => void;
 }) {
   const [busy, setBusy] = useState(false);
+  // Bringing a table back saves its definition again: `PUT resources/*` asks resource:write.
+  const need = useNeeds({ base: root, permission: "resource:write", what: "this table" });
   return (
     <Button
       size="small"
       loading={busy}
+      {...(need.can ? {} : { disabled: true, tooltip: need.reason })}
       onClick={async () => {
         setBusy(true);
         try {
@@ -1909,9 +1981,12 @@ function PurgeButton({
   onDone: () => void;
 }) {
   const what = column ? `the retired column "${column}"` : `the retired table "${table}"`;
+  // `POST table-purges` asks table:write, which a person who may edit definitions need not hold.
+  const need = useNeeds({ base: root, permission: "table:write", what: "retired data" });
   return (
     <RemoveButton
       label="Delete for good"
+      disabled={need.can ? undefined : need.reason}
       confirm={`Delete ${what} and everything in it? This is the one action that destroys data, and it cannot be undone.`}
       typeToConfirm={column ?? table}
       run={() =>

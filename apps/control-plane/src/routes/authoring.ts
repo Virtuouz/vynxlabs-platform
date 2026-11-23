@@ -1116,8 +1116,8 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         schema: {
           summary: "Deploy the drafts",
           description:
-            "Composes the drafts with the workspace's bundle into a new bundle and activates " +
-            "it, atomically. The drafts it carried are cleared. Deploying a draft with code in " +
+            "Composes the drafts with the workspace's bundle into a new bundle and deploys " +
+            "it as the next version, atomically. The drafts it carried are cleared. Deploying a draft with code in " +
             "it also needs `code:write`. Needs `deployment:write`. `interface:write` is enough " +
             "to deploy interfaces and the apps that serve them, named in `paths`: with it alone " +
             "nothing else is deployed, and a deploy of everything is refused.",

@@ -745,3 +745,33 @@ describe("highlighted code", () => {
     expect(DOC_DARK_CSS).not.toMatch(/url\(|@import/);
   });
 });
+
+describe("a screenshot in both looks", () => {
+  const tree = parse('::screenshot{name=console/deploy alt="The deploy"}\n');
+  const light = (name: string) => (name === "console/deploy" ? "/a/deploy.light.png" : null);
+  const dark = (name: string) => (name === "console/deploy" ? "/a/deploy.dark.png" : null);
+
+  test("with a dark picture it is a picture whose dark source a reader in dark is given", () => {
+    const html = renderHtml(tree, { profile: "product", screenshot: light, screenshotDark: dark });
+    expect(html).toContain(
+      '<picture><source media="(prefers-color-scheme: dark)" srcset="/a/deploy.dark.png"/>',
+    );
+    expect(html).toContain('<img src="/a/deploy.light.png" alt="The deploy" loading="lazy"/>');
+  });
+
+  test("without one it is drawn as it was", () => {
+    const html = renderHtml(tree, { profile: "product", screenshot: light });
+    expect(html).not.toContain("<picture");
+    expect(html).toContain('<figure class="vd-screenshot"><img src="/a/deploy.light.png"');
+  });
+
+  test("a dark picture whose address is refused is left out, and the light one stands", () => {
+    const html = renderHtml(tree, {
+      profile: "product",
+      screenshot: light,
+      screenshotDark: () => "javascript:alert(1)",
+    });
+    expect(html).not.toContain("javascript:");
+    expect(html).not.toContain("<picture");
+  });
+});

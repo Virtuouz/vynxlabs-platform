@@ -732,9 +732,9 @@ export const LIST_LINKS = [
   "- [Connectors](connectors): what a connection to each holds",
   "- [Keyboard shortcuts](shortcuts)",
   "- [SQL functions](sql-functions): what a query may call",
-  "- [Audit actions](audit-actions): what the log records",
+  "- [Audit actions](../../administer/reference/audit-actions): what the log records",
   "- [Platform events](platform-events): what the platform publishes",
-  "- [Metrics](metrics): every series an instance serves",
+  "- [Metrics](../../self-host/reference/metrics): every series an instance serves",
   "- [The SDK](sdk/index): every export of the packages a repository is written against",
 ];
 export const LIST_PAGES = [
@@ -743,8 +743,6 @@ export const LIST_PAGES = [
   "connectors",
   "shortcuts",
   "sql-functions",
-  "audit-actions",
   "platform-events",
-  "metrics",
   "sdk",
 ];

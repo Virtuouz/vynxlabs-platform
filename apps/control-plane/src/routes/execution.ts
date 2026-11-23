@@ -615,9 +615,9 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       {
         config: { access: access.workspace("deployment:read") },
         schema: {
-          summary: "Deployments to a workspace, newest first",
+          summary: "Versions deployed to a workspace, newest first",
           description:
-            "Each time a bundle was made the workspace's active one: by whom, and which bundle.",
+            "Each time a version was deployed or rolled back to: by whom, and which bundle.",
           tags: ["deploys"],
           params: WorkspaceParams,
           response: { 200: listOf(Deployment, 100) },
@@ -757,10 +757,10 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       {
         config: { access: access.workspace("deployment:write") },
         schema: {
-          summary: "Activate a bundle",
+          summary: "Deploy a version, or roll back to an earlier one",
           description:
-            "Atomic. Runs in progress finish on the bundle they started with. To roll back, " +
-            "deploy an earlier bundle.",
+            "Atomic. Runs in progress finish on the version they started with. To roll back, " +
+            "deploy an earlier version: the one a bundle's number names.",
           tags: ["deploys"],
           params: WorkspaceParams,
           body: Type.Object({

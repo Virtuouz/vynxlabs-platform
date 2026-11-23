@@ -17,7 +17,7 @@ A tar archive in the POSIX "ustar" layout, holding only regular files. Any tar p
 | `key.json` | The tenant's encryption key, wrapped with the export's passphrase. Always present: a tenant that never stored a secret is given its key when it is first exported, so that a wrong passphrase is always refused |
 | `members.NNNN.jsonl` | The tenant's members |
 | `platform/<table>.NNNN.jsonl` | The rows of one platform table that belong to the tenant |
-| `data/catalog/data_table.NNNN.jsonl`, `data/catalog/data_column.NNNN.jsonl` | The catalog of the tenant's custom tables: every table and column, active or retired, with the names they have in the database and the names they had before |
+| `data/catalog/data_table.NNNN.jsonl`, `data/catalog/data_column.NNNN.jsonl` | The catalog of the tenant's custom tables: every table and column, active or retired, with the names they have in the database and the names they had before, and a column's place among its table's columns (`position`, null in an export made before places were kept: those columns keep the order they were made in) |
 | `data/<workspace id>/<table>.NNNN.jsonl` | The rows of one custom table, under its name in the database |
 | `objects/<key>` | One object from the object store, byte for byte: a bundle, an uploaded file, or a payload too large to keep in a row |
 | `manifest.json` | The list of contents. Always the last file |

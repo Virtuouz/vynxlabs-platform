@@ -569,6 +569,18 @@ export function pagesInOrder(nav: Nav): PageRef[] {
   return out;
 }
 
+/**
+ * The page before and the page after one, in the order of the whole navigation. The one function
+ * the served site's pager and the console's help panel both use, so they lead to the same pages.
+ */
+export function neighboursOf(nav: Nav, path: string): { before?: PageRef; after?: PageRef } {
+  const order = pagesInOrder(nav);
+  const at = order.findIndex((one) => one.path === path);
+  const before = at > 0 ? order[at - 1] : undefined;
+  const after = at >= 0 ? order[at + 1] : undefined;
+  return { ...(before ? { before } : {}), ...(after ? { after } : {}) };
+}
+
 /** The folders from a collection down to a page, outermost first. Empty when the page is in none. */
 export function trailOf(nav: Nav, path: string): Folder[] {
   const find = (folder: Folder, trail: Folder[]): Folder[] | undefined => {

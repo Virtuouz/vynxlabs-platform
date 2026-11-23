@@ -66,7 +66,7 @@ const EVENT_LIST = [
   },
   {
     name: "platform/run-finished",
-    description: "A script run ended, however it ended: well, badly or canceled.",
+    description: "A script run ended, however it ended, including a run that was canceled.",
     payload: [
       { name: "runId", type: "string", description: "The run." },
       { name: "script", type: "string", description: "The script's path." },

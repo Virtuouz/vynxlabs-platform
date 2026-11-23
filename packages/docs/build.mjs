@@ -1,13 +1,13 @@
 // Builds the product's documentation into dist/: a manifest, one tree for each
 // page, and the search index. The console ships these and reads them offline.
-import { copyFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { packageOutput } from "@volvel/docs-engine";
 import { fieldDescriptions } from "./generators/reference.mjs";
 import { HERE, loadDocs, report, VERSION } from "./load.mjs";
 import { readIndex } from "./screenshots.mjs";
 
-const { set, issues, assets, redirects } = loadDocs();
+const { set, issues, assets, redirects, sources } = loadDocs();
 if (issues.some((issue) => issue.severity === "error")) {
   report(issues);
   console.error(
@@ -20,6 +20,12 @@ const out = join(HERE, "dist");
 rmSync(out, { recursive: true, force: true });
 for (const [name, text] of packageOutput(set, { version: VERSION, productName: "Volvel" })) {
   const file = join(out, name);
+  mkdirSync(dirname(file), { recursive: true });
+  writeFileSync(file, text);
+}
+// Each page as written, for `/docs/<page>.md` ("Copy as Markdown").
+for (const [path, text] of sources) {
+  const file = join(out, "md", `${path}.md`);
   mkdirSync(dirname(file), { recursive: true });
   writeFileSync(file, text);
 }
@@ -48,9 +54,9 @@ writeFileSync(
 );
 
 for (const asset of assets) {
-  const from = asset.startsWith("reference/")
-    ? join(HERE, "generated", asset.slice("reference/".length))
-    : join(HERE, "content", asset);
+  // A generated page is mounted where it is written, so its pictures are found there.
+  const made = join(HERE, "generated", asset);
+  const from = existsSync(made) ? made : join(HERE, "content", asset);
   const to = join(out, "assets", asset);
   mkdirSync(dirname(to), { recursive: true });
   copyFileSync(from, to);

@@ -33,6 +33,7 @@ export {
   slugOf,
 } from "./ops.js";
 export { type Manifest, manifestOf, type PageFile, packageOutput } from "./output.js";
+export { type OpenedPackage, openPackage, setFromManifest } from "./package.js";
 export {
   asDirectory,
   type DocEntry,
@@ -84,6 +85,7 @@ export {
   glossaryOf,
   type Nav,
   nameOf,
+  neighboursOf,
   ordered,
   type PageRef,
   PRODUCT_PREFIX,

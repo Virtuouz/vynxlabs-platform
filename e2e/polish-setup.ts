@@ -391,6 +391,9 @@ export const screens = (ctx: Polish) => [
   ["the page editor of a dashboard", `${ctx.ws}/dashboards/${ctx.board}?edit=1`],
   ["extensions", `${ctx.ws}/extensions`],
   ["documentation", `${ctx.ws}/docs`],
+  // The product's own documentation (phase 30): a page of the server, not of the console, with a
+  // `main`, so the same measures (text over text, box in box) judge it. Its home, as pages move.
+  ["the product's documentation", "/docs/"],
   ["resources", `${ctx.ws}/resources`],
   ["workspace approvals", `${ctx.ws}/approvals`],
   ["git sync", `${ctx.ws}/git`],

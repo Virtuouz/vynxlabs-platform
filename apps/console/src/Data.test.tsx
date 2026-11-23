@@ -1989,3 +1989,113 @@ test("w-limits 2: a required yes/no column and a required reference are marked a
   expect(await within(dialog).findByText("paid needs a value.")).toBeTruthy();
   expect(await within(dialog).findByText("shop needs a value.")).toBeTruthy();
 });
+
+test("TAB-36: the names of referenced rows are asked for the columns shown, and a reference box says it takes an ID", async () => {
+  const reference = (name: string) => ({
+    name,
+    type: "reference",
+    required: false,
+    unique: false,
+    default: null,
+    references: "customers",
+    status: "active",
+    held: null,
+    writable: true,
+  });
+  const names = ["a1", "a2", "a3", "a4", "a5", "a6", "a7"];
+  routes[`GET /api/v1${root}/tables/orders`] = () => [
+    200,
+    {
+      ...orders("ui"),
+      columns: [{ ...orders("ui").columns[0] }, ...names.map(reference)],
+    },
+  ];
+  navigate("/t/t1/workspaces/w1/tables/orders?cols=number&cols=a7&cols=a6");
+  show(<TableView root={root} name="orders" link="/t/t1/workspaces/w1" />);
+  await screen.findByText("A-1");
+  await waitFor(() => expect(lastRows().get("expand")).toBe("a7,a6"));
+  // A name typed in a reference's box is not an ID: it is said so, and nothing is asked for.
+  const before = calls.length;
+  fireEvent.change(screen.getByLabelText("Filter by a7"), { target: { value: "Acme" } });
+  expect((await screen.findByRole("alert")).textContent).toMatch(/^a7: .*ID/);
+  expect(calls.slice(before).some((call) => call.url.includes("filter="))).toBe(false);
+  navigate("/t/t1/workspaces/w1/tables/orders");
+});
+
+test("TAB-34: Previous survives a reload, and a link to a row opens it when its page is not shown", async () => {
+  // The address of page 2 says where Previous goes, so a reload keeps it.
+  navigate("/t/t1/workspaces/w1/tables/orders?page=NTA&back=-");
+  show(<TableView root={root} name="orders" link="/t/t1/workspaces/w1" />);
+  await screen.findByText("A-1");
+  const previous = screen.getByRole("button", { name: "Previous" }) as HTMLButtonElement;
+  expect(previous.disabled).toBe(false);
+  fireEvent.click(previous);
+  await waitFor(() => expect(lastRows().get("cursor")).toBeNull());
+  expect(location.search).not.toContain("back=");
+  cleanup();
+
+  // A row that is not on the page shown is read by its ID.
+  routes[`GET /api/v1${root}/row/r9/orders`] = () => [200, { ...rows[0], id: "r9", number: "Z-9" }];
+  navigate("/t/t1/workspaces/w1/tables/orders?row=r9");
+  show(<TableView root={root} name="orders" link="/t/t1/workspaces/w1" />);
+  expect(await screen.findByLabelText("number")).toBeTruthy();
+  expect((screen.getByLabelText("number") as HTMLInputElement).value).toBe("Z-9");
+  cleanup();
+
+  // One that is gone says so.
+  routes[`GET /api/v1${root}/row/r8/orders`] = () => [
+    404,
+    { status: 404, detail: "The row was not found." },
+  ];
+  navigate("/t/t1/workspaces/w1/tables/orders?row=r8");
+  show(<TableView root={root} name="orders" link="/t/t1/workspaces/w1" />);
+  expect(await screen.findByText(/That row is gone/)).toBeTruthy();
+  navigate("/t/t1/workspaces/w1/tables/orders");
+});
+
+test("TAB-37: a refused row save names the field, and a refused Add row keeps the file it uploaded", async () => {
+  const refused = {
+    status: 400,
+    detail: "The row is not valid.",
+    errors: [{ path: "/number", message: "is already used" }],
+  };
+  routes[`PATCH /api/v1${root}/row/r1/orders`] = () => [400, refused];
+  openOrderWithCustomerAndFile({});
+  const number = await screen.findByLabelText("number", { selector: "input[name=number]" });
+  fireEvent.input(number, { target: { value: "A-2" } });
+  fireEvent.click(await screen.findByRole("button", { name: "Save row" }));
+  // The message is under the field, not only in a toast.
+  await waitFor(() =>
+    expect(number.closest("div")?.textContent ?? "").toMatch(
+      /number is already used|is already used/,
+    ),
+  );
+  cleanup();
+  history.replaceState(history.state, "", location.pathname);
+
+  // Add row: the file is uploaded once, whatever the number of tries.
+  const files: string[] = [];
+  routes[`POST /api/v1${root}/files`] = () => {
+    files.push("up");
+    return [201, { id: "f1", name: "a.txt" }];
+  };
+  routes[`POST /api/v1${root}/rows/orders`] = () => [400, refused];
+  openOrderWithCustomerAndFile({});
+  history.replaceState(history.state, "", location.pathname);
+  fireEvent.click(await screen.findByRole("button", { name: "Add row" }));
+  const dialog = await screen.findByRole("dialog");
+  fireEvent.input(screen.getByLabelText("number", { selector: "input[name=number]" }), {
+    target: { value: "A-9" },
+  });
+  const input = dialog.querySelector("input[type=file]") as HTMLInputElement;
+  fireEvent.change(input, { target: { files: [new File(["x"], "a.txt")] } });
+  fireEvent.submit(dialog.querySelector("form") as HTMLFormElement);
+  await screen.findByText("The row is not valid.");
+  fireEvent.submit(dialog.querySelector("form") as HTMLFormElement);
+  await waitFor(() =>
+    expect(
+      calls.filter((call) => call.method === "POST" && call.url.endsWith("/rows/orders")),
+    ).toHaveLength(2),
+  );
+  expect(files).toHaveLength(1);
+});

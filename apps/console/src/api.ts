@@ -323,6 +323,27 @@ export function useLoadOf<T>(path: string | null): Loaded<T> {
 }
 
 /**
+ * Whether the caller holds a permission in a workspace, so a screen leaves out what the server
+ * would refuse (CFG-26). With no root nothing is asked. Until the answer is in nothing is offered; if it cannot be had, the
+ * controls stay, and the server's refusal says what is missing.
+ */
+export function useMay(
+  root: string | null,
+  ...permissions: string[]
+): (permission: string) => boolean {
+  const asked = useLoad<{ allowed: string[] }>(
+    root === null
+      ? null
+      : `${root}/allowed?permissions=${permissions.map(encodeURIComponent).join(",")}`,
+  );
+  return (permission) => {
+    if (!asked.data) return asked.error !== undefined;
+    // An answer that does not say is no refusal: the server decides.
+    return Array.isArray(asked.data.allowed) ? asked.data.allowed.includes(permission) : true;
+  };
+}
+
+/**
  * Changes what a read holds on screen at once, before the server answers, and
  * gives back a way to undo that when it refuses. The write's own refresh then
  * brings what the server says.

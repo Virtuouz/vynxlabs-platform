@@ -1,6 +1,6 @@
 import { Button, EmptyState, Menu, Notice, TextField } from "@volvel/ui";
 import { lazy, Suspense, useEffect, useState } from "react";
-import { api, isOperator, type Me, useLoad } from "../api.ts";
+import { api, isOperator, type Me, useLoad, useMay } from "../api.ts";
 import { notify } from "../ask.tsx";
 import { CollectionView } from "../kit/CollectionView.tsx";
 import { useEditorKey } from "../kit/editorKey.ts";
@@ -455,6 +455,7 @@ function WorkspaceDetail({
   }, [named, workspaceId]);
   const root = `${base}/workspaces/${workspaceId}`;
   const secretUses = useReferences(root, "secret", tab === "secrets");
+  const maySecrets = useMay(tab === "secrets" ? root : null, "secret:write")("secret:write");
   if (refused) {
     if (named || (!all.data && !all.error)) return null;
     return <NotFound home={`/t/${tenantId}/workspaces`} homeLabel="Go to the workspaces" />;
@@ -828,6 +829,7 @@ function WorkspaceDetail({
       ) : tab === "secrets" ? (
         <ListScreen<{ name: string; updatedAt: string; updatedBy?: string | null }>
           title="Secrets"
+          {...(maySecrets ? {} : { needs: "secret:write" })}
           setupField="name"
           description="Values are encrypted with this tenant's own key. A value can be replaced but never read back here."
           path={`${root}/secrets`}

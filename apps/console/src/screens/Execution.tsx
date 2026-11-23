@@ -9,7 +9,7 @@ import {
   saveText,
 } from "@volvel/ui";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ApiError, api, useLoad } from "../api.ts";
+import { ApiError, api, useLoad, useMay } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
 import { InputDialog } from "../InputDialog.tsx";
 import { CollectionView } from "../kit/CollectionView.tsx";
@@ -699,7 +699,16 @@ export function TestConnection({
 }
 
 /** What the last Test found, or why the connection cannot be used. */
-export function ConnectionHealth({ root, row }: { root: string; row: ConnectionRow }) {
+export function ConnectionHealth({
+  root,
+  row,
+  mayConnect = true,
+}: {
+  root: string;
+  row: ConnectionRow;
+  /** Connecting is a change of the connection: someone who may only read sees the state, not the button. */
+  mayConnect?: boolean;
+}) {
   if (!row.bound) return null;
   // What a member must do is beside what is wrong, where a phone shows it.
   if (row.oauth && row.oauth.status !== "connected") {
@@ -709,13 +718,15 @@ export function ConnectionHealth({ root, row }: { root: string; row: ConnectionR
         <StatePill state={again ? "failed" : "waiting"}>
           {again ? "Needs reconnecting" : "Not connected"}
         </StatePill>
-        <Button
-          size="small"
-          variant="primary"
-          onClick={() => startConnect(root, row.path).catch((error) => notify.error(error))}
-        >
-          {again ? "Reconnect" : "Connect"}
-        </Button>
+        {mayConnect ? (
+          <Button
+            size="small"
+            variant="primary"
+            onClick={() => startConnect(root, row.path).catch((error) => notify.error(error))}
+          >
+            {again ? "Reconnect" : "Connect"}
+          </Button>
+        ) : null}
       </span>
     );
   }
@@ -724,6 +735,10 @@ export function ConnectionHealth({ root, row }: { root: string; row: ConnectionR
 
 export function Connections({ root, production = false }: { root: string; production?: boolean }) {
   const connectionUses = useReferences(root, "connection");
+  const may = useMay(root, "connection:write", "resource:write", "run:read");
+  const mayWrite = may("connection:write");
+  // A new connection is declared in a draft (resource:write); in production one only waits to be set up.
+  const mayNew = mayWrite && (production || may("resource:write"));
   const list = useLoad<{ items: ConnectionRow[] }>(`${root}/connection-bindings`);
   const [editing, setEditing] = useState<{ row?: ConnectionRow | undefined } | null>(null);
   // Back from an OAuth provider: the connection's sheet opens again with what it said.
@@ -780,7 +795,8 @@ export function Connections({ root, production = false }: { root: string; produc
         description="Where each connection points in this workspace. Addresses and credentials are set here, never in the repository, so dev and production can differ."
         path={`${root}/connection-bindings`}
         rowKey={(row) => row.path}
-        action={newButton}
+        action={mayNew ? newButton : null}
+        {...(mayWrite ? {} : { needs: "connection:write" })}
         columns={[
           {
             header: "Connection",
@@ -802,7 +818,10 @@ export function Connections({ root, production = false }: { root: string; produc
             ),
           },
           // Second, so a phone shows it without scrolling the table.
-          { header: "Health", cell: (row) => <ConnectionHealth root={root} row={row} /> },
+          {
+            header: "Health",
+            cell: (row) => <ConnectionHealth root={root} row={row} mayConnect={mayWrite} />,
+          },
           {
             header: "Used by",
             cell: (row) => (
@@ -846,7 +865,7 @@ export function Connections({ root, production = false }: { root: string; produc
           const done = () => reloadList();
           return (
             <span className="flex flex-wrap justify-end gap-2">
-              {row.bound && (!row.oauth || row.oauth.status === "connected") ? (
+              {row.bound && (!row.oauth || row.oauth.status === "connected") && may("run:read") ? (
                 <TestConnection root={root} path={row.path} onDone={done} />
               ) : null}
               <Button size="small" onClick={() => setEditing({ row })}>
@@ -890,6 +909,7 @@ export function Connections({ root, production = false }: { root: string; produc
 
 export function Variables({ root }: { root: string }) {
   const variableUses = useReferences(root, "variable");
+  const mayWrite = useMay(root, "variable:write")("variable:write");
   return (
     <ListScreen<{
       path: string;
@@ -900,6 +920,7 @@ export function Variables({ root }: { root: string }) {
       draft?: "new" | "changed" | "removed" | null;
     }>
       title="Variables"
+      {...(mayWrite ? {} : { needs: "variable:write" })}
       setupField="path"
       description="Settings a script reads at run time. Each workspace can set its own value. Without one, the default from the repository applies."
       path={`${root}/variable-values`}

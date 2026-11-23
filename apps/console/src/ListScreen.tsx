@@ -131,6 +131,11 @@ export interface ListScreenProps<Row> {
   rowActions?: (row: Row, reload: () => void) => ReactNode;
   /** A button beside the title, for a screen whose way to add something is not a dialog. */
   action?: ReactNode;
+  /**
+   * The permission this person lacks to change the list: with it, there is no create button and
+   * no row action, and the list says what it would take. The server refuses a change anyway.
+   */
+  needs?: string;
 }
 
 export function Page({
@@ -351,16 +356,19 @@ export function ListScreen<Row>(props: ListScreenProps<Row>) {
     setSetup(null);
   }, [setup, create, setupField, setSetup]);
 
-  const columns: DataColumn<Row>[] = props.rowActions
-    ? [
-        ...props.columns,
-        { header: "", align: "end", cell: (row) => props.rowActions?.(row, list.reload) },
-      ]
-    : props.columns;
+  const columns: DataColumn<Row>[] =
+    props.rowActions && !props.needs
+      ? [
+          ...props.columns,
+          { header: "", align: "end", cell: (row) => props.rowActions?.(row, list.reload) },
+        ]
+      : props.columns;
   const createButton = create ? (
-    <Button variant="primary" onClick={() => setCreating(true)}>
-      {create.action}
-    </Button>
+    props.needs ? null : (
+      <Button variant="primary" onClick={() => setCreating(true)}>
+        {create.action}
+      </Button>
+    )
   ) : (
     props.action
   );
@@ -373,6 +381,12 @@ export function ListScreen<Row>(props: ListScreenProps<Row>) {
       action={createButton}
     >
       {created ? <Notice tone="attention">{created}</Notice> : null}
+      {props.needs ? (
+        <Notice tone="plain">
+          You can read this list. Changing it needs the {props.needs} permission: ask an
+          administrator of this workspace.
+        </Notice>
+      ) : null}
       {list.error ? (
         <Notice tone="danger" action={<Button onClick={list.reload}>Try again</Button>}>
           {list.error.message}
@@ -394,7 +408,7 @@ export function ListScreen<Row>(props: ListScreenProps<Row>) {
       ) : (
         <Loading />
       )}
-      {create ? (
+      {create && !props.needs ? (
         <CreateDialog
           // A name given by the address starts the form again, with the name in.
           key={filling ?? ""}

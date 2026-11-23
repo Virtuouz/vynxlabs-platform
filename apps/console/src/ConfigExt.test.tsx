@@ -1,9 +1,12 @@
 // @vitest-environment happy-dom
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import type { Me } from "./api.ts";
+import { usePath } from "./router.tsx";
 import { Connections, Variables } from "./screens/Execution.tsx";
 import { RepositorySettings } from "./screens/Git.tsx";
 import { SecretPage } from "./screens/ObjectPages.tsx";
+import { Tenant } from "./screens/Tenant.tsx";
 import { show } from "./testing.tsx";
 
 /** Rough edges of configure and extensions (phase 29, lane t4-config-ext). */
@@ -57,7 +60,9 @@ test("CFG-20, EXT-16: a new connection may be named with an underscore, as the p
   routes[`PUT ${root}/drafts/my_crm`] = () => [200, {}];
   routes[`PUT ${root}/connection-bindings/my_crm`] = () => [200, {}];
   show(<Connections root={root} />);
-  fireEvent.click(await screen.findByRole("button", { name: "New connection" }));
+  fireEvent.click(
+    (await screen.findAllByRole("button", { name: "New connection" }))[0] as HTMLElement,
+  );
   const sheet = await screen.findByRole("dialog");
   fireEvent.change(within(sheet).getByLabelText("Name"), { target: { value: "my_crm" } });
   fireEvent.click(within(sheet).getByRole("button", { name: "Save" }));
@@ -70,7 +75,9 @@ test("CFG-21: when the kinds cannot be read, the wizard says so and offers to tr
   routes[`GET ${root}/connectors`] = () => [500, { status: 500, detail: "The database is busy." }];
   routes[`GET ${root}/references`] = () => [200, { items: [] }];
   show(<Connections root={root} />);
-  fireEvent.click(await screen.findByRole("button", { name: "New connection" }));
+  fireEvent.click(
+    (await screen.findAllByRole("button", { name: "New connection" }))[0] as HTMLElement,
+  );
   const sheet = await screen.findByRole("dialog");
   expect(await within(sheet).findByRole("button", { name: "Try again" })).toBeTruthy();
 });
@@ -159,4 +166,96 @@ test("EXT-10: when it is off the page says so and offers to turn it on; a reader
   show(<RepositorySettings base={tenantBase} />);
   expect(await screen.findByText(/Writing code in the console is off/)).toBeTruthy();
   expect(screen.queryByRole("button", { name: /code in the console/ })).toBeNull();
+});
+
+const connection = {
+  path: "shop",
+  connector: "http",
+  description: "",
+  defined: true,
+  draft: null,
+  bound: true,
+  config: { baseUrl: "https://shop.example" },
+  configSchema: http,
+  hasCredential: true,
+  health: null,
+  oauth: null,
+  updatedAt: null,
+};
+const allowedAre = (allowed: string[]) => {
+  routes[`GET ${root}/allowed`] = () => [200, { allowed }];
+};
+
+test("CFG-26: someone who may only read connections is offered no change, and told what they lack", async () => {
+  allowedAre([]);
+  routes[`GET ${root}/connection-bindings`] = () => [200, { items: [connection] }];
+  routes[`GET ${root}/references`] = () => [200, { items: [] }];
+  show(<Connections root={root} />);
+  expect(await screen.findByText("shop")).toBeTruthy();
+  expect(await screen.findByText(/needs the connection:write permission/)).toBeTruthy();
+  for (const name of ["New connection", "Change", "Unbind", "Test"]) {
+    expect(screen.queryByRole("button", { name })).toBeNull();
+  }
+});
+
+test("CFG-26: with connection:write and resource:write a connection is offered everything; without resource:write it cannot be declared", async () => {
+  allowedAre(["connection:write", "resource:write", "run:read"]);
+  routes[`GET ${root}/connection-bindings`] = () => [200, { items: [connection] }];
+  routes[`GET ${root}/references`] = () => [200, { items: [] }];
+  show(<Connections root={root} />);
+  for (const name of ["New connection", "Change", "Unbind", "Test"]) {
+    expect(await screen.findByRole("button", { name })).toBeTruthy();
+  }
+  cleanup();
+  allowedAre(["connection:write", "run:read"]);
+  show(<Connections root={root} />);
+  expect(await screen.findByRole("button", { name: "Change" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "New connection" })).toBeNull();
+});
+
+test("CFG-26: a variable's controls follow variable:write", async () => {
+  allowedAre([]);
+  routes[`GET ${root}/variable-values`] = () => [
+    200,
+    { items: [{ path: "region", description: "", default: "eu", value: "us" }] },
+  ];
+  routes[`GET ${root}/references`] = () => [200, { items: [] }];
+  show(<Variables root={root} />);
+  expect(await screen.findByText("region")).toBeTruthy();
+  expect(await screen.findByText(/needs the variable:write permission/)).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Set variable" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Use default" })).toBeNull();
+  cleanup();
+  allowedAre(["variable:write"]);
+  show(<Variables root={root} />);
+  expect(await screen.findByRole("button", { name: "Set variable" })).toBeTruthy();
+  expect(await screen.findByRole("button", { name: "Use default" })).toBeTruthy();
+});
+
+test("CFG-26: the secrets list and a secret's page follow secret:write", async () => {
+  const me: Me = {
+    principal: { type: "member", id: "m1", name: "Ada", email: "ada@acme.test" },
+    instancePermissions: [],
+    tenants: [{ id: "t1", slug: "acme", name: "Acme" }],
+  };
+  function AtAddress() {
+    return <Tenant tenantId="t1" me={me} path={usePath()} />;
+  }
+  routes[`GET ${root}`] = () => [200, { id: "w1", slug: "dev", name: "Dev", type: "dev" }];
+  routes[`GET ${root}/secrets`] = () => [
+    200,
+    { items: [{ name: "KEY", updatedAt: "2026-11-01T10:00:00Z" }] },
+  ];
+  routes[`GET ${root}/references`] = () => [200, { items: [] }];
+  allowedAre([]);
+  history.replaceState(null, "", "/t/t1/workspaces/w1/secrets");
+  show(<AtAddress />);
+  expect(await screen.findByText("KEY")).toBeTruthy();
+  expect(await screen.findByText(/needs the secret:write permission/)).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "New secret" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Delete" })).toBeNull();
+  cleanup();
+  show(<SecretPage root={root} link="/t/t1/workspaces/w1" name="KEY" />);
+  expect(await screen.findByText(/Encrypted/)).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Replace the value" })).toBeNull();
 });

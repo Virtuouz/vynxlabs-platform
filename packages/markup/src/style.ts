@@ -97,10 +97,11 @@ export const DOC_CSS = `
 /* As table-saw stacks a table: where its container is narrow, a row is label and value pairs, the labels
    from each cell's data-label, with the header row kept for a screen reader. No script does this. */
 @container (max-width: 40rem) {
-  .vd-doc thead tr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(1px, 1px, 1px, 1px); }
-  .vd-doc table, .vd-doc tbody { display: block; }
-  .vd-doc tbody tr { display: block; padding: 0.35em 0; border-bottom: 1px solid var(--vd-line, #dcdcdc); }
-  .vd-doc tbody td {
+  /* A table of one or two columns fits a phone as it is: only three or more stack. */
+  .vd-doc .vd-table:not([data-cols="1"]):not([data-cols="2"]) thead tr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(1px, 1px, 1px, 1px); }
+  .vd-doc .vd-table:not([data-cols="1"]):not([data-cols="2"]) table, .vd-doc .vd-table:not([data-cols="1"]):not([data-cols="2"]) tbody { display: block; }
+  .vd-doc .vd-table:not([data-cols="1"]):not([data-cols="2"]) tbody tr { display: block; padding: 0.35em 0; border-bottom: 1px solid var(--vd-line, #dcdcdc); }
+  .vd-doc .vd-table:not([data-cols="1"]):not([data-cols="2"]) tbody td {
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
     gap: 0 1em;
@@ -109,8 +110,8 @@ export const DOC_CSS = `
     text-align: left;
     overflow-wrap: anywhere;
   }
-  .vd-doc tbody td::before { content: attr(data-label); font-weight: 600; }
-  .vd-doc tbody td:not([data-label]) { grid-template-columns: minmax(0, 1fr); }
+  .vd-doc .vd-table:not([data-cols="1"]):not([data-cols="2"]) tbody td::before { content: attr(data-label); font-weight: 600; }
+  .vd-doc .vd-table:not([data-cols="1"]):not([data-cols="2"]) tbody td:not([data-label]) { grid-template-columns: minmax(0, 1fr); }
 }
 .vd-doc .vd-tasks { padding-left: 0.25em; list-style: none; }
 .vd-doc .vd-task input { margin-right: 0.35em; }
@@ -267,7 +268,7 @@ export const DOC_CSS = `
   overflow: hidden;
 }
 .vd-doc .vd-lightbox[open] { display: grid; place-items: center; }
-.vd-doc .vd-lightbox::backdrop { background: rgb(0 0 0 / 0.82); }
+.vd-doc .vd-lightbox::backdrop { background: rgb(0 0 0 / 0.98); }
 .vd-doc .vd-lightbox-figure {
   display: flex;
   flex-direction: column;
@@ -289,7 +290,7 @@ export const DOC_CSS = `
   transform-origin: 0 0;
   cursor: default;
 }
-.vd-doc .vd-lightbox-caption { max-width: min(60rem, 100%); margin: 0; font-size: 0.95rem; line-height: 1.4; text-align: center; color: #fff; }
+.vd-doc .vd-lightbox-caption { max-width: min(60rem, 100%); margin: 0; padding: 0.35rem 0.6rem; border-radius: 6px; background: #000; font-size: 0.95rem; line-height: 1.4; text-align: center; color: #fff; }
 .vd-doc .vd-lightbox-close {
   position: absolute;
   top: 0.75rem;

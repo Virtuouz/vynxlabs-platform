@@ -17,6 +17,8 @@ The owner's four changes of 2026-11-24 to the shared renderer. Commits: "Phase 3
 - `style.ts`: `.vd-table` is a size container; under 40rem of container width (table-saw's 39.9375em) the header row is visually hidden, rows are blocks and each cell is a label/value grid from `attr(data-label)`. Zebra: `tbody tr:nth-child(even)` on `--vd-stripe`, 6% of the page's ink, so it follows light, dark and a tenant's theme.
 - Tests: `markup.test.ts` ("a table stacks"), contrast in `packages/ui/src/docColors.test.ts` (ink, muted and link text on the stripe over canvas and surface, both looks, at least 4.5:1).
 
+Follow-up (coordinator): only tables of three or more columns stack (`data-cols` on `.vd-table`, container query on `:not([data-cols="1"]):not([data-cols="2"])`); a two-column table stays a table, striped. The image view's backdrop is 98% black and the caption sits on a solid black band, so the page does not show through. Goldens: `markdown.html`, `page-components*.html` updated again. Re-shot at 390, light and dark.
+
 ## 4. Inline code
 `style.ts` and `Doc.tsx` (its own edge rule removed): `--vd-code-bg` 11% ink, `--vd-code-ink` the ink, `--vd-code-line` 26% ink, edge by inset shadow; not the sunken ground of a block (which is almost the canvas in dark). Code in the site's descriptions and cards (`css.ts`) got the same. Tests: `markup.test.ts`, `styles.test.ts`, `docColors.test.ts` (4.5:1 on the chip, chip at least 1.2:1 from the ground).
 

@@ -329,7 +329,11 @@ function usual(node: Node, ctx: Context): Drawn[] {
           ),
         );
       }
-      return [el("div", { class: "vd-table" }, [el("table", {}, parts)])];
+      return [
+        el("div", { class: "vd-table", "data-cols": String(node.align.length || labels.length) }, [
+          el("table", {}, parts),
+        ]),
+      ];
     }
     case "tableRow":
     case "tableCell":

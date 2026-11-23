@@ -1333,9 +1333,11 @@ export function RenameTenantButton({
   tenant,
   onDone,
 }: {
-  tenant: { id: string; slug: string; name: string };
+  tenant: { id: string; slug: string; name: string; mayRename?: boolean };
   onDone: () => void;
 }) {
+  // Offered only to someone the server lets rename it, wherever the button is drawn.
+  if (tenant.mayRename === false) return null;
   return (
     <Button
       size="small"

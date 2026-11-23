@@ -327,3 +327,15 @@ test("a tenant whose workers the instance starts is not told that no worker is o
   show(<TenantOverview base={base} tenantId="t1" />);
   await screen.findByText("No worker is online");
 });
+
+test("Rename is offered on the overview only to someone who may rename the tenant (SHL-11)", async () => {
+  routes[`GET ${base}/summary`] = () => ({ workspaces: 0, approvalsWaiting: 0, domainsToFix: 0 });
+  routes[`GET ${base}`] = () => ({ name: "Acme", slug: "acme", mayRename: false });
+  const view = show(<TenantOverview base={base} tenantId="t1" />);
+  await screen.findByRole("heading", { name: "Acme" });
+  expect(screen.queryByRole("button", { name: "Rename" })).toBeNull();
+  view.unmount();
+  routes[`GET ${base}`] = () => ({ name: "Acme", slug: "acme", mayRename: true });
+  show(<TenantOverview base={base} tenantId="t1" />);
+  await screen.findByRole("button", { name: "Rename" });
+});

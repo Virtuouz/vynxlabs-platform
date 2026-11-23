@@ -47,7 +47,12 @@ const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? o
  * and its failures, who is here, and what changed last.
  */
 export function TenantOverview({ base, tenantId }: { base: string; tenantId: string }) {
-  const tenant = useLoad<{ name: string; slug: string; managedWorkers?: boolean }>(base);
+  const tenant = useLoad<{
+    name: string;
+    slug: string;
+    managedWorkers?: boolean;
+    mayRename?: boolean;
+  }>(base);
   const counts = useLoad<TenantCounts>(`${base}/summary`);
   const instance = useLoad<{ mail?: boolean }>("/instance");
   const workspaces = useLoad<{ items: Workspace[] }>(`${base}/workspaces`);

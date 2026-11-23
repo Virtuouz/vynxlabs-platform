@@ -69,3 +69,9 @@ test("a loading button keeps its label, says it is busy, and cannot be pressed a
   fireEvent.click(button);
   expect(press).not.toHaveBeenCalled();
 });
+
+test("WLK-12f: the messages' right edge keeps clear of a panel that says how much room it takes", () => {
+  mount();
+  const holder = document.querySelector<HTMLElement>(".layer-toast");
+  expect(holder?.style.right).toBe("calc(1rem + var(--vx-toast-inset, 0px))");
+});

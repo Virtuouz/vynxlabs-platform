@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type Bundle, type BundleManifest, bundleDigest } from "@volvel/manifest";
-import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import { type Client, putSeen, startTestApp, type TestApp } from "./testing.js";
 
 /**
@@ -1133,6 +1133,46 @@ describe("one action on several rows", () => {
   });
 });
 
+describe("today is the reader's day (D21)", () => {
+  /** The wall clock of a moment in Los Angeles, as `YYYY-MM-DD HH:MM`. */
+  const inLosAngeles = (at: Date) =>
+    new Intl.DateTimeFormat("sv-SE", {
+      timeZone: "America/Los_Angeles",
+      dateStyle: "short",
+      timeStyle: "short",
+    }).format(at);
+
+  test("in the evening in Los Angeles, a step's today into a time column is that day's midnight there", async () => {
+    const id = await invoice();
+    const other = await invoice();
+    const third = await invoice();
+    // The next 03:30 UTC, which is the evening of the day before in Los Angeles; ahead of now, so
+    // that sessions are still valid.
+    const evening = new Date();
+    evening.setUTCHours(3, 30, 0, 0);
+    if (evening.getTime() <= Date.now()) evening.setUTCDate(evening.getUTCDate() + 1);
+    vi.useFakeTimers({ toFake: ["Date"], now: evening });
+    try {
+      const done = await press(ivy, "pay", id, { zone: "America/Los_Angeles" });
+      expect(done.status, JSON.stringify(done.body)).toBe(200);
+      const stored = new Date((await rowOf(id)).paid_on);
+      // Midnight in Los Angeles of the day it is there (the day before UTC's), not midnight UTC.
+      const day = inLosAngeles(evening).slice(0, 10);
+      expect(inLosAngeles(stored)).toBe(`${day} 00:00`);
+      expect(day).not.toBe(evening.toISOString().slice(0, 10));
+      // Without a zone it is UTC's day, as before.
+      expect((await press(ivy, "pay", other)).status).toBe(200);
+      expect(new Date((await rowOf(other)).paid_on).toISOString()).toBe(
+        `${evening.toISOString().slice(0, 10)}T00:00:00.000Z`,
+      );
+      // A zone that is no zone is refused.
+      expect((await press(ivy, "pay", third, { zone: "Mars/Base" })).status).toBe(400);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe("edit in place of a record detail", () => {
   /** A detail that lets people edit what it shows, put in the stored page. */
   beforeAll(async () => {
@@ -1155,6 +1195,21 @@ describe("edit in place of a record detail", () => {
           fields: [{ column: "number" }, { column: "total" }, { column: "status", hidden: true }],
         },
       });
+    // The same, limited to a group: the groups of the end users are keyed (ivy is in "finance").
+    for (const [id, groups] of [
+      ["info_sales", ["sales"]],
+      ["info_finance", ["finance"]],
+    ] as const) {
+      body.pages
+        .find((page) => page.id === "inv")
+        ?.widgets.push({
+          id,
+          type: "core/detail",
+          at: { x: 0, y: 14, w: 6, h: 6 },
+          data: { record: { source: { record: "this" } } },
+          config: { edit: true, editBy: { groups }, fields: [{ column: "total" }] },
+        });
+    }
     await t.db
       .updateTable("resource")
       .set({ body: JSON.stringify(body) })
@@ -1174,6 +1229,17 @@ describe("edit in place of a record detail", () => {
       targetId: id,
       details: { fields: expect.arrayContaining(["total", "number"]), action: "config/edit" },
     });
+  });
+
+  test("is limited to the groups the detail names, and refused to everyone else (WID-19)", async () => {
+    const id = await invoice();
+    const as = (widget: string) =>
+      act(ivy, { widget, at: "config/edit", records: { this: id }, inputs: { total: 77 } });
+    const refused = await as("info_sales");
+    expect(refused.status, JSON.stringify(refused.body)).toBe(403);
+    expect((await rowOf(id)).total).toBe(10);
+    expect((await as("info_finance")).status).toBe(200);
+    expect((await rowOf(id)).total).toBe(77);
   });
 
   test("refuses a column it does not show, or hides, and a value of the wrong type", async () => {

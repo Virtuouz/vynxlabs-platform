@@ -4,6 +4,7 @@ import { api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
 import { CollectionView } from "../kit/CollectionView.tsx";
 import { FilterChips, Inspector, KeyValues, SectionLabel } from "../kit/layout.tsx";
+import { consoleLink, kindName, objectHref } from "../kit/objects.tsx";
 import { LoadMore, usePagedList } from "../kit/paged.tsx";
 import { Mono, StatePill, Tag } from "../kit/status.tsx";
 import { Time } from "../kit/Time.tsx";
@@ -19,7 +20,7 @@ export const ACCESS_TABS = [
   { slug: "members", label: "Members" },
   { slug: "groups", label: "Groups" },
   { slug: "roles", label: "Roles" },
-  { slug: "access", label: "Access grants" },
+  { slug: "access", label: "Access" },
   { slug: "releases", label: "Releases" },
 ] as const;
 export type AccessTab = (typeof ACCESS_TABS)[number]["slug"];
@@ -51,7 +52,7 @@ export function endUsersFramed(tenantId: string, current: EndUserTab): Framed {
 }
 
 /** A screen's tabs, each a link to its own address under the tenant. */
-function SectionTabs({
+export function SectionTabs({
   label,
   tenantId,
   tabs,
@@ -63,7 +64,7 @@ function SectionTabs({
   current: string;
 }) {
   return (
-    <nav aria-label={label} className="-mb-4 flex gap-1 overflow-x-auto">
+    <nav aria-label={label} className="-mb-4 flex flex-wrap gap-x-1">
       {tabs.map((tab) => {
         const on = tab.slug === current;
         return (
@@ -71,7 +72,7 @@ function SectionTabs({
             key={tab.slug}
             to={`/t/${tenantId}/${tab.slug}`}
             current={on}
-            className={`shrink-0 border-b-2 px-3 py-2 text-body-sm ${
+            className={`shrink-0 border-b-2 px-2.5 py-2 text-body-sm sm:px-3 ${
               on
                 ? "border-action font-medium text-ink"
                 : "border-transparent text-ink-muted hover:text-ink"
@@ -130,12 +131,18 @@ interface Member {
   email: string;
   createdAt: string;
   suspended?: boolean;
+  /** How many roles they are given directly, and how many groups they are in. */
+  directRoles?: number;
+  groups?: number;
 }
 
 interface Binding {
   id: string;
   scopeType: "tenant" | "workspace" | "resource";
   workspaceId: string | null;
+  resourceId?: string | null;
+  resourceKind?: string | null;
+  resourcePath?: string | null;
   principalType: string;
   principalId: string | null;
   principalLabel: string;
@@ -148,12 +155,46 @@ interface WorkspaceRef {
   name: string;
 }
 
-const whereOf = (binding: Binding, workspaces: WorkspaceRef[]) =>
-  binding.scopeType === "tenant"
-    ? "Whole tenant"
-    : `${workspaces.find((w) => w.id === binding.workspaceId)?.name ?? "A workspace"}${
-        binding.scopeType === "resource" ? " (one resource)" : ""
-      }`;
+/**
+ * Where a binding applies, said so that two are told apart: the whole tenant, a workspace, or the
+ * one script, flow or app in it, by kind and path, and a link to it.
+ */
+function WhereOf({
+  binding,
+  workspaces,
+  base,
+}: {
+  binding: Binding;
+  workspaces: WorkspaceRef[];
+  base: string;
+}) {
+  if (binding.scopeType === "tenant") return <>Whole tenant</>;
+  const workspace = workspaces.find((w) => w.id === binding.workspaceId)?.name ?? "A workspace";
+  if (binding.scopeType !== "resource") return <>{workspace}</>;
+  if (!binding.resourceKind || !binding.resourcePath) return <>{workspace} (one resource)</>;
+  return (
+    <>
+      <Link
+        to={objectHref(
+          consoleLink(`${base}/workspaces/${binding.workspaceId}`),
+          binding.resourceKind,
+          binding.resourcePath,
+        )}
+      >
+        {kindName(binding.resourceKind)} <Mono>{binding.resourcePath}</Mono>
+      </Link>{" "}
+      in {workspace}
+    </>
+  );
+}
+
+/** What a member holds in words, from the counts the server gave: nothing when they are not known. */
+export function rolesHeld(member: Pick<Member, "directRoles" | "groups">): string {
+  const { directRoles: direct, groups } = member;
+  if (direct === undefined || groups === undefined) return "";
+  if (direct === 0) return groups === 0 ? "No access" : "Through groups only";
+  return `${direct} given directly`;
+}
 
 export function MemberList({ base, framed }: { base: string; framed?: Framed }) {
   const [search, setSearch] = useUrlParam("q", "");
@@ -166,7 +207,12 @@ export function MemberList({ base, framed }: { base: string; framed?: Framed }) 
   const [adding, setAdding] = useState(false);
   const needle = search.trim().toLowerCase();
   const rows = members.items;
-  const chosen = members.items?.find((row) => row.id === selected);
+  const listed = members.items?.find((row) => row.id === selected);
+  // A link to someone past the pages loaded opens them all the same: they are read by themselves.
+  const alone = useLoad<Member>(
+    selected && members.items && !listed ? `${base}/members/${selected}` : null,
+  );
+  const chosen = listed ?? alone.data;
   const held = (bindings.data?.items ?? []).filter(
     (binding) => binding.principalType === "member" && binding.principalId === selected,
   );
@@ -190,7 +236,7 @@ export function MemberList({ base, framed }: { base: string; framed?: Framed }) 
     <>
       <CollectionView<Member>
         title={framed?.title ?? "Members"}
-        description="People who belong to this tenant. Belonging grants nothing by itself: give access under Access grants."
+        description="People who belong to this tenant. Belonging grants nothing by itself: give access under Access."
         actions={
           <Button variant="primary" onClick={() => setAdding(true)}>
             Add member
@@ -246,16 +292,8 @@ export function MemberList({ base, framed }: { base: string; framed?: Framed }) 
           {
             header: "Roles",
             priority: 3,
-            cell: (row) => {
-              const count = (bindings.data?.items ?? []).filter(
-                (binding) => binding.principalType === "member" && binding.principalId === row.id,
-              ).length;
-              return (
-                <span className="text-ink-muted">
-                  {count === 0 ? "Through groups only" : `${count} given directly`}
-                </span>
-              );
-            },
+            // What the server counted, so that nothing is said while it is not known.
+            cell: (row) => <span className="text-ink-muted">{rolesHeld(row)}</span>,
           },
           {
             header: "Added",
@@ -321,7 +359,11 @@ export function MemberList({ base, framed }: { base: string; framed?: Framed }) 
                         <li key={binding.id} className="flex flex-wrap items-center gap-2">
                           <Mono>{binding.roleName}</Mono>
                           <span className="text-meta text-ink-muted">
-                            {whereOf(binding, workspaces.data?.items ?? [])}
+                            <WhereOf
+                              binding={binding}
+                              workspaces={workspaces.data?.items ?? []}
+                              base={base}
+                            />
                           </span>
                         </li>
                       ))}
@@ -463,7 +505,7 @@ export function AccessList({ base, framed }: { base: string; framed?: Framed }) 
             ]}
           />,
         )}
-        label="Access grants"
+        label="Access"
         rows={rows}
         selected={linked ?? undefined}
         error={bindings.error}
@@ -485,7 +527,9 @@ export function AccessList({ base, framed }: { base: string; framed?: Framed }) 
           {
             header: "Where",
             priority: 2,
-            cell: (row) => whereOf(row, workspaces.data?.items ?? []),
+            cell: (row) => (
+              <WhereOf binding={row} workspaces={workspaces.data?.items ?? []} base={base} />
+            ),
           },
           {
             header: "",

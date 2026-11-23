@@ -577,6 +577,7 @@ describe("going back, and asking a second person", () => {
     );
     expect(listed.status).toBe("superseded");
     const late = await decide(bob, "approve", stale.body.id);
+    // It was marked superseded when the other applied (ACC-15), so it is not left saying it waits.
     expect(late.status).toBe(409);
     expect(late.body.message ?? late.body.detail).toContain("superseded");
     expect((await decide(bob, "withdraw", stale.body.id)).status).toBe(409);

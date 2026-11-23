@@ -906,11 +906,16 @@ export function CommandPalette({
             title={`${starting.kind === "script" ? "Run" : "Start"} ${starting.path}`}
             action={starting.kind === "script" ? "Run" : "Start flow"}
             schema={starting.schema}
-            onSubmit={async (input) => {
+            timing={starting.kind === "script"}
+            onSubmit={async (input, timing) => {
               const root = `/tenants/${tenantId}/workspaces/${starting.workspaceId}`;
               const made =
                 starting.kind === "script"
-                  ? await api.post<{ id: string }>(`${root}/runs`, { script: starting.path, input })
+                  ? await api.post<{ id: string }>(`${root}/runs`, {
+                      script: starting.path,
+                      input,
+                      ...timing,
+                    })
                   : await api.post<{ id: string }>(`${root}/flow-runs`, {
                       flow: starting.path,
                       input,

@@ -14,6 +14,21 @@ const draw = (source: string) =>
     </div>,
   );
 
+describe("the options of a drawing", () => {
+  test("a glossary given to the page is drawn where ::glossary is written", () => {
+    render(
+      <Doc
+        tree={parse("# Words\n\n::glossary\n")}
+        profile="docs"
+        glossary={() => [{ id: "rma", term: "RMA", short: "A return." }]}
+      />,
+    );
+    const drawn = document.querySelector(".vd-glossary");
+    expect(drawn).not.toBeNull();
+    expect(drawn?.textContent).toContain("A return.");
+  });
+});
+
 /** Every component of the page profile, drawn inside a widget's card. */
 describe("the components of a widget's text", () => {
   test("an alert is a callout that keeps its border and its rail, for each type", () => {

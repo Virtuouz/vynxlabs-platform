@@ -87,17 +87,14 @@ test("the pictures the documentation shows are taken", async ({ browser }) => {
   const pages: Record<string, string> = {
     "handbook/index": source("title: Shop handbook", "Start with [refunds](support/refunds).\n"),
     "handbook/support/index": source(
-      "title: Customer support\norder: 1",
+      "title: Customer support\npages: [refunds, returns]",
       "When a customer writes in.\n",
     ),
     "handbook/support/refunds": source(
       "title: Refund an order\ndescription: Full and partial refunds.\nextends: [data-tables]\nabout:\n  - table: orders",
       "# Before you start\n\nCheck the order's :term[status]{table=orders column=status}.\n\n:::alert[Mind the limit]{type=warning}\nA refund over 500 needs a second person.\n:::\n\n:::steps\n1. Find the order.\n2. Refund it to the card it was paid with.\n:::\n",
     ),
-    "handbook/support/returns": source(
-      "title: Returns\norder: 2",
-      "Parcels come back on Tuesdays.\n",
-    ),
+    "handbook/support/returns": source("title: Returns", "Parcels come back on Tuesdays.\n"),
   };
   for (const [path, text] of Object.entries(pages)) {
     await call(page, "PUT", `${W}/drafts/${path}`, {

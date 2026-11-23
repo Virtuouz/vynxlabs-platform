@@ -3,8 +3,7 @@ import { type Kysely, type PlatformSchema, sql } from "@volvel/db";
 import { createTestDatabase, type TestDatabase } from "@volvel/db/testing";
 import { type Bundle, type BundleManifest, bundleDigest, formatFor } from "@volvel/manifest";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { upgradePolicies, workspaceSchema } from "./kernel/data/apply.js";
-import { describeTable, findRows, withData } from "./kernel/data/rows.js";
+import { workspaceSchema } from "./kernel/data/apply.js";
 import { type Client, startTestApp, type TestApp } from "./testing.js";
 
 const PASSWORD = "a-good-long-password";

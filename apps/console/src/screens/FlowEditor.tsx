@@ -35,6 +35,7 @@ import {
 } from "@xyflow/react";
 import { ago } from "../kit/format.ts";
 import { glide } from "../kit/motion.ts";
+import { listenChoices } from "../kit/platformEvents.ts";
 import "@xyflow/react/dist/style.css";
 import { Play, Plus, Redo2, TriangleAlert, Undo2 } from "lucide-react";
 import {
@@ -1271,6 +1272,7 @@ export function FlowEditor({
       !dirty ||
       busy ||
       gaveUp ||
+      draft.clashed ||
       state === "new" ||
       state === "repository" ||
       state === "removed"
@@ -1286,7 +1288,7 @@ export function FlowEditor({
       if (failures.current >= 5) setGaveUp(true);
     }, wait);
     return () => clearTimeout(timer);
-  }, [dirty, busy, gaveUp, state, nodes, edges, description]);
+  }, [dirty, busy, gaveUp, state, nodes, edges, description, draft.clashed]);
   // A change after giving up is worth trying again.
   // biome-ignore lint/correctness/useExhaustiveDependencies: a change is the reason to try again
   useEffect(() => {
@@ -1436,13 +1438,15 @@ export function FlowEditor({
   const matches = (label: string, hint?: string) =>
     !wanted || label.toLowerCase().includes(wanted) || (hint ?? "").toLowerCase().includes(wanted);
   const saveState = dirty
-    ? state === "new" || state === "repository"
-      ? "Not saved"
-      : gaveUp
-        ? "Could not save."
-        : failures.current > 0
-          ? "Could not save. Trying again…"
-          : "Saving…"
+    ? draft.clashed
+      ? "Not saved: someone else saved this flow"
+      : state === "new" || state === "repository"
+        ? "Not saved"
+        : gaveUp
+          ? "Could not save."
+          : failures.current > 0
+            ? "Could not save. Trying again…"
+            : "Saving…"
     : savedAt
       ? `Draft saved ${ago(savedAt)}`
       : stateLabel(state === "removed" ? "draft" : state);
@@ -1757,7 +1761,7 @@ export function FlowEditor({
                       {(node.trigger as { type: string }).type === "event" ? (
                         <ComboboxField
                           label="Event"
-                          options={eventOptions}
+                          options={listenChoices(eventOptions)}
                           value={(node.trigger as { event?: string }).event || undefined}
                           onChange={(event) =>
                             update(chosen.id, {
@@ -2034,7 +2038,7 @@ export function FlowEditor({
               ) : null}
               <span
                 role="status"
-                className={`text-meta ${gaveUp || failures.current > 0 ? "text-danger" : "text-ink-subtle"}`}
+                className={`text-meta ${gaveUp || draft.clashed || failures.current > 0 ? "text-danger" : "text-ink-subtle"}`}
               >
                 {saveState}
               </span>
@@ -2206,7 +2210,13 @@ export function FlowEditor({
               steps shown are what is deployed now. Keep this flow to take the removal back.
             </Notice>
           ) : null}
-          {draft.clashed ? <DraftClash what="flow" onTake={() => setAgain((n) => n + 1)} /> : null}
+          {draft.clashed ? (
+            <DraftClash
+              what="flow"
+              mine={() => JSON.stringify(toSend.current(), null, 2)}
+              onTake={() => setAgain((n) => n + 1)}
+            />
+          ) : null}
           {state === "repository" ? (
             <Notice tone="attention">
               This flow is managed in the tenant's repository. Saving a draft of it takes it over.

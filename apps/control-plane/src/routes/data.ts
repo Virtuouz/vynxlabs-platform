@@ -25,7 +25,7 @@ import {
   scopeFor,
   withData,
 } from "../kernel/data/rows.js";
-import { badRequest, forbidden, forbiddenBecause } from "../kernel/errors.js";
+import { badRequest, forbiddenBecause } from "../kernel/errors.js";
 import { publishPlatformEvent } from "../kernel/flows/events.js";
 import { access, findWorkspace, guestLimit, type RequestContext } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
@@ -391,6 +391,8 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.workspace("table:read") },
         schema: {
           summary: "Custom tables in a workspace",
+          description:
+            "Each table with its columns, who manages it, how many rows it holds and its policy.",
           tags: ["data"],
           params: WorkspaceParams,
           response: {
@@ -456,6 +458,8 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.workspace("table:read") },
         schema: {
           summary: "One table: its columns, including retired ones, and where it is stored",
+          description:
+            "The table, with its columns, the ones retired included, and where its rows are kept.",
           tags: ["data"],
           params: WildParams,
           querystring: Type.Object({
@@ -608,7 +612,12 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       `${base}/rows/*`,
       {
-        config: { access: access.custom, rateLimit: guestLimit },
+        config: {
+          access: access.custom(
+            "Needs `data:read` at the workspace or at the table, and the table's row policy then decides which rows the caller sees. An app may call it for someone who is not signed in only where the table is open to anyone.",
+          ),
+          rateLimit: guestLimit,
+        },
         schema: {
           summary: "Rows of a table",
           description:
@@ -710,7 +719,12 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       `${base}/column-values`,
       {
-        config: { access: access.custom, rateLimit: guestLimit },
+        config: {
+          access: access.custom(
+            "Needs `data:read` at the workspace or at the table, and the table's row policy then decides which rows the caller sees. An app may call it for someone who is not signed in only where the table is open to anyone.",
+          ),
+          rateLimit: guestLimit,
+        },
         schema: {
           summary: "The values a column holds, with how many rows have each",
           description:
@@ -748,7 +762,12 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       `${base}/column-counts`,
       {
-        config: { access: access.custom, rateLimit: guestLimit },
+        config: {
+          access: access.custom(
+            "Needs `data:read` at the workspace or at the table, and the table's row policy then decides which rows the caller sees. An app may call it for someone who is not signed in only where the table is open to anyone.",
+          ),
+          rateLimit: guestLimit,
+        },
         schema: {
           summary: "How many different values each column of a table has",
           description:
@@ -778,7 +797,12 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       `${base}/aggregate/*`,
       {
-        config: { access: access.custom, rateLimit: guestLimit },
+        config: {
+          access: access.custom(
+            "Needs `data:read` at the workspace or at the table, and the table's row policy then decides which rows the caller sees. An app may call it for someone who is not signed in only where the table is open to anyone.",
+          ),
+          rateLimit: guestLimit,
+        },
         schema: {
           summary: "Totals over a table's rows",
           description:
@@ -837,7 +861,12 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.post(
       `${base}/rows/*`,
       {
-        config: { access: access.custom, rateLimit: guestLimit },
+        config: {
+          access: access.custom(
+            "Needs `data:write` at the workspace or at the table, and the table's row policy decides which rows the caller may change. An app may call it for someone who is not signed in only where the table is open to anyone.",
+          ),
+          rateLimit: guestLimit,
+        },
         schema: {
           summary: "Insert one row, or up to 1,000",
           description: 'Send a row, or `{ "rows": [...] }`. Either all are inserted or none.',
@@ -890,9 +919,16 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       `${base}/row/:id/*`,
       {
-        config: { access: access.custom, rateLimit: guestLimit },
+        config: {
+          access: access.custom(
+            "Needs `data:read` at the workspace or at the table, and the table's row policy then decides which rows the caller sees. An app may call it for someone who is not signed in only where the table is open to anyone.",
+          ),
+          rateLimit: guestLimit,
+        },
         schema: {
           summary: "One row",
+          description:
+            "The row with the given key, as the table's row policy lets the caller see it.",
           tags: ["data"],
           params: RowParams,
           response: { 200: AnyObject },
@@ -907,9 +943,16 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.patch(
       `${base}/row/:id/*`,
       {
-        config: { access: access.custom, rateLimit: guestLimit },
+        config: {
+          access: access.custom(
+            "Needs `data:write` at the workspace or at the table, and the table's row policy decides which rows the caller may change. An app may call it for someone who is not signed in only where the table is open to anyone.",
+          ),
+          rateLimit: guestLimit,
+        },
         schema: {
           summary: "Change some of a row's values",
+          description:
+            "Only the columns sent change. The values are checked against the table's columns and its policy. Audited.",
           tags: ["data"],
           params: RowParams,
           body: AnyObject,
@@ -939,7 +982,12 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       `${base}/rows-export/*`,
       {
-        config: { access: access.custom, rateLimit: guestLimit },
+        config: {
+          access: access.custom(
+            "Needs `data:read` at the workspace or at the table, and the table's row policy then decides which rows the caller sees. An app may call it for someone who is not signed in only where the table is open to anyone.",
+          ),
+          rateLimit: guestLimit,
+        },
         schema: {
           summary: "Rows of a table, as CSV",
           description:
@@ -1000,7 +1048,12 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.post(
       `${base}/row-deletions/*`,
       {
-        config: { access: access.custom, rateLimit: guestLimit },
+        config: {
+          access: access.custom(
+            "Needs `data:write` at the workspace or at the table, and the table's row policy decides which rows the caller may change. An app may call it for someone who is not signed in only where the table is open to anyone.",
+          ),
+          rateLimit: guestLimit,
+        },
         schema: {
           summary: "Delete several rows",
           description:
@@ -1048,10 +1101,16 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.delete(
       `${base}/row/:id/*`,
       {
-        config: { access: access.custom, rateLimit: guestLimit },
+        config: {
+          access: access.custom(
+            "Needs `data:write` at the workspace or at the table, and the table's row policy decides which rows the caller may change. An app may call it for someone who is not signed in only where the table is open to anyone.",
+          ),
+          rateLimit: guestLimit,
+        },
         schema: {
           summary: "Delete a row",
           description:
+            "Deletes the row with the given key, where the table's policy lets the caller. Audited. " +
             "Rows that a reference's `cascade` or `set_null` rule deletes or empties with it are " +
             "not announced as changes; only this row is.",
           tags: ["data"],

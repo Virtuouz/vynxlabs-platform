@@ -50,6 +50,7 @@ import {
   type AskedField,
   addedAt,
   grantWords,
+  inputType,
   inputWords,
   moved,
   newStep,
@@ -70,6 +71,7 @@ import {
 } from "./actionModel.ts";
 import { ConfirmPreview } from "./confirmPreview.tsx";
 import type { Env } from "./controls.tsx";
+import { useChosenGroups } from "./groupChoices.tsx";
 import {
   type ConfigSetting,
   heading,
@@ -582,6 +584,7 @@ function InputMapper({
               id={`${id}-${name}`}
               label={`${heading(name)} gets`}
               value={input?.[name]}
+              type={inputType(schema?.properties?.[name])}
               ctx={ctx}
               asked={asked}
               optional
@@ -1059,12 +1062,15 @@ export function ActionEditor({
   /** Left of the trigger line. Default: a bolt. */
   trigger?: ReactNode;
 }) {
+  const chosen = useChosenGroups();
   const ctx = actionContext(env);
   const current: Action = action ?? { steps: [] };
   const asked = current.confirm?.ask ?? [];
   const put = (next: Action, key?: string) =>
     onChange(
-      !next.confirm && next.steps.length === 0 && !next.when && !next.runBy ? undefined : next,
+      !next.confirm && next.steps.length === 0 && !next.when && !next.runBy && !next.done
+        ? undefined
+        : next,
       key,
     );
   const stepKeys = useStepKeys(current.steps.length);
@@ -1232,8 +1238,24 @@ export function ActionEditor({
           </span>
         </p>
       ) : null}
+      {count > 0 ? (
+        <TextField
+          name={`${id}-done`}
+          label="When it is done, say"
+          hint="A notice after every step has worked. Leave it empty to say nothing."
+          required={false}
+          value={current.done ?? ""}
+          maxLength={300}
+          onChange={(text) => {
+            const { done: _before, ...rest } = current;
+            put(text.trim() === "" ? rest : { ...rest, done: text }, `${id}-done`);
+          }}
+        />
+      ) : null}
       {current.steps.length > 0 ? (
-        <p className="m-0 text-body-sm text-ink-muted">{grantWords(current, ctx)}</p>
+        <p className="m-0 text-body-sm text-ink-muted">
+          {grantWords(current, ctx, Object.fromEntries(chosen.map((one) => [one.path, one.name])))}
+        </p>
       ) : null}
     </div>
   );

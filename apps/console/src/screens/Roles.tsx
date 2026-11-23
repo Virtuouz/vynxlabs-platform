@@ -3,7 +3,7 @@ import { Button, Closing, Notice, SideSheet, TextField, Toggletip, Tooltip } fro
 import { X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
-import { notify } from "../ask.tsx";
+import { failureText, notify } from "../ask.tsx";
 import { CollectionView } from "../kit/CollectionView.tsx";
 import { FilterChips, Inspector, SectionLabel } from "../kit/layout.tsx";
 import { consoleLink } from "../kit/objects.tsx";
@@ -300,8 +300,11 @@ function RoleDialog({
   const [error, setError] = useState<ApiError>();
   const [busy, setBusy] = useState(false);
   const readOnly = role !== undefined && (role.builtin || role.managedByResource);
+  // A refusal of the release behind the change names the field inside its message.
   const fieldError = (field: string) =>
-    error?.fields?.find((one) => one.path.startsWith(`/body/${field}`))?.message;
+    error?.fields.find(
+      (one) => one.path.startsWith(`/body/${field}`) || one.message.startsWith(`/body/${field} `),
+    )?.message;
 
   return (
     <SideSheet
@@ -313,7 +316,9 @@ function RoleDialog({
         ? {
             description: role?.builtin
               ? "A built-in role cannot be changed. Create a role of your own to allow something else."
-              : "This role comes from the tenant's repository and is changed there.",
+              : role?.workspaceId
+                ? "This role comes from a workspace's repository and is changed there."
+                : "This role comes from the tenant's repository and is changed there.",
           }
         : {})}
     >
@@ -329,7 +334,7 @@ function RoleDialog({
             notify.success(
               role
                 ? `The role ${role.name} is saved. Everyone who holds it has the new permissions.`
-                : `The role ${name} is made. Give it to people under Access grants.`,
+                : `The role ${name} is made. Give it to people under Access.`,
             );
             onSaved();
           } catch (caught) {
@@ -365,7 +370,7 @@ function RoleDialog({
           onChange={setPermissions}
           disabled={readOnly}
         />
-        {error ? <Notice tone="danger">{error.message}</Notice> : null}
+        {error ? <Notice tone="danger">{failureText(error)}</Notice> : null}
         <div className="mt-1 flex justify-end gap-2">
           <Button onClick={onClose}>{readOnly ? "Close" : "Cancel"}</Button>
           {readOnly ? null : (
@@ -420,9 +425,15 @@ export function Roles({ base, framed }: { base: string; framed?: Framed }) {
   const catalog = useLoad<{ items: PermissionKind[] }>("/permissions");
   // Who holds a role decides whether it can be deleted. Someone who may not read bindings sees
   // no list, and the server's refusal says it if the role is still held.
-  const bindings = useLoad<{ items: { roleName: string; principalLabel: string }[] }>(
+  const bindings = useLoad<{ items: { roleId: string; principalLabel: string }[] }>(
     `${base}/bindings`,
   );
+  // Two roles may share a name, one the tenant's and one a workspace's: they are told apart here.
+  const workspaces = useLoad<{ items: { id: string; name: string }[] }>(`${base}/workspaces`);
+  const workspaceOf = (role: Role) =>
+    role.workspaceId
+      ? (workspaces.data?.items.find((one) => one.id === role.workspaceId)?.name ?? "a workspace")
+      : undefined;
   const [open, setOpen] = useState<Role | "new">();
   const [selected, setSelected] = useUrlParam("role", undefined, { push: true });
   const [show, setShow] = useUrlParam<Show>("show", "all");
@@ -435,15 +446,13 @@ export function Roles({ base, framed }: { base: string; framed?: Framed }) {
       : undefined;
   const chosen = all?.find((role) => role.id === selected);
   const fixed = chosen ? chosen.builtin || chosen.managedByResource : false;
-  const held = chosen
-    ? (bindings.data?.items ?? []).filter((one) => one.roleName === chosen.name)
-    : [];
+  const held = chosen ? (bindings.data?.items ?? []).filter((one) => one.roleId === chosen.id) : [];
 
   return (
     <>
       <CollectionView<Role>
         title={framed?.title ?? "Roles"}
-        description="A role is a named set of permissions. Give a role to a person, a group or a service account under Access grants."
+        description="A role is a named set of permissions. Give a role to a person, a group or a service account under Access."
         actions={
           <Button variant="primary" onClick={() => setOpen("new")}>
             Create role
@@ -484,6 +493,7 @@ export function Roles({ base, framed }: { base: string; framed?: Framed }) {
                 <Mono>{row.name}</Mono>
                 {row.builtin ? <Tag>Built in</Tag> : null}
                 {row.managedByResource ? <Tag tone="repository">From repository</Tag> : null}
+                {workspaceOf(row) ? <Tag>In {workspaceOf(row)}</Tag> : null}
               </span>
             ),
           },
@@ -550,7 +560,7 @@ export function Roles({ base, framed }: { base: string; framed?: Framed }) {
                         {fixed ? null : (
                           <>
                             It cannot be deleted while it is held. Remove its bindings in{" "}
-                            <Link to={`${consoleLink(base)}/members`}>Members and access</Link>.
+                            <Link to={`${consoleLink(base)}/access`}>Members and access</Link>.
                           </>
                         )}
                       </p>

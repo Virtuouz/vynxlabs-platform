@@ -365,7 +365,8 @@ export function RunsWorkbench({
   );
   const missing = notListed && Boolean(stepRun.error) && Boolean(flowRun.error);
   useTitleObject(selected ? (picked ? `Run of ${picked.target}` : "Run") : undefined);
-  const counts = list.data?.stateCounts ?? {};
+  // A window that ends before it starts holds no run: the counts of the one before it are not its own.
+  const counts = backwards ? {} : (list.data?.stateCounts ?? {});
   const total = Object.values(counts).reduce((a, b) => a + b, 0);
   const filtered = status !== "all" || Boolean(search) || tags.length > 0 || Boolean(url.target);
   const queued = counts.queued ?? 0;

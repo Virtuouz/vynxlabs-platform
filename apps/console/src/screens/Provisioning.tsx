@@ -141,8 +141,21 @@ export function Provisioning({
             },
             { header: "Made", cell: (row) => <Time value={row.createdAt} mode="ago" /> },
             {
+              header: "Expires",
+              cell: (row) => (row.expiresAt ? <Time value={row.expiresAt} mode="ago" /> : "Never"),
+            },
+            {
               header: "Last used",
               cell: (row) => (row.lastUsedAt ? when(row.lastUsedAt) : "Never"),
+            },
+            {
+              header: "Status",
+              cell: (row) =>
+                row.expiresAt && new Date(row.expiresAt) <= new Date() ? (
+                  <StatePill state="expired" />
+                ) : (
+                  <StatePill state="active" />
+                ),
             },
             {
               header: "",

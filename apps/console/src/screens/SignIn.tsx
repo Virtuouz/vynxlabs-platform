@@ -137,7 +137,9 @@ export function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
                     !ways
                       ? `We could not check how this address signs in. ${failure.message} Press Continue to try again.`
                       : failure.status === 401
-                        ? "That email and password do not match an account."
+                        ? recovering
+                          ? "That email and password do not match an account. The recovery code was used up by this try; use another code."
+                          : "That email and password do not match an account."
                         : recovering && failure.status === 403
                           ? "That recovery code is not right, or was already used. Each code works once."
                           : failure.message,
@@ -217,7 +219,7 @@ export function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
                   autoComplete="one-time-code"
                   value={code}
                   required
-                  hint="One of the codes you made on your account page. It works once."
+                  hint="One of the codes you made on your account page. It works once, even if the password is wrong."
                   onChange={setCode}
                 />
               ) : null}

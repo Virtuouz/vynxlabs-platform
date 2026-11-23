@@ -84,6 +84,10 @@ const DomainView = Type.Object({
   verifiedAt: NullableTime,
   checkedAt: NullableTime,
   problem: NullableString,
+  recordGoneAt: Type.Union([NullableTime], {
+    description:
+      "When a check first did not find the record of a domain that was proved. It stays proved, from `verifiedAt`; this says it may no longer be. Empty while the record is found.",
+  }),
   record: Type.Union([Type.Object({ name: Type.String(), value: Type.String() }), Type.Null()], {
     description: "The TXT record that proves the domain. Null for a provider of the instance.",
   }),
@@ -96,7 +100,15 @@ const GroupMap = Type.Object({
   }),
   groupId: Id,
 });
-const GroupMapView = Type.Object({ value: Type.String(), groupId: Id, groupName: Type.String() });
+const GroupMapView = Type.Object({
+  value: Type.String(),
+  groupId: Id,
+  groupName: Type.String(),
+  managedBy: Type.Union([Type.Literal("hand"), Type.Literal("release")], {
+    description:
+      "`release` for a mapping a release of the tenant's access made: it is changed by another release, not here.",
+  }),
+});
 const LinkView = Type.Object({
   id: Id,
   subject: Type.String(),
@@ -111,7 +123,12 @@ const _ProviderParams = Type.Object({ t: Type.Optional(Id), p: Id });
 const Settings = {
   name: Type.Optional(Type.String({ minLength: 1, maxLength: 80 })),
   config: Type.Optional(AnyObject),
-  clientSecret: Type.Optional(Type.String({ minLength: 1, maxLength: 4000 })),
+  clientSecret: Type.Optional(
+    Type.Union([Type.String({ minLength: 1, maxLength: 4000 }), Type.Null()], {
+      description:
+        "OIDC. Leave out to keep the one stored. `null` removes it: the client is then a public one, and PKCE protects the exchange.",
+    }),
+  ),
   enabled: Type.Optional(Type.Boolean()),
   enforce: Type.Optional(Type.Boolean()),
   provision: Type.Optional(Type.Boolean()),
@@ -166,6 +183,7 @@ export function ssoRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         verified_at: Date | null;
         checked_at: Date | null;
         check_error: string | null;
+        record_gone_at: Date | null;
       },
     ) => ({
       id: row.id,
@@ -174,6 +192,7 @@ export function ssoRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       verifiedAt: isoOrNull(row.verified_at),
       checkedAt: isoOrNull(row.checked_at),
       problem: row.check_error,
+      recordGoneAt: isoOrNull(row.record_gone_at),
       record: provider.tenantId ? challengeOf(kernel, provider.tenantId, row.domain) : null,
     });
 
@@ -254,7 +273,7 @@ export function ssoRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               { tenantId, audience: body.audience, protocol: body.protocol },
               body,
             );
-            if (isOidc(made)) await reachable(made, body.clientSecret);
+            if (isOidc(made)) await reachable(made, body.clientSecret ?? undefined);
             return made;
           });
           return reply.code(201).send(await view(created));
@@ -451,6 +470,12 @@ export function ssoRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                   ? null
                   : `No TXT record ${record?.name} with the value ${record?.value} was found.`,
                 ...(met && !domain.verified_at ? { verified_at: new Date() } : {}),
+                // A record not found after it was proved is said apart, from the first time it was missed.
+                record_gone_at: met
+                  ? null
+                  : domain.verified_at
+                    ? (domain.record_gone_at ?? new Date())
+                    : null,
               })
               .where("id", "=", domain.id)
               .returningAll()
@@ -466,6 +491,19 @@ export function ssoRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               tenantId: current.tenantId,
               details: { domain: domain.domain, provider: current.name, verified: met },
             });
+            if (!met && domain.verified_at && !domain.record_gone_at) {
+              await audit({
+                action: "identity_domain.record_gone",
+                targetType: "identity_domain",
+                targetId: domain.id,
+                tenantId: current.tenantId,
+                details: {
+                  domain: domain.domain,
+                  provider: current.name,
+                  verifiedAt: domain.verified_at.toISOString(),
+                },
+              });
+            }
             return updated;
           });
           return domainView(current, row);
@@ -629,6 +667,7 @@ export function ssoRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             "identity_group_map.claim_value",
             "identity_group_map.member_group_id",
             "identity_group_map.end_user_group_id",
+            "identity_group_map.managed_by",
             "principal_group.name as member_group",
             "end_user_group.name as end_user_group",
           ])
@@ -640,6 +679,7 @@ export function ssoRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           value: row.claim_value,
           groupId: (row.member_group_id ?? row.end_user_group_id) as string,
           groupName: row.member_group ?? row.end_user_group ?? "",
+          managedBy: row.managed_by,
         }));
       };
 
@@ -755,7 +795,7 @@ export function ssoRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     }
 
     /** Reads an OIDC provider's own description, so a wrong issuer is said when it is saved. */
-    async function reachable(provider: Provider, clientSecret: string | undefined) {
+    async function reachable(provider: Provider, clientSecret: string | null | undefined) {
       if (!isOidc(provider)) return;
       await checkOidc(provider, clientSecret ? { clientSecret } : {}).catch(asProblem);
     }

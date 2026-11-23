@@ -1,6 +1,6 @@
 import { Button, JsonView, Notice } from "@volvel/ui";
 import { Download } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { copyText } from "../ask.tsx";
 import { actionWords } from "../audit-words.ts";
@@ -77,6 +77,7 @@ const TENANT_AREAS: [string, string][] = [
   ["end_user_group", "End user groups"],
   ["connection_group", "Connection groups"],
   ["group_member", "Group members"],
+  ["sql", "SQL"],
   ["tenant", "Tenant"],
 ];
 
@@ -246,16 +247,23 @@ export function AuditTable({
   const asked = filters.toString();
   const facets = useLoad<Facets>(tenantLog ? `${path}-facets?${asked}` : null);
 
+  // Each first page asked for is the newest; an answer to an earlier one, or to one before the
+  // filters changed, is not shown.
+  const latest = useRef(0);
   const load = async (from: string | null) => {
+    if (!from) latest.current += 1;
+    const mine = latest.current;
     try {
       const query = new URLSearchParams(asked);
       query.set("limit", "50");
       if (from) query.set("cursor", from);
       const page = await api.get<{ items: Entry[]; nextCursor: string | null }>(`${path}?${query}`);
+      if (mine !== latest.current) return;
       setEntries((current) => (from ? [...current, ...page.items] : page.items));
       setCursor(page.nextCursor);
       setError(undefined);
     } catch (caught) {
+      if (mine !== latest.current) return;
       setError(caught as ApiError);
     }
     setLoaded(true);

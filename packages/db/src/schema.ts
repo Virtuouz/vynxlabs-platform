@@ -995,6 +995,7 @@ export interface AppDomainTable {
   enabled_by_operator: Generated<boolean>;
   checked_at: Date | null;
   check_error: string | null;
+  record_gone_at: Date | null;
   created_by_type: string;
   created_by_id: string | null;
   created_at: Generated<Date>;
@@ -1250,6 +1251,7 @@ export interface IdentityDomainTable {
   verified_at: Timestamp | null;
   checked_at: Timestamp | null;
   check_error: string | null;
+  record_gone_at: Timestamp | null;
   created_at: Generated<Date>;
 }
 

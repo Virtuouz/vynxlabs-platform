@@ -59,7 +59,7 @@ import {
   searchAnswer,
   searchPage,
 } from "./docs.js";
-import type { Place } from "./hosts.js";
+import { hostnameOf, type Place } from "./hosts.js";
 import { isStaticFile, Limiter, MemoryLimiter } from "./limit.js";
 import {
   forgotPage,
@@ -1373,6 +1373,17 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
     const path = url.pathname;
     if (path === "/api" || path.startsWith("/api/")) return;
     const place = await kernel.hosts.place(request);
+    // A name a tenant holds and has turned off serves nothing, not the console either. Its check
+    // address, under /api, still answers.
+    if (place.kind === "main" && !kernel.hosts.isOwn(hostnameOf(request.host))) {
+      if (await kernel.hosts.turnedOff(hostnameOf(request.host))) {
+        return plain(
+          reply,
+          404,
+          "This hostname is not served here. Its registration is turned off.",
+        );
+      }
+    }
     const isPage = request.method === "GET" || request.method === "HEAD";
     if (!isPage && request.method !== "POST") {
       if (place.kind === "main" && !path.startsWith("/apps/") && !path.startsWith("/portal/"))

@@ -147,3 +147,42 @@ test("the people pushed and the pushes refused are listed, with why", async () =
   await waitFor(() => expect(screen.queryByText("Ana Ruiz")).toBeNull());
   expect(screen.getAllByText("bo@acme.example").length).toBeGreaterThan(0);
 });
+
+test("a token says when it expires, and an expired one does not look live (GOV-28)", async () => {
+  state = {
+    ...state,
+    tokens: [
+      {
+        id: "k1",
+        name: "Old",
+        prefix: "vxp_oldoldol",
+        createdAt: "2026-01-01T10:00:00Z",
+        expiresAt: "2026-02-01T10:00:00Z",
+        lastUsedAt: null,
+      },
+      {
+        id: "k2",
+        name: "Fresh",
+        prefix: "vxp_freshfre",
+        createdAt: "2026-11-01T10:00:00Z",
+        expiresAt: "2999-01-01T10:00:00Z",
+        lastUsedAt: null,
+      },
+      {
+        id: "k3",
+        name: "Forever",
+        prefix: "vxp_foreverr",
+        createdAt: "2026-11-01T10:00:00Z",
+        expiresAt: null,
+        lastUsedAt: null,
+      },
+    ],
+  };
+  show(<Provisioning root={root} instance={false} audience="members" />);
+  await screen.findByText("vxp_oldoldol…");
+  expect(screen.getByRole("columnheader", { name: "Expires" })).toBeTruthy();
+  const rowOf = (name: string) => screen.getByText(name).closest("tr") as HTMLElement;
+  expect(rowOf("Old").textContent).toContain("Expired");
+  expect(rowOf("Fresh").textContent).toContain("Active");
+  expect(rowOf("Forever").textContent).toContain("Never");
+});

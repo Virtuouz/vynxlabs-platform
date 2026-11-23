@@ -111,3 +111,25 @@ test("GOV-11: shortening the audit log says it also deletes the files that rows 
   fireEvent.click(screen.getByRole("button", { name: "Save" }));
   expect(await answer("Cancel")).not.toContain("files that rows replaced");
 });
+
+test("GOV-26: the audit log is said apart: entries hide at once, leave with their month, and come back if the period is lengthened", async () => {
+  show(<RetentionSettings base={base} />);
+  const page = await screen.findByText(/Who changed what/);
+  expect(page.textContent).toContain("leave with their month");
+  expect(page.textContent).toContain("hidden");
+  // Shortened alone, it is not said to be removed within minutes.
+  fireEvent.change(screen.getByLabelText(/Audit log \(days\)/), { target: { value: "120" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  const alone = await answer("Cancel");
+  expect(alone).not.toContain("within minutes");
+  expect(alone).toContain("stop showing at once");
+  expect(alone).toContain("with their month");
+  expect(alone).toContain("lengthen");
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  // With another kind, the other kind is still said to go within minutes.
+  fireEvent.change(screen.getByLabelText(/Runs \(days\)/), { target: { value: "7" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  const both = await answer("Cancel");
+  expect(both).toContain("Runs older than that are removed within minutes of saving");
+  expect(both).toContain("stop showing at once");
+});

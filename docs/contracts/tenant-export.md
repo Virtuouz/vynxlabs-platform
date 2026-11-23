@@ -125,7 +125,7 @@ A resource, each of its versions, a draft and each kept version of a draft carry
 | `history` | Whether run, flow and event history is included |
 | `counts` | Rows per table. A custom table is named `<workspace id>/<table>` |
 | `pendingRuns` | Runs that were queued or in progress when the export was made |
-| `notCarried` | What the export leaves out, in words |
+| `notCarried` | What the export leaves out, in words: one line for every table of the tenant that is not carried (provisioning tokens and refused pushes, webhook refusals, approval links, saved views, and the rest), and the audit log's cut at its period. A test fails when a table is left out and not named. |
 | `entries` | Every other file: `path`, `bytes`, `sha256` |
 | `authentication` | Format 2. `{ alg: "hmac-sha256", mac }`: the HMAC-SHA-256, in hex, of the list as JSON without this field. The key is `HMAC-SHA-256(tenant data key, "tenant-export-manifest:<tenant id>")`. Only someone who can open `key.json` with the passphrase can make it. Absent in format 1 |
 

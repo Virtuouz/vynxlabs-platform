@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, test } from "vitest";
-import { CONTRAST_NEEDED, contrastRatio } from "./contrast.ts";
+import { CONTRAST_NEEDED, contrastRatio, parseColor } from "./contrast.ts";
 
 /** The kit's color tokens for one scheme, read from its stylesheet. */
 function tokens(block: "light" | "dark"): Record<string, string> {
@@ -19,7 +19,24 @@ test("contrast is measured as WCAG does", () => {
   expect(contrastRatio("#ffffff", "#ffffff")).toBe(1);
   expect(contrastRatio("#687485", "#eef1f4")).toBeCloseTo(4.19, 2);
   expect(contrastRatio("rgb(0, 0, 0)", "#ffffff")).toBeCloseTo(21, 5);
-  expect(contrastRatio("tomato", "#fff")).toBeUndefined();
+  expect(contrastRatio("var(--ink)", "#fff")).toBeUndefined();
+});
+
+test("any CSS color is read, and one with some transparency is laid over its ground (GOV-22)", () => {
+  expect(contrastRatio("white", "white")).toBe(1);
+  expect(contrastRatio("white", "#ffffff")).toBe(1);
+  expect(contrastRatio("black", "white")).toBeCloseTo(21, 5);
+  expect(contrastRatio("hsl(0 0% 100%)", "#ffffff")).toBeCloseTo(1, 5);
+  expect(contrastRatio("hsl(0, 0%, 0%)", "#fff")).toBeCloseTo(21, 5);
+  expect(contrastRatio("#000000ff", "#fff")).toBeCloseTo(21, 5);
+  // A faint black over white is a light gray, not black.
+  expect(contrastRatio("rgba(0,0,0,0.05)", "#ffffff") as number).toBeLessThan(1.2);
+  expect(contrastRatio("rgb(0 0 0 / 5%)", "#ffffff") as number).toBeLessThan(1.2);
+  expect(contrastRatio("#0000000d", "#ffffff") as number).toBeLessThan(1.2);
+  expect(parseColor("rgb(100%, 0%, 0%)")).toEqual({ r: 255, g: 0, b: 0, a: 1 });
+  expect(parseColor("hsl(120, 100%, 25%)")).toMatchObject({ r: 0, g: 128, b: 0 });
+  expect(parseColor("color-mix(in srgb, red, blue)")).toBeUndefined();
+  expect(parseColor("not a color")).toBeUndefined();
 });
 
 // The pairs in docs/uiux/07-design-system-specification.md §7.4.

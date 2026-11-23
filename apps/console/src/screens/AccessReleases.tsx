@@ -259,7 +259,7 @@ export function AccessReleases({ base, framed }: { base: string; framed?: Framed
         <span className="flex flex-col gap-2">
           <Changes
             release={release}
-            intro={`The tenant's groups, service accounts, roles and what they are given become what they were after release ${release.number}. Who is in each group is not changed, and groups an identity provider made are left alone.${approval ? " It waits for a second person." : ""} Release ${release.number} itself did:`}
+            intro={`The tenant's groups, service accounts, roles and what they are given become what they were after release ${release.number}. Who is in each group is not changed, and groups an identity provider made are left alone. A service account that is gone is made again with no API keys: keys belong to the account, not to a release.${approval ? " It waits for a second person." : ""} Release ${release.number} itself did:`}
           />
           {removing ? (
             <span>

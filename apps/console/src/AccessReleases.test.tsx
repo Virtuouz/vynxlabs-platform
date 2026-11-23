@@ -154,6 +154,8 @@ test("an applied release can be gone back to, and asking for a second person can
   const sure = await answer("Go back");
   expect(sure).toContain("It waits for a second person.");
   expect(sure).toContain("groups an identity provider made are left alone");
+  // ACC-37: a service account made again has no keys: they are not part of a release.
+  expect(sure).toContain("A service account that is gone is made again with no API keys");
   expect(sure).toContain("Makes the group Night shift");
   expect(sure).toContain("These are removed:");
   expect(sure).toContain("the group Late shift");

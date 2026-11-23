@@ -7,6 +7,7 @@ import { badRequest, conflict, HttpError, notFound } from "../errors.js";
 import { decryptFor, encryptFor } from "../execution/bindings.js";
 import type { Kernel } from "../kernel.js";
 import { INSTANCE_ONLY_ROLE } from "../kinds.js";
+import { sameOrigin } from "../origin.js";
 import { membershipForProvider } from "../tenant/releases.js";
 import { readIdpMetadata } from "./metadata.js";
 
@@ -571,6 +572,19 @@ export async function updateProvider(
     if (current.protocol !== "oidc") throw badRequest("Only an OIDC provider has a client secret.");
     sealed = await sealSecrets(kernel, trx, current, { clientSecret: input.clientSecret });
   }
+  // A stored client secret was given for the issuer it was given with. An issuer at another
+  // address is not sent it: the secret is dropped unless given again.
+  const moved =
+    isOidc(current) &&
+    sealed === undefined &&
+    current.hasSecret &&
+    !sameOrigin(current.config.issuer, (config as OidcConfig).issuer);
+  // The provider's subjects are the issuer's own: another issuer may use the same subject for
+  // another person. What tied people to the old one is removed, and email ties them again.
+  const issuerChanged = isOidc(current)
+    ? current.config.issuer !== (config as OidcConfig).issuer
+    : current.protocol === "saml" &&
+      (current.config as SamlConfig).idpIssuer !== (config as SamlConfig).idpIssuer;
   const enabled = input.enabled ?? current.enabled;
   // Turning a provider off stops it being required too.
   const enforce = input.enforce ?? (enabled ? current.enforce : false);
@@ -582,7 +596,7 @@ export async function updateProvider(
     .set({
       ...(input.name !== undefined ? { name: input.name.trim() } : {}),
       config: JSON.stringify(config),
-      ...(sealed ? { secrets: sealed } : {}),
+      ...(sealed ? { secrets: sealed } : moved ? { secrets: null } : {}),
       enabled,
       enforce,
       ...(input.provision !== undefined ? { provision: input.provision } : {}),
@@ -595,7 +609,30 @@ export async function updateProvider(
     .returningAll()
     .executeTakeFirstOrThrow();
   const provider = toProvider(row);
+  if (moved && provider.enabled) {
+    throw new HttpError(
+      409,
+      "secret_needed",
+      "The issuer is at a new address, and the stored client secret is not sent there. Give the client secret again to save it.",
+    );
+  }
   await checkCanEnable(trx, provider);
+  if (issuerChanged) {
+    const removed = await trx
+      .deleteFrom("identity_link")
+      .where("provider_id", "=", provider.id)
+      .returning("id")
+      .execute();
+    if (removed.length > 0) {
+      await audit({
+        action: "identity_provider.links_removed",
+        targetType: "identity_provider",
+        targetId: provider.id,
+        tenantId: provider.tenantId,
+        details: { name: provider.name, removed: removed.length, why: "issuer_changed" },
+      });
+    }
+  }
 
   const sha1 = (value: OidcConfig | SamlConfig) => (value as SamlConfig).allowSha1 === true;
   const unasked = (value: OidcConfig | SamlConfig) =>
@@ -611,6 +648,7 @@ export async function updateProvider(
       enforce: provider.enforce,
       provision: provider.provision,
       secretChanged: sealed !== undefined,
+      ...(moved ? { secretDropped: true } : {}),
       ...(current.paused ? { resumed: true } : {}),
     },
   });

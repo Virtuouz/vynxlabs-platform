@@ -1,4 +1,5 @@
-import { newId } from "@volvel/db";
+import { createServer, type Server } from "node:http";
+import type { AddressInfo } from "node:net";
 import { generate } from "selfsigned";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { dns } from "./kernel/apps/challenge.js";
@@ -452,5 +453,186 @@ describe("what a person here turned off, a push does not turn on (GOV-05)", () =
     await patch(false);
     await patch(true);
     expect((await list()).disabled).toBe(true);
+  });
+});
+
+/** An OIDC provider that only describes itself, which is all that saving a provider reads. */
+async function describedIssuer(): Promise<{ issuer: string; stop: () => Promise<void> }> {
+  let origin = "";
+  const server: Server = createServer((request, response) => {
+    const path = new URL(request.url ?? "/", origin).pathname;
+    const suffix = "/.well-known/openid-configuration";
+    if (!path.endsWith(suffix)) {
+      response.writeHead(404).end();
+      return;
+    }
+    const issuer = `${origin}${path.slice(0, -suffix.length)}`;
+    response.writeHead(200, { "content-type": "application/json" });
+    response.end(
+      JSON.stringify({
+        issuer,
+        authorization_endpoint: `${issuer}/authorize`,
+        token_endpoint: `${issuer}/token`,
+        jwks_uri: `${issuer}/jwks`,
+        response_types_supported: ["code"],
+        subject_types_supported: ["public"],
+        id_token_signing_alg_values_supported: ["RS256"],
+        code_challenge_methods_supported: ["S256"],
+        token_endpoint_auth_methods_supported: ["client_secret_post"],
+      }),
+    );
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  return { issuer: origin, stop: () => new Promise((resolve) => server.close(() => resolve())) };
+}
+
+const audited = async (action: string): Promise<Any[]> =>
+  t.db.selectFrom("audit_entry").select("details").where("action", "=", action).execute();
+
+describe("a changed issuer (GOV-06, GOV-07)", () => {
+  test("a stored client secret is not sent to an issuer at another address", async () => {
+    const first = await describedIssuer();
+    const second = await describedIssuer();
+    try {
+      const made = await alice.post(providers(), {
+        audience: "members",
+        protocol: "oidc",
+        name: "Moves",
+        config: { issuer: first.issuer, clientId: "console" },
+        clientSecret: "the-secret-1",
+      });
+      expect(made.status, JSON.stringify(made.body)).toBe(201);
+      const id = made.body.id as string;
+      // The same address, another path: the secret is for this host, and stays.
+      const path = await alice.patch(`${providers()}/${id}`, {
+        config: { issuer: `${first.issuer}/realms/b` },
+      });
+      expect(path.status, JSON.stringify(path.body)).toBe(200);
+      expect(path.body.hasSecret).toBe(true);
+      // Another address: it is not given the secret unless it is given again.
+      const moved = await alice.patch(`${providers()}/${id}`, {
+        config: { issuer: second.issuer },
+      });
+      expect(moved.status, JSON.stringify(moved.body)).toBe(200);
+      expect(moved.body.hasSecret).toBe(false);
+      expect(
+        (await audited("identity_provider.updated")).some(
+          (entry) => entry.details.secretDropped === true,
+        ),
+      ).toBe(true);
+      // Given again, it is kept.
+      const again = await alice.patch(`${providers()}/${id}`, {
+        config: { issuer: first.issuer },
+        clientSecret: "the-secret-2",
+      });
+      expect(again.body.hasSecret).toBe(true);
+      expect((await alice.delete(`${providers()}/${id}`)).status).toBe(204);
+    } finally {
+      await first.stop();
+      await second.stop();
+    }
+  });
+
+  test("a provider that is on cannot move to another address without the secret", async () => {
+    const first = await describedIssuer();
+    const second = await describedIssuer();
+    try {
+      const id = (
+        await alice.post(providers(), {
+          audience: "members",
+          protocol: "oidc",
+          name: "Live",
+          config: { issuer: first.issuer, clientId: "console" },
+          clientSecret: "the-secret-1",
+        })
+      ).body.id as string;
+      await prove(alice, providers(), id, "live.example");
+      expect((await alice.patch(`${providers()}/${id}`, { enabled: true })).status).toBe(200);
+      const moved = await alice.patch(`${providers()}/${id}`, {
+        config: { issuer: second.issuer },
+      });
+      expect(moved.status, JSON.stringify(moved.body)).toBe(409);
+      expect(moved.body.code).toBe("secret_needed");
+      expect((await alice.get(`${providers()}/${id}`)).body.config.issuer).toBe(first.issuer);
+      const given = await alice.patch(`${providers()}/${id}`, {
+        config: { issuer: second.issuer },
+        clientSecret: "the-secret-3",
+      });
+      expect(given.status, JSON.stringify(given.body)).toBe(200);
+    } finally {
+      await first.stop();
+      await second.stop();
+    }
+  });
+
+  test("ties to people are removed when the issuer changes, and made again by email", async () => {
+    const first = await describedIssuer();
+    const second = await describedIssuer();
+    try {
+      const gil = await alice.post(`/tenants/${tenant}/members`, {
+        email: "gil@ties.example",
+        name: "Gil",
+        password: PASSWORD,
+      });
+      expect(gil.status).toBe(201);
+      const id = (
+        await alice.post(providers(), {
+          audience: "members",
+          protocol: "oidc",
+          name: "Ties",
+          config: { issuer: first.issuer, clientId: "console" },
+          clientSecret: "the-secret-1",
+        })
+      ).body.id as string;
+      await prove(alice, providers(), id, "ties.example");
+      expect(await signInAs(id, "subject-7", "gil@ties.example")).toMatchObject({
+        principalId: gil.body.id,
+        linked: true,
+      });
+      expect((await alice.get(`${providers()}/${id}/links`)).body.items).toHaveLength(1);
+
+      const moved = await alice.patch(`${providers()}/${id}`, {
+        config: { issuer: second.issuer },
+        clientSecret: "the-secret-2",
+      });
+      expect(moved.status, JSON.stringify(moved.body)).toBe(200);
+      expect((await alice.get(`${providers()}/${id}/links`)).body.items).toEqual([]);
+      expect((await audited("identity_provider.links_removed")).at(-1)).toMatchObject({
+        details: { removed: 1 },
+      });
+      // The same subject at the new issuer is found by its email again, not by the old tie.
+      const dan = (await alice.get(`/tenants/${tenant}/members?limit=200`)).body.items.find(
+        (member: Any) => member.email === "gil@ties.example",
+      );
+      expect(await signInAs(id, "subject-7", "gil@ties.example")).toMatchObject({
+        principalId: dan.id,
+        linked: true,
+      });
+      await alice.delete(`${providers()}/${id}`);
+    } finally {
+      await first.stop();
+      await second.stop();
+    }
+  });
+
+  test("the same for a SAML provider's entity ID", async () => {
+    const id = await provider(alice, providers(), { audience: "members", name: "Saml ties" });
+    await prove(alice, providers(), id, "saml.example");
+    await alice.post(`/tenants/${tenant}/members`, {
+      email: "gil@saml.example",
+      name: "Gil",
+      password: PASSWORD,
+    });
+    await signInAs(id, "name-1", "gil@saml.example");
+    expect((await alice.get(`${providers()}/${id}/links`)).body.items).toHaveLength(1);
+    const same = await alice.patch(`${providers()}/${id}`, { name: "Saml ties again" });
+    expect(same.status).toBe(200);
+    expect((await alice.get(`${providers()}/${id}/links`)).body.items).toHaveLength(1);
+    const moved = await alice.patch(`${providers()}/${id}`, {
+      config: { idpIssuer: "https://other.acme.test/saml" },
+    });
+    expect(moved.status, JSON.stringify(moved.body)).toBe(200);
+    expect((await alice.get(`${providers()}/${id}/links`)).body.items).toEqual([]);
   });
 });

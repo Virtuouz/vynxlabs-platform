@@ -30,6 +30,7 @@ import { activeConsoleManaged, deployConsoleManaged } from "./authoring.js";
 import { guardedFetch } from "./egress.js";
 import { conflict, HttpError, notFound } from "./errors.js";
 import { decryptFor, encryptFor } from "./execution/bindings.js";
+import { sameOrigin } from "./origin.js";
 import type { WorkspaceRef } from "./http.js";
 import type { Kernel } from "./kernel.js";
 import { currentAccess } from "./tenant/releases.js";
@@ -574,6 +575,15 @@ export async function saveRepository(
       400,
       "validation_failed",
       "An access token is needed to connect a repository.",
+    );
+  }
+  // A token given for one repository is not sent to another place: pointing at another origin
+  // asks for the token again (the rule for every stored credential that has an address).
+  if (existing && !input.token && !sameOrigin(existing.url, input.url)) {
+    throw new HttpError(
+      400,
+      "validation_failed",
+      "The address is at another host than the one the stored token was given for. Enter the access token again.",
     );
   }
   const token =

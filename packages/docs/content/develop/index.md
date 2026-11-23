@@ -3,8 +3,10 @@ title: Develop
 icon: code
 description: Writing widgets, and the kinds, API and command line drawn from the code itself.
 pages:
+  - tutorials
   - how-to
   - reference
+  - explanation
 ---
 
 For whoever writes for the product or talks to it from code.

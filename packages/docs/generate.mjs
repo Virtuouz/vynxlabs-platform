@@ -86,7 +86,7 @@ export async function expected() {
     "index.md",
     referenceIndex(
       ["- [The API](api/index): every route, and what it needs", ...LIST_LINKS],
-      LIST_PAGES,
+      [...LIST_PAGES, ...writtenReference()],
     ),
   );
   const files = new Map();
@@ -94,6 +94,20 @@ export async function expected() {
     files.set(placeOf(name), name.endsWith(".md") ? withMoved(name, text) : text);
   }
   return files;
+}
+
+/**
+ * Folders and pages written by hand beside the generated ones, under content/develop/reference/: the
+ * Develop collection's reference index is generated, so it lists them too, after the drawn lists.
+ */
+function writtenReference() {
+  const folder = join(HERE, "content", "develop", "reference");
+  if (!existsSync(folder)) return [];
+  return readdirSync(folder)
+    .filter((name) => name !== "index.md" && !name.startsWith("."))
+    .filter((name) => statSync(join(folder, name)).isDirectory() || name.endsWith(".md"))
+    .map((name) => name.replace(/\.md$/, ""))
+    .sort();
 }
 
 /** What differs between generated/ and what the code says now. Empty when they agree. */

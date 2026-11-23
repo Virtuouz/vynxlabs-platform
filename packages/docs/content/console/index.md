@@ -3,6 +3,7 @@ title: Console
 icon: layout-dashboard
 description: What each screen of the console shows and does.
 pages:
+  - tutorials
   - how-to
   - reference
   - explanation

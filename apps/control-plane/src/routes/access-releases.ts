@@ -323,6 +323,7 @@ export function accessReleaseRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             }),
             202: Type.Object({
               waiting: Type.Literal(true),
+              detail: Type.String(),
               id: Id,
               number: Type.Integer(),
               status: Type.String(),
@@ -343,7 +344,11 @@ export function accessReleaseRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         );
         return released.status === "applied"
           ? reply.code(201).send(released)
-          : reply.code(202).send({ ...released, waiting: true as const });
+          : reply.code(202).send({
+              ...released,
+              waiting: true as const,
+              detail: `Release ${released.number} waits for a second person. Nothing changed yet: someone else who may release access has to approve it.`,
+            });
       },
     );
 
@@ -482,6 +487,7 @@ export function accessReleaseRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             }),
             202: Type.Object({
               waiting: Type.Literal(true),
+              detail: Type.String(),
               id: Id,
               number: Type.Integer(),
               status: Type.String(),
@@ -504,7 +510,11 @@ export function accessReleaseRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         });
         return released.status === "applied"
           ? reply.code(201).send(released)
-          : reply.code(202).send({ ...released, waiting: true as const });
+          : reply.code(202).send({
+              ...released,
+              waiting: true as const,
+              detail: `Release ${released.number} waits for a second person. Nothing changed yet: someone else who may release access has to approve it.`,
+            });
       },
     );
   };

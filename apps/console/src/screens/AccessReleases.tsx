@@ -1,7 +1,7 @@
 import { Button, Notice } from "@volvel/ui";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ApiError, api, type Me, useLoad } from "../api.ts";
-import { ask, notify } from "../ask.tsx";
+import { ask, failureText, notify } from "../ask.tsx";
 import { CollectionView } from "../kit/CollectionView.tsx";
 import { count } from "../kit/format.ts";
 import { StatePill } from "../kit/status.tsx";
@@ -21,7 +21,14 @@ interface AccessRelease {
   status: string;
   origin: string;
   message: string | null;
-  summary: { created: number; updated: number; deleted: number; changes: Change[] };
+  summary: {
+    created: number;
+    updated: number;
+    deleted: number;
+    changes: Change[];
+    /** What the release did not do, or does that its asker should have read before approving. */
+    warnings?: string[];
+  };
   createdBy: string | null;
   createdByType?: string;
   createdById?: string | null;
@@ -67,6 +74,7 @@ function what(release: AccessRelease): string {
 /** Every change a release made or would make, one to a line. */
 function Changes({ release, intro }: { release: AccessRelease; intro: string }) {
   const changes = release.summary.changes;
+  const warnings = release.summary.warnings ?? [];
   return (
     <span className="flex flex-col gap-2">
       <span>{intro}</span>
@@ -81,11 +89,21 @@ function Changes({ release, intro }: { release: AccessRelease; intro: string }) 
           ))}
         </ul>
       )}
+      {warnings.length > 0 ? (
+        <span className="flex flex-col gap-1">
+          <span className="font-medium">Read before you answer:</span>
+          <ul className="m-0 max-h-40 overflow-auto pl-5 text-left">
+            {warnings.map((warning) => (
+              <li key={warning}>{warning}</li>
+            ))}
+          </ul>
+        </span>
+      ) : null}
     </span>
   );
 }
-const failed = (error: unknown) =>
-  error instanceof ApiError ? error.message : "It could not be done. Try again.";
+// The cause is in the refusal's own fields, so it is worded as everywhere else in the console.
+const failed = (error: unknown) => failureText(error);
 
 /**
  * Every change to the tenant's access, as it was released: who asked, who
@@ -98,6 +116,22 @@ export function AccessReleases({ base, framed }: { base: string; framed?: Framed
   const [problem, setProblem] = useState<string>();
   const me = useLoad<Me>("/me");
   const approval = access.data?.approval ?? false;
+  // The button that was pressed leaves the list once it is answered: focus goes to what is left of
+  // the list, not to the page body.
+  const holder = useRef<HTMLDivElement>(null);
+  const [refocus, setRefocus] = useState(false);
+  useEffect(() => {
+    if (!refocus || releases.data === undefined) return;
+    const table = holder.current?.querySelector<HTMLElement>("table");
+    const target =
+      table?.querySelector<HTMLElement>("tbody button, tbody a") ??
+      holder.current?.querySelector<HTMLElement>("h1, h2");
+    if (target) {
+      if (!target.matches("button, a")) target.tabIndex = -1;
+      target.focus();
+    }
+    setRefocus(false);
+  }, [refocus, releases.data]);
   // An older server does not say, and then the server's own refusal answers.
   const mayChange = access.data?.mayChange ?? true;
   const askedByMe = (release: AccessRelease) =>
@@ -152,20 +186,31 @@ export function AccessReleases({ base, framed }: { base: string; framed?: Framed
           : `Release ${release.number} is ${decision === "decline" ? "declined" : "withdrawn"}.`,
       );
       releases.reload();
+      setRefocus(true);
     } catch (error) {
       setProblem(failed(error));
     }
   };
+  /** Every change of a release, whatever its status: the list shows three. */
+  const showAll = (release: AccessRelease) =>
+    ask.confirm({
+      title: `Release ${release.number}`,
+      text: <Changes release={release} intro="It changed:" />,
+      action: "Close",
+      cancel: "Back",
+    });
   const back = async (release: AccessRelease) => {
     setProblem(undefined);
     // What going back removes, asked of the server before anyone is asked to agree.
     let removes: { kind: string; key: string; label: string }[];
+    let left: string[] = [];
     try {
-      removes = (
-        await api.get<{ removes: { kind: string; key: string; label: string }[] }>(
-          `${base}/access/releases/${release.id}/rollback`,
-        )
-      ).removes;
+      const looked = await api.get<{
+        removes: { kind: string; key: string; label: string }[];
+        warnings?: string[];
+      }>(`${base}/access/releases/${release.id}/rollback`);
+      removes = looked.removes;
+      left = looked.warnings ?? [];
     } catch (error) {
       setProblem(failed(error));
       return;
@@ -193,6 +238,16 @@ export function AccessReleases({ base, framed }: { base: string; framed?: Framed
           ) : (
             <span>Nothing is removed.</span>
           )}
+          {left.length > 0 ? (
+            <span>
+              Left out, because it no longer exists:
+              <ul className="m-0 mt-1 max-h-32 overflow-auto pl-5 text-left">
+                {left.map((one) => (
+                  <li key={one}>{one}</li>
+                ))}
+              </ul>
+            </span>
+          ) : null}
         </span>
       ),
       action: "Go back",
@@ -204,11 +259,18 @@ export function AccessReleases({ base, framed }: { base: string; framed?: Framed
       notify.success(`The tenant's access is what release ${release.number} left.`);
       releases.reload();
     } catch (error) {
+      // A change that waits has not happened: it is said to wait, not to be done, and not as a failure.
+      if (error instanceof ApiError && error.code === "awaiting_approval") {
+        notify.info(error.message);
+        releases.reload();
+        return;
+      }
       setProblem(failed(error));
     }
   };
 
   return (
+    <div ref={holder} className="contents">
     <CollectionView<AccessRelease>
       title={framed?.title ?? "Releases"}
       description="Every change to the tenant's groups, service accounts, roles and what they are given, from the console or from the repository, with who made it and who approved it."
@@ -277,6 +339,18 @@ export function AccessReleases({ base, framed }: { base: string; framed?: Framed
               {row.comment ? (
                 <span className="text-meta text-ink-muted">“{row.comment}”</span>
               ) : null}
+              {(row.summary.warnings ?? []).map((warning) => (
+                <span key={warning} className="text-meta text-ink-muted">
+                  {warning}
+                </span>
+              ))}
+              {row.summary.changes.length > 3 ? (
+                <span>
+                  <Button size="small" onClick={() => showAll(row)}>
+                    All {row.summary.changes.length} changes
+                  </Button>
+                </span>
+              ) : null}
             </span>
           ),
         },
@@ -306,7 +380,7 @@ export function AccessReleases({ base, framed }: { base: string; framed?: Framed
           align: "end",
           cell: (row) => {
             if (row.status === "awaiting_approval") {
-              if (!mayChange)
+              if (!mayChange && !askedByMe(row))
                 return (
                   <span className="text-meta text-ink-muted">
                     You may read this, not answer it.
@@ -347,5 +421,6 @@ export function AccessReleases({ base, framed }: { base: string; framed?: Framed
         text: "A release is recorded when a group, a service account, a role or what one is given changes.",
       }}
     />
+    </div>
   );
 }

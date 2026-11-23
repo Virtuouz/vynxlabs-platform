@@ -11,6 +11,10 @@ let approval: boolean;
 let who: string;
 let mayChange: boolean;
 let removes: { kind: string; key: string; label: string }[];
+/** What a POST to a release's rollback answers, and what its decision answers. */
+let rollbackAnswer: { status: number; body: unknown };
+let decisionAnswer: { status: number; body: unknown };
+let warnings: string[];
 const release = (number: number, extra: object = {}) => ({
   id: `r${number}`,
   number,
@@ -39,6 +43,9 @@ beforeEach(() => {
   who = "bob";
   mayChange = true;
   removes = [{ kind: "group", key: "late", label: "Late shift" }];
+  rollbackAnswer = { status: 201, body: { id: "r9", number: 9, status: "applied" } };
+  decisionAnswer = { status: 200, body: { id: "r2", number: 2, status: "applied" } };
+  warnings = [];
   vi.stubGlobal("fetch", async (address: string, init: RequestInit = {}) => {
     const method = init.method ?? "GET";
     calls.push({
@@ -50,12 +57,28 @@ beforeEach(() => {
     if (method === "GET" && address.endsWith("/access/releases")) {
       return json({
         items: [
-          release(2, { status: "awaiting_approval", message: "Made the group Night shift" }),
+          release(2, {
+            status: "awaiting_approval",
+            message: "Made the group Night shift",
+            summary: {
+              created: 1,
+              updated: 0,
+              deleted: 0,
+              changes: [
+                { change: "created", kind: "group", key: "night-shift", label: "Night shift" },
+              ],
+              warnings,
+            },
+          }),
           release(1, { origin: "cli", message: "Bring up the tenant" }),
         ],
       });
     }
-    if (method === "GET" && address.endsWith("/rollback")) return json({ removes });
+    if (method === "GET" && address.endsWith("/rollback")) return json({ removes, warnings: [] });
+    if (method === "POST" && address.endsWith("/rollback"))
+      return json(rollbackAnswer.body, rollbackAnswer.status);
+    if (method === "POST" && address.endsWith("/decision"))
+      return json(decisionAnswer.body, decisionAnswer.status);
     if (method === "GET" && address.endsWith("/me"))
       return json({ principal: { type: "member", id: who, name: who, email: null } });
     if (method === "GET" && address.endsWith("/access")) return json({ approval, mayChange });
@@ -188,4 +211,59 @@ test("going back says when it removes nothing, and asks as a danger only when it
   expect(sure).toContain("Nothing is removed.");
   expect(sure).not.toContain("These are removed:");
   expect(calls.some((call) => call.method === "POST")).toBe(false);
+});
+
+test("going back that waits is said to wait, not to be done (ACC-14)", async () => {
+  rollbackAnswer = {
+    status: 202,
+    body: {
+      waiting: true,
+      id: "r9",
+      number: 9,
+      status: "awaiting_approval",
+      detail: "Release 9 waits for a second person. Nothing changed yet.",
+    },
+  };
+  show(<AccessReleases base={base} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Go back to this" }));
+  await answer("Go back");
+  expect(await screen.findByText("Release 9 waits for a second person. Nothing changed yet.")).toBeTruthy();
+  expect(screen.queryByText("The tenant's access is what release 1 left.")).toBeNull();
+});
+
+test("whoever asked may withdraw it with no right to answer, and is not told they may only read (ACC-16)", async () => {
+  who = "alice";
+  mayChange = false;
+  show(<AccessReleases base={base} />);
+  expect(await screen.findByRole("button", { name: "Withdraw" })).toBeTruthy();
+  expect(screen.queryByText("You may read this, not answer it.")).toBeNull();
+});
+
+test("what a release warned of is in the row and in the dialog that approves it (ACC-36)", async () => {
+  warnings = ["the group night-shift was last changed in release 1, outside the repository."];
+  show(<AccessReleases base={base} />);
+  expect(
+    (await screen.findAllByText(/was last changed in release 1, outside the repository/)).length,
+  ).toBeGreaterThan(0);
+  fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+  const said = await answer("Cancel");
+  expect(said).toContain("Read before you answer:");
+  expect(said).toContain("was last changed in release 1");
+});
+
+test("a refusal names its cause, not only that the access is not valid (ACC-21)", async () => {
+  decisionAnswer = {
+    status: 400,
+    body: {
+      title: "Bad Request",
+      status: 400,
+      code: "validation_failed",
+      detail: "The tenant's access is not valid.",
+      errors: [{ path: "group night-shift", message: "/body/description must NOT have more than 500 characters" }],
+    },
+  };
+  show(<AccessReleases base={base} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Approve" }));
+  await answer("Approve");
+  expect(await screen.findByText(/must NOT have more than 500 characters/)).toBeTruthy();
 });

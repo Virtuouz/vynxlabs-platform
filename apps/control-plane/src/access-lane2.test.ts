@@ -221,6 +221,7 @@ describe("releases of access, lane acc2", () => {
     const back = await alice.post(`${at()}/releases/${here.id}/rollback`);
     expect(back.status, JSON.stringify(back.body)).toBe(202);
     expect(back.body.waiting).toBe(true);
+    expect(back.body.detail).toContain(`Release ${back.body.number} waits`);
     const now = (await alice.get(at())).body.resources as Any[];
     const full = await alice.post(`${at()}/releases`, {
       resources: now.map((one) => (one.key === "ops" ? group("ops", "Operations") : one)),

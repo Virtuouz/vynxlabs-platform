@@ -397,3 +397,18 @@ test("a tenant whose database does not answer is deleted only after a second con
   await waitFor(() => expect(done).toHaveBeenCalled());
   expect(sentBodies).toEqual([{ confirm: "acme" }, { confirm: "acme", tablesLeftBehind: true }]);
 });
+
+test("a workspace's run limit is set from its settings, from 1 to 1000, saved with the others (CFG-MP4)", async () => {
+  routes[`GET /api/v1${base}/workspaces/w-dev`] = () => [200, { timeZone: "UTC", concurrencyLimit: 20 }];
+  routes[`PATCH /api/v1${base}/workspaces/w-dev`] = () => [200, {}];
+  show(<WorkspaceSettings base={base} tenantId="t1" workspace={dev} reload={() => {}} />);
+  const field = (await screen.findByLabelText("Runs at once")) as HTMLInputElement;
+  await waitFor(() => expect(field.value).toBe("20"));
+  fireEvent.input(field, { target: { value: "2000" } });
+  expect(await screen.findByText("A whole number from 1 to 1000.")).toBeTruthy();
+  fireEvent.click(await screen.findByRole("button", { name: "Save" }));
+  expect(sent("PATCH")).toHaveLength(0);
+  fireEvent.input(field, { target: { value: "5" } });
+  fireEvent.click(await screen.findByRole("button", { name: "Save" }));
+  await waitFor(() => expect(sent("PATCH")[0]?.body).toEqual({ concurrencyLimit: 5 }));
+});

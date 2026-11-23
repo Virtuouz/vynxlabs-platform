@@ -64,6 +64,40 @@ describe("what a manifest refers to", () => {
   });
 });
 
+describe("what a trigger source names", () => {
+  test("a connection or variable that is not in the repository is caught, as for a script", () => {
+    const source: BundleManifest = {
+      kind: "trigger_source",
+      schemaVersion: 1,
+      path: "sources/inbox",
+      ownership: "code",
+      body: {
+        entry: "inbox",
+        mode: "poll",
+        uses: { connections: ["mail"], variables: ["limits/size"], secrets: ["INBOX_KEY"] },
+      },
+    };
+    const problems = checkBundleManifests([source]);
+    expect(problems).toEqual([
+      expect.stringContaining('connections refers to "mail"'),
+      expect.stringContaining('variables refers to "limits/size"'),
+    ]);
+    expect(
+      checkBundleManifests([
+        source,
+        variable("limits/size"),
+        {
+          kind: "connection",
+          schemaVersion: 1,
+          path: "mail",
+          ownership: "code",
+          body: { connector: "http" },
+        },
+      ]),
+    ).toEqual([]);
+  });
+});
+
 describe("the format a bundle is written in", () => {
   test("is the oldest that can carry it", () => {
     expect(formatFor(1, [variable("a")])).toBe(1);

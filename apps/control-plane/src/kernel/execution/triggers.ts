@@ -79,11 +79,28 @@ export async function pausedAlone(
 /** How many refused requests are kept for one trigger. */
 const REFUSALS_KEPT = 20;
 
-/** Keeps a refused webhook request's reason, never its body, and only the latest few. */
-async function recordRefusal(
+/** Why a trigger did not start what it was asked to. */
+export type RefusalReason =
+  | "signature"
+  | "body"
+  | "paused"
+  /** What it was given does not fit what it starts. */
+  | "input"
+  /** An event's filter could not be worked out. */
+  | "filter"
+  /** Its source was still looking, so this time was passed over. */
+  | "busy"
+  /** Its source failed, or its answer could not be passed on. */
+  | "error";
+
+/**
+ * Keeps a refusal's reason, never the request's body, and only the latest few. Every type of
+ * trigger records here, so that one notice shows why a trigger is not starting anything.
+ */
+export async function recordRefusal(
   kernel: Kernel,
   state: { tenant_id: string; workspace_id: string; path: string; node_id: string },
-  reason: "signature" | "body" | "paused",
+  reason: RefusalReason,
   problem = "",
 ) {
   observe.webhookRefused(kernel.metrics, reason);
@@ -263,7 +280,7 @@ async function register(
 ) {
   const existing = await trx
     .selectFrom("trigger_state")
-    .select(["node_id", "type"])
+    .select(["node_id", "type", "config", "next_fire_at"])
     .where("resource_id", "=", resource.id)
     .execute();
   const keep = new Set(wanted.map((registration) => registration.node));
@@ -282,21 +299,38 @@ async function register(
     const field = registration.node
       ? `/body/nodes/${registration.node}/trigger/cron`
       : "/body/cron";
+    const current = existing.find(
+      (row) => row.node_id === registration.node && row.type === registration.type,
+    );
+    // An edit that leaves the time alone leaves the schedule's place in time alone: what it was
+    // holding, such as a firing due while it was paused, and why it last skipped, stay.
+    const before = current?.config as
+      | { cron?: string; timezone?: string; lastSkippedAt?: string; lastSkipReason?: string }
+      | undefined;
+    const sameTime =
+      registration.schedule !== undefined &&
+      current?.next_fire_at != null &&
+      before?.cron === registration.schedule.cron &&
+      (before.timezone ?? "UTC") === (registration.schedule.timezone ?? "UTC");
     const common = {
       target_kind: registration.target.kind,
       target_path: registration.target.path,
       enabled: registration.enabled,
-      next_fire_at: registration.schedule ? firstFire(registration.schedule, field) : null,
+      next_fire_at: registration.schedule
+        ? sameTime && current?.next_fire_at
+          ? current.next_fire_at
+          : firstFire(registration.schedule, field)
+        : null,
       event_name: registration.event?.name ?? null,
       filter: registration.event?.filter ?? null,
       config: JSON.stringify({
         ...(registration.schedule ?? registration.webhook ?? registration.form ?? {}),
         ...(registration.tags?.length ? { tags: registration.tags } : {}),
+        ...(sameTime && before?.lastSkippedAt
+          ? { lastSkippedAt: before.lastSkippedAt, lastSkipReason: before.lastSkipReason }
+          : {}),
       }),
     };
-    const current = existing.find(
-      (row) => row.node_id === registration.node && row.type === registration.type,
-    );
     if (current) {
       await trx
         .updateTable("trigger_state")
@@ -568,6 +602,22 @@ async function triggerTags(
 /** The most runs one answer of a trigger source may start. */
 export const MAX_RELAYED = 100;
 
+/** Says on a source's run that what it gave could not be passed on, and tells who is alerted to failed runs. */
+async function failSourceRun(kernel: Kernel, runId: string, message: string) {
+  const failed = await kernel.db
+    .updateTable("run")
+    .set({ status: "failed", error: JSON.stringify({ message }) })
+    .where("id", "=", runId)
+    .where("status", "=", "succeeded")
+    .returningAll()
+    .executeTakeFirst();
+  if (!failed) return;
+  const { sendAlerts } = await import("./alerts.js");
+  await sendAlerts(kernel, failed).catch((failure) =>
+    kernel.log.error({ err: failure, runId }, "failure alert could not be sent"),
+  );
+}
+
 /**
  * Passes on what a trigger source gave back: starts the trigger's script or
  * flow once for each input, and keeps a polling source's place.
@@ -575,6 +625,16 @@ export const MAX_RELAYED = 100;
  * A webhook source answers `{ accept: false }` to start nothing, `{ input }`
  * to start one run, or `{ inputs: [...] }` to start several. A polling source
  * answers `{ items: [...], cursor }`.
+ *
+ * What is given is passed on whole or not at all. An answer that cannot be
+ * passed on (more than `MAX_RELAYED`, or items that are no list) fails the
+ * source's run, starts nothing and leaves the cursor where it was, so that the
+ * next tick is handed the same place. An item that does not fit what it starts
+ * is refused alone and recorded on the source's run: the others start, and the
+ * cursor moves, because the same item would be refused again. A failure
+ * anywhere else undoes the whole answer, cursor included, and fails the run.
+ * Each run started has the key `source:<source run>:<position>`, so passing on
+ * the same answer twice starts nothing twice.
  */
 export async function relaySource(
   kernel: Kernel,
@@ -591,10 +651,26 @@ export async function relaySource(
     .where("trigger_state.resource_id", "=", relay.resourceId)
     .where("trigger_state.node_id", "=", relay.node)
     .executeTakeFirst();
-  // The trigger was removed, turned off or paused while its source was running.
-  if (!state?.enabled || state.triggers_paused) return;
-  if (await instanceTriggersPaused(kernel)) return;
-  if (await pausedAlone(kernel, state)) return;
+  // The trigger was removed or turned off while its source was running: there is nothing left to show it on.
+  if (!state?.enabled) return;
+  // It was paused: what the source gave is not started, and the pause says so where refusals are shown.
+  if (
+    state.triggers_paused ||
+    (await instanceTriggersPaused(kernel)) ||
+    (await pausedAlone(kernel, state))
+  ) {
+    await recordRefusal(
+      kernel,
+      state,
+      "paused",
+      "The trigger was paused while its source was running, so what the source gave was not started.",
+    );
+    return;
+  }
+  const fail = async (message: string) => {
+    await failSourceRun(kernel, run.id, message);
+    await recordRefusal(kernel, state, "error", message);
+  };
   const answer = (typeof output === "object" && output !== null ? output : {}) as {
     accept?: unknown;
     input?: unknown;
@@ -603,53 +679,98 @@ export async function relaySource(
     cursor?: unknown;
   };
   let inputs: unknown[] = [];
-  if (relay.mode === "poll") inputs = Array.isArray(answer.items) ? answer.items : [];
-  else if (answer.accept === false) inputs = [];
+  if (relay.mode === "poll") {
+    if (!Array.isArray(answer.items)) {
+      await fail(
+        "The source did not give a list of items. A polling source answers { items: [...], cursor }. Nothing was started, and the cursor stays where it was.",
+      );
+      return;
+    }
+    inputs = answer.items;
+  } else if (answer.accept === false) inputs = [];
   else if (Array.isArray(answer.inputs)) inputs = answer.inputs;
   else if ("input" in answer) inputs = [answer.input];
   if (inputs.length > MAX_RELAYED) {
-    kernel.log.warn(
-      { source: run.script_path, given: inputs.length },
-      `a trigger source gave more than ${MAX_RELAYED} things to start, and the rest were dropped`,
+    await fail(
+      `The source gave ${inputs.length} items, and one tick may start at most ${MAX_RELAYED}. Nothing was started, and the cursor stays where it was. Give fewer items, with the cursor of the last one.`,
     );
-    inputs = inputs.slice(0, MAX_RELAYED);
+    return;
   }
   const label = state.node_id ? `${state.path}#${state.node_id}` : state.path;
-  const started = await kernel.db.transaction().execute(async (trx) => {
-    if (relay.mode === "poll" && "cursor" in answer) {
-      await trx
-        .updateTable("trigger_state")
-        .set({ cursor: JSON.stringify(answer.cursor ?? null) })
-        .where("resource_id", "=", relay.resourceId)
-        .where("node_id", "=", relay.node)
-        .execute();
-    }
-    const made: { kind: string; id: string }[] = [];
-    for (const [index, input] of inputs.entries()) {
-      try {
-        made.push(
-          await startTarget(kernel, trx, state, {
-            input,
-            trigger: {
-              type: relay.mode === "poll" ? "schedule" : "webhook",
-              detail: { trigger: label, source: run.script_path, sourceRun: run.id },
-            },
-            idempotencyKey: `source:${run.id}:${index}`,
-          }),
-        );
-      } catch (error) {
-        // One input that does not fit what it starts must not stop the others.
-        if (!(error instanceof HttpError)) throw error;
-        kernel.log.warn(
-          { source: run.script_path, trigger: label, reason: error.message },
-          "something a trigger source gave could not start a run",
-        );
+  const refused: { index: number; reason: string }[] = [];
+  let started: { kind: string; id: string }[];
+  try {
+    started = await kernel.db.transaction().execute(async (trx) => {
+      refused.length = 0;
+      if (relay.mode === "poll" && "cursor" in answer) {
+        await trx
+          .updateTable("trigger_state")
+          .set({ cursor: JSON.stringify(answer.cursor ?? null) })
+          .where("resource_id", "=", relay.resourceId)
+          .where("node_id", "=", relay.node)
+          .execute();
       }
-    }
-    return made;
-  });
+      const made: { kind: string; id: string }[] = [];
+      for (const [index, input] of inputs.entries()) {
+        try {
+          made.push(
+            await startTarget(kernel, trx, state, {
+              input,
+              trigger: {
+                type: relay.mode === "poll" ? "schedule" : "webhook",
+                detail: { trigger: label, source: run.script_path, sourceRun: run.id },
+              },
+              idempotencyKey: `source:${run.id}:${index}`,
+            }),
+          );
+        } catch (error) {
+          // One input that does not fit what it starts must not stop the others.
+          if (!(error instanceof HttpError)) throw error;
+          refused.push({ index, reason: error.message });
+        }
+      }
+      if (made.length > 0) {
+        await trx
+          .updateTable("trigger_state")
+          .set({ last_fired_at: new Date() })
+          .where("resource_id", "=", relay.resourceId)
+          .where("node_id", "=", relay.node)
+          .execute();
+      }
+      return made;
+    });
+  } catch (error) {
+    // Nothing was started and the cursor did not move: the next tick is handed the same place.
+    await fail(
+      `What the source gave could not be passed on: ${(error as Error).message} Nothing was started, and the cursor stays where it was.`,
+    );
+    throw error;
+  }
+  const [first] = refused;
+  if (first) {
+    await recordRefusal(
+      kernel,
+      state,
+      "input",
+      `${refused.length} of ${inputs.length} could not start a run. The ${ordinal(first.index + 1)}: ${first.reason}`,
+    );
+    // The run's own output names each one, by its place in the list the source gave.
+    await kernel.db
+      .updateTable("run")
+      .set({ output: sql`output || ${JSON.stringify({ refused })}::jsonb` })
+      .where("id", "=", run.id)
+      .where("output_ref", "is", null)
+      .where(sql<boolean>`jsonb_typeof(output) = 'object'`)
+      .execute();
+  }
   await kickStarted(kernel, started);
 }
+
+const ordinal = (n: number) => {
+  const tail = n % 100;
+  if (tail >= 11 && tail <= 13) return `${n}th`;
+  return `${n}${({ 1: "st", 2: "nd", 3: "rd" } as Record<number, string>)[n % 10] ?? "th"}`;
+};
 
 /** Lets the flow runs a trigger just started take their first step. Call after the transaction commits. */
 export async function kickStarted(kernel: Kernel, started: { kind: string; id: string }[]) {
@@ -701,6 +822,7 @@ export async function fireDueSchedules(kernel: Kernel, now = new Date()): Promis
   const backlogLimit = kernel.config.limits.scheduleBacklogLimit;
   let fired = 0;
   for (;;) {
+    let which: { resourceId: string; nodeId: string } | undefined;
     const started = await kernel.db.transaction().execute(async (trx) => {
       const due = await trx
         .selectFrom("trigger_state")
@@ -721,6 +843,7 @@ export async function fireDueSchedules(kernel: Kernel, now = new Date()): Promis
         .skipLocked()
         .executeTakeFirst();
       if (!due) return undefined;
+      which = { resourceId: due.resource_id, nodeId: due.node_id };
       // Schedules registered before flows existed keep their settings on the resource.
       const config = (typeof due.config.cron === "string"
         ? due.config
@@ -728,7 +851,7 @@ export async function fireDueSchedules(kernel: Kernel, now = new Date()): Promis
       const fireTime = due.next_fire_at as Date;
       await trx
         .updateTable("trigger_state")
-        .set({ next_fire_at: scheduleSource.nextFire?.(config, now) ?? null, last_fired_at: now })
+        .set({ next_fire_at: scheduleSource.nextFire?.(config, now) ?? null })
         .where("resource_id", "=", due.resource_id)
         .where("node_id", "=", due.node_id)
         .execute();
@@ -761,7 +884,15 @@ export async function fireDueSchedules(kernel: Kernel, now = new Date()): Promis
               and trigger_detail->'relay'->>'node' = ${due.node_id}
             limit 1
           `.execute(trx);
-          if (busy.rows.length > 0) return { kind: "none" as const, id: "" };
+          if (busy.rows.length > 0) {
+            await recordRefusal(
+              kernel,
+              due,
+              "busy",
+              "The source was still looking from the last tick, so this time was passed over.",
+            );
+            return { kind: "none" as const, id: "" };
+          }
           const made = await startRun(kernel, trx, {
             tenantId: due.tenant_id,
             workspaceId: due.workspace_id,
@@ -802,10 +933,20 @@ export async function fireDueSchedules(kernel: Kernel, now = new Date()): Promis
           { schedule: due.path, reason: error.message },
           "a schedule could not start its run",
         );
+        await recordRefusal(kernel, due, "input", error.message);
         return { kind: "none" as const, id: "" };
       }
     });
     if (!started) return fired;
+    // "Last fired" is when something started: not a time that was passed over or refused.
+    if (started.kind !== "none" && which) {
+      await kernel.db
+        .updateTable("trigger_state")
+        .set({ last_fired_at: now })
+        .where("resource_id", "=", which.resourceId)
+        .where("node_id", "=", which.nodeId)
+        .execute();
+    }
     await kickStarted(kernel, [started]);
     fired += 1;
   }
@@ -1029,16 +1170,23 @@ export async function fireWebhook(
         }
       : webhookSource.toInput?.(undefined, { headers, body });
   // Not audited: the run itself records the webhook that started it.
-  const started = await kernel.db.transaction().execute((trx) =>
-    startTarget(kernel, trx, state, {
-      input,
-      trigger: {
-        type: "webhook",
-        detail: { trigger: state.node_id ? `${state.path}#${state.node_id}` : state.path },
-      },
-      idempotencyKey,
-    }),
-  );
+  const started = await kernel.db
+    .transaction()
+    .execute((trx) =>
+      startTarget(kernel, trx, state, {
+        input,
+        trigger: {
+          type: "webhook",
+          detail: { trigger: state.node_id ? `${state.path}#${state.node_id}` : state.path },
+        },
+        idempotencyKey,
+      }),
+    )
+    .catch(async (error) => {
+      // A request that does not fit what it starts is answered with why, and kept where refusals are shown.
+      if (error instanceof HttpError) await recordRefusal(kernel, state, "input", error.message);
+      throw error;
+    });
   await kernel.db
     .updateTable("trigger_state")
     .set({ last_fired_at: new Date() })

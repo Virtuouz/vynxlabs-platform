@@ -302,6 +302,118 @@ describe("events", () => {
   });
 });
 
+describe("a trigger that cannot start what it is for", () => {
+  const strict = manifest("script", "orders/strict", {
+    entry: "sync",
+    input: { type: "object", required: ["n"] },
+    output: {},
+    timeoutSeconds: 30,
+    retries: { limit: 0, delaySeconds: 0, backoff: false },
+    uses: { connections: [], secrets: [], variables: [] },
+  });
+  const nightly = (note: string, script = "orders/sync") =>
+    manifest("schedule", "orders/nightly", { script, cron: "0 3 * * *", input: { note } });
+
+  async function deployWith(extra: BundleManifest[]) {
+    const base = bundle();
+    const unsigned = { ...base, manifests: [...base.manifests, ...extra] } as Omit<
+      Bundle,
+      "digest"
+    >;
+    const content = { ...unsigned, digest: bundleDigest(unsigned) } as Bundle;
+    const uploaded = await alice.post(`${ws()}/bundles`, content);
+    expect(uploaded.status, JSON.stringify(uploaded.body)).toBe(201);
+    const deployed = await alice.post(`${ws()}/deployments`, { bundleId: uploaded.body.id });
+    expect(deployed.status, JSON.stringify(deployed.body)).toBe(201);
+  }
+  const listed = async (path: string) =>
+    ((await alice.get(`${ws()}/triggers`)).body.items as Record<string, any>[]).find(
+      (one) => one.path === path,
+    ) as Record<string, any>;
+
+  test("a paused schedule keeps the firing it was holding through an edit that leaves its time alone", async () => {
+    await deployWith([nightly("Nightly")]);
+    const due = new Date(Date.now() - 3_600_000);
+    await t.db
+      .updateTable("trigger_state")
+      .set({
+        next_fire_at: due,
+        config: sql`config || '{"lastSkippedAt": "2026-01-01T03:00:00.000Z", "lastSkipReason": "backlog"}'::jsonb`,
+      })
+      .where("type", "=", "schedule")
+      .execute();
+    expect((await alice.put(`${ws()}/trigger-pauses/orders/nightly`, {})).status).toBe(204);
+
+    await deployWith([nightly("Edited")]);
+    const kept = await listed("orders/nightly");
+    expect(new Date(kept.nextFireAt).getTime()).toBe(due.getTime());
+    expect(kept.lastSkipReason).toBe("backlog");
+    expect(kept.lastSkippedAt).toEqual(expect.any(String));
+    expect(kept.paused).not.toBeNull();
+
+    // Changing the time is a new schedule, and starts from the next time it names.
+    const moved = nightly("Nightly");
+    moved.body.cron = "0 4 * * *";
+    await deployWith([moved]);
+    expect(new Date((await listed("orders/nightly")).nextFireAt).getTime()).toBeGreaterThan(
+      Date.now(),
+    );
+    expect((await alice.delete(`${ws()}/trigger-pauses/orders/nightly`)).status).toBe(204);
+  });
+
+  test("a schedule whose input no longer fits says so, and is not shown as fired", async () => {
+    await deployWith([strict, nightly("Nightly", "orders/strict")]);
+    await t.db
+      .updateTable("trigger_state")
+      .set({ next_fire_at: new Date(Date.now() - 60_000), last_fired_at: null })
+      .where("type", "=", "schedule")
+      .execute();
+    const { fireDueSchedules } = await import("./kernel/execution/triggers.js");
+    await fireDueSchedules(t.kernel);
+    const shown = await listed("orders/nightly");
+    expect(shown.lastRefusal).toMatchObject({ reason: "input" });
+    expect(shown.lastRefusal.problem).toContain("does not match");
+    expect(shown.lastFiredAt).toBeNull();
+    expect(shown.lastRun).toBeNull();
+    expect(new Date(shown.nextFireAt).getTime()).toBeGreaterThan(Date.now());
+  });
+
+  test("a webhook answered 400 for its input, and an event that does not fit, are kept where refusals are", async () => {
+    await deployWith([
+      strict,
+      manifest("event", "orders/placed", { payload: { type: "object" } }),
+      manifest("trigger", "orders/on-placed", {
+        type: "event",
+        script: "orders/strict",
+        event: "orders/placed",
+      }),
+      manifest("trigger", "orders/on-placed-filtered", {
+        type: "event",
+        script: "orders/sync",
+        event: "orders/placed",
+        filter: "event.payload.nothing.deeper == 1",
+      }),
+      manifest("trigger", "orders/strict-hook", { type: "webhook", script: "orders/strict" }),
+    ]);
+    const hook = new URL((await listed("orders/strict-hook")).url).pathname;
+    const answered = await t.app.inject({
+      method: "POST",
+      url: hook,
+      headers: { "content-type": "application/json" },
+      payload: "{}",
+    });
+    expect(answered.statusCode).toBe(400);
+    expect((await listed("orders/strict-hook")).lastRefusal).toMatchObject({ reason: "input" });
+
+    const published = await alice.post(`${ws()}/events`, { name: "orders/placed", payload: {} });
+    expect(published.status, JSON.stringify(published.body)).toBe(201);
+    expect((await listed("orders/on-placed")).lastRefusal).toMatchObject({ reason: "input" });
+    expect((await listed("orders/on-placed-filtered")).lastRefusal).toMatchObject({
+      reason: "filter",
+    });
+  });
+});
+
 describe("the write path", () => {
   test("every change was audited", () => {
     expect(t.unaudited).toEqual([]);

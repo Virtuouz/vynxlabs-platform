@@ -190,6 +190,13 @@ export function checkBundleManifests(manifests: BundleManifest[]): string[] {
     if (manifest.kind === "trigger" && body.type === "event") {
       expect(manifest, "event", body.event, "event");
     }
+    if (manifest.kind === "trigger_source") {
+      // A source reads what it names as a script does, and fails on every request or tick without it.
+      for (const path of body.uses?.connections ?? [])
+        expect(manifest, "connections", path, "connection");
+      for (const path of body.uses?.variables ?? [])
+        expect(manifest, "variables", path, "variable");
+    }
     if (manifest.kind === "script") {
       for (const path of body.uses?.connections ?? [])
         expect(manifest, "connections", path, "connection");

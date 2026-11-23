@@ -496,7 +496,7 @@ function ScriptRunPage({ root, link, id }: { root: string; link: string; id: str
                   >
                     <Mono>{one.connection}</Mono>
                     <Tag tone={one.bound ? "live" : "production"}>
-                      {one.bound ? "Bound" : "Not bound"}
+                      {one.bound ? "Set up here" : "Not set up here"}
                     </Tag>
                   </Link>
                 ))}

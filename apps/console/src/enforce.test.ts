@@ -133,7 +133,7 @@ test("no type size, corner, shadow, layer or spacing step is written by hand", (
  */
 test("no Badge says a state", () => {
   const states =
-    /<Badge\b[^>]*>\s*(Active|Running|Failed|Succeeded|Paused|Revoked|Expired|Enabled|Disabled|Verified|Not verified|Draft|Deployed|On|Off|Ended|Waiting|Queued|Canceled|Reachable|Not reachable)\s*</;
+    /<Badge\b[^>]*>\s*(Active|Running|Failed|Succeeded|Paused|Revoked|Expired|Enabled|Disabled|Verified|Not verified|Draft|Deployed|On|Off|Ended|Waiting|Queued|Canceled|Reached|Not tested)\s*</;
   const found: string[] = [];
   for (const path of [
     ...files(join(here, "screens")),

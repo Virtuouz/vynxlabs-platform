@@ -73,9 +73,7 @@ export function ConnectionPage({ root, link, path }: { root: string; link: strin
             title={one.path}
             state={
               <>
-                <StatePill state={one.bound ? "bound" : "unbound"}>
-                  {one.bound ? "Set up here" : "Not set up here"}
-                </StatePill>
+                <StatePill state={one.bound ? "bound" : "unbound"} />
                 <ConnectionHealth root={root} row={one} />
               </>
             }

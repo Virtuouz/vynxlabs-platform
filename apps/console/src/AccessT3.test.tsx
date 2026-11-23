@@ -4,6 +4,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { EndUsers } from "./screens/EndUsers.tsx";
 import { AttributesDialog, EndUserGroups, Groups } from "./screens/Groups.tsx";
 import { MemberList } from "./screens/Members.tsx";
+import { OfferToAgent } from "./screens/OfferToAgent.tsx";
 import { Tenant } from "./screens/Tenant.tsx";
 import { answer, show } from "./testing.tsx";
 
@@ -326,4 +327,51 @@ test("ACC-MP19: an operator's grant takes any length from 1 to 1440 minutes, by 
   fireEvent.click(within(dialog).getByRole("button", { name: "Open operator access" }));
   await waitFor(() => expect(calls.some((c) => c.method === "POST")).toBe(true));
   expect(calls.find((c) => c.method === "POST")?.body).toMatchObject({ durationMinutes: 90 });
+});
+
+test("ACC-26: a workspace's role called agent_runner does not stand for the built-in one when offering to an agent", async () => {
+  routes.push((method, url) => {
+    if (method !== "GET") return undefined;
+    if (url.endsWith("/service-accounts"))
+      return [200, { items: [{ id: "a1", name: "Support agent" }] }];
+    if (url.endsWith("/roles"))
+      return [
+        200,
+        {
+          items: [
+            { id: "r-agent", name: "agent_runner", builtin: true },
+            { id: "r-ws", name: "agent_runner", builtin: false, workspaceId: "w1" },
+          ],
+        },
+      ];
+    if (url.includes("/resources/")) return [200, { id: "res1" }];
+    if (url.includes("/bindings?"))
+      return [
+        200,
+        {
+          items: [
+            {
+              resourceId: "res1",
+              principalType: "service_account",
+              principalId: "a1",
+              roleId: "r-ws",
+              roleName: "agent_runner",
+            },
+          ],
+        },
+      ];
+    return undefined;
+  });
+  show(
+    <OfferToAgent
+      open
+      onClose={() => {}}
+      tenantId="t1"
+      workspaceId="w1"
+      kind="script"
+      path="orders/greet"
+    />,
+  );
+  // The account holds a role of that name, not the built-in one: it is still to be offered.
+  expect(await screen.findByRole("button", { name: "Offer" })).toBeTruthy();
 });

@@ -85,7 +85,7 @@ test("an account's tools are shown for a workspace, with what to give the agent"
   expect(screen.getByText("https://p.example/api/v1/tenants/t1/workspaces/w1/mcp")).toBeTruthy();
   // The settings name the address and leave the key for the person to put in.
   const settings = document.querySelector("pre")?.textContent ?? "";
-  expect(JSON.parse(settings).mcpServers.platform).toEqual({
+  expect(JSON.parse(settings).mcpServers.volvel).toEqual({
     type: "http",
     url: "https://p.example/api/v1/tenants/t1/workspaces/w1/mcp",
     headers: { Authorization: "Bearer <one of this account's API keys>" },

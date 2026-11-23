@@ -13,6 +13,7 @@ interface Account {
 
 interface Binding {
   resourceId: string | null;
+  roleId?: string;
   principalType: string;
   principalId: string | null;
   roleName: string;
@@ -89,7 +90,9 @@ function OfferForm({
             binding.principalType === "service_account" &&
             binding.principalId === id &&
             binding.resourceId === resource.data?.id &&
-            binding.roleName === "agent_runner",
+            // The built-in role, by identity: a role of a workspace may be called the same.
+            runner !== undefined &&
+            binding.roleId === runner.id,
         ),
     );
   const failed = accounts.error ?? roles.error ?? resource.error;

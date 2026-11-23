@@ -597,6 +597,9 @@ export function sourceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             description:
               "The request body is the file. Its type comes from the Content-Type header, its name from `name`.",
             tags: ["files"],
+            consumes: ["application/octet-stream"],
+            // Read as bytes, as sent: the schema says only that a body is taken.
+            body: Type.Unknown(),
             params: WorkspaceParams,
             querystring: Type.Object({ name: Type.String({ minLength: 1, maxLength: 255 }) }),
             response: { 201: StoredFile },

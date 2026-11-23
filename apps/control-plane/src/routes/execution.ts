@@ -3729,6 +3729,9 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               "held open for up to 25 seconds, and answered 202 if the flow has said nothing by " +
               "then. Such an answer carries the flow run's ID in `x-flow-run`.",
             tags: ["runs"],
+            consumes: ["application/json", "application/x-www-form-urlencoded", "text/plain"],
+            // Read as bytes, as sent: the schema says only that a body is taken.
+            body: Type.Unknown(),
             params: Type.Object({ token: Type.String({ maxLength: 200 }) }),
             response: { 202: Type.Object({ runId: Id }) },
           },

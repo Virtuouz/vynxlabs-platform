@@ -179,6 +179,22 @@ describe("API description", () => {
     ]);
   });
 
+  test("API-13: the event stream, the webhook and the uploads say their content types", async () => {
+    const description = (await app.inject({ url: "/api/v1/openapi.json" })).json();
+    const at = (path: string, method: string) => description.paths[`/api/v1${path}`][method];
+    expect(Object.keys(at("/tenants/{t}/stream", "get").responses["200"].content ?? {})).toEqual([
+      "text/event-stream",
+    ]);
+    expect(Object.keys(at("/hooks/{token}", "post").requestBody?.content ?? {}).sort()).toEqual([
+      "application/json",
+      "application/x-www-form-urlencoded",
+      "text/plain",
+    ]);
+    expect(
+      Object.keys(at("/tenants/{t}/workspaces/{w}/files", "post").requestBody?.content ?? {}),
+    ).toEqual(["application/octet-stream"]);
+  });
+
   test("includes the sign-in routes served by the authentication library", async () => {
     const description = (await app.inject({ url: "/api/v1/openapi.json" })).json();
     expect(description.paths["/api/v1/auth/sign-in/email"]).toBeDefined();

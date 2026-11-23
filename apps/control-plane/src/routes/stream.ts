@@ -34,6 +34,7 @@ export function streamRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             "Otherwise at most five streams per caller. Proxies in front must not buffer the " +
             "response.",
           tags: ["runs"],
+          produces: ["text/event-stream"],
           params: TenantParams,
           response: {
             200: Type.String({

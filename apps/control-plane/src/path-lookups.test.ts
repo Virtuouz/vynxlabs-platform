@@ -31,7 +31,7 @@ const ALLOWED: Record<string, number> = {
   // `fits` check, so one of the two is gone.
   "routes/authoring.ts": 1,
   "routes/data.ts": 1,
-  "routes/execution.ts": 2,
+  "routes/execution.ts": 1,
   "routes/flows.ts": 3,
   "routes/interfaces.ts": 1,
   "routes/search.ts": 1,

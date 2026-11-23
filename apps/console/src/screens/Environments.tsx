@@ -1580,6 +1580,56 @@ export function RenameTenantButton({
   );
 }
 
+/**
+ * Says whether people with `code:write` may write code in the console for a tenant. Off, saving
+ * and testing code is refused (`console_code_off`) and code comes from the tenant's repository.
+ * Offered to whoever the server lets change the tenant, wherever the button is drawn.
+ */
+export function ConsoleCodeButton({
+  tenant,
+  onDone,
+}: {
+  tenant: { id: string; name: string; consoleCode?: boolean; mayRename?: boolean };
+  onDone: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  if (tenant.mayRename === false || tenant.consoleCode === undefined) return null;
+  const on = tenant.consoleCode;
+  return (
+    <Button
+      size="small"
+      loading={busy}
+      onClick={async () => {
+        const sure = await ask.confirm({
+          title: on ? `Turn off code in the console for ${tenant.name}?` : `Turn on code in the console for ${tenant.name}?`,
+          text: on
+            ? "People can no longer save or test scripts and flows' code in the console. Code deployed from the repository keeps running. A tenant admin or an operator can turn it on again."
+            : "People with the code permission can write and test code in the console again.",
+          action: on ? "Turn off" : "Turn on",
+          danger: on,
+        });
+        if (!sure) return;
+        setBusy(true);
+        try {
+          await api.patch(`/tenants/${tenant.id}`, { consoleCode: !on });
+          notify.success(
+            on
+              ? `Code in the console is off for ${tenant.name}.`
+              : `Code in the console is on for ${tenant.name}.`,
+          );
+          onDone();
+        } catch (error) {
+          notify.error(error);
+        } finally {
+          setBusy(false);
+        }
+      }}
+    >
+      {on ? "Turn off code in console" : "Turn on code in console"}
+    </Button>
+  );
+}
+
 /** Lets an operator delete a tenant from the list, by typing its slug. */
 export function DeleteTenantButton({
   tenant,

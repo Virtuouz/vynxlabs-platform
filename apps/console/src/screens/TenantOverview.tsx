@@ -9,7 +9,7 @@ import { useInstanceStartsWorkers } from "../kit/useInstanceStartsWorkers.ts";
 import { when } from "../ListScreen.tsx";
 import { Link } from "../router.tsx";
 import type { TenantCounts, WorkspaceCounts } from "../Shell.tsx";
-import { RenameTenantButton } from "./Environments.tsx";
+import { ConsoleCodeButton, RenameTenantButton } from "./Environments.tsx";
 import { PromotionRequests } from "./Promotion.tsx";
 
 /** Actions that recorded a person's own preference, not a change. */
@@ -55,6 +55,7 @@ export function TenantOverview({ base, tenantId }: { base: string; tenantId: str
     slug: string;
     managedWorkers?: boolean;
     mayRename?: boolean;
+    consoleCode?: boolean;
   }>(base);
   const startsWorkers = useInstanceStartsWorkers(base, tenant.data?.managedWorkers);
   const counts = useLoad<TenantCounts>(`${base}/summary`);
@@ -158,7 +159,10 @@ export function TenantOverview({ base, tenantId }: { base: string; tenantId: str
         meta={tenant.data ? <Mono>{tenant.data.slug}</Mono> : null}
         actions={
           tenant.data ? (
-            <RenameTenantButton tenant={{ id: tenantId, ...tenant.data }} onDone={tenant.reload} />
+            <>
+              <RenameTenantButton tenant={{ id: tenantId, ...tenant.data }} onDone={tenant.reload} />
+              <ConsoleCodeButton tenant={{ id: tenantId, ...tenant.data }} onDone={tenant.reload} />
+            </>
           ) : null
         }
       />

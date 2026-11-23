@@ -335,6 +335,27 @@ describe("drafts", () => {
     expect(off.body.code).toBe("console_code_off");
     await t.db.updateTable("tenant").set({ console_code: true }).where("id", "=", tenant).execute();
   });
+
+  test("a tenant admin and an operator switch writing code in the console, audited (D17)", async () => {
+    const body = scriptBody("export default () => ({})");
+    expect((await alice.get(`/tenants/${tenant}`)).body.consoleCode).toBe(true);
+    const off = await alice.patch(`/tenants/${tenant}`, { consoleCode: false });
+    expect(off.status, JSON.stringify(off.body)).toBe(200);
+    expect(off.body.consoleCode).toBe(false);
+    expect((await alice.get(`/tenants/${tenant}`)).body.consoleCode).toBe(false);
+    expect((await draft("orders/switched", body)).body.code).toBe("console_code_off");
+    // An operator turns it on again: it is the same switch.
+    const on = await t.admin.patch(`/tenants/${tenant}`, { consoleCode: true });
+    expect(on.body.consoleCode).toBe(true);
+    expect((await draft("orders/switched", body)).status).toBe(200);
+    const entries = (await alice.get(`/tenants/${tenant}/audit?limit=50`)).body.items;
+    expect(
+      entries.filter(
+        (entry: { action: string; details: { consoleCode?: boolean } }) =>
+          entry.action === "tenant.updated" && entry.details.consoleCode === false,
+      ),
+    ).toHaveLength(1);
+  });
 });
 
 describe("trying a draft out", () => {

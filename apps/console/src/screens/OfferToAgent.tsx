@@ -1,7 +1,7 @@
 import { Button, Dialog, Notice, SelectField } from "@volvel/ui";
 import { useState } from "react";
 import { api, useLoad } from "../api.ts";
-import { failureText } from "../ask.tsx";
+import { failureText, noteWaiting } from "../ask.tsx";
 import { Loading } from "../kit/LoadState.tsx";
 import { CopyButton } from "../ListScreen.tsx";
 import { Link } from "../router.tsx";
@@ -167,7 +167,8 @@ function OfferForm({
           );
           setDone({ account: chosenAccount, address: offered.address });
         } catch (error) {
-          setProblem(failureText(error));
+          if (noteWaiting(error)) onClose();
+          else setProblem(failureText(error));
         } finally {
           setBusy(false);
         }

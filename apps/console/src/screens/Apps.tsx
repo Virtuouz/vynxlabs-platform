@@ -3,7 +3,7 @@ import { Button, Notice, SelectField, SideSheet, Tabs } from "@volvel/ui";
 import { ArrowUpRight } from "lucide-react";
 import { useState } from "react";
 import { api, useLoad } from "../api.ts";
-import { ask, failureText } from "../ask.tsx";
+import { ask, failureText, noteWaiting } from "../ask.tsx";
 import { CollectionView } from "../kit/CollectionView.tsx";
 import { bytes, count } from "../kit/format.ts";
 import { Inspector, KeyValues } from "../kit/layout.tsx";
@@ -161,7 +161,8 @@ function ShareDialog({
       bindings.reload();
       onChanged();
     } catch (error) {
-      setProblem(failureText(error));
+      if (noteWaiting(error)) onChanged();
+      else setProblem(failureText(error));
     } finally {
       setBusy(false);
     }

@@ -201,7 +201,11 @@ export function checkTenantResources(
           .permissions as string[] | undefined) ?? [],
       );
       for (const permission of (resource.body.permissions as string[] | undefined) ?? []) {
-        if (typeof permission === "string" && !kept.has(permission) && !isGrantablePermission(permission)) {
+        if (
+          typeof permission === "string" &&
+          !kept.has(permission) &&
+          !isGrantablePermission(permission)
+        ) {
           problems.push(
             `${name}: /body/permissions "${permission}" is not a permission a role can give.`,
           );

@@ -13,7 +13,7 @@ import {
 import type { ReactNode } from "react";
 import { useEffect, useId, useState } from "react";
 import { type ApiError, useLoad } from "./api.ts";
-import { ask, notify } from "./ask.tsx";
+import { ask, noteWaiting, notify } from "./ask.tsx";
 import { type DataColumn, DataTable } from "./kit/DataTable.tsx";
 import { clock } from "./kit/format.ts";
 import { Loading } from "./kit/LoadState.tsx";
@@ -263,7 +263,11 @@ export function CreateDialog({
           setValues(initial ?? {});
           onCreated(result);
         } catch (caught) {
-          setError(caught as ApiError);
+          // A change that waits for a second person is asked, not failed: the form is done.
+          if (noteWaiting(caught)) {
+            setValues(initial ?? {});
+            onClose();
+          } else setError(caught as ApiError);
         } finally {
           setBusy(false);
         }

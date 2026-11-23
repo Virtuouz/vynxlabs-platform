@@ -73,7 +73,6 @@ afterAll(async () => {
   await t.stop();
 });
 
-
 describe("tenant access, lane t3-access", () => {
   test("ACC-17: giving what is already given records no release and answers the one there", async () => {
     const ops = await alice.post(`/tenants/${tenant}/groups`, { name: "Desk" });

@@ -3,7 +3,7 @@ import { Button, Closing, Notice, SideSheet, TextField, Toggletip, Tooltip } fro
 import { X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
-import { failureText, notify } from "../ask.tsx";
+import { failureText, noteWaiting, notify } from "../ask.tsx";
 import { CollectionView } from "../kit/CollectionView.tsx";
 import { FilterChips, Inspector, SectionLabel } from "../kit/layout.tsx";
 import { consoleLink } from "../kit/objects.tsx";
@@ -338,7 +338,8 @@ function RoleDialog({
             );
             onSaved();
           } catch (caught) {
-            setError(caught as ApiError);
+            if (noteWaiting(caught)) onSaved();
+            else setError(caught as ApiError);
           } finally {
             setBusy(false);
           }

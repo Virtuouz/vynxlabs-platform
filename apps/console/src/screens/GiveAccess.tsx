@@ -1,7 +1,7 @@
 import { Button, ComboboxField, Notice, SelectField, SideSheet } from "@volvel/ui";
 import { useEffect, useState } from "react";
 import { api, useLoad } from "../api.ts";
-import { failureText, notify } from "../ask.tsx";
+import { failureText, noteWaiting, notify } from "../ask.tsx";
 
 interface Principal {
   type: "member" | "group" | "service_account" | "end_user" | "end_user_group";
@@ -132,7 +132,8 @@ export function GiveAccess({
                 onGiven();
                 close();
               } catch (error) {
-                setProblem(failureText(error));
+                if (noteWaiting(error)) close();
+                else setProblem(failureText(error));
               } finally {
                 setBusy(false);
               }

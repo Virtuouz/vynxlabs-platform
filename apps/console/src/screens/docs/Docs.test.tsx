@@ -985,6 +985,39 @@ describe("what is taken out can be brought back", () => {
     await waitFor(() => expect(sent("DELETE")).toHaveLength(1));
   });
 
+  test("WLK-17d: a page drafted for removal opens in its editor as removed, read only, with Keep", async () => {
+    routes[`GET /api/v1${root}/docs/page/handbook/support/returns`] = () => [
+      200,
+      {
+        page: {
+          ...list().pages.find((one) => one.path === "handbook/support/returns"),
+          state: "removed",
+        },
+        source: sources["handbook/support/returns"],
+        revision: 2,
+        deployedSource: null,
+      },
+    ];
+    show(
+      <DocEditor
+        root={root}
+        link={link}
+        tenantId="acme"
+        workspaceId="dev"
+        path="handbook/support/returns"
+      />,
+    );
+    expect(await screen.findByText(/A draft removes this page/)).toBeTruthy();
+    expect(screen.getAllByText("To be removed").length).toBeGreaterThan(0);
+    expect(
+      ((await screen.findByLabelText("Source of handbook/support/returns")) as HTMLTextAreaElement)
+        .readOnly,
+    ).toBe(true);
+    fireEvent.click(await screen.findByRole("button", { name: "Keep this page" }));
+    await answer("Keep");
+    await waitFor(() => expect(sent("DELETE")).toHaveLength(1));
+  });
+
   test("the editor deletes a page as the tree does: the same words, the name typed, and Undo", async () => {
     show(
       <DocEditor

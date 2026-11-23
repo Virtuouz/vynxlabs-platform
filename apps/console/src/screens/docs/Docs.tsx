@@ -22,6 +22,7 @@ import {
   Doc,
   type DropPosition,
   EmptyState,
+  LimitNote,
   Menu,
   Notice,
   Panel,
@@ -1145,6 +1146,10 @@ export function NameEditor({
       setProblem("A title is needed.");
       return;
     }
+    if (title.length > 120 || name.length > 80) {
+      setProblem("Shorten what is past its limit first.");
+      return;
+    }
     if (name === "" || wrong) {
       setProblem(name === "" ? "A file name is needed." : wrong);
       return;
@@ -1175,7 +1180,6 @@ export function NameEditor({
         aria-label={titleLabel}
         placeholder={titleLabel}
         value={title}
-        maxLength={120}
         onChange={(event) => {
           const next = event.currentTarget.value;
           setTitle(next);
@@ -1183,6 +1187,7 @@ export function NameEditor({
         }}
         className="h-7 w-full rounded-inner border border-action bg-surface px-2 text-ink outline-none"
       />
+      <LimitNote value={title} max={120} />
       <div
         className={`flex h-7 items-center rounded-inner border bg-surface px-2 font-mono text-code-sm ${
           wrong ? "border-danger" : "border-line"
@@ -1193,7 +1198,6 @@ export function NameEditor({
           placeholder="made from the title"
           value={name}
           disabled={nameLocked}
-          maxLength={80}
           onChange={(event) => {
             setOwn(true);
             setName(event.currentTarget.value);
@@ -1202,6 +1206,7 @@ export function NameEditor({
         />
         <span className="text-ink-subtle">{suffix}</span>
       </div>
+      <LimitNote value={name} max={80} />
       {wrong ? (
         <p className="m-0 text-meta text-danger">
           Use lowercase letters, numbers, - and _.

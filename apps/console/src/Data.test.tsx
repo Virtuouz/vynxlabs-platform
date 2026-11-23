@@ -1923,3 +1923,47 @@ test("w-limits 2: the add-row dialog marks a required column required, and an op
   expect(mark("number")).not.toContain("optional");
   expect(mark("total")).toContain("optional");
 });
+
+test("w-limits 2: a required yes/no column and a required reference are marked and refused when empty", async () => {
+  routes[`GET /api/v1${root}/tables/orders`] = () => [
+    200,
+    {
+      ...orders("code"),
+      columns: [
+        ...orders("code").columns,
+        {
+          name: "paid",
+          type: "boolean",
+          required: true,
+          unique: false,
+          default: null,
+          references: null,
+          status: "active",
+          held: null,
+        },
+        {
+          name: "shop",
+          type: "reference",
+          required: true,
+          unique: false,
+          default: null,
+          references: "shops",
+          status: "active",
+          held: null,
+        },
+      ],
+    },
+  ];
+  routes[`GET /api/v1${root}/rows/shops`] = () => [200, { items: [], nextCursor: null }];
+  show(<TableView root={root} name="orders" link="/t/t1/workspaces/w1" />);
+  await screen.findByText("A-1");
+  fireEvent.click(screen.getByRole("button", { name: "Add row" }));
+  const dialog = await screen.findByRole("dialog");
+  const paid = within(dialog).getByLabelText("paid") as HTMLElement;
+  expect(paid.closest("[class*=flex-col]")?.textContent).toContain("*");
+  const shop = await within(dialog).findByLabelText("shop");
+  expect(shop.closest("[class*=flex-col]")?.textContent).toContain("*");
+  fireEvent.submit(dialog.querySelector("form") as HTMLFormElement);
+  expect(await within(dialog).findByText("paid needs a value.")).toBeTruthy();
+  expect(await within(dialog).findByText("shop needs a value.")).toBeTruthy();
+});

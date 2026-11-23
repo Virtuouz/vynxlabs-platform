@@ -4,6 +4,7 @@ import {
   EmptyState,
   HeadingSlot,
   hasHeadingControls,
+  LimitNote,
   Menu,
   Notice,
   Skeleton,
@@ -89,6 +90,7 @@ function Title({
   onRename: (title: string) => void;
 }) {
   const [renaming, setRenaming] = useState(false);
+  const [typed, setTyped] = useState(widget.title ?? "");
   const field = useRef<HTMLInputElement>(null);
   // Said once: Enter or Esc ends it, and the blur that follows must not say it again.
   const settled = useRef(false);
@@ -109,25 +111,30 @@ function Title({
   if (renaming) {
     const finish = (save: boolean) => {
       if (settled.current) return;
-      settled.current = true;
       const next = field.current?.value.trim() ?? title;
+      // A title past its limit is said at the field and kept for the person to shorten, not cut.
+      if (save && next.length > 100) return;
+      settled.current = true;
       setRenaming(false);
       if (save && next !== title) onRename(next);
     };
     return (
-      <input
-        ref={field}
-        aria-label="Widget title"
-        defaultValue={title}
-        maxLength={100}
-        className="min-w-0 flex-1 rounded-inner border border-action bg-surface px-1.5 py-0.5 text-body font-semibold text-ink"
-        onClick={(event) => event.stopPropagation()}
-        onKeyDown={(event) => {
-          if (event.key === "Enter") finish(true);
-          if (event.key === "Escape") finish(false);
-        }}
-        onBlur={() => finish(true)}
-      />
+      <>
+        <input
+          ref={field}
+          aria-label="Widget title"
+          defaultValue={title}
+          onChange={(event) => setTyped(event.currentTarget.value)}
+          className="min-w-0 flex-1 rounded-inner border border-action bg-surface px-1.5 py-0.5 text-body font-semibold text-ink"
+          onClick={(event) => event.stopPropagation()}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") finish(true);
+            if (event.key === "Escape") finish(false);
+          }}
+          onBlur={() => finish(true)}
+        />
+        <LimitNote value={typed} max={100} />
+      </>
     );
   }
   if (renamable) {

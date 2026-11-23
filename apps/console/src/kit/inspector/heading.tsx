@@ -5,7 +5,7 @@
  * with `ownHeading` and places `HeadingGroup` itself. A frameless widget (a button, an action
  * group, a filter) has none: its title is only the outline's name, set in ⋯ › Layout.
  */
-import { DrawerGroup, DrawerRow, TextField } from "@volvel/ui";
+import { DrawerGroup, DrawerRow, LimitNote, TextField } from "@volvel/ui";
 import { Type } from "lucide-react";
 import type { Env } from "./controls.tsx";
 import { withConfig, withText } from "./model.ts";
@@ -102,10 +102,10 @@ export function HeadingGroup({
         aria-label={label}
         value={value}
         placeholder={placeholder}
-        maxLength={max}
         onChange={(event) => onChange(event.target.value)}
         className="h-7 w-full min-w-0 border-0 bg-transparent p-0 text-body-sm font-medium text-ink outline-offset-4 placeholder:font-normal placeholder:text-ink-muted focus-visible:outline-2 focus-visible:outline-focus"
       />
+      <LimitNote value={value} max={max} />
     </label>
   );
   return (

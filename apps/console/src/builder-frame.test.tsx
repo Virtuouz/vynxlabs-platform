@@ -133,9 +133,15 @@ test("the app is named in the header and renamed in place, with no field for it"
   expect(screen.getByRole("heading", { name: "Sales", level: 1 })).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Rename the app" }));
   const field = screen.getByLabelText("Name of the app") as HTMLInputElement;
-  expect(field.maxLength).toBe(100); // BLD-06: what the interface takes
+  expect(field.maxLength).toBe(-1); // BLD-06: said at the field, not cut
   // The count is said beside it, as in every other field of a name.
   expect(field.parentElement?.textContent).toContain("5 of 100");
+  fireEvent.change(field, { target: { value: "x".repeat(101) } });
+  expect(field.value).toHaveLength(101);
+  expect(screen.getByRole("alert").textContent).toBe("Use at most 100 characters. This is 101.");
+  fireEvent.keyDown(field, { key: "Enter" });
+  expect(screen.queryByRole("heading", { name: "x".repeat(101) })).toBeNull();
+  expect(screen.getByLabelText("Name of the app")).toBe(field);
   fireEvent.change(field, { target: { value: "Tak" } });
   expect(field.parentElement?.textContent).toContain("3 of 100");
   fireEvent.change(field, { target: { value: "Takings" } });

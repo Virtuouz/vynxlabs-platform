@@ -104,6 +104,7 @@ test("every filter is the server's, chosen from what the log holds", async () =>
   await screen.findAllByText("secret.set");
   const lastList = () => asked.filter((one) => /\/audit\?/.test(one)).at(-1) ?? "";
   // Who, the action and the kind of thing are offered from the log, with how many each.
+  fireEvent.click(screen.getByRole("button", { name: "More filters" }));
   await screen.findByRole("option", { name: "jane@acme.test (6)" });
   fireEvent.change(screen.getByLabelText("Who"), {
     target: { value: "00000000-0000-7000-8000-00000000aaaa" },
@@ -325,6 +326,7 @@ test("everything about one thing is asked of the log from an entry, and is left 
 test("the instance's log is narrowed by who, what, to what and until when (GOV-P8)", async () => {
   show(<AuditTable title="Instance log" description="" path="/audit" />);
   await screen.findAllByText("secret.set");
+  fireEvent.click(screen.getByRole("button", { name: "More filters" }));
   await screen.findByRole("option", { name: "jane@acme.test (6)" });
   expect(asked.some((one) => one === "/api/v1/audit-facets?")).toBe(true);
   expect(screen.queryByLabelText("Workspace")).toBeNull();
@@ -352,4 +354,26 @@ test("the instance's log is narrowed by who, what, to what and until when (GOV-P
     ),
   );
   await waitFor(() => expect(lastList()).toContain("target=target-"));
+});
+
+test("R-final: the first row holds search and the few used most; the rest are behind 'More filters', which counts those set and applies them", async () => {
+  show(<AuditTable title="Audit log" description="" path="/tenants/t1/audit" />);
+  await screen.findAllByText("secret.set");
+  const lastList = () => asked.filter((one) => /\/audit\?/.test(one)).at(-1) ?? "";
+  // Search comes first, and the three used less are not in the row.
+  const row = screen.getByLabelText("Search").closest("div");
+  expect(row?.firstElementChild?.contains(screen.getByLabelText("Search"))).toBe(true);
+  expect(screen.queryByLabelText("Who")).toBeNull();
+  expect(screen.queryByLabelText("Action")).toBeNull();
+  expect(screen.queryByLabelText("Done to")).toBeNull();
+  const more = screen.getByRole("button", { name: "More filters" });
+  expect(more.getAttribute("aria-expanded")).toBe("false");
+  fireEvent.click(more);
+  expect(more.getAttribute("aria-expanded")).toBe("true");
+  await screen.findByRole("option", { name: "jane@acme.test (6)" });
+  fireEvent.change(screen.getByLabelText("Action"), { target: { value: "secret.set" } });
+  fireEvent.change(screen.getByLabelText("Done to"), { target: { value: "secret" } });
+  await waitFor(() => expect(lastList()).toContain("targetType=secret"));
+  expect(lastList()).toContain("action=secret.set");
+  expect(screen.getByRole("button", { name: "More filters (2)" })).toBeTruthy();
 });

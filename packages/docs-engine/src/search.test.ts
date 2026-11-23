@@ -79,13 +79,12 @@ describe("the search index", () => {
     );
   });
 
-  test("keeps a slot for each page's type, empty until pages have one", () => {
+  test("keeps each page's type, empty for an untyped page, stored and not searched", () => {
     const json = JSON.parse(buildSearchIndex(set));
-    const fields = Object.values(json.storedFields) as { type?: string }[];
+    const fields = Object.values(json.storedFields) as { docType?: string }[];
     expect(fields.length).toBeGreaterThan(0);
-    for (const one of fields) expect(one.type).toBe("");
-    // The slot is stored, not searched.
-    expect(json.fieldIds).not.toHaveProperty("type");
+    for (const one of fields) expect(one.docType).toBe("");
+    expect(json.fieldIds).not.toHaveProperty("docType");
   });
 
   test("an index built before this one is still read", () => {
@@ -96,7 +95,7 @@ describe("the search index", () => {
     ][]) {
       fields.text = id.includes("#") ? "An older index kept the words of this part." : "";
       delete fields.passage;
-      delete fields.type;
+      delete fields.docType;
     }
     const hits = loadSearchIndex(JSON.stringify(old)).search("refund");
     expect(hits.length).toBeGreaterThan(0);

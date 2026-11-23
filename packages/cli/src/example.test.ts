@@ -672,7 +672,10 @@ describe("working locally", () => {
       workspace: { id: "x", slug: "main" },
       principal: { type: "member", name: null, email: null },
     }).catch((error) => error);
-    expect(which.message).toContain("Say which app: portal, public.");
+    // Every kind of app is offered, an interface by its kind (D64).
+    expect(which.message).toMatch(/^Say which app: .*invoice-desk \(interface\)/m);
+    expect(which.message).toMatch(/portal/);
+    expect(which.message).toMatch(/public/);
   }, 60_000);
 
   test("run executes one script on this machine with local bindings", async () => {

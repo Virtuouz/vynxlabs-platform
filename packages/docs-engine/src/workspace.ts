@@ -192,6 +192,17 @@ export function buildApp(
   };
 }
 
+function definedTerms(resources: readonly ResourceLike[]): Set<string> {
+  const defined = new Set<string>();
+  for (const resource of resources) {
+    if (resource.kind !== "doc") continue;
+    for (const term of readPage(resource.path, sourceOf(resource)).entry.frontmatter.terms ?? []) {
+      defined.add(term.id);
+    }
+  }
+  return defined;
+}
+
 const said = (issue: DocIssue) =>
   `${issue.path} (doc): ${issue.line > 1 ? `line ${issue.line}: ` : ""}${issue.message.replace(/\n/g, " ")}`;
 
@@ -256,13 +267,7 @@ export function checkWorkspaceDocs(
   }
 
   // A term of one app can be used on a page of another: terms are the workspace's.
-  const defined = new Set<string>();
-  for (const resource of resources) {
-    if (resource.kind !== "doc") continue;
-    for (const term of readPage(resource.path, sourceOf(resource)).entry.frontmatter.terms ?? []) {
-      defined.add(term.id);
-    }
-  }
+  const defined = definedTerms(resources);
 
   const built: BuiltApp[] = [];
   for (const app of apps) {
@@ -291,6 +296,22 @@ export function checkWorkspaceDocs(
     );
   }
   return problems;
+}
+
+/**
+ * What is worth knowing about a workspace's documentation that stops nothing:
+ * each warning as a line that names its page. A deploy is never refused for one.
+ */
+export function workspaceDocsWarnings(
+  resources: readonly ResourceLike[],
+  options: WorkspaceOptions = {},
+): string[] {
+  const defined = definedTerms(resources);
+  return docsApps(resources).flatMap((app) =>
+    buildApp(app, resources, { ...options, knownTerms: defined })
+      .issues.filter((issue) => issue.severity === "warning")
+      .map(said),
+  );
 }
 
 export { ABOUT_KINDS, type AboutKind };

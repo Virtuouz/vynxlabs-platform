@@ -71,7 +71,16 @@ if (covered.share + 1e-9 < floor) {
   );
 }
 
-const { set, issues, redirects } = loadDocs();
+const { set, issues: found, redirects } = loadDocs();
+// A warning about a page's type or subjects that is known and not yet mended is listed in
+// lint-allow.json as "<path>:<code>". The list only gets shorter: an entry that no longer fires
+// is a problem, so that it is taken out.
+const allowed = new Set(JSON.parse(readFileSync(join(HERE, "lint-allow.json"), "utf8")).allow);
+const fired = new Set(found.map((one) => `${one.path}:${one.code}`));
+const issues = found.filter((one) => !allowed.has(`${one.path}:${one.code}`));
+for (const one of allowed) {
+  if (!fired.has(one)) problems.push(`lint-allow.json  "${one}" no longer fires. Take it out.`);
+}
 report(issues);
 
 // What was released stays reachable and keeps its names (see locks.mjs).

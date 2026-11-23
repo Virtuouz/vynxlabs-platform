@@ -13,7 +13,11 @@
 import {
   asDirectory,
   type Collection,
+  DOC_TYPE_LABELS,
+  DOC_TYPE_SUMMARIES,
+  DOC_TYPES,
   type DocSet,
+  type DocType,
   type Folder,
   folderItems,
   glossaryOf,
@@ -21,6 +25,7 @@ import {
   type PageHit,
   type PageRef,
   pagesInOrder,
+  relatedTo,
   resolveAsset,
   resolveLink,
   type SearchHit,
@@ -231,10 +236,25 @@ ${switcher}
 </aside>`;
 }
 
+const PLURALS: Record<DocType, string> = {
+  tutorial: "Tutorials",
+  "how-to": "How-to guides",
+  reference: "Reference",
+  explanation: "Explanations",
+};
+
+/** The types a site's pages have, in the order a reader thinks of them. Empty for a site with none. */
+function typesOf(set: DocSet): DocType[] {
+  const present = new Set(Object.values(set.types));
+  return DOC_TYPES.filter((one) => present.has(one));
+}
+
 /** What the script reads: never run, only read. */
 function data(at: SiteView, extra: Record<string, unknown>): string {
+  const types = typesOf(at.set);
   const json = JSON.stringify({
     base: at.base,
+    ...(types.length > 0 ? { types: types.map((id) => ({ id, title: PLURALS[id] })) } : {}),
     ...(at.platform ? { platform: at.platform } : {}),
     ...(at.search?.kind === "static" ? { search: at.search } : {}),
     collections: collectionsOf(at.set).map((one) => ({ id: one.id, title: one.title })),
@@ -389,6 +409,44 @@ function feedbackOf(at: SiteView, path: string): string {
 </form>`;
 }
 
+/**
+ * On a collection's own page, when its pages are of two types or more: a card for each, so that a
+ * reader says what they are doing and is taken to the first page that does it.
+ */
+function typeCards(at: SiteView, path: string): string {
+  const { set } = at;
+  const trail = trailOf(set.nav, path);
+  const folder = trail.at(-1);
+  if (!folder || folder.index?.path !== path || trail.length !== 1 || folder.id === "") return "";
+  const inside = pagesInOrder({ collections: [folder] }).filter((page) => set.types[page.path]);
+  const present = DOC_TYPES.filter((one) => inside.some((page) => set.types[page.path] === one));
+  if (present.length < 2) return "";
+  return `<section class="types" aria-labelledby="types"><h2 id="types">What do you want to do?</h2><ul class="cards">${present
+    .map((one) => {
+      const pages = inside.filter((page) => set.types[page.path] === one);
+      const first = pages[0] as PageRef;
+      return `<li><section class="card" data-type="${one}"><h3><a href="${pageHref(at, first.url)}">${escapeHtml(PLURALS[one])}</a></h3><p>${escapeHtml(DOC_TYPE_SUMMARIES[one])}</p><a class="more" href="${pageHref(at, first.url)}">${pages.length} ${pages.length === 1 ? "page" : "pages"} →</a></section></li>`;
+    })
+    .join("")}</ul></section>`;
+}
+
+/** Pages of the other types that are about the same things as this one. */
+function relatedBlock(at: SiteView, path: string): string {
+  const related = relatedTo(at.set, path);
+  const kinds = DOC_TYPES.filter((one) => related[one]?.length);
+  if (kinds.length === 0) return "";
+  return `<aside class="related" aria-labelledby="related"><h2 id="related">Related</h2>${kinds
+    .map(
+      (one) =>
+        `<section data-type="${one}"><h3>${escapeHtml(PLURALS[one])}</h3><ul>${(related[one] ?? [])
+          .map(
+            (page) => `<li><a href="${pageHref(at, page.url)}">${escapeHtml(page.title)}</a></li>`,
+          )
+          .join("")}</ul></section>`,
+    )
+    .join("")}</aside>`;
+}
+
 /** One page of the app, drawn. The home page is drawn as a home page. */
 export function docPage(at: SiteView, path: string): string {
   const { set } = at;
@@ -444,6 +502,10 @@ export function docPage(at: SiteView, path: string): string {
           .join("")}</ol>`
       : "";
   const { title, description, since } = entry.frontmatter;
+  const type = set.types[path];
+  const eyebrow = type
+    ? `<p class="eyebrow" data-type="${type}">${escapeHtml(DOC_TYPE_LABELS[type])}</p>`
+    : "";
   const updated = entry.updated ? new Date(entry.updated) : undefined;
   return shell(at, {
     title,
@@ -451,10 +513,10 @@ export function docPage(at: SiteView, path: string): string {
     collection,
     toc,
     data: { page: { title, url: urlOf(path), crumb: crumbOf(set, path) } },
-    main: `${tocbar}<header class="lead">${crumbs}<h1>${escapeHtml(title)}</h1>${
+    main: `${tocbar}<header class="lead">${crumbs}${eyebrow}<h1>${escapeHtml(title)}</h1>${
       description ? `<p>${escapeHtml(description)}</p>` : ""
     }${since ? `<p class="since">New in version ${escapeHtml(since)}</p>` : ""}<div class="actions"><button class="button" type="button" data-copy="${href(at, `${urlOf(path) || "index"}.md`)}" hidden>${icon("copy", 14)}<span>Copy as Markdown</span></button><button class="button" type="button" data-copy="link" hidden>${icon("link", 14)}<span>Copy link</span></button></div></header>
-<article class="vd-doc">${body}</article>
+<article class="vd-doc">${body}</article>${typeCards(at, path)}${relatedBlock(at, path)}
 <footer class="foot">${feedbackOf(at, path)}${
       updated && !Number.isNaN(updated.getTime())
         ? `<p class="updated">Last updated <time datetime="${attr(updated.toISOString())}">${DATE.format(updated)}</time></p>`

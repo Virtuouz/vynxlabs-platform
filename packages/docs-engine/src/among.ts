@@ -1,4 +1,5 @@
 import { walk } from "@volvel/markup";
+import { diataxisIssues, effectiveType } from "./diataxis.js";
 import { type DocEntry, type DocIssue, readPage } from "./page.js";
 import type { AboutKind } from "./schema.js";
 import { ABOUT_KINDS } from "./schema.js";
@@ -17,6 +18,12 @@ export interface PageIndex {
   terms: readonly string[];
   /** What its headings are addressed by. */
   headings: readonly string[];
+  /** What it says of its own `type:`: on an index, the type of what is under it. Left out, it says none. */
+  type?: string | null | undefined;
+  /** Its `subjects:`. */
+  subjects?: readonly string[] | undefined;
+  /** Its `moved_from:`. */
+  moved_from?: readonly string[] | undefined;
 }
 
 export interface AmongOptions {
@@ -137,6 +144,30 @@ export function checkPageAmong(
       }
     }
   }
+
+  // Where it used to be, and what its type says: the same checks as a deploy's, beside the others.
+  for (const old of entry.frontmatter.moved_from ?? []) {
+    if (old === path) {
+      error("moved_from_self", `moved_from lists "${old}", which is this page's own path.`);
+    } else if (paths.has(old)) {
+      error(
+        "moved_from_exists",
+        `moved_from lists "${old}", and there is a page at that path. A path that is still a page cannot lead somewhere else: take it out of moved_from, or move that page.`,
+      );
+    } else {
+      const other = rest.find((one) => one.moved_from?.includes(old));
+      if (other) {
+        error(
+          "moved_from_duplicate",
+          `moved_from lists "${old}", which ${other.path} also lists. An old path leads to one page.`,
+        );
+      }
+    }
+  }
+  const ownType = (at: string) =>
+    at === path ? entry.frontmatter.type : rest.find((one) => one.path === at)?.type;
+  // Whether a subject is used once, and whether a folder says a type, are known to a deploy alone.
+  issues.push(...diataxisIssues(entry, { type: effectiveType(path, ownType) }));
 
   // Its links and terms, against the pages around it.
   const own = new Set<string>();

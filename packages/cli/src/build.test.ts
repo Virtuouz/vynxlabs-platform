@@ -557,6 +557,26 @@ describe("a repository with documentation", () => {
     expect(built.files.get(built.bundle.assets?.[0]?.sha256 as string)).toEqual(PNG);
   });
 
+  test("pages with types and subjects build, and what could be better is said as warnings, never as a refusal", async () => {
+    const directory = await withPages({
+      "platform/docs/handbook/index.md": "---\ntitle: Handbook\n---\n\nHello.\n",
+      "platform/docs/handbook/how/index.md": "---\ntitle: How\ntype: how-to\n---\n",
+      "platform/docs/handbook/how/refund.md":
+        "---\ntitle: Refund an order\nsubjects: [refunds]\nmoved_from: [old/refund]\n---\n\nJust words.\n",
+    });
+    const built = await buildRepository({ directory });
+    expect(built.warnings.join("\n")).toContain("handbook/how/refund (doc)");
+    expect(built.warnings.join("\n")).toContain("no numbered steps");
+    expect(built.warnings.join("\n")).toContain('subject "refunds"');
+  });
+
+  test("a site that uses none of it has no warnings", async () => {
+    const directory = await withPages({
+      "platform/docs/handbook/index.md": "---\ntitle: Handbook\n---\n\nHello.\n",
+    });
+    expect((await buildRepository({ directory })).warnings).toEqual([]);
+  });
+
   test("reads them from the folders a repository names, and from nowhere else", async () => {
     const directory = await withPages(
       {

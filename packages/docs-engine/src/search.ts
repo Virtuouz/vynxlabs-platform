@@ -17,6 +17,8 @@ interface Indexed {
   description: string;
   /** The page's top-level folder: what search can be narrowed to. Empty for a page in none. */
   collection: string;
+  /** The page's type, stored and never searched. Empty for a page with none. */
+  docType: string;
   headings: string;
   /** For a section: its heading, and what a link to it ends in. */
   heading: string;
@@ -28,8 +30,6 @@ interface Indexed {
    * An index built before this one kept `text` and `intro` whole.
    */
   passage: string;
-  /** What kind of page it is. Stored and not searched; empty until pages have a type. */
-  type: string;
 }
 
 /** The most characters of a page's or a section's words an index keeps for a result's snippet. */
@@ -76,6 +76,8 @@ export interface PageHit {
   title: Marked;
   description: string;
   collection: string;
+  /** The page's type, when it has one. */
+  docType?: string;
   places: PlaceHit[];
 }
 
@@ -88,10 +90,10 @@ const OPTIONS = {
     "title",
     "description",
     "collection",
+    "docType",
     "heading",
     "anchor",
     "passage",
-    "type",
   ],
   searchOptions: {
     boost: { title: 4, heading: 3, headings: 2, description: 2 },
@@ -141,6 +143,7 @@ export function buildSearchIndex(set: DocSet, options: { productName?: string } 
       title: entry.frontmatter.title,
       description: entry.frontmatter.description ?? "",
       collection,
+      docType: set.types[path] ?? "",
     };
     const parts = sections(entry.tree);
     // A page's own words are those before its first heading: the rest is its sections'.
@@ -154,7 +157,6 @@ export function buildSearchIndex(set: DocSet, options: { productName?: string } 
       anchor: "",
       text: intro,
       passage: clip(intro),
-      type: "",
     });
     for (const part of parts.slice(1)) {
       if (!part.heading) continue;
@@ -170,7 +172,6 @@ export function buildSearchIndex(set: DocSet, options: { productName?: string } 
         anchor: part.heading.id,
         text: words,
         passage: clip(words),
-        type: "",
       });
     }
   }
@@ -241,9 +242,12 @@ function passageOf(hit: Record<string, unknown>): string {
 /** Reads an index back, to ask it questions. */
 export function loadSearchIndex(json: string): {
   /** Pages, best first: for a page of results. */
-  search(query: string, limit?: number): SearchHit[];
+  search(query: string, limit?: number, options?: { type?: string }): SearchHit[];
   /** Pages, best first, each with the places on it: for results as they are typed. */
-  grouped(query: string, options?: { collection?: string; limit?: number }): PageHit[];
+  grouped(
+    query: string,
+    options?: { collection?: string; type?: string; limit?: number },
+  ): PageHit[];
 } {
   const index = MiniSearch.loadJSON<Indexed>(json, OPTIONS);
   const titleOf = (path: string) => String(index.getStoredFields(path)?.title ?? "");
@@ -260,18 +264,21 @@ export function loadSearchIndex(json: string): {
         const exact =
           titleOf(path).toLowerCase() === asked ||
           String(hit.heading ?? "").toLowerCase() === asked;
-        const reference = isReference(path, index.getStoredFields(path)?.type);
+        const reference = isReference(path, index.getStoredFields(path)?.docType);
         return { hit, score: reference && !exact ? hit.score * 0.6 : hit.score };
       })
       .sort((a, b) => b.score - a.score)
       .map((one) => one.hit);
   };
   return {
-    search(query, limit = 20) {
+    search(query, limit = 20, options = {}) {
       if (query.trim() === "") return [];
       const pages = new Map<string, SearchHit>();
       // A page is found by its own words or by those of a section of it.
-      for (const hit of found(query)) {
+      for (const hit of found(
+        query,
+        options.type !== undefined ? (hit) => hit.docType === options.type : undefined,
+      )) {
         const path = hit.path as string;
         if (pages.has(path) || pages.size >= limit) continue;
         const own = index.getStoredFields(path);
@@ -291,8 +298,10 @@ export function loadSearchIndex(json: string): {
       const words = asked.split(/\s+/);
       const hits = found(
         asked,
-        options.collection !== undefined
-          ? (hit) => hit.collection === options.collection
+        options.collection !== undefined || options.type !== undefined
+          ? (hit) =>
+              (options.collection === undefined || hit.collection === options.collection) &&
+              (options.type === undefined || hit.docType === options.type)
           : undefined,
       );
       const pages = new Map<string, PageHit>();
@@ -310,6 +319,7 @@ export function loadSearchIndex(json: string): {
             title: mark(String(own?.title ?? ""), terms),
             description: String(own?.description ?? ""),
             collection: hit.collection as string,
+            ...(hit.docType ? { docType: hit.docType as string } : {}),
             places: [],
           };
           pages.set(path, page);

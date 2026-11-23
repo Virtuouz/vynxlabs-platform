@@ -140,6 +140,28 @@ export const FRONTMATTER_SCHEMA = {
       uniqueItems: true,
       items: { type: "string", pattern: ID_PATTERN, maxLength: 80 },
     },
+    type: {
+      type: "string",
+      description:
+        "What kind of page this is, by what the reader is doing: tutorial (learning by doing), how-to (getting a task done), reference (looking a fact up) or explanation (understanding why). On a folder's index page it is the kind of every page under the folder, and the index itself has none. A page can say its own.",
+      maxLength: 40,
+    },
+    subjects: {
+      type: "array",
+      description:
+        "What this page is about, as short names the same in every page that is about it. Pages of other types with a subject in common are shown as related. Five at most are used.",
+      maxItems: 20,
+      uniqueItems: true,
+      items: { type: "string", pattern: ID_PATTERN, maxLength: 80 },
+    },
+    moved_from: {
+      type: "array",
+      description:
+        "The paths this page had before it moved. A reader who follows an old address is taken here.",
+      maxItems: 20,
+      uniqueItems: true,
+      items: path("A path the page had, without .md."),
+    },
     since: {
       type: "string",
       description: "For the product's own pages: the version that brought what the page describes.",
@@ -169,6 +191,9 @@ export interface Frontmatter {
   terms?: TermDefinition[];
   about?: About[];
   extends?: string[];
+  type?: string;
+  subjects?: string[];
+  moved_from?: string[];
   since?: string;
 }
 

@@ -381,6 +381,13 @@ describe("a folder of pages served as a docs app", () => {
         pages: [],
       },
     );
+    // Narrowed to a type that a site with none does not have, nothing, in the dialog and the page.
+    expect(
+      JSON.parse((await browser().get(`${HELP}_search.json?q=tuesdays&type=how-to`)).body),
+    ).toEqual({ pages: [] });
+    expect((await browser().get(`${HELP}_search?q=tuesdays&type=how-to`)).body).toContain(
+      "Nothing here matches",
+    );
     // An app the caller may not open answers nothing of itself.
     expect((await browser().get("/apps/acme/main/staff/_search.json?q=staff")).status).toBe(303);
   });

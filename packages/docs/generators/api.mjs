@@ -201,6 +201,8 @@ export function apiPages(description) {
       {
         title: "The API",
         description: "Every route of the API, what it does, what it needs and what it answers.",
+        // Until 0.5 the API was one page, here; it grew a page for each group.
+        moved_from: ["reference/api"],
       },
       [
         `Everything the console does, it does through this API, and so can anything else. It has ${noun(total, "route", "routes")} in ${noun(tags.length, "group", "groups")}, as version ${description.info.version} describes itself. Each instance serves the whole description, with every request and response, at \`/api/v1/openapi.json\`.`,

@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { startTestApp, type TestApp } from "@volvel/control-plane/testing";
 import { afterAll, beforeAll, expect, test } from "vitest";
-import { consoleResourcesLeft, run, settingsPath } from "./cli.js";
+import { consoleResourcesLeft, refusal, run, settingsPath } from "./cli.js";
 
 let t: TestApp;
 let url: string;
@@ -363,4 +363,29 @@ test("status says when the database takes no writes (INS-MP5)", async () => {
   } finally {
     stub.close();
   }
+});
+
+test("an instance from before page types refuses the key by name, and the CLI says the instance may be older", () => {
+  const older = refusal(
+    {
+      status: 422,
+      body: {
+        detail: "The bundle was refused.",
+        errors: [
+          { message: 'handbook/how/refund (doc): There is no "type" here. It can have: title.' },
+        ],
+      },
+    },
+    "deploy",
+  );
+  expect(older.message).toContain("the instance may be older than this CLI");
+  expect(older.message).toContain('There is no "type" here');
+  const other = refusal(
+    {
+      status: 422,
+      body: { detail: "No.", errors: [{ message: "a (doc): The link leads nowhere." }] },
+    },
+    "deploy",
+  );
+  expect(other.message).not.toContain("older");
 });

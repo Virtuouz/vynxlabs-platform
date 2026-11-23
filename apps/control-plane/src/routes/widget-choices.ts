@@ -126,19 +126,25 @@ export function widgetChoicesRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           ctx.principal,
           await ctx.allowed("data_all:read", where),
         );
+        // Text is searched by the database. Any other kind of name (a number, a date) is not
+        // text, so it is searched as it is written, over the first rows in its order.
+        const text = described.columns.find((one) => one.name === display)?.type === "text";
         const read = await withData(kernel, at.tenantId, scope, (data) =>
           findRows(data, described, {
-            ...(search !== ""
+            ...(search !== "" && text
               ? { filter: { column: display, op: "contains", value: search } }
               : {}),
             sort: [display],
-            limit: MAX_CHOICES,
+            limit: search !== "" && !text ? 1000 : MAX_CHOICES,
           }),
         );
+        const wanted = search.toLowerCase();
         return {
           choices: read.items
             .filter((row) => row[display] !== null && row[display] !== undefined)
-            .map((row) => ({ value: String(row.id), label: String(row[display]) })),
+            .map((row) => ({ value: String(row.id), label: String(row[display]) }))
+            .filter((one) => text || one.label.toLowerCase().includes(wanted))
+            .slice(0, MAX_CHOICES),
         };
       },
     );

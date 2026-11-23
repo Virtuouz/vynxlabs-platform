@@ -94,7 +94,7 @@ With several replicas, a replica that knows only the old key cannot open what a 
 2. Restart every replica with the two swapped. Values move to the new key as replicas start, and the ten-minute pass catches any sealed meanwhile by a replica not yet restarted.
 3. When the status says `secondaryRemovable`, restart without the second key.
 
-The data role's password does not change in a rotation: it is made from a secret kept in the database, which was the master key the instance had when it upgraded to this version, and is sealed with whichever key is current.
+The data role's password does not change in a rotation: it is made from a secret kept in the database, which was the master key the instance had when it upgraded to this version, and is sealed with whichever key is current. To change it, stop every replica, run `node dist/main.js rekey --data-role` once, and start them again: the command makes a new random seed, and each instance makes the role's password and signing key from it as it starts. A replica left running on the old seed cannot read tenants' tables until it is restarted.
 
 **Backups taken before a rotation need the old key.** Keep each key for as long as the backups it sealed. A value no key opens is reported by the status and the `rekey` command, by place and row, and never changed.
 

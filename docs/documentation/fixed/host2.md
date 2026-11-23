@@ -33,7 +33,7 @@ No migration. No screen changed. Commits are named by row; `git log --oneline p2
 
 ## HOST-21 Guests' limits in Postgres
 - `kernel/apps/limit.ts` `Limiter` counts with `countHit` in `rate_limit` (key `front:<name>:<key>`); `front.ts` five limiters, `await`ed. Test `limit.test.ts` (two limiters on one database share a count; fails on the old constructor). Members' sign-in was HOST-05 in tier 1. A database error lets the request through (the page fails by itself without the database).
-- **Cost:** each anonymous page or file request is one upsert.
+- **Cost, after the coordinator's change:** only what renders (a page, an address that names no file) is counted in the database, 600 a minute per address. A request for a file with an extension other than `.html` (script, picture, font, icon, docs picture) is counted by `MemoryLimiter` in this process, 1200 a minute per address, as before, with no write. `apps.test.ts` "one page with its files is one counted request": one page and five files make 1 counted hit (the first version made 6). Forms, votes and sign-in starts stay in the database.
 
 ## HOST-22, HOST-23, HOST-25, HOST-26 Text
 - `docs/self-hosting.md`, `SECURITY.md`, `README.md`. Not done: HOST-22's "one constant the table is checked against", and the metrics table drawn from help lines (writing phase 31).

@@ -31,3 +31,38 @@ export class Limiter {
     }
   }
 }
+
+/**
+ * The same limit kept in this process, for what costs nothing to serve: a file named in a
+ * bundle by its hash, an icon, a font. Counting each of them in the database would make a
+ * page's every image a write. With several replicas each keeps its own count.
+ */
+export class MemoryLimiter {
+  readonly #max: number;
+  readonly #windowMs: number;
+  readonly #seen = new Map<string, { count: number; resetAt: number }>();
+
+  constructor(max: number, windowSeconds: number) {
+    this.#max = max;
+    this.#windowMs = windowSeconds * 1000;
+  }
+
+  async allow(key: string): Promise<boolean> {
+    const now = Date.now();
+    if (this.#seen.size > 50_000) {
+      for (const [seen, entry] of this.#seen) if (entry.resetAt <= now) this.#seen.delete(seen);
+    }
+    const entry = this.#seen.get(key);
+    if (!entry || entry.resetAt <= now) {
+      this.#seen.set(key, { count: 1, resetAt: now + this.#windowMs });
+      return true;
+    }
+    entry.count += 1;
+    return entry.count <= this.#max;
+  }
+}
+
+/** Whether a path asks for a file that is only sent (a script, a picture, a font), not a page. */
+export function isStaticFile(file: string): boolean {
+  return /\.[A-Za-z0-9]+$/.test(file) && !/\.html?$/i.test(file);
+}

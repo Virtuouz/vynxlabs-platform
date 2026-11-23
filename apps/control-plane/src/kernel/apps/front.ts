@@ -60,7 +60,7 @@ import {
   searchPage,
 } from "./docs.js";
 import type { Place } from "./hosts.js";
-import { Limiter } from "./limit.js";
+import { isStaticFile, Limiter, MemoryLimiter } from "./limit.js";
 import {
   forgotPage,
   formPage,
@@ -155,6 +155,8 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
   const { db } = kernel;
   /** How often someone who is not signed in may ask for pages and files, and send forms. */
   const guestPages = new Limiter(db, "guest-pages", 600, 60);
+  /** Files that are only sent: counted here, in this process, not in the database. */
+  const guestFiles = new MemoryLimiter(1200, 60);
   const forms = new Limiter(db, "forms", 20, 60);
   /** Readers' answers to whether a page helped: a reader answers a few at most in a minute. */
   const votes = new Limiter(db, "votes", 30, 60);
@@ -907,7 +909,10 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
     const file = fixedApp !== undefined ? rest : rest.slice(manifest.path.length + 1);
 
     const principal = await resolvePrincipal(kernel, request, tenant.id);
-    if (principal.type === "anonymous" && !(await guestPages.allow(request.ip))) {
+    if (
+      principal.type === "anonymous" &&
+      !(await (isStaticFile(file) ? guestFiles : guestPages).allow(request.ip))
+    ) {
       return plain(reply, 429, "Too many requests. Wait a minute and try again.");
     }
     const resource = await db

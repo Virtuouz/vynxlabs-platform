@@ -4,8 +4,8 @@ import { useEffect, useState } from "react";
 import { afterEach, expect, test } from "vitest";
 import { Dialog } from "./Dialog.tsx";
 import { DialogsProvider, useDialogs } from "./Dialogs.tsx";
-import { SideSheet } from "./SideSheet.tsx";
 import { SelectField } from "./Fields.tsx";
+import { SideSheet } from "./SideSheet.tsx";
 
 afterEach(cleanup);
 

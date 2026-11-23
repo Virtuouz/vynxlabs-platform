@@ -83,3 +83,7 @@ Already decided, and not asked: every collection is on every instance; `/docs` s
 | D63 | With two-person approval on, does a role given straight to a member or to every end user wait? | No: it applies at once, and the screen says so. Access changes keep covering groups, service accounts and end-user groups | decided 2026-11-22 |
 | D64 | `volvel dev` for interface and docs apps (CLI-MP7) | Drawn locally by the same packages the instance uses (`@volvel/screens`, `@volvel/docs-site`), API calls passed to the instance. Built in phase 30, after M1 | decided 2026-11-22 |
 | D65 | Git sync and `volvel.yaml`'s `resources` and `entry` | The file wins for `resources`: git sync writes there, and the Repository page shows it read-only. `entry` stays for the CLI and CI; the instance never builds code | decided 2026-11-22 |
+| D66 | A tenant admin making a reset link for a member whose account reaches beyond the tenant | Refused: only an operator makes it | decided 2026-11-23 |
+| D67 | How code in docs is highlighted | Prism.js, highlighting on the server (as the 11ty syntax-highlight plugin does), classes only, no script on the page; languages listed, not loaded on demand | decided 2026-11-23 |
+| D68 | Tab titles, collection breadcrumbs and a pager within a collection on every tenant docs site | Accepted for every site, typed or not | decided 2026-11-23 |
+| D69 | Tenant names starting `volvel-`; `@volvel/docs-site` publishable | Both accepted | decided 2026-11-23 |

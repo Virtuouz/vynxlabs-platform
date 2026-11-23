@@ -1080,6 +1080,35 @@ describe("a flow chosen when the step runs", () => {
 });
 
 describe("starting one flow and no other", () => {
+  test("a screen asks what is held on one flow, and a grant on it counts (GOV-37)", async () => {
+    // The member and the binding on `linear` are made by the next test; this one makes its own.
+    const role = await alice.post(`/tenants/${tenant}/roles`, {
+      name: "flow_starter_asked",
+      description: "Starts flows it is bound to.",
+      permissions: ["flow_run:write"],
+    });
+    const member = await alice.post(`/tenants/${tenant}/members`, {
+      email: "quinn@acme.example",
+      name: "Quinn",
+      password: PASSWORD,
+    });
+    const linear = (await alice.get(`${ws()}/resources/linear`)).body;
+    await alice.post(`/tenants/${tenant}/bindings`, {
+      workspaceId: dev,
+      resourceId: linear.id,
+      principalType: "member",
+      principalId: member.body.id,
+      roleId: role.body.id,
+    });
+    const quinn = await t.signIn("quinn@acme.example", PASSWORD);
+    const asked = (query: string) =>
+      quinn.get(`${ws()}/allowed?permissions=flow_run:write${query}`);
+    expect((await asked("")).body.allowed).toEqual([]);
+    expect((await asked("&kind=flow&path=linear")).body.allowed).toEqual(["flow_run:write"]);
+    expect((await asked("&kind=flow&path=parent")).body.allowed).toEqual([]);
+    expect((await asked("&kind=flow&path=no-such-flow")).body.allowed).toEqual([]);
+  });
+
   test("someone allowed to start a single flow starts it, reads how it ended, and nothing else", async () => {
     const role = await alice.post(`/tenants/${tenant}/roles`, {
       name: "flow_starter",

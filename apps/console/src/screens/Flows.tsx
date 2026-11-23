@@ -12,13 +12,14 @@ import {
 } from "@volvel/ui";
 import { ListChecks, Play, Workflow } from "lucide-react";
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
-import { type ApiError, api, useLoad, useMay } from "../api.ts";
+import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
 import { FlowGraph, type GraphEdge, type GraphNode, type Positions } from "../FlowGraph.tsx";
 import { AttachedPages, workspaceOf } from "../help/glossary.tsx";
 import { InputDialog } from "../InputDialog.tsx";
 import { StateAnnouncer } from "../kit/Announce.tsx";
 import { REJECTING } from "../kit/approvals.ts";
+import { useMayOn } from "../kit/Can.tsx";
 import { CollectionView } from "../kit/CollectionView.tsx";
 import { Current } from "../kit/current.ts";
 import { DataTable } from "../kit/DataTable.tsx";
@@ -92,6 +93,7 @@ export function Flows({
   return (
     <CollectionView<FlowRow>
       title="Flows"
+      needs={{ base: root, permission: "flow:write", what: "this workspace's flows" }}
       description="A flow is a graph of steps the platform runs in order, remembering where it is. It survives a restart."
       actions={
         editable ? (
@@ -388,7 +390,13 @@ export function FlowView({
 }) {
   const flow = useLoad<FlowDetail>(`${root}/flows/${path}`);
   // What this person may do here is asked before the controls are drawn (FLW-30).
-  const may = useMay(root, "flow_run:write", "resource:write", "flow:write");
+  const may = useMayOn(
+    root,
+    { kind: "flow", path },
+    "flow_run:write",
+    "resource:write",
+    "flow:write",
+  );
   const runs = useLoad<{ items: FlowRunRow[] }>(
     `${root}/flow-runs?flow=${encodeURIComponent(path)}&limit=20`,
   );

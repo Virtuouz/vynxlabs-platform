@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { type Needs, useNeeds } from "./Can.tsx";
 import { type DataColumn, DataTable, type DataTableProps } from "./DataTable.tsx";
 import { MasterDetail } from "./layout.tsx";
 import { PageHeader } from "./PageHeader.tsx";
@@ -41,6 +42,7 @@ export function CollectionView<Row>({
   table,
   helpKey,
   state,
+  needs,
 }: {
   title: string;
   description?: ReactNode;
@@ -67,15 +69,61 @@ export function CollectionView<Row>({
   helpKey?: string;
   /** Something about the whole list, beside its title: a `HeadNote`. */
   state?: ReactNode;
+  /**
+   * What changing the list takes. Where this member does not hold it, a line says so under the
+   * title, the screen's actions are switched off, and so is the column of row actions (the one
+   * with no header, or "Actions"). Reading is not hidden (GOV-37).
+   */
+  needs?: Needs;
 }) {
+  const { can, line } = useNeeds(needs);
+  const offered =
+    can || !actions ? (
+      actions
+    ) : (
+      <fieldset disabled className="contents">
+        {actions}
+      </fieldset>
+    );
+  const emptyAction =
+    can || !empty.action ? (
+      empty.action
+    ) : (
+      <fieldset disabled className="contents">
+        {empty.action}
+      </fieldset>
+    );
+  const shown: CollectionColumn<Row>[] = can
+    ? columns
+    : columns.map((column) =>
+        column.header === "" || column.header === "Actions"
+          ? {
+              ...column,
+              cell: (row: Row) => (
+                <fieldset disabled className="contents">
+                  {column.cell(row)}
+                </fieldset>
+              ),
+            }
+          : column,
+      );
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="border-line border-b px-4 py-3 md:px-6">
         <PageHeader
           title={title}
           description={description}
-          actions={actions}
-          toolbar={toolbar}
+          actions={offered}
+          toolbar={
+            line ? (
+              <div className="flex flex-col gap-3">
+                {line}
+                {toolbar}
+              </div>
+            ) : (
+              toolbar
+            )
+          }
           helpKey={helpKey ?? keyOf(title)}
           state={state}
           oneRow
@@ -85,14 +133,16 @@ export function CollectionView<Row>({
         <DataTable
           {...table}
           label={label ?? title}
-          columns={columns}
+          columns={shown}
           rows={rows}
           rowKey={rowKey}
           selected={selected}
           {...(onSelect ? { onOpen: onSelect } : {})}
           // An empty list offers what the page offers: making the first one.
           empty={{
-            ...(empty.action || !actions ? empty : { ...empty, action: actions }),
+            ...(emptyAction || !offered
+              ? { ...empty, action: emptyAction }
+              : { ...empty, action: offered }),
             // The sentence that was folded into help stays where a first list is made.
             text: empty.text ?? description,
           }}

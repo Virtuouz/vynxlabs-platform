@@ -4,6 +4,7 @@ import { ArrowUpRight } from "lucide-react";
 import { useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { ask, failureText, noteWaiting } from "../ask.tsx";
+import { useNeeds } from "../kit/Can.tsx";
 import { CollectionView } from "../kit/CollectionView.tsx";
 import type { SortState } from "../kit/DataTable.tsx";
 import { bytes, count } from "../kit/format.ts";
@@ -475,6 +476,12 @@ export function Apps({ root }: { root: string }) {
 function AppList({ root, onShare }: { root: string; onShare: (app: AppSummary) => void }) {
   const list = useLoad<{ items: AppSummary[] }>(`${root}/apps`);
   const instance = useLoad<{ appsAddress?: "separate" | "console" | "none" }>("/instance");
+  const share = useNeeds({ base: root, permission: "binding:write", what: "who may open an app" });
+  const edit = useNeeds({
+    base: root,
+    permission: "resource:write",
+    what: "this workspace's apps",
+  });
   const [chosen, setChosen] = useUrlParam("app", undefined, { push: true });
   const open = list.data?.items.find((row) => row.id === chosen);
   const ids = /^\/tenants\/([^/]+)\/workspaces\/([^/]+)/.exec(root);
@@ -631,7 +638,12 @@ function AppList({ root, onShare }: { root: string; onShare: (app: AppSummary) =
               onClose={() => setChosen(undefined)}
               footer={
                 <>
-                  <Button variant="primary" onClick={() => onShare(open)}>
+                  <Button
+                    variant="primary"
+                    disabled={!share.can}
+                    {...(share.reason ? { tooltip: share.reason } : {})}
+                    onClick={() => onShare(open)}
+                  >
                     Share
                   </Button>
                   {open.ownership === "code" ? (
@@ -639,15 +651,17 @@ function AppList({ root, onShare }: { root: string; onShare: (app: AppSummary) =
                       Managed in the repository: the app is removed there.
                     </span>
                   ) : (
-                    <RemoveDraftButton
-                      root={root}
-                      kind="app"
-                      path={open.path}
-                      noun="app"
-                      state="deployed"
-                      then="Its address stops serving once that draft is deployed."
-                      onDone={() => list.reload()}
-                    />
+                    <fieldset disabled={!edit.can} className="contents">
+                      <RemoveDraftButton
+                        root={root}
+                        kind="app"
+                        path={open.path}
+                        noun="app"
+                        state="deployed"
+                        then="Its address stops serving once that draft is deployed."
+                        onDone={() => list.reload()}
+                      />
+                    </fieldset>
                   )}
                   {open.published === false ? null : (
                     <a

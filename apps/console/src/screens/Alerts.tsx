@@ -1,7 +1,8 @@
 import { Badge, Button, SelectField } from "@volvel/ui";
 import { useEffect, useState } from "react";
-import { api, useLoad, useMay } from "../api.ts";
+import { api, useLoad } from "../api.ts";
 import { failureText, notify } from "../ask.tsx";
+import { Can } from "../kit/Can.tsx";
 import { ago } from "../kit/format.ts";
 import { ErrorState } from "../kit/LoadState.tsx";
 import { StatePill, Tag } from "../kit/status.tsx";
@@ -43,9 +44,6 @@ export function Alerts({
   workspaceRoot: string;
   editable: boolean;
 }) {
-  // What this person may do is asked before the controls are drawn (OPS-35).
-  const may = useMay(workspaceRoot, "workspace:write", "connection:write");
-  const canSave = editable && may("workspace:write");
   const settings = useLoad<Settings>(`${root}/alert-settings`);
   const scripts = useLoad<{ items: { path: string }[] }>(`${root}/scripts`);
   const connections = useLoad<{ items: { path: string; connector: string; bound: boolean }[] }>(
@@ -126,76 +124,82 @@ export function Alerts({
       title="Alerts"
       description="Who is told when a script or a flow fails for the last time. A script's own onFailure replaces this workspace's default, as a whole. More failures of one script within ten minutes of an alert are counted on it, not sent again."
     >
-      <section aria-label="Default" className="flex max-w-2xl flex-col gap-3">
-        <h2 className="m-0 text-title font-semibold">This workspace's default</h2>
-        {loadErrors.map(([what, load]) =>
-          load.error ? (
-            <ErrorState key={what} what={what} error={load.error} onRetry={load.reload} />
-          ) : null,
-        )}
-        <div className="grid gap-3 sm:grid-cols-2">
-          <SelectField
-            name="handler"
-            label="Start a script"
-            value={script}
-            disabled={!canSave}
-            options={[
-              { value: "", label: "None" },
-              ...(scripts.data || scripts.error
-                ? held(script, scriptOptions, "not found")
-                : scriptOptions),
-            ]}
-            onChange={setScript}
-          />
-          <SelectField
-            name="notify"
-            label="Post to a connection"
-            value={notifyPath}
-            disabled={!canSave}
-            options={[
-              { value: "", label: "None" },
-              ...(connections.data || connections.error
-                ? held(notifyPath, connectionOptions, "no longer bound")
-                : connectionOptions),
-            ]}
-            onChange={setNotifyPath}
-          />
-        </div>
-        <p className="m-0 text-body-sm text-ink-muted">
-          The script is given the failed run. The connection is posted a summary as JSON, with a
-          line of text a chat webhook shows as it is.
-        </p>
-        <div className="flex flex-wrap items-center gap-2">
-          {canSave ? (
-            <Button variant="primary" disabled={!changed || saving} onClick={save}>
-              Save
-            </Button>
-          ) : null}
-          {notifyPath && may("connection:write") ? (
-            <Button
-              disabled={following.waiting}
-              onClick={async () => {
-                setTested(undefined);
-                try {
-                  const task = await api.post<{ id: string }>(`${root}/alert-tests`, {
-                    connection: notifyPath,
-                  });
-                  setTesting(task.id);
-                } catch (error) {
-                  setTested({ tone: "danger", text: failureText(error) });
-                }
-              }}
-            >
-              {following.waiting
-                ? following.slow
-                  ? "Waiting for a worker…"
-                  : "Sending…"
-                : "Send a test alert"}
-            </Button>
-          ) : null}
-          {tested ? <Badge tone={tested.tone}>{tested.text}</Badge> : null}
-        </div>
-      </section>
+      <Can
+        base={workspaceRoot}
+        permission="workspace:write"
+        what="where this workspace's alerts go"
+      >
+        <section aria-label="Default" className="flex max-w-2xl flex-col gap-3">
+          <h2 className="m-0 text-title font-semibold">This workspace's default</h2>
+          {loadErrors.map(([what, load]) =>
+            load.error ? (
+              <ErrorState key={what} what={what} error={load.error} onRetry={load.reload} />
+            ) : null,
+          )}
+          <div className="grid gap-3 sm:grid-cols-2">
+            <SelectField
+              name="handler"
+              label="Start a script"
+              value={script}
+              disabled={!editable}
+              options={[
+                { value: "", label: "None" },
+                ...(scripts.data || scripts.error
+                  ? held(script, scriptOptions, "not found")
+                  : scriptOptions),
+              ]}
+              onChange={setScript}
+            />
+            <SelectField
+              name="notify"
+              label="Post to a connection"
+              value={notifyPath}
+              disabled={!editable}
+              options={[
+                { value: "", label: "None" },
+                ...(connections.data || connections.error
+                  ? held(notifyPath, connectionOptions, "no longer bound")
+                  : connectionOptions),
+              ]}
+              onChange={setNotifyPath}
+            />
+          </div>
+          <p className="m-0 text-body-sm text-ink-muted">
+            The script is given the failed run. The connection is posted a summary as JSON, with a
+            line of text a chat webhook shows as it is.
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            {editable ? (
+              <Button variant="primary" disabled={!changed || saving} onClick={save}>
+                Save
+              </Button>
+            ) : null}
+            {notifyPath ? (
+              <Button
+                disabled={following.waiting}
+                onClick={async () => {
+                  setTested(undefined);
+                  try {
+                    const task = await api.post<{ id: string }>(`${root}/alert-tests`, {
+                      connection: notifyPath,
+                    });
+                    setTesting(task.id);
+                  } catch (error) {
+                    setTested({ tone: "danger", text: failureText(error) });
+                  }
+                }}
+              >
+                {following.waiting
+                  ? following.slow
+                    ? "Waiting for a worker…"
+                    : "Sending…"
+                  : "Send a test alert"}
+              </Button>
+            ) : null}
+            {tested ? <Badge tone={tested.tone}>{tested.text}</Badge> : null}
+          </div>
+        </section>
+      </Can>
 
       {(settings.data?.overrides.length ?? 0) > 0 ? (
         <section aria-label="Set by scripts" className="flex flex-col gap-2">

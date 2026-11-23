@@ -1,10 +1,11 @@
 import { Button, Closing, JsonView } from "@volvel/ui";
 import { FileCode2, ListChecks } from "lucide-react";
 import { useState } from "react";
-import { api, useLoad, useMay } from "../api.ts";
+import { api, useLoad } from "../api.ts";
 import { notify } from "../ask.tsx";
 import { CodeEditor } from "../editor/CodeEditor.tsx";
 import { AttachedPages, workspaceOf } from "../help/glossary.tsx";
+import { useMay, useNeeds } from "../kit/Can.tsx";
 import { Current } from "../kit/current.ts";
 import { DataTable } from "../kit/DataTable.tsx";
 import { ago } from "../kit/format.ts";
@@ -375,6 +376,13 @@ export function EventPage({
   production?: boolean;
 }) {
   const found = useLoad<Resource>(`${root}/resources/${path}`);
+  const may = useNeeds({ base: root, permission: "resource:write", what: "this event" });
+  const mayPublish = useNeeds({
+    base: root,
+    permission: "event:write",
+    what: "this event",
+    resource: { kind: "event", path },
+  });
   return (
     <Gate found={found} list={`${link}/events`} noun="event">
       {(one) => (
@@ -384,13 +392,19 @@ export function EventPage({
           title={one.path}
           actions={
             <>
-              <PublishEventButton
-                root={root}
-                production={production}
-                event={one.path}
-                label="Publish it"
-              />
-              <Button onClick={() => navigate(`${link}/resources/edit/event/${one.path}`)}>
+              <fieldset disabled={!mayPublish.can} className="contents">
+                <PublishEventButton
+                  root={root}
+                  production={production}
+                  event={one.path}
+                  label="Publish it"
+                />
+              </fieldset>
+              <Button
+                disabled={!may.can}
+                {...(may.reason ? { tooltip: may.reason } : {})}
+                onClick={() => navigate(`${link}/resources/edit/event/${one.path}`)}
+              >
                 Change its declaration
               </Button>
             </>
@@ -469,6 +483,7 @@ export function TriggersOf({
     (one) => one.script === path && (one.targetKind ?? "script") === kind,
   );
   const [adding, setAdding] = useState(false);
+  const may = useNeeds({ base: root, permission: "resource:write", what: "its triggers" });
   const listPath = `${root}/triggers?${new URLSearchParams({ target: path })}`;
   const { pause, resume } = useTriggerPause({ root, production, listPath });
   return (
@@ -479,7 +494,12 @@ export function TriggersOf({
         </p>
       ) : (
         <div>
-          <Button size="small" onClick={() => setAdding(true)}>
+          <Button
+            size="small"
+            disabled={!may.can}
+            {...(may.reason ? { tooltip: may.reason } : {})}
+            onClick={() => setAdding(true)}
+          >
             Add a schedule
           </Button>
         </div>
@@ -630,6 +650,12 @@ export function ScriptPage({
   production?: boolean;
 }) {
   const scripts = useLoad<{ items: ScriptSummary[] }>(`${root}/scripts`);
+  const mayRun = useNeeds({
+    base: root,
+    permission: "run:write",
+    what: "this script",
+    resource: { kind: "script", path },
+  });
   const one = scripts.data?.items.find((script) => script.path === path);
   const found: Loaded<ScriptSummary> = {
     data: one,
@@ -685,15 +711,17 @@ export function ScriptPage({
             }
             actions={
               <>
-                <RunButton
-                  root={root}
-                  script={script.path}
-                  schema={script.inputSchema ?? {}}
-                  runsLink={`${link}/runs`}
-                  deployed={script.deployed !== false}
-                  draft={script.draft === true}
-                  size="regular"
-                />
+                <fieldset disabled={!mayRun.can} className="contents" title={mayRun.reason}>
+                  <RunButton
+                    root={root}
+                    script={script.path}
+                    schema={script.inputSchema ?? {}}
+                    runsLink={`${link}/runs`}
+                    deployed={script.deployed !== false}
+                    draft={script.draft === true}
+                    size="regular"
+                  />
+                </fieldset>
                 <Button
                   variant="primary"
                   onClick={() => navigate(`${link}/scripts/edit/${script.path}`)}

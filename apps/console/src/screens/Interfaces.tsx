@@ -2,6 +2,7 @@ import { Button, Dialog, EmptyState, Notice, TextField } from "@volvel/ui";
 import { useEffect, useState } from "react";
 import { ApiError, api, useLoad } from "../api.ts";
 import { failureText, notify, takenText } from "../ask.tsx";
+import { useNeeds } from "../kit/Can.tsx";
 import { DataTable } from "../kit/DataTable.tsx";
 import { putDraft } from "../kit/draftApi.ts";
 import { ago } from "../kit/format.ts";
@@ -35,8 +36,14 @@ export function Interfaces({
   const [renaming, setRenaming] = useState<Listed>();
   const where = address || slug(title);
 
+  const may = useNeeds({ base: root, permission: "resource:write", what: "this workspace's apps" });
   const create = editable ? (
-    <Button variant="primary" onClick={() => setCreating(true)}>
+    <Button
+      variant="primary"
+      disabled={!may.can}
+      {...(may.reason ? { tooltip: may.reason } : {})}
+      onClick={() => setCreating(true)}
+    >
       Make an app
     </Button>
   ) : undefined;
@@ -47,6 +54,7 @@ export function Interfaces({
       description="Apps over this workspace's tables, built without code: tables, cards, charts and forms, where choosing a row in one decides what another shows. A change is saved as you make it, and reaches people only when it is published."
       action={create}
     >
+      {editable ? may.line : null}
       {editable ? null : (
         <Notice tone="plain">
           Apps are built in a dev workspace and promoted. Here they can be opened.

@@ -14,6 +14,7 @@ import type { ReactNode } from "react";
 import { useEffect, useId, useState } from "react";
 import { type ApiError, useLoad } from "./api.ts";
 import { ask, noteWaiting, notify } from "./ask.tsx";
+import { type Needs, useNeeds } from "./kit/Can.tsx";
 import { type DataColumn, DataTable } from "./kit/DataTable.tsx";
 import { keepPlace } from "./kit/focus.ts";
 import { clock } from "./kit/format.ts";
@@ -147,10 +148,11 @@ export interface ListScreenProps<Row> {
    */
   action?: ReactNode;
   /**
-   * The permission this person lacks to change the list: with it, there is no create button and
-   * no row action, and the list says what it would take. The server refuses a change anyway.
+   * What changing this list takes, and where it is held. Without it, the create button is greyed
+   * under a line that says what it takes, and the row actions are switched off, for someone who
+   * may only read it (GOV-37).
    */
-  needs?: string;
+  needs?: Needs;
 }
 
 export function Page({
@@ -393,24 +395,33 @@ export function ListScreen<Row>(props: ListScreenProps<Row>) {
     setSetup(null);
   }, [setup, create, setupField, setSetup]);
 
-  const columns: DataColumn<Row>[] =
-    props.rowActions && !props.needs
-      ? [
-          ...props.columns,
-          { header: "", align: "end", cell: (row) => props.rowActions?.(row, list.reload) },
-        ]
-      : props.columns;
+  const { can, line, reason } = useNeeds(props.needs);
+  const columns: DataColumn<Row>[] = props.rowActions
+    ? [
+        ...props.columns,
+        {
+          header: "",
+          align: "end",
+          cell: (row) => (
+            <fieldset disabled={!can} className="contents">
+              {props.rowActions?.(row, list.reload)}
+            </fieldset>
+          ),
+        },
+      ]
+    : props.columns;
   const createButton = create ? (
-    props.needs ? (
-      props.action
-    ) : (
-      <span className="inline-flex flex-wrap items-center gap-2">
-        {props.action}
-        <Button variant="primary" onClick={() => setCreating(true)}>
-          {create.action}
-        </Button>
-      </span>
-    )
+    <span className="inline-flex flex-wrap items-center gap-2">
+      {props.action}
+      <Button
+        variant="primary"
+        disabled={!can}
+        {...(reason ? { tooltip: reason } : {})}
+        onClick={() => setCreating(true)}
+      >
+        {create.action}
+      </Button>
+    </span>
   ) : (
     props.action
   );
@@ -423,12 +434,7 @@ export function ListScreen<Row>(props: ListScreenProps<Row>) {
       action={createButton}
     >
       {created ? <Notice tone="attention">{created}</Notice> : null}
-      {props.needs ? (
-        <Notice tone="plain">
-          You can read this list. Changing it needs the {props.needs} permission: ask an
-          administrator of this workspace.
-        </Notice>
-      ) : null}
+      {line}
       {list.error ? (
         <Notice tone="danger" action={<Button onClick={list.reload}>Try again</Button>}>
           {list.error.message}
@@ -450,7 +456,7 @@ export function ListScreen<Row>(props: ListScreenProps<Row>) {
       ) : (
         <Loading />
       )}
-      {create && !props.needs ? (
+      {create && can ? (
         <CreateDialog
           // A name given by the address starts the form again, with the name in.
           key={filling ?? ""}

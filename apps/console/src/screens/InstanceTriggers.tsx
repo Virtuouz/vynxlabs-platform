@@ -2,6 +2,7 @@ import { Button, Notice } from "@volvel/ui";
 import { useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { ask, failureText, notify } from "../ask.tsx";
+import { Can } from "../kit/Can.tsx";
 import { ago } from "../kit/format.ts";
 import { ErrorState } from "../kit/LoadState.tsx";
 import { PageHeader, Panel, SectionLabel } from "../kit/layout.tsx";
@@ -62,39 +63,41 @@ export function InstanceTriggers() {
       {loaded.error ? <ErrorState error={loaded.error} onRetry={loaded.reload} /> : null}
       {problem ? <Notice tone="danger">{problem}</Notice> : null}
       {state ? (
-        <section className="flex flex-col gap-3">
-          <SectionLabel>Emergency stop</SectionLabel>
-          {state.paused ? (
-            <Notice
-              tone="attention"
-              action={
-                state.byEnvironment ? undefined : (
-                  <Button size="small" disabled={busy} onClick={() => change(false)}>
-                    Resume triggers
-                  </Button>
-                )
-              }
-            >
-              <strong>Every trigger is paused.</strong>{" "}
-              {state.byEnvironment
-                ? "TRIGGERS_PAUSED is set where the instance runs. Unset it and restart to resume."
-                : `Paused ${state.updatedAt ? ago(state.updatedAt) : ""}${state.reason ? `: ${state.reason}` : "."}`}
-            </Notice>
-          ) : (
-            <Panel className="flex flex-wrap items-center justify-between gap-3 p-4">
-              <span className="flex min-w-0 flex-1 basis-64 flex-col gap-0.5">
-                <StatePill state="on">Triggers are on</StatePill>
-                <span className="text-meta text-ink-muted">
-                  Pausing stops them across the instance at once, whatever each workspace says. Use
-                  it when scripts are piling up faster than they finish.
+        <Can base="/instance" permission="instance:write" what="whether triggers run">
+          <section className="flex flex-col gap-3">
+            <SectionLabel>Emergency stop</SectionLabel>
+            {state.paused ? (
+              <Notice
+                tone="attention"
+                action={
+                  state.byEnvironment ? undefined : (
+                    <Button size="small" disabled={busy} onClick={() => change(false)}>
+                      Resume triggers
+                    </Button>
+                  )
+                }
+              >
+                <strong>Every trigger is paused.</strong>{" "}
+                {state.byEnvironment
+                  ? "TRIGGERS_PAUSED is set where the instance runs. Unset it and restart to resume."
+                  : `Paused ${state.updatedAt ? ago(state.updatedAt) : ""}${state.reason ? `: ${state.reason}` : "."}`}
+              </Notice>
+            ) : (
+              <Panel className="flex flex-wrap items-center justify-between gap-3 p-4">
+                <span className="flex min-w-0 flex-1 basis-64 flex-col gap-0.5">
+                  <StatePill state="on">Triggers are on</StatePill>
+                  <span className="text-meta text-ink-muted">
+                    Pausing stops them across the instance at once, whatever each workspace says.
+                    Use it when scripts are piling up faster than they finish.
+                  </span>
                 </span>
-              </span>
-              <Button size="small" disabled={busy} onClick={() => change(true)}>
-                Pause every trigger
-              </Button>
-            </Panel>
-          )}
-        </section>
+                <Button size="small" disabled={busy} onClick={() => change(true)}>
+                  Pause every trigger
+                </Button>
+              </Panel>
+            )}
+          </section>
+        </Can>
       ) : null}
     </div>
   );

@@ -2,6 +2,7 @@ import { Button, Notice, TextField } from "@volvel/ui";
 import { type ReactNode, useState } from "react";
 import { type CreateConfig, CreateDialog } from "../ListScreen.tsx";
 import { useUrlState } from "../router.tsx";
+import { type Needs, useNeeds } from "./Can.tsx";
 import { type CollectionColumn, CollectionView } from "./CollectionView.tsx";
 import { Inspector } from "./layout.tsx";
 import { LoadMore, usePagedList } from "./paged.tsx";
@@ -26,6 +27,7 @@ export function ListCollection<Row>({
   paged,
   filters,
   inspect,
+  needs,
 }: {
   title: string;
   description?: ReactNode;
@@ -47,6 +49,8 @@ export function ListCollection<Row>({
   /** Controls beside the search box that narrow the list: kept by the screen, in the address. */
   filters?: ReactNode;
   /** What the inspector shows for the chosen row. Without it rows are not chosen. */
+  /** What changing the list takes: without it, the controls to change are greyed with the reason. */
+  needs?: Needs;
   inspect?: {
     title: (row: Row) => ReactNode;
     eyebrow?: (row: Row) => ReactNode;
@@ -78,8 +82,14 @@ export function ListCollection<Row>({
   const row = chosen ? list.items?.find((one) => rowKey(one) === chosen) : undefined;
   const close = () => setChosen(undefined);
 
+  const { can, line, reason } = useNeeds(needs);
   const createButton = create ? (
-    <Button variant="primary" onClick={() => setCreating(true)}>
+    <Button
+      variant="primary"
+      disabled={!can}
+      {...(reason ? { tooltip: reason } : {})}
+      onClick={() => setCreating(true)}
+    >
       {create.action}
     </Button>
   ) : null;
@@ -94,7 +104,9 @@ export function ListCollection<Row>({
             // biome-ignore lint/a11y/noStaticElementInteractions: only stops the click reaching the row
             // biome-ignore lint/a11y/useKeyWithClickEvents: the buttons inside take the keyboard
             <span className="inline-flex gap-2" onClick={(event) => event.stopPropagation()}>
-              {rowActions(one, list.reload)}
+              <fieldset disabled={!can} className="contents">
+                {rowActions(one, list.reload)}
+              </fieldset>
             </span>
           ),
         },
@@ -108,8 +120,9 @@ export function ListCollection<Row>({
         description={description}
         actions={createButton}
         toolbar={
-          created || hasSearch || filters ? (
+          created || hasSearch || filters || line ? (
             <div className="flex flex-col gap-3">
+              {line}
               {created ? <Notice tone="attention">{created}</Notice> : null}
               {hasSearch || filters ? (
                 <div className="flex flex-wrap items-end gap-3">
@@ -142,7 +155,13 @@ export function ListCollection<Row>({
               title={inspect.title(row)}
               eyebrow={inspect.eyebrow?.(row)}
               onClose={close}
-              footer={inspect.footer?.(row, list.reload, close)}
+              footer={
+                inspect.footer ? (
+                  <fieldset disabled={!can} className="contents">
+                    {inspect.footer(row, list.reload, close)}
+                  </fieldset>
+                ) : undefined
+              }
             >
               {inspect.body(row, list.reload)}
             </Inspector>

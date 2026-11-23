@@ -3,6 +3,7 @@ import { Upload } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { type ApiError, api } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
+import { useNeeds } from "../kit/Can.tsx";
 import { DataTable } from "../kit/DataTable.tsx";
 import { bytes } from "../kit/format.ts";
 import { ErrorState, Loading } from "../kit/LoadState.tsx";
@@ -147,6 +148,7 @@ export function Files({ root }: { root: string }) {
     }
   };
 
+  const may = useNeeds({ base: root, permission: "file:write", what: "this workspace's files" });
   const action = (
     <>
       <input
@@ -160,7 +162,13 @@ export function Files({ root }: { root: string }) {
           if (file) void upload(file);
         }}
       />
-      <Button variant="primary" loading={uploading} onClick={() => input.current?.click()}>
+      <Button
+        variant="primary"
+        loading={uploading}
+        disabled={!may.can}
+        {...(may.reason ? { tooltip: may.reason } : {})}
+        onClick={() => input.current?.click()}
+      >
         <Upload aria-hidden="true" size={16} /> Upload file
       </Button>
     </>
@@ -172,6 +180,7 @@ export function Files({ root }: { root: string }) {
       description="Files stored in this workspace: those put in a table's file column, those a script saved, and those uploaded here. A file that a row names cannot be deleted: change the row first."
       action={action}
     >
+      {may.line}
       {error && !items ? (
         <ErrorState what="files" error={error} onRetry={() => setAgain((n) => n + 1)} />
       ) : !items ? (
@@ -250,12 +259,12 @@ export function Files({ root }: { root: string }) {
                   <Button
                     size="small"
                     variant="danger"
-                    disabled={row.namedBy.length > 0}
+                    disabled={row.namedBy.length > 0 || !may.can}
                     aria-label={`Delete ${row.name}`}
                     title={
                       row.namedBy.length > 0
                         ? "A row still names this file. Change the row first."
-                        : undefined
+                        : may.reason
                     }
                     onClick={() => void remove(row)}
                   >

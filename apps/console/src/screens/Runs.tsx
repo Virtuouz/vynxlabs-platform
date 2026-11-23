@@ -10,12 +10,13 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { api, useLoad, useMay } from "../api.ts";
+import { api, useLoad } from "../api.ts";
 import { ask, copyText, notify } from "../ask.tsx";
 import { StateAnnouncer } from "../kit/Announce.tsx";
 import { useAddressBox } from "../kit/addressBox.ts";
 import { useArrivals } from "../kit/arrivals.ts";
 import { type BatchAnswer, inSlices, useBatch } from "../kit/BatchResult.tsx";
+import { useMay } from "../kit/Can.tsx";
 import { CopyIcon, Identifier } from "../kit/copy.tsx";
 import {
   type DataColumn,

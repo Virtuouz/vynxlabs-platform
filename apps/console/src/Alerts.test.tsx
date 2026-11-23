@@ -138,10 +138,15 @@ test("a viewer reads the alert settings and is offered no Save or test (OPS-35)"
   const post = (await screen.findByLabelText("Post to a connection")) as HTMLSelectElement;
   await waitFor(() => expect(post.value).toBe("chat"));
   await new Promise((resolve) => setTimeout(resolve, 100));
-  expect(post.disabled).toBe(true);
-  expect((screen.getByLabelText("Start a script") as HTMLSelectElement).disabled).toBe(true);
-  expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
-  expect(screen.queryByRole("button", { name: "Send a test alert" })).toBeNull();
+  // Greyed under the line that says what it takes: inside a fieldset that is off.
+  expect((post.closest("fieldset") as HTMLFieldSetElement).disabled).toBe(true);
+  expect(document.body.textContent).toContain("It needs workspace:write");
+  const buttons = ["Save", "Send a test alert"].flatMap((name) =>
+    screen.queryAllByRole("button", { name }),
+  );
+  expect(buttons.every((one) => (one.closest("fieldset") as HTMLFieldSetElement).disabled)).toBe(
+    true,
+  );
   cleanup();
   allowed = ["workspace:write", "connection:write"];
   show(<Alerts root={root} link={link} workspaceRoot={root} editable />);

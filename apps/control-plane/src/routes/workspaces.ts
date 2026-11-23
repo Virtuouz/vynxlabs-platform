@@ -304,6 +304,14 @@ export function workspaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               description:
                 "Permission names, separated by commas: `connection:write,secret:write`.",
             }),
+            kind: Type.Optional(
+              Type.String({
+                maxLength: 60,
+                description:
+                  "With `path`: the resource asked about. A grant given on it alone counts, as it does where the server checks.",
+              }),
+            ),
+            path: Type.Optional(Type.String({ maxLength: 400 })),
           }),
           response: { 200: Type.Object({ allowed: Type.Array(Type.String()) }) },
         },
@@ -311,8 +319,19 @@ export function workspaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       async ({ ctx, params, query }) => {
         const asked = [...new Set(query.permissions.split(",").filter(Boolean))].slice(0, 20);
         const allowed: string[] = [];
+        // A resource that is not there is asked about as the workspace: a grant on nothing is none.
+        const target =
+          query.kind && query.path
+            ? (await resolveResource(db, params.w, query.path, { kind: query.kind }))?.resource
+            : undefined;
         for (const permission of asked) {
-          if (await ctx.allowed(permission, { tenantId: params.t, workspaceId: params.w })) {
+          if (
+            await ctx.allowed(permission, {
+              tenantId: params.t,
+              workspaceId: params.w,
+              ...(target ? { resourceId: target.id } : {}),
+            })
+          ) {
             allowed.push(permission);
           }
         }

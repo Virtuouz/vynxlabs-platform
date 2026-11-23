@@ -775,6 +775,29 @@ function Settings({
   const [provision, setProvision] = useState(provider.provision);
   const [roleId, setRoleId] = useState(provider.defaultRoleId ?? undefined);
   const [error, setError] = useState<ApiError | string>();
+  // A refusal of one field is said at that field, with what was typed kept. Only what no field
+  // here shows, or that is not about a field, is said in a notice.
+  const fieldError = (tail: string) =>
+    typeof error === "string"
+      ? undefined
+      : error?.fields?.find(
+          (one) => one.path === `/body/${tail}` || one.path.startsWith(`/body/${tail}/`),
+        )?.message;
+  const unplaced =
+    error === undefined
+      ? undefined
+      : typeof error === "string"
+        ? error
+        : error.fields?.length
+          ? error.fields.some(
+              (one) =>
+                !/^\/body\/(name|defaultRoleId|config\/(entryPoint|idpIssuer|certificates|nameIdFormat|signed|issuer|clientId|scopes|attributes))(\/|$)/.test(
+                  one.path,
+                ),
+            )
+            ? failureText(error)
+            : undefined
+          : failureText(error);
   const [busy, setBusy] = useState(false);
   const set = (patch: Partial<Config>) => setConfig((current) => ({ ...current, ...patch }));
   const claim = (key: keyof Claims, label: string, usual: string) => (
@@ -995,6 +1018,7 @@ function Settings({
         <TextField
           label="Name"
           name="name"
+          error={fieldError("name")}
           value={name}
           required
           maxLength={80}
@@ -1005,6 +1029,7 @@ function Settings({
             <TextField
               label="Sign-in address"
               name="entryPoint"
+              error={fieldError("config/entryPoint")}
               value={config.entryPoint ?? ""}
               required
               hint="Where people are sent to sign in."
@@ -1013,6 +1038,7 @@ function Settings({
             <TextField
               label="Provider's entity ID"
               name="idpIssuer"
+              error={fieldError("config/idpIssuer")}
               value={config.idpIssuer ?? ""}
               required
               onChange={(idpIssuer) => set({ idpIssuer })}
@@ -1020,6 +1046,7 @@ function Settings({
             <TextAreaField
               label="Signing certificates"
               name="certificates"
+              error={fieldError("config/certificates")}
               value={certificates}
               rows={5}
               hint="One or more, in PEM form. List the new one beside the old one while a certificate is being replaced."
@@ -1028,6 +1055,7 @@ function Settings({
             <SelectField
               label="Name ID format"
               name="nameIdFormat"
+              error={fieldError("config/nameIdFormat")}
               value={config.nameIdFormat ?? ""}
               options={
                 config.nameIdFormat && !NAME_ID_FORMATS.some((f) => f.value === config.nameIdFormat)
@@ -1040,6 +1068,7 @@ function Settings({
             <SelectField
               label="What must be signed"
               name="signed"
+              error={fieldError("config/signed")}
               value={config.signed ?? "either"}
               options={SIGNED}
               onChange={(signed) => set({ signed })}
@@ -1077,6 +1106,7 @@ function Settings({
             <TextField
               label="Issuer"
               name="issuer"
+              error={fieldError("config/issuer")}
               value={config.issuer ?? ""}
               required
               onChange={(issuer) => set({ issuer })}
@@ -1084,6 +1114,7 @@ function Settings({
             <TextField
               label="Client ID"
               name="clientId"
+              error={fieldError("config/clientId")}
               value={config.clientId ?? ""}
               required
               onChange={(clientId) => set({ clientId })}
@@ -1110,6 +1141,7 @@ function Settings({
             <TextField
               label="Scopes"
               name="scopes"
+              error={fieldError("config/scopes")}
               value={scopes}
               hint="Separated by spaces."
               onChange={setScopes}
@@ -1136,6 +1168,7 @@ function Settings({
             <TextAreaField
               label="Attributes"
               name="attributes"
+              error={fieldError("config/attributes")}
               value={attributes}
               rows={3}
               placeholder="customer_id = customerId"
@@ -1170,6 +1203,7 @@ function Settings({
         {provider.audience === "members" && !instance ? (
           <ComboboxField
             label="Role given to a new member"
+            error={fieldError("defaultRoleId")}
             options={(roles.data?.items ?? [])
               .filter((role) => !role.workspaceId)
               .map((role) => ({ value: role.id, label: role.name }))}
@@ -1178,7 +1212,7 @@ function Settings({
             onChange={setRoleId}
           />
         ) : null}
-        {error ? <Notice tone="danger">{failureText(error)}</Notice> : null}
+        {unplaced ? <Notice tone="danger">{unplaced}</Notice> : null}
         <SaveBar
           dirty={dirty}
           saving={busy}

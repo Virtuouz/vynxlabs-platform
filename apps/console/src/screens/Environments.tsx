@@ -10,6 +10,7 @@ import {
 import { type ReactNode, useEffect, useState } from "react";
 import { ApiError, api, apiFetch, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
+import { Can } from "../kit/Can.tsx";
 import { count } from "../kit/format.ts";
 import { ListCollection } from "../kit/ListCollection.tsx";
 import { ErrorState, Loading } from "../kit/LoadState.tsx";
@@ -274,65 +275,67 @@ export function WorkspaceSettings({
       title="Workspace settings"
       description="Pause what starts by itself, make a copy, or delete the workspace: these act at once. Its name, where it promotes to and its time zone are saved together, from the bar that appears below."
     >
-      <section aria-labelledby="workspace-name" className="flex flex-col gap-3">
-        <h2 id="workspace-name" className="m-0 text-title">
-          Name
-        </h2>
-        <Panel className="flex flex-col gap-3 p-4">
-          <div className="w-full max-w-sm">
-            <TextField
-              name="name"
-              label="Workspace name"
-              value={draft.name}
-              maxLength={200}
-              required
-              onChange={setName}
-              hint={`What people read in lists and the switcher. Its address, ${workspace.slug}, does not change.`}
-              {...(blank ? { error: "A workspace needs a name." } : {})}
+      <Can base={root} permission="workspace:write" what="this workspace's settings">
+        <section aria-labelledby="workspace-name" className="flex flex-col gap-3">
+          <h2 id="workspace-name" className="m-0 text-title">
+            Name
+          </h2>
+          <Panel className="flex flex-col gap-3 p-4">
+            <div className="w-full max-w-sm">
+              <TextField
+                name="name"
+                label="Workspace name"
+                value={draft.name}
+                maxLength={200}
+                required
+                onChange={setName}
+                hint={`What people read in lists and the switcher. Its address, ${workspace.slug}, does not change.`}
+                {...(blank ? { error: "A workspace needs a name." } : {})}
+              />
+            </div>
+          </Panel>
+        </section>
+        <WorkspaceControls
+          key={workspace.id}
+          base={base}
+          tenantId={tenantId}
+          workspace={workspace}
+          reload={reload}
+          promotion={
+            <Promotion
+              base={base}
+              workspace={workspace}
+              reload={reload}
+              linked={draft.linkedWorkspaceId}
+              onLink={setLinked}
             />
-          </div>
-        </Panel>
-      </section>
-      <WorkspaceControls
-        key={workspace.id}
-        base={base}
-        tenantId={tenantId}
-        workspace={workspace}
-        reload={reload}
-        promotion={
-          <Promotion
-            base={base}
-            workspace={workspace}
-            reload={reload}
-            linked={draft.linkedWorkspaceId}
-            onLink={setLinked}
-          />
-        }
-      />
-      <TimeZoneSetting zone={draft.timeZone} onZone={setZone} />
-      <section aria-labelledby="run-limit" className="flex flex-col gap-3">
-        <h2 id="run-limit" className="m-0 text-title">
-          Run limit
-        </h2>
-        <Panel className="flex flex-col gap-3 p-4">
-          <p className="m-0 text-ink-muted">
-            How many runs of this workspace may be in progress at once. The rest wait their turn.
-          </p>
-          <div className="w-full max-w-xs">
-            <NumberField
-              name="concurrencyLimit"
-              label="Runs at once"
-              value={shownLimit}
-              min={1}
-              max={1000}
-              step={1}
-              onChange={setLimit}
-              hint="1 to 1000."
-              {...(limitBad ? { error: "A whole number from 1 to 1000." } : {})}
-            />
-          </div>
-        </Panel>
-      </section>
+          }
+        />
+        <TimeZoneSetting zone={draft.timeZone} onZone={setZone} />
+        <section aria-labelledby="run-limit" className="flex flex-col gap-3">
+          <h2 id="run-limit" className="m-0 text-title">
+            Run limit
+          </h2>
+          <Panel className="flex flex-col gap-3 p-4">
+            <p className="m-0 text-ink-muted">
+              How many runs of this workspace may be in progress at once. The rest wait their turn.
+            </p>
+            <div className="w-full max-w-xs">
+              <NumberField
+                name="concurrencyLimit"
+                label="Runs at once"
+                value={shownLimit}
+                min={1}
+                max={1000}
+                step={1}
+                onChange={setLimit}
+                hint="1 to 1000."
+                {...(limitBad ? { error: "A whole number from 1 to 1000." } : {})}
+              />
+            </div>
+          </Panel>
+        </section>
+      </Can>
       <WorkspaceAccess base={base} workspace={workspace} />
       <SaveBar
         dirty={dirty}
@@ -757,90 +760,92 @@ export function TenantExport({ base, slug }: { base: string; slug: string }) {
       title="Export"
       description="Everything this tenant has, in one file you can keep or take to another instance: resources, bindings, secrets, members, the audit log, tables and files. It is yours."
     >
-      <form
-        className="flex max-w-md flex-col gap-3"
-        onSubmit={async (event) => {
-          event.preventDefault();
-          if (mismatch || tooShort || passphrase !== again) return;
-          setProblem(undefined);
-          setState("working");
-          try {
-            const response = await apiFetch(`${base}/exports`, {
-              method: "POST",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify({ passphrase, history: history === "yes" }),
-            });
-            if (!response.ok) throw new ApiError(response.status, await response.json());
-            const link = document.createElement("a");
-            link.href = URL.createObjectURL(await response.blob());
-            link.download = `${slug}-${new Date().toISOString().slice(0, 10)}.tar`;
-            link.click();
-            URL.revokeObjectURL(link.href);
-            setState("done");
-            setPassphrase("");
-            setAgain("");
-          } catch (error) {
-            setState("idle");
-            setProblem(failed(error));
-          }
-        }}
-      >
-        <TextField
-          label="Passphrase"
-          name="passphrase"
-          type="password"
-          value={passphrase}
-          required
-          autoComplete="new-password"
-          onChange={setPassphrase}
-          error={tooShort ? "Use at least 12 characters." : undefined}
-          hint="At least 12 characters. It protects every secret in the file, and the password of each member who belongs to this tenant alone. It is not stored: without it they cannot be read. Pass it on separately from the file."
-        />
-        <TextField
-          label="Passphrase again"
-          name="again"
-          type="password"
-          value={again}
-          required
-          autoComplete="new-password"
-          onChange={setAgain}
-          error={mismatch ? "The two do not match." : undefined}
-        />
-        <SelectField
-          label="Run, flow and event history"
-          name="history"
-          value={history}
-          onChange={setHistory}
-          options={[
-            { value: "no", label: "Leave it out" },
-            { value: "yes", label: "Include it" },
-          ]}
-          hint="History can make the file much larger."
-        />
-        {problem ? <Notice tone="danger">{problem}</Notice> : null}
-        {state === "done" ? (
-          <Notice tone="attention">
-            The export was downloaded. API keys and worker credentials are never in an export: make
-            new ones wherever the tenant goes.
-          </Notice>
-        ) : null}
-        <div>
-          <Button
-            type="submit"
-            variant="primary"
-            disabled={state === "working" || mismatch || tooShort}
-          >
-            {state === "working" ? "Exporting…" : "Export tenant"}
-          </Button>
-        </div>
-        <p className="m-0 text-body-sm text-ink-muted">
-          The passphrase protects the secrets and members' passwords in the file. A member who also
-          belongs to another tenant, or runs the instance, is exported without a password. The rest
-          of the file, rows and files included, can be read by anyone who has the file, so keep it
-          somewhere safe. For a large tenant, use the command line instead:{" "}
-          <Code>{"volvel tenant export"}</Code>.
-        </p>
-      </form>
+      <Can base={base} permission="export:write" what="this tenant's export">
+        <form
+          className="flex max-w-md flex-col gap-3"
+          onSubmit={async (event) => {
+            event.preventDefault();
+            if (mismatch || tooShort || passphrase !== again) return;
+            setProblem(undefined);
+            setState("working");
+            try {
+              const response = await apiFetch(`${base}/exports`, {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ passphrase, history: history === "yes" }),
+              });
+              if (!response.ok) throw new ApiError(response.status, await response.json());
+              const link = document.createElement("a");
+              link.href = URL.createObjectURL(await response.blob());
+              link.download = `${slug}-${new Date().toISOString().slice(0, 10)}.tar`;
+              link.click();
+              URL.revokeObjectURL(link.href);
+              setState("done");
+              setPassphrase("");
+              setAgain("");
+            } catch (error) {
+              setState("idle");
+              setProblem(failed(error));
+            }
+          }}
+        >
+          <TextField
+            label="Passphrase"
+            name="passphrase"
+            type="password"
+            value={passphrase}
+            required
+            autoComplete="new-password"
+            onChange={setPassphrase}
+            error={tooShort ? "Use at least 12 characters." : undefined}
+            hint="At least 12 characters. It protects every secret in the file, and the password of each member who belongs to this tenant alone. It is not stored: without it they cannot be read. Pass it on separately from the file."
+          />
+          <TextField
+            label="Passphrase again"
+            name="again"
+            type="password"
+            value={again}
+            required
+            autoComplete="new-password"
+            onChange={setAgain}
+            error={mismatch ? "The two do not match." : undefined}
+          />
+          <SelectField
+            label="Run, flow and event history"
+            name="history"
+            value={history}
+            onChange={setHistory}
+            options={[
+              { value: "no", label: "Leave it out" },
+              { value: "yes", label: "Include it" },
+            ]}
+            hint="History can make the file much larger."
+          />
+          {problem ? <Notice tone="danger">{problem}</Notice> : null}
+          {state === "done" ? (
+            <Notice tone="attention">
+              The export was downloaded. API keys and worker credentials are never in an export:
+              make new ones wherever the tenant goes.
+            </Notice>
+          ) : null}
+          <div>
+            <Button
+              type="submit"
+              variant="primary"
+              disabled={state === "working" || mismatch || tooShort}
+            >
+              {state === "working" ? "Exporting…" : "Export tenant"}
+            </Button>
+          </div>
+          <p className="m-0 text-body-sm text-ink-muted">
+            The passphrase protects the secrets and members' passwords in the file. A member who
+            also belongs to another tenant, or runs the instance, is exported without a password.
+            The rest of the file, rows and files included, can be read by anyone who has the file,
+            so keep it somewhere safe. For a large tenant, use the command line instead:{" "}
+            <Code>{"volvel tenant export"}</Code>.
+          </p>
+        </form>
+      </Can>
     </Page>
   );
 }
@@ -935,6 +940,7 @@ export function DatabaseLocations() {
       title="Database locations"
       description="Databases, other than the instance's own, where a tenant's custom tables can live. A tenant is placed in one when it is created or imported."
       path="/instance/database-locations"
+      needs={{ base: "/instance", permission: "instance:write", what: "the database locations" }}
       rowKey={(row) => row.name}
       columns={[
         { header: "Name", cell: (row) => <Code>{row.name}</Code> },

@@ -10,10 +10,11 @@ import {
   Zap,
 } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
-import { api, useCacheEdit, useLoad, useMay } from "../api.ts";
+import { api, askForAccess, useCacheEdit, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
 import { REJECTING } from "../kit/approvals.ts";
 import { type BatchAnswer, inSlices, useBatch } from "../kit/BatchResult.tsx";
+import { useMay } from "../kit/Can.tsx";
 import { type CollectionColumn, CollectionView } from "../kit/CollectionView.tsx";
 import { Current } from "../kit/current.ts";
 import { DeployMenu } from "../kit/DeployMenu.tsx";
@@ -247,7 +248,9 @@ export function TriggersWorkbench({
   const list = useLoad<{ items: Trigger[] }>(`${root}/triggers`);
   const { pause, resume } = useTriggerPause({ root, production, listPath: `${root}/triggers` });
   // What this person may do is asked before the controls are drawn (OPS-35).
-  const may = useMay(root, "trigger:write");
+  const may = useMay(root, "trigger:write", "resource:write");
+  const mayEdit = may("resource:write");
+  const noEdit = `It needs resource:write. ${askForAccess()}`;
   const mayPause = may("trigger:write");
   // The kind shown is in the address, so a reload or a link keeps it.
   const [type, setType] = useUrlParam("kind", "all");
@@ -553,7 +556,12 @@ export function TriggersWorkbench({
                 footer={
                   open.draft === "new" ? (
                     <span className="flex flex-wrap gap-2">
-                      <Button variant="primary" href={editLink(link, open)}>
+                      <Button
+                        variant="primary"
+                        {...(mayEdit
+                          ? { href: editLink(link, open) }
+                          : { disabled: true, tooltip: noEdit })}
+                      >
                         <Pencil aria-hidden="true" size={16} /> Edit
                       </Button>
                       <DeployMenu
@@ -571,7 +579,11 @@ export function TriggersWorkbench({
                         </Button>
                       ) : null}
                       {production ? null : (
-                        <Button href={editLink(link, open)}>
+                        <Button
+                          {...(mayEdit
+                            ? { href: editLink(link, open) }
+                            : { disabled: true, tooltip: noEdit })}
+                        >
                           <Pencil aria-hidden="true" size={16} /> Edit
                         </Button>
                       )}
@@ -579,7 +591,11 @@ export function TriggersWorkbench({
                   ) : (
                     <span className="flex flex-wrap gap-2">
                       {production ? null : (
-                        <Button href={editLink(link, open)}>
+                        <Button
+                          {...(mayEdit
+                            ? { href: editLink(link, open) }
+                            : { disabled: true, tooltip: noEdit })}
+                        >
                           <Pencil aria-hidden="true" size={16} /> Edit
                         </Button>
                       )}

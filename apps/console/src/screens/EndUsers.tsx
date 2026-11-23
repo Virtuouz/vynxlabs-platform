@@ -2,6 +2,7 @@ import { Button, Closing, Dialog, Notice, SelectField, TextField } from "@volvel
 import { useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
+import { useNeeds } from "../kit/Can.tsx";
 import { CollectionView } from "../kit/CollectionView.tsx";
 import { Inspector, KeyValues, SectionLabel } from "../kit/layout.tsx";
 import { StatePill, Tag } from "../kit/status.tsx";
@@ -295,6 +296,7 @@ export function EndUsers({ base, framed }: { base: string; framed?: Framed }) {
       </div>
     ) : null;
 
+  const may = useNeeds({ base, permission: "end_user:write", what: "this tenant's end users" });
   return (
     <>
       <CollectionView<EndUser>
@@ -326,6 +328,7 @@ export function EndUsers({ base, framed }: { base: string; framed?: Framed }) {
             {framed?.tabs}
           </div>
         }
+        needs={{ base, permission: "end_user:write", what: "this tenant's end users" }}
         label="End users"
         rows={page.data ? rows : undefined}
         error={page.error}
@@ -385,8 +388,9 @@ export function EndUsers({ base, framed }: { base: string; framed?: Framed }) {
             title={chosen?.email}
             onClose={() => setSelected(undefined)}
             footer={
-              chosen
-                ? actions(chosen).map((action) => (
+              chosen ? (
+                <fieldset disabled={!may.can} className="contents">
+                  {actions(chosen).map((action) => (
                     <Button
                       key={action.label}
                       size="small"
@@ -395,8 +399,9 @@ export function EndUsers({ base, framed }: { base: string; framed?: Framed }) {
                     >
                       {action.label}
                     </Button>
-                  ))
-                : null
+                  ))}
+                </fieldset>
+              ) : null
             }
           >
             {chosen ? (

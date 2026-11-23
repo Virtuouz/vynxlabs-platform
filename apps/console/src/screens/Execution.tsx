@@ -9,10 +9,10 @@ import {
   saveText,
 } from "@volvel/ui";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ApiError, api, useLoad, useMay } from "../api.ts";
+import { ApiError, api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
 import { InputDialog } from "../InputDialog.tsx";
-import { Can } from "../kit/Can.tsx";
+import { Can, useMay } from "../kit/Can.tsx";
 import { CollectionView } from "../kit/CollectionView.tsx";
 import { DataTable } from "../kit/DataTable.tsx";
 import { ago, between, count, duration } from "../kit/format.ts";
@@ -173,6 +173,7 @@ export function Scripts({
   return (
     <CollectionView<ScriptRow>
       title="Scripts"
+      needs={{ base: root, permission: "resource:write", what: "this workspace's scripts" }}
       description="Code this workspace runs. Each script declares what it reaches, so a run can reach only that."
       actions={
         editable ? (
@@ -814,7 +815,7 @@ export function Connections({ root, production = false }: { root: string; produc
         path={`${root}/connection-bindings`}
         rowKey={(row) => row.path}
         action={mayNew ? newButton : null}
-        {...(mayWrite ? {} : { needs: "connection:write" })}
+        needs={{ base: root, permission: "connection:write", what: "this workspace's connections" }}
         columns={[
           {
             header: "Connection",
@@ -940,7 +941,7 @@ export function Variables({ root }: { root: string }) {
         draft?: "new" | "changed" | "removed" | null;
       }>
         title="Variables"
-        {...(mayWrite ? {} : { needs: "variable:write" })}
+        needs={{ base: root, permission: "variable:write", what: "this workspace's variables" }}
         setupField="path"
         description="Settings a script reads at run time. Each workspace can set its own value. Without one, the default from the repository applies."
         path={`${root}/variable-values`}

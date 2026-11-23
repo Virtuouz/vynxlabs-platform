@@ -22,6 +22,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ApiError, api, useLoad } from "../api.ts";
 import { ask, failureText, notify, takenText } from "../ask.tsx";
 import { useHelpTopic } from "../help/store.ts";
+import { useNeeds } from "../kit/Can.tsx";
 import { DataTable } from "../kit/DataTable.tsx";
 import { DraftClash } from "../kit/DraftClash.tsx";
 import { isDraftClash, putDraft, readDraft } from "../kit/draftApi.ts";
@@ -164,8 +165,18 @@ export function Dashboards({ root, link }: { root: string; link: string }) {
     });
     if (made) navigate(`${link}/dashboards/${made.id}?edit=1`);
   };
+  const may = useNeeds({
+    base: root,
+    permission: "dashboard:write",
+    what: "this workspace's dashboards",
+  });
   const action = mayCreate ? (
-    <Button variant="primary" onClick={create}>
+    <Button
+      variant="primary"
+      disabled={!may.can}
+      {...(may.reason ? { tooltip: may.reason } : {})}
+      onClick={create}
+    >
       New dashboard
     </Button>
   ) : undefined;
@@ -175,6 +186,7 @@ export function Dashboards({ root, link }: { root: string; link: string }) {
       description="Questions asked of this workspace's tables, and their answers drawn: figures, charts, tables and pivots. Build a question from menus, use a query the workspace keeps, or write SQL. Everyone who looks at a dashboard sees the rows they may read."
       {...(action ? { action } : {})}
     >
+      {may.line}
       {list.error ? (
         <ErrorState what="dashboards" error={list.error} onRetry={list.reload} />
       ) : !list.data || (drafts.loading && !drafts.data && !drafts.error) ? (

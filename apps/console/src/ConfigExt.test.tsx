@@ -184,6 +184,17 @@ const connection = {
   oauth: null,
   updatedAt: null,
 };
+/** Absent, or greyed by the piece that says what it takes: neither can be pressed. */
+const unavailable = (name: string | RegExp) =>
+  screen
+    .queryAllByRole("button", { name })
+    .every(
+      (one) =>
+        (one as HTMLButtonElement).disabled ||
+        (one.closest("fieldset") as HTMLFieldSetElement | null)?.disabled,
+    );
+const needsSaid = (permission: string) =>
+  waitFor(() => expect(document.body.textContent).toContain(`It needs ${permission}`));
 const allowedAre = (allowed: string[]) => {
   routes[`GET ${root}/allowed`] = () => [200, { allowed }];
 };
@@ -194,9 +205,9 @@ test("CFG-26: someone who may only read connections is offered no change, and to
   routes[`GET ${root}/references`] = () => [200, { items: [] }];
   show(<Connections root={root} />);
   expect(await screen.findByText("shop")).toBeTruthy();
-  expect(await screen.findByText(/needs the connection:write permission/)).toBeTruthy();
+  await needsSaid("connection:write");
   for (const name of ["New connection", "Change", "Unbind", "Test"]) {
-    expect(screen.queryByRole("button", { name })).toBeNull();
+    expect(unavailable(name)).toBe(true);
   }
 });
 
@@ -224,9 +235,9 @@ test("CFG-26: a variable's controls follow variable:write", async () => {
   routes[`GET ${root}/references`] = () => [200, { items: [] }];
   show(<Variables root={root} />);
   expect(await screen.findByText("region")).toBeTruthy();
-  expect(await screen.findByText(/needs the variable:write permission/)).toBeTruthy();
-  expect(screen.queryByRole("button", { name: "Set variable" })).toBeNull();
-  expect(screen.queryByRole("button", { name: "Use default" })).toBeNull();
+  await needsSaid("variable:write");
+  expect(unavailable("Set variable")).toBe(true);
+  expect(unavailable("Use default")).toBe(true);
   cleanup();
   allowedAre(["variable:write"]);
   show(<Variables root={root} />);
@@ -253,11 +264,11 @@ test("CFG-26: the secrets list and a secret's page follow secret:write", async (
   history.replaceState(null, "", "/t/t1/workspaces/w1/secrets");
   show(<AtAddress />);
   expect(await screen.findByText("KEY")).toBeTruthy();
-  expect(await screen.findByText(/needs the secret:write permission/)).toBeTruthy();
-  expect(screen.queryByRole("button", { name: "New secret" })).toBeNull();
-  expect(screen.queryByRole("button", { name: "Delete" })).toBeNull();
+  await needsSaid("secret:write");
+  expect(unavailable("New secret")).toBe(true);
+  expect(unavailable("Delete")).toBe(true);
   cleanup();
   show(<SecretPage root={root} link="/t/t1/workspaces/w1" name="KEY" />);
   expect(await screen.findByText(/Encrypted/)).toBeTruthy();
-  expect(screen.queryByRole("button", { name: "Replace the value" })).toBeNull();
+  expect(unavailable("Replace the value")).toBe(true);
 });

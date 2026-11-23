@@ -2,6 +2,7 @@ import { Button, SelectField, TextField } from "@volvel/ui";
 import { type ReactNode, useEffect, useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
+import { useNeeds } from "../kit/Can.tsx";
 import { CollectionView } from "../kit/CollectionView.tsx";
 import { FilterChips, Inspector, KeyValues, SectionLabel } from "../kit/layout.tsx";
 import { consoleLink, kindName, objectHref } from "../kit/objects.tsx";
@@ -205,6 +206,7 @@ export function MemberList({ base, framed }: { base: string; framed?: Framed }) 
   const workspaces = useLoad<{ items: WorkspaceRef[] }>(`${base}/workspaces`);
   const [selected, setSelected] = useUrlParam("member", undefined, { push: true });
   const [adding, setAdding] = useState(false);
+  const may = useNeeds({ base, permission: "member:write", what: "this tenant's members" });
   const needle = search.trim().toLowerCase();
   const rows = members.items;
   const listed = members.items?.find((row) => row.id === selected);
@@ -254,6 +256,7 @@ export function MemberList({ base, framed }: { base: string; framed?: Framed }) 
             />
           </div>,
         )}
+        needs={{ base: base, permission: "member:write", what: "this tenant's members" }}
         label="Members"
         rows={rows}
         error={members.error}
@@ -323,17 +326,19 @@ export function MemberList({ base, framed }: { base: string; framed?: Framed }) 
                   >
                     View access
                   </Button>
-                  <Button size="small" onClick={() => suspend(chosen)}>
-                    {chosen.suspended ? "Resume" : "Suspend"}
-                  </Button>
-                  <RemoveButton
-                    confirm={`Remove ${chosen.email} from this tenant? Their access here is removed too.`}
-                    run={() => api.delete(`${base}/members/${chosen.id}`)}
-                    onDone={() => {
-                      setSelected(undefined);
-                      members.reload();
-                    }}
-                  />
+                  <fieldset disabled={!may.can} className="contents">
+                    <Button size="small" onClick={() => suspend(chosen)}>
+                      {chosen.suspended ? "Resume" : "Suspend"}
+                    </Button>
+                    <RemoveButton
+                      confirm={`Remove ${chosen.email} from this tenant? Their access here is removed too.`}
+                      run={() => api.delete(`${base}/members/${chosen.id}`)}
+                      onDone={() => {
+                        setSelected(undefined);
+                        members.reload();
+                      }}
+                    />
+                  </fieldset>
                 </>
               ) : null
             }
@@ -620,6 +625,7 @@ export function AccessList({ base, framed }: { base: string; framed?: Framed }) 
             ]}
           />,
         )}
+        needs={{ base: base, permission: "binding:write", what: "who holds which role" }}
         label="Access"
         rows={rows}
         selected={linked ?? undefined}

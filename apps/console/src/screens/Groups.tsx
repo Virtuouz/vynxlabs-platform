@@ -254,6 +254,7 @@ export function Groups({ base, framed }: { base: string; framed?: Framed }) {
           </Button>
         }
         toolbar={toolbarOf(framed)}
+        needs={{ base: base, permission: "group:write", what: "this tenant's groups" }}
         label="Groups"
         rows={groups.data?.items}
         error={groups.error}
@@ -417,6 +418,7 @@ export function EndUserGroups({ base, framed }: { base: string; framed?: Framed 
             Create group
           </Button>
         }
+        needs={{ base: base, permission: "end_user_group:write", what: "the end-user groups" }}
         label="End-user groups"
         rows={groups.data?.items}
         error={groups.error}

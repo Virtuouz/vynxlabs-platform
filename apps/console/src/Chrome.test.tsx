@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
-import { act, cleanup, fireEvent, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { notify } from "./ask.tsx";
 import { OperatorMark, OperatorStrip, setOperatorAccess } from "./kit/OperatorStrip.tsx";
 import { PageHeader } from "./kit/PageHeader.tsx";
 import { readPreference, resetPreferences } from "./prefs.ts";
@@ -105,4 +106,26 @@ test("filters have a row of their own under the title and the description", () =
     resetPreferences();
     localStorage.clear();
   }
+});
+
+test("ending operator access that fails says so, and the strip stays (INS-26)", async () => {
+  const failure = vi.spyOn(notify, "error").mockImplementation(() => 0);
+  const end = vi.fn(async () => {
+    throw new Error("The grant could not be ended.");
+  });
+  show(<OperatorStrip />);
+  act(() =>
+    setOperatorAccess({
+      grant: {
+        id: "g1",
+        roleName: "tenant_admin",
+        expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+        reason: "Ticket 1042",
+      },
+      end,
+    }),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "End now" }));
+  await waitFor(() => expect(failure).toHaveBeenCalledTimes(1));
+  expect(screen.getByRole("region", { name: "Operator access" })).toBeTruthy();
 });

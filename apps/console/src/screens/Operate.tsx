@@ -12,6 +12,7 @@ import {
 import { useState } from "react";
 import { api, useCacheEdit, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
+import { REJECTING } from "../kit/approvals.ts";
 import { type BatchAnswer, useBatch } from "../kit/BatchResult.tsx";
 import { type CollectionColumn, CollectionView } from "../kit/CollectionView.tsx";
 import { Current } from "../kit/current.ts";
@@ -48,6 +49,8 @@ export interface Trigger {
   lastFiredAt: string | null;
   url: string | null;
   paused: { at: string; by: string | null; reason: string } | null;
+  /** What holds it, widest first: the instance, the workspace, or its own pause. */
+  pausedBy?: "instance" | "workspace" | "trigger" | null;
   lastRun: {
     kind: "script" | "flow";
     id: string;
@@ -96,10 +99,11 @@ const runLink = (link: string, run: NonNullable<Trigger["lastRun"]>) => `${link}
  */
 export function TriggerState({
   row,
-  workspacePaused,
+  workspacePaused = false,
 }: {
-  row: Pick<Trigger, "paused" | "enabled" | "nextFireAt" | "draft">;
-  workspacePaused: boolean;
+  row: Pick<Trigger, "paused" | "enabled" | "nextFireAt" | "draft" | "pausedBy">;
+  /** For a list that was not given what holds each trigger: the server says it as `pausedBy`. */
+  workspacePaused?: boolean;
 }) {
   if (row.draft === "new") return <StatePill state="draft">Draft, never deployed</StatePill>;
   if (row.draft)
@@ -109,9 +113,13 @@ export function TriggerState({
         <Tag tone="draft">{row.draft === "removed" ? "Removing" : "Draft"}</Tag>
       </span>
     );
+  if (row.pausedBy === "instance") return <StatePill state="paused">Instance paused</StatePill>;
+  if (row.paused && row.pausedBy === "workspace")
+    return <StatePill state="paused">Workspace paused</StatePill>;
   if (row.paused) return <StatePill state="paused" />;
   if (!row.enabled) return <StatePill state="off" />;
-  if (workspacePaused) return <StatePill state="paused">Workspace paused</StatePill>;
+  if (workspacePaused || row.pausedBy === "workspace")
+    return <StatePill state="paused">Workspace paused</StatePill>;
   if (row.nextFireAt) return <span className="text-ink-muted">Next {ago(row.nextFireAt)}</span>;
   return <StatePill state="on" />;
 }
@@ -445,7 +453,10 @@ export function TriggersWorkbench({
                           icon: CirclePause,
                           run: () => pause(open),
                         },
-                        ...(open.type === "schedule" && !open.node
+                        ...(open.type === "schedule" &&
+                        !open.node &&
+                        !workspacePaused &&
+                        !open.pausedBy
                           ? [
                               {
                                 key: "fire",
@@ -502,7 +513,10 @@ export function TriggersWorkbench({
                           <Pencil aria-hidden="true" size={16} /> Edit
                         </Button>
                       )}
-                      {open.type === "schedule" && !open.node ? (
+                      {open.type === "schedule" &&
+                      !open.node &&
+                      !workspacePaused &&
+                      !open.pausedBy ? (
                         <Button variant="primary" onClick={() => void fireNow(open)}>
                           <Zap aria-hidden="true" size={16} /> Fire now
                         </Button>
@@ -646,8 +660,27 @@ interface EventRow {
   source: { type: string; id: string | null };
   occurredAt: string;
   publishedBy: { run: string; script: string } | null;
-  started: { kind: "script" | "flow"; id: string; target: string; status: string }[];
+  started: {
+    kind: "script" | "flow";
+    id: string;
+    target: string;
+    status: string;
+    state: RunState;
+  }[];
+  /** Triggers that would start something now. */
   listeners: number;
+  /** Triggers that are on and held: paused, or in a paused workspace or instance. */
+  pausedListeners?: number;
+}
+
+/** What is said of the triggers that listen for an event, in one place for every list of events. */
+export function listening(row: Pick<EventRow, "listeners" | "pausedListeners">): string {
+  const held = row.pausedListeners ?? 0;
+  const some = (count: number) => `${count} trigger${count === 1 ? "" : "s"}`;
+  if (held === 0) return some(row.listeners);
+  return row.listeners === 0
+    ? `${some(held)}, all paused`
+    : `${some(row.listeners)}, and ${held} paused`;
 }
 
 const SOURCE: Record<string, string> = {
@@ -745,7 +778,9 @@ export function EventsWorkbench({ root, link }: { root: string; link: string }) 
                 {row.started.length} run{row.started.length === 1 ? "" : "s"}
               </span>
             ) : row.listeners === 0 ? (
-              <span className="text-attention">Nothing listens</span>
+              <span className="text-attention">
+                {(row.pausedListeners ?? 0) > 0 ? "Listeners are paused" : "Nothing listens"}
+              </span>
             ) : (
               <span className="text-ink-subtle">Nothing</span>
             ),
@@ -809,13 +844,17 @@ export function EventsWorkbench({ root, link }: { root: string; link: string }) 
                   },
                   {
                     label: "Listening",
-                    value: `${open.listeners} trigger${open.listeners === 1 ? "" : "s"}`,
+                    value: listening(open),
                   },
                   { label: "Event ID", value: open.id, mono: true },
                 ]}
               />
               {open.listeners === 0 ? (
-                <Notice tone="attention">No flow or script listens for {open.name} here.</Notice>
+                <Notice tone="attention">
+                  {(open.pausedListeners ?? 0) > 0
+                    ? `Every trigger that listens for ${open.name} here is paused, so none of them started anything.`
+                    : `No flow or script listens for ${open.name} here.`}
+                </Notice>
               ) : null}
               {open.started.length > 0 ? (
                 <div className="flex flex-col gap-1.5">
@@ -827,7 +866,7 @@ export function EventsWorkbench({ root, link }: { root: string; link: string }) 
                       className="flex items-center justify-between gap-2 no-underline"
                     >
                       <Mono className="text-ink">{one.target}</Mono>
-                      <StatePill state={stateOf(one.status)} />
+                      <StatePill state={one.state ?? stateOf(one.status)} />
                     </Link>
                   ))}
                 </div>
@@ -932,7 +971,7 @@ export function ApprovalsQueue({
     state === "decided" ? `${from}/approvals/decided` : null,
   );
   const about = workspaceId
-    ? "Flows in this workspace that paused for a person's decision, the longest waiting first. Approving lets the flow go on; rejecting fails that step."
+    ? `Flows in this workspace that paused for a person's decision, the longest waiting first. Approving lets the flow go on. ${REJECTING}`
     : "Decisions that flows surface to the whole tenant, from every workspace, the longest waiting first. Each workspace lists all of its own under Operate.";
   const workspaces = useLoad<{ items: { id: string; name: string; type: string }[] }>(
     `${base}/workspaces`,
@@ -1008,7 +1047,7 @@ export function ApprovalsQueue({
       notify.success(
         decision === "approve"
           ? `Approved “${row.title}”. The flow goes on.`
-          : `Rejected “${row.title}”. The flow takes its rejected path.`,
+          : `Rejected “${row.title}”. ${REJECTING}`,
         {
           link: {
             label: "Open the run",

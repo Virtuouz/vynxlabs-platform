@@ -12,9 +12,9 @@ import {
 import { type ReactNode, useEffect, useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { ask, copyText, notify } from "../ask.tsx";
-import { InputDialog, isStoredInput } from "../InputDialog.tsx";
+import { InputDialog } from "../InputDialog.tsx";
 import { StateAnnouncer } from "../kit/Announce.tsx";
-import { CopyIcon, curlFor, Identifier } from "../kit/copy.tsx";
+import { CopyIcon, Identifier } from "../kit/copy.tsx";
 import { Current } from "../kit/current.ts";
 import { Elapsed, WaitedAndRan } from "../kit/Elapsed.tsx";
 import { clock } from "../kit/format.ts";
@@ -42,10 +42,14 @@ import { NotFound } from "./NotFound.tsx";
 import { type PreviousSuccess, RunCompare } from "./RunCompare.tsx";
 import type { Insight } from "./Runs.tsx";
 import {
+  flowAgainCurl,
   flowFromFailed,
   flowFromStart,
+  isSourceRun,
   type RetryPlan,
   scriptAgain,
+  scriptAgainCurl,
+  sourceLink,
   type Version,
 } from "./runAgain.ts";
 
@@ -256,6 +260,11 @@ function ScriptRunPage({ root, link, id }: { root: string; link: string; id: str
   if (!run) return <Loading />;
   const active = run.state === "queued" || run.state === "running";
   const diagnosis = insight.data?.diagnosis;
+  // A run of a trigger source has a source, not a script: its page is the source's editor, and
+  // nothing starts it by hand.
+  const fromSource = isSourceRun(run.trigger);
+  const scriptPage = fromSource ? sourceLink(link, run.script) : `${link}/scripts/${run.script}`;
+  const editPage = fromSource ? sourceLink(link, run.script) : `${link}/scripts/edit/${run.script}`;
   const logFile = `${run.script.replaceAll("/", "-")}-${run.id.slice(-12)}.log`;
   const wholeLog = wholeLogDownload(root, run.id, logFile, earlier);
 
@@ -306,7 +315,7 @@ function ScriptRunPage({ root, link, id }: { root: string; link: string; id: str
                   },
                 ]
               : []),
-            ...(run.trigger.type === "flow"
+            ...(run.trigger.type === "flow" || fromSource
               ? []
               : [
                   {
@@ -326,7 +335,7 @@ function ScriptRunPage({ root, link, id }: { root: string; link: string; id: str
               key: "edit",
               label: `Open ${run.script} in the editor`,
               icon: FileCode2,
-              run: () => navigate(`${link}/scripts/edit/${run.script}`),
+              run: () => navigate(editPage),
             },
             {
               key: "compare",
@@ -355,7 +364,7 @@ function ScriptRunPage({ root, link, id }: { root: string; link: string; id: str
         link={link}
         id={run.id}
         path={run.script}
-        pathLink={`${link}/scripts/${run.script}`}
+        pathLink={scriptPage}
         state={run.state}
         detail={
           run.maxAttempts > 1
@@ -363,7 +372,9 @@ function ScriptRunPage({ root, link, id }: { root: string; link: string; id: str
             : undefined
         }
         timing={<WaitedAndRan run={run} />}
-        versionTo={`${link}/scripts/${run.script}?tab=source&run=${run.id}`}
+        versionTo={
+          fromSource ? scriptPage : `${link}/scripts/${run.script}?tab=source&run=${run.id}`
+        }
         started={startedBy(link, run.trigger)}
         version={run.bundleVersion}
         tags={run.tags ?? []}
@@ -386,7 +397,7 @@ function ScriptRunPage({ root, link, id }: { root: string; link: string; id: str
               </Button>
             ) : null}
             {/* A step of a flow is run again by retrying its flow run. */}
-            {run.trigger.type === "flow" ? null : (
+            {run.trigger.type === "flow" || fromSource ? null : (
               <Menu
                 label={
                   <span className="flex items-center gap-1.5">
@@ -407,11 +418,13 @@ function ScriptRunPage({ root, link, id }: { root: string; link: string; id: str
                 ]}
               />
             )}
-            <EditInDev root={root} path={run.script} runId={run.id} />
-            <CopyIcon
-              value={curlFor("POST", `${root}/runs`, { script: run.script, input: run.input })}
-              label="Copy as curl: start this script again with the same input"
-            />
+            {fromSource ? null : <EditInDev root={root} path={run.script} runId={run.id} />}
+            {fromSource ? null : (
+              <CopyIcon
+                value={scriptAgainCurl(root, run.id)}
+                label="Copy as curl: run this again with the same input"
+              />
+            )}
           </>
         }
       />
@@ -438,7 +451,14 @@ function ScriptRunPage({ root, link, id }: { root: string; link: string; id: str
                       <span className={one.failed ? "text-danger" : "text-ink-muted"}>
                         #{one.attempt} {one.failed ? "failed" : "succeeded"}
                       </span>
-                      <Mono className="ml-auto text-ink-subtle">{clock(one.startedAt)}</Mono>
+                      {one.errorsLogged > 0 ? (
+                        <span className="text-ink-subtle">
+                          {one.errorsLogged} error line{one.errorsLogged === 1 ? "" : "s"}
+                        </span>
+                      ) : null}
+                      <Mono className="ml-auto text-ink-subtle">
+                        {one.startedAt ? clock(one.startedAt) : "nothing logged"}
+                      </Mono>
                     </li>
                   ))}
                 </ol>
@@ -831,12 +851,10 @@ function FlowRunHeader({
                 ]}
               />
             )}
-            {isStoredInput(run.input) ? null : (
-              <CopyIcon
-                value={curlFor("POST", `${root}/flow-runs`, { flow: run.flow, input: run.input })}
-                label="Copy as curl: start this flow again with the same input"
-              />
-            )}
+            <CopyIcon
+              value={flowAgainCurl(root, run.id)}
+              label="Copy as curl: run this again from the start with the same input"
+            />
           </>
         }
       />

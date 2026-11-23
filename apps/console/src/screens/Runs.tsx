@@ -15,7 +15,7 @@ import { ask, copyText, notify } from "../ask.tsx";
 import { StateAnnouncer } from "../kit/Announce.tsx";
 import { useArrivals } from "../kit/arrivals.ts";
 import { type BatchAnswer, useBatch } from "../kit/BatchResult.tsx";
-import { CopyIcon, curlFor, Identifier } from "../kit/copy.tsx";
+import { CopyIcon, Identifier } from "../kit/copy.tsx";
 import {
   type DataColumn,
   DataTable,
@@ -38,7 +38,14 @@ import { ColumnsMenu, ViewsMenu } from "../kit/views.tsx";
 import { Link, navigate, useUrlState } from "../router.tsx";
 import { useStreamConnected } from "../stream.ts";
 import { LogWindowNote, TRIGGER, useLiveRun, wholeLogDownload } from "./Execution.tsx";
-import { flowFromFailed, flowFromStart, scriptAgain } from "./runAgain.ts";
+import {
+  flowFromFailed,
+  flowFromStart,
+  isSourceRun,
+  scriptAgain,
+  scriptAgainCurl,
+  sourceLink,
+} from "./runAgain.ts";
 
 /** What the list can be narrowed to: a state. `waiting`, from older addresses, is either kind. */
 type Filter =
@@ -57,6 +64,8 @@ interface Activity {
   target: string;
   state: RunState;
   trigger: string;
+  /** A run of a trigger source: its target is a source, which is not run again by hand. */
+  source?: boolean;
   attempt: number;
   maxAttempts: number;
   error: string | null;
@@ -72,7 +81,13 @@ interface Activity {
 }
 
 export interface Insight {
-  attempts: { attempt: number; startedAt: string; endedAt: string; failed: boolean }[];
+  attempts: {
+    attempt: number;
+    startedAt: string | null;
+    endedAt: string | null;
+    failed: boolean;
+    errorsLogged: number;
+  }[];
   worker: { id: string; name: string; pool: string | null } | null;
   timeoutSeconds: number | null;
   uses: { connection: string; bound: boolean }[];
@@ -270,7 +285,13 @@ export function RunsWorkbench({
       : null,
   );
   const picked = listed ?? looked.data?.items.find((one) => one.id === selected);
-  const missing = Boolean(selected && !listed && looked.data && !picked);
+  // The list leaves a flow's own steps out, so an ID the list does not know may be one of
+  // them: it is read as the run page reads it, before it is said that no run has it.
+  const notListed = Boolean(selected && !listed && looked.data && !picked);
+  const stepRun = useLoad<{ trigger: { type: string; flowRunId?: string; node?: string } }>(
+    notListed ? `${root}/runs/${selected}` : null,
+  );
+  const missing = notListed && Boolean(stepRun.error);
   useTitleObject(selected ? (picked ? `Run of ${picked.target}` : "Run") : undefined);
   const counts = list.data?.stateCounts ?? {};
   const total = Object.values(counts).reduce((a, b) => a + b, 0);
@@ -288,7 +309,7 @@ export function RunsWorkbench({
   const cancelQueued = async () => {
     const sure = await ask.confirm({
       title: `Cancel ${queued} queued run${queued === 1 ? "" : "s"}?`,
-      text: `Every queued run this list shows${scope ? ` (${scope})` : ""} is cancelled. Runs already going carry on, and a flow's steps are left to their flow.`,
+      text: `Every queued run this list shows${scope ? ` (${scope})` : ""} is canceled. Runs already going carry on, and a flow's steps are left to their flow.`,
       action: "Cancel queued runs",
       cancel: "Keep them",
       danger: true,
@@ -305,7 +326,7 @@ export function RunsWorkbench({
         },
       });
       notify.success(
-        `${done.cancelled} queued run${done.cancelled === 1 ? "" : "s"} cancelled${done.more ? ". More are left: cancel again." : "."}`,
+        `${done.cancelled} queued run${done.cancelled === 1 ? "" : "s"} canceled${done.more ? ". More are left: cancel again." : "."}`,
       );
       refresh();
     } catch (error) {
@@ -377,7 +398,7 @@ export function RunsWorkbench({
   const againChecked = async (ids: string[]) => {
     const sure = await ask.confirm({
       title: `Run ${plural(ids.length, "run")} again?`,
-      text: `${sample(ids)}. Scripts run again with the same input, on the version they ran; flows retry from their failed step, or from the start if none failed.`,
+      text: `${sample(ids)}. Scripts run again with the same input, on the version they ran; flows retry from their failed step, or from the start if none failed.${ids.some((id) => kindOf(id)?.source) ? " A trigger source's runs are left out: its trigger starts it." : ""}`,
       action: "Run again",
     });
     if (!sure) return;
@@ -387,7 +408,7 @@ export function RunsWorkbench({
     const otherFlows = ids.filter(
       (id) => kindOf(id)?.kind === "flow" && kindOf(id)?.state !== "failed",
     );
-    const scripts = ids.filter((id) => kindOf(id)?.kind === "script");
+    const scripts = ids.filter((id) => kindOf(id)?.kind === "script" && !kindOf(id)?.source);
     const send = async (subset: string[]) => {
       const parts = await Promise.all([
         runBatch(
@@ -441,7 +462,7 @@ export function RunsWorkbench({
     };
     return [
       { label: "Open", onSelect: () => navigate(page) },
-      ...(one.kind === "script" && !going
+      ...(one.kind === "script" && !going && !one.source
         ? [
             {
               label: "Run again…",
@@ -753,6 +774,20 @@ export function RunsWorkbench({
                 </p>
               ) : looked.error && !picked ? (
                 <ErrorState error={looked.error} onRetry={looked.reload} />
+              ) : !picked && stepRun.data ? (
+                <div className="flex flex-col gap-3">
+                  {stepRun.data.trigger.type === "flow" && stepRun.data.trigger.flowRunId ? (
+                    <Notice tone="info">
+                      A step of a flow run.{" "}
+                      <Link
+                        to={`${link}/runs/${stepRun.data.trigger.flowRunId}${stepRun.data.trigger.node ? `?step=${encodeURIComponent(stepRun.data.trigger.node)}` : ""}`}
+                      >
+                        Open the flow run
+                      </Link>
+                    </Notice>
+                  ) : null}
+                  <ScriptRunPanel root={root} link={link} runId={selected as string} />
+                </div>
               ) : !picked ? (
                 <Loading />
               ) : picked.kind === "flow" ? (
@@ -908,6 +943,7 @@ export function ScriptRunPanel({
   if (!run) return <Loading />;
   const active = run.status === "queued" || run.status === "running";
   const failed = run.status === "failed";
+  const fromSource = isSourceRun(run.trigger);
   const logFile = `${run.script.replaceAll("/", "-")}-${run.id.slice(-12)}.log`;
   const wholeLog = wholeLogDownload(root, run.id, logFile, earlier);
   const diagnosis = insight.data?.diagnosis;
@@ -942,10 +978,12 @@ export function ScriptRunPanel({
           <Button size="small" onClick={() => navigate(`${link}/runs/${runId}`)}>
             Open full view <ArrowUpRight aria-hidden="true" size={14} />
           </Button>
-          <CopyIcon
-            value={curlFor("POST", `${root}/runs`, { script: run.script, input: run.input })}
-            label="Copy as curl: start this script again with the same input"
-          />
+          {fromSource ? null : (
+            <CopyIcon
+              value={scriptAgainCurl(root, run.id)}
+              label="Copy as curl: run this again with the same input"
+            />
+          )}
         </div>
       </div>
 
@@ -1001,7 +1039,12 @@ export function ScriptRunPanel({
                 {index > 0 ? <span aria-hidden="true" className="h-px w-3 bg-line-strong" /> : null}
                 <Junction kind={one.failed ? "danger" : "here"} size={5} />
                 <span className={one.failed ? "text-danger" : "text-ink-muted"}>
-                  #{one.attempt} <Time value={one.startedAt} className="font-mono text-code" />
+                  #{one.attempt}{" "}
+                  {one.startedAt ? (
+                    <Time value={one.startedAt} className="font-mono text-code" />
+                  ) : (
+                    <span className="text-ink-subtle">logged nothing</span>
+                  )}
                 </span>
               </span>
             ))}
@@ -1069,8 +1112,18 @@ export function ScriptRunPanel({
                       mono: true,
                     },
                     {
-                      label: "Script",
-                      value: <Link to={`${link}/scripts/edit/${run.script}`}>{run.script}</Link>,
+                      label: fromSource ? "Trigger source" : "Script",
+                      value: (
+                        <Link
+                          to={
+                            fromSource
+                              ? sourceLink(link, run.script)
+                              : `${link}/scripts/edit/${run.script}`
+                          }
+                        >
+                          {run.script}
+                        </Link>
+                      ),
                       mono: true,
                     },
                     {

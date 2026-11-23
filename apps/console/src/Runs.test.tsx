@@ -172,6 +172,9 @@ test("cancelling queued runs names how many and cancels only what the list shows
   fireEvent.click(await screen.findByRole("button", { name: "Cancel 2 queued" }));
   const dialog = await screen.findByRole("dialog");
   expect(dialog.textContent).toContain('matching "reminders"');
+  // American spelling, as everywhere else (OPS-40).
+  expect(dialog.textContent).toContain("is canceled");
+  expect(dialog.textContent).not.toContain("cancelled");
   fireEvent.click(within(dialog).getByRole("button", { name: "Cancel queued runs" }));
   await waitFor(() => expect(sent).toHaveLength(1));
   expect(sent[0]?.body).toMatchObject({

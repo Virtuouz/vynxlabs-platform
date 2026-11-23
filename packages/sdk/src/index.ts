@@ -210,7 +210,11 @@ export interface ScriptOptions<Input extends z.ZodType, Output extends z.ZodType
    * place's worker a credential made for the same pool.
    */
   worker?: string;
-  /** What happens when a run fails for the last time. */
+  /**
+   * What happens when a run fails for the last time. It replaces the workspace's default alert for
+   * this script, as a whole: a script that names only `notify` does not also start the default's
+   * `script`.
+   */
   onFailure?: { script?: string | { path: string }; notify?: string | { path: string } };
   /**
    * Makes the script a step people can pick in the flow editor. Its input

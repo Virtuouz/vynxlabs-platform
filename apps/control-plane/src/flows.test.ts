@@ -1289,7 +1289,10 @@ describe("retrying a flow run", () => {
       () => read(id),
       (r) => step(r, "gate")?.status === "waiting",
     );
-    await alice.post(`${ws()}/flow-runs/${id}/approvals/gate`, { decision: "reject" });
+    await alice.post(`${ws()}/flow-runs/${id}/approvals/gate`, {
+      decision: "reject",
+      comment: "Not this one",
+    });
     expect((await finished(id)).state).toBe("failed");
     const started = await retry(id, { from: "failed" });
     const asked = await until(

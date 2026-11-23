@@ -318,7 +318,7 @@ export const PERMISSION_KINDS: readonly PermissionKind[] = [
     scope: "workspace",
     verbs: {
       read: "See schedules, webhooks and event triggers.",
-      write: "See a webhook's address, which is a credential.",
+      write: "Pause and resume a trigger, and see a webhook's address, which is a credential.",
     },
   },
   {

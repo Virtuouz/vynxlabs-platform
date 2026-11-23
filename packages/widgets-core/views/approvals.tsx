@@ -237,8 +237,8 @@ function Decider({
   const box = useRef<HTMLDivElement>(null);
   const reasonId = useId();
   const blocked = disabledReason !== "";
-  const needs = (which: "approve" | "reject") =>
-    askWhy === "always" || (askWhy !== "never" && which === "reject");
+  // A rejection always says why: the server asks on every route. "Never" is for approving.
+  const needs = (which: "approve" | "reject") => askWhy === "always" || which === "reject";
 
   // Opening the box puts the cursor in it: the reason is what comes next.
   useEffect(() => {
@@ -367,11 +367,7 @@ function Decider({
         <div className="flex flex-col gap-2 rounded-control border border-line bg-sunken p-3">
           <TextAreaField
             label={
-              asking === "reject"
-                ? needs("reject")
-                  ? "Why are you rejecting this?"
-                  : "Why are you rejecting this? (optional)"
-                : "Why are you approving this?"
+              asking === "reject" ? "Why are you rejecting this?" : "Why are you approving this?"
             }
             name="reason"
             rows={2}

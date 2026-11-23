@@ -356,7 +356,7 @@ export function EventPage({ root, link, path }: { root: string; link: string; pa
               id: "recent",
               label: "Recent",
               content: (
-                <Link to={`${link}/events?q=${encodeURIComponent(one.path)}`}>
+                <Link to={`${link}/events?name=${encodeURIComponent(one.path)}`}>
                   See it in the event log
                 </Link>
               ),
@@ -430,7 +430,8 @@ export function TriggersOf({
       </Closing>
       <DataTable<Trigger>
         actions={(one) => [
-          ...(one.type === "schedule"
+          // A schedule that is turned off may be run to try it; one that is held may not.
+          ...(one.type === "schedule" && !one.paused && !one.pausedBy
             ? [
                 {
                   label: "Run it now",
@@ -470,7 +471,7 @@ export function TriggersOf({
             header: "State",
             cell: (one) => (
               <span className="flex flex-col">
-                <TriggerState row={one} workspacePaused={false} />
+                <TriggerState row={one} />
                 {one.cron ? (
                   <span className="text-meta text-ink-muted">
                     <Mono>{one.cron}</Mono>

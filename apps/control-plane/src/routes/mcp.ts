@@ -19,7 +19,7 @@ import {
   describeApprovers,
   isApprover,
 } from "../kernel/flows/approvers.js";
-import { decideApproval, kickFlow, startFlowRun } from "../kernel/flows/engine.js";
+import { decideApproval, deciderOf, kickFlow, startFlowRun } from "../kernel/flows/engine.js";
 import { access, findWorkspace, type RequestContext, type WorkspaceRef } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
 import { Id } from "./shared.js";
@@ -506,7 +506,7 @@ async function toolsFor(kernel: Kernel, ctx: Caller, workspace: WorkspaceRef): P
     tools.push({
       name: "decide_approval",
       description:
-        "Approves or rejects a waiting approval. Approving lets the flow go on. Rejecting fails the step. Give a comment that says why.",
+        "Approves or rejects a waiting approval. Approving lets the flow go on. Rejecting fails the step: the flow takes its error path, or fails if it has none. A rejection needs a comment that says why.",
       inputSchema: {
         type: "object",
         properties: {
@@ -549,7 +549,8 @@ async function toolsFor(kernel: Kernel, ctx: Caller, workspace: WorkspaceRef): P
             node: String(input.node),
             approve,
             comment,
-            memberId: ctx.principal.type === "member" ? ctx.principal.id : null,
+            decidedBy: deciderOf(ctx.principal),
+            via: "mcp",
           });
           await audit({
             action: approve ? "approval.approved" : "approval.rejected",

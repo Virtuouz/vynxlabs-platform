@@ -118,7 +118,8 @@ export function approvalLinkRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             node: taken.node_id,
             approve: body.decision === "approve",
             comment,
-            memberId: member.id,
+            decidedBy: { type: "member", id: member.id },
+            via: "email",
           });
           await writeAudit(trx, linkActor(member, request), {
             action: body.decision === "approve" ? "approval.approved" : "approval.rejected",

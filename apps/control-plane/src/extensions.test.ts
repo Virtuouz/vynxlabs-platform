@@ -2,6 +2,7 @@ import { createHmac } from "node:crypto";
 import type { AddressInfo } from "node:net";
 import { createServer as createTcpServer, type Server as TcpServer } from "node:net";
 import { setTimeout as sleep } from "node:timers/promises";
+import { sql } from "@volvel/db";
 import { type Bundle, type BundleManifest, bundleDigest } from "@volvel/manifest";
 import { Worker } from "@volvel/worker";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
@@ -726,6 +727,68 @@ export const onLetter = { execute: async (input) => ({ read: input.letter }) };
       } finally {
         await t.db.updateTable("run").set({ status: "succeeded" }).where("id", "=", last).execute();
       }
+    });
+
+    test("a schedule that skips while its last run goes does so when the run is one its source started (OPS-38)", async () => {
+      const inboxRuns = async () =>
+        (
+          await t.db
+            .selectFrom("run")
+            .select("id")
+            .where("script_path", "=", "sources/inbox")
+            .execute()
+        ).length;
+      const going = (
+        await t.db
+          .selectFrom("run")
+          .select("id")
+          .where("script_path", "=", "on-letter")
+          .orderBy("created_at", "desc")
+          .executeTakeFirstOrThrow()
+      ).id;
+      await t.db
+        .updateTable("trigger_state")
+        .set({ config: sql`config || '{"overlap":"skip"}'::jsonb` })
+        .where("type", "=", "schedule")
+        .execute();
+      await t.db.updateTable("run").set({ status: "running" }).where("id", "=", going).execute();
+      try {
+        const before = await inboxRuns();
+        minutes += 2;
+        await fireDueSchedules(t.kernel, new Date(Date.now() + minutes * 60_000));
+        // Its source was not asked, because what it started last time is still going.
+        expect(await inboxRuns()).toBe(before);
+        const shown = (await alice.get(`${ws()}/triggers`)).body.items.find(
+          (item: Any) => item.path === "every-minute",
+        ) as Any;
+        expect(shown.lastSkipReason).toBe("overlap");
+      } finally {
+        await t.db
+          .updateTable("run")
+          .set({ status: "succeeded" })
+          .where("id", "=", going)
+          .execute();
+        await t.db
+          .updateTable("trigger_state")
+          .set({ config: sql`config || '{"overlap":"allow"}'::jsonb` })
+          .where("type", "=", "schedule")
+          .execute();
+      }
+    });
+
+    test("a run of a source says so, and cannot be run again by hand (OPS-22)", async () => {
+      const source = (await runsOf("sources/inbox", 1)).at(-1) as Any;
+      const shown = (await alice.get(`${ws()}/runs/${source.id}`)).body;
+      expect(shown.trigger.relay).toMatchObject({ mode: "poll" });
+      const listed = (await alice.get(`${ws()}/activity?q=${source.id}`)).body.items[0];
+      expect(listed).toMatchObject({ id: source.id, source: true });
+      const letter = (await runsOf("on-letter", 1)).at(-1) as Any;
+      expect(
+        ((await alice.get(`${ws()}/activity?q=${letter.id}`)).body.items[0] as Any).source,
+      ).toBe(false);
+      const again = await alice.post(`${ws()}/runs/${source.id}/rerun`, {});
+      expect(again.status, JSON.stringify(again.body)).toBe(409);
+      expect(again.body.detail).toContain("trigger source");
     });
   });
 });

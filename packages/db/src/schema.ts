@@ -747,7 +747,11 @@ export interface StepRunTable {
   child_flow_run_id: string | null;
   wake_at: Date | null;
   detail: ColumnType<Record<string, unknown>, string | undefined, string>;
+  /** The ID of the principal that decided: a member, a service account. */
   decided_by: string | null;
+  decided_by_type: string | null;
+  /** Where: console, api, mcp, app or email. */
+  decided_via: string | null;
   decision_comment: string | null;
   started_at: Generated<Date>;
   finished_at: Date | null;

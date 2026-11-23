@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, test } from "vitest";
-import { MultiSelectField } from "./Combobox.tsx";
+import { ComboboxField, MultiSelectField } from "./Combobox.tsx";
 import { DateInput } from "./DateInput.tsx";
 import { datePattern } from "./dates.ts";
 import { SchemaForm } from "./SchemaForm.tsx";
@@ -68,4 +68,21 @@ test("the kit's locale is the reader's locale of the widgets, one rule", async (
   const { readerLocale } = await import("@volvel/widgets");
   const { localeOf } = await import("./dates.ts");
   expect(localeOf).toBe(readerLocale);
+});
+
+test("NARROW-4: an option's hint wraps, and is not cut at the list's edge", () => {
+  const hint = "A run was queued. Payload: runId, flowPath, and the workspace it ran in.";
+  render(
+    <ComboboxField
+      label="Events"
+      options={[{ value: "a", label: "run.queued", hint }]}
+      value=""
+      onChange={() => undefined}
+    />,
+  );
+  fireEvent.click(screen.getByRole("combobox"));
+  fireEvent.keyDown(screen.getByRole("combobox"), { key: "ArrowDown" });
+  const shown = screen.getByText(hint);
+  expect(shown.className).toContain("break-words");
+  expect(shown.className).not.toContain("truncate");
 });

@@ -377,6 +377,9 @@ export function match(pattern: string, path: string): Record<string, string> | n
   return params;
 }
 
+/** A link inside a sentence or a cell, which must read as one: in the action color, underlined. */
+export const TEXT_LINK = "text-action underline underline-offset-2 hover:no-underline";
+
 export function Link({
   to,
   children,

@@ -28,7 +28,7 @@ import { Code, Mono, type RunState, StatePill, Tag } from "../kit/status.tsx";
 import { Time } from "../kit/Time.tsx";
 import { Truncate } from "../kit/Truncate.tsx";
 import { CopyButton, CreateDialog, ListScreen, Page, RemoveButton } from "../ListScreen.tsx";
-import { Link, navigate, useQueryValue, useUrlParam } from "../router.tsx";
+import { Link, navigate, TEXT_LINK, useQueryValue, useUrlParam } from "../router.tsx";
 import { useStreamConnected, useStreamEvents } from "../stream.ts";
 import { type TaskState, useTaskEnd } from "../tasks.ts";
 import {
@@ -112,12 +112,19 @@ export function startedBy(link: string, trigger: { type: string; [detail: string
           {word} {named}
         </Link>
         {event ? (
-          <Link to={`${link}/events?item=${encodeURIComponent(event)}`}>The event</Link>
+          <Link to={`${link}/events?item=${encodeURIComponent(event)}`} className={TEXT_LINK}>
+            The event
+          </Link>
         ) : null}
       </span>
     );
   }
-  if (event) return <Link to={`${link}/events?item=${encodeURIComponent(event)}`}>{word}</Link>;
+  if (event)
+    return (
+      <Link to={`${link}/events?item=${encodeURIComponent(event)}`} className={TEXT_LINK}>
+        {word}
+      </Link>
+    );
   return word;
 }
 

@@ -67,3 +67,17 @@ test("a run waiting for a time says until when", () => {
   render(<StatePill state="waiting_time" until="2026-11-16T15:30:00Z" />);
   expect(screen.getByText(/^Waiting until /)).toBeTruthy();
 });
+
+test("NARROW-1: a state never grows past its cell, and a health cell has no minimum width of its own", async () => {
+  const { HealthCell } = await import("./health.tsx");
+  const { container } = render(
+    <>
+      <StatePill state="waiting_approval" />
+      <HealthCell
+        health={{ ok: true, problem: null, latencyMs: 4, checkedAt: new Date().toISOString() }}
+      />
+    </>,
+  );
+  expect(container.querySelector("span.inline-flex")?.className).toContain("max-w-full");
+  expect(container.querySelector("[data-health]")?.className).not.toContain("min-w-[");
+});

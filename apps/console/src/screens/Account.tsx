@@ -4,6 +4,7 @@ import { ApiError, api, type Me, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
 import { DataTable } from "../kit/DataTable.tsx";
 import { daysChosen, expiryField } from "../kit/expiry.ts";
+import { keepPlace } from "../kit/focus.ts";
 import { Loading } from "../kit/LoadState.tsx";
 import { KeyValues, Panel, SectionLabel } from "../kit/layout.tsx";
 import { OneTimeSecret } from "../kit/OneTimeSecret.tsx";
@@ -407,7 +408,7 @@ export function Sessions() {
       notify.error(error);
     }
   };
-  const endOthers = async () => {
+  const endOthers = async (opener: EventTarget | null) => {
     const sure = await ask.confirm({
       title: "End all other sessions?",
       text: `${others.length === 1 ? "The other session is" : `The other ${others.length} sessions are`} signed out. This one stays.`,
@@ -415,6 +416,8 @@ export function Sessions() {
       danger: true,
     });
     if (!sure) return;
+    // The button is off when no other session is left: the focus goes to what is nearest.
+    const settle = keepPlace(opener);
     setBusy(true);
     try {
       await api.post("/auth/revoke-other-sessions");
@@ -424,6 +427,7 @@ export function Sessions() {
       notify.error(error);
     } finally {
       setBusy(false);
+      settle();
     }
   };
 
@@ -436,7 +440,7 @@ export function Sessions() {
             variant="secondary"
             loading={busy}
             disabled={others.length === 0}
-            onClick={endOthers}
+            onClick={(event) => void endOthers(event.currentTarget)}
           >
             End other sessions
           </Button>

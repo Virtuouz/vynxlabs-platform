@@ -357,7 +357,8 @@ function FlowNodeCard({ data, selected }: NodeProps<CanvasNode>) {
   );
 }
 const nodeTypes = { flow: FlowNodeCard };
-const FIT = { maxZoom: 1, padding: 0.25 };
+/** The whole flow in view, but never smaller than text can be read at: a long flow is panned, not shrunk. */
+export const FIT = { maxZoom: 1, minZoom: 0.7, padding: 0.25 };
 /** "1 step", "3 steps". */
 const plural = (count: number) => `${count} step${count === 1 ? "" : "s"}`;
 

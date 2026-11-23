@@ -175,15 +175,40 @@ export function LoadMore({
   noun: string;
   onMore: () => void;
 }) {
-  if (!hasMore && !error) return null;
+  const box = useRef<HTMLDivElement>(null);
+  const asked = useRef(false);
+  const [used, setUsed] = useState(false);
+  // A button that was used goes away or is disabled while it works: the focus returns to the
+  // button, or to this line when no button is left, and never drops to the page.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs when a page arrives or the button goes
+  useEffect(() => {
+    if (!asked.current || loading) return;
+    asked.current = false;
+    const here = box.current;
+    if (!here || here.contains(document.activeElement)) return;
+    (here.querySelector("button") ?? here).focus();
+  }, [loading, hasMore, shown]);
+  if (!hasMore && !error && !used) return null;
   return (
-    <div className="flex flex-wrap items-center gap-3 text-meta text-ink-muted">
+    <div
+      ref={box}
+      tabIndex={-1}
+      className="flex flex-wrap items-center gap-3 text-meta text-ink-muted"
+    >
       <span>{hasMore ? `Showing the first ${shown} ${noun}.` : `Showing ${shown} ${noun}.`}</span>
       {error ? (
         <span className="text-danger">The next page did not load: {error.message}</span>
       ) : null}
       {hasMore ? (
-        <Button size="small" loading={loading} onClick={onMore}>
+        <Button
+          size="small"
+          loading={loading}
+          onClick={() => {
+            asked.current = true;
+            setUsed(true);
+            onMore();
+          }}
+        >
           {error ? "Try again" : "Load more"}
         </Button>
       ) : null}

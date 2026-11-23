@@ -556,6 +556,19 @@ function SchemaFields({
   unsaved: boolean;
   onChange: (rows: SchemaRow[]) => void;
 }) {
+  // A removed field takes the focus with it: it goes to the field that took its place, else the
+  // one before it, else Add a field, and never to the page.
+  const group = useRef<HTMLFieldSetElement>(null);
+  const after = useRef<number | undefined>(undefined);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs after each removal
+  useEffect(() => {
+    const at = after.current;
+    if (at === undefined) return;
+    after.current = undefined;
+    const names = group.current?.querySelectorAll<HTMLElement>('input[name$="-name"]');
+    const target = names?.[Math.min(at, (names?.length ?? 0) - 1)];
+    (target ?? group.current?.querySelector<HTMLElement>("[data-add-field]"))?.focus();
+  }, [rows]);
   if (why !== undefined) {
     return (
       <p className="m-0 text-body-sm text-ink-muted" role="note">
@@ -567,7 +580,11 @@ function SchemaFields({
   const change = (at: number, patch: Partial<SchemaRow>) =>
     onChange(rows.map((row, index) => (index === at ? { ...row, ...patch } : row)));
   return (
-    <fieldset className="m-0 flex min-w-0 flex-col gap-3 border-0 p-0" disabled={unsaved}>
+    <fieldset
+      ref={group}
+      className="m-0 flex min-w-0 flex-col gap-3 border-0 p-0"
+      disabled={unsaved}
+    >
       <legend className="mb-1 p-0 text-body-sm font-medium">What it takes, field by field</legend>
       {unsaved ? (
         <p className="m-0 text-meta text-ink-muted">
@@ -647,7 +664,10 @@ function SchemaFields({
               <Button
                 size="small"
                 variant="quiet"
-                onClick={() => onChange(rows.filter((_, index) => index !== at))}
+                onClick={() => {
+                  after.current = at;
+                  onChange(rows.filter((_, index) => index !== at));
+                }}
                 aria-label={`Remove field ${n}`}
               >
                 Remove field
@@ -657,7 +677,7 @@ function SchemaFields({
         );
       })}
       <div>
-        <Button size="small" onClick={() => onChange([...rows, { ...NEW_ROW }])}>
+        <Button size="small" data-add-field="" onClick={() => onChange([...rows, { ...NEW_ROW }])}>
           Add a field
         </Button>
       </div>

@@ -600,8 +600,14 @@ describe("the flow editor, as a person uses it", () => {
       expect((screen.getByLabelText("Name of field 1") as HTMLInputElement).value).toBe("note"),
     );
     expect((screen.getByLabelText("Longest of field 1") as HTMLInputElement).value).toBe("20");
-    fireEvent.click(screen.getByRole("button", { name: "Remove field 1" }));
+    const remove = screen.getByRole("button", { name: "Remove field 1" });
+    remove.focus();
+    fireEvent.click(remove);
     await waitFor(() => expect(box().value).toBe(""));
+    // NARROW-3: the focus does not drop to the page when the field it was on is gone.
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole("button", { name: "Add a field" })),
+    );
   });
   test("a schema the form cannot show keeps the JSON box and says why", async () => {
     await openAt(

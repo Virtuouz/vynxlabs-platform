@@ -80,7 +80,8 @@ export function Button({ tooltip, keys, ...props }: ButtonProps) {
   const drawn = <Plain {...props} />;
   if (tooltip === undefined) return drawn;
   // A disabled button takes no pointer or focus: a wrapper that does says why.
-  const disabled = props.href === undefined && (props.disabled || props.loading);
+  // A loading button is not disabled: it keeps the focus it has while it works.
+  const disabled = props.href === undefined && props.disabled;
   return (
     <Tooltip label={tooltip} keys={keys} tapToShow={disabled === true}>
       {disabled ? (
@@ -127,8 +128,17 @@ function Plain({
     <button
       type="button"
       {...button}
-      disabled={button.disabled || loading}
+      disabled={button.disabled}
+      // Busy, not disabled: a disabled button gives up the keyboard's place, and the focus drops to the page.
+      aria-disabled={loading || undefined}
       aria-busy={loading || undefined}
+      onClick={
+        loading
+          ? (event) => {
+              event.preventDefault();
+            }
+          : button.onClick
+      }
       className={classesOf(variant, size, className)}
     >
       {label}

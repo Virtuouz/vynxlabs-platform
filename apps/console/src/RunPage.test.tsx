@@ -803,6 +803,11 @@ test("a script run says what its failure alert did, and what it published (OPS-M
   expect(href("The failure handler's run")).toContain(`${link}/runs/h1`);
   const published = await screen.findByRole("link", { name: "orders/placed" });
   expect(published.getAttribute("href")).toBe(`${link}/events?item=e9`);
+  // NARROW-4: links read as links, in the action color, not as plain text.
+  expect(published.className).toContain("text-action");
+  expect(screen.getByRole("link", { name: "The failure handler's run" }).className).toContain(
+    "text-action",
+  );
   expect(calls.some((one) => one.url.includes("/events?run=r1"))).toBe(true);
 });
 

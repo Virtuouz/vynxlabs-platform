@@ -37,7 +37,7 @@ import { Time } from "../kit/Time.tsx";
 import { Truncate } from "../kit/Truncate.tsx";
 import { useTitleObject } from "../kit/title.ts";
 import { ColumnsMenu, ViewsMenu } from "../kit/views.tsx";
-import { Link, navigate, useUrlState } from "../router.tsx";
+import { Link, navigate, TEXT_LINK, useUrlState } from "../router.tsx";
 import { useStreamConnected } from "../stream.ts";
 import { CancelOlder } from "./CancelOlder.tsx";
 import { LogWindowNote, startedBy, TRIGGER, useLiveRun, wholeLogDownload } from "./Execution.tsx";
@@ -1349,7 +1349,10 @@ export function ScriptRunPanel({
                   </div>
                 ) : null}
                 {run.alert?.handlerRunId ? (
-                  <Link to={`${link}/runs/${String(run.alert.handlerRunId)}`} className="text-meta">
+                  <Link
+                    to={`${link}/runs/${String(run.alert.handlerRunId)}`}
+                    className={`text-meta ${TEXT_LINK}`}
+                  >
                     The failure handler's run
                   </Link>
                 ) : null}

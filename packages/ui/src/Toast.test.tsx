@@ -65,7 +65,10 @@ test("a loading button keeps its label, says it is busy, and cannot be pressed a
   );
   const button = screen.getByRole("button", { name: "Save draft" });
   expect(button.getAttribute("aria-busy")).toBe("true");
-  expect((button as HTMLButtonElement).disabled).toBe(true);
+  expect(button.getAttribute("aria-disabled")).toBe("true");
+  // It is not disabled, so the focus a person had on it stays (NARROW-3).
+  button.focus();
+  expect(document.activeElement).toBe(button);
   fireEvent.click(button);
   expect(press).not.toHaveBeenCalled();
 });

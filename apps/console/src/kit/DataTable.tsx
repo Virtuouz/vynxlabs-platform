@@ -2,6 +2,7 @@ import { observeElementRect, useVirtualizer } from "@tanstack/react-virtual";
 import { Button, Menu, type MenuItem, Skeleton } from "@volvel/ui";
 import { MoreHorizontal, Rows3 } from "lucide-react";
 import {
+  type CSSProperties,
   isValidElement,
   type KeyboardEvent,
   type ReactNode,
@@ -351,6 +352,14 @@ export function DataTable<Row>(props: DataTableProps<Row>) {
   const slow = useDelayed(loading === true || rows === undefined);
   const edge = (index: number, count: number) =>
     `${index === 0 ? "pl-4 md:pl-6" : ""} ${index === count - 1 ? "pr-4 md:pr-6" : ""}`;
+  // The width its columns need where they are shown, so a narrow screen scrolls the table
+  // sideways and no cell runs under the next, and an action column is never cut off.
+  const minimums: Record<string, string> = {};
+  for (const level of [1, 2, 3] as const) {
+    const shown = columns.filter((column) => (column.priority ?? 1) <= level).length;
+    const rem = shown * 7 + (checking ? 2.5 : 0) + (actions ? 3 : 0);
+    minimums[`--table-min-${level}`] = `${rem}rem`;
+  }
   const cells = [
     ...(checking ? [{ kind: "check" as const }] : []),
     ...columns.map((column) => ({ kind: "data" as const, column })),
@@ -424,7 +433,8 @@ export function DataTable<Row>(props: DataTableProps<Row>) {
           role={grid ? "grid" : undefined}
           aria-rowcount={grid ? shown.length + 1 : undefined}
           onKeyDown={onKeyDown}
-          className="w-full table-fixed border-collapse text-left"
+          style={minimums as CSSProperties}
+          className="w-full min-w-[var(--table-min-1)] table-fixed border-collapse text-left sm:min-w-[var(--table-min-2)] lg:min-w-[var(--table-min-3)]"
           aria-busy={refreshing || undefined}
         >
           <thead
@@ -615,7 +625,7 @@ export function DataTable<Row>(props: DataTableProps<Row>) {
                       <td
                         key={columnKey(column)}
                         {...common}
-                        className={`px-3 ${PAD[density]} ${SHOWN[column.priority ?? 1]} ${
+                        className={`px-3 [overflow-wrap:anywhere] ${PAD[density]} ${SHOWN[column.priority ?? 1]} ${
                           column.align === "end" ? "text-right tabular-nums" : ""
                         } ${column.truncate ? "truncate" : ""} ${edges} ${ring}`}
                         onPointerEnter={column.truncate ? fullOnHover : undefined}

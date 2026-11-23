@@ -2,6 +2,7 @@ import type { Edge } from "@xyflow/react";
 import { expect, test } from "vitest";
 import {
   carryName,
+  FIT,
   followCases,
   insertAfter,
   keepsAddress,
@@ -260,4 +261,8 @@ test("FLW-23: a step named from a script path, a long text and too many cases ar
   expect(found.some((m) => /ask.*200/.test(m))).toBe(true);
   expect(found.some((m) => /pick.*20 cases/.test(m))).toBe(true);
   expect(found.some((m) => /calc.*2,000/.test(m))).toBe(true);
+});
+
+test("NARROW-5: fitting the flow never shrinks it below a size its text can be read at", () => {
+  expect(FIT.minZoom).toBeGreaterThanOrEqual(0.7);
 });

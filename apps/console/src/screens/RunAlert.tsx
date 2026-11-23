@@ -1,6 +1,6 @@
 import { Notice } from "@volvel/ui";
 import { useLoad } from "../api.ts";
-import { Link } from "../router.tsx";
+import { Link, TEXT_LINK } from "../router.tsx";
 
 /** What the failure alert of a run did, as the run stores it. */
 export type FailureAlertOutcome = Record<string, unknown> | null | undefined;
@@ -24,7 +24,7 @@ export function RunAlert({ alert, link }: { alert: FailureAlertOutcome; link: st
   return (
     <>
       {handlerRun ? (
-        <Link to={`${link}/runs/${handlerRun}`} className="text-meta">
+        <Link to={`${link}/runs/${handlerRun}`} className={`text-meta ${TEXT_LINK}`}>
           The failure handler's run
         </Link>
       ) : null}
@@ -80,7 +80,9 @@ export function RunEvents({ root, link, runId }: { root: string; link: string; r
         <ul className="m-0 flex list-none flex-col gap-1 p-0">
           {events.data.items.map((one) => (
             <li key={one.id} className="min-w-0 break-words">
-              <Link to={`${link}/events?item=${encodeURIComponent(one.id)}`}>{one.name}</Link>
+              <Link to={`${link}/events?item=${encodeURIComponent(one.id)}`} className={TEXT_LINK}>
+                {one.name}
+              </Link>
             </li>
           ))}
         </ul>

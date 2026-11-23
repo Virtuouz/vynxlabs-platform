@@ -240,3 +240,29 @@ test("Shift+J and Shift+K check the rows they pass, as the shortcut sheet says (
   await act(frame);
   expect(screen.getByText("3 selected")).toBeTruthy();
 });
+
+test("NARROW-1: a table keeps a width its columns can be read in and wraps long text, so cells never run under the next", () => {
+  render(
+    <DataTable
+      label="Things"
+      columns={[
+        { header: "A", cell: (row: Row) => row.name },
+        { header: "B", cell: (row: Row) => row.name, priority: 2 },
+        { header: "C", cell: (row: Row) => row.name, priority: 3 },
+      ]}
+      rows={ROWS}
+      rowKey={(row) => row.id}
+      actions={() => [{ label: "Open", onSelect: () => {} }]}
+      empty={{ title: "None" }}
+    />,
+  );
+  const table = screen.getByLabelText("Things");
+  // One scrolling width for each breakpoint, from the columns shown there.
+  expect(table.className).toContain("min-w-[var(--table-min-1)]");
+  expect(table.className).toContain("sm:min-w-[var(--table-min-2)]");
+  expect(table.className).toContain("lg:min-w-[var(--table-min-3)]");
+  expect(table.style.getPropertyValue("--table-min-1")).toBe("10rem");
+  expect(table.style.getPropertyValue("--table-min-3")).toBe("24rem");
+  const cell = table.querySelector("tbody td") as HTMLElement;
+  expect(cell.className).toContain("[overflow-wrap:anywhere]");
+});

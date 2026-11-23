@@ -88,6 +88,7 @@ export const TENANT_KINDS: { kind: string; schemaVersion: number; folder: string
       body: {
         type: "object",
         properties: {
+          title,
           description,
           permissions: {
             type: "array",
@@ -122,6 +123,7 @@ export const TENANT_KINDS: { kind: string; schemaVersion: number; folder: string
       body: {
         type: "object",
         properties: {
+          title,
           role: {
             type: "string",
             pattern: ROLE_KEY_PATTERN,
@@ -207,7 +209,9 @@ export function checkTenantResources(
     }
     seen.add(`${resource.kind} ${resource.key}`);
     for (const issue of validateJson(definition.body, resource.body, "/body")) {
-      problems.push(`${name}: ${issue.path} ${issue.message}`);
+      problems.push(
+        `${name} (${tenantFileName(definition, resource.key)}): ${issue.path} ${issue.message}`,
+      );
     }
     if (resource.kind === "tenant_role") {
       // A permission the role already holds stays, even once it is retired: only what is added is checked.
@@ -239,6 +243,8 @@ export function checkTenantResources(
   return problems;
 }
 
+/** Kinds that are known by their key and what they give, and keep no title: a file's title for one is not kept. */
+const UNTITLED = new Set(["tenant_role", "tenant_binding"]);
 const FILE_NAME = /^(?:.*\/)?([^/]+)\.([a-z][a-z0-9_]*)\.yaml$/;
 const YAML_OPTIONS = { lineWidth: 0, version: "1.2" } as const;
 
@@ -339,7 +345,7 @@ export function parseTenantFiles(files: readonly ResourceFile[]): {
       kind,
       key: (key as string | undefined) ?? stem,
       body: {
-        ...(said !== undefined ? { title: said } : {}),
+        ...(said !== undefined && !UNTITLED.has(kind) ? { title: said } : {}),
         ...((body as Record<string, unknown> | undefined) ?? {}),
       },
     });

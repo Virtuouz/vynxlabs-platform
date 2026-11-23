@@ -21,6 +21,13 @@
     "body": {
       "type": "object",
       "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "pattern": "^\\S(.*\\S)?$",
+          "description": "What people read. It can change: nothing refers to it."
+        },
         "role": {
           "type": "string",
           "pattern": "^[a-z][a-z0-9_]{0,62}$",

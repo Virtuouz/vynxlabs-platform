@@ -264,13 +264,13 @@ test("a bound connection's page has Unbind, which asks naming what uses it, then
   });
   history.replaceState(null, "", `${link}/connections/erp`);
   show(<ConnectionPage root={root} link={link} path="erp" />);
-  fireEvent.click(await screen.findByRole("button", { name: "Unbind" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Remove from here" }));
   const dialog = await screen.findByRole("dialog");
   expect(dialog.textContent).toMatch(/Used by 2: orders\/sync and orders\/reorder/);
-  fireEvent.click(within(dialog).getByRole("button", { name: "Unbind" }));
+  fireEvent.click(within(dialog).getByRole("button", { name: "Remove from here" }));
   await screen.findByText("Not set up here");
   expect(calls).toContain(`DELETE ${root}/connection-bindings/erp`);
-  expect(screen.queryByRole("button", { name: "Unbind" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Remove from here" })).toBeNull();
   history.replaceState(null, "", "/");
 });
 

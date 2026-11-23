@@ -261,3 +261,13 @@ test("FLW-23: a step named from a script path, a long text and too many cases ar
   expect(found.some((m) => /pick.*20 cases/.test(m))).toBe(true);
   expect(found.some((m) => /calc.*2,000/.test(m))).toBe(true);
 });
+
+test("an event start's filter that reads trigger is a problem, since only event is there (FLW-filter)", () => {
+  const listen = (filter: string) => ({
+    listen: { type: "trigger", trigger: { type: "event", event: "orders/paid", filter } },
+  });
+  expect(problemsOf(listen("event.payload.amount > 100"), [])).toEqual([]);
+  expect(problemsOf(listen("trigger.amount > 100"), [])).toEqual([
+    "listen's filter reads trigger, which an event start does not have. Read the event instead: event.payload or event.name.",
+  ]);
+});

@@ -3510,7 +3510,7 @@ export function Sources({ root, link }: { root: string; link: string }) {
   );
 }
 
-/** Test, Change and Unbind of a bound data source: the list's row and the source's own page share them. */
+/** Test, Change and Remove from here of a bound data source: the list's row and the source's own page share them. */
 function SourceActions({
   root,
   row,
@@ -3530,8 +3530,8 @@ function SourceActions({
       <TestSource root={root} row={row} onDone={onDone} />
       <ChangeSource root={root} row={row} onDone={onDone} />
       <RemoveButton
-        label="Unbind"
-        confirm={`Unbind "${row.path}"? Scripts that use it will fail until it is bound again. Nothing in that database changes.`}
+        label="Remove from here"
+        confirm={`Remove "${row.path}" from here? Scripts that use it will fail until it is set up again. Nothing in that database changes.`}
         run={() => api.delete(`${root}/data-source-bindings/${row.path}`)}
         onDone={onUnbound}
       />

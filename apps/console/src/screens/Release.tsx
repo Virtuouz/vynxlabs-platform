@@ -475,7 +475,7 @@ function ReviewStep({
                     <ul className="mt-1 mb-0 pl-5">
                       {(preview.data.summary.warnings ?? []).map((one) => (
                         <li key={one.path}>
-                          {one.message}. A run that reaches it fails until it is bound.
+                          {one.message}. A run that reaches it fails until it is set up.
                         </li>
                       ))}
                     </ul>

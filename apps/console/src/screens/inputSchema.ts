@@ -11,6 +11,8 @@ export interface SchemaRow {
   type: FieldType;
   required: boolean;
   description: string;
+  /** What the field is called on the Start form, when that is not its name. */
+  title: string;
   /** The shortest text, or the smallest number. */
   min: number | undefined;
   /** The longest text, or the largest number. */
@@ -24,7 +26,7 @@ export const FIELD_TYPES: { value: FieldType; label: string }[] = [
   { value: "boolean", label: "Yes or no" },
 ];
 
-const KEYS = ["type", "description", "minLength", "maxLength", "minimum", "maximum"];
+const KEYS = ["type", "title", "description", "minLength", "maxLength", "minimum", "maximum"];
 
 const isObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -32,11 +34,13 @@ const isObject = (value: unknown): value is Record<string, unknown> =>
 /** The rows a schema is, or the reason the form cannot show it. */
 export function fieldsOf(
   schema: Record<string, unknown> | undefined,
-): { rows: SchemaRow[] } | { why: string } {
+): { rows: SchemaRow[]; title?: string } | { why: string } {
   if (schema === undefined) return { rows: [] };
   const extra = Object.keys(schema).find(
-    (key) => !["type", "properties", "required"].includes(key),
+    (key) => !["type", "title", "properties", "required"].includes(key),
   );
+  if (schema.title !== undefined && typeof schema.title !== "string")
+    return { why: "Its title is not text." };
   if (extra) return { why: `It uses ${extra}.` };
   if (schema.type !== "object") return { why: 'It is not of type "object".' };
   const properties = schema.properties ?? {};
@@ -74,11 +78,15 @@ export function fieldsOf(
     if (property.description !== undefined && typeof property.description !== "string") {
       return { why: `"${name}" has a description that is not text.` };
     }
+    if (property.title !== undefined && typeof property.title !== "string") {
+      return { why: `"${name}" has a title that is not text.` };
+    }
     rows.push({
       name,
       type,
       required: required.includes(name),
       description: (property.description as string | undefined) ?? "",
+      title: (property.title as string | undefined) ?? "",
       min: type === "boolean" ? undefined : bound(low),
       max: type === "boolean" ? undefined : bound(high),
     });
@@ -86,7 +94,7 @@ export function fieldsOf(
   if (required.some((one) => !(one in properties))) {
     return { why: "It requires a name that is not one of its properties." };
   }
-  return { rows };
+  return { rows, ...(typeof schema.title === "string" ? { title: schema.title } : {}) };
 }
 
 /** What is wrong with the rows, by the place of the row, or nothing when they are a schema. */
@@ -105,13 +113,18 @@ export function problemsOf(rows: readonly SchemaRow[]): Map<number, string> {
 }
 
 /** The schema the rows make: nothing when there are none. */
-export function schemaOf(rows: readonly SchemaRow[]): Record<string, unknown> | undefined {
+export function schemaOf(
+  rows: readonly SchemaRow[],
+  /** The schema's own title, which the form does not edit and keeps. */
+  title?: string,
+): Record<string, unknown> | undefined {
   if (rows.length === 0) return undefined;
   const properties: Record<string, unknown> = {};
   for (const row of rows) {
     const text = row.type === "string";
     properties[row.name.trim()] = {
       type: row.type,
+      ...(row.title.trim() ? { title: row.title.trim() } : {}),
       ...(row.description.trim() ? { description: row.description.trim() } : {}),
       ...(row.type !== "boolean" && row.min !== undefined
         ? { [text ? "minLength" : "minimum"]: row.min }
@@ -122,5 +135,10 @@ export function schemaOf(rows: readonly SchemaRow[]): Record<string, unknown> | 
     };
   }
   const required = rows.filter((row) => row.required).map((row) => row.name.trim());
-  return { type: "object", properties, ...(required.length > 0 ? { required } : {}) };
+  return {
+    type: "object",
+    ...(title ? { title } : {}),
+    properties,
+    ...(required.length > 0 ? { required } : {}),
+  };
 }

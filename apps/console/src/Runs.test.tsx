@@ -429,6 +429,18 @@ test("a window that ends before it starts says so and asks for nothing (OPS-MP7)
   expect(lists()).toHaveLength(0);
 });
 
+test("a window changed to end before it starts drops the rows of the window before (OPS-MP7)", async () => {
+  show(<RunsWorkbench root={root} link="/t/t1/workspaces/w1" />);
+  await screen.findByText("reminders/send");
+  fireEvent.change(screen.getByLabelText("When"), { target: { value: "between" } });
+  fireEvent.change(await screen.findByLabelText("From"), { target: { value: "2026-11-10T08:00" } });
+  fireEvent.change(screen.getByLabelText("To"), { target: { value: "2026-11-11T09:30" } });
+  await screen.findByText("reminders/send");
+  fireEvent.change(screen.getByLabelText("To"), { target: { value: "2026-11-09T09:30" } });
+  expect(await screen.findByText("The end is before the start.")).toBeTruthy();
+  expect(screen.queryByText("reminders/send")).toBeNull();
+});
+
 test("a viewer is offered no Cancel, Cancel by age or Run again, and an operator is (OPS-35)", async () => {
   const served = globalThis.fetch;
   let allowed: string[] = [];

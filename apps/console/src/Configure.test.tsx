@@ -179,7 +179,7 @@ test("CFG-16: until what uses a connection is read, the list says it is reading,
   show(<Connections root={root} />);
   expect(await screen.findByText("Reading…")).toBeTruthy();
   expect(screen.queryByText("Nothing deployed uses it")).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "Unbind" }));
+  fireEvent.click(screen.getByRole("button", { name: "Remove from here" }));
   expect(await answerText()).toMatch(/could not be read/);
   answer([500, { status: 500, detail: "The database is busy." }]);
   await waitFor(() => expect(screen.getByText("Could not be read")).toBeTruthy());
@@ -431,10 +431,10 @@ test("WLK-cfg2: a connection's page can unbind it, after saying what that does",
   routes[`GET ${root}/references`] = () => [200, { items: [] }];
   routes[`DELETE ${root}/connection-bindings/drive`] = () => [204, null];
   show(<ConnectionPage root={root} link={link} path="drive" />);
-  fireEvent.click(await screen.findByRole("button", { name: "Unbind" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Remove from here" }));
   const dialog = await screen.findByRole("dialog");
   expect(within(dialog).getByText(/Scripts that use it will fail/)).toBeTruthy();
-  fireEvent.click(within(dialog).getByRole("button", { name: "Unbind" }));
+  fireEvent.click(within(dialog).getByRole("button", { name: "Remove from here" }));
   await waitFor(() =>
     expect(calls.some((one) => one.method === "DELETE" && one.url.endsWith("/drive"))).toBe(true),
   );

@@ -412,7 +412,13 @@ export async function deployBundle(
     await renamePathState(trx, data, workspace.id, row, row.path, swapPath(row.id));
   }
 
-  for (const manifest of content.manifests) {
+  // What a resource refers to is applied before it, whatever the paths sort as: a trigger
+  // before the script it starts, a schedule before the flow. Within a kind, paths keep their order.
+  const inOrder = content.manifests
+    .map((manifest, index) => ({ manifest, index }))
+    .sort((a, b) => applyRank(a.manifest.kind) - applyRank(b.manifest.kind) || a.index - b.index)
+    .map(({ manifest }) => manifest);
+  for (const manifest of inOrder) {
     const stored = matched.get(manifest);
     // An app, an interface and a form have a title in their body: that is their title.
     const inBody = (manifest.body as { title?: unknown }).title;
@@ -876,3 +882,8 @@ const KIND_ORDER = [
 ];
 /** Where a kind comes when resources are applied: what others refer to goes first. */
 export const order = (kind: string) => KIND_ORDER.indexOf(kind);
+/** A kind this list does not name is applied after the ones it does. */
+const applyRank = (kind: string) => {
+  const at = order(kind);
+  return at === -1 ? KIND_ORDER.length : at;
+};

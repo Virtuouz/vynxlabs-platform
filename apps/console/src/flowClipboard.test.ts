@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { type Clip, copySteps, pasteSteps, readClip } from "./flowClipboard.ts";
+import { type Clip, copySteps, pasteSteps, readClip, readClipReport } from "./flowClipboard.ts";
 
 const steps = [
   { id: "start", position: { x: 0, y: 0 }, node: { type: "trigger", trigger: { type: "manual" } } },
@@ -79,4 +79,22 @@ test("FLW-23: pasted names and types are checked", () => {
   expect(readClip(clip("Bad Name!", "set"))).toBeUndefined();
   expect(readClip(clip("fine", "teleport"))).toBeUndefined();
   expect(readClip(clip("fine", "set"))?.steps).toHaveLength(1);
+});
+
+test("what a paste leaves out is said, with each reason, and text that is no steps says so (FLW-paste)", () => {
+  const steps = [
+    { id: "fine", position: { x: 0, y: 0 }, node: { type: "set" } },
+    { id: "Bad Name!", position: { x: 0, y: 0 }, node: { type: "set" } },
+    { id: "odd", position: { x: 0, y: 0 }, node: { type: "teleport" } },
+  ];
+  const read = readClipReport(JSON.stringify({ volvelFlowSteps: 1, steps, edges: [] }));
+  expect(read.clip?.steps.map((step) => step.id)).toEqual(["fine"]);
+  expect(read.skipped.map((one) => one.id)).toEqual(["Bad Name!", "odd"]);
+  expect(read.skipped[1]?.why).toContain('"teleport"');
+  const none = readClipReport(
+    JSON.stringify({ volvelFlowSteps: 1, steps: steps.slice(1), edges: [] }),
+  );
+  expect(none.clip).toBeUndefined();
+  expect(none.nothing).toContain("no step on the clipboard can be used");
+  expect(readClipReport("hello").nothing).toContain("not steps copied from a flow");
 });

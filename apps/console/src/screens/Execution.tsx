@@ -428,6 +428,8 @@ export type LiveRun = Run & {
   alert: Record<string, unknown> | null;
   pool: string | null;
   waitingFor: string | null;
+  /** When a run set for later starts. */
+  scheduledFor?: string | null;
   /** Set when the script limits its runs per value of a key in their input. */
   concurrency?: { key: string; value: string; limit: number } | null;
   reruns?: { id: string; state: RunState; createdAt: string }[];
@@ -892,8 +894,8 @@ export function Connections({ root, production = false }: { root: string; produc
               </Button>
               {row.bound ? (
                 <RemoveButton
-                  label="Unbind"
-                  confirm={`Unbind ${row.path}? Scripts that use it will fail until it is bound again.`}
+                  label="Remove from here"
+                  confirm={`Remove ${row.path} from here? Scripts that use it will fail until it is set up again.`}
                   affected={usersOf(connectionUses(row.path))}
                   usesUnread={connectionUses.failed || !connectionUses.loaded}
                   run={() => api.delete(`${root}/connection-bindings/${row.path}`)}

@@ -95,8 +95,8 @@ export function ConnectionPage({ root, link, path }: { root: string; link: strin
                 ) : null}
                 {one.bound && mayWrite ? (
                   <RemoveButton
-                    label="Unbind"
-                    confirm={`Unbind ${one.path}? Scripts that use it will fail until it is bound again.`}
+                    label="Remove from here"
+                    confirm={`Remove ${one.path} from here? Scripts that use it will fail until it is set up again.`}
                     affected={usersOf(uses(one.path))}
                     usesUnread={uses.failed || !uses.loaded}
                     run={() => api.delete(`${root}/connection-bindings/${one.path}`)}

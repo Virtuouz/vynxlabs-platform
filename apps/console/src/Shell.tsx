@@ -170,7 +170,7 @@ function panelFor(
           : ws?.git?.state === "ahead" || ws?.git?.state === "behind"
             ? { text: ws.git.state, tone: "neutral" }
             : undefined,
-      connections: some(ws?.unboundConnections, (n) => `${n} missing`, "attention"),
+      connections: some(ws?.unboundConnections, (n) => `${n} not set up`, "attention"),
     };
     return {
       title: AREA_LABEL[area],

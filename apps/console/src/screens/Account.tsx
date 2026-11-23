@@ -3,6 +3,7 @@ import { useState } from "react";
 import { ApiError, api, type Me, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
 import { DataTable } from "../kit/DataTable.tsx";
+import { daysChosen, expiryField } from "../kit/expiry.ts";
 import { Loading } from "../kit/LoadState.tsx";
 import { KeyValues, Panel, SectionLabel } from "../kit/layout.tsx";
 import { OneTimeSecret } from "../kit/OneTimeSecret.tsx";
@@ -63,27 +64,14 @@ export const keyColumns = [
   },
 ];
 
-/** How long a new key lasts: asked once, here, for every list of keys that makes them. */
-export const keyExpiryField: FormField = {
-  name: "expires",
-  label: "Expires",
-  options: [
-    { value: "never", label: "Never" },
-    { value: "30", label: "In 30 days" },
-    { value: "90", label: "In 90 days" },
-    { value: "365", label: "In a year" },
-  ],
-  hint: "After this the key stops working, and you make a new one.",
-};
+export const keyExpiryField: FormField = expiryField("key");
 
 /** What the create form sends for a key: its name, and the moment it ends when it does. */
 export function newKeyBody(values: Record<string, string>, now = Date.now()) {
-  const days = Number(values.expires);
+  const days = daysChosen(values);
   return {
     name: values.name,
-    ...(Number.isFinite(days) && days > 0
-      ? { expiresAt: new Date(now + days * 86_400_000).toISOString() }
-      : {}),
+    ...(days ? { expiresAt: new Date(now + days * 86_400_000).toISOString() } : {}),
   };
 }
 

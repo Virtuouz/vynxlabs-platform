@@ -483,7 +483,8 @@ function AppList({ root, onShare }: { root: string; onShare: (app: AppSummary) =
     what: "this workspace's apps",
   });
   const [chosen, setChosen] = useUrlParam("app", undefined, { push: true });
-  const open = list.data?.items.find((row) => row.id === chosen);
+  // A link names an app by its ID or by its path: the palette's Recent list keeps paths.
+  const open = list.data?.items.find((row) => row.id === chosen || row.path === chosen);
   const ids = /^\/tenants\/([^/]+)\/workspaces\/([^/]+)/.exec(root);
   useRecordRecent(ids?.[1], ids?.[2], open ? "app" : undefined, open?.path);
   const [search, setSearch] = useState("");
@@ -617,7 +618,7 @@ function AppList({ root, onShare }: { root: string; onShare: (app: AppSummary) =
         ]}
         rows={list.data ? shown : undefined}
         rowKey={(row) => row.id}
-        selected={chosen}
+        selected={open?.id ?? chosen}
         onSelect={(row) => setChosen(row.id)}
         error={list.error}
         onRetry={list.reload}

@@ -1571,7 +1571,7 @@ export function Tables({ root, link }: { root: string; link: string }) {
             label: "What it holds",
             required: false,
             placeholder: "Notes taken in meetings",
-            hint: "In plain words. Shown under the table's name. Optional.",
+            hint: "In plain words. Shown under the table's name.",
           },
           { name: "column", label: "First column", placeholder: "title" },
           { name: "type", label: "It holds", options: TYPES },
@@ -2666,7 +2666,7 @@ function Definition({
                 row.default === null || row.default === undefined ? (
                   ""
                 ) : (
-                  <Code>{JSON.stringify(row.default)}</Code>
+                  <Code>{showValue(row.type, row.default)}</Code>
                 ),
             },
             ...(editable
@@ -3112,7 +3112,6 @@ function Definition({
               name: "fallback",
               label: "Value when none is given",
               required: false,
-              hint: "Optional.",
               when: (values) => !hasNoDefault(values.type ?? "text"),
               render: ({ value, values, error, onChange }) => (
                 <DefaultField

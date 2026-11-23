@@ -1,7 +1,13 @@
 import type { InterfaceBody, PageWidget } from "@volvel/manifest";
 import { expect, test } from "vitest";
 import { draftChanges } from "./screens/builder/changes.ts";
-import { checksFor, plainly, problemAt, problemWords } from "./screens/builder/publishCheck.ts";
+import {
+  checksFor,
+  plainly,
+  problemAt,
+  problemWords,
+  refusalWords,
+} from "./screens/builder/publishCheck.ts";
 
 const form = (data: PageWidget["data"]): PageWidget => ({
   id: "form",
@@ -242,4 +248,41 @@ test("a Run a flow step with no flow chosen says so, not an empty path (FLW-publ
   expect(problem({ do: "flow", path: "orders/other" })).toBe(
     "it starts orders/other, which can't be started by hand",
   );
+});
+
+test("w-builder 6: a deploy's refusal about another dashboard or app is said with its name, not as this app's", () => {
+  const made = body(form(undefined));
+  const own = ["clinic/app", null];
+  // A widget the server no longer knows, on a dashboard that is not this app.
+  const other = {
+    path: "boards/w-builder-board (dashboard)",
+    message: '/body/widgets/2/type there is no widget called "labs/goal"',
+  };
+  const said = refusalWords(other, made, own);
+  expect(said).toBe(
+    'boards/w-builder-board (dashboard), which this deploy also carries: there is no widget called "labs/goal".',
+  );
+  // Two such dashboards are two lines, each its own.
+  const second = refusalWords({ ...other, path: "boards/old (dashboard)" }, made, own);
+  expect(second).not.toBe(said);
+  const items = checksFor({
+    body: made,
+    known,
+    definitionOf: () => undefined,
+    problems: [],
+    refusal: [{ text: said }, { text: second }, { text: said }],
+    warnings: [],
+  });
+  expect(items.filter((one) => one.text.includes("labs/goal"))).toHaveLength(2);
+  // This app's own refusal is in its page's words.
+  expect(
+    refusalWords(
+      {
+        path: "clinic/app (interface)",
+        message: "/body/pages/0/widgets/0/config/fields must NOT have fewer than 1 items",
+      },
+      made,
+      own,
+    ),
+  ).toBe("form on Edit invoice: needs at least 1 field.");
 });

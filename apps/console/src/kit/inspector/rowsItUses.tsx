@@ -194,6 +194,13 @@ function neededBy(visual: VisualQuery, via: string): string[] {
   ];
 }
 
+/** What a column of a followed table is called in the result: `pet.name` is `pet_name`. */
+export const joinedName = (via: string, column: string) => `${via}_${column}`;
+
+/** Whether a column of a followed table would take the name of one the table has itself. */
+export const collides = (own: readonly string[], via: string, column: string) =>
+  own.includes(joinedName(via, column));
+
 /**
  * "Also from": the tables the chosen table points to, each a chip that follows it, and for each
  * one followed the columns of it to show. Every visual source gets it through "Rows it uses".
@@ -263,6 +270,10 @@ function AlsoFrom({ env, input, visual }: { env: Env; input: string; visual: Vis
                     <CheckChip
                       key={column.name}
                       checked={(visual.columns ?? []).includes(`${one.via}.${column.name}`)}
+                      disabled={
+                        !(visual.columns ?? []).includes(`${one.via}.${column.name}`) &&
+                        collides(own, one.via, column.name)
+                      }
                       onChange={(on) => choose(one.via, column.name, on)}
                     >
                       {heading(column.name)}
@@ -270,6 +281,21 @@ function AlsoFrom({ env, input, visual }: { env: Env; input: string; visual: Vis
                   ))}
                 </ChipSet>
               )}
+              {summary
+                ? null
+                : one.columns
+                    .filter(
+                      (column) =>
+                        !(visual.columns ?? []).includes(`${one.via}.${column.name}`) &&
+                        collides(own, one.via, column.name),
+                    )
+                    .map((column) => (
+                      <p key={column.name} className="m-0 text-body-sm text-ink-muted">
+                        {heading(column.name)} is not offered: {heading(visual.table)} already has a
+                        column called {joinedName(one.via, column.name)}, which this one would be
+                        called too.
+                      </p>
+                    ))}
             </div>
           );
         })}

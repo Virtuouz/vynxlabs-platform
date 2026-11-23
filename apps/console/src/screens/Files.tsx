@@ -261,11 +261,14 @@ export function Files({ root }: { root: string }) {
                     variant="danger"
                     disabled={row.namedBy.length > 0 || !may.can}
                     aria-label={`Delete ${row.name}`}
-                    title={
-                      row.namedBy.length > 0
-                        ? "A row still names this file. Change the row first."
-                        : may.reason
-                    }
+                    {...(row.namedBy.length > 0 || may.reason
+                      ? {
+                          tooltip:
+                            row.namedBy.length > 0
+                              ? "A row still names this file. Change the row first."
+                              : (may.reason as string),
+                        }
+                      : {})}
                     onClick={() => void remove(row)}
                   >
                     Delete

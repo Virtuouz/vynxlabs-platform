@@ -139,7 +139,7 @@ export function ResourceIdentity({
       <Button
         size="small"
         disabled={why !== undefined}
-        title={why}
+        {...(why ? { tooltip: why } : {})}
         onClick={(event) => {
           opener.current = event.currentTarget;
           setOpen(true);

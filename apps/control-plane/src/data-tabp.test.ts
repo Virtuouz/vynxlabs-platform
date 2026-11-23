@@ -130,4 +130,23 @@ describe("what the console needs of a table to change it (TAB-P1 to TAB-P6)", ()
     expect(detail.status).toBe("active");
     expect(detail.rowCount).toBe(2);
   });
+
+  test("w-data 1: a retired table still lists its indexes, and brings them back", async () => {
+    const own = await fresh();
+    const body = {
+      columns: { title: { type: "text" }, kind: { type: "text" } },
+      indexes: [["kind", "title"], ["title"]],
+    };
+    await put(own, "notes", body, { create: true });
+    expect((await alice.delete(`${ws(own)}/resources/notes`)).status).toBe(204);
+    const gone = (await alice.get(`${ws(own)}/tables/notes`)).body;
+    expect(gone.status).toBe("retired");
+    expect(gone.indexes).toEqual(expect.arrayContaining([["kind", "title"], ["title"]]));
+    expect(gone.indexes).toHaveLength(2);
+    const back = await put(own, "notes", { ...body, indexes: gone.indexes });
+    expect(back.status, JSON.stringify(back.body)).toBeLessThan(300);
+    const detail = (await alice.get(`${ws(own)}/tables/notes`)).body;
+    expect(detail.status).toBe("active");
+    expect(detail.indexes).toHaveLength(2);
+  });
 });

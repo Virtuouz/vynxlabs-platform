@@ -14,6 +14,7 @@ import {
   mostAffectedGroup,
   problemAt,
   problemWords,
+  refusalWords,
 } from "./publishCheck.ts";
 import { definitionOf } from "./registry.ts";
 
@@ -143,7 +144,7 @@ export function PublishCheck({
         ? asked.refusal.errors.length > 0
           ? asked.refusal.errors.map((one) => ({
               // The same words as a saved problem's, so that one failure is one line.
-              text: `${problemWords(one, body)}.`.replace(/\.\.$/, "."),
+              text: refusalWords(one, body, [path, appPath]),
               at: problemAt(one, body),
             }))
           : [{ text: asked.refusal.detail }]
@@ -161,7 +162,7 @@ export function PublishCheck({
             detail: "Reload to ask again. Publishing is not held for this.",
           },
         ];
-  }, [body, known, problems, asked, catalogError, keyed.error]);
+  }, [body, path, appPath, known, problems, asked, catalogError, keyed.error]);
   const lines = deployed === undefined ? undefined : draftChanges(deployed ?? undefined, body);
   const blockers = checks.filter((one) => one.state === "fail");
   const ready = asked !== undefined && lines !== undefined;

@@ -576,6 +576,7 @@ function SchemaFields({
   // one before it, else Add a field, and never to the page.
   const group = useRef<HTMLFieldSetElement>(null);
   const after = useRef<number | undefined>(undefined);
+  const [left, setLeft] = useState<ReadonlySet<number>>(new Set());
   // biome-ignore lint/correctness/useExhaustiveDependencies: runs after each removal
   useEffect(() => {
     const at = after.current;
@@ -592,7 +593,9 @@ function SchemaFields({
       </p>
     );
   }
-  const problems = problemsOf(rows);
+  const all = problemsOf(rows);
+  // A field just added has no name yet: that is said once its name has been left, not before.
+  const problems = new Map([...all].filter(([at]) => rows[at]?.name.trim() !== "" || left.has(at)));
   const change = (at: number, patch: Partial<SchemaRow>) =>
     onChange(rows.map((row, index) => (index === at ? { ...row, ...patch } : row)));
   return (
@@ -626,6 +629,10 @@ function SchemaFields({
             // biome-ignore lint/suspicious/noArrayIndexKey: a row is known by its place while its name is typed
             key={at}
             className="m-0 flex min-w-0 flex-col gap-2 rounded-control border border-line p-3"
+            onBlur={(event) => {
+              if ((event.target as unknown as HTMLInputElement).name === `input-field-${n}-name`)
+                setLeft((before) => new Set(before).add(at));
+            }}
           >
             <legend className="px-1 text-meta text-ink-muted">Field {n}</legend>
             <TextField
@@ -696,6 +703,7 @@ function SchemaFields({
                 variant="quiet"
                 onClick={() => {
                   after.current = at;
+                  setLeft(new Set());
                   onChange(rows.filter((_, index) => index !== at));
                 }}
                 aria-label={`Remove field ${n}`}

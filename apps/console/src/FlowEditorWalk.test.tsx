@@ -567,6 +567,17 @@ describe("the flow editor, as a person uses it", () => {
     expect(box().value).toBe('{ "type": "obj');
     await screen.findByText(/This is not JSON yet/);
   });
+  test("w-builder 7: a field just added is not told to be named until its name has been left", async () => {
+    await openAt({ nodes: { start: manual }, edges: [] }, "start", /What it takes, as JSON Schema/);
+    fireEvent.click(screen.getByRole("button", { name: "Add a field" }));
+    const name = screen.getByLabelText("Name of field 1") as HTMLInputElement;
+    expect(screen.queryByText("Give the field a name.")).toBeNull();
+    name.focus();
+    fireEvent.blur(name);
+    await screen.findByText("Give the field a name.");
+    fireEvent.change(name, { target: { value: "client" } });
+    expect(screen.queryByText("Give the field a name.")).toBeNull();
+  });
   test("a manual start's input is a form of fields, kept in step with the JSON box", async () => {
     await openAt({ nodes: { start: manual }, edges: [] }, "start", /What it takes, as JSON Schema/);
     const box = () => screen.getByLabelText(/What it takes, as JSON Schema/) as HTMLTextAreaElement;

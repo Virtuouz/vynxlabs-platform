@@ -586,6 +586,11 @@ describe("what a form's field starts with", () => {
     ]);
   });
 
+  it("w-builder 5: a value chosen but not yet typed is no refusal, and a wrong one still is", () => {
+    expect(said(form({ kind: "value" }))).toEqual([]);
+    expect(said(form({ kind: "value", value: "ten" }))).toHaveLength(1);
+  });
+
   it("refuses today on a column that is not a date, and the person on a number", () => {
     expect(said(form({ kind: "today" }))[0]).toContain('"today" starts a date or a timestamp');
     expect(said(form({ kind: "me" }))[0]).toContain(

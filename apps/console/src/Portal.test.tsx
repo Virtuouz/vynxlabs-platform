@@ -817,3 +817,22 @@ test("an app that is opened is remembered for the palette's Recent list", async 
     }),
   );
 });
+
+test("w-builder 1: an app named in the address by its path (as the palette's Recent list has it) opens", async () => {
+  routes[`GET /api/v1${base}/workspaces/w1/apps`] = () => [
+    200,
+    {
+      items: [appRow("a1", "portal/orders", "Orders"), appRow("a2", "back-office", "Back office")],
+    },
+  ];
+  history.replaceState(null, "", "/?app=portal%2Forders");
+  show(<Apps root={`${base}/workspaces/w1`} />);
+  const sheet = await screen.findByRole("dialog");
+  expect(sheet.textContent).toContain("Orders");
+  expect(sheet.textContent).toContain("portal/orders");
+  history.replaceState(null, "", "/?app=a2");
+  cleanup();
+  show(<Apps root={`${base}/workspaces/w1`} />);
+  expect((await screen.findByRole("dialog")).textContent).toContain("Back office");
+  history.replaceState(null, "", "/");
+});

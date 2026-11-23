@@ -75,6 +75,14 @@ test("TAB-P10: files are listed with what names each, a page at a time", async (
   expect(
     (screen.getByRole("button", { name: "Delete notes.txt" }) as HTMLButtonElement).disabled,
   ).toBe(false);
+  // w-data 6: the reason is not a title, which a keyboard or a finger never meets: it is on a
+  // stop that takes focus, and focusing it says it.
+  const named = screen.getByRole("button", { name: "Delete orders.csv" });
+  expect(named.hasAttribute("title")).toBe(false);
+  const stop = named.parentElement as HTMLElement;
+  expect(stop.getAttribute("tabindex")).toBe("0");
+  fireEvent.focus(stop);
+  await screen.findByText("A row still names this file. Change the row first.");
   expect(screen.getByRole("link", { name: "Download orders.csv" }).getAttribute("href")).toBe(
     `${api}/files/f1/content`,
   );

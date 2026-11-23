@@ -155,10 +155,17 @@ export function Interfaces({
                             path: row.path,
                           }) !== undefined
                         }
-                        title={cannotRename({
+                        {...(cannotRename({
                           ownership: row.ownership ?? "console",
                           path: row.path,
-                        })}
+                        })
+                          ? {
+                              tooltip: cannotRename({
+                                ownership: row.ownership ?? "console",
+                                path: row.path,
+                              }) as string,
+                            }
+                          : {})}
                         onClick={() => setRenaming(row)}
                       >
                         Rename

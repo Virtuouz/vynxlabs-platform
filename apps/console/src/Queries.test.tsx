@@ -206,6 +206,36 @@ describe("the list of saved queries (DAT-30)", () => {
   });
 });
 
+describe("the header of an open query", () => {
+  test("w-data 3: its state is an item of its own beside a long path, so it wraps and never runs under the buttons", async () => {
+    listed = [
+      {
+        path: "reports/a-rather-long-path/of-many/parts/fees-by-device-and-week",
+        title: "Fees",
+        description: "",
+        sql: "select 1",
+        parameters: [],
+        ownership: "ui",
+        draft: "new",
+      },
+    ];
+    history.replaceState(
+      null,
+      "",
+      "/?query=reports/a-rather-long-path/of-many/parts/fees-by-device-and-week",
+    );
+    show(<Queries root={root} link={link} />);
+    const pill = await screen.findByText("Draft, never deployed");
+    const path = screen
+      .getAllByText(/fees-by-device-and-week$/, { selector: "span" })
+      .find((one) => one.className.includes("font-mono")) as HTMLElement;
+    expect(path.contains(pill)).toBe(false);
+    expect(path.className).toContain("break-all");
+    expect(path.parentElement?.className).toContain("flex-wrap");
+    expect(pill.closest("span.shrink-0")?.parentElement).toBe(path.parentElement);
+  });
+});
+
 describe("what uses a saved query (REL-MP7)", () => {
   test("the open query says which dashboards show it, linked", async () => {
     const before = globalThis.fetch;

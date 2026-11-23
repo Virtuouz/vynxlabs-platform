@@ -57,7 +57,7 @@ export interface Destination {
 }
 
 /** Something the search found, as `GET /tenants/:t/search` gives it. */
-interface Found {
+export interface Found {
   kind: string;
   id: string;
   ref: string;
@@ -168,7 +168,7 @@ export function useCommandKey(open: () => void) {
 }
 
 /** Where a found thing's page is. */
-function pageOf(tenantId: string, found: Found): string {
+export function pageOf(tenantId: string, found: Found): string {
   if (found.kind === "member") return `/t/${tenantId}/members/${found.id}`;
   if (found.kind === "end_user") return `/t/${tenantId}/end-users?user=${found.id}`;
   const ws = `/t/${tenantId}/workspaces/${found.workspaceId}`;
@@ -177,7 +177,8 @@ function pageOf(tenantId: string, found: Found): string {
     case "script":
       return `${ws}/scripts/${found.ref}`;
     case "app":
-      return `${ws}/apps?app=${found.id}`;
+      // By path, which a recent item has and the page matches (an ID is matched too).
+      return `${ws}/apps?app=${encodeURIComponent(found.ref)}`;
     case "doc":
       return `${ws}/docs/${found.ref}`;
     case "flow":

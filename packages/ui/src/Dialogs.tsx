@@ -106,11 +106,21 @@ export function DialogsProvider({ children }: { children: ReactNode }) {
 
   const options = asked?.options;
   const required = asked?.kind === "prompt" ? (asked.options.required ?? true) : false;
+  // The limit is said at the field and refused, never cut quietly while a person types.
+  const limit = asked?.kind === "prompt" ? asked.options.maxLength : undefined;
+  const tooLong =
+    asked?.kind === "prompt" &&
+    limit !== undefined &&
+    !asked.options.multiline &&
+    text.length > limit;
+  const lengthSaid = tooLong
+    ? `Use at most ${limit} characters. This is ${text.length}.`
+    : undefined;
   const ready =
     asked?.kind === "type"
       ? text === asked.options.expected
       : asked?.kind === "prompt"
-        ? !required || text.trim() !== ""
+        ? (!required || text.trim() !== "") && !tooLong
         : true;
 
   return (
@@ -174,9 +184,16 @@ export function DialogsProvider({ children }: { children: ReactNode }) {
                   label={asked.options.label}
                   value={text}
                   required={required}
-                  {...(asked.options.maxLength ? { maxLength: asked.options.maxLength } : {})}
-                  {...(fieldError ? { error: fieldError } : {})}
-                  {...(asked.options.hint ? { hint: asked.options.hint } : {})}
+                  {...(fieldError || lengthSaid
+                    ? { error: (fieldError ?? lengthSaid) as string }
+                    : {})}
+                  {...(asked.options.hint || limit
+                    ? {
+                        hint: [asked.options.hint, limit ? `Up to ${limit} characters.` : undefined]
+                          .filter(Boolean)
+                          .join(" "),
+                      }
+                    : {})}
                   {...(asked.options.placeholder ? { placeholder: asked.options.placeholder } : {})}
                   onChange={(value) => {
                     setFieldError(undefined);

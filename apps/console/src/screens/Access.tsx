@@ -141,6 +141,12 @@ export function EffectiveAccess({
         ),
       ]
     : [];
+  // Operator access is not the member's own role: said, when it is all that gives the permission.
+  const counting = held
+    ? held.sources.map((sourceId) => byId.get(sourceId)).filter((source) => source?.counts === true)
+    : [];
+  const byOperatorAccess =
+    counting.length > 0 && counting.every((source) => source?.source === "access_grant");
   // Allowed only when a source that counts gives it: a suspended member's bindings count for nothing.
   const holds = held !== undefined && heldWhere.length > 0;
   const everything = sources.some((source) => source.role.permissions.includes("*:*"));
@@ -190,6 +196,9 @@ export function EffectiveAccess({
                   : heldWhere.length > 0
                     ? `only in: ${heldWhere.join(", ")}.`
                     : ""}
+                {byOperatorAccess
+                  ? " It comes only from operator access, which ends when the grant does."
+                  : ""}
               </span>
             </p>
           ) : (

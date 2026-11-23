@@ -145,7 +145,7 @@ export function DefaultField({
       required={false}
       error={error}
       onChange={onChange}
-      {...(hint ? { hint } : { hint: "Optional." })}
+      {...(hint ? { hint } : {})}
     />
   );
 }

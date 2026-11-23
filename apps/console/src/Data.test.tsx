@@ -1893,3 +1893,19 @@ test("QSD-MP11: a source that is declared and not connected has its own Connect,
     }),
   );
 });
+
+test("w-data 7: a text default is shown as a number's is, and 'optional' is said once on a field", async () => {
+  editable({}, [
+    column("status", "text", { default: "open" }),
+    column("qty", "number", { default: 5 }),
+  ]);
+  show(<TableView root={root} name="orders" link="/t/t1/workspaces/w1" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Definition" }));
+  await screen.findByText("open");
+  expect(screen.queryByText('"open"')).toBeNull();
+  expect(screen.getByText("5")).toBeTruthy();
+  fireEvent.click(screen.getAllByRole("button", { name: "Rules" })[0] as HTMLElement);
+  const dialog = await screen.findByRole("dialog");
+  within(dialog).getByLabelText("Value when none is given");
+  expect(within(dialog).queryByText("Optional.")).toBeNull();
+});

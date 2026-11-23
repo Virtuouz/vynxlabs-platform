@@ -142,10 +142,11 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       "/tenants",
       {
-        config: { access: access.signedIn },
+        config: { access: access.signedInOrKey },
         schema: {
           summary: "Tenants the caller can see",
-          description: "Every tenant for an operator. Otherwise the tenants the caller belongs to.",
+          description:
+            "Every tenant for an operator. Otherwise the tenants the caller belongs to; a service account's key sees its own tenant, so that a command by slug can find it.",
           tags: ["tenancy"],
           querystring: Type.Object({
             ...SearchPageQuery.properties,

@@ -252,6 +252,49 @@ describe("runs of every kind, together", () => {
     expect(diagnose({ ...at, message: "status 422 Unprocessable" })?.cause).toContain("422");
     expect(diagnose({ ...at, message: "Something odd happened" })).toBeUndefined();
   });
+
+  test("diagnosis reads the texts the platform itself writes", () => {
+    const at = { attempt: 1, maxAttempts: 1 };
+    const cause = (message: string) => diagnose({ ...at, message })?.cause ?? "";
+    expect(cause("GET https://api.example.com/v1/x?key=1 answered 401.")).toContain("credential");
+    expect(cause("GET https://api.example.com/v1/x answered 404.")).toContain("404");
+    expect(cause("POST https://api.example.com/v1/x answered 429.")).toContain("limiting");
+    expect(cause("GET https://api.example.com/v1/x answered 503.")).toContain("503");
+    expect(cause("POST https://api.example.com/v1/x answered 413.")).toContain("too large");
+    expect(cause("The run took longer than its limit of 60 seconds.")).toContain("60 seconds");
+    expect(cause("The script ran out of memory (512 MB).")).toContain("512 MB");
+    expect(cause("The script was stopped: the machine ran low on memory.")).toContain("machine");
+    const secret = diagnose({
+      ...at,
+      message: "GET /runs/r1/secrets/TOKEN?attempt=1 answered 404: The secret TOKEN was not found.",
+    });
+    expect(secret).toMatchObject({ section: "secrets" });
+    expect(secret?.cause).toContain("TOKEN");
+    expect(
+      diagnose({ ...at, message: "GET /runs/r1/variables/x answered 404: The variable x was not found." })
+        ?.section,
+    ).toBe("variables");
+    expect(
+      diagnose({ ...at, message: "GET /runs/r1/connections/erp answered 404: The connection erp was not found." })
+        ?.section,
+    ).toBe("connections");
+    expect(
+      cause(
+        'GET /runs/r1/connections/erp answered 403: This needs a declared use of the connection "erp".',
+      ),
+    ).toContain("without naming it");
+    expect(cause("The worker did not report for 30 seconds.")).toContain("stopped reporting");
+    expect(
+      cause("POST /runs/r1/logs?attempt=1 answered 413: Request body is too large"),
+    ).toContain("larger than a request may be");
+    // A word in the failure is not the failure.
+    expect(
+      diagnose({ ...at, message: 'relation "schema_migrations" does not exist' }),
+    ).toBeUndefined();
+    expect(
+      diagnose({ ...at, message: "GET https://timeout.example.com/ answered 503." })?.cause,
+    ).toContain("503");
+  });
 });
 
 describe("approvals that name who decides", () => {

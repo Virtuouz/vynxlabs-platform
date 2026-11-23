@@ -165,6 +165,28 @@ describe("approval mail", () => {
     expect(JSON.stringify(queue.body)).not.toContain("k-live-98765");
   });
 
+  test("a detail written as a text from a secret field is masked in the mail, the link's page and the queue", async () => {
+    sent.length = 0;
+    const body = flow();
+    body.nodes.ask.detail = "'Pay with ' + trigger.apiKey + ' now'";
+    await alice.put(`${ws()}/drafts/refunds/text`, { kind: "flow", schemaVersion: 1, body });
+    expect((await alice.post(`${ws()}/changes/deploy`, {})).status).toBeLessThan(300);
+    const started = await alice.post(`${ws()}/flow-runs`, {
+      flow: "refunds/text",
+      input: { amount: 120, apiKey: "k-live-98765" },
+    });
+    await flowRun(started.body.id, (run) => run.state === "waiting_approval");
+    await waitForMail(2);
+    const mail = mailTo("bob@acme.example")[0] as Message;
+    expect(mail.text).not.toContain("k-live-98765");
+    expect(mail.text).toContain("Pay with [redacted] now");
+    const page = await t.anonymous.get(`/approval-links/${linkOf(mail)}`);
+    expect(page.body.detail).toBe("Pay with [redacted] now");
+    const queue = await alice.get(`/tenants/${tenant}/approvals`);
+    expect(JSON.stringify(queue.body)).not.toContain("k-live-98765");
+    expect(JSON.stringify(queue.body)).toContain("Pay with [redacted] now");
+  });
+
   test("goes to the named approvers alone when the step names them", async () => {
     await asking({ groups: ["Finance"] }, 1);
     expect(sent.map((message) => message.to)).toEqual(["bob@acme.example"]);

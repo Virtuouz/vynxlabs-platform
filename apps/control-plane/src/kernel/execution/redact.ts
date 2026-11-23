@@ -28,7 +28,7 @@ export type Known = readonly string[];
 
 /** Below this many characters a value is masked only as a whole word: a 2-character secret would wreck every text. */
 const SHORT_VALUE = 4;
-const escapeRegex = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+export const escapeRegex = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /**
  * The strings to look for in a text for one secret: the value, how it reads in a URL and in
@@ -140,4 +140,41 @@ export function summarize(
   const text = JSON.stringify(redact(value, schema, known));
   if (text === undefined) return null;
   return text.length > max ? `${text.slice(0, max - 1)}…` : text;
+}
+
+/**
+ * The strings of `value` that `redact` would mask by their key or schema. A text built from one
+ * (an approval's detail, a log of it) holds the same characters, so these join the run's known
+ * values.
+ */
+export function secretStrings(value: unknown, schema?: Schema): string[] {
+  const found: string[] = [];
+  const walk = (original: unknown, masked: unknown) => {
+    if (masked === REDACTED && typeof original === "string") found.push(original);
+    else if (Array.isArray(original) && Array.isArray(masked))
+      for (const [index, item] of original.entries()) walk(item, masked[index]);
+    else if (isObject(original) && isObject(masked))
+      for (const [key, inner] of Object.entries(original)) walk(inner, masked[key]);
+  };
+  walk(value, redact(value, schema));
+  return found;
+}
+
+/**
+ * The key names under which `redact` changed something in `value`, the nearest named one for a
+ * list's items. An expression that mentions one of them would be computed on the mask, not on
+ * the value, so a preview says it cannot be shown.
+ */
+export function maskedNames(
+  value: unknown,
+  masked: unknown,
+  within = "",
+  out: Set<string> = new Set(),
+): Set<string> {
+  if (Array.isArray(value) && Array.isArray(masked)) {
+    for (const [index, item] of value.entries()) maskedNames(item, masked[index], within, out);
+  } else if (isObject(value) && isObject(masked)) {
+    for (const [key, inner] of Object.entries(value)) maskedNames(inner, masked[key], key, out);
+  } else if (JSON.stringify(value) !== JSON.stringify(masked) && within) out.add(within);
+  return out;
 }

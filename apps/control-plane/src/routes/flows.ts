@@ -5,7 +5,14 @@ import { Type } from "typebox";
 import { badRequest, conflict, HttpError, notFound } from "../kernel/errors.js";
 import { cancelFlowRuns } from "../kernel/execution/bulk-cancel.js";
 import { bundleManifest, payloadSchemas } from "../kernel/execution/bundles.js";
-import { redact } from "../kernel/execution/redact.js";
+import {
+  escapeRegex,
+  type Known,
+  maskedNames,
+  REDACTED,
+  redact,
+  redactText,
+} from "../kernel/execution/redact.js";
 import { readPayload } from "../kernel/execution/runs.js";
 import {
   flowStateSql,
@@ -33,6 +40,7 @@ import {
 } from "../kernel/flows/engine.js";
 import { eventSchema, publishEvent } from "../kernel/flows/events.js";
 import { ExpressionError } from "../kernel/flows/expressions.js";
+import { flowKnown } from "../kernel/flows/known.js";
 import { access, findWorkspace, guestLimit } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
 import { resolveResource } from "../kernel/resolve.js";
@@ -191,19 +199,24 @@ interface StepInputRow {
 function stepInput(
   step: StepInputRow,
   schemaOf: (script: string) => Record<string, unknown> | undefined,
+  known: Known,
 ): unknown {
   if (step.run_id) {
     if (step.run_input_ref) return { stored: step.run_input_ref };
-    return redact(step.run_input ?? null, step.run_script ? schemaOf(step.run_script) : undefined);
+    return redact(
+      step.run_input ?? null,
+      step.run_script ? schemaOf(step.run_script) : undefined,
+      known,
+    );
   }
   if (step.child_flow_run_id) {
     return step.child_input_ref
       ? { stored: step.child_input_ref }
-      : redact(step.child_input ?? null);
+      : redact(step.child_input ?? null, undefined, known);
   }
   const detail = (step.detail ?? null) as { items?: unknown; detail?: unknown } | null;
-  if (detail && "items" in detail) return redact(detail.items);
-  if (detail && "detail" in detail) return redact(detail.detail);
+  if (detail && "items" in detail) return redact(detail.items, undefined, known);
+  if (detail && "detail" in detail) return redact(detail.detail, undefined, known);
   return null;
 }
 
@@ -313,7 +326,10 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         let extra: Record<string, unknown> = {};
         let note: string | undefined;
         // The expression sees what the run page shows: a test on a masked field cannot be used
-        // to guess it, so the context is masked before it is evaluated, not the answer.
+        // to guess it, so the context is masked before it is evaluated, not the answer. One that
+        // reads a masked field is not computed at all: its answer would be about the mask.
+        const known = await flowKnown(kernel, db, run.id);
+        const masked = new Set<string>();
         const shield = async (step: ContextStep, output: unknown) => {
           let schema: Record<string, unknown> | undefined;
           if (step.run_id) {
@@ -333,14 +349,29 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               (run.trigger_detail as { event: string }).event,
             );
           }
-          return redact(output, schema);
+          const safe = redact(output, schema, known);
+          if (JSON.stringify(safe) !== JSON.stringify(output)) {
+            maskedNames(output, safe, safe === REDACTED ? step.node_id : "", masked);
+          }
+          return safe;
+        };
+        const readsMasked = () =>
+          [...masked].some((name) =>
+            [query.expression, query.items ?? ""].some((text) =>
+              new RegExp(`(?<![\\p{L}\\p{N}_])${escapeRegex(name)}(?![\\p{L}\\p{N}_])`, "u").test(
+                text,
+              ),
+            ),
+          );
+        const cannot = {
+          note: "This reads a secret, which a preview does not show, so it cannot be previewed here.",
+          flowRun: shown,
         };
         try {
+          const context = await expressionContext(db, run, {}, shield);
+          if (readsMasked()) return cannot;
           if (query.items) {
-            const items = await kernel.expressions.evaluate(
-              query.items,
-              await expressionContext(db, run, {}, shield),
-            );
+            const items = await kernel.expressions.evaluate(query.items, context);
             if (!Array.isArray(items) || items.length === 0) {
               return {
                 note: "Its items gave no list to take the first of.",
@@ -350,10 +381,10 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             extra = { item: items[0], index: 0 };
             note = "For the first item.";
           }
-          const value = await kernel.expressions.evaluate(
-            query.expression,
-            await expressionContext(db, run, extra, shield),
-          );
+          const value = await kernel.expressions.evaluate(query.expression, {
+            ...context,
+            ...extra,
+          });
           return { value, ...(note ? { note } : {}), flowRun: shown };
         } catch (error) {
           return { error: said(error), flowRun: shown };
@@ -1186,11 +1217,24 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           await ctx.authorize("flow_run:read", { tenantId: params.t, workspaceId: params.w });
         }
         if (!row) throw notFound("The flow run");
+        const known = await flowKnown(kernel, db, params.id);
+        const shownRun = (one: typeof row) => {
+          const plain = toFlowRun(one);
+          return {
+            ...plain,
+            error: plain.error ? { message: redactText(plain.error.message, known) } : null,
+            errorSummary: plain.errorSummary ? redactText(plain.errorSummary, known) : null,
+          };
+        };
         if (!mayReadAll) {
           return {
-            ...toFlowRun(row),
-            input: redact(row.input_ref ? { stored: row.input_ref } : (row.input ?? null)),
-            output: redact(row.output ?? null),
+            ...shownRun(row),
+            input: redact(
+              row.input_ref ? { stored: row.input_ref } : (row.input ?? null),
+              undefined,
+              known,
+            ),
+            output: redact(row.output ?? null, undefined, known),
             steps: [],
             retries: [],
           };
@@ -1244,12 +1288,13 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         const triggerSchema =
           typeof eventName === "string" ? await eventSchema(db, params.w, eventName) : undefined;
         return {
-          ...toFlowRun(run),
+          ...shownRun(run),
           input: redact(
             run.input_ref ? { stored: run.input_ref } : (run.input ?? null),
             triggerSchema,
+            known,
           ),
-          output: redact(run.output ?? null),
+          output: redact(run.output ?? null, undefined, known),
           retries: retries.map((one) => ({
             id: one.id,
             state: one.state,
@@ -1263,7 +1308,7 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             outputName: step.output_name,
             // What the step was given: a code step's run input, a sub-flow's input, the items
             // of a foreach, the detail an approval showed. Masked as payloads are.
-            input: stepInput(step, (script) => scriptSchemas.get(script)?.input),
+            input: stepInput(step, (script) => scriptSchemas.get(script)?.input, known),
             // A code step's output is its run's. Something large is named, not sent.
             output: step.run_id
               ? step.run_output_ref
@@ -1271,14 +1316,16 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                 : redact(
                     step.run_output ?? null,
                     step.run_script ? scriptSchemas.get(step.run_script)?.output : undefined,
+                    known,
                   )
               : step.output_ref
                 ? { stored: step.output_ref }
                 : redact(
                     step.output ?? null,
                     step.node_id === run.trigger_node ? triggerSchema : undefined,
+                    known,
                   ),
-            error: step.error ? { message: step.error.message } : null,
+            error: step.error ? { message: redactText(step.error.message, known) } : null,
             handled: step.handled,
             runId: step.run_id,
             childFlowRunId: step.child_flow_run_id,
@@ -1290,6 +1337,8 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                   ([name]) => name !== "items" && name !== "copiedFrom",
                 ),
               ),
+              undefined,
+              known,
             ) as Record<string, unknown>,
             copiedFrom:
               (step.detail.copiedFrom as
@@ -1392,13 +1441,16 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         .where(sql<boolean>`step_run.detail ? 'title'`)
         .orderBy("step_run.started_at");
     type PendingRow = Awaited<ReturnType<ReturnType<typeof pending>["execute"]>>[number];
-    const toApproval = async (row: PendingRow) => ({
+    const toApproval = async (row: PendingRow, known: Map<string, Promise<Known>>) => ({
       flowRunId: row.flow_run_id,
       workspaceId: row.workspace_id,
       flow: row.flow_path,
       node: row.node_id,
       title: String(row.detail.title),
-      detail: approvalDetail(row.detail.detail),
+      detail: approvalDetail(
+        row.detail.detail,
+        await flowKnown(kernel, db, row.flow_run_id, known),
+      ),
       waitingSince: iso(row.started_at),
       timesOutAt: isoOrNull(row.wake_at),
       approvers: await (async () => {
@@ -1517,12 +1569,14 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         const rows = await pending(params.t)
           .where("flow_run.workspace_id", "=", params.w)
           .execute();
-        if (!query.mine) return { items: await Promise.all(rows.map(toApproval)) };
+        const cache = new Map<string, Promise<Known>>();
+        if (!query.mine)
+          return { items: await Promise.all(rows.map((row) => toApproval(row, cache))) };
         const at = { tenantId: params.t, workspaceId: params.w };
         const items = [];
         for (const row of rows) {
           // A step that names its approvers is shown only to them.
-          if (await mayDecide(db, ctx, at, row.detail)) items.push(await toApproval(row));
+          if (await mayDecide(db, ctx, at, row.detail)) items.push(await toApproval(row, cache));
         }
         return { items };
       },
@@ -1567,6 +1621,7 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       async ({ ctx, params, query }) => {
         const rows = await pending(params.t).where(SURFACED).execute();
         const allowed = new Map<string, boolean>();
+        const known = new Map<string, Promise<Known>>();
         const items = [];
         const memberId = ctx.principal.type === "member" ? ctx.principal.id : null;
         for (const row of rows) {
@@ -1593,7 +1648,7 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             ))
           )
             continue;
-          items.push(await toApproval(row));
+          items.push(await toApproval(row, known));
         }
         // With nothing to show, answer exactly as the permission check would.
         if (items.length === 0) await ctx.authorize("approval:read", { tenantId: params.t });

@@ -208,13 +208,26 @@ describe("what an expression gives", () => {
     const run = started.body.runId as string;
     await finished(run);
     const ask = (expression: string) => value({ expression, flowRun: run }, reader);
-    expect((await ask("trigger.apiKey")).body.value).toBe("[redacted]");
-    expect((await ask("trigger.password")).body.value).toBe("[redacted]");
-    expect((await ask("steps.keep.output.accessToken")).body.value).toBe("[redacted]");
+    // A masked field is not computed on: the answer would be about the mask, not the value.
+    const cannot = /cannot be previewed/;
+    for (const expression of [
+      "trigger.apiKey",
+      "trigger.password",
+      "size(trigger.apiKey)",
+      "steps.keep.output.accessToken",
+      "trigger.apiKey == 'k-live-98765'",
+      "trigger.apiKey.startsWith('k-')",
+    ]) {
+      const answer = (await ask(expression)).body;
+      expect(answer.value, expression).toBeUndefined();
+      expect(answer.note, expression).toMatch(cannot);
+    }
     expect((await ask("steps.keep.output.plain")).body.value).toBe("ok");
-    // A test on the real value would say whether a guess is right.
-    expect((await ask("trigger.apiKey == 'k-live-98765'")).body.value).toBe(false);
-    expect((await ask("trigger.apiKey.startsWith('k-')")).body.value).toBe(false);
+    // Reading the whole of it still shows what the run page shows.
+    expect((await ask("trigger")).body.value).toEqual({
+      apiKey: "[redacted]",
+      password: "[redacted]",
+    });
   });
 
   test("is for those who may read flow runs, in the run's own workspace", async () => {

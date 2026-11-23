@@ -19,6 +19,7 @@ let otherTenant: string;
 let dev: string;
 let alice: Client;
 let bob: Client; // developer: may start flows, may not approve
+const LEAK_VALUE = "leak-7f3a9c21-private";
 let worker: Worker;
 let working: Promise<unknown>;
 let roles: Record<string, string>;
@@ -71,6 +72,7 @@ export const risky = { execute: async (input) => { if (input.fail) throw new Err
 export const slow = { execute: async (input, ctx) => { await wait(input.ms, ctx.signal); return { label: "${label}" }; } };
 export const sink = { execute: async (input) => ({ got: input }) };
 export const publisher = { execute: async (input, ctx) => { await ctx.events.publish(input.event, input.payload); return { published: true }; } };
+export const leaky = { execute: async (input) => ({ echo: input.say }) };
 export const big = { execute: async () => ({ blob: "x".repeat(300 * 1024) }) };
 `;
 
@@ -98,6 +100,9 @@ function bundle(
       uses: { connections: [], secrets: [], variables: [], events: ["orders/placed"] },
     }),
     script("big", "big"),
+    script("leaky", "leaky", {
+      uses: { connections: [], secrets: ["LEAK"], variables: [] },
+    }),
     manifest("trigger", "big-orders", {
       type: "event",
       script: "sink",
@@ -284,6 +289,23 @@ function bundle(
       [
         ["start", "pause"],
         ["pause", "after"],
+      ],
+    ),
+    flow(
+      "leaks",
+      {
+        start: manual,
+        show: run("leaky", "{'say': trigger.say}"),
+        gate: {
+          type: "approval",
+          title: "Look at this",
+          detail: "'Sent ' + steps.show.output.echo + ' on'",
+          surface: "tenant",
+        },
+      },
+      [
+        ["start", "show"],
+        ["show", "gate"],
       ],
     ),
     flow(
@@ -562,6 +584,7 @@ beforeAll(async () => {
     config: { baseUrl: `http://127.0.0.1:${(chat.address() as AddressInfo).port}/hook` },
   });
   await alice.patch(ws(), { failureAlert: { notify: "chat" } });
+  expect((await alice.put(`${ws()}/secrets/LEAK`, { value: LEAK_VALUE })).status).toBe(204);
   expect((await deploy(bundle())).status).toBe(201);
 
   const credential = await alice.post(`/tenants/${tenant}/worker-credentials`, { name: "flows" });
@@ -1508,6 +1531,22 @@ describe("events and triggers", () => {
     const run = (await alice.get(`${ws()}/flow-runs/${runs[0].id}`)).body;
     expect(JSON.stringify(run)).not.toContain("4111-2468-0000");
     expect(run.input.card).toBe("[redacted]");
+  });
+
+  test("the flow run page and the approval queue hold what a step was served, wherever it turns up", async () => {
+    const id = await start("leaks", { say: LEAK_VALUE });
+    const waiting = await until(
+      async () => (await alice.get(`${ws()}/approvals`)).body.items,
+      (items) => items.some((one: Any) => one.flowRunId === id),
+    );
+    const page = await read(id);
+    const queue = (await alice.get(`/tenants/${tenant}/approvals`)).body;
+    const everything = JSON.stringify([page, waiting, queue]);
+    await alice.post(`${ws()}/flow-runs/${id}/cancel`, {});
+    expect(everything).not.toContain(LEAK_VALUE);
+    expect(step(page, "show").output.echo).toBe("[redacted]");
+    expect(step(page, "show").input.say).toBe("[redacted]");
+    expect(waiting.find((one: Any) => one.flowRunId === id).detail).toBe("Sent [redacted] on");
   });
 
   test("a payload that breaks the schema, an unknown event and a platform name are refused", async () => {

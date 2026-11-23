@@ -5,6 +5,7 @@ import { badRequest } from "../kernel/errors.js";
 import { approvalDetail } from "../kernel/flows/approval-detail.js";
 import { linkActor, linkGone, readLink, takeLink } from "../kernel/flows/approval-links.js";
 import { decideApproval, kickFlow } from "../kernel/flows/engine.js";
+import { flowKnown } from "../kernel/flows/known.js";
 import { access } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
 import { Time } from "./shared.js";
@@ -58,7 +59,10 @@ export function approvalLinkRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         const detail = (step.detail ?? {}) as { title?: string; detail?: unknown };
         return {
           title: detail.title ?? "",
-          detail: approvalDetail(detail.detail),
+          detail: approvalDetail(
+            detail.detail,
+            await flowKnown(kernel, kernel.db, step.flow_run_id),
+          ),
           flow: step.flow_path,
           flowRunId: step.flow_run_id,
           workspace: {

@@ -55,7 +55,7 @@ const GRID = {
 } as const;
 
 /** What a column holds that an editor here can't: never edited in place. */
-const NOT_EDITABLE = new Set(["json", "uuid", "timestamp"]);
+const NOT_EDITABLE = new Set(["json", "uuid", "timestamp", "file"]);
 
 /** A date as a person reads it: "Nov 20, 2026". Anything else says itself. */
 function dateOf(value: unknown): string {
@@ -157,8 +157,20 @@ function FieldEditor({
     if (type === "reference" && choices) void choices("record", column, "").then(setOffered);
   }, [type, choices, column]);
 
+  // Several choices: the list it holds, ticked and unticked, kept in order of the choices.
+  const [ticked, setTicked] = useState<string[]>(Array.isArray(value) ? (value as string[]) : []);
   const commit = async () => {
     if (saving) return;
+    if (type === "enum_list") {
+      setSaving(true);
+      const failed = await save(
+        (info?.values ?? []).map((one) => one.value).filter((one) => ticked.includes(one)),
+      );
+      setSaving(false);
+      if (failed === undefined) stop();
+      else setProblem(failed || "It could not be saved.");
+      return;
+    }
     let amount: number | null | undefined;
     if (money) {
       const read = parseMoney(draft, money);
@@ -212,7 +224,46 @@ function FieldEditor({
           ]
         : offered;
   const control =
-    type === "enum" || type === "boolean" || type === "reference" ? (
+    type === "enum_list" ? (
+      <fieldset
+        aria-label={label}
+        aria-invalid={problem ? true : undefined}
+        className="m-0 flex flex-col gap-1 border-0 p-0"
+        onKeyDown={(event) => {
+          if (event.key === "Escape") {
+            event.preventDefault();
+            event.stopPropagation();
+            stop();
+          }
+        }}
+      >
+        {(info?.values ?? []).map((one, at) => (
+          <label key={one.value} className="flex items-center gap-2 text-body-sm">
+            <input
+              type="checkbox"
+              // biome-ignore lint/a11y/noAutofocus: opened by the person's own click, the editor takes the keys
+              autoFocus={at === 0}
+              checked={ticked.includes(one.value)}
+              disabled={saving}
+              onChange={(event) =>
+                setTicked((now) =>
+                  event.target.checked ? [...now, one.value] : now.filter((x) => x !== one.value),
+                )
+              }
+            />
+            {one.label ?? one.value}
+          </label>
+        ))}
+        <span className="flex gap-2">
+          <Button size="small" variant="primary" loading={saving} onClick={() => void commit()}>
+            Save
+          </Button>
+          <Button size="small" onClick={stop}>
+            Cancel
+          </Button>
+        </span>
+      </fieldset>
+    ) : type === "enum" || type === "boolean" || type === "reference" ? (
       <select
         {...common}
         // biome-ignore lint/a11y/noAutofocus: opened by the person's own click, the editor takes the keys

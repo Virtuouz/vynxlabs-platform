@@ -79,10 +79,14 @@ type Kind =
   | "reference"
   | "json";
 
+/** A column that holds a list of values: marked so, or a several-choice column. */
+const holdsList = (column: FormColumn) =>
+  column.multiple === true || column.type.toLowerCase() === "enum_list";
+
 function kindOf(column: FormColumn): Kind {
   const type = column.type.toLowerCase();
   if (type === "reference") return "reference";
-  if (type === "enum") return "enum";
+  if (type === "enum" || type === "enum_list") return "enum";
   if (type === "boolean") return "boolean";
   if (type === "date") return "date";
   if (type === "timestamp") return "timestamp";
@@ -139,7 +143,7 @@ function schemaOf(column: FormColumn, kind: Kind): JsonSchema {
     default:
       one = { type: "string" };
   }
-  return column.multiple ? { type: "array", items: one } : one;
+  return holdsList(column) ? { type: "array", items: one } : one;
 }
 
 const isEmpty = (value: unknown) =>
@@ -513,7 +517,7 @@ function FormBody({
         />
       );
     }
-    if (column.multiple && kind === "enum") {
+    if (holdsList(column) && kind === "enum") {
       const options: Option[] = (column.values ?? []).map((one) => ({
         value: one.value,
         label: one.label ?? one.value,
@@ -680,7 +684,7 @@ function FormBody({
             <div className="grid min-w-0 grid-cols-1 gap-x-4 gap-y-4 @[34rem]/cell:grid-cols-2">
               {section.fields.map((field) => {
                 const { kind, column } = info(field);
-                const whole = kind === "longtext" || kind === "json" || column.multiple === true;
+                const whole = kind === "longtext" || kind === "json" || holdsList(column);
                 return (
                   <div
                     key={field.column}

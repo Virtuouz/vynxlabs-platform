@@ -44,6 +44,9 @@ const columns = [
   col("sent", "timestamp", "Sent"),
   col("paid", "boolean", "Paid in full"),
   col("notes", "text", "Notes", { maxLength: 5000 }),
+  col("tags", "enum_list", "Tags", {
+    values: [{ value: "late" }, { value: "vip", label: "VIP" }],
+  }),
 ];
 
 const wire = (record: Record<string, unknown> | null): WireData =>
@@ -159,6 +162,9 @@ describe("controls by column type", () => {
     expect(status.tagName).toBe("SELECT");
     expect([...status.options].map((one) => one.text)).toEqual(["None", "Unpaid", "Paid"]);
     expect(screen.getByPlaceholderText("Search client")).toBeTruthy();
+    // A several-choice column is a list to choose from, not a box to type "a,b" in (WID-10).
+    expect(screen.queryByRole("textbox", { name: /Tags/ })).toBeNull();
+    expect(screen.getByText("Tags")).toBeTruthy();
   });
 
   test("money is typed as dollars and sent as cents", async () => {

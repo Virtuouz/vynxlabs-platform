@@ -409,3 +409,62 @@ test("MP-1: in production, or for a script a repository holds, the settings are 
   await screen.findByText(/reach production by promotion/);
   expect(screen.queryByRole("button", { name: "Change the settings" })).toBeNull();
 });
+
+const scriptList = (path: string, extra = {}) => {
+  routes[`${root}/scripts`] = () => [
+    200,
+    { items: [{ path, description: "", ownership: "ui", lastRun: null, ...extra }] },
+  ];
+  routes[`${root}/references`] = () => [200, { items: [] }];
+};
+
+test("R-last: a script that has only a draft shows the draft's settings, and says it is a draft", async () => {
+  scriptList("orders/new", { draft: "new" });
+  routes[`${root}/drafts/orders/new`] = () => [
+    200,
+    {
+      path: "orders/new",
+      kind: "script",
+      schemaVersion: 1,
+      revision: 2,
+      deleted: false,
+      body: { timeoutSeconds: 45, source: { language: "typescript", code: "x" } },
+    },
+  ];
+  show(<ScriptPage root={root} link={link} path="orders/new" />);
+  fireEvent.click(await screen.findByRole("tab", { name: "Settings" }));
+  await screen.findByText("45 seconds");
+  expect(screen.queryByText(/Could not load the settings/)).toBeNull();
+  expect(screen.getByText(/only a draft and is not deployed yet/)).toBeTruthy();
+});
+
+test("R-last: a script with a draft over a deployed version reads the draft and says so, also after a reload", async () => {
+  scriptList("orders/sync");
+  routes[`${root}/resources/orders/sync`] = () => [
+    200,
+    { kind: "script", path: "orders/sync", ownership: "ui", version: 3, body: { timeoutSeconds: 90 } },
+  ];
+  routes[`${root}/drafts/orders/sync`] = () => [
+    200,
+    {
+      path: "orders/sync",
+      kind: "script",
+      schemaVersion: 1,
+      revision: 1,
+      deleted: false,
+      body: { timeoutSeconds: 120 },
+    },
+  ];
+  show(<ScriptPage root={root} link={link} path="orders/sync" />);
+  fireEvent.click(await screen.findByRole("tab", { name: "Settings" }));
+  await screen.findByText("120 seconds");
+  expect(screen.queryByText("90 seconds")).toBeNull();
+  expect(screen.getByText(/This script has a draft\. These are the draft's settings/)).toBeTruthy();
+});
+
+test("R-last: a script with neither a deployed version nor a draft still says it could not be loaded", async () => {
+  scriptList("orders/none");
+  show(<ScriptPage root={root} link={link} path="orders/none" />);
+  fireEvent.click(await screen.findByRole("tab", { name: "Settings" }));
+  await screen.findByText(/Could not load the settings/);
+});

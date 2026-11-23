@@ -358,3 +358,38 @@ test("WLK-04: the shortcut sheet writes the space bar as Space, not as an empty 
   const row = screen.getByText("Check the row").previousElementSibling as HTMLElement;
   expect(Array.from(row.children).map((cap) => cap.textContent)).toEqual(["x", "Space"]);
 });
+
+test("w-builder 1: the link of every kind of Recent item opens what it names", async () => {
+  const { pageOf } = await import("./kit/CommandPalette.tsx");
+  const { openedAt } = await import("./recent.ts");
+  const ws = `/t/${T}/workspaces/${W}`;
+  const named = (kind: string, ref: string) =>
+    ({ kind, id: ref, ref, workspaceId: W, workspaceSlug: "dev", title: ref, hint: null }) as never;
+  // Kinds opened at an address that the shell records again when the page is open: the link must
+  // be that very address, or Recent would not be recording what it links to.
+  for (const [kind, ref] of [
+    ["script", "orders/sync"],
+    ["flow", "orders/flow"],
+    ["table", "orders"],
+    ["interface", "boards/main"],
+    ["connection", "mail"],
+    ["event", "orders/paid"],
+    ["doc", "guide/start"],
+    ["variable", "region"],
+    ["data_source", "crm"],
+  ] as const) {
+    const href = pageOf(T, named(kind, ref));
+    expect(openedAt(href), kind).toEqual({ kind, ref });
+  }
+  // A trigger and a schedule, and a saved query, open by the address's own parameter.
+  for (const kind of ["trigger", "schedule"]) {
+    const href = pageOf(T, named(kind, "nightly/run"));
+    expect(href).toBe(`${ws}/triggers?trigger=nightly%2Frun`);
+  }
+  expect(pageOf(T, named("query", "reports/fees"))).toBe(`${ws}/queries?query=reports%2Ffees`);
+  // An app by its path, which the Apps page matches.
+  expect(pageOf(T, named("app", "portal/orders"))).toBe(`${ws}/apps?app=portal%2Forders`);
+  // A run, script or flow, is its own page.
+  expect(pageOf(T, named("flow_run", "r2"))).toBe(`${ws}/runs/r2`);
+  expect(pageOf(T, named("run", "r1"))).toBe(`${ws}/runs/r1`);
+});

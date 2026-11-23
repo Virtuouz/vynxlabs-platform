@@ -145,13 +145,16 @@ export async function runLocally(args: string[], io: Io) {
   }
 }
 
+/** The SDK a new repository asks for. A release sets it to the version released. */
+export const STARTER_SDK_RANGE = "^0.5.0";
+
 const STARTER: Record<string, string> = {
   "package.json": `${JSON.stringify(
     {
       name: "tenant-repository",
       private: true,
       type: "module",
-      dependencies: { "@volvel/sdk": "^0.5.0" },
+      dependencies: { "@volvel/sdk": STARTER_SDK_RANGE },
     },
     null,
     2,

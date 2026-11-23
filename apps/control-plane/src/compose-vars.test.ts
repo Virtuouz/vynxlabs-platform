@@ -21,6 +21,39 @@ const NOT_PASSED: Record<string, string> = {
   MAIL_CAPTURE_DIR: "a test setting: it writes mail to a folder in the container",
 };
 
+describe("compose lets what is running finish (HOST-10)", () => {
+  const worker = readFileSync(`${folder}../worker/compose.yaml`, "utf8");
+
+  test("every service that runs scripts has a stop grace period longer than the drain, and an init", () => {
+    for (const [name, text, minSeconds] of [
+      [
+        "control-plane",
+        compose.slice(compose.indexOf("\n  control-plane:"), compose.indexOf("\n  worker-host:")),
+        50,
+      ],
+      [
+        "worker-host",
+        compose.slice(compose.indexOf("\n  worker-host:"), compose.indexOf("\n  postgres:")),
+        50,
+      ],
+      ["standalone worker", worker, 50],
+    ] as const) {
+      const grace = /stop_grace_period: (\d+)s/.exec(text);
+      expect(Number(grace?.[1]), name).toBeGreaterThanOrEqual(minSeconds);
+      expect(text, name).toMatch(/^ {4}init: true$/m);
+    }
+  });
+
+  test("the worker host has a health check, and fly.toml a kill timeout", () => {
+    const host = compose.slice(
+      compose.indexOf("\n  worker-host:"),
+      compose.indexOf("\n  postgres:"),
+    );
+    expect(host).toContain("healthcheck:");
+    expect(readFileSync(`${folder}../fly/fly.toml`, "utf8")).toMatch(/^kill_timeout = \d+/m);
+  });
+});
+
 describe("compose passes the settings", () => {
   const environment = (service: string) => {
     const start = compose.indexOf(`\n  ${service}:`);

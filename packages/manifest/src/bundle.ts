@@ -236,7 +236,8 @@ export function bundleDigest(bundle: Omit<Bundle, "digest">): string {
 }
 
 function parts(version: string): [number, number, number] {
-  const [major = 0, minor = 0, patch = 0] = version.split(".").map(Number);
+  // A prerelease (`0.6.0-next.1`) is the version it leads to; its tag is not a number.
+  const [major = 0, minor = 0, patch = 0] = (version.split(/[-+]/)[0] ?? "").split(".").map(Number);
   return [major, minor, patch];
 }
 

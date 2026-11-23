@@ -1,6 +1,6 @@
 import { type ChildProcess, fork } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { setPriority, tmpdir } from "node:os";
 import { join } from "node:path";
@@ -98,7 +98,10 @@ function capped(entry: LogEntry): LogEntry {
   };
 }
 
-const WORKER_VERSION = "0.7.0";
+/** What this package says it is: the version of the instance it was built with. */
+export const WORKER_VERSION: string = JSON.parse(
+  readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+).version;
 
 /** Log lines kept while the control plane cannot be reached. Past this, the oldest go. */
 const MAX_PENDING_LOGS = 5000;

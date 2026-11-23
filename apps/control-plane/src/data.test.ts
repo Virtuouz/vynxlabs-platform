@@ -865,6 +865,92 @@ describe("row policies", () => {
       expect((await alice.get("/instance/database-locations")).status).toBe(403);
     },
   );
+
+  test.runIf(DEDICATED)(
+    "registering a location's name again with another database is refused while it does not hold the tenants' tables",
+    async () => {
+      const empty = await createTestDatabase();
+      try {
+        const refused = await t.admin.put("/instance/database-locations/acme-db", {
+          connectionString: empty.connectionString,
+        });
+        expect(refused.status, JSON.stringify(refused.body)).toBe(409);
+        expect(refused.body.detail).toMatch(/does not hold them/);
+        expect((await t.admin.get("/instance/database-locations")).body.items[0].reachable).toBe(
+          true,
+        );
+        expect(await data.selectFrom("data_table").select("id").execute()).not.toEqual([]);
+        const same = await t.admin.put("/instance/database-locations/acme-db", {
+          connectionString: (dedicatedDb as TestDatabase).connectionString,
+          description: "Acme's own database, described again",
+        });
+        expect(same.status).toBe(204);
+        // The old connection was closed with the change of address.
+        data = (await t.kernel.data.forTenant(tenant)).owner;
+      } finally {
+        await empty.drop();
+      }
+    },
+  );
+
+  test.runIf(DEDICATED)(
+    "a replica reopens a location whose address another replica changed, and rereads where a tenant lives",
+    async () => {
+      const current = async () =>
+        (
+          await sql<{ name: string }>`select current_database() as name`.execute(
+            (
+              await t.kernel.data.location("acme-db")
+            ).owner,
+          )
+        ).rows[0]?.name;
+      const first = await current();
+      const other = await createTestDatabase();
+      const saved = await t.db
+        .selectFrom("database_location")
+        .select(["connection_encrypted", "updated_at"])
+        .where("name", "=", "acme-db")
+        .executeTakeFirstOrThrow();
+      try {
+        // As another replica would have written it: the row changes, and this process is not told.
+        await t.db
+          .updateTable("database_location")
+          .set({
+            connection_encrypted: t.kernel.data.seal("acme-db", other.connectionString),
+            updated_at: new Date(),
+          })
+          .where("name", "=", "acme-db")
+          .execute();
+        await new Promise((resolve) => setTimeout(resolve, 2200));
+        expect(await current()).not.toBe(first);
+
+        // A tenant moved by another replica: its location is read again, not remembered for good.
+        await t.db
+          .updateTable("tenant")
+          .set({ data_location: JSON.stringify({ kind: "shared" }) })
+          .where("id", "=", tenant)
+          .execute();
+        await new Promise((resolve) => setTimeout(resolve, 2200));
+        expect(await t.kernel.data.locationOf(tenant)).toBeNull();
+      } finally {
+        await t.db
+          .updateTable("tenant")
+          .set({ data_location: JSON.stringify({ kind: "dedicated", ref: "acme-db" }) })
+          .where("id", "=", tenant)
+          .execute();
+        await t.db
+          .updateTable("database_location")
+          .set({ connection_encrypted: saved.connection_encrypted, updated_at: new Date() })
+          .where("name", "=", "acme-db")
+          .execute();
+        await new Promise((resolve) => setTimeout(resolve, 2200));
+        expect(await current()).toBe(first);
+        data = (await t.kernel.data.forTenant(tenant)).owner;
+        await other.drop();
+      }
+    },
+    30_000,
+  );
 });
 
 describe("changing a table without losing data: the exit criterion", () => {

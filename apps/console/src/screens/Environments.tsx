@@ -953,9 +953,9 @@ export function DatabaseLocations() {
           header: "Status",
           cell: (row) =>
             row.reachable ? (
-              <StatePill state="reachable" />
+              <StatePill state="ok">Reached</StatePill>
             ) : (
-              <StatePill state="unreachable" detail={row.problem ?? undefined} />
+              <StatePill state="failed" detail={row.problem ?? undefined} />
             ),
         },
       ]}
@@ -1015,7 +1015,9 @@ export function DatabaseLocations() {
                 },
                 {
                   label: "Status",
-                  value: row.reachable ? "Answers" : (row.problem ?? "Does not answer"),
+                  value: row.reachable
+                    ? "Reached"
+                    : `Failed${row.problem ? `: ${row.problem}` : ""}`,
                 },
                 { label: "Tenants", value: String(row.tenants) },
               ]}

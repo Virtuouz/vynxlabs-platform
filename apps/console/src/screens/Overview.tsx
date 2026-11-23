@@ -214,7 +214,7 @@ function FirstRun({
       title: "A first deploy",
       detail: "Deploying makes what you wrote what runs here, for schedules and webhooks too.",
       to: `${link}/release`,
-      action: "Releases",
+      action: "Deploy",
     },
   ];
   const next = steps.find((step) => !step.done);

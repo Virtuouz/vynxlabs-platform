@@ -153,10 +153,10 @@ export function testText(task: TaskState): { ok: boolean; text: string } {
   if (task.status === "failed" || !result) {
     return {
       ok: false,
-      text: (task.error?.message ?? "The test did not finish.").replace(
+      text: `Failed: ${(task.error?.message ?? "The test did not finish.").replace(
         /^(GET|POST) \S+ answered \d+: /,
         "",
-      ),
+      )}`,
     };
   }
   if (result.ok) {
@@ -167,9 +167,7 @@ export function testText(task: TaskState): { ok: boolean; text: string } {
   }
   return {
     ok: false,
-    text: [result.status ? `HTTP ${result.status}` : null, result.message]
-      .filter(Boolean)
-      .join(": "),
+    text: `Failed${result.status ? ` (HTTP ${result.status})` : ""}${result.message ? `: ${result.message}` : ""}`,
   };
 }
 

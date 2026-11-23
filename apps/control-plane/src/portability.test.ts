@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdtemp, open, rm, stat, writeFile } from "node:fs/promises";
+import { mkdtemp, open, readdir, rm, stat, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -10,7 +10,7 @@ import { Worker } from "@volvel/worker";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { workspaceSchema } from "./kernel/data/apply.js";
 import type { ExportManifest } from "./kernel/tenancy/export.js";
-import { STAGE_DIR } from "./kernel/tenancy/staging.js";
+import { removeExpiredImports, STAGE_DIR } from "./kernel/tenancy/staging.js";
 import { OWNED_TABLES } from "./kernel/tenancy/tables.js";
 import { TAR_END, tarEntry, tarIndex, tarRead } from "./kernel/tenancy/tar.js";
 import { type Client, startTestApp, type TestApp } from "./testing.js";
@@ -896,6 +896,30 @@ describe("an export that someone changed, who knows its passphrase", () => {
     expect(staged.status).toBe(201);
     expect((await stat(STAGE_DIR)).mode & 0o777).toBe(0o700);
     expect((await stat(join(STAGE_DIR, `${staged.body.id}.tar`))).mode & 0o777).toBe(0o600);
+    await operatorB.delete(`/instance/tenant-imports/staged/${staged.body.id}`);
+  });
+
+  test("a file no upload row holds is swept, and one that is held or still arriving is kept (INS-10)", async () => {
+    const staged = await operatorB.upload(
+      "/instance/tenant-imports/staged",
+      archive,
+      "application/x-tar",
+      { "x-export-passphrase": PASSPHRASE },
+    );
+    const held = join(STAGE_DIR, `${staged.body.id}.tar`);
+    const orphan = join(STAGE_DIR, "orphan-of-another-replica.tar");
+    const arriving = join(STAGE_DIR, "arriving.tar");
+    await writeFile(orphan, "left behind");
+    await writeFile(arriving, "still coming");
+    const hoursAgo = new Date(Date.now() - 3 * 3_600_000);
+    await utimes(orphan, hoursAgo, hoursAgo);
+    await removeExpiredImports(b.kernel);
+    const left = await readdir(STAGE_DIR);
+    expect(left).not.toContain("orphan-of-another-replica.tar");
+    expect(left).toContain("arriving.tar");
+    expect(left).toContain(`${staged.body.id}.tar`);
+    await rm(arriving, { force: true });
+    await stat(held);
     await operatorB.delete(`/instance/tenant-imports/staged/${staged.body.id}`);
   });
 });

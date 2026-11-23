@@ -26,6 +26,8 @@ interface Entry {
   targetId: string | null;
   targetLabel?: string | null;
   workspaceId?: string | null;
+  /** Set on an entry of the instance's log that belongs to a tenant that has been deleted. */
+  tenantId?: string | null;
   details: Record<string, unknown>;
   ipAddress: string | null;
   userAgent: string | null;
@@ -364,6 +366,11 @@ export function AuditTable({
               {entry.action}
             </code>
             {entry.accessGrantId ? <Tag tone="attention">Operator</Tag> : null}
+            {entry.tenantId && !tenantLog ? (
+              <span title={`Tenant ${entry.tenantId}, which has been deleted`}>
+                <Tag>Deleted tenant</Tag>
+              </span>
+            ) : null}
           </span>
         );
       },

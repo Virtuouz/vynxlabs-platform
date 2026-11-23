@@ -1156,7 +1156,138 @@ describe("starting one flow and no other", () => {
     const aliceRun = await start("linear", { n: 1 });
     expect((await petra.get(`${ws()}/flow-runs/${aliceRun}`)).status).toBe(403);
     expect((await petra.get(`${ws()}/flow-runs`)).status).toBe(403);
-    expect((await petra.post(`${ws()}/flow-runs/${started.body.id}/cancel`)).status).toBe(403);
+    // She may cancel what she may start: hers has ended, so it says so; another flow's is refused.
+    expect((await petra.post(`${ws()}/flow-runs/${started.body.id}/cancel`)).status).toBe(409);
+    const parentRun = await start("parent", { n: 1 });
+    expect((await petra.post(`${ws()}/flow-runs/${parentRun}/cancel`)).status).toBe(403);
+  });
+});
+
+describe("someone bound on one flow or one script reaches that one (phase 29, r-screens 6)", () => {
+  test("reads, starts and re-runs the flow it was given, and nothing else", async () => {
+    const role = await alice.post(`/tenants/${tenant}/roles`, {
+      name: "one_flow_operator",
+      description: "Reads, starts and re-runs the flows it is bound to.",
+      permissions: ["flow:read", "flow_run:read", "flow_run:write"],
+    });
+    const gina = await alice.post(`/tenants/${tenant}/members`, {
+      email: "gina@acme.example",
+      name: "Gina",
+      password: PASSWORD,
+    });
+    const linear = (await alice.get(`${ws()}/resources/linear`)).body;
+    await alice.post(`/tenants/${tenant}/bindings`, {
+      workspaceId: dev,
+      resourceId: linear.id,
+      principalType: "member",
+      principalId: gina.body.id,
+      roleId: role.body.id,
+    });
+    await alice.post(`/tenants/${tenant}/members`, {
+      email: "nogrant@acme.example",
+      name: "No grant",
+      password: PASSWORD,
+    });
+    const gina_ = await t.signIn("gina@acme.example", PASSWORD);
+    const nogrant = await t.signIn("nogrant@acme.example", PASSWORD);
+
+    // The flow she was given.
+    const page = await gina_.get(`${ws()}/flows/linear`);
+    expect(page.status, JSON.stringify(page.body)).toBe(200);
+    expect((await gina_.get(`${ws()}/flows/parent`)).status).toBe(403);
+
+    const started = await gina_.post(`${ws()}/flow-runs`, { flow: "linear", input: { n: 3 } });
+    expect(started.status, JSON.stringify(started.body)).toBe(201);
+    await finished(started.body.id);
+    const listed = await gina_.get(`${ws()}/flow-runs?flow=linear`);
+    expect(listed.status, JSON.stringify(listed.body)).toBe(200);
+    expect(listed.body.items.some((one: Any) => one.id === started.body.id)).toBe(true);
+    const run = await gina_.get(`${ws()}/flow-runs/${started.body.id}`);
+    expect(run.status).toBe(200);
+    expect(run.body.steps.length).toBeGreaterThan(0);
+    expect((await gina_.get(`${ws()}/flow-runs/${started.body.id}/definition`)).status).toBe(200);
+    expect((await gina_.get(`${ws()}/flow-runs/${started.body.id}/retry-plan`)).status).toBe(200);
+    const again = await gina_.post(`${ws()}/flow-runs/${started.body.id}/retry`, {
+      from: "start",
+    });
+    expect(again.status, JSON.stringify(again.body)).toBe(201);
+    await finished(again.body.id);
+
+    // Another flow, its runs, and a list of every run are not hers.
+    const others = await start("parent", { n: 1 });
+    await finished(others);
+    expect((await gina_.get(`${ws()}/flow-runs?flow=parent`)).status).toBe(403);
+    expect((await gina_.get(`${ws()}/flow-runs`)).status).toBe(403);
+    expect((await gina_.get(`${ws()}/flow-runs/${others}`)).status).toBe(403);
+    expect((await gina_.get(`${ws()}/flow-runs/${others}/definition`)).status).toBe(403);
+    expect((await gina_.get(`${ws()}/flow-runs/${others}/retry-plan`)).status).toBe(403);
+    expect((await gina_.post(`${ws()}/flow-runs/${others}/retry`, { from: "start" })).status).toBe(
+      403,
+    );
+    expect((await gina_.post(`${ws()}/flow-runs/${others}/cancel`)).status).toBe(403);
+    expect((await gina_.post(`${ws()}/flow-runs`, { flow: "parent", input: { n: 1 } })).status).toBe(
+      403,
+    );
+    // Writes she was not given: the flow's drawing, a script.
+    expect(
+      (await gina_.put(`${ws()}/flow-layouts/linear`, { positions: {} })).status,
+    ).toBe(403);
+    expect((await gina_.get(`${ws()}/runs`)).status).toBe(403);
+
+    // Someone with no grant is refused all of it.
+    for (const path of [
+      `/flows/linear`,
+      `/flow-runs?flow=linear`,
+      `/flow-runs/${started.body.id}`,
+      `/flow-runs/${started.body.id}/definition`,
+      `/flow-runs/${started.body.id}/retry-plan`,
+    ]) {
+      expect((await nogrant.get(`${ws()}${path}`)).status, path).toBeGreaterThanOrEqual(403);
+    }
+    expect(
+      (await nogrant.post(`${ws()}/flow-runs/${started.body.id}/retry`, { from: "start" })).status,
+    ).toBeGreaterThanOrEqual(403);
+    expect((await nogrant.post(`${ws()}/flow-runs`, { flow: "linear", input: {} })).status)
+      .toBeGreaterThanOrEqual(403);
+  });
+
+  test("reads, runs and re-runs the script it was given, and no other", async () => {
+    const role = await alice.post(`/tenants/${tenant}/roles`, {
+      name: "one_script_operator",
+      description: "Reads and runs the scripts it is bound to.",
+      permissions: ["run:read", "run:write"],
+    });
+    const sam = await alice.post(`/tenants/${tenant}/members`, {
+      email: "scripty@acme.example",
+      name: "Scripty",
+      password: PASSWORD,
+    });
+    const double = (await alice.get(`${ws()}/resources/double`)).body;
+    await alice.post(`/tenants/${tenant}/bindings`, {
+      workspaceId: dev,
+      resourceId: double.id,
+      principalType: "member",
+      principalId: sam.body.id,
+      roleId: role.body.id,
+    });
+    const scripty = await t.signIn("scripty@acme.example", PASSWORD);
+    const mine = await scripty.post(`${ws()}/runs`, { script: "double", input: { n: 2 } });
+    expect(mine.status, JSON.stringify(mine.body)).toBe(201);
+    const theirs = await alice.post(`${ws()}/runs`, { script: "sink", input: {} });
+    expect(theirs.status, JSON.stringify(theirs.body)).toBe(201);
+    const listed = await scripty.get(`${ws()}/runs?script=double`);
+    expect(listed.status, JSON.stringify(listed.body)).toBe(200);
+    expect((await scripty.get(`${ws()}/runs?script=sink`)).status).toBe(403);
+    expect((await scripty.get(`${ws()}/runs`)).status).toBe(403);
+    // Someone else's run of the script she was given, and of one she was not.
+    const aliceDouble = await alice.post(`${ws()}/runs`, { script: "double", input: { n: 5 } });
+    expect((await scripty.get(`${ws()}/runs/${aliceDouble.body.id}`)).status).toBe(200);
+    expect((await scripty.get(`${ws()}/runs/${aliceDouble.body.id}/logs`)).status).toBe(200);
+    expect((await scripty.get(`${ws()}/runs/${theirs.body.id}`)).status).toBe(403);
+    expect((await scripty.get(`${ws()}/runs/${theirs.body.id}/logs`)).status).toBe(403);
+    expect((await scripty.post(`${ws()}/runs/${theirs.body.id}/cancel`)).status).toBe(403);
+    expect((await scripty.post(`${ws()}/runs/${theirs.body.id}/rerun`, {})).status).toBe(403);
+    expect((await scripty.post(`${ws()}/runs/${aliceDouble.body.id}/rerun`, {})).status).toBe(201);
   });
 });
 

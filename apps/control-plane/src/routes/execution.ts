@@ -1234,7 +1234,11 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       `${base}/runs`,
       {
-        config: { access: access.workspace("run:read") },
+        config: {
+          access: access.custom(
+            "Needs `run:read` at the workspace, or at the script itself when `script` names it.",
+          ),
+        },
         schema: {
           summary: "Runs in a workspace, newest first",
           description:
@@ -1249,7 +1253,8 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           response: { 200: pageOf(Run) },
         },
       },
-      async ({ params, query }) => {
+      async ({ ctx, params, query }) => {
+        await findWorkspace(kernel, params.t, params.w);
         const args = pageArgs(query);
         let select = db
           .selectFrom("run")
@@ -1257,17 +1262,24 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           .selectAll("run")
           .select("bundle.version as bundle_version")
           .where("run.workspace_id", "=", params.w);
+        const script = query.script
+          ? await db
+              .selectFrom("resource")
+              .select("id")
+              .where("workspace_id", "=", params.w)
+              .where("kind", "=", "script")
+              .where("path", "=", query.script)
+              .executeTakeFirst()
+          : undefined;
+        await ctx.authorize("run:read", {
+          tenantId: params.t,
+          workspaceId: params.w,
+          ...(script ? { resourceId: script.id } : {}),
+        });
         if (query.script) {
           // The runs of the script that has this path now, under whatever path it had then,
           // beside any run that was started under this path.
           const path = query.script;
-          const script = await db
-            .selectFrom("resource")
-            .select("id")
-            .where("workspace_id", "=", params.w)
-            .where("kind", "=", "script")
-            .where("path", "=", path)
-            .executeTakeFirst();
           select = select.where((eb) =>
             script
               ? eb.or([eb("run.resource_id", "=", script.id), eb("run.script_path", "=", path)])
@@ -1564,10 +1576,14 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       },
       async ({ ctx, params }) => {
         await findWorkspace(kernel, params.t, params.w);
-        const mayReadAll = await ctx.allowed("run:read", {
+        const found = await findRun(params.w, params.id).catch(() => undefined);
+        // At the workspace, or on the run's script.
+        const at = {
           tenantId: params.t,
           workspaceId: params.w,
-        });
+          ...(found?.resource_id ? { resourceId: found.resource_id } : {}),
+        };
+        const mayReadAll = await ctx.allowed("run:read", at);
         const row = mayReadAll
           ? await findRun(params.w, params.id)
           : await findRun(params.w, params.id).catch(() => undefined);
@@ -1578,7 +1594,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           row.started_by_type === ctx.principal.type;
         // To someone who may not read runs, a run that is not theirs does not exist.
         if (!mayReadAll && !own)
-          await ctx.authorize("run:read", { tenantId: params.t, workspaceId: params.w });
+          await ctx.authorize("run:read", at);
         if (!row) throw notFound("The run");
         // Values the run was given are masked wherever they turn up, as well as secret-named keys.
         const known = await servedValues(kernel, db, row);
@@ -1626,10 +1642,36 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       },
     );
 
+    /**
+     * What a run's other routes need is what starting its script needs: the permission in the
+     * workspace or on the script itself. Asked before the run is looked for, so a run that is
+     * not there and one that is not allowed answer the same.
+     */
+    const authorizeRun = async (
+      ctx: RequestContext,
+      params: { t: string; w: string; id: string },
+      permission: string,
+    ) => {
+      await findWorkspace(kernel, params.t, params.w);
+      const found = await db
+        .selectFrom("run")
+        .select("resource_id")
+        .where("id", "=", params.id)
+        .where("workspace_id", "=", params.w)
+        .executeTakeFirst();
+      await ctx.authorize(permission, {
+        tenantId: params.t,
+        workspaceId: params.w,
+        ...(found?.resource_id ? { resourceId: found.resource_id } : {}),
+      });
+    };
+
     app.get(
       `${base}/runs/:id/logs`,
       {
-        config: { access: access.workspace("run:read") },
+        config: {
+          access: access.custom("Needs `run:read` at the workspace or at the run's script itself."),
+        },
         schema: {
           summary: "A run's log lines, oldest first",
           description: "Pass the last `seq` you have as `after` to read only what is new.",
@@ -1658,7 +1700,8 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           },
         },
       },
-      async ({ params, query }) => {
+      async ({ ctx, params, query }) => {
+        await authorizeRun(ctx, params, "run:read");
         const run = await findRun(params.w, params.id);
         const rows = await db
           .selectFrom("run_log")
@@ -1690,7 +1733,9 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.post(
       `${base}/runs/:id/cancel`,
       {
-        config: { access: access.workspace("run:write") },
+        config: {
+          access: access.custom("Needs `run:write` at the workspace or at the run's script itself."),
+        },
         schema: {
           summary: "Cancel a run that is waiting or in progress",
           description:
@@ -1701,6 +1746,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         },
       },
       async ({ ctx, params }) => {
+        await authorizeRun(ctx, params, "run:write");
         let ended: ReturnType<typeof takeCanceled> = [];
         const run = await ctx.mutate(async (trx, audit) => {
           const cancelled = await cancelRun(kernel, trx, params.w, params.id);

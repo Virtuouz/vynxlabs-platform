@@ -44,6 +44,7 @@ import {
 import { eventSchema, publishEvent } from "../kernel/flows/events.js";
 import { ExpressionError } from "../kernel/flows/expressions.js";
 import { flowKnown } from "../kernel/flows/known.js";
+import type { Target } from "../kernel/authorize.js";
 import { access, findWorkspace, guestLimit } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
 import { resolveResource } from "../kernel/resolve.js";
@@ -654,7 +655,9 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       `${base}/flows/*`,
       {
-        config: { access: access.workspace("flow:read") },
+        config: {
+          access: access.custom("Needs `flow:read` at the workspace or at the flow itself."),
+        },
         schema: {
           summary: "One flow: its graph, where its nodes are drawn, and its triggers",
           description: "A webhook's address is included only for callers who hold `trigger:write`.",
@@ -682,6 +685,7 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       },
       async ({ ctx, params }) => {
         const path = wildPath(params);
+        await findWorkspace(kernel, params.t, params.w);
         const flow = await db
           .selectFrom("resource")
           .select(["id", "body", "version"])
@@ -689,6 +693,11 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           .where("kind", "=", "flow")
           .where("path", "=", path)
           .executeTakeFirst();
+        await ctx.authorize("flow:read", {
+          tenantId: params.t,
+          workspaceId: params.w,
+          ...(flow ? { resourceId: flow.id } : {}),
+        });
         if (!flow) throw notFound("The flow");
         const body = flow.body as unknown as FlowBody;
         const layout = await db
@@ -783,6 +792,31 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
 
     // ----- Flow runs -----
 
+    /**
+     * A flow's runs are read, retried and canceled by whoever holds the permission in the
+     * workspace or on the flow itself, as starting one is. A run whose flow is gone has no
+     * flow to hold it on. Asked before the run is looked for, so a run that is not there and one
+     * that is not allowed answer the same.
+     */
+    const authorizeRun = async (
+      ctx: { authorize: (permission: string, target: Target) => Promise<void> },
+      params: { t: string; w: string; id: string },
+      permission: string,
+    ) => {
+      await findWorkspace(kernel, params.t, params.w);
+      const row = await db
+        .selectFrom("flow_run")
+        .select("resource_id")
+        .where("id", "=", params.id)
+        .where("workspace_id", "=", params.w)
+        .executeTakeFirst();
+      await ctx.authorize(permission, {
+        tenantId: params.t,
+        workspaceId: params.w,
+        ...(row?.resource_id ? { resourceId: row.resource_id } : {}),
+      });
+    };
+
     const flowRuns = (workspaceId: string, from: typeof db = db) =>
       from
         .selectFrom("flow_run")
@@ -795,7 +829,11 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       `${base}/flow-runs`,
       {
-        config: { access: access.workspace("flow_run:read") },
+        config: {
+          access: access.custom(
+            "Needs `flow_run:read` at the workspace, or at the flow itself when `flow` names it.",
+          ),
+        },
         schema: {
           summary: "Flow runs in a workspace, newest first",
           description: "Runs started as a step of another flow are left out unless `all` is set.",
@@ -810,7 +848,22 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           response: { 200: pageOf(FlowRun) },
         },
       },
-      async ({ params, query }) => {
+      async ({ ctx, params, query }) => {
+        await findWorkspace(kernel, params.t, params.w);
+        const named = query.flow
+          ? await db
+              .selectFrom("resource")
+              .select("id")
+              .where("workspace_id", "=", params.w)
+              .where("kind", "=", "flow")
+              .where("path", "=", query.flow)
+              .executeTakeFirst()
+          : undefined;
+        await ctx.authorize("flow_run:read", {
+          tenantId: params.t,
+          workspaceId: params.w,
+          ...(named ? { resourceId: named.id } : {}),
+        });
         const args = pageArgs(query);
         let select = flowRuns(params.w);
         if (query.flow) {
@@ -1032,7 +1085,11 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       `${base}/flow-runs/:id/definition`,
       {
-        config: { access: access.workspace("flow_run:read") },
+        config: {
+          access: access.custom(
+            "Needs `flow_run:read` at the workspace or at the run's flow itself.",
+          ),
+        },
         schema: {
           summary: "The flow as it was when this run started",
           description:
@@ -1053,8 +1110,8 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           },
         },
       },
-      async ({ params }) => {
-        await findWorkspace(kernel, params.t, params.w);
+      async ({ ctx, params }) => {
+        await authorizeRun(ctx, params, "flow_run:read");
         const row = await flowRuns(params.w)
           .where("flow_run.id", "=", params.id)
           .executeTakeFirst();
@@ -1110,7 +1167,11 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       `${base}/flow-runs/:id/retry-plan`,
       {
-        config: { access: access.workspace("flow_run:read") },
+        config: {
+          access: access.custom(
+            "Needs `flow_run:read` at the workspace or at the run's flow itself.",
+          ),
+        },
         schema: {
           summary: "What retrying a flow run from its failed step would keep and run again",
           description:
@@ -1130,8 +1191,8 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           response: { 200: RetryPlan },
         },
       },
-      async ({ params, query }) => {
-        await findWorkspace(kernel, params.t, params.w);
+      async ({ ctx, params, query }) => {
+        await authorizeRun(ctx, params, "flow_run:read");
         const { row, body, plan } = await retryPlanOf(params.w, params.id);
         const target = await retryTarget(params.w, row, query.bundle);
         return {
@@ -1145,7 +1206,11 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.post(
       `${base}/flow-runs/:id/retry`,
       {
-        config: { access: access.workspace("flow_run:write") },
+        config: {
+          access: access.custom(
+            "Needs `flow_run:write` at the workspace or at the run's flow itself.",
+          ),
+        },
         schema: {
           summary: "Run a finished flow run again, from its failed step or from the start",
           description:
@@ -1165,7 +1230,7 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         },
       },
       async ({ ctx, params, body }, reply) => {
-        await findWorkspace(kernel, params.t, params.w);
+        await authorizeRun(ctx, params, "flow_run:write");
         const { row, body: ranOn, plan } = await retryPlanOf(params.w, params.id);
         if (row.status === "running") {
           throw new HttpError(409, "conflict", "The flow run has not ended. Cancel it first.");
@@ -1279,22 +1344,23 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       },
       async ({ ctx, params }) => {
         await findWorkspace(kernel, params.t, params.w);
-        const mayReadAll = await ctx.allowed("flow_run:read", {
-          tenantId: params.t,
-          workspaceId: params.w,
-        });
         const row = await flowRuns(params.w)
           .where("flow_run.id", "=", params.id)
           .executeTakeFirst();
+        // At the workspace, or on the run's flow.
+        const at = {
+          tenantId: params.t,
+          workspaceId: params.w,
+          ...(row?.resource_id ? { resourceId: row.resource_id } : {}),
+        };
+        const mayReadAll = await ctx.allowed("flow_run:read", at);
         const own =
           row !== undefined &&
           ctx.principal.id !== null &&
           row.started_by_id === ctx.principal.id &&
           row.started_by_type === ctx.principal.type;
         // To someone who may not read flow runs, one that is not theirs does not exist.
-        if (!mayReadAll && !own) {
-          await ctx.authorize("flow_run:read", { tenantId: params.t, workspaceId: params.w });
-        }
+        if (!mayReadAll && !own) await ctx.authorize("flow_run:read", at);
         if (!row) throw notFound("The flow run");
         const known = await flowKnown(kernel, db, params.id);
         const shownRun = (one: typeof row) => {
@@ -1434,7 +1500,11 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.post(
       `${base}/flow-runs/:id/cancel`,
       {
-        config: { access: access.workspace("flow_run:write") },
+        config: {
+          access: access.custom(
+            "Needs `flow_run:write` at the workspace or at the run's flow itself.",
+          ),
+        },
         schema: {
           summary: "Cancel a flow run and the steps it has in progress",
           description:
@@ -1445,6 +1515,7 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         },
       },
       async ({ ctx, params }) => {
+        await authorizeRun(ctx, params, "flow_run:write");
         let ended: ReturnType<typeof takeCanceled> = [];
         const cancelled = await ctx.mutate(async (trx, audit) => {
           const flowRun = await cancelFlowRun(kernel, trx, params.w, params.id);

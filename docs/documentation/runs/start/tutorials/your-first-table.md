@@ -39,3 +39,13 @@ No horizontal page scroll at 1440.
 
 - Widths 768 and 390, dark theme and keyboard-only: not run. The steps assume a wide screen, which the page says.
 - The page's screenshots were not taken: the screenshot spec (`e2e/screenshots.spec.ts`) has no scene `visit-notes` yet (see the writer's report).
+
+## Second check: the tutorial done again (second agent, 2026-11-23)
+
+- Instance `http://localhost:8091`, commit `be324f78` plus the page edits of this check. Maya Brooks, Sandbox, Playwright headless, light theme. Table names `chk-vn-a` (1440 px) and `chk-vn-c` (390 px) in place of `visit-notes`.
+- 1440 px: every step 1 to 11 followed as written, in one run, from the Data rail button and the Tables menu to the saved view. Results: step 4 opened `.../tables/chk-vn-a` with "This table has no rows yet."; step 5 "The column clinic was added." and the row showed Required and Northside; step 6 Required on summary; step 7 "Row added." five times and "5 rows on this page, of 5"; step 8 "3 rows on this page, of 3 that match"; step 9 `sort=minutes` then `sort=-minutes`, order Moss 55, Pepper 40, Olive 25; step 10 "Saved as “Long visits”. Only you see it in this menu; its link opens it for anyone."; step 11 five rows, then **Long visits** gave the filter, the sort and "3 rows on this page, of 3 that match". No horizontal page scroll.
+- What the page got wrong: step 4 said the table's header reads "What the vet wrote down ... 0 rows ...". The text is not on the page; it is in the popover of the information button **About <name>**. The step now names the button.
+- 390 px: the steps can be followed with differences, which the page does not claim (it says a laptop-width screen). The rail is a menu button at the top left: it opens the menu, **Data**, then **Tables**. The list shows only Table and Rows (no **Managed in**). In the Columns table the **Rules** and **When not given** columns are hidden, so steps 5 and 6 show no **Required** or **Northside**; each column's buttons are in a menu named "Actions for summary" at the right end of the table, which has to be scrolled into view. Steps 2, 3, 4, 7, 8, 9, 10 and 11 gave the same messages as at 1440. No horizontal page scroll.
+- The edited step 4 was checked on `chk-vn-a`: the button **About chk-vn-a** opened a popover reading "What the vet wrote down after a visit. 5 rows. Everyone with access. Managed in the console." (5 rows, as the table then held five). The rest of the page did not change after the run, so the run is not repeated in full.
+
+Not run in this check: 768 px, dark theme, keyboard only.

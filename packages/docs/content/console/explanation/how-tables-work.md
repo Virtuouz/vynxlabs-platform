@@ -28,7 +28,7 @@ A resource is managed in one place or the other, never both. Rows of both kinds 
 The work of making a workspace's tables match a definition is planned before it is done, and the plan has no step that drops a table or a column. What a definition no longer has is **retired**: the table or column is marked, hidden from use, and its data stays where it is.
 
 - A **retired table** cannot be read or written. Its rows are kept. If other tables hold references to it, the keys that tie them are dropped while it is away and put back when it returns.
-- A **retired column** keeps its values. It stops being required or unique, and its default is dropped from the database. The catalog keeps the default, to put back.
+- A **retired column** keeps its values. It stops being required or unique, and its default is dropped from the database. Bringing a column back in the console restores its type and what its rows may hold, and not those settings: see [Retire a table or a column, and bring it back](../how-to/data/retired-data).
 - A deploy retires a table when the bundle no longer lists a table that the repository owned. A person with `resource:write` can also retire a table of the console by hand, with **Retire table** on its **Definition** tab.
 - A table that other tables refer to is not retired. The refusal names each table and column that refers to it, because no later deploy could succeed until they were changed.
 
@@ -51,7 +51,7 @@ Volvel uses "rule" for two different things, at two levels.
 - **Each person sees their own rows.** One column holds who added the row. Choosing "Each person sees only the rows they added" when you create a table adds that column, `owner_id`.
 - **Rules decide.** Up to 20 rules, each allowing a person to read, or to read and change, the rows where a column matches: the person's own ID, a group they are in, or one of their attributes.
 
-Row rules limit people, and the people who hold `data_all` are past them: the permission reads every row whatever the rule says. The built-in `developer` and `viewer` roles hold it for reading, so a row rule does not hide rows from them. Row rules are saved with **Save who sees rows**, not as you type, and are not part of **Undo**.
+Row rules limit people, and the people who hold `data_all` are past them: the permission reads every row whatever the rule says. The built-in `developer` and `viewer` roles hold it for reading, so a row rule does not hide rows from them. Row rules are saved with **Save who sees rows**, not as you type. What you have set and not saved is not applied and **Undo** does not take it back; once saved, the change is one step of undo like any other change to the definition.
 
 ## What happens to files
 

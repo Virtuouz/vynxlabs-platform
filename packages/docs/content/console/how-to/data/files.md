@@ -24,7 +24,7 @@ A workspace keeps the files that people put in a table's file column, that a scr
 3. Press **Add row** at the foot of the sheet. The file is uploaded when the row is saved. The grid shows **Download** in the cell.
 :::
 
-To change the file of a row that exists, click the row. In the inspector press **Replace** and choose a file, or **Remove**. Each asks first: "Replace the file in attachment?" with "The old file stays in this row's history, until that history expires." and the buttons **Cancel** and **Replace**, or "Remove the file from attachment?" and **Remove**. The console then says "File replaced." or "File removed." A file cell is not changed in the grid itself.
+To change the file of a row that exists, click the row. In the inspector press **Replace** and choose a file, or press **Remove**. The console then asks first: "Replace the file in attachment?" with "notes.txt takes its place. The old file stays in this row's history, until that history expires." and the buttons **Cancel** and **Replace**, or "Remove the file from attachment?" with "The row will have no file." and the button **Remove**. The console then says "File replaced." or "File removed." (a row that had no file says "File added.") A file cell is not changed in the grid itself.
 
 ## Upload a file without a row
 
@@ -70,6 +70,6 @@ The file is attached to its row, or listed on **Files** with "No row", or gone. 
 ## If it does not work
 
 - **The **Upload file** button is grayed out.** You lack `file:write`. The tooltip says so.
-- **The **Delete** button is grayed out.** Either a row still names the file, or you lack `file:write`. Through the API the server answers 409 "A row still names this file. Change the row to another file or none, or delete the row, and then delete the file."
+- **The **Delete** button is grayed out.** Either a row still names the file, or you lack `file:write`. Through the API the instance answers 409 "A row still names this file. Change the row to another file or none, or delete the row, and then delete the file."
 - **The screen cannot be opened, or a file is "not found".** Without `data_all:read` the list is not given, and a file is found by its ID only through a row you may read, or because you uploaded it.
 - **A file column cannot be changed in the grid.** Use the inspector, or **Add row**.

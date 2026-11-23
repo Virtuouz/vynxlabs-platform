@@ -33,7 +33,7 @@ The rules are saved when you press **Save who sees rows**, and not as you set th
 **See it as** and **See it as a group** are under **Save who sees rows**. They appear whenever the table is not open to everyone.
 
 :::steps
-1. Click **See it as** and type part of an email. The console asks the server, so an end user past the first page is found. Choose one: the hint under a name lists the groups they are in. Choosing Jess Morgan lists the rows with `northside`, the first 20 at most.
+1. Click **See it as** and type part of an email. The console asks the instance, so an end user past the first page is found. Choose one: the hint under a name lists the groups they are in. Choosing Jess Morgan lists the rows with `northside`, the first 20 at most.
 2. Search for George Lewis and choose him. The list changes to the one row whose `client_code` is `C-1001`.
 3. Click **See it as a group** and choose a group. Groups of end users and groups of members are in the same list and each says which. Choosing `riverside` says "Someone in this group would see 2 rows in all." and lists them.
 :::

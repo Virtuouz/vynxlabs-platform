@@ -20,3 +20,8 @@
 
 ## Not run
 A repository table (no Bring back, text from the code), two retired tables of one name, a retired table opened by a person without `resource:write`, phone width, dark theme.
+
+## Second check (second agent, 2026-11-23)
+- Instance `http://localhost:8091`, Maya Brooks, 1440 px, light. Tables `chk-vn-c` (5 rows, made in the tutorial run) and `chk-ref` (a column `ptr` pointing to `chk-vn-c`).
+- Followed: **Retire table** on `chk-vn-c` (confirmation text as quoted; refused while `chk-ref.ptr` pointed to it, text as quoted); retired `ptr`; **Retire table** again (the console went to the list, "Retired" pill); opened it (notice with 5 rows, **Bring back**, **Delete for good**); **Bring back** ("The table chk-vn-c is back, with its rows.", 5 rows, Required and default restored, description not). Column: **Retire** on `status` (listed under Retired columns with "5 values"), **Bring back** (Required and default gone, as the page says), retired again and **Delete for good** (type `status`, button off until it matches, column gone).
+- Not run: **Delete for good** on a whole table in this check, a table defined in the repository, two retired tables of one name, a person without `table:write`, 768 and 390 px, dark, keyboard only.

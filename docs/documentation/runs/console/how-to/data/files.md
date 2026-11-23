@@ -19,3 +19,9 @@
 
 ## Not run
 **Remove** in the inspector, a 25 MB or empty file (texts from the code), **Show more files** (the list had fewer than 50), the API refusal with 409 (text from the code), the audit lines, a person with only `file:read`, a file saved by a script, retention actually removing a file.
+
+## Second check (second agent, 2026-11-23)
+- Instance `http://localhost:8091`, Maya Brooks, 1440 px, light. Table `chk-docs` (title, attachment: **File**).
+- Followed: **Add column** File (no unique or default in the dialog, no **Rules** button on the column); **Add row** with **Choose a file**; the cell shows **Download**; inspector **Replace** (choose a file, then "Replace the file in attachment?" and "notes-b.txt takes its place. ...", "File replaced.") and **Remove** ("Remove the file from attachment?" and "The row will have no file. ..."); **Data**, **Files**: **Upload file** (price-list.txt: "price-list.txt was uploaded.", first in the list), an empty file ("... is empty. Choose a file with something in it."), a 26,214,500-byte file ("big.bin is over 25 MB, the most a file can be."); **Named by** "chk-docs, attachment (1 row)" with **Delete** off; a removed file shows "No row"; **Find a file by name** `.pdf` ("No file has that in its name"); **Delete** on price-list.txt: "Delete price-list.txt?", "The file is gone for good. ...", "price-list.txt was deleted."
+- What the page got wrong: the inspector asks after the file is chosen, not before, and the question names the new file. Corrected.
+- Not run: the tooltip text on the off **Delete** (the hover did not show it in the headless run; the text is in `Files.tsx:268`), **Show more files**, a person with only `file:read`, retention removing a file, 768 and 390 px, dark, keyboard only.

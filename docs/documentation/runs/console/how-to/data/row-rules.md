@@ -25,3 +25,10 @@ Reading as a person without `data_all` (the page's claim that a rule gives them 
 
 ## Findings for the product (not written as working in the page)
 - With **Rules decide**, **Save who sees rows** saves, but the text "Saved. It applies from the next request." does not stay on screen (it does in the owner mode). The editor seems to start afresh after the reload, as the policy comes back with a shape that differs from what was sent. Not investigated further.
+
+## Second check (second agent, 2026-11-23)
+- Instance `http://localhost:8091`, Maya Brooks, 1440 px, light. Table `chk-notes2` made with **Create table** (columns note, clinic, client_code) and five rows added with **Add row**.
+- Followed steps 1 to 5 of "Give a group its rows and a client theirs" and the three steps of "Check it as a person or a group" as written: headings "People in the group named in clinic may read and change the row." and "People whose client_id is in client_code may read the row."; after **Save who sees rows** the list said "By 2 rules"; **See it as** `jess` showed the two northside rows; `george` offered two end users (george.lewis and george.green), choosing George Lewis showed the one C-1001 row; **See it as a group** `riverside`: "Someone in this group would see 2 rows in all."
+- Undo, as the brief said: with rules set and not saved, **Undo** is off; after **Save who sees rows**, **Undo** reads "Undo the change to who sees rows" and puts the select back to "Everyone with access sees every row"; **Redo** puts the two rules back. Confirmed.
+- "Saved. It applies from the next request." does not stay after a save in the Rules decide mode (the writer's finding): confirmed again, not quoted by the page.
+- Not run: a person without `data_all:read`, the 20-rule limit, the "groups could not be read" message, 768 and 390 px, dark, keyboard only.

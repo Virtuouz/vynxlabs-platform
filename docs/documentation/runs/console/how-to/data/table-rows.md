@@ -29,3 +29,8 @@
 
 ## Not run
 The inspector's **Delete row** (the confirm text comes from the code), a reference picker, a list-of-values cell, a phone width, dark theme, keyboard-only walk of the whole page.
+
+## Second check (second agent, 2026-11-23)
+- Instance `http://localhost:8091`, commit `be324f78`, Maya Brooks, Sandbox, 1440 px, light, table `chk-vn-a` (5 rows).
+- Followed: filter in two boxes (3 of 3 that match), **Rows must match** to any filter (5), no match ("No rows match the filters."), `abc` in the minutes box ("minutes: Enter a number." and **CSV** off), a click then a Shift click on two headings (`sort=clinic,minutes`), **Columns** dialog, double-click edit of a cell and Escape, a click on a row (inspector titled Row with **Save row**, **Delete row**), the leave guard ("Leave without saving?", **Stay**, **Leave**), "Row saved.", the checkbox bar ("1 row checked", **Delete**, **Uncheck all**), **CSV** (file `chk-vn-a.csv`, columns id, created_at, updated_at, then the table's, only the filtered rows), the **Saved views** menu (**Save this view…**, **Copy a link to this view**). All as the page says; the page did not change.
+- Not run: delete confirmation, the "N were gone already" message, the slow-read notice, 768 and 390 px, dark, keyboard only.

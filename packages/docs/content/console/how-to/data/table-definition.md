@@ -75,7 +75,7 @@ Press **Remove** on a line of the list to take an index away. A table has at mos
 
 ## Choose what stands for a row
 
-When another table points to a row of this one, the row is named by the column you choose in **What stands for a row**: open **The column that stands for a row** and choose a column, or **None: the row's ID**. Columns of JSON, files and lists of values are not offered. Where none is chosen, the server uses a column called `name`, else `title`, else the first text column.
+When another table points to a row of this one, the row is named by the column you choose in **What stands for a row**: open **The column that stands for a row** and choose a column, or **None: the row's ID**. Columns of JSON, files and lists of values are not offered. Where none is chosen, the console uses a column called `name`, else `title`, else the first text column.
 
 ## Rename and describe
 
@@ -86,7 +86,7 @@ When another table points to a row of this one, the row is named by the column y
 
 ## Take a change back
 
-Every change on this tab, is saved as soon as you confirm it. Two things wait: renaming the table (a draft), and **Who sees rows**, which waits for **Save who sees rows**; once saved, that is one step of undo too. **Undo** takes the last one back and **Redo** makes it again; each button says which change, for example "Undo the change to what stands for a row". The keys are :kbd[⌘Z] or :kbd[Ctrl+Z] for undo and :kbd[⇧⌘Z] or :kbd[Ctrl+Y] for redo, when the cursor is not in a field. Undo saves the earlier definition again. It does not put back rows that were deleted or values that were changed. The list starts empty each time you open the page.
+Every change on this tab is saved as soon as you confirm it. Two things wait: renaming the table (a draft), and **Who sees rows**, which waits for **Save who sees rows**; once saved, that is one step of undo too. **Undo** takes the last one back and **Redo** makes it again; each button says which change, for example "Undo the change to what stands for a row". The keys are :kbd[⌘Z] or :kbd[Ctrl+Z] for undo and :kbd[⇧⌘Z] or :kbd[Ctrl+Y] for redo, when the cursor is not in a field. Undo saves the earlier definition again. It does not put back rows that were deleted or values that were changed. The list starts empty each time you open the page.
 
 If someone else changed the table after you opened it, the page says "Someone else changed" the table "after you opened it. This page shows what is saved now, so undo and redo start again from there."
 

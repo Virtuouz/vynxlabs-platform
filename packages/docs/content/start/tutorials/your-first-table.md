@@ -22,7 +22,7 @@ You will have a table of visit notes in Fernhill's Sandbox workspace, with five 
 
 3. **Add a second column.** Press **Add another column**. Name it `minutes`, and set **Column 2 holds** to **Whole number**. Leave **Who sees rows** as **Everyone who may use the table sees every row**.
 
-4. **Create it.** Press **Create table**. The table opens on **Rows**. Its header reads "What the vet wrote down after a visit. 0 rows. Everyone with access. Managed in the console." and the grid says "This table has no rows yet." The table is in use at once. You do not deploy it.
+4. **Create it.** Press **Create table**. The table opens on **Rows** and the grid says "This table has no rows yet." Press the information button beside the table's name, named **About visit-notes**. It reads "What the vet wrote down after a visit. 0 rows. Everyone with access. Managed in the console." The table is in use at once. You do not deploy it.
 
 5. **Add a column with a rule.** Choose **Definition**. Under **Columns**, press **Add column**. Fill in:
    - **Name**: `clinic`

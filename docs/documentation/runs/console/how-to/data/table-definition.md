@@ -25,3 +25,9 @@
 
 ## Not run
 Rename table deployed; Undo of a retire or a rename; Add column with a date or yes/no default; the phone menu (**Actions for** a column); the "Someone else changed" message; the 20-index limit.
+
+## Second check (second agent, 2026-11-23)
+- Instance `http://localhost:8091`, Maya Brooks, 1440 px, light, table `chk-vn-a`.
+- Followed: **Add column** `status`, required, with no default (refused with the message the page quotes), then with a default `open` ("The column status was added."); **Rules** on `clinic`, unique (refused: "Northside" is in 2 rows ...); **Change type** on `minutes` (offered Number and Text; saved); **Values** dialog; **Add an index** dialog (cancelled); **Retire** on `status`, then the **Undo** button ("Undo retiring status") brought it back. All as the page says.
+- At 390 px the column buttons are in an "Actions for <column>" menu (see the tutorial's log). The page describes the wide screen.
+- Not run: **Rename**, **Rename table**, **Describe**, the display column, **Redo** on this page, the "Someone else changed" notice, dark, keyboard only.

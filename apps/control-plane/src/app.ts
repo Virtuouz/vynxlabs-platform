@@ -94,6 +94,11 @@ export interface AppOptions {
   onRoute?: (route: RouteOptions) => void;
 }
 
+/** What Fastify is given for `TRUSTED_PROXIES`: a count of hops from this server, or networks. */
+function trustProxy(trusted: number | string[]) {
+  return typeof trusted === "number" ? (_address: string, hop: number) => hop < trusted : trusted;
+}
+
 /** The built console, when there is one to serve. */
 export async function buildApp(options: AppOptions) {
   const app = Fastify({
@@ -101,8 +106,9 @@ export async function buildApp(options: AppOptions) {
     requestIdHeader: false,
     // On shutdown, do not wait for idle connections or for workers that are long-polling.
     forceCloseConnections: true,
-    // Behind a proxy, the caller's address is in the forwarding header.
-    trustProxy: true,
+    // Behind a proxy, the caller's address is what the proxy added to the forwarding header.
+    // What the caller wrote is not believed past the proxies the operator says (TRUSTED_PROXIES).
+    trustProxy: trustProxy(options.config.trustedProxies),
     genReqId: (request) => {
       const incoming = request.headers["x-request-id"];
       return typeof incoming === "string" && REQUEST_ID.test(incoming) ? incoming : newId();

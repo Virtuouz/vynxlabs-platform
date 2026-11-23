@@ -1,9 +1,32 @@
 import type { FastifyRateLimitOptions, FastifyRateLimitStoreCtor } from "@fastify/rate-limit";
 import { sql } from "@volvel/db";
+import type { Db } from "./audit.js";
 import type { Kernel } from "./kernel.js";
 
 type Result = { current: number; ttl: number };
 type Callback = (error: Error | null, result?: Result) => void;
+
+/**
+ * Counts one hit under `key` in a fixed window of `windowMs`, and says how many there have
+ * been in it and how long it has left. The one place that writes the counts, for the routes'
+ * limits and for the sign-in library's.
+ */
+export async function countHit(
+  db: Db,
+  key: string,
+  windowMs: number,
+): Promise<{ hits: number; ttl: number }> {
+  const { rows } = await sql<{ hits: number; ttl: number }>`
+    insert into rate_limit (key, hits, window_ends)
+    values (${key}, 1, now() + ${windowMs} * interval '1 millisecond')
+    on conflict (key) do update set
+      hits = case when rate_limit.window_ends <= now() then 1 else rate_limit.hits + 1 end,
+      window_ends = case when rate_limit.window_ends <= now()
+        then excluded.window_ends else rate_limit.window_ends end
+    returning hits, greatest(0, ceil(extract(epoch from (window_ends - now())) * 1000))::int as ttl
+  `.execute(db);
+  return { hits: rows[0]?.hits ?? 1, ttl: rows[0]?.ttl ?? windowMs };
+}
 
 /**
  * Rate limits counted in Postgres, so that every replica of the control plane
@@ -20,20 +43,10 @@ export function postgresRateLimitStore(kernel: Kernel): FastifyRateLimitStoreCto
 
     incr(key: string, callback: Callback, timeWindow: number): void {
       const window = Math.max(1, Math.trunc(timeWindow));
-      sql<{ hits: number; ttl: number }>`
-        insert into rate_limit (key, hits, window_ends)
-        values (${this.#prefix + key}, 1, now() + ${window} * interval '1 millisecond')
-        on conflict (key) do update set
-          hits = case when rate_limit.window_ends <= now() then 1 else rate_limit.hits + 1 end,
-          window_ends = case when rate_limit.window_ends <= now()
-            then excluded.window_ends else rate_limit.window_ends end
-        returning hits, greatest(0, ceil(extract(epoch from (window_ends - now())) * 1000))::int as ttl
-      `
-        .execute(kernel.db)
-        .then(({ rows }) => {
-          const row = rows[0];
-          callback(null, { current: row?.hits ?? 1, ttl: row?.ttl ?? window });
-        }, callback);
+      countHit(kernel.db, this.#prefix + key, window).then(
+        ({ hits, ttl }) => callback(null, { current: hits, ttl }),
+        callback,
+      );
     }
 
     read(key: string, callback: Callback): void {

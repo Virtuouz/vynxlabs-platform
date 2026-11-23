@@ -1,3 +1,4 @@
+import { isIP } from "node:net";
 import type { ConfigVarName } from "./config-vars.js";
 import { type EgressAllow, parseEgressAllow } from "./kernel/egress.js";
 import { readHeaders, type TelemetryConfig } from "./kernel/telemetry.js";
@@ -50,6 +51,14 @@ export interface Config {
   retention: RetentionDays;
   /** Internal networks and hosts the instance may reach for a tenant despite the egress guard. */
   egressAllow: EgressAllow;
+  /**
+   * Which peers' forwarding headers are believed: a number of proxies in front of the
+   * instance (0 trusts none), or the networks they are on. Everything the instance
+   * learns about a caller's address, for limits and the audit log, comes from this.
+   */
+  trustedProxies: number | string[];
+  /** Whether the sign-in library counts attempts by address. Off only in tests. */
+  authLimits: boolean;
   /** Directory holding the built console. Undefined when the console is not served. */
   consoleDir: string | undefined;
   /** Where the documentation is on the web, when the operator says. */
@@ -304,6 +313,8 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
   };
   const egress = parseEgressAllow(value("EGRESS_ALLOW"));
   if (typeof egress === "string") problems.push(egress);
+  const proxies = parseTrustedProxies(value("TRUSTED_PROXIES"));
+  if (typeof proxies === "string") problems.push(proxies);
   const whole = (name: ConfigVarName, min: number, max: number) => {
     const raw = value(name);
     if (raw === undefined) return undefined;
@@ -371,6 +382,8 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     managedWorkerUser: workerUser === "same" ? "same" : { uid: workerUid, gid: workerGid },
     retention,
     egressAllow: typeof egress === "string" ? { networks: [], hosts: [] } : egress,
+    trustedProxies: typeof proxies === "string" ? 1 : proxies,
+    authLimits: true,
     consoleDir: value("CONSOLE_DIR"),
     docsUrl: docsUrl?.replace(/\/+$/, ""),
     screensDir: value("SCREENS_DIR"),
@@ -386,4 +399,36 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
 
   if (problems.length > 0) throw new ConfigError(problems);
   return config;
+}
+
+/**
+ * Reads `TRUSTED_PROXIES`: a whole number of proxies in front of the instance, or the
+ * networks they are on, with commas. Without it one proxy is trusted, which is what a
+ * reverse proxy that adds the caller's address to the header needs.
+ */
+export function parseTrustedProxies(value: string | undefined): number | string[] | string {
+  const text = (value ?? "").trim();
+  if (text === "") return 1;
+  if (/^\d+$/.test(text)) {
+    const hops = Number(text);
+    if (hops > 10)
+      return "TRUSTED_PROXIES must be a number of proxies from 0 to 10, or a list of networks.";
+    return hops;
+  }
+  const networks: string[] = [];
+  for (const raw of text.split(",")) {
+    const entry = raw.trim();
+    if (!entry) continue;
+    const [address, bits] = entry.split("/") as [string, string | undefined];
+    const family = isIP(address);
+    const prefix = bits === undefined ? undefined : Number(bits);
+    if (
+      family === 0 ||
+      (prefix !== undefined && (!/^\d+$/.test(bits ?? "") || prefix > (family === 6 ? 128 : 32)))
+    ) {
+      return `TRUSTED_PROXIES has an entry that is not a network: ${entry}.`;
+    }
+    networks.push(entry);
+  }
+  return networks;
 }

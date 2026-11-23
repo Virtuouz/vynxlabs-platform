@@ -287,6 +287,13 @@ export const CONFIG_VARS = {
       "Private networks and hosts that scripts and connections may reach, as a list with commas: `10.0.0.0/8,db.internal`. Everything else private is refused.",
   },
 
+  TRUSTED_PROXIES: {
+    group: "Network",
+    default: "1",
+    description:
+      "Whose forwarding headers are believed when the instance learns who is calling: a number of proxies in front of it, or the networks they are on, as a list with commas (`10.0.0.0/8,172.16.0.0/12`). With `1`, the address your one proxy adds last is the caller's. `0` believes none, for an instance reached directly. Rate limits and the audit log use this address. The proxy must put the caller's address in `X-Forwarded-For` itself, never pass on what the caller sent.",
+  },
+
   CONSOLE_DIR: {
     group: "Files of the image",
     description: "Where the console's built files are. The image sets it.",

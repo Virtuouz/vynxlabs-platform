@@ -1,4 +1,5 @@
 import type { FastifyPluginAsync } from "fastify";
+import { CLIENT_ADDRESS_HEADER } from "../kernel/auth.js";
 import { readOnly } from "../kernel/errors.js";
 import { access } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
@@ -27,6 +28,9 @@ export function authRoutes(kernel: Kernel): FastifyPluginAsync {
           if (value !== undefined)
             headers.set(name, Array.isArray(value) ? value.join(", ") : value);
         }
+        // The library is told one address, ours. A caller cannot say another.
+        headers.delete("x-forwarded-for");
+        headers.set(CLIENT_ADDRESS_HEADER, request.ip);
         const hasBody = request.method === "POST" && request.body !== undefined;
         const response = await kernel.auth.handler(
           new Request(new URL(request.url, kernel.config.publicUrl), {

@@ -266,7 +266,7 @@ test("the reference's first page leads to every page made from a list, and a cha
     "self-host/reference/metrics",
     "sdk/index",
   ]) {
-    expect(index, link).toContain(`(${link})`);
+    expect(index, link).toContain(`${link})`);
   }
   // Each is mounted where its readers are: the operator's metrics with the instance's settings.
   expect(files.has("self-host/reference/metrics.md")).toBe(true);

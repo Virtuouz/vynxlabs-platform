@@ -72,10 +72,11 @@ export interface RenderOptions {
   /** Put before every id this drawing makes up, so two drawings on one page do not clash. */
   idPrefix?: string;
   /**
-   * Draws code as spans with classes, for a language it knows: `hljs-*`, never a style, so
-   * that a page's policy needs no change. Nothing leaves the code as it was written.
+   * Draws code as spans with classes, for a language it knows: Prism's `token keyword`, never a style, so
+   * that a page's policy needs no change. Nothing leaves the code as it was written. `marks` is what follows
+   * a `/` in the fence (`ts/1,3-5`).
    */
-  highlight?: (code: string, lang: string) => Drawn[] | null | undefined;
+  highlight?: (code: string, lang: string, marks?: string) => Drawn[] | null | undefined;
   /** The words of the link behind a term. `{word}` is the term as it was written. "More about {word}" when left out. */
   learnMore?: string;
 }
@@ -315,12 +316,14 @@ export function codeBlock(value: string, lang: string | undefined, ctx?: Context
       ]),
     ]);
   }
-  const safe = lang && /^[A-Za-z0-9_+#-]+$/.test(lang) ? lang : undefined;
+  // `ts/1,3-5` is the language `ts` with lines to mark; what follows the slash is read by the highlighter alone.
+  const [named, marks] = lang ? lang.split("/", 2) : [];
+  const safe = named && /^[A-Za-z0-9_+#-]+$/.test(named) ? named : undefined;
   return el("pre", safe ? { "data-lang": safe } : {}, [
     el(
       "code",
       safe ? { class: `language-${safe}` } : {},
-      (safe && ctx?.options.highlight?.(value, safe)) || [value],
+      (safe && ctx?.options.highlight?.(value, safe, marks)) || [value],
     ),
   ]);
 }
@@ -331,7 +334,8 @@ export function tabsOf(node: Component): { label: string; node: Node }[] {
     return node.children
       .filter((child) => child.type === "code")
       .map((child) => ({
-        label: (child.type === "code" && (titleOf(child.meta) ?? child.lang)) || "Code",
+        label:
+          (child.type === "code" && (titleOf(child.meta) ?? child.lang?.split("/")[0])) || "Code",
         node: child,
       }));
   }

@@ -1,119 +1,148 @@
+import Prism from "./prism.js";
 import { type Drawn, el } from "./render.js";
 
 /**
- * Code drawn as spans with classes, without a script and without a style. The
- * classes are those of highlight.js (`hljs-keyword`, `hljs-string`, ...), so a
- * fuller highlighter can take this one's place, through `RenderOptions.highlight`,
- * and the stylesheet stays as it is. Only the languages the documentation is
- * written in are known; for any other this gives nothing and the code is as written.
+ * Code drawn as spans with classes (`token keyword`, `token string`, ...), by Prism, at the time the page is
+ * drawn: no script on a served page, no style, so a page's policy needs no change. The tokens are walked into the
+ * tree, not turned into HTML and read back, so what a person wrote cannot become markup. For a language this does
+ * not know, it gives nothing and the code is as written.
+ *
+ * A fence may say more than the language, in the way the 11ty syntax-highlight plugin does:
+ * - `diff-ts`: a diff whose added and removed lines are drawn in TypeScript;
+ * - `ts/1,3-5`: lines 1, 3, 4 and 5 are marked (`<mark class="vd-line vd-line-mark">`). The plugin's second
+ *   form, `lang/added/removed`, is not read: `diff-` says what it says.
  */
 
-type Rule = [pattern: RegExp, className: string | null];
+/** The languages imported in `prism.ts`. */
+export const LANGUAGE_NAMES = [
+  "markup",
+  "css",
+  "clike",
+  "javascript",
+  "jsx",
+  "typescript",
+  "tsx",
+  "json",
+  "yaml",
+  "bash",
+  "sql",
+  "diff",
+  "markdown",
+] as const;
 
-const JS_KEYWORDS =
-  "as async await break case catch class const continue declare default delete do else enum export extends finally for from function if implements import in instanceof interface let namespace new of private protected public readonly return static switch throw try type typeof var while yield";
-const JS_LITERALS = "true false null undefined NaN Infinity this";
-const JS_BUILT_INS =
-  "console Promise Array Object Map Set JSON Math Date Error string number boolean unknown never any void";
-const SQL_KEYWORDS =
-  "select from where group by order having limit offset insert into values update set delete create table alter drop index join left right inner outer on as and or not in is like between union all distinct case when then else end with returning";
-
-const words = (list: string, flags = "") =>
-  new RegExp(`\\b(?:${list.replace(/ /g, "|")})\\b`, `y${flags}`);
-
-const JS: Rule[] = [
-  [/\/\/[^\n]*/y, "hljs-comment"],
-  [/\/\*[\s\S]*?\*\//y, "hljs-comment"],
-  [/`(?:\\[\s\S]|[^\\`])*`/y, "hljs-string"],
-  [/"(?:\\.|[^\\"\n])*"/y, "hljs-string"],
-  [/'(?:\\.|[^\\'\n])*'/y, "hljs-string"],
-  [/\b0[xX][\da-fA-F_]+\b|\b\d[\d_]*(?:\.\d+)?(?:[eE][+-]?\d+)?n?\b/y, "hljs-number"],
-  [words(JS_LITERALS), "hljs-literal"],
-  [words(JS_KEYWORDS), "hljs-keyword"],
-  [words(JS_BUILT_INS), "hljs-built_in"],
-];
-
-const JSON_RULES: Rule[] = [
-  [/"(?:\\.|[^\\"\n])*"(?=\s*:)/y, "hljs-attr"],
-  [/"(?:\\.|[^\\"\n])*"/y, "hljs-string"],
-  [/-?\b\d+(?:\.\d+)?(?:[eE][+-]?\d+)?\b/y, "hljs-number"],
-  [words("true false null"), "hljs-literal"],
-];
-
-const YAML: Rule[] = [
-  [/#[^\n]*/y, "hljs-comment"],
-  [/[\w.-]+(?=\s*:(?:\s|$))/y, "hljs-attr"],
-  [/"(?:\\.|[^\\"\n])*"/y, "hljs-string"],
-  [/'(?:''|[^'\n])*'/y, "hljs-string"],
-  [/-?\b\d+(?:\.\d+)?\b/y, "hljs-number"],
-  [words("true false null yes no"), "hljs-literal"],
-];
-
-const SH: Rule[] = [
-  [/(?:^|(?<=\s))#[^\n]*/y, "hljs-comment"],
-  [/"(?:\\.|[^\\"])*"/y, "hljs-string"],
-  [/'[^']*'/y, "hljs-string"],
-  [/\$\{[^}\n]*\}|\$[A-Za-z_]\w*/y, "hljs-variable"],
-  [words("if then else elif fi for while do done case esac function in export"), "hljs-keyword"],
-];
-
-const SQL: Rule[] = [
-  [/--[^\n]*/y, "hljs-comment"],
-  [/'(?:''|[^'])*'/y, "hljs-string"],
-  [/\b\d+(?:\.\d+)?\b/y, "hljs-number"],
-  [words(SQL_KEYWORDS, "i"), "hljs-keyword"],
-  [words("true false null", "i"), "hljs-literal"],
-];
-
-const LANGUAGES: Record<string, Rule[]> = {
-  js: JS,
-  jsx: JS,
-  javascript: JS,
-  ts: JS,
-  tsx: JS,
-  typescript: JS,
-  json: JSON_RULES,
-  jsonc: JSON_RULES,
-  yaml: YAML,
-  yml: YAML,
-  sh: SH,
-  bash: SH,
-  shell: SH,
-  zsh: SH,
-  sql: SQL,
+/**
+ * Names that stand for one of them. The first block is `alias` in prismjs/components.json for these languages (a
+ * test reads the file and checks it); the second is what the plugin hard-codes and what people write.
+ */
+const ALIASES: Record<string, string> = {
+  html: "markup",
+  xml: "markup",
+  svg: "markup",
+  mathml: "markup",
+  ssml: "markup",
+  atom: "markup",
+  rss: "markup",
+  js: "javascript",
+  ts: "typescript",
+  webmanifest: "json",
+  yml: "yaml",
+  sh: "bash",
+  shell: "bash",
+  md: "markdown",
+  jsonc: "json",
+  json5: "json",
+  zsh: "bash",
 };
+
+/** The language a name stands for, or undefined when it is not one of those imported. */
+export function resolveLanguage(name: string): string | undefined {
+  const lower = name.toLowerCase();
+  const found = ALIASES[lower] ?? lower;
+  return (LANGUAGE_NAMES as readonly string[]).includes(found) ? found : undefined;
+}
 
 /** More than this is left as written: a page that is mostly one block of code is not worth the time. */
 const MOST = 20_000;
 
-export function highlightCode(code: string, lang: string): Drawn[] | undefined {
-  const rules = LANGUAGES[lang.toLowerCase()];
-  if (!rules || code.length > MOST) return undefined;
+type Token = string | { type: string; alias?: string | string[]; content: Token | Token[] };
+
+function draw(tokens: Token | Token[]): Drawn[] {
   const out: Drawn[] = [];
-  let plain = "";
-  let at = 0;
-  const flush = () => {
-    if (plain !== "") out.push(plain);
-    plain = "";
-  };
-  scan: while (at < code.length) {
-    for (const [pattern, className] of rules) {
-      pattern.lastIndex = at;
-      const found = pattern.exec(code);
-      if (!found || found[0] === "") continue;
-      if (className) {
-        flush();
-        out.push(el("span", { class: className }, [found[0]]));
-      } else plain += found[0];
-      at += found[0].length;
-      continue scan;
+  for (const token of Array.isArray(tokens) ? tokens : [tokens]) {
+    if (typeof token === "string") {
+      if (token !== "") out.push(token);
+      continue;
     }
-    // A word with nothing to say goes whole, so that a keyword is not found inside another word.
-    const word = /^[\w$]+/.exec(code.slice(at, at + 64))?.[0];
-    const take = word ?? (code[at] as string);
-    plain += take;
-    at += take.length;
+    const classes = ["token", token.type, ...[token.alias ?? []].flat()].join(" ");
+    out.push(el("span", { class: classes }, draw(token.content)));
   }
-  flush();
+  return out;
+}
+
+/** The text of the code drawn in a language, as it is for one line or for all. */
+function drawIn(code: string, language: string | undefined): Drawn[] {
+  const grammar = language ? Prism.languages[language] : undefined;
+  return grammar ? draw(Prism.tokenize(code, grammar) as Token[]) : code === "" ? [] : [code];
+}
+
+/** The tree cut at its line ends: a span that holds several lines is closed and opened again on each. */
+function lines(tree: Drawn[]): Drawn[][] {
+  const out: Drawn[][] = [[]];
+  for (const node of tree) {
+    if (typeof node === "string") {
+      node.split("\n").forEach((part, i) => {
+        if (i > 0) out.push([]);
+        if (part !== "") (out[out.length - 1] as Drawn[]).push(part);
+      });
+      continue;
+    }
+    lines(node.children).forEach((inner, i) => {
+      if (i > 0) out.push([]);
+      if (inner.length > 0) (out[out.length - 1] as Drawn[]).push(el(node.tag, node.attrs, inner));
+    });
+  }
+  return out;
+}
+
+/** `1,3-5` as the numbers it names; nothing when it says anything else. */
+function marksOf(spec: string | undefined): Set<number> | undefined {
+  if (!spec || !/^\d+(?:-\d+)?(?:,\d+(?:-\d+)?)*$/.test(spec)) return undefined;
+  const set = new Set<number>();
+  for (const part of spec.split(",")) {
+    const [from, to = from] = part.split("-").map(Number) as [number, number?];
+    for (let n = from; n <= Math.min(to ?? from, from + 10_000); n++) set.add(n);
+  }
+  return set;
+}
+
+export function highlightCode(code: string, lang: string, marks?: string): Drawn[] | undefined {
+  if (code.length > MOST) return undefined;
+  const name = lang.toLowerCase();
+  const isDiff = name.startsWith("diff-");
+  const language = resolveLanguage(isDiff ? name.slice(5) : name);
+  const marked = marksOf(marks);
+  if (!language && name !== "text") return undefined;
+  if (name === "text" && !marked) return undefined;
+  if (!isDiff && !marked) return drawIn(code, language);
+
+  let rows: Drawn[][];
+  if (isDiff) {
+    rows = code.split("\n").map((row) => {
+      const sign = row[0];
+      const header = /^(?:\+\+\+|---) /.test(row);
+      if (header || (sign !== "+" && sign !== "-" && sign !== " ")) return drawIn(row, "diff");
+      const inner: Drawn[] = [sign, ...drawIn(row.slice(1), language)];
+      if (sign === " ") return inner;
+      return [el("span", { class: `token ${sign === "+" ? "inserted" : "deleted"}` }, inner)];
+    });
+  } else rows = lines(drawIn(code, language));
+  if (rows.length > 1 && rows[rows.length - 1]?.length === 0) rows.pop();
+
+  const out: Drawn[] = [];
+  rows.forEach((row, i) => {
+    if (i > 0) out.push("\n");
+    if (marked?.has(i + 1)) out.push(el("mark", { class: "vd-line vd-line-mark" }, row));
+    else out.push(...row);
+  });
   return out;
 }

@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test } from "vitest";
+import { LANGUAGE_NAMES, resolveLanguage } from "./highlight.js";
 import {
   COMPONENTS,
   containersAt,
@@ -696,9 +697,9 @@ describe("highlighted code", () => {
 
   test("is drawn as the highlighter gives it, in classes and never in styles", () => {
     const html = renderHtml(parse(source), { highlight: highlightCode });
-    expect(html).toContain('<span class="hljs-keyword">const</span>');
-    expect(html).toContain('<span class="hljs-string">&#x27;x&#x27;</span>');
-    expect(html).toContain('<span class="hljs-comment">// note</span>');
+    expect(html).toContain('<span class="token keyword">const</span>');
+    expect(html).toContain('<span class="token string">&#x27;x&#x27;</span>');
+    expect(html).toContain('<span class="token comment">// note</span>');
     expect(html).toContain('class="language-ts"');
     expect(html).not.toContain("style=");
   });
@@ -732,23 +733,69 @@ describe("highlighted code", () => {
     const react = renderToStaticMarkup(
       renderReact(tree, { highlight: highlightCode }) as ReactElement,
     );
-    expect(react).toContain('<span class="hljs-keyword">const</span>');
-    expect(react).toContain('<span class="hljs-comment">// note</span>');
-    expect(html).toContain('<span class="hljs-comment">// note</span>');
+    expect(react).toContain('<span class="token keyword">const</span>');
+    expect(react).toContain('<span class="token comment">// note</span>');
+    expect(html).toContain('<span class="token comment">// note</span>');
   });
 
   test("covers the languages the documentation is written in", () => {
     const spans = (lang: string, code: string) =>
       renderHtml(parse(`\`\`\`${lang}\n${code}\n\`\`\`\n`), { highlight: highlightCode });
-    expect(spans("yaml", "name: fern # x\nitems:\n  - 1")).toContain('hljs-attr">name');
-    expect(spans("json", '{"a": [1, true, null]}')).toContain('hljs-number">1');
-    expect(spans("sh", "pnpm add x # run\necho $HOME")).toContain('hljs-comment"># run');
-    expect(spans("tsx", "export const A = () => <b>1</b>;")).toContain('hljs-keyword">export');
+    expect(spans("yaml", "name: fern # x\nitems:\n  - 1")).toContain('token key atrule">name');
+    expect(spans("json", '{"a": [1, true, null]}')).toContain('token number">1');
+    expect(spans("sh", "pnpm add x # run\necho $HOME")).toContain('token comment"># run');
+    expect(spans("tsx", "export const A = () => <b>1</b>;")).toContain('token keyword">export');
+  });
+
+  test("resolves aliases and draws a diff, marks and an unknown language as they are said", () => {
+    const draw = (info: string, code: string) =>
+      renderHtml(parse(`\`\`\`${info}\n${code}\n\`\`\`\n`), { highlight: highlightCode });
+    expect(draw("js", "let a")).toContain('token keyword">let');
+    expect(draw("html", "<b>x</b>")).toContain("token tag");
+    expect(draw("shell", "echo $HOME")).toContain("token environment constant");
+    expect(draw("jsonc", '{"a": 1}')).toContain('token number">1');
+    expect(draw("zsh", "echo $HOME")).toContain("token environment constant");
+    expect(draw("css", "a { color: red; }")).toContain("token property");
+    expect(draw("tsx", "const a = <b>1</b>;")).toContain("token tag");
+    expect(draw("md", "# T")).toContain("token title");
+    expect(draw("text", "a < b")).toBe(
+      '<pre data-lang="text"><code class="language-text">a &lt; b</code></pre>',
+    );
+    // diff-<lang>: lines marked as added and removed, the rest drawn in the language
+    const diff = draw("diff-ts", "-let a = 1;\n+const a = 2;\n keep();");
+    expect(diff).toContain('<span class="token deleted">-<span class="token keyword">let</span>');
+    expect(diff).toContain(
+      '<span class="token inserted">+<span class="token keyword">const</span>',
+    );
+    expect(draw("diff", "-a\n+b")).toContain("token deleted");
+    // lang/1,3-5: those lines in a mark; a token across lines is closed and opened again
+    const marked = draw("ts/1,3-4", "const a = `x\ny`;\nb();\nc();\nd();");
+    expect(marked).toContain('<mark class="vd-line vd-line-mark">');
+    expect(marked.match(/<mark /g)?.length).toBe(3);
+    expect(marked.match(/<span/g)?.length).toBe(marked.match(/<\/span>/g)?.length);
+    expect(marked).toContain('class="language-ts"');
+    expect(draw("ts/", "a")).toContain("language-ts");
+    // an unbalanced or odd mark spec is no mark, not a failure
+    expect(draw("ts/x", "const a")).not.toContain("<mark");
+    // unknown stays plain
+    expect(draw("cobol/1", "MOVE 1")).not.toContain("token");
+  });
+
+  test("the alias table is what Prism's own component list says for the languages imported", async () => {
+    const { createRequire } = await import("node:module");
+    const components = createRequire(import.meta.url)("prismjs/components.json")
+      .languages as Record<string, { alias?: string | string[] }>;
+    for (const lang of LANGUAGE_NAMES) {
+      for (const alias of [components[lang]?.alias ?? []].flat()) {
+        expect(resolveLanguage(alias), alias).toBe(lang);
+      }
+    }
   });
 
   test("has a light and a dark style, classes only, for the page and the help to share", () => {
-    expect(DOC_CSS).toMatch(/\.vd-doc \.hljs-keyword/);
-    expect(DOC_CSS).toMatch(/\.vd-doc \.hljs-string/);
+    expect(DOC_CSS).toMatch(/\.vd-doc \.token\.keyword/);
+    expect(DOC_CSS).toMatch(/\.vd-doc \.token\.string/);
+    expect(DOC_CSS).not.toContain("hljs");
     expect(DOC_DARK_CSS).toMatch(/--vd-tok-keyword/);
     expect(DOC_DARK_CSS).toContain('[data-theme="dark"]');
     expect(DOC_DARK_CSS).not.toMatch(/url\(|@import/);

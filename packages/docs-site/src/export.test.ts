@@ -282,7 +282,7 @@ describe.each(BASES)("the export served from %s", (base) => {
     expect(html).toContain(`href="${base}develop/cli/"`);
     expect(html).toContain('<p class="since">New in version 0.5.0</p>');
     expect(html).toContain("Version 0.5.0");
-    expect(html).toContain('class="hljs-');
+    expect(html).toContain('class="token ');
     expect(html).not.toContain("_search.json");
     expect(html).not.toContain("/_platform/diagrams.js");
   });

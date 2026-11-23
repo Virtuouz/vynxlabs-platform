@@ -710,7 +710,7 @@ export async function deriveSchemas(
   kernel: Kernel,
   workspace: WorkspaceRef,
   principal: Principal,
-  draft: { path: string; revision: number },
+  draft: { path: string; key: string; revision: number },
 ): Promise<string | undefined> {
   // A draft that does not build, or names what the workspace does not have yet, is
   // saved all the same. It is read once it is whole.
@@ -727,7 +727,7 @@ async function describeIn(
   kernel: Kernel,
   workspace: WorkspaceRef,
   principal: Principal,
-  draft: { path: string; revision: number },
+  draft: { path: string; key: string; revision: number },
   bundle: Bundle,
 ): Promise<string> {
   return mutate(kernel.db, { principal }, async (trx, audit) => {
@@ -739,7 +739,8 @@ async function describeIn(
       subject: `${draft.revision}:${draft.path}`,
       request: {
         bundle: { id: stored.bundle.id, digest: stored.bundle.digest },
-        entry: entryFor("script", draft.path),
+        // By the key: after a rename the path is not what the entry is made from.
+        entry: entryFor("script", draft.key),
       },
     });
     return task.id;

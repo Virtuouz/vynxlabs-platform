@@ -57,3 +57,17 @@ test("OPS-11: a list read again keeps the pages the reader loaded, and misses no
   fireEvent.click(screen.getByRole("button", { name: "Reload" }));
   await waitFor(() => expect(screen.getByTestId("ids").textContent).toBe("12,11,10,9,8,7,6,5,4"));
 });
+
+test("NARROW-3: after Load more the focus stays in the list's footer, also when the button goes away", async () => {
+  show(<List />);
+  await waitFor(() => expect(screen.getByTestId("ids").textContent).toBe("10,9,8"));
+  for (const expected of ["10,9,8,7,6,5", "10,9,8,7,6,5,4,3,2", "10,9,8,7,6,5,4,3,2,1"]) {
+    const button = screen.getByRole("button", { name: "Load more" });
+    button.focus();
+    fireEvent.click(button);
+    await waitFor(() => expect(screen.getByTestId("ids").textContent).toBe(expected));
+    await waitFor(() => expect(document.activeElement).not.toBe(document.body));
+  }
+  expect(screen.queryByRole("button", { name: "Load more" })).toBeNull();
+  expect(document.activeElement?.textContent).toContain("Showing 10 things");
+});

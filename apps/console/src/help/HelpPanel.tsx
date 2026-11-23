@@ -379,11 +379,28 @@ function Results({
 
 const plain = (words: Marked) => words.map((word) => word.text).join("");
 
+/**
+ * A passage from a table reads as its cells, apart by a dot: the pipes and the rule under the
+ * header are the markup's, not the reader's.
+ */
+export function tidyWords(words: Marked): Marked {
+  const cut = (text: string) =>
+    text.replace(/\|\s*:?-{3,}:?\s*(?=\||$)/g, "").replace(/\s*\|\s*/g, " · ");
+  return words
+    .map((word, at) => {
+      let text = cut(word.text);
+      if (at === 0) text = text.replace(/^\s*·\s*/, "");
+      if (at === words.length - 1) text = text.replace(/\s*·\s*$/, "");
+      return { ...word, text };
+    })
+    .filter((word) => word.text !== "");
+}
+
 /** Words, with what was asked for set in bold. */
 function Words({ words }: { words: Marked }) {
   return (
     <>
-      {words.map((word, at) =>
+      {tidyWords(words).map((word, at) =>
         word.hit ? (
           // biome-ignore lint/suspicious/noArrayIndexKey: the words are a fixed run of one answer
           <mark key={at} className="bg-transparent font-semibold text-ink">

@@ -18,7 +18,7 @@ import { SecretField } from "../kit/SecretField.tsx";
 import { Mono, StatePill } from "../kit/status.tsx";
 import { Time } from "../kit/Time.tsx";
 import { RemoveButton, when } from "../ListScreen.tsx";
-import { Link, navigate, useUrlParam } from "../router.tsx";
+import { Link, navigate, TEXT_LINK, useUrlParam } from "../router.tsx";
 import { RecentRuns } from "./Authoring.tsx";
 import { CONNECTOR_NAMES, type ConnectionRow, ConnectionWizard } from "./ConnectionWizard.tsx";
 import { ConnectionHealth, RunButton, TestConnection } from "./Execution.tsx";
@@ -446,7 +446,10 @@ export function EventPage({
               id: "recent",
               label: "Recent",
               content: (
-                <Link to={`${link}/events?name=${encodeURIComponent(one.path)}`}>
+                <Link
+                  to={`${link}/events?name=${encodeURIComponent(one.path)}`}
+                  className={TEXT_LINK}
+                >
                   See it in the event log
                 </Link>
               ),

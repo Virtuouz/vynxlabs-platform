@@ -54,7 +54,7 @@ function Items({ empty }: { empty: string }) {
                 <span className="col-start-2 flex min-w-0 flex-col data-[selected]:font-medium">
                   <span className="truncate">{option.label}</span>
                   {option.hint ? (
-                    <span className="truncate text-meta text-ink-muted">{option.hint}</span>
+                    <span className="text-meta break-words text-ink-muted">{option.hint}</span>
                   ) : null}
                 </span>
               </Base.Item>

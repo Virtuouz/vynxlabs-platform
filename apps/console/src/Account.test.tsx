@@ -419,6 +419,8 @@ test("a person ends every other session at once, after being asked (SHL-MP2)", a
   await answer("End other sessions");
   await waitFor(() => expect(within(panel).queryByText("Safari on macOS")).toBeNull());
   expect(within(panel).getByText("Firefox on Linux")).toBeTruthy();
+  // NARROW-3: the button is off now, and the focus is not left on the page.
+  await waitFor(() => expect(document.activeElement).not.toBe(document.body));
 });
 
 test("sessions that cannot be read say so, and can be asked for again (SHL-MP2)", async () => {

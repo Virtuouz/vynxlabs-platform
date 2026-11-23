@@ -74,3 +74,12 @@ test("with a database that takes writes nothing is said or disabled (INS-MP5)", 
   expect(screen.queryByText(/It cannot be saved now/)).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Save" }));
 });
+
+test("NARROW-2: on a phone the save bar's buttons take a row of their own, kept clear of the screen's edge", () => {
+  show(<SaveBar dirty onSave={() => {}} onDiscard={() => {}} />);
+  const save = screen.getByRole("button", { name: "Save" });
+  expect(save.parentElement?.className).toContain("max-sm:w-full");
+  expect(screen.getByRole("region", { name: "Unsaved changes" }).className).toContain(
+    "safe-area-inset-bottom",
+  );
+});

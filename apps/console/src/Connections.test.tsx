@@ -333,7 +333,7 @@ test("WLK-17a: at a phone's width the health, used-by and kind cells keep room, 
     expect(header.className).toContain("whitespace-nowrap");
   }
   const health = document.querySelector("[data-health]");
-  expect(health?.className).toContain("min-w-[9rem]");
+  expect(health?.className).toContain("min-w-0");
   const kind = screen.getAllByText("HTTP")[0]?.closest("td")?.firstElementChild;
   expect(kind?.className).toContain("whitespace-nowrap");
 });

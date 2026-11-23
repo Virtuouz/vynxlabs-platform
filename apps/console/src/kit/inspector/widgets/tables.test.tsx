@@ -209,7 +209,9 @@ describe("table columns", () => {
     fireEvent.click(within(editor).getByRole("radio", { name: "Change" }));
     expect(columnsOf().find((one) => one.column === "total")).toMatchObject({ as: "delta" });
     fireEvent.click(within(editor).getByRole("radio", { name: "Number" }));
-    expect(columnsOf().find((one) => one.column === "total")?.as).toBeUndefined();
+    expect(
+      (columnsOf().find((one) => one.column === "total") as { as?: string } | undefined)?.as,
+    ).toBeUndefined();
   });
 
   test("a choice shown as a badge gets a colour for each of its values", async () => {

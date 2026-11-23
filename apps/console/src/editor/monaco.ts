@@ -7,6 +7,7 @@ import * as monaco from "monaco-editor";
 import EditorWorker from "monaco-editor/editor/editor.worker.js?worker";
 import JsonWorker from "monaco-editor/language/json/json.worker.js?worker";
 import TsWorker from "monaco-editor/language/typescript/ts.worker.js?worker";
+import { NODE_TYPES } from "./nodeTypes.ts";
 import contextTypes from "../../../../packages/sdk/dist/context.d.ts?raw";
 import extensionTypes from "../../../../packages/sdk/dist/extensions.d.ts?raw";
 import httpTypes from "../../../../packages/sdk/dist/http.d.ts?raw";
@@ -34,7 +35,9 @@ monaco.typescript.typescriptDefaults.setCompilerOptions({
   // A script runs in Node, which has the globals a web worker has (fetch, URL, AbortSignal,
   // crypto…) and none of a page's (window, document).
   lib: ["es2023", "webworker"],
+  allowSyntheticDefaultImports: true,
 });
+monaco.typescript.typescriptDefaults.addExtraLib(NODE_TYPES, "file:///node_modules/@types/node-subset/index.d.ts");
 // The SDK's own declarations, as built, so the editor knows every export the SDK has.
 const sdk = "file:///node_modules/@volvel/sdk";
 const libraries: Record<string, string> = {

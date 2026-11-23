@@ -166,7 +166,21 @@ beforeAll(async () => {
   mkdirSync(join(consoleDir, "help"));
   writeFileSync(
     join(consoleDir, "help", "manifest.json"),
-    JSON.stringify({ terms: { workspace: {} }, topics: { "data-tables": {} } }),
+    JSON.stringify({
+      terms: {
+        workspace: {
+          id: "workspace",
+          term: "Workspace",
+          short: "Where a tenant's tables, flows and apps live.",
+          path: "concepts/workspace",
+        },
+      },
+      topics: { "data-tables": {} },
+    }),
+  );
+  writeFileSync(
+    join(consoleDir, "help", "fields.json"),
+    JSON.stringify({ "table.description": "What the table is for, in a sentence." }),
   );
   t = await startTestApp({ config: { consoleDir } });
   const roles = Object.fromEntries(
@@ -1536,5 +1550,60 @@ describe("a docs site that is switched off", () => {
         .published,
     ).toBe(true);
     expect((await browser().get(HELP)).status).toBe(200);
+  });
+});
+
+describe("DOC-03 what the words on a served page mean", () => {
+  const words = "handbook/support/words";
+  const deployWords = (body: string) => deploy([...handbook(), page(words, "title: Words", body)]);
+  const read = (who: Client | undefined, url = `${HELP}support/words`) =>
+    t.app.inject({ url, headers: { host: MAIN, ...(who ? who.headers : {}) } });
+  const ORDERS = "What customers bought.";
+  const COLUMN = "Where the order is in its life.";
+
+  test("a term of the product's own, and a field of a kind, say what they mean, to anyone", async () => {
+    const deployed = await deployWords(
+      ["A :term[workspace]{id=workspace} holds it.", "", "::field{path=table.description}"].join(
+        "\n",
+      ),
+    );
+    expect(deployed.status, JSON.stringify(deployed.body)).toBe(201);
+    const seen = (await read(undefined)).body;
+    expect(seen).toContain("Where a tenant&#x27;s tables, flows and apps live.");
+    // Read more is the product's own page, on the instance's main address.
+    expect(seen).toContain('<a href="http://localhost:8080/docs/concepts/workspace">');
+    expect(seen).toContain("What the table is for, in a sentence.");
+  });
+
+  test("a resource's description is told to whoever may read the resource, and to nobody else", async () => {
+    const deployed = await deployWords(
+      [
+        "The :term[orders]{table=orders} table, its :term[status]{table=orders column=status} column.",
+      ].join("\n"),
+    );
+    expect(deployed.status, JSON.stringify(deployed.body)).toBe(201);
+    const member = (await read(alice)).body;
+    expect(member).toContain(ORDERS);
+    expect(member).toContain(COLUMN);
+    // The site is open to anyone, the table is not: a reader who is not signed in learns nothing.
+    const guest = (await read(undefined)).body;
+    expect(guest).not.toContain(ORDERS);
+    expect(guest).not.toContain(COLUMN);
+    expect(guest).not.toContain("vd-term-tip");
+  });
+
+  test("a table that may not be read looks, to a reader, as one that says nothing", async () => {
+    const one = async (table: string) => {
+      await deployWords(`The :term[thing]{table=${table}} table.`);
+      return (await read(undefined)).body;
+    };
+    expect(await one("orders")).toBe(await one("plain"));
+  });
+
+  test("a draft preview tells a writer who may read the resource what it is", async () => {
+    await deployWords("The :term[orders]{table=orders} table.");
+    const preview = (await read(alice, `${HELP}_draft/support/words`)).body;
+    expect(preview).toContain(ORDERS);
+    expect((await read(undefined, `${HELP}_draft/support/words`)).statusCode).toBe(404);
   });
 });

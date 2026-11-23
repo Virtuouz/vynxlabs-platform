@@ -3,8 +3,8 @@ import { Eye, EyeOff } from "lucide-react";
 import { useState } from "react";
 import { ApiError, api } from "../api.ts";
 import { BrandMark, useBrand } from "../kit/brand.tsx";
-import { Junction } from "../kit/motifs.tsx";
 import { endSentence } from "../kit/format.ts";
+import { Junction } from "../kit/motifs.tsx";
 
 interface Ways {
   providers: { id: string; name: string; url: string }[];

@@ -644,7 +644,9 @@ test("Add operator with nobody chosen says so at the field and sends nothing (P3
   routes["GET /api/v1/bindings"] = () => [200, { items: [], nextCursor: null }];
   routes["GET /api/v1/me"] = () => [200, me("m1", "ada@ops.example")];
   show(<Operators />);
-  fireEvent.click((await screen.findAllByRole("button", { name: "Add operator" }))[0] as HTMLElement);
+  fireEvent.click(
+    (await screen.findAllByRole("button", { name: "Add operator" }))[0] as HTMLElement,
+  );
   const dialog = await screen.findByRole("dialog");
   fireEvent.click(within(dialog).getByRole("button", { name: "Add operator" }));
   expect(await within(dialog).findByText("Choose one.")).toBeTruthy();

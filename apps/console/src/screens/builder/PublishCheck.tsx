@@ -3,10 +3,10 @@ import { Button } from "@volvel/ui";
 import { Check, TriangleAlert, X } from "lucide-react";
 import { useMemo } from "react";
 import { useLoad } from "../../api.ts";
+import { endSentence } from "../../kit/format.ts";
 import { useActionLists, useCatalog } from "../../kit/inspector/catalog.ts";
 import type { DocsList } from "../docs/model.ts";
 import { draftChanges } from "./changes.ts";
-import { endSentence } from "../../kit/format.ts";
 import { useGroupKeys } from "./groupKeys.ts";
 import {
   type CheckItem,

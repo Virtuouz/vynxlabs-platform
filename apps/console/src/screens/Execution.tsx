@@ -9,7 +9,7 @@ import {
   saveText,
 } from "@volvel/ui";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, useLoad } from "../api.ts";
+import { ApiError, api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
 import { InputDialog } from "../InputDialog.tsx";
 import { CollectionView } from "../kit/CollectionView.tsx";
@@ -38,6 +38,7 @@ import {
 } from "./ConnectionWizard.tsx";
 import { type GroupMemberRow, GroupMemberSheet } from "./GroupMemberSheet.tsx";
 import { OfferButton } from "./OfferToAgent.tsx";
+import { askToDelete } from "./PromotionConfirm.tsx";
 
 type Status = "queued" | "running" | "succeeded" | "failed" | "cancelled";
 /** The badge tone of a run's state, for the run page's mark. */
@@ -594,13 +595,27 @@ export function ActivateVersion({
           danger: workspace.type === "production",
         });
         if (!sure) return;
-        try {
-          await api.post(`${root}/deployments`, { bundleId });
-          notify.success(`Version ${version} is what runs here now.`);
-          onDone();
-        } catch (error) {
-          notify.error(error);
-        }
+        const activate = async (allowDelete?: string[]) => {
+          try {
+            await api.post(`${root}/deployments`, {
+              bundleId,
+              ...(allowDelete ? { allowDelete } : {}),
+            });
+            notify.success(`Version ${version} is what runs here now.`);
+            onDone();
+          } catch (error) {
+            // A deletion taken for a rename done wrong is allowed by name, once someone has said to.
+            if (error instanceof ApiError && error.code === "rename_suspected" && !allowDelete) {
+              const paths = error.fields.map((field) => field.path);
+              if (paths.length > 0 && (await askToDelete(paths, workspace.name))) {
+                await activate(paths);
+                return;
+              }
+            }
+            notify.error(error);
+          }
+        };
+        await activate();
       }}
     >
       Activate this version

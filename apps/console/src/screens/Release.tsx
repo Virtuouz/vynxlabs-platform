@@ -785,9 +785,19 @@ function PromoteStep({
         <Notice tone="success">
           {target.name} now runs version {result.bundleVersion}.
           {result.release?.status === "done" ? ` Committed to ${result.release.branch}.` : ""}
-          {result.release?.status === "failed"
-            ? ` The release branch was not updated: ${result.release.problem ?? "the push failed"}. Try again from Git sync.`
-            : ""}
+          {result.release?.status === "failed" ? (
+            <>
+              {" "}
+              The release branch was not updated: {result.release.problem ?? "the push failed"}.{" "}
+              <Link
+                to={`${link.split("/workspaces/")[0]}/workspaces/${target.id}/git`}
+                className="text-action"
+              >
+                Try again from Git sync
+              </Link>
+              .
+            </>
+          ) : null}
         </Notice>
       ) : null}
       {data && data.canPromote === false ? (

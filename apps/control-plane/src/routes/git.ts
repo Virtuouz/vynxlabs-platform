@@ -11,6 +11,7 @@ import {
   pushRelease,
   removeRepository,
   saveRepository,
+  unfollowBranch,
 } from "../kernel/git.js";
 import { access, type WorkspaceRef } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
@@ -235,6 +236,29 @@ export function gitRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         const workspace = ctx.workspace as WorkspaceRef;
         ctx.mutated = true;
         await followBranch(kernel, ctx.actor, workspace, body.branch);
+        return status(workspace);
+      },
+    );
+
+    app.delete(
+      `${base}/git`,
+      {
+        config: { access: access.workspace("git:write") },
+        schema: {
+          summary: "Make a dev workspace follow no branch",
+          description:
+            "The workspace stops syncing with its branch. The branch and what is on it are left " +
+            "as they are, and the workspace can follow it again, or another, with `PUT`. A " +
+            "workspace that follows nothing is refused with `no_branch`.",
+          tags: ["git"],
+          params: WorkspaceParams,
+          response: { 200: Status },
+        },
+      },
+      async ({ ctx }) => {
+        const workspace = ctx.workspace as WorkspaceRef;
+        ctx.mutated = true;
+        await unfollowBranch(kernel, ctx.actor, workspace);
         return status(workspace);
       },
     );
@@ -523,6 +547,13 @@ export function gitRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                   "Resources changed on both sides, as their file names without the extension.",
               }),
               applied: Type.Array(Type.String()),
+              suspected: Type.Optional(
+                Type.Array(Type.String(), {
+                  description:
+                    "Paths the pull would delete although it creates something of the same kind, " +
+                    "so it stopped: ask again with `allowDelete` naming them, if they are not renames.",
+                }),
+              ),
             }),
           },
         },

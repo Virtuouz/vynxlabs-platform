@@ -23,6 +23,18 @@ export const breakingText = (data: PromotionPreview | undefined) => {
 };
 
 /**
+ * Asks whether to delete what the server took for a rename done wrong: the paths it named,
+ * in the workspace they would go from. The same words for a promotion, a pull and an activation.
+ */
+export const askToDelete = (paths: string[], where: string) =>
+  ask.confirm({
+    title: `Delete ${paths.join(", ")} in ${where}?`,
+    text: "What each one holds there is cut off from whatever is created in its place. If one of them was renamed, give the new one its key in the repository instead, and nothing is lost.",
+    action: "Delete them and look again",
+    danger: true,
+  });
+
+/**
  * The two things a promotion may need said before it goes: a deletion the
  * server took for a rename ("Delete them anyway"), and names that something
  * outside calls. The Promote step and the review of a request both show it,
@@ -50,12 +62,7 @@ export function PromotionConfirm({
             variant="danger"
             onClick={async () => {
               const paths = data.refusal?.errors.map((one) => one.path) ?? [];
-              const sure = await ask.confirm({
-                title: `Delete ${paths.join(", ")} in ${targetName}?`,
-                text: "What each one holds there is cut off from whatever is created in its place. If one of them was renamed, give the new one its key in the repository instead, and nothing is lost.",
-                action: "Delete them and look again",
-                danger: true,
-              });
+              const sure = await askToDelete(paths, targetName);
               if (sure) onAllow([...allowed, ...paths]);
             }}
           >

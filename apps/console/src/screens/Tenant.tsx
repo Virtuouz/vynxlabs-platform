@@ -623,7 +623,13 @@ function WorkspaceDetail({
           reload={workspace.reload}
         />
       ) : tab === "git" ? (
-        <GitSync root={root} link={`/t/${tenantId}/workspaces/${workspaceId}`} />
+        <GitSync
+          root={root}
+          link={`/t/${tenantId}/workspaces/${workspaceId}`}
+          production={
+            workspace.data.type === "production" ? { slug: workspace.data.slug } : undefined
+          }
+        />
       ) : tab === "scripts" && rest ? (
         <ScriptPage
           root={root}

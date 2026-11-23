@@ -3,7 +3,7 @@ import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { GitPanel, RepositorySettings } from "./screens/Git.tsx";
 import { GitSync } from "./screens/GitSync.tsx";
-import { show } from "./testing.tsx";
+import { answer, show } from "./testing.tsx";
 
 const root = "/tenants/t1/workspaces/w1";
 const repository = {
@@ -181,4 +181,123 @@ test("a pull stays disabled until every conflict is chosen, and none is chosen f
   fireEvent.click(pull);
   await screen.findByText("Deployed what changed on the branch.");
   expect(sent("POST")[0]?.body).toEqual({ resolutions: { "orders/sync.script": "theirs" } });
+});
+
+const prodRepository = { ...repository, releaseBranch: "release" };
+
+test("production shows its release branch and its last result, not a form that follows a branch (REL-08)", async () => {
+  routes[`GET /api/v1${root}/git`] = () => [
+    200,
+    { repository: prodRepository, branch: null, state: null, syncedCommit: null },
+  ];
+  routes[`GET /api/v1${root}/git/operations`] = () => [
+    200,
+    {
+      items: [
+        {
+          id: "o2",
+          kind: "push",
+          status: "failed",
+          commit: null,
+          message: "The remote refused the push.",
+          detail: { release: "release/main" },
+          createdAt: "2026-11-20T10:00:00Z",
+        },
+      ],
+    },
+  ];
+  show(<GitSync root={root} link="/t/t1/workspaces/w1" production={{ slug: "main" }} />);
+  expect(await screen.findByText("release/main")).toBeTruthy();
+  expect(await screen.findByText(/failed .*The remote refused the push/)).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Follow this branch" })).toBeNull();
+  expect(screen.queryByLabelText("Branch")).toBeNull();
+});
+
+test("a failed release commit is tried again from Git sync (REL-06)", async () => {
+  routes[`GET /api/v1${root}/git`] = () => [
+    200,
+    { repository: prodRepository, branch: null, state: null, syncedCommit: null },
+  ];
+  routes[`GET /api/v1${root}/git/operations`] = () => [200, { items: [] }];
+  routes[`POST /api/v1${root}/git/release`] = () => [
+    200,
+    { status: "done", branch: "release/main" },
+  ];
+  show(<GitSync root={root} link="/t/t1/workspaces/w1" production={{ slug: "main" }} />);
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Commit to the release branch again" }),
+  );
+  await screen.findByText("Committed what runs here to release/main.");
+  expect(sent("POST")).toHaveLength(1);
+});
+
+test("a followed branch can be changed or let go (REL-09, D48)", async () => {
+  let branch: string | null = "console/dev";
+  routes[`GET /api/v1${root}/git`] = () => [
+    200,
+    {
+      repository,
+      branch,
+      state: branch ? "synced" : null,
+      syncedCommit: null,
+      updatedAt: null,
+    },
+  ];
+  routes[`GET /api/v1${root}/git/compare`] = () => [
+    200,
+    { ...compare(false), ahead: 0, behind: 0 },
+  ];
+  routes[`PUT /api/v1${root}/git`] = (body) => {
+    branch = (body as { branch: string }).branch;
+    return [200, {}];
+  };
+  routes[`DELETE /api/v1${root}/git`] = () => {
+    branch = null;
+    return [200, {}];
+  };
+  show(<GitSync root={root} link="/t/t1/workspaces/w1" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Change branch" }));
+  const said = await answer("Follow it", "console/other");
+  expect(said).toContain("Nothing on either branch is changed.");
+  await waitFor(() => expect(sent("PUT")[0]?.body).toEqual({ branch: "console/other" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Stop following" }));
+  await answer("Stop following");
+  await waitFor(() => expect(sent("DELETE")).toHaveLength(1));
+  // With no branch the form to follow one is back.
+  expect(await screen.findByRole("button", { name: "Follow this branch" })).toBeTruthy();
+});
+
+test("a pull that stopped at what looks like a rename offers to delete those paths, and asks again with them (REL-10)", async () => {
+  routes[`GET /api/v1${root}/git`] = () => [
+    200,
+    { repository, branch: "console/dev", state: "behind", syncedCommit: "abc1234def" },
+  ];
+  routes[`GET /api/v1${root}/git/compare`] = () => [
+    200,
+    { ...compare(false), ahead: 0, behind: 1 },
+  ];
+  let asked = 0;
+  routes[`POST /api/v1${root}/git/pull`] = () => {
+    asked += 1;
+    return asked === 1
+      ? [
+          200,
+          {
+            status: "failed",
+            state: "error",
+            conflicts: [],
+            applied: [],
+            suspected: ["orders/old"],
+            problem: "What is on the branch cannot be deployed. The script orders/old has runs.",
+          },
+        ]
+      : [200, { status: "done", state: "synced", conflicts: [], applied: ["orders/new"] }];
+  };
+  show(<GitSync root={root} link="/t/t1/workspaces/w1" />);
+  fireEvent.click(await screen.findByRole("button", { name: /^Pull 1 change/ }));
+  await screen.findByText(/The script orders\/old has runs\./);
+  fireEvent.click(await screen.findByRole("button", { name: "Delete them anyway" }));
+  expect(await answer("Delete them and look again")).toContain("Delete orders/old");
+  await screen.findByText("Deployed what changed on the branch.");
+  expect(sent("POST").map((call) => call.body)).toEqual([{}, { allowDelete: ["orders/old"] }]);
 });

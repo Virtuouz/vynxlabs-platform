@@ -67,3 +67,42 @@ test("in a dev workspace it still names the workspace, and is not worded as prod
   expect(within(dialog).getByText("Activate version 1 in Sandbox?")).toBeTruthy();
   expect(within(dialog).queryByRole("button", { name: "Activate in production" })).toBeNull();
 });
+
+test("an activation the server took for a rename done wrong can be allowed by name (REL-10)", async () => {
+  const done = vi.fn();
+  vi.stubGlobal("fetch", async (address: string, init: RequestInit = {}) => {
+    const body = init.body ? JSON.parse(init.body as string) : undefined;
+    calls.push({ method: init.method ?? "GET", url: address, body });
+    if (body && !body.allowDelete) {
+      return new Response(
+        JSON.stringify({
+          code: "rename_suspected",
+          detail: "This deploy would delete something that holds history.",
+          errors: [{ path: "orders/old", message: 'the script "orders/old" has runs' }],
+        }),
+        { status: 409 },
+      );
+    }
+    return new Response("{}", { status: 201 });
+  });
+  show(
+    <ActivateVersion
+      root={root}
+      workspace={{ name: "Sandbox", type: "dev" }}
+      bundleId="b1"
+      version={2}
+      onDone={done}
+    />,
+  );
+  fireEvent.click(await screen.findByRole("button", { name: "Activate this version" }));
+  const dialog = await screen.findByRole("dialog");
+  fireEvent.click(within(dialog).getByRole("button", { name: "Activate" }));
+  const second = await screen.findByText("Delete orders/old in Sandbox?");
+  expect(second).toBeTruthy();
+  fireEvent.click(await screen.findByRole("button", { name: "Delete them and look again" }));
+  await waitFor(() => expect(done).toHaveBeenCalled());
+  expect(calls.filter((call) => call.method === "POST").map((call) => call.body)).toEqual([
+    { bundleId: "b1" },
+    { bundleId: "b1", allowDelete: ["orders/old"] },
+  ]);
+});

@@ -119,7 +119,9 @@ export {
 export * from "./groups.js";
 export {
   appKind,
+  BUILTIN_CONNECTOR_LIST,
   BUILTIN_CONNECTORS,
+  type BuiltinConnector,
   bindingKind,
   COLUMN_TYPES,
   CONCURRENCY_KEY,

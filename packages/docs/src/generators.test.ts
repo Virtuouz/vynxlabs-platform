@@ -2,15 +2,30 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describeApi } from "@volvel/control-plane/testing";
 import {
+  AUDIT_ACTIONS,
+  BUILTIN_CONNECTOR_LIST,
+  CONDITION_TESTS,
+  EXPRESSION_FUNCTIONS,
+  EXPRESSION_NAMES,
+  FLOW_STARTS,
+  FLOW_STEPS,
   fileSchemas,
+  PLATFORM_EVENTS,
   platformKinds,
   resourceFileName,
+  STEP_KINDS,
   TENANT_KINDS,
   tenantFileName,
 } from "@volvel/manifest";
 import { beforeAll, expect, test } from "vitest";
+import { SHORTCUTS } from "../../../apps/console/src/kit/shortcuts.ts";
+import { FUNCTION_GROUPS } from "../../../apps/control-plane/dist/kernel/data/query/allowed.js";
+import { METRIC_LIST } from "../../../apps/control-plane/dist/kernel/metric-list.js";
+import { CORE_NODES } from "../../nodes/dist/index.js";
+import { CORE_WIDGETS } from "../../widgets-core/dist/index.js";
 import { expected, GENERATED, stale, write } from "../generate.mjs";
 import { apiPages } from "../generators/api.mjs";
+import { listFiles, strayWords, wordlessSettings } from "../generators/lists.mjs";
 import { generate } from "../generators/reference.mjs";
 import { tablesOf } from "../generators/schema.mjs";
 
@@ -166,5 +181,98 @@ test("the API's pages are among the generated ones, so a route that changed make
     } finally {
       writeFileSync(file, kept);
     }
+  }
+});
+
+// ---------------------------------------------------------------------------
+// The pages drawn from the typed lists (M9, second part)
+
+const listPages = listFiles();
+const listText = (name: string) => listPages.get(name) ?? "";
+
+test("each core widget has a page, and every setting of it says what it is (M9)", () => {
+  expect(CORE_WIDGETS.length).toBeGreaterThan(10);
+  for (const widget of CORE_WIDGETS) {
+    const name = `widgets/${widget.type.split("/")[1]}.md`;
+    expect(listPages.has(name), name).toBe(true);
+    // A setting that has neither a description nor words is a gap in the reference.
+    expect(wordlessSettings(widget), `${widget.type} has settings without words`).toEqual([]);
+    expect(strayWords(widget), `${widget.type} gives words to settings it does not have`).toEqual(
+      [],
+    );
+    for (const key of Object.keys(widget.config.properties)) {
+      expect(listText(name), `${widget.type} ${key}`).toContain(`| \`${key}\` |`);
+    }
+  }
+  // The default a widget is added with is on its page.
+  expect(listText("widgets/table.md")).toMatch(/\| `pageSize` \| integer \| 25 \|/);
+  expect(listText("widgets/index.md")).toContain("(table)");
+});
+
+test("the actions page lists every kind of step, of value and of test (M9)", () => {
+  const actions = listText("widgets/action-steps.md");
+  for (const kind of STEP_KINDS) expect(actions, kind).toContain(`\`${kind}\``);
+  for (const test of CONDITION_TESTS) expect(actions, test).toContain(`\`${test}\``);
+  // Each form of a step is under a heading of its own, with its own needed fields.
+  expect(actions).toContain("### `update`");
+});
+
+test("the flow pages say every kind of step and start, every core node and every function (M9)", () => {
+  for (const type of Object.keys(FLOW_STEPS))
+    expect(listText("flows/steps.md")).toContain(`\`${type}\``);
+  for (const type of Object.keys(FLOW_STARTS))
+    expect(listText("flows/starts.md")).toContain(`\`${type}\``);
+  for (const node of CORE_NODES) expect(listText("flows/nodes.md")).toContain(`\`${node.path}\``);
+  for (const one of EXPRESSION_FUNCTIONS)
+    expect(listText("flows/expressions.md")).toContain(one.example);
+  for (const one of EXPRESSION_NAMES)
+    expect(listText("flows/expressions.md")).toContain(`\`${one.name}\``);
+});
+
+test("the connectors' page says each built-in connector and every field of its configuration (M9)", () => {
+  const connectors = listText("connectors.md");
+  for (const one of BUILTIN_CONNECTOR_LIST) expect(connectors).toContain(`\`${one.name}\``);
+  for (const field of ["baseUrl", "auth.name", "host", "security", "authorizeUrl", "clientAuth"]) {
+    expect(connectors, field).toContain(`\`${field}\``);
+  }
+});
+
+test("the shortcuts, the SQL functions, the audit actions, the events and the metrics are each all on their page (M9)", () => {
+  for (const one of Object.values(SHORTCUTS)) expect(listText("shortcuts.md")).toContain(one.label);
+  for (const group of FUNCTION_GROUPS) {
+    for (const name of group.functions)
+      expect(listText("sql-functions.md")).toContain(`\`${name}\``);
+  }
+  for (const action of AUDIT_ACTIONS)
+    expect(listText("audit-actions.md")).toContain(`\`${action}\``);
+  for (const event of PLATFORM_EVENTS)
+    expect(listText("platform-events.md")).toContain(`## ${event.name}`);
+  for (const metric of METRIC_LIST) expect(listText("metrics.md")).toContain(`\`${metric.name}\``);
+  // The event the platform publishes for a run that ended any way at all was once missing.
+  expect(listText("platform-events.md")).toContain("## platform/run-finished");
+});
+
+test("the reference's first page leads to every page made from a list, and a changed list makes them old (M9)", async () => {
+  const index = (await expected()).get("index.md") ?? "";
+  for (const link of [
+    "widgets/index",
+    "flows/index",
+    "connectors",
+    "shortcuts",
+    "sql-functions",
+    "audit-actions",
+    "platform-events",
+    "metrics",
+  ]) {
+    expect(index, link).toContain(`(${link})`);
+  }
+  await write();
+  const file = join(GENERATED, "metrics.md");
+  const kept = readFileSync(file, "utf8");
+  try {
+    writeFileSync(file, `${kept}\nA series that has since been added.\n`);
+    expect(await stale()).toContain("generated/metrics.md is not what the code says now.");
+  } finally {
+    writeFileSync(file, kept);
   }
 });

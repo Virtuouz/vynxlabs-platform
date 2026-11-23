@@ -785,8 +785,42 @@ export const flowKind: KindDefinition = {
   },
 };
 
-/** The connectors every worker has. A connection names one of these, or a connector resource. */
-export const BUILTIN_CONNECTORS: readonly string[] = ["http", "smtp", "oauth2"];
+/** A connector every worker has, with what a connection to it is for. */
+export interface BuiltinConnector {
+  name: string;
+  label: string;
+  description: string;
+  /** What a script is given when it asks for a connection of this connector (`ctx.connection`). */
+  client: string;
+}
+
+/** The connectors every worker has, with their words. A connection names one of these, or a connector resource. */
+export const BUILTIN_CONNECTOR_LIST: readonly BuiltinConnector[] = [
+  {
+    name: "http",
+    label: "HTTP API",
+    description:
+      "Any API reached over HTTP. The connection holds the address and, as its secret, a credential that is sent as a bearer token, in a header or as HTTP Basic. A script can call only the connection's own address.",
+    client: "`HttpClient`: `request(path, options)`, with the status, the headers and the body.",
+  },
+  {
+    name: "smtp",
+    label: "Mail server",
+    description:
+      "A mail server, to send messages through. The connection holds the server and the address mail is sent from, and its secret is the password.",
+    client: "`SmtpClient`: `send(message)`, which gives the ID the server gave the message.",
+  },
+  {
+    name: "oauth2",
+    label: "API with OAuth 2.0",
+    description:
+      "An API a member authorizes once in the console. The platform keeps the tokens and refreshes them, and a script is given the access token alone, never the refresh token or the client's secret.",
+    client: "`HttpClient`, which sends the access token as a bearer token.",
+  },
+];
+
+/** The names of the connectors every worker has. */
+export const BUILTIN_CONNECTORS: readonly string[] = BUILTIN_CONNECTOR_LIST.map((one) => one.name);
 
 const connectorName = {
   type: "string",

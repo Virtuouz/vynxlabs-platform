@@ -71,19 +71,34 @@ export const httpConnector: Connector<HttpConfig, HttpClient> = {
   configSchema: {
     type: "object",
     properties: {
-      baseUrl: { type: "string", pattern: "^https?://", title: "Address" },
+      baseUrl: {
+        type: "string",
+        pattern: "^https?://",
+        title: "Address",
+        description:
+          "Where the API is. Every request goes under it, and a script cannot call any other address through the connection.",
+      },
       headers: {
         type: "object",
         additionalProperties: { type: "string" },
         title: "Headers sent with every request",
+        description:
+          "Sent with every request. Not for credentials: the connection's secret has its own place.",
       },
       auth: {
         title: "How the credential is sent",
+        description:
+          "How the connection's secret goes to the API. Left out, no credential is sent.",
         oneOf: [
           {
             type: "object",
             title: "Authorization: Bearer",
-            properties: { type: { const: "bearer" } },
+            properties: {
+              type: {
+                const: "bearer",
+                description: "Sends the secret as `Authorization: Bearer <secret>`.",
+              },
+            },
             required: ["type"],
             additionalProperties: false,
           },
@@ -91,8 +106,16 @@ export const httpConnector: Connector<HttpConfig, HttpClient> = {
             type: "object",
             title: "In a header of your choice",
             properties: {
-              type: { const: "header" },
-              name: { type: "string", minLength: 1, title: "Header name" },
+              type: {
+                const: "header",
+                description: "Sends the secret in a header of your choice.",
+              },
+              name: {
+                type: "string",
+                minLength: 1,
+                title: "Header name",
+                description: "The header that carries the secret, such as `x-api-key`.",
+              },
             },
             required: ["type", "name"],
             additionalProperties: false,
@@ -101,8 +124,15 @@ export const httpConnector: Connector<HttpConfig, HttpClient> = {
             type: "object",
             title: "HTTP Basic",
             properties: {
-              type: { const: "basic" },
-              username: { type: "string", title: "User name" },
+              type: {
+                const: "basic",
+                description: "Sends the user name and the secret as HTTP Basic credentials.",
+              },
+              username: {
+                type: "string",
+                title: "User name",
+                description: "The user to sign in as. The secret is its password.",
+              },
             },
             required: ["type", "username"],
             additionalProperties: false,

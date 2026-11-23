@@ -41,15 +41,42 @@ export interface SmtpClient {
 export const smtpConfigSchema = {
   type: "object",
   properties: {
-    host: { type: "string", minLength: 1, maxLength: 253, title: "Mail server" },
-    port: { type: "integer", minimum: 1, maximum: 65535, default: 587, title: "Port" },
+    host: {
+      type: "string",
+      minLength: 1,
+      maxLength: 253,
+      title: "Mail server",
+      description: "The mail server's address, such as `smtp.example.com`.",
+    },
+    port: {
+      type: "integer",
+      minimum: 1,
+      maximum: 65535,
+      default: 587,
+      title: "Port",
+      description: "The port the server listens on. Port 465 expects `tls`.",
+    },
     security: {
       enum: ["starttls", "tls", "none"],
       default: "starttls",
       title: "Security",
+      description:
+        "`tls` speaks TLS from the first byte. `starttls` upgrades a plain connection and refuses to go on without it. `none` is for a server inside the same network that offers neither.",
     },
-    from: { type: "string", minLength: 3, maxLength: 320, title: "Sent from" },
-    username: { type: "string", maxLength: 320, title: "User name" },
+    from: {
+      type: "string",
+      minLength: 3,
+      maxLength: 320,
+      title: "Sent from",
+      description:
+        "The address mail is sent from: `orders@example.com` or `Orders <orders@example.com>`.",
+    },
+    username: {
+      type: "string",
+      maxLength: 320,
+      title: "User name",
+      description: "The user to sign in as. The password is the connection's secret.",
+    },
   },
   required: ["host", "from"],
   additionalProperties: false,

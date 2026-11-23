@@ -236,6 +236,12 @@ export interface WidgetDefinition {
   /** The Data tab's controls for each input, in order. */
   dataHints?: readonly DataHints[];
   config: ConfigSchema;
+  /**
+   * What each setting is, by its path in `config` (`columns.*.label`, with `*` for a place in a
+   * list or under any name), where the schema does not say. The documentation draws its page
+   * for the widget from this and from the hints, so a setting with neither is a gap there.
+   */
+  words?: Readonly<Record<string, string>>;
   /** What the widget is when it is added, before anyone changes it. */
   defaults?: Readonly<Record<string, unknown>>;
   /**

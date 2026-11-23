@@ -45,9 +45,10 @@ function formTypes(node: unknown): string[] {
 }
 
 test("every kind of step and of start the flow's schema allows has its words, and no other has", () => {
-  const body = fileSchemas().find((one) => one.kind === "flow")?.schema.properties.body as {
-    properties: { nodes: { additionalProperties: unknown } };
+  const schema = fileSchemas().find((one) => one.kind === "flow")?.schema as unknown as {
+    properties: { body: { properties: { nodes: { additionalProperties: unknown } } } };
   };
+  const body = schema.properties.body;
   const node = body.properties.nodes.additionalProperties as {
     oneOf: { properties: { trigger?: unknown } }[];
   };

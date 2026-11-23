@@ -397,12 +397,12 @@ export function generate() {
 }
 
 /** The reference's own first page. `more` are pages made by something else, such as the API's. */
-export function referenceIndex(more = []) {
+export function referenceIndex(more = [], morePages = []) {
   return page(
     {
       title: "Reference",
       icon: "book-open",
-      pages: ["permissions", "kinds", "settings", "cli", "errors", "docs", "api"],
+      pages: ["permissions", "kinds", "settings", "cli", "errors", "docs", "api", ...morePages],
       description: "Lists drawn from the code itself: what it checks, reads and answers with.",
     },
     [

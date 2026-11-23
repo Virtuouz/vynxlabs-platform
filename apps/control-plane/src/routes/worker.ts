@@ -32,6 +32,7 @@ import { badRequest, forbidden, forbiddenBecause, HttpError, notFound } from "..
 import { readConnection, readGroupMember } from "../kernel/execution/bindings.js";
 import { loadBundle } from "../kernel/execution/bundles.js";
 import { accessToken, isOAuthSettings } from "../kernel/execution/oauth.js";
+import { redact, redactText } from "../kernel/execution/redact.js";
 import {
   activeRun,
   claimRun,
@@ -43,6 +44,7 @@ import {
   runnable,
   TAG_PATTERN,
 } from "../kernel/execution/runs.js";
+import { servedValues, taskValues } from "../kernel/execution/served.js";
 import {
   beatTask,
   claimTask,
@@ -118,6 +120,26 @@ const MAX_WAIT_SECONDS = 25;
 /** How long a waiting claim goes without looking, when nothing it hears of wakes it. */
 const CLAIM_LOOK_MS = 1000;
 const MAX_LOG_MESSAGE = 8000;
+/** The most a log line's `fields` keep, as JSON. A line over it keeps a note in their place. */
+const MAX_LOG_FIELDS_BYTES = 32_000;
+/**
+ * What a request may hold, by route. Fastify's own 1 MiB would answer 413 to a batch of lines
+ * that are each within their cap, and to an output the run already did its work for. A worker
+ * sends logs in parts of about 512 KB; the room here is for one that sends more.
+ */
+const LOGS_BODY_LIMIT = 4 * 1024 * 1024;
+/** The largest output a run may report, and the most rows or arguments one data call may carry. */
+export const MAX_OUTPUT_BYTES = 10 * 1024 * 1024;
+const OUTPUT_BODY_LIMIT = MAX_OUTPUT_BYTES + 64 * 1024;
+const DATA_BODY_LIMIT = 8 * 1024 * 1024;
+
+function cappedFields(fields: unknown): unknown {
+  const size = Buffer.byteLength(JSON.stringify(fields));
+  if (size <= MAX_LOG_FIELDS_BYTES) return fields;
+  return {
+    truncated: `The fields of this line were ${size} bytes, and only ${MAX_LOG_FIELDS_BYTES / 1000} KB are kept.`,
+  };
+}
 /** Memory for a script that does not say, in MB. */
 const DEFAULT_MEMORY_MB = 512;
 /** Log lines the worker held but could not deliver. The run says how many. */
@@ -367,6 +389,8 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       "/worker/tasks/:id/complete",
       {
         config,
+        // Over its own limit answers 400 with the words below, not Fastify's 413.
+        bodyLimit: 2 * 1024 * 1024,
         schema: {
           summary: "Report what a task found",
           description: `The result is JSON of at most ${MAX_RESULT_BYTES / 1024} KB, in the shape its kind gives.`,
@@ -400,7 +424,12 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         },
       },
       async ({ worker, params, body }, reply) => {
-        await endTask(kernel, worker, params.id, { error: { message: body.error.message } });
+        // The task's own connection is the one thing it was given.
+        const task = await heldTask(db, worker, params.id);
+        const known = await taskValues(kernel, db, task);
+        await endTask(kernel, worker, params.id, {
+          error: { message: redactText(body.error.message, known) },
+        });
         return reply.code(204).send(null);
       },
     );
@@ -511,6 +540,7 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       "/worker/runs/:id/logs",
       {
         config,
+        bodyLimit: LOGS_BODY_LIMIT,
         schema: {
           summary: "Append log lines to a run",
           tags: ["worker protocol"],
@@ -539,12 +569,15 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         // Logs from an attempt that just ended are still worth keeping.
         let query = db
           .selectFrom("run")
-          .select("id")
+          .selectAll()
           .where("id", "=", params.id)
           .where("tenant_id", "=", worker.tenantId);
         if (worker.workspaceId) query = query.where("workspace_id", "=", worker.workspaceId);
-        if (!(await query.executeTakeFirst())) throw notFound("The run");
+        const run = await query.executeTakeFirst();
+        if (!run) throw notFound("The run");
         if (body.entries.length > 0) {
+          // A line is stored masked: the values the run was given, and secret-named fields.
+          const known = await servedValues(kernel, db, run);
           await db
             .insertInto("run_log")
             .values(
@@ -553,8 +586,8 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                 attempt: body.attempt,
                 logged_at: new Date(entry.time),
                 level: entry.level,
-                message: entry.message.slice(0, MAX_LOG_MESSAGE),
-                fields: JSON.stringify(entry.fields ?? {}),
+                message: redactText(entry.message, known).slice(0, MAX_LOG_MESSAGE),
+                fields: JSON.stringify(cappedFields(redact(entry.fields ?? {}, undefined, known))),
               })),
             )
             .execute();
@@ -841,6 +874,7 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       "/worker/runs/:id/data",
       {
         config,
+        bodyLimit: DATA_BODY_LIMIT,
         schema: {
           summary: "Read or write rows for the running script",
           description:
@@ -1063,8 +1097,10 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       "/worker/runs/:id/complete",
       {
         config,
+        bodyLimit: OUTPUT_BODY_LIMIT,
         schema: {
           summary: "Report that the run succeeded",
+          description: `The output may be up to ${MAX_OUTPUT_BYTES / 1024 / 1024} MB as JSON. A larger one answers 413: report the failure instead, saying the output is too large. What is over 256 KB is kept in file storage.`,
           tags: ["worker protocol"],
           params: RunParams,
           body: Type.Object({
@@ -1097,16 +1133,29 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               message: Type.String({ maxLength: 8000 }),
               stack: Type.Optional(Type.String({ maxLength: 32000 })),
             }),
+            retry: Type.Optional(
+              Type.Boolean({
+                description:
+                  "False when running the script again would repeat work it already did, as when its output was too large to report: the run fails now, whatever attempts it has left. Absent from an older worker, and then the run is retried as its script says.",
+              }),
+            ),
             logsLost: LogsLost,
           }),
           response: { 200: Type.Object({ final: Type.Boolean() }) },
         },
       },
       async ({ worker, params, body }) => {
-        const result = await failRun(kernel, worker, params.id, body.attempt, {
-          message: body.error.message,
-          ...(body.error.stack ? { stack: body.error.stack } : {}),
-        });
+        const result = await failRun(
+          kernel,
+          worker,
+          params.id,
+          body.attempt,
+          {
+            message: body.error.message,
+            ...(body.error.stack ? { stack: body.error.stack } : {}),
+          },
+          body.retry !== false,
+        );
         await recordLostLogs(params.id, body.attempt, body.logsLost);
         return result;
       },

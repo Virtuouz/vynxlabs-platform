@@ -1765,3 +1765,135 @@ describe("managed workers", () => {
     }
   });
 });
+
+describe("what a run was given stays out of what is shown", () => {
+  /** A claimed `use-all` run: it declares the secret TOKEN and the connection `api`. */
+  async function held(scriptPath = "use-all") {
+    const token = (await alice.post(`/tenants/${tenant}/worker-credentials`, { name: "masking" }))
+      .body.token;
+    const worker = protocol(token);
+    const id = await start(scriptPath);
+    const job = await until(
+      async () => (await worker.claim()).body.job,
+      (found) => found?.runId === id,
+      10,
+    );
+    return { worker, id, attempt: job.attempt as number };
+  }
+
+  test("a log line, an error and the run read back hold the values the run was given, never as written", async () => {
+    const { worker, id, attempt } = await held();
+    const credential = "api-credential-123";
+    const logged = await worker.post(`/runs/${id}/logs`, {
+      attempt,
+      entries: [
+        {
+          time: new Date().toISOString(),
+          level: "info",
+          message: `token ${SECRET_VALUE} and ${credential}`,
+          fields: { note: `x ${SECRET_VALUE} y`, deep: { list: [credential] }, token: "other" },
+        },
+      ],
+    });
+    expect(logged.status).toBe(204);
+    const failed = await worker.post(`/runs/${id}/fail`, {
+      attempt,
+      error: {
+        message: `GET http://api.example/x?api_key=${SECRET_VALUE} answered 401.`,
+        stack: `Error\n  at ${encodeURIComponent(SECRET_VALUE)} ${credential}`,
+      },
+    });
+    expect(failed.status).toBe(200);
+    const run = (await alice.get(`${ws()}/runs/${id}`)).body;
+    const logs = (await alice.get(`${ws()}/runs/${id}/logs`)).body;
+    const stored = await t.db
+      .selectFrom("run")
+      .select(["error", "error_summary"])
+      .where("id", "=", id)
+      .executeTakeFirstOrThrow();
+    const shown = JSON.stringify([run, logs, stored, (await alice.get(`${ws()}/runs`)).body]);
+    expect(shown).not.toContain(SECRET_VALUE);
+    expect(shown).not.toContain(encodeURIComponent(SECRET_VALUE));
+    expect(shown).not.toContain(credential);
+    expect(logs.items[0].message).toBe("token [redacted] and [redacted]");
+    expect(logs.items[0].fields).toEqual({
+      note: "x [redacted] y",
+      deep: { list: ["[redacted]"] },
+      token: "[redacted]",
+    });
+    expect(run.error.message).toBe("GET http://api.example/x?api_key=[redacted] answered 401.");
+  });
+
+  test("a batch over 1 MiB is taken, and one line's huge fields are cut to a note", async () => {
+    const { worker, id, attempt } = await held();
+    const line = (extra: object = {}) => ({
+      time: new Date().toISOString(),
+      level: "info",
+      message: "x".repeat(3000),
+      ...extra,
+    });
+    // 500 lines of 3,000 characters is about 1.5 MB: the worker of before this sent it whole.
+    const batch = await worker.post(`/runs/${id}/logs`, {
+      attempt,
+      entries: Array.from({ length: 500 }, () => line()),
+    });
+    expect(batch.status).toBe(204);
+    const big = await worker.post(`/runs/${id}/logs`, {
+      attempt,
+      entries: [line({ fields: { blob: "y".repeat(1_100_000) } })],
+    });
+    expect(big.status).toBe(204);
+    const logs = (await alice.get(`${ws()}/runs/${id}/logs?limit=1000`)).body.items;
+    expect(logs).toHaveLength(501);
+    expect(logs[500].fields.truncated).toMatch(/only 32 KB are kept/);
+  });
+
+  test("an output of 2 MB is kept, and one over the limit is refused with a word the worker can act on", async () => {
+    const { worker, id, attempt } = await held();
+    const output = { blob: "z".repeat(2 * 1024 * 1024) };
+    expect((await worker.post(`/runs/${id}/complete`, { attempt, output })).status).toBe(204);
+    const run = (await alice.get(`${ws()}/runs/${id}`)).body;
+    expect(run.status).toBe("succeeded");
+    expect(run.output.blob).toHaveLength(2 * 1024 * 1024);
+    const row = await t.db
+      .selectFrom("run")
+      .select("output_ref")
+      .where("id", "=", id)
+      .executeTakeFirstOrThrow();
+    expect(row.output_ref).not.toBeNull();
+
+    const second = await held();
+    const huge = { blob: "z".repeat(11 * 1024 * 1024) };
+    expect(
+      (
+        await second.worker.post(`/runs/${second.id}/complete`, {
+          attempt: second.attempt,
+          output: huge,
+        })
+      ).status,
+    ).toBe(413);
+  });
+
+  test("an output refused for its size is not retried: the work was done", async () => {
+    // `flaky` has two retries.
+    const { worker, id, attempt } = await held("flaky");
+    const failed = await worker.post(`/runs/${id}/fail`, {
+      attempt,
+      retry: false,
+      error: { message: "The output is larger than 10 MB. The script's work was done." },
+    });
+    expect(failed.body).toEqual({ final: true });
+    const run = (await alice.get(`${ws()}/runs/${id}`)).body;
+    expect(run).toMatchObject({ status: "failed", attempt: 1 });
+    // Without the field, as an older worker reports, it is retried as before.
+    const again = await held("flaky");
+    expect(
+      (
+        await again.worker.post(`/runs/${again.id}/fail`, {
+          attempt: again.attempt,
+          error: { message: "x" },
+        })
+      ).body,
+    ).toEqual({ final: false });
+  });
+});

@@ -37,12 +37,25 @@ export interface HttpClient {
   post(path: string, json?: unknown, options?: HttpRequest): Promise<HttpResponse>;
 }
 
+/** An address without its query, fragment and credentials. What is not an address is kept as it is. */
+function withoutQuery(address: string): string {
+  try {
+    const url = new URL(address);
+    url.username = "";
+    url.password = "";
+    return `${url.origin}${url.pathname}`;
+  } catch {
+    return address.split(/[?#]/)[0] ?? address;
+  }
+}
+
 /** A request that came back with a 4xx or 5xx status. */
 export class HttpError extends Error {
   readonly status: number;
   readonly response: HttpResponse;
   constructor(method: string, url: string, response: HttpResponse) {
-    super(`${method} ${url} answered ${response.status}.`);
+    // The query is left out: an API key in it would be written into every log and alert.
+    super(`${method} ${withoutQuery(url)} answered ${response.status}.`);
     this.name = "HttpError";
     this.status = response.status;
     this.response = response;

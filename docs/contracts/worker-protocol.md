@@ -68,7 +68,7 @@ A worker that sends no heartbeat for 30 seconds loses the job. The job is then o
 
 ### `POST /runs/{runId}/logs`
 
-Request: `attempt`, and `entries`: up to 500 of `{time, level, message, fields}`. `level` is `debug`, `info`, `warn` or `error`. Send logs in batches, not one request per line.
+Request: `attempt`, and `entries`: up to 500 of `{time, level, message, fields}`. `level` is `debug`, `info`, `warn` or `error`. Send logs in batches, not one request per line, and keep a batch under about 512 KB: a request may hold up to 4 MB, and an older control plane only 1 MiB. A line's `message` is cut at 8,000 characters and its `fields` at 32 KB (a note replaces fields over it). Before this limit was stated, a line or a batch over 1 MiB was answered 413: a worker that gets 413 should send the batch again in smaller parts, and drop a single line that is still refused, counting it in `logsLost`, so that one line never holds back the lines after it. The control plane masks the values a run was given, and secret-looking fields, in what it stores.
 
 ### `GET /runs/{runId}/secrets/{name}?attempt=N`
 
@@ -162,11 +162,11 @@ Request: `attempt`, `tags`: up to 10 strings of `a-z`, `0-9` and `_.:-`, at most
 
 ### `POST /runs/{runId}/complete`
 
-Request: `attempt`, `output`, and optionally `logsLost`: how many log lines the worker held but could not deliver. A control plane that predates it ignores it. The run's log then says how many are missing. The run succeeds. 409 means the attempt was no longer in progress and the output was not recorded.
+Request: `attempt`, `output`, and optionally `logsLost`: how many log lines the worker held but could not deliver. A control plane that predates it ignores it. The run's log then says how many are missing. The run succeeds. The output may be up to 10 MB as JSON; one over it is answered 413, so a worker checks first and reports `fail` with the words "The output is larger than 10 MB". 409 means the attempt was no longer in progress and the output was not recorded.
 
 ### `POST /runs/{runId}/fail`
 
-Request: `attempt`, `error`: `{message, stack}`, and optionally `logsLost`, as for `complete`.
+Request: `attempt`, `error`: `{message, stack}`, optionally `retry`, and optionally `logsLost`, as for `complete`. `retry: false` says that running the script again would repeat work it already did (its output was too large to report): the run fails now, whatever attempts it has left. A control plane that predates it ignores it and retries as the script says; a worker that omits it is retried as before.
 
 Response: `{"final": false}` when the run will be retried, `{"final": true}` when it has no attempts left.
 

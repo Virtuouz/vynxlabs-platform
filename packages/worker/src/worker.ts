@@ -82,12 +82,34 @@ const BUSY_RETRIES = 2;
 /** The longest a script's call waits before trying again, in seconds. */
 const BUSY_WAIT_LIMIT = 5;
 
+/** A failure after the script's work was done: running it again would only repeat that work. */
+class NoRetry extends Error {}
+
+/** A log line with fields past the limit keeps a note in their place, so one line cannot hold the rest back. */
+function capped(entry: LogEntry): LogEntry {
+  if (!entry.fields) return entry;
+  const size = Buffer.byteLength(JSON.stringify(entry.fields));
+  if (size <= LOG_FIELDS_BYTES) return entry;
+  return {
+    ...entry,
+    fields: {
+      truncated: `These fields were ${size} bytes, and only ${LOG_FIELDS_BYTES / 1000} KB are kept.`,
+    },
+  };
+}
+
 const WORKER_VERSION = "0.7.0";
 
 /** Log lines kept while the control plane cannot be reached. Past this, the oldest go. */
 const MAX_PENDING_LOGS = 5000;
 /** The most lines the control plane takes in one request. */
 const LOG_BATCH = 500;
+/** A request of log lines stops near this many bytes: the control plane's body limit is far above it. */
+const LOG_BATCH_BYTES = 512 * 1024;
+/** The most a line's fields keep as JSON. A line over it is sent with a note in their place. */
+const LOG_FIELDS_BYTES = 32_000;
+/** The largest output a run may report. A larger one fails the attempt before it is sent. */
+const MAX_OUTPUT_BYTES = 10 * 1024 * 1024;
 /** How often the last send of an attempt is tried, and the first pause between tries. */
 const LOG_FINAL_TRIES = 3;
 const LOG_RETRY_MS = 250;
@@ -346,7 +368,7 @@ export class Worker {
       if (response.status === 503 && response.headers.get("retry-after")) {
         throw new Busy(message, Number(response.headers.get("retry-after")) || 1);
       }
-      throw new Error(message);
+      throw Object.assign(new Error(message), { status: response.status });
     }
     return (text === "" ? undefined : JSON.parse(text)) as T;
   }
@@ -439,12 +461,36 @@ export class Worker {
         lost += excess;
       }
     };
+    let maxLines = LOG_BATCH;
     const send = async () => {
       while (pending.length > 0) {
-        const entries = pending.splice(0, LOG_BATCH);
+        // A part ends near the byte limit, and a line over it goes alone.
+        const entries: LogEntry[] = [];
+        let bytes = 0;
+        while (pending.length > 0 && entries.length < maxLines) {
+          const next = pending[0] as LogEntry;
+          const size = Buffer.byteLength(JSON.stringify(next));
+          if (entries.length > 0 && bytes + size > LOG_BATCH_BYTES) break;
+          entries.push(next);
+          pending.shift();
+          bytes += size;
+        }
         try {
           await this.#call("POST", `${runPath}/logs`, { attempt: job.attempt, entries });
+          maxLines = LOG_BATCH;
         } catch (error) {
+          // A line the control plane refuses for its size would be refused again for ever,
+          // and the lines behind it with it: parts are halved until the one line is found,
+          // which is dropped and counted. The rest go on.
+          if ((error as { status?: number }).status === 413) {
+            if (entries.length > 1) {
+              pending.unshift(...entries);
+              maxLines = Math.ceil(entries.length / 2);
+            } else {
+              lost += 1;
+            }
+            continue;
+          }
           pending.unshift(...entries);
           bound();
           throw error;
@@ -509,7 +555,7 @@ export class Worker {
       const outcome = new Promise<unknown>((resolve, reject) => {
         started.on("message", (message: FromRunner) => {
           if (message.t === "log") {
-            pending.push(message.entry);
+            pending.push(capped(message.entry));
             bound();
           } else if (message.t === "call") {
             void this.#answer(job, started, message).catch((error) => {
@@ -552,6 +598,12 @@ export class Worker {
         else abort.signal.addEventListener("abort", stop, { once: true });
       });
       const output = await Promise.race([outcome, aborted]);
+      const size = Buffer.byteLength(JSON.stringify(output ?? null));
+      if (size > MAX_OUTPUT_BYTES) {
+        throw new NoRetry(
+          `The output is larger than ${MAX_OUTPUT_BYTES / 1024 / 1024} MB (it is ${(size / 1024 / 1024).toFixed(1)} MB). The script's work was done and is not repeated. Return less, or store it as a file and return its name.`,
+        );
+      }
       const logs = await settle();
       await this.#call("POST", `${runPath}/complete`, { attempt: job.attempt, output, ...logs });
     } catch (error) {
@@ -565,6 +617,7 @@ export class Worker {
       failed = failure.message;
       await this.#call("POST", `${runPath}/fail`, {
         attempt: job.attempt,
+        ...(error instanceof NoRetry ? { retry: false } : {}),
         ...logs,
         error: {
           message: failure.message.slice(0, 8000),

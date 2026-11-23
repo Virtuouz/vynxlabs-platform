@@ -81,7 +81,14 @@ function bundle(
   const manifests = change([
     manifest("connection", "chat", { connector: "http" }),
     manifest("event", "orders/placed", {
-      payload: object({ id: { type: "string" }, total: { type: "number" } }, ["id", "total"]),
+      payload: object(
+        {
+          id: { type: "string" },
+          total: { type: "number" },
+          card: { type: "string", "x-secret": true },
+        },
+        ["id", "total"],
+      ),
     }),
     script("double", "double", { input: object({ n: { type: "number" } }, ["n"]) }),
     script("risky", "risky"),
@@ -1468,6 +1475,39 @@ describe("events and triggers", () => {
     const listed = (await alice.get(`${ws()}/events?name=orders/placed`)).body.items;
     expect(listed.map((e: Any) => e.payload.id)).toEqual(["o-2", "o-1"]);
     expect(listed[0].source).toMatchObject({ type: "api" });
+  });
+
+  test("an event is listed as the run it started shows it: masked by key name", async () => {
+    const sent = await alice.post(`${ws()}/events`, {
+      name: "orders/placed",
+      payload: { id: "o-3", total: 5, apiKey: "k-live-98765", password: "hunter22" },
+    });
+    expect(sent.status, JSON.stringify(sent.body)).toBe(201);
+    const listed = (await alice.get(`${ws()}/events?id=${sent.body.id}`)).body.items;
+    expect(JSON.stringify(listed)).not.toContain("k-live-98765");
+    expect(listed[0].payload).toEqual({
+      id: "o-3",
+      total: 5,
+      apiKey: "[redacted]",
+      password: "[redacted]",
+    });
+  });
+
+  test("the flow run an event started shows its input and trigger masked by the event's schema", async () => {
+    const sent = await alice.post(`${ws()}/events`, {
+      name: "orders/placed",
+      payload: { id: "o-4", total: 5, card: "4111-2468-0000" },
+    });
+    const runs = await until(
+      async () =>
+        (await alice.get(`${ws()}/flow-runs?flow=many-triggers&limit=50`)).body.items.filter(
+          (r: Any) => r.trigger.eventId === sent.body.id,
+        ),
+      (items) => items.length === 1,
+    );
+    const run = (await alice.get(`${ws()}/flow-runs/${runs[0].id}`)).body;
+    expect(JSON.stringify(run)).not.toContain("4111-2468-0000");
+    expect(run.input.card).toBe("[redacted]");
   });
 
   test("a payload that breaks the schema, an unknown event and a platform name are refused", async () => {

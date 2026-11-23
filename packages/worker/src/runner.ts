@@ -4,7 +4,9 @@
  * control plane is asked of the worker over IPC, and the worker makes it only
  * for this run. A task asks for nothing: what it needs, it is given at start.
  */
+
 import { pathToFileURL } from "node:url";
+import { format } from "node:util";
 import type { BundleManifest } from "@volvel/manifest";
 import type { ScriptContext } from "@volvel/sdk";
 import {
@@ -66,8 +68,30 @@ function failure(error: unknown) {
   };
 }
 
+/**
+ * `console.log` and its kin write to the run's log, where the control plane masks what the
+ * run was given before it is kept or shown. Nothing goes to the process's own output.
+ */
+function routeConsole(write: (entry: LogEntry) => void) {
+  const levels = {
+    log: "info",
+    info: "info",
+    debug: "debug",
+    warn: "warn",
+    error: "error",
+    trace: "debug",
+  } as const;
+  for (const [method, level] of Object.entries(levels)) {
+    (console as unknown as Record<string, unknown>)[method] = (...args: unknown[]) =>
+      write({ time: new Date().toISOString(), level, message: format(...args) });
+  }
+}
+
 async function run(job: Job, bundleFile: string, manifests: BundleManifest[]) {
   try {
+    routeConsole((entry) => {
+      void send({ t: "log", entry });
+    });
     const exports = (await import(pathToFileURL(bundleFile).href)) as Record<string, unknown>;
     const script = exports[job.script.entry] as
       | { execute?: (input: unknown, ctx: ScriptContext) => Promise<unknown> }

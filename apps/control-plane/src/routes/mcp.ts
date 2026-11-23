@@ -8,7 +8,11 @@ import { derivedToolName, type FlowBody } from "@volvel/manifest";
 import { Type } from "typebox";
 import { boundInside, check } from "../kernel/authorize.js";
 import { forbidden, HttpError, notFound } from "../kernel/errors.js";
+import { payloadSchemas } from "../kernel/execution/bundles.js";
+import { redact, redactText } from "../kernel/execution/redact.js";
 import { startRun } from "../kernel/execution/runs.js";
+import { servedValues } from "../kernel/execution/served.js";
+import { approvalDetail } from "../kernel/flows/approval-detail.js";
 import {
   approversOf,
   approverTitles,
@@ -203,7 +207,7 @@ async function toolsFor(kernel: Kernel, ctx: Caller, workspace: WorkspaceRef): P
   const readRun = async (id: string) => {
     const run = await db
       .selectFrom("run")
-      .select(["id", "script_path", "status", "output", "output_ref", "error", "started_by_id"])
+      .selectAll()
       .where("id", "=", id)
       .where("workspace_id", "=", workspace.id)
       .executeTakeFirst();
@@ -220,23 +224,42 @@ async function toolsFor(kernel: Kernel, ctx: Caller, workspace: WorkspaceRef): P
     if (!run) throw new HttpError(404, "not_found", "The flow run was not found.");
     return run;
   };
-  const showRun = (run: Awaited<ReturnType<typeof readRun>>) => ({
+  /**
+   * What a call shows of a run. The caller's own run is the answer to what they asked and is
+   * given as it is; another person's is shown as it is on screen, masked (decision D13).
+   */
+  const showRun = async (run: Awaited<ReturnType<typeof readRun>>, shielded: boolean) => {
+    let output: unknown = run.output_ref ? { stored: run.output_ref } : (run.output ?? null);
+    let error = run.error?.message;
+    if (shielded) {
+      const known = await servedValues(kernel, db, run);
+      const schemas = await payloadSchemas(kernel, run.bundle_id, run.script_path);
+      output = redact(output, schemas.output, known);
+      if (error !== undefined) error = redactText(error, known);
+    }
+    return shownRun(run, output, error);
+  };
+  const shownRun = (
+    run: Awaited<ReturnType<typeof readRun>>,
+    output: unknown,
+    error: string | undefined,
+  ) => ({
     runId: run.id,
     script: run.script_path,
     status: run.status,
-    ...(run.status === "succeeded"
-      ? { output: run.output_ref ? { stored: run.output_ref } : (run.output ?? null) }
-      : {}),
-    ...(run.error ? { error: run.error.message } : {}),
+    ...(run.status === "succeeded" ? { output } : {}),
+    ...(error !== undefined ? { error } : {}),
     ...(["queued", "running"].includes(run.status)
       ? { note: "Still running. Call get_run with this runId to see how it ends." }
       : {}),
   });
-  const showFlowRun = (run: Awaited<ReturnType<typeof readFlowRun>>) => ({
+  const showFlowRun = (run: Awaited<ReturnType<typeof readFlowRun>>, shielded: boolean) => ({
     flowRunId: run.id,
     flow: run.flow_path,
     status: run.status,
-    ...(run.status === "succeeded" ? { output: run.output ?? null } : {}),
+    ...(run.status === "succeeded"
+      ? { output: shielded ? redact(run.output ?? null) : (run.output ?? null) }
+      : {}),
     ...(run.error ? { error: (run.error as { message: string }).message } : {}),
     ...(run.status === "running"
       ? {
@@ -282,7 +305,7 @@ async function toolsFor(kernel: Kernel, ctx: Caller, workspace: WorkspaceRef): P
                 .where("idempotency_key", "=", idempotencyKey)
                 .executeTakeFirst()
             : undefined;
-          if (earlier) return showRun(await ended(() => readRun(earlier.id)));
+          if (earlier) return showRun(await ended(() => readRun(earlier.id)), false);
           const started = await ctx.mutate(async (trx, audit) => {
             const result = await startRun(kernel, trx, {
               tenantId: workspace.tenantId,
@@ -303,7 +326,7 @@ async function toolsFor(kernel: Kernel, ctx: Caller, workspace: WorkspaceRef): P
             });
             return result;
           });
-          return showRun(await ended(() => readRun(started.run.id)));
+          return showRun(await ended(() => readRun(started.run.id)), false);
         },
       });
     } else {
@@ -346,7 +369,7 @@ async function toolsFor(kernel: Kernel, ctx: Caller, workspace: WorkspaceRef): P
                 .where("idempotency_key", "=", idempotencyKey)
                 .executeTakeFirst()
             : undefined;
-          if (earlier) return showFlowRun(await ended(() => readFlowRun(earlier.id)));
+          if (earlier) return showFlowRun(await ended(() => readFlowRun(earlier.id)), false);
           const started = await ctx.mutate(async (trx, audit) => {
             const result = await startFlowRun(kernel, trx, {
               tenantId: workspace.tenantId,
@@ -368,7 +391,7 @@ async function toolsFor(kernel: Kernel, ctx: Caller, workspace: WorkspaceRef): P
             return result;
           });
           kickFlow(kernel, started.flowRun.id);
-          return showFlowRun(await ended(() => readFlowRun(started.flowRun.id)));
+          return showFlowRun(await ended(() => readFlowRun(started.flowRun.id)), false);
         },
       });
     }
@@ -412,8 +435,9 @@ async function toolsFor(kernel: Kernel, ctx: Caller, workspace: WorkspaceRef): P
     },
     call: async (input) => {
       const run = await readRun(String(input.runId));
-      if (!mine(run.started_by_id)) await ctx.authorize("run:read", target);
-      return showRun(run);
+      const own = mine(run.started_by_id);
+      if (!own) await ctx.authorize("run:read", target);
+      return showRun(run, !own);
     },
   });
   tools.push({
@@ -428,8 +452,9 @@ async function toolsFor(kernel: Kernel, ctx: Caller, workspace: WorkspaceRef): P
     },
     call: async (input) => {
       const run = await readFlowRun(String(input.flowRunId));
-      if (!mine(run.started_by_id)) await ctx.authorize("flow_run:read", target);
-      return showFlowRun(run);
+      const own = mine(run.started_by_id);
+      if (!own) await ctx.authorize("flow_run:read", target);
+      return showFlowRun(run, !own);
     },
   });
 
@@ -470,7 +495,7 @@ async function toolsFor(kernel: Kernel, ctx: Caller, workspace: WorkspaceRef): P
             node: row.node_id,
             flow: row.flow_path,
             title: (row.detail as { title?: string }).title,
-            detail: (row.detail as { detail?: unknown }).detail ?? null,
+            detail: approvalDetail((row.detail as { detail?: unknown }).detail),
             waitingSince: row.started_at.toISOString(),
           })),
         };

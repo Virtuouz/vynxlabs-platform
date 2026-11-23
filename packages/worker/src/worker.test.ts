@@ -22,6 +22,32 @@ export const chatty = {
   },
 };
 
+/** Writes lines of \`size\` characters, \`count\` of them, and one huge line when told. */
+export const wide = {
+  async execute(input, ctx) {
+    for (let i = 0; i < input.count; i += 1) ctx.log.info("w" + i + ":" + "x".repeat(input.size));
+    if (input.huge) ctx.log.info("huge:" + "y".repeat(input.huge));
+    ctx.log.info("last");
+    return { ok: true };
+  },
+};
+
+/** Writes with console. */
+export const consoler = {
+  async execute() {
+    console.log("hello", { a: 1 });
+    console.error("bad");
+    return { ok: true };
+  },
+};
+
+/** Gives back more than the limit. */
+export const bulky = {
+  async execute() {
+    return { blob: "z".repeat(11 * 1024 * 1024) };
+  },
+};
+
 /** Says which process it is, then never yields and never looks at its signal. */
 export const spin = {
   async execute(input, ctx) {
@@ -108,6 +134,8 @@ interface Platform {
   /** Every request the worker made, as "METHOD path". */
   requests: string[];
   bodies: Record<string, unknown>[];
+  /** The most bytes a log request may hold before it is answered 413, as an older control plane did. */
+  maxLogBody: number;
   /** How many log requests fail before they start to succeed. Infinity: they never do. */
   failLogs: number;
   /** Runs whose next heartbeat is told the run was canceled. */
@@ -140,13 +168,14 @@ async function platform(jobs: Asked[], failLogs = 0): Promise<Platform & { runId
     requests: [] as string[],
     bodies: [] as Record<string, unknown>[],
     failLogs,
+    maxLogBody: Number.POSITIVE_INFINITY,
     cancel: new Set<string>(),
     runIds: queue.map((job) => job.runId),
   };
-  const read = async (request: IncomingMessage) => {
+  const rawBody = async (request: IncomingMessage) => {
     let text = "";
     for await (const chunk of request) text += chunk;
-    return text ? (JSON.parse(text) as Record<string, unknown>) : {};
+    return text;
   };
   const reply = (response: ServerResponse, status: number, body?: unknown) => {
     response.writeHead(status, { "content-type": "application/json" });
@@ -154,7 +183,8 @@ async function platform(jobs: Asked[], failLogs = 0): Promise<Platform & { runId
   };
   const server = createServer(async (request, response) => {
     const path = (request.url ?? "").replace("/api/v1/worker", "");
-    const body = await read(request);
+    const raw = await rawBody(request);
+    const body = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
     state.requests.push(`${request.method} ${path}`);
     state.bodies.push(body);
     const runId = path.split("/")[2] as string;
@@ -198,6 +228,7 @@ async function platform(jobs: Asked[], failLogs = 0): Promise<Platform & { runId
       return reply(response, 200, { cancelled: state.cancel.has(runId) });
     }
     if (path.endsWith("/logs")) {
+      if (raw.length > state.maxLogBody) return reply(response, 413, { detail: "Too large." });
       if (state.failLogs > 0) {
         state.failLogs -= 1;
         return reply(response, 503, { detail: "Not now." });
@@ -274,6 +305,49 @@ describe("log delivery", () => {
     expect(state.ended[0]?.kind).toBe("complete");
     expect(state.ended[0]?.body.logsLost).toBe(20);
     expect(state.lines).toEqual([]);
+  });
+});
+
+describe("log lines of any size", () => {
+  it("sends 1.5 MB of lines in parts, so a limit of 1 MiB per request never holds them back", async () => {
+    const state = await platform([{ entry: "wide", input: { count: 500, size: 3000 } }]);
+    state.maxLogBody = 1024 * 1024;
+    await work(state, () => state.ended.length === 1);
+    expect(state.ended[0]?.kind).toBe("complete");
+    expect(state.ended[0]?.body.logsLost).toBeUndefined();
+    expect(state.lines).toHaveLength(501);
+    expect(state.lines.at(-1)).toBe("last");
+    expect(state.requests.filter((one) => one.endsWith("/logs")).length).toBeGreaterThan(2);
+  });
+
+  it("drops the one line a control plane refuses for its size, counts it, and sends the rest", async () => {
+    const state = await platform([
+      { entry: "wide", input: { count: 20, size: 100, huge: 200_000 } },
+    ]);
+    state.maxLogBody = 100_000;
+    await work(state, () => state.ended.length === 1);
+    expect(state.ended[0]?.kind).toBe("complete");
+    expect(state.ended[0]?.body.logsLost).toBe(1);
+    expect(state.lines).toHaveLength(21);
+    expect(state.lines.some((line) => line.startsWith("huge:"))).toBe(false);
+    expect(state.lines.at(-1)).toBe("last");
+  });
+
+  it("writes console output to the run's log", async () => {
+    const state = await platform([{ entry: "consoler" }]);
+    await work(state, () => state.ended.length === 1);
+    expect(state.lines).toEqual(["hello { a: 1 }", "bad"]);
+  });
+
+  it("refuses an output over its limit before reporting the run done", async () => {
+    const state = await platform([{ entry: "bulky" }]);
+    await work(state, () => state.ended.length === 1);
+    expect(state.ended[0]?.kind).toBe("fail");
+    // The work was done: the control plane is told not to run it again.
+    expect(state.ended[0]?.body.retry).toBe(false);
+    expect(((state.ended[0]?.body ?? {}).error as { message: string }).message).toContain(
+      "The output is larger than 10 MB",
+    );
   });
 });
 

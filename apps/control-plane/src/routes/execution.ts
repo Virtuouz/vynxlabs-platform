@@ -35,8 +35,9 @@ import {
 import { BUILTIN_CONFIG_SCHEMAS, connectorSchema } from "../kernel/execution/connectors.js";
 import { deployBundle } from "../kernel/execution/deploy.js";
 import { previewPromotion, promote, promotionOf } from "../kernel/execution/promote.js";
-import { redact } from "../kernel/execution/redact.js";
+import { redact, redactError, redactText } from "../kernel/execution/redact.js";
 import { cancelRun, readPayload, type ScriptBody, startRun } from "../kernel/execution/runs.js";
+import { servedValues } from "../kernel/execution/served.js";
 import {
   flowStateSql,
   type RunState,
@@ -54,7 +55,7 @@ import {
 } from "../kernel/execution/triggers.js";
 import { createWorkerCredential, WORKER_STALE_SECONDS } from "../kernel/execution/workers.js";
 import { awaitResponse } from "../kernel/flows/engine.js";
-import { publishPlatformEvent } from "../kernel/flows/events.js";
+import { eventSchema, publishPlatformEvent } from "../kernel/flows/events.js";
 import { pushRelease } from "../kernel/git.js";
 import { access, findWorkspace, guestLimit, type WorkspaceRef } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
@@ -1443,16 +1444,29 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         if (!mayReadAll && !own)
           await ctx.authorize("run:read", { tenantId: params.t, workspaceId: params.w });
         if (!row) throw notFound("The run");
+        // Values the run was given are masked wherever they turn up, as well as secret-named keys.
+        const known = await servedValues(kernel, db, row);
         return {
           ...toRun(row, row.bundle_version),
+          ...(row.error ? { error: redactError({ message: row.error.message }, known) } : {}),
           pool: row.pool,
           ...(await keyed(params.t, params.w, row)),
           // What is shown masks secret-looking values; workers and re-runs read the real ones.
           ...(await (async () => {
             const schemas = await payloadSchemas(kernel, row.bundle_id, row.script_path);
             return {
-              input: redact(await readPayload(kernel, row.input, row.input_ref), schemas.input),
-              output: redact(await readPayload(kernel, row.output, row.output_ref), schemas.output),
+              input: redact(
+                redact(await readPayload(kernel, row.input, row.input_ref), schemas.input, known),
+                // An event's input is held to the event's schema too: it is its payload.
+                typeof row.trigger_detail?.event === "string"
+                  ? await eventSchema(db, row.workspace_id, row.trigger_detail.event)
+                  : undefined,
+              ),
+              output: redact(
+                await readPayload(kernel, row.output, row.output_ref),
+                schemas.output,
+                known,
+              ),
             };
           })()),
           alert: row.alert,
@@ -1518,14 +1532,16 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           .orderBy("seq")
           .limit(query.limit ?? 500)
           .execute();
+        // Lines are stored masked; a value the run was given since is masked on the way out too.
+        const known = rows.length > 0 ? await servedValues(kernel, db, run) : [];
         return {
           items: rows.map((row) => ({
             seq: Number(row.seq),
             attempt: row.attempt,
             time: iso(row.logged_at),
             level: row.level,
-            message: row.message,
-            fields: row.fields,
+            message: redactText(row.message, known),
+            fields: redact(row.fields, undefined, known) as Record<string, unknown>,
           })),
           done:
             run.status !== "queued" &&

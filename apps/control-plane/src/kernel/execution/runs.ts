@@ -8,7 +8,8 @@ import { observe } from "../metrics.js";
 import { formerPaths, resolveResource } from "../resolve.js";
 import { traceFor, traceRun } from "../trace.js";
 import { bundleManifest, payloadSchemas } from "./bundles.js";
-import { summarize } from "./redact.js";
+import { redactError, summarize } from "./redact.js";
+import { servedValues } from "./served.js";
 import { type MachineClaim, machineHasRoom, onMachine } from "./workers.js";
 
 /** Input and output above this size go to file storage, and the run keeps a reference. */
@@ -564,6 +565,7 @@ export async function completeRun(
   if (!taken) throw conflict("This attempt is no longer in progress. Its result is not recorded.");
   const stored = await storePayload(kernel, run.id, "output", output);
   const schemas = await payloadSchemas(kernel, run.bundle_id, run.script_path);
+  const known = await servedValues(kernel, kernel.db, run);
   const finishedAt = new Date();
   await kernel.db
     .updateTable("run")
@@ -571,7 +573,7 @@ export async function completeRun(
       status: "succeeded",
       output: stored.inline,
       output_ref: stored.ref,
-      output_summary: summarize(output, schemas.output),
+      output_summary: summarize(output, schemas.output, 200, known),
       error: null,
       finished_at: finishedAt,
     })
@@ -637,15 +639,21 @@ export async function failRun(
   scope: WorkerScope,
   runId: string,
   attempt: number,
-  error: RunFailure,
+  reported: RunFailure,
+  /** False when another attempt would repeat work that was done: the run ends here. */
+  retry = true,
 ) {
   const run = await activeRun(kernel.db, scope, runId, attempt);
+  // What the script was given never reaches the record, the alerts or the handler: an error
+  // that quotes a URL with its key, or a header, is stored without it.
+  const error = redactError(reported, await servedValues(kernel, kernel.db, run));
   const queue = queueName(run.workspace_id, run.pool);
-  const taken = await kernel.queue.fail(queue, run.queue_job_id as string, {
-    message: error.message,
-  });
+  // A failure that must not be retried ends the job as done, and the run as failed.
+  const taken = retry
+    ? await kernel.queue.fail(queue, run.queue_job_id as string, { message: error.message })
+    : await kernel.queue.complete(queue, run.queue_job_id as string);
   if (!taken) throw conflict("This attempt is no longer in progress. Its result is not recorded.");
-  const state = await kernel.queue.state(queue, run.queue_job_id as string);
+  const state = retry ? await kernel.queue.state(queue, run.queue_job_id as string) : "failed";
   if (state === "retry" || state === "created") {
     await kernel.db
       .updateTable("run")

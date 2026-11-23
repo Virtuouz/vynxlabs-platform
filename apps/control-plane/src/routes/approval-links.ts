@@ -2,6 +2,7 @@ import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import { Type } from "typebox";
 import { writeAudit } from "../kernel/audit.js";
 import { badRequest } from "../kernel/errors.js";
+import { approvalDetail } from "../kernel/flows/approval-detail.js";
 import { linkActor, linkGone, readLink, takeLink } from "../kernel/flows/approval-links.js";
 import { decideApproval, kickFlow } from "../kernel/flows/engine.js";
 import { access } from "../kernel/http.js";
@@ -57,7 +58,7 @@ export function approvalLinkRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         const detail = (step.detail ?? {}) as { title?: string; detail?: unknown };
         return {
           title: detail.title ?? "",
-          detail: detail.detail ?? null,
+          detail: approvalDetail(detail.detail),
           flow: step.flow_path,
           flowRunId: step.flow_run_id,
           workspace: {

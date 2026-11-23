@@ -470,6 +470,9 @@ export const payments = { execute: async (request, ctx) => {
   return { inputs: request.body.events.map((event) => ({ id: event.id, amount: event.amount })) };
 } };
 export const inbox = { execute: async (tick) => {
+  if (tick.cursor === "flood") return { items: Array.from({ length: 150 }, (_, i) => ({ letter: i })), cursor: "after-flood" };
+  if (tick.cursor === "mixed") return { items: [{ letter: 1 }, "not an object", { letter: 3 }], cursor: "after-mixed" };
+  if (tick.cursor === "scalar") return { items: "nope", cursor: "after-scalar" };
   const from = tick.cursor ?? 0;
   const letters = [from + 1, from + 2].map((number) => ({ letter: number }));
   return { items: letters, cursor: from + 2 };
@@ -588,6 +591,141 @@ export const onLetter = { execute: async (input) => ({ read: input.letter }) };
       .where("type", "=", "schedule")
       .executeTakeFirstOrThrow();
     expect(state.cursor).toBe(4);
+  });
+
+  describe("what it gives that cannot be started", () => {
+    const { fireDueSchedules, relaySource } = {
+      fireDueSchedules: (
+        ...given: Parameters<typeof import("./kernel/execution/triggers.js").fireDueSchedules>
+      ) => import("./kernel/execution/triggers.js").then((m) => m.fireDueSchedules(...given)),
+      relaySource: (
+        ...given: Parameters<typeof import("./kernel/execution/triggers.js").relaySource>
+      ) => import("./kernel/execution/triggers.js").then((m) => m.relaySource(...given)),
+    };
+    let minutes = 10;
+    const tick = async (cursor: unknown) => {
+      await t.db
+        .updateTable("trigger_state")
+        .set({ cursor: JSON.stringify(cursor) })
+        .where("type", "=", "schedule")
+        .execute();
+      const before = (
+        await t.db
+          .selectFrom("run")
+          .select("id")
+          .where("script_path", "=", "sources/inbox")
+          .execute()
+      ).length;
+      minutes += 2;
+      expect(await fireDueSchedules(t.kernel, new Date(Date.now() + minutes * 60_000))).toBe(1);
+      const runs = await runsOf("sources/inbox", before + 1);
+      const mine = runs.at(-1) as Any;
+      // The source's answer is passed on after its run ends: wait until it has been.
+      for (let i = 0; i < 100; i++) {
+        const refused = await refusal();
+        const state = await cursorNow();
+        if (refused || state !== cursor) break;
+        await sleep(50);
+      }
+      await sleep(200);
+      return mine;
+    };
+    const cursorNow = async () =>
+      (
+        await t.db
+          .selectFrom("trigger_state")
+          .select("cursor")
+          .where("type", "=", "schedule")
+          .executeTakeFirstOrThrow()
+      ).cursor;
+    const refusal = async () =>
+      (
+        (await alice.get(`${ws()}/triggers`)).body.items.find(
+          (item: Any) => item.path === "every-minute",
+        ) as Any
+      ).lastRefusal;
+    const letters = async () => (await runsOf("on-letter", 0)).length;
+
+    test("a source that gives more than a hundred fails its tick, and keeps its cursor", async () => {
+      const before = await letters();
+      const source = await tick("flood");
+      const shown = (await alice.get(`${ws()}/runs/${source.id}`)).body;
+      expect(shown.status).toBe("failed");
+      expect(shown.error.message).toContain("150 items");
+      expect(shown.error.message).toContain("at most 100");
+      expect(await letters()).toBe(before);
+      expect(await cursorNow()).toBe("flood");
+      expect(await refusal()).toMatchObject({ reason: "error" });
+      // The next tick is handed the place it had, not the one the source named.
+      const again = await tick("flood");
+      expect((await alice.get(`${ws()}/runs/${again.id}`)).body.input.cursor).toBe("flood");
+    });
+
+    test("items that are no list fail the tick and keep the cursor", async () => {
+      const source = await tick("scalar");
+      expect((await alice.get(`${ws()}/runs/${source.id}`)).body.status).toBe("failed");
+      expect(await cursorNow()).toBe("scalar");
+    });
+
+    test("one item that does not fit leaves the others started, the refusal visible, and nothing twice", async () => {
+      const before = await letters();
+      const source = await tick("mixed");
+      expect(await letters()).toBe(before + 2);
+      const shown = (await alice.get(`${ws()}/runs/${source.id}`)).body;
+      expect(shown.status).toBe("succeeded");
+      expect(shown.output.refused).toEqual([expect.objectContaining({ index: 1 })]);
+      expect(await refusal()).toMatchObject({ reason: "input" });
+      expect(await cursorNow()).toBe("after-mixed");
+      // Passing on the same answer again, as after a crash between the two, starts nothing again.
+      const row = await t.db
+        .selectFrom("run")
+        .selectAll()
+        .where("id", "=", source.id)
+        .executeTakeFirstOrThrow();
+      await relaySource(t.kernel, row as never, {
+        items: [{ letter: 1 }, "x", { letter: 3 }],
+        cursor: "after-mixed",
+      });
+      expect(await letters()).toBe(before + 2);
+    });
+
+    test("an answer that comes after the trigger was paused is refused where refusals are shown", async () => {
+      const source = (await t.db
+        .selectFrom("run")
+        .selectAll()
+        .where("script_path", "=", "sources/inbox")
+        .orderBy("created_at", "desc")
+        .executeTakeFirstOrThrow()) as Any;
+      expect((await alice.put(`${ws()}/trigger-pauses/every-minute`, {})).status).toBe(204);
+      const before = await letters();
+      await relaySource(t.kernel, source, { items: [{ letter: 9 }], cursor: 9 });
+      expect(await refusal()).toMatchObject({ reason: "paused" });
+      expect(await letters()).toBe(before);
+      expect((await alice.delete(`${ws()}/trigger-pauses/every-minute`)).status).toBe(204);
+    });
+
+    test("a tick passed over because the source is still looking says so", async () => {
+      const last = (
+        await t.db
+          .selectFrom("run")
+          .select("id")
+          .where("script_path", "=", "sources/inbox")
+          .orderBy("created_at", "desc")
+          .executeTakeFirstOrThrow()
+      ).id;
+      await t.db.updateTable("run").set({ status: "running" }).where("id", "=", last).execute();
+      try {
+        minutes += 2;
+        await fireDueSchedules(t.kernel, new Date(Date.now() + minutes * 60_000));
+        expect(await refusal()).toMatchObject({ reason: "busy" });
+        const shown = (await alice.get(`${ws()}/triggers`)).body.items.find(
+          (item: Any) => item.path === "every-minute",
+        ) as Any;
+        expect(shown.lastRefusal.reason).toBe("busy");
+      } finally {
+        await t.db.updateTable("run").set({ status: "succeeded" }).where("id", "=", last).execute();
+      }
+    });
   });
 });
 

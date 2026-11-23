@@ -402,7 +402,10 @@ export interface PollTick<Cursor = unknown> {
 
 /** What a polling trigger source answers. */
 export interface PollResult<Cursor = unknown> {
-  /** Each starts the trigger's script or flow, up to a hundred. */
+  /**
+   * Each starts the trigger's script or flow. At most 100 a tick: a tick that gives more fails,
+   * starts nothing and keeps the cursor it had, so give fewer, and the rest on the next tick.
+   */
   items: unknown[];
   /** Where to pick up from next time. Left out, the place it had is kept. */
   cursor?: Cursor;

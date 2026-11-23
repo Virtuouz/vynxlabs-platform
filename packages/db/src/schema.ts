@@ -1153,7 +1153,7 @@ export interface WebhookRefusalTable {
   workspace_id: string;
   path: string;
   node_id: Generated<string>;
-  reason: "signature" | "body" | "paused";
+  reason: "signature" | "body" | "paused" | "input" | "filter" | "busy" | "error";
   problem: Generated<string>;
   occurred_at: Generated<Date>;
 }

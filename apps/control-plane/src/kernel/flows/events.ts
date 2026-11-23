@@ -3,7 +3,7 @@ import { PLATFORM_EVENT_PREFIX, validateJson } from "@volvel/manifest";
 import type { Trx } from "../audit.js";
 import { badRequest, HttpError, notFound } from "../errors.js";
 import { instanceTriggersPaused } from "../execution/control.js";
-import { kickStarted, notPausedAlone, startTarget } from "../execution/triggers.js";
+import { kickStarted, notPausedAlone, recordRefusal, startTarget } from "../execution/triggers.js";
 import type { Kernel } from "../kernel.js";
 import { resolveResource } from "../resolve.js";
 import { ExpressionError } from "./expressions.js";
@@ -86,6 +86,7 @@ export async function publishEvent(kernel: Kernel, trx: Trx, asked: PublishEvent
           .selectFrom("trigger_state")
           .innerJoin("resource", "resource.id", "trigger_state.resource_id")
           .selectAll("trigger_state")
+          .select("resource.path")
           .where("trigger_state.workspace_id", "=", event.workspaceId)
           .where("trigger_state.type", "=", "event")
           .where("trigger_state.event_name", "=", event.name)
@@ -107,6 +108,12 @@ export async function publishEvent(kernel: Kernel, trx: Trx, asked: PublishEvent
         kernel.log.warn(
           { event: event.name, target: subscriber.target_path, reason: error.message },
           "an event filter could not be evaluated, so its subscriber was not started",
+        );
+        await recordRefusal(
+          kernel,
+          subscriber,
+          "filter",
+          `The filter could not be worked out for the event ${event.name}: ${error.message}`,
         );
         continue;
       }
@@ -131,6 +138,12 @@ export async function publishEvent(kernel: Kernel, trx: Trx, asked: PublishEvent
       kernel.log.warn(
         { event: event.name, target: subscriber.target_path, reason: error.message },
         "an event's subscriber could not be started",
+      );
+      await recordRefusal(
+        kernel,
+        subscriber,
+        "input",
+        `The event ${event.name} does not fit what this starts: ${error.message}`,
       );
     }
   }

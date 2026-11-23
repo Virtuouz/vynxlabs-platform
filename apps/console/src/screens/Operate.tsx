@@ -78,6 +78,10 @@ const REFUSED: Record<string, string> = {
   signature: "the signature did not match",
   body: "the body could not be read",
   paused: "the trigger was paused",
+  input: "what it was given does not fit what it starts",
+  filter: "its filter could not be worked out",
+  busy: "its source was still looking",
+  error: "its source could not pass on what it gave",
 };
 
 /** The page of what a trigger starts. */

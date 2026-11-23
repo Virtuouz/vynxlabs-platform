@@ -1,5 +1,14 @@
+import type { Edge } from "@xyflow/react";
 import { expect, test } from "vitest";
-import { problemsOf, stepOrder } from "./screens/FlowEditor.tsx";
+import {
+  carryName,
+  followCases,
+  insertAfter,
+  problemsOf,
+  rowsToValues,
+  stepOrder,
+  valueRowProblem,
+} from "./screens/FlowEditor.tsx";
 
 test("a flow with nothing wrong has no problems", () => {
   expect(
@@ -71,4 +80,103 @@ test("steps are listed in the order a run reaches them, then those nothing reach
     "stop",
     "orphan",
   ]);
+});
+
+test("a step added from the palette stays new when it is renamed, and one that was loaded stays loaded (FLW-03)", () => {
+  expect(carryName(new Set(["every_day"]), "every_day", "daily").has("daily")).toBe(true);
+  expect(carryName(new Set(), "loaded", "renamed").has("renamed")).toBe(false);
+});
+
+const at = (id: string, x = 0) => ({ id, position: { x, y: 0 } });
+const edge = (source: string, target: string, sourceHandle = "next"): Edge => ({
+  id: `${source}->${target}`,
+  source,
+  target,
+  sourceHandle,
+});
+
+test("a branch added in the middle takes the connection on its first case (FLW-07)", () => {
+  const placed = insertAfter(
+    [at("first"), at("second", 280)],
+    [edge("first", "second")],
+    "first",
+    "branch",
+    { type: "branch", cases: [{ name: "yes", when: "true" }] } as never,
+  );
+  expect(placed.edges.map((one) => [one.source, one.target, one.sourceHandle])).toEqual([
+    ["branch", "second", "case:yes"],
+    ["first", "branch", "next"],
+  ]);
+});
+
+test("a fail step added in the middle leaves nothing connected after it (FLW-07)", () => {
+  const placed = insertAfter(
+    [at("first"), at("second", 280)],
+    [edge("first", "second")],
+    "first",
+    "fail",
+    { type: "fail", message: "'Stopped'" } as never,
+  );
+  expect(placed.edges.map((one) => [one.source, one.target])).toEqual([["first", "fail"]]);
+});
+
+test("a case removed takes its connection, and one renamed keeps it, even past another's name (FLW-08)", () => {
+  const edges = [
+    edge("route", "a1", "case:a"),
+    edge("route", "ab1", "case:ab"),
+    edge("route", "m", "case:maybe"),
+  ];
+  const cases = [{ name: "a" }, { name: "ab" }];
+  expect(followCases(edges, "route", cases).map((one) => one.target)).toEqual(["a1", "ab1"]);
+  const renamed = followCases(edges.slice(0, 2), "route", [{ name: "bc" }, { name: "ab" }], {
+    from: "a",
+    to: "bc",
+  });
+  expect(renamed.map((one) => [one.target, one.sourceHandle])).toEqual([
+    ["a1", "case:bc"],
+    ["ab1", "case:ab"],
+  ]);
+});
+
+test("the editor sees every fault in a branch's connections that a deploy would refuse (FLW-08)", () => {
+  const nodes = {
+    start: { type: "trigger", trigger: { type: "manual" } },
+    route: {
+      type: "branch",
+      cases: [
+        { name: "a", when: "true" },
+        { name: "a", when: "false" },
+      ],
+    },
+    one: { type: "join" },
+    two: { type: "join" },
+    stop: { type: "fail", message: "'x'" },
+  };
+  const problems = problemsOf(nodes as never, [
+    { from: "start", to: "route" },
+    { from: "route", to: "one", output: "maybe" },
+    { from: "route", to: "two" },
+    { from: "route", to: "stop", output: "a" },
+    { from: "stop", to: "one" },
+  ]);
+  expect(problems).toContain('route has no case "maybe", and a connection leaves by it to one.');
+  expect(problems).toContain(
+    "A connection leaves route to two without saying which case it follows.",
+  );
+  expect(problems).toContain(
+    'route needs a different name for each case, and "otherwise" is taken.',
+  );
+  expect(problems).toContain("stop ends the flow, so nothing can follow it.");
+});
+
+test("rows with a taken or bad name are flagged and not saved over another value (FLW-06)", () => {
+  const rows = [
+    { name: "one", value: "1" },
+    { name: "one", value: "2" },
+  ];
+  expect(valueRowProblem(rows, 1, false)).toMatch(/used twice/);
+  expect(rowsToValues(rows, false)).toEqual({ one: "1" });
+  expect(valueRowProblem([{ name: "Set-Cookie", value: "''" }], 0, true)).toMatch(/may not set/);
+  expect(valueRowProblem([{ name: "value_1", value: "''" }], 0, true)).toMatch(/hyphens/);
+  expect(valueRowProblem([{ name: "x-header", value: "''" }], 0, true)).toBeUndefined();
 });

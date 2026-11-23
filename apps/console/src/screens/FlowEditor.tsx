@@ -1,3 +1,4 @@
+import { RESPONSE_HEADERS_REFUSED } from "@volvel/manifest";
 import {
   Appear,
   Button,
@@ -345,6 +346,8 @@ export function insertAfter(
   edges: Edge[],
   after: string | undefined,
   id: string,
+  /** The new step, which says where a connection onward leaves it. */
+  made?: FlowNode,
 ): { position: { x: number; y: number }; edges: Edge[] } {
   const from = nodes.find((node) => node.id === after);
   const last = nodes.reduce<(typeof nodes)[number] | undefined>(
@@ -365,16 +368,47 @@ export function insertAfter(
   if (!from) return { position, edges };
   const onward = (edge: Edge) =>
     edge.source === from.id && (edge.sourceHandle ?? "next") === "next";
+  // Where the new step goes on: its "next", the first case of a branch, or nowhere (a fail step).
+  const leaves = made ? outputs(made).find((output) => output.id !== "error")?.id : "next";
+  const handed = (edge: Edge): Edge[] => {
+    if (!onward(edge)) return [edge];
+    if (!leaves) return [];
+    const label = leaves.startsWith("case:") ? { label: leaves.slice(5) } : {};
+    return [{ ...edge, id: `${id}->${edge.target}`, source: id, sourceHandle: leaves, ...label }];
+  };
   return {
     position,
     edges: [
-      ...edges.map((edge) =>
-        onward(edge) ? { ...edge, id: `${id}->${edge.target}`, source: id } : edge,
-      ),
+      ...edges.flatMap(handed),
       { id: `${from.id}->${id}`, source: from.id, target: id, sourceHandle: "next" },
     ],
   };
 }
+
+/**
+ * The edges that still lead somewhere after a branch's cases changed: a case that
+ * was renamed keeps its connection under the new name, and a case that is gone
+ * takes its connection with it.
+ */
+export function followCases(
+  edges: Edge[],
+  branch: string,
+  cases: { name: string }[],
+  renamed?: { from: string; to: string },
+): Edge[] {
+  const named = new Set([...cases.map((one) => one.name), OTHERWISE]);
+  return edges.flatMap((edge) => {
+    if (edge.source !== branch || !edge.sourceHandle?.startsWith("case:")) return [edge];
+    const was = edge.sourceHandle.slice(5);
+    const now = renamed && was === renamed.from ? renamed.to : was;
+    if (!named.has(now)) return [];
+    return now === was ? [edge] : [{ ...edge, sourceHandle: `case:${now}`, label: now }];
+  });
+}
+
+/** The ids that were added from the palette, with a step's new name added when it is renamed. */
+export const carryName = (ids: ReadonlySet<string>, from: string, to: string): Set<string> =>
+  new Set(ids.has(from) ? [...ids, to] : ids);
 
 /** One thing wrong with a flow: what, and which step and field it is in, to go to it. */
 export interface Problem {
@@ -401,8 +435,45 @@ export function problemsAt(
   if (!ids.some((id) => nodes[id]?.type === "trigger"))
     problems.push({ message: "Add a way for the flow to start." });
   const reached = new Set(edges.map((edge) => edge.to));
+  for (const edge of edges) {
+    const from = nodes[edge.from];
+    if (!from) continue;
+    if (from.type === "fail") {
+      problems.push({
+        message: `${edge.from} ends the flow, so nothing can follow it.`,
+        node: edge.from,
+      });
+    } else if (from.type === "branch") {
+      const cases = ((from.cases as { name: string }[] | undefined) ?? []).map((one) => one.name);
+      if (edge.output === undefined && !edge.error) {
+        problems.push({
+          message: `A connection leaves ${edge.from} to ${edge.to} without saying which case it follows.`,
+          node: edge.from,
+        });
+      } else if (
+        edge.output !== undefined &&
+        edge.output !== OTHERWISE &&
+        !cases.includes(edge.output)
+      ) {
+        problems.push({
+          message: `${edge.from} has no case "${edge.output}", and a connection leaves by it to ${edge.to}.`,
+          node: edge.from,
+        });
+      }
+    }
+  }
   for (const id of ids) {
     const node = nodes[id] as FlowNode;
+    if (node.type === "branch") {
+      const names = ((node.cases as { name: string }[] | undefined) ?? []).map((one) => one.name);
+      if (new Set(names).size !== names.length || names.includes(OTHERWISE)) {
+        problems.push({
+          message: `${id} needs a different name for each case, and "${OTHERWISE}" is taken.`,
+          node: id,
+          field: "cases",
+        });
+      }
+    }
     if (node.type !== "trigger" && !reached.has(id))
       problems.push({ message: `Nothing leads to ${id}.`, node: id });
     if (node.type === "script" && !node.script)
@@ -522,8 +593,8 @@ export function FlowEditor({
   const [starterId, setStarterId] = useState("blank");
   const [testing, setTesting] = useState(false);
   const [testRunId, setTestRunId] = useState<string>();
-  /** The steps the flow had when it was opened: a schedule among them keeps its own zone. */
-  const loadedIds = useRef(new Set<string>());
+  /** The steps added here from the palette: a schedule among them takes the workspace's zone. */
+  const addedIds = useRef(new Set<string>());
   const [testTrigger, setTestTrigger] = useState<string>();
   const [editedSinceTest, setEditedSinceTest] = useState(false);
   const live = useFlowRunLive(root, testRunId);
@@ -676,7 +747,7 @@ export function FlowEditor({
     (body: FlowBody) => {
       clearHistory();
       const positions = { ...autoLayout(body.nodes, body.edges), ...(body.layout ?? {}) };
-      loadedIds.current = new Set(Object.keys(body.nodes));
+      addedIds.current = new Set();
       setDescription(body.description ?? "");
       const chosenInAddress = new URLSearchParams(location.search).get("step");
       setNodes(
@@ -744,6 +815,7 @@ export function FlowEditor({
     for (let n = 2; nodes.some((node) => node.id === id); n++) id = `${entry.base}_${n}`;
     history.record(`Add ${id}`);
     const made = entry.make();
+    addedIds.current = new Set([...addedIds.current, id]);
     // After the chosen step, joined to it, taking over where it went next. A trigger,
     // or a step added with nothing chosen, goes to the right of everything.
     // Joined only after a step that goes on to one next step: a branch goes on by its
@@ -753,7 +825,7 @@ export function FlowEditor({
       made.type !== "trigger" &&
       before !== undefined &&
       outputs(before).some((output) => output.id === "next");
-    const placed = insertAfter(nodes, edges, joinable ? selected : undefined, id);
+    const placed = insertAfter(nodes, edges, joinable ? selected : undefined, id, made);
     const at = placed.position;
     setNodes((before) => [
       // The new step is the chosen one, on the canvas as in the panel beside it.
@@ -796,6 +868,7 @@ export function FlowEditor({
       return { ...node, id, data: { id, node: changed as unknown as FlowNode } };
     });
     setNodes(renamed);
+    addedIds.current = carryName(addedIds.current, from, to);
     if (updated > 0) {
       notify.success(
         `Renamed ${from} to ${to}, and updated ${updated} reference${updated === 1 ? "" : "s"} to it.`,
@@ -1509,8 +1582,8 @@ export function FlowEditor({
                           }
                         }
                         readOnly={false}
-                        // One added here is new; one that came with the flow keeps its zone.
-                        fresh={!loadedIds.current.has(chosen.id)}
+                        // One added from the palette is new; one that came with the flow, or was pasted, keeps its zone.
+                        fresh={addedIds.current.has(chosen.id)}
                         overlapDefault="skip"
                         change={(next) => {
                           const merged: Record<string, unknown> = {
@@ -1699,6 +1772,7 @@ export function FlowEditor({
                       <ValuesEditor
                         legend="Headers"
                         add="Add a header"
+                        headers
                         values={values}
                         onChange={onChange}
                       />
@@ -1710,17 +1784,9 @@ export function FlowEditor({
                     cases={(node.cases as { name: string; when: string }[]) ?? []}
                     onChange={(cases, renamed) => {
                       update(chosen.id, { cases });
-                      // The case's connection leaves the same case under its new name.
-                      if (renamed && renamed.from !== renamed.to) {
-                        setEdges((before) =>
-                          before.map((edge) =>
-                            edge.source === chosen.id &&
-                            edge.sourceHandle === `case:${renamed.from}`
-                              ? { ...edge, sourceHandle: `case:${renamed.to}`, label: renamed.to }
-                              : edge,
-                          ),
-                        );
-                      }
+                      // A renamed case's connection leaves it under its new name, and a
+                      // removed case takes its connection with it, in the same step to undo.
+                      setEdges((before) => followCases(before, chosen.id, cases, renamed));
                     }}
                   />
                 ) : null}
@@ -2233,7 +2299,55 @@ function ConnectionsEditor({
   );
 }
 
-function CasesEditor({
+/** A case's name, changed when Enter is pressed or the field is left, not while it is typed. */
+function CaseName({
+  index,
+  name,
+  taken,
+  onRename,
+}: {
+  index: number;
+  name: string;
+  /** The names the other cases have. */
+  taken: string[];
+  onRename: (name: string) => void;
+}) {
+  const [text, setText] = useState(name);
+  const [error, setError] = useState<string>();
+  // A name changed from outside, by undo, is the one shown.
+  useEffect(() => {
+    setText(name);
+    setError(undefined);
+  }, [name]);
+  const commit = () => {
+    if (text === name) return setError(undefined);
+    if (!text.trim()) return setError("A case needs a name.");
+    if (text === OTHERWISE || taken.includes(text))
+      return setError(`The name "${text}" is already used. Each case needs its own.`);
+    setError(undefined);
+    onRename(text);
+  };
+  return (
+    <form
+      onSubmit={(event) => {
+        event.preventDefault();
+        commit();
+      }}
+      onBlur={commit}
+    >
+      <TextField
+        name={`case-${index}`}
+        label="Name"
+        value={text}
+        error={error}
+        hint="Press Enter to change it. The connection from this case follows."
+        onChange={setText}
+      />
+    </form>
+  );
+}
+
+export function CasesEditor({
   cases,
   onChange,
 }: {
@@ -2256,11 +2370,11 @@ function CasesEditor({
           data-flip-key={names.keys[index]}
           className="flex flex-col gap-1 rounded-control border border-line p-2"
         >
-          <TextField
-            name={`case-${index}`}
-            label="Name"
-            value={one.name}
-            onChange={(name) =>
+          <CaseName
+            index={index}
+            name={one.name}
+            taken={cases.filter((_, at) => at !== index).map((each) => each.name)}
+            onRename={(name) =>
               onChange(
                 cases.map((each, at) => (at === index ? { ...each, name } : each)),
                 { from: one.name, to: name },
@@ -2304,63 +2418,145 @@ function CasesEditor({
       <div>
         <Button
           size="small"
-          onClick={() => onChange([...cases, { name: `case_${cases.length + 1}`, when: "true" }])}
+          onClick={() => onChange([...cases, { name: freeName("case", cases), when: "true" }])}
         >
           Add a case
         </Button>
       </div>
       <p className="m-0 text-meta text-ink-muted">
-        When no case holds, the flow leaves by “otherwise”.
+        When no case holds, the flow leaves by “otherwise”. Removing a case removes its connection.
       </p>
     </fieldset>
   );
 }
 
-function ValuesEditor({
+/** `base_1`, `base_2`… the first not already a name in `items`. */
+export function freeName(base: string, items: { name: string }[]): string {
+  let n = items.length + 1;
+  while (items.some((one) => one.name === `${base}_${n}`)) n++;
+  return `${base}_${n}`;
+}
+
+interface ValueRow {
+  name: string;
+  value: string;
+}
+
+/** Why a row's name cannot be used, or nothing when it can. */
+export function valueRowProblem(
+  rows: ValueRow[],
+  at: number,
+  headers: boolean,
+): string | undefined {
+  const name = rows[at]?.name ?? "";
+  if (!name.trim()) return "A name is needed.";
+  if (rows.some((row, other) => other < at && row.name === name))
+    return `The name "${name}" is used twice. Each needs its own.`;
+  if (headers) {
+    if (!/^[A-Za-z0-9-]+$/.test(name)) return "Letters, digits and hyphens only.";
+    if (RESPONSE_HEADERS_REFUSED.includes(name.toLowerCase()))
+      return `A flow may not set the header "${name}".`;
+  }
+  return undefined;
+}
+
+/** What is saved of the rows: those whose name can be used, the first of a name winning. */
+export function rowsToValues(rows: ValueRow[], headers: boolean): Record<string, string> {
+  return Object.fromEntries(
+    rows.filter((_, at) => !valueRowProblem(rows, at, headers)).map((row) => [row.name, row.value]),
+  );
+}
+
+const sameValues = (a: Record<string, string>, b: Record<string, string>) =>
+  JSON.stringify(Object.entries(a)) === JSON.stringify(Object.entries(b));
+
+export function ValuesEditor({
   values,
   onChange,
   legend = "Values",
   add = "Add a value",
+  headers = false,
 }: {
   values: Record<string, string>;
   onChange: (values: Record<string, string>) => void;
   legend?: string;
   add?: string;
+  /** Rows are response headers: their names are checked as header names, up to 20. */
+  headers?: boolean;
 }) {
-  const entries = Object.entries(values);
+  const most = headers ? 20 : 50;
+  const fewest = headers ? 0 : 1;
+  // Held as a list while edited, so that a name typed on the way to another is not a value lost.
+  const [rows, setRows] = useState<ValueRow[]>(() =>
+    Object.entries(values).map(([name, value]) => ({ name, value })),
+  );
+  const keys = useKeys(rows.length);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only a change of the values is news
+  useEffect(() => {
+    // Values changed from outside, by undo, are the rows shown.
+    if (!sameValues(values, rowsToValues(rows, headers)))
+      setRows(Object.entries(values).map(([name, value]) => ({ name, value })));
+  }, [values]);
+  const edit = (next: ValueRow[]) => {
+    setRows(next);
+    onChange(rowsToValues(next, headers));
+  };
+  const seed = headers ? "x-header" : "value";
+  const taken = (name: string) => rows.some((row) => row.name === name);
+  let fresh = headers ? seed : `${seed}_${rows.length + 1}`;
+  for (let n = 2; taken(fresh); n++)
+    fresh = headers ? `${seed}-${n}` : `${seed}_${rows.length + n}`;
   return (
     <fieldset className="m-0 flex flex-col gap-2 border-0 p-0">
       <legend className="p-0 text-body-sm font-medium">{legend}</legend>
-      {entries.map(([name, value], index) => (
-        // biome-ignore lint/suspicious/noArrayIndexKey: a value has no identity but its place while its name is being typed
-        <div key={index} className="grid grid-cols-[1fr_1.4fr] gap-2">
-          <TextField
-            name={`name-${index}`}
-            label="Name"
-            value={name}
-            onChange={(next) =>
-              onChange(
-                Object.fromEntries(
-                  entries.map(([key, each], at) => [at === index ? next : key, each]),
-                ),
-              )
-            }
-          />
-          <ExpressionField
-            name={`value-${index}`}
-            label="Expression"
-            value={value}
-            onChange={(next) => onChange({ ...values, [name]: next })}
-          />
+      {rows.map((row, index) => (
+        <div key={keys.keys[index]} className="flex flex-col gap-1">
+          <div className="grid grid-cols-[1fr_1.4fr] gap-2">
+            <TextField
+              name={`name-${index}`}
+              label="Name"
+              value={row.name}
+              error={valueRowProblem(rows, index, headers)}
+              onChange={(name) =>
+                edit(rows.map((one, at) => (at === index ? { ...one, name } : one)))
+              }
+            />
+            <ExpressionField
+              name={`value-${index}`}
+              label="Expression"
+              value={row.value}
+              onChange={(value) =>
+                edit(rows.map((one, at) => (at === index ? { ...one, value } : one)))
+              }
+            />
+          </div>
+          {rows.length > fewest ? (
+            <div>
+              <Button
+                size="small"
+                variant="danger"
+                onClick={() => {
+                  keys.remove(index);
+                  edit(rows.filter((_, at) => at !== index));
+                }}
+              >
+                {headers ? "Remove header" : "Remove value"}
+              </Button>
+            </div>
+          ) : null}
         </div>
       ))}
       <div>
         <Button
           size="small"
-          onClick={() => onChange({ ...values, [`value_${entries.length + 1}`]: "trigger" })}
+          disabled={rows.length >= most}
+          onClick={() => edit([...rows, { name: fresh, value: headers ? "''" : "trigger" }])}
         >
           {add}
         </Button>
+        {rows.length >= most ? (
+          <p className="m-0 mt-1 text-meta text-ink-muted">A step takes {most} at most.</p>
+        ) : null}
       </div>
     </fieldset>
   );

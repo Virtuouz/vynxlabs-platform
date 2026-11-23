@@ -148,6 +148,7 @@ export function PageSettings({
                   name="page-title"
                   value={page.title}
                   maxLength={NAME_MAX}
+                  showCount
                   required
                   {...(kind === "page"
                     ? {}

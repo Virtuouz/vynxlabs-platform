@@ -75,12 +75,12 @@ import type {
   TabFate,
 } from "./model.ts";
 import {
+  columnsNamed,
   heading,
   isChoiceLike,
   resultNames,
   tableOfInput,
   withConfig,
-  withSystemColumns,
 } from "./model.ts";
 import { TabsControl } from "./tabsControl.tsx";
 import { type GroupChoice, groupName } from "./timelineModel.ts";
@@ -128,7 +128,7 @@ export interface Env {
 /**
  * Whether a column suits a place that names types. A place that asks for a choice (`enum`) is
  * given every column that is choice-like: text the server counted to a few values, as Conditions
- * and a table's badge colours count it.
+ * and a table's badge colors count it.
  */
 export function offersType(types: readonly string[], column: CatalogColumn): boolean {
   return types.includes(column.type) || (types.includes("enum") && isChoiceLike(column));
@@ -142,8 +142,7 @@ export function columnOptions(
 ): Option[] {
   const input = of ? env.widget.data?.[of] : undefined;
   const named = tableOfInput(input, env.page, env.widgets);
-  const table = named ? env.catalog.tables.find((one) => one.name === named) : undefined;
-  const columns = table ? withSystemColumns(table.columns) : [];
+  const columns = columnsNamed(env.catalog, named);
   if (types) {
     return columns
       .filter((column) => offersType(types, column))

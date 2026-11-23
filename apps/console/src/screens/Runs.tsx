@@ -25,7 +25,7 @@ import {
   useDensity,
 } from "../kit/DataTable.tsx";
 import { Elapsed, WaitedAndRan } from "../kit/Elapsed.tsx";
-import { hm } from "../kit/format.ts";
+import { hm, stamp } from "../kit/format.ts";
 import { ErrorState, Loading } from "../kit/LoadState.tsx";
 import { FilterChips, Inspector, KeyValues, MasterDetail, NextStep } from "../kit/layout.tsx";
 import { Junction } from "../kit/motifs.tsx";
@@ -38,7 +38,9 @@ import { useTitleObject } from "../kit/title.ts";
 import { ColumnsMenu, ViewsMenu } from "../kit/views.tsx";
 import { Link, navigate, useUrlState } from "../router.tsx";
 import { useStreamConnected } from "../stream.ts";
+import { CancelOlder } from "./CancelOlder.tsx";
 import { LogWindowNote, startedBy, TRIGGER, useLiveRun, wholeLogDownload } from "./Execution.tsx";
+import { RetryOnVersion } from "./RetryOnVersion.tsx";
 import {
   flowFromFailed,
   flowFromStart,
@@ -101,8 +103,22 @@ const WINDOWS = [
   { value: "1", label: "Last hour" },
   { value: "24", label: "Last 24 hours" },
   { value: "168", label: "Last 7 days" },
+  { value: "between", label: "Between…" },
   { value: "all", label: "Everything kept" },
 ];
+
+/** A time as a date-time field holds it, in the reader's own zone. */
+const toField = (iso: string | undefined): string => {
+  const at = iso ? new Date(iso) : undefined;
+  if (!at || Number.isNaN(at.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}T${pad(at.getHours())}:${pad(at.getMinutes())}`;
+};
+/** What a date-time field holds, as the address and the API keep it: one instant. */
+const fromField = (value: string): string | undefined => {
+  const at = value ? new Date(value) : undefined;
+  return at && !Number.isNaN(at.getTime()) ? at.toISOString() : undefined;
+};
 
 const FILTERS: { value: "all" | Filter; label: string; states: RunState[] }[] = [
   { value: "all", label: "All", states: [] },
@@ -150,6 +166,8 @@ const RUNS_URL = {
   status: { type: "string" },
   kind: { type: "string" },
   when: { type: "string", default: "24" },
+  from: { type: "string" },
+  to: { type: "string" },
   q: { type: "string" },
   tag: { type: "list" },
   target: { type: "string" },
@@ -215,11 +233,17 @@ export function RunsWorkbench({
     (next) => setUrl({ q: next }),
   );
 
-  const from = windowStart(hours, tick);
+  const between = hours === "between";
+  const validTime = (value: string | undefined) =>
+    value !== undefined && !Number.isNaN(Date.parse(value)) ? value : undefined;
+  const from = between ? validTime(url.from) : windowStart(hours, tick);
+  const until = between ? validTime(url.to) : undefined;
+  const backwards = Boolean(from && until && Date.parse(until) < Date.parse(from));
   const query = new URLSearchParams({ limit: "100" });
   if (status !== "all") query.set("state", status);
   if (kind !== "all") query.set("kind", kind);
   if (from) query.set("from", from);
+  if (until) query.set("to", until);
   if (search) query.set("q", search);
   for (const one of tags) query.append("tag", one);
   if (url.target) query.set("target", url.target);
@@ -228,7 +252,8 @@ export function RunsWorkbench({
     query.set("dir", sort.dir);
   }
   const base = `${root}/activity?${query}`;
-  const list = useLoad<Page>(base);
+  // A window that ends before it starts asks for nothing: the page says so instead.
+  const list = useLoad<Page>(backwards ? null : base);
   const [later, setLater] = useState(() => laterPages.get(base));
   const [loadingMore, setLoadingMore] = useState(false);
   const [moreError, setMoreError] = useState<string>();
@@ -342,11 +367,23 @@ export function RunsWorkbench({
   const total = Object.values(counts).reduce((a, b) => a + b, 0);
   const filtered = status !== "all" || Boolean(search) || tags.length > 0 || Boolean(url.target);
   const queued = counts.queued ?? 0;
-  const scope = [
+  const inProgress = LIVE.reduce((sum, state) => sum + (counts[state] ?? 0), 0);
+  const [cancelOlder, setCancelOlder] = useState(false);
+  const [retryOn, setRetryOn] = useState<Activity>();
+  const narrowedBy = [
     url.target ? `of ${url.target}` : "",
     search ? `matching "${search}"` : "",
     tags.length > 0 ? `tagged ${tags.join(" and ")}` : "",
-    from ? `from the ${WINDOWS.find((one) => one.value === hours)?.label.toLowerCase()}` : "",
+  ];
+  const scope = [
+    ...narrowedBy,
+    between
+      ? [from ? `from ${stamp(from)}` : "", until ? `until ${stamp(until)}` : ""]
+          .filter(Boolean)
+          .join(" ")
+      : from
+        ? `from the ${WINDOWS.find((one) => one.value === hours)?.label.toLowerCase()}`
+        : "",
   ]
     .filter(Boolean)
     .join(", ");
@@ -368,6 +405,7 @@ export function RunsWorkbench({
           ...(search ? { q: search } : {}),
           ...(tags.length > 0 ? { tags } : {}),
           ...(from ? { from } : {}),
+          ...(until ? { to: until } : {}),
         },
       });
       notify.success(
@@ -382,7 +420,7 @@ export function RunsWorkbench({
   const [checked, setChecked] = useState<Set<string>>(new Set());
   // Runs that start while the reader is down the list, or has some checked, wait at the top.
   const arrivals = useArrivals(
-    list.data ? items : undefined,
+    list.data || backwards ? items : undefined,
     (one) => one.id,
     base,
     () => {
@@ -537,6 +575,9 @@ export function RunsWorkbench({
                 ),
             },
           ]
+        : []),
+      ...(one.kind === "flow" && !going && !one.source
+        ? [{ label: "On another version…", onSelect: () => setRetryOn(one) }]
         : []),
       ...(going
         ? [
@@ -727,7 +768,18 @@ export function RunsWorkbench({
               <select
                 aria-label="When"
                 value={hours}
-                onChange={(event) => setUrl({ when: event.currentTarget.value })}
+                onChange={(event) => {
+                  const value = event.currentTarget.value;
+                  // Between starts from the last day, so there is a window to change at once.
+                  setUrl(
+                    value === "between"
+                      ? {
+                          when: value,
+                          from: url.from ?? new Date(Date.now() - 24 * 3_600_000).toISOString(),
+                        }
+                      : { when: value, from: undefined, to: undefined },
+                  );
+                }}
                 className="h-8 rounded-control border border-line-control bg-surface px-2 text-body-sm"
               >
                 {WINDOWS.map((one) => (
@@ -736,9 +788,32 @@ export function RunsWorkbench({
                   </option>
                 ))}
               </select>
+              {between ? (
+                <>
+                  <label className="flex items-center gap-1.5 text-meta text-ink-muted">
+                    From
+                    <input
+                      type="datetime-local"
+                      value={toField(from ?? undefined)}
+                      onChange={(event) => setUrl({ from: fromField(event.currentTarget.value) })}
+                      className="h-8 rounded-control border border-line-control bg-surface px-2 text-body-sm"
+                    />
+                  </label>
+                  <label className="flex items-center gap-1.5 text-meta text-ink-muted">
+                    To
+                    <input
+                      type="datetime-local"
+                      value={toField(until)}
+                      onChange={(event) => setUrl({ to: fromField(event.currentTarget.value) })}
+                      className="h-8 rounded-control border border-line-control bg-surface px-2 text-body-sm"
+                    />
+                  </label>
+                </>
+              ) : null}
             </div>
           }
         />
+        {backwards ? <Notice tone="danger">The end is before the start.</Notice> : null}
         <div className="flex flex-wrap items-center gap-3">
           <FilterChips
             label="Status"
@@ -779,6 +854,11 @@ export function RunsWorkbench({
                 Cancel {queued} queued
               </Button>
             ) : null}
+            {inProgress > 0 ? (
+              <Button size="small" onClick={() => setCancelOlder(true)}>
+                Cancel by age…
+              </Button>
+            ) : null}
             <ColumnsMenu
               columns={columns.slice(1).map((column) => ({
                 key: column.key ?? column.header,
@@ -799,6 +879,33 @@ export function RunsWorkbench({
         </div>
       </div>
 
+      <CancelOlder
+        open={cancelOlder}
+        onClose={() => setCancelOlder(false)}
+        root={root}
+        // The window of time is left out: the runs asked for are those older than a length, however old.
+        scope={narrowedBy.filter(Boolean).join(", ")}
+        filters={{
+          ...(url.target ? { target: url.target } : {}),
+          ...(search ? { q: search } : {}),
+          ...(tags.length > 0 ? { tags } : {}),
+        }}
+        done={refresh}
+      />
+      <RetryOnVersion
+        open={retryOn !== undefined}
+        onClose={() => setRetryOn(undefined)}
+        root={root}
+        id={retryOn?.id ?? ""}
+        flow={retryOn?.target ?? ""}
+        failed={retryOn?.state === "failed"}
+        started={(next) => {
+          notify.success("Started again.", {
+            action: { label: "Open it", onClick: () => navigate(`${link}/runs/${next}`) },
+          });
+          refresh();
+        }}
+      />
       <MasterDetail
         fill
         inspector={
@@ -1220,7 +1327,11 @@ export function ScriptRunPanel({
                         className="flex items-center justify-between gap-2"
                       >
                         <Mono>{one.connection}</Mono>
-                        {one.bound ? <Tag tone="live">Bound</Tag> : <StatePill state="unbound" />}
+                        {one.bound ? (
+                          <Tag tone="live">Set up here</Tag>
+                        ) : (
+                          <StatePill state="unbound" />
+                        )}
                       </span>
                     ))}
                   </div>

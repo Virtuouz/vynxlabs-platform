@@ -1,4 +1,5 @@
 import { isPoolTimeout, sql } from "@volvel/db";
+import { createTestDatabase } from "@volvel/db/testing";
 import Fastify from "fastify";
 import { afterAll, beforeAll, expect, test } from "vitest";
 import { withData } from "./kernel/data/rows.js";
@@ -59,6 +60,40 @@ test("a tenant past its share waits, and another tenant's requests go straight t
   const firstDone = await held;
   expect(otherDone - asked).toBeLessThan(400);
   expect(secondDone).toBeGreaterThanOrEqual(firstDone);
+});
+
+test("tenants that share a dedicated database each have a share of it, and another tenant's requests go through (INS-25)", async () => {
+  const shared = await createTestDatabase();
+  try {
+    expect(
+      (
+        await t.admin.put("/instance/database-locations/pooled", {
+          connectionString: shared.connectionString,
+        })
+      ).status,
+    ).toBe(204);
+    const one = (
+      await t.admin.post("/tenants", { slug: "pool-one", name: "One", dataLocation: "pooled" })
+    ).body.id;
+    const two = (
+      await t.admin.post("/tenants", { slug: "pool-two", name: "Two", dataLocation: "pooled" })
+    ).body.id;
+    const held = withData(t.kernel, one, everyone, async (db) => {
+      await sql`select pg_sleep(0.6)`.execute(db);
+      return Date.now();
+    });
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    const asked = Date.now();
+    const [secondDone, otherDone] = await Promise.all([
+      withData(t.kernel, one, everyone, async () => Date.now()),
+      withData(t.kernel, two, everyone, async () => Date.now()),
+    ]);
+    const firstDone = await held;
+    expect(otherDone - asked).toBeLessThan(400);
+    expect(secondDone).toBeGreaterThanOrEqual(firstDone);
+  } finally {
+    await shared.drop();
+  }
 });
 
 test("a database too busy to hand out a connection is a 503 with when to try again", async () => {

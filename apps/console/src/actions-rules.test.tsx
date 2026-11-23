@@ -153,10 +153,10 @@ test("the trigger line, then steps on a rail, built as board 4 draws them", asyn
   fireEvent.click(screen.getByRole("button", { name: "Set another field" }));
   fireEvent.click(await screen.findByRole("menuitem", { name: "Paid on" }));
 
-  add("Run a workflow");
-  // A workflow is one chip in the card; it opens its small editor.
+  add("Run a flow");
+  // A flow is one chip in the card; it opens its small editor.
   fireEvent.click(screen.getByRole("button", { name: /^Change step 3/ }));
-  fireEvent.change(await screen.findByLabelText("Workflow"), { target: { value: "send-receipt" } });
+  fireEvent.change(await screen.findByLabelText("Flow"), { target: { value: "send-receipt" } });
   fireEvent.change(screen.getByLabelText("What it is given"), { target: { value: "this" } });
   expect(screen.getByText("Gets this invoice as its input")).toBeTruthy();
   fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
@@ -359,7 +359,7 @@ test("Rules: a button's can be pressed when and who can run it write the action"
   const start: PageWidget = { ...pressMe, on: { click: { steps: [{ do: "close" }] } } };
   show(<Rules start={start} />);
   expect(
-    screen.getByText("Shown but greyed out otherwise, with the reason as a tooltip."),
+    screen.getByText("Shown but grayed out otherwise, with the reason as a tooltip."),
   ).toBeTruthy();
   expect(
     screen.getByText(
@@ -426,4 +426,16 @@ test("an action at a config path has its own Actions and Rules editors", () => {
   add("Close");
   expect(changes.at(-1)).toEqual({ steps: [{ do: "close" }] });
   expect(screen.getByText("Who can run it")).toBeTruthy();
+});
+
+test("an action can say something when it is done, and drops it when it is emptied (WID-M2)", () => {
+  show(<Actions />);
+  expect(screen.queryByLabelText("When it is done, say")).toBeNull();
+  add("Show a message");
+  fireEvent.change(screen.getByLabelText("When it is done, say"), {
+    target: { value: "All paid" },
+  });
+  expect(last().on?.click?.done).toBe("All paid");
+  fireEvent.change(screen.getByLabelText("When it is done, say"), { target: { value: "" } });
+  expect(last().on?.click).not.toHaveProperty("done");
 });

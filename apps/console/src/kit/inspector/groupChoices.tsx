@@ -17,10 +17,21 @@ export interface GroupKey {
   kind: "member" | "end_user";
 }
 
-/** The tenant's groups by key. Empty until they are read. `root` is the workspace's path. */
-export function useGroupKeys(root: string): { groups: GroupKey[]; loaded: boolean } {
+/**
+ * The tenant's groups by key. Empty until they are read, and `error` says why when they could not
+ * be (so a caller does not take "not read" for "there are none"). `root` is the workspace's path.
+ */
+export function useGroupKeys(root: string): {
+  groups: GroupKey[];
+  loaded: boolean;
+  error: string | undefined;
+} {
   const read = useLoad<{ items: GroupKey[] }>(`${root}/group-keys`);
-  return { groups: read.data?.items ?? [], loaded: read.data !== undefined };
+  return {
+    groups: read.data?.items ?? [],
+    loaded: read.data !== undefined,
+    error: read.data === undefined ? read.error?.message : undefined,
+  };
 }
 
 /** The path a group is named by: what `runBy` and `seenBy` hold. */

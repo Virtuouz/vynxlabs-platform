@@ -38,6 +38,7 @@ import { BreakdownRow, MeasureRow } from "../measureControls.tsx";
 import { heading } from "../model.ts";
 import {
   ChoiceRow,
+  CompareAcross,
   ConfigToggle,
   type DrawerData,
   dateFilters,
@@ -413,7 +414,7 @@ export function ChartDisplay({ env, data }: SectionProps) {
     };
   });
   const comparing = isComparing(config);
-  const colours = (config.colors as string | undefined) ?? "theme";
+  const colors = (config.colors as string | undefined) ?? "theme";
   const palette = (name: string) =>
     name === "theme" ? THEME_SWATCHES : (PALETTES[name as keyof typeof PALETTES] ?? []).slice(0, 3);
   void data;
@@ -422,7 +423,7 @@ export function ChartDisplay({ env, data }: SectionProps) {
     <>
       <DrawerGroup
         label="Chart type"
-        note="Greyed types don't fit this data; the note says what they would need."
+        note="Grayed types don't fit this data; the note says what they would need."
       >
         <DrawerBlock>
           <TilePicker
@@ -462,12 +463,12 @@ export function ChartDisplay({ env, data }: SectionProps) {
           idPrefix={env.widget.id}
           label="Colors"
           icon={Palette}
-          value={colours}
+          value={colors}
           options={[
             { value: "theme", label: "App theme", swatches: palette("theme") },
             { value: "cool", label: "Cool", swatches: palette("cool") },
             { value: "warm", label: "Warm", swatches: palette("warm") },
-            { value: "mono", label: "Greys", swatches: palette("mono") },
+            { value: "mono", label: "Grays", swatches: palette("mono") },
           ]}
           onChange={(next) =>
             set("colors", next === "theme" ? undefined : next, "changing the colors")
@@ -520,6 +521,7 @@ export function ChartDisplay({ env, data }: SectionProps) {
               )
             }
           />
+          {comparing ? <CompareAcross env={env} /> : null}
           {mark === "line" || mark === "area" ? (
             <>
               <ConfigToggle env={env} name="smooth" label="Smooth the line" />

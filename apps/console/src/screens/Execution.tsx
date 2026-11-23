@@ -41,6 +41,7 @@ import {
 import { type GroupMemberRow, GroupMemberSheet } from "./GroupMemberSheet.tsx";
 import { OfferButton } from "./OfferToAgent.tsx";
 import { askToDelete } from "./PromotionConfirm.tsx";
+import { VariableSheet, type VariableValue } from "./VariableSheet.tsx";
 
 type Status = "queued" | "running" | "succeeded" | "failed" | "cancelled";
 /** The badge tone of a run's state, for the run page's mark. */
@@ -410,8 +411,9 @@ export function RunButton({
         title={draft ? `Run ${script}, as deployed` : `Run ${script}`}
         action="Run"
         schema={schema}
-        onSubmit={async (input) => {
-          const run = await api.post<Run>(`${root}/runs`, { script, input });
+        timing
+        onSubmit={async (input, timing) => {
+          const run = await api.post<Run>(`${root}/runs`, { script, input, ...timing });
           navigate(`${runsLink}/${run.id}`);
         }}
       />
@@ -603,14 +605,24 @@ export function LogWindowNote({
 }
 
 /**
- * "Activate this version": the way back to a bundle that ran before, or on to one
- * that never ran here. It names the workspace, and asks as a danger in production.
+ * What putting a version in place is called: "roll_back" when it is earlier than the one running,
+ * "deploy" otherwise (a later one, one that never ran here, or nothing running). The one place
+ * that words it, for the button, the question and the confirm.
  */
-export function ActivateVersion({
+export function versionMove(version: number, running: number | null): "deploy" | "roll_back" {
+  return running !== null && version < running ? "roll_back" : "deploy";
+}
+
+/**
+ * "Deploy this version" or "Roll back to this version": the way back to a bundle that ran before,
+ * or on to one that never ran here. It names the workspace, and asks as a danger in production.
+ */
+export function DeployVersion({
   root,
   workspace,
   bundleId,
   version,
+  running,
   onDone,
 }: {
   root: string;
@@ -618,16 +630,22 @@ export function ActivateVersion({
   workspace: { name: string; type: string };
   bundleId: string;
   version: number;
+  /** The version running there now, or null when none is known. */
+  running: number | null;
   onDone: () => void;
 }) {
+  const back = versionMove(version, running) === "roll_back";
+  const verb = back ? "Roll back" : "Deploy";
   return (
     <Button
       size="small"
       onClick={async () => {
         const sure = await ask.confirm({
-          title: `Activate version ${version} in ${workspace.name}?`,
+          title: back
+            ? `Roll back ${workspace.name} to version ${version}?`
+            : `Deploy version ${version} to ${workspace.name}?`,
           text: `${workspace.name} stops running what it runs now and starts running version ${version} at once. Runs in progress there finish on the version they started with.`,
-          action: workspace.type === "production" ? "Activate in production" : "Activate",
+          action: workspace.type === "production" ? `${verb} in production` : verb,
           danger: workspace.type === "production",
         });
         if (!sure) return;
@@ -654,7 +672,7 @@ export function ActivateVersion({
         await activate();
       }}
     >
-      Activate this version
+      {back ? "Roll back to this version" : "Deploy this version"}
     </Button>
   );
 }
@@ -757,7 +775,19 @@ export function Connections({ root, production = false }: { root: string; produc
     setItem(null);
   }, [setup, list.data, setSetup, setItem]);
   const newButton = (
-    <Button variant="primary" onClick={() => setEditing({})}>
+    <Button
+      variant="primary"
+      onClick={() => {
+        // In production a connection is set up only if one waits: otherwise the form would be empty.
+        if (production && list.data?.items.every((item) => item.bound)) {
+          notify.info(
+            "Nothing waits to be set up here. A connection is declared in a dev workspace and arrives here with a promotion.",
+          );
+          return;
+        }
+        setEditing({});
+      }}
+    >
       {production ? "Set up a connection" : "New connection"}
     </Button>
   );
@@ -805,7 +835,11 @@ export function Connections({ root, production = false }: { root: string; produc
           },
           {
             header: "Kind",
-            cell: (row) => CONNECTOR_NAMES[row.connector] ?? <Code>{row.connector}</Code>,
+            cell: (row) => (
+              <span className="whitespace-nowrap">
+                {CONNECTOR_NAMES[row.connector] ?? <Code>{row.connector}</Code>}
+              </span>
+            ),
           },
           {
             header: "Points to",
@@ -874,102 +908,126 @@ export function Connections({ root, production = false }: { root: string; produc
 
 export function Variables({ root }: { root: string }) {
   const variableUses = useReferences(root, "variable");
+  const [editing, setEditing] = useState<{ row: VariableValue; reload: () => void } | null>(null);
   return (
-    <ListScreen<{
-      path: string;
-      description: string;
-      default: string | null;
-      value: string | null;
-      arrives?: boolean;
-      draft?: "new" | "changed" | "removed" | null;
-    }>
-      title="Variables"
-      setupField="path"
-      description="Settings a script reads at run time. Each workspace can set its own value. Without one, the default from the repository applies."
-      path={`${root}/variable-values`}
-      rowKey={(row) => row.path}
-      columns={[
-        {
-          header: "Variable",
-          cell: (row) => (
-            <span className="inline-flex flex-wrap items-center gap-2">
-              {row.draft === "new" ? (
-                // It has no page yet: its editor is where it is.
-                <Link
-                  to={`${consoleLink(root)}/resources/edit/variable/${row.path}`}
-                  className="font-mono text-code text-action"
-                >
-                  {row.path}
-                </Link>
-              ) : row.arrives ? (
-                <Code>{row.path}</Code>
-              ) : (
-                <ObjectLink link={consoleLink(root)} kind="variable" path={row.path} />
-              )}
-              {row.draft === "new" ? (
-                <StatePill state="draft">Draft, never deployed</StatePill>
-              ) : row.draft ? (
-                <Tag tone="draft">{row.draft === "removed" ? "Removing" : "Draft"}</Tag>
-              ) : row.arrives ? (
-                <Tag tone="neutral">Arrives with the next promotion</Tag>
-              ) : null}
-            </span>
-          ),
-        },
-        {
-          header: "Read by",
-          cell: (row) => (
-            <UsedBy
-              uses={variableUses(row.path)}
-              failed={variableUses.failed}
-              loaded={variableUses.loaded}
-              link={consoleLink(root)}
-              all={`${consoleLink(root)}/variables/${row.path}?tab=used-by`}
-            />
-          ),
-        },
-        { header: "For", cell: (row) => <span className="text-ink-muted">{row.description}</span> },
-        {
-          header: "Value here",
-          cell: (row) =>
-            row.value !== null ? (
-              <Code>{row.value}</Code>
-            ) : (
-              <span className="text-ink-muted">Default: {row.default ?? "none"}</span>
-            ),
-        },
-      ]}
-      empty={{ title: "No variables yet" }}
-      create={{
-        action: "Set variable",
-        fields: [
+    <>
+      <ListScreen<{
+        path: string;
+        description: string;
+        default: string | null;
+        value: string | null;
+        arrives?: boolean;
+        draft?: "new" | "changed" | "removed" | null;
+      }>
+        title="Variables"
+        setupField="path"
+        description="Settings a script reads at run time. Each workspace can set its own value. Without one, the default from the repository applies."
+        path={`${root}/variable-values`}
+        rowKey={(row) => row.path}
+        columns={[
           {
-            name: "path",
-            label: "Variable",
-            choose: {
-              path: `${root}/variable-values`,
-              option: (item: { path: string; description?: string }) => ({
-                value: item.path,
-                label: item.path,
-                ...(item.description ? { hint: item.description } : {}),
-              }),
-            },
+            header: "Variable",
+            cell: (row) => (
+              <span className="inline-flex flex-wrap items-center gap-2">
+                {row.draft === "new" ? (
+                  // It has no page yet: its editor is where it is.
+                  <Link
+                    to={`${consoleLink(root)}/resources/edit/variable/${row.path}`}
+                    className="font-mono text-code text-action"
+                  >
+                    {row.path}
+                  </Link>
+                ) : row.arrives ? (
+                  <Code>{row.path}</Code>
+                ) : (
+                  <ObjectLink link={consoleLink(root)} kind="variable" path={row.path} />
+                )}
+                {row.draft === "new" ? (
+                  <StatePill state="draft">Draft, never deployed</StatePill>
+                ) : row.draft ? (
+                  <Tag tone="draft">{row.draft === "removed" ? "Removing" : "Draft"}</Tag>
+                ) : row.arrives ? (
+                  <Tag tone="neutral">Arrives with the next promotion</Tag>
+                ) : null}
+              </span>
+            ),
           },
-          { name: "value", label: "Value" },
-        ],
-        submit: ({ path = "", value }) => api.put(`${root}/variable-values/${path}`, { value }),
-      }}
-      rowActions={(row, reload) =>
-        row.value !== null ? (
-          <RemoveButton
-            label="Use default"
-            confirm={`Clear the value of ${row.path} in this workspace?`}
-            run={() => api.delete(`${root}/variable-values/${row.path}`)}
-            onDone={reload}
+          {
+            header: "Read by",
+            cell: (row) => (
+              <UsedBy
+                uses={variableUses(row.path)}
+                failed={variableUses.failed}
+                loaded={variableUses.loaded}
+                link={consoleLink(root)}
+                all={`${consoleLink(root)}/variables/${row.path}?tab=used-by`}
+              />
+            ),
+          },
+          {
+            header: "For",
+            cell: (row) => <span className="text-ink-muted">{row.description}</span>,
+          },
+          {
+            header: "Value here",
+            cell: (row) =>
+              row.value !== null ? (
+                <Code>{row.value}</Code>
+              ) : (
+                <span className="text-ink-muted">Default: {row.default ?? "none"}</span>
+              ),
+          },
+        ]}
+        empty={{ title: "No variables yet" }}
+        create={{
+          action: "Set variable",
+          fields: [
+            {
+              name: "path",
+              label: "Variable",
+              choose: {
+                path: `${root}/variable-values`,
+                option: (item: { path: string; description?: string }) => ({
+                  value: item.path,
+                  label: item.path,
+                  ...(item.description ? { hint: item.description } : {}),
+                }),
+              },
+            },
+            { name: "value", label: "Value" },
+          ],
+          submit: ({ path = "", value }) => api.put(`${root}/variable-values/${path}`, { value }),
+        }}
+        rowActions={(row, reload) => (
+          <span className="flex flex-wrap justify-end gap-2">
+            {row.draft === "new" || row.draft === "removed" ? null : (
+              <Button size="small" onClick={() => setEditing({ row, reload })}>
+                {row.value !== null ? "Change" : "Set"}
+              </Button>
+            )}
+            {row.value !== null ? (
+              <RemoveButton
+                label="Use default"
+                confirm={`Clear the value of ${row.path} in this workspace?`}
+                run={() => api.delete(`${root}/variable-values/${row.path}`)}
+                onDone={reload}
+              />
+            ) : null}
+          </span>
+        )}
+      />
+      <Closing subject={editing}>
+        {(one, shown) => (
+          <VariableSheet
+            root={root}
+            open={shown}
+            variable={one.row}
+            onClose={() => setEditing(null)}
+            onSaved={one.reload}
           />
-        ) : null
-      }
-    />
+        )}
+      </Closing>
+    </>
   );
 }
 
@@ -1123,6 +1181,9 @@ export function Workers({ base }: { base: string }) {
     state: "off" | "unavailable" | "host" | "isolated" | "shared" | "refused";
   }>(`${base}/managed-workers`);
   const [adding, setAdding] = useState(false);
+  const workspaces = useLoad<{ items: { id: string; name: string }[] }>(`${base}/workspaces`);
+  const workspaceName = (id: string) =>
+    workspaces.data?.items.find((workspace) => workspace.id === id)?.name ?? "A workspace";
   const made = (pools.data?.items ?? []).filter((pool) => pool.name !== null);
   const poolOptions = [
     { value: "", label: "Default pool: scripts that name no pool" },
@@ -1345,6 +1406,11 @@ export function Workers({ base }: { base: string }) {
               header: "Pool",
               cell: (row) => (row.pool ? <Mono>{row.pool}</Mono> : "Default pool"),
             },
+            {
+              header: "Runs code of",
+              cell: (row) =>
+                row.workspaceId ? workspaceName(row.workspaceId) : "Every workspace of the tenant",
+            },
             { header: "Created", cell: (row) => <Time value={row.createdAt} mode="ago" /> },
             {
               header: "Status",
@@ -1366,11 +1432,24 @@ export function Workers({ base }: { base: string }) {
                 options: poolOptions,
                 hint: "The worker runs only the scripts of this pool.",
               },
+              {
+                name: "workspaceId",
+                label: "Runs code of",
+                options: [
+                  { value: "", label: "Every workspace of the tenant" },
+                  ...(workspaces.data?.items ?? []).map((workspace) => ({
+                    value: workspace.id,
+                    label: workspace.name,
+                  })),
+                ],
+                hint: "A worker for one workspace never runs another's scripts, so a client's network holds only that client's code.",
+              },
             ],
-            submit: async ({ name, pool }) => {
+            submit: async ({ name, pool, workspaceId }) => {
               const result = await api.post(`${base}/worker-credentials`, {
                 name,
                 ...(pool ? { pool } : {}),
+                ...(workspaceId ? { workspaceId } : {}),
               });
               pools.reload();
               return result;

@@ -12,18 +12,20 @@ import { ErrorState, Loading, Pending } from "../kit/LoadState.tsx";
 import { KeyValues } from "../kit/layout.tsx";
 import { ObjectPage } from "../kit/ObjectPage.tsx";
 import { kindName, ObjectLink, objectHref, triggerKey } from "../kit/objects.tsx";
-import { ReferenceList } from "../kit/references.tsx";
+import { ReferenceList, useReferences, usersOf } from "../kit/references.tsx";
 import { SecretField } from "../kit/SecretField.tsx";
 import { Mono, StatePill } from "../kit/status.tsx";
 import { Time } from "../kit/Time.tsx";
-import { when } from "../ListScreen.tsx";
+import { RemoveButton, when } from "../ListScreen.tsx";
 import { Link, navigate, useUrlParam } from "../router.tsx";
 import { RecentRuns } from "./Authoring.tsx";
 import { CONNECTOR_NAMES, type ConnectionRow, ConnectionWizard } from "./ConnectionWizard.tsx";
 import { ConnectionHealth, RunButton, TestConnection } from "./Execution.tsx";
 import { NotFound } from "./NotFound.tsx";
 import { type Trigger, TriggerState, useTriggerPause } from "./Operate.tsx";
+import { PublishEventButton } from "./PublishEvent.tsx";
 import { NewScheduleSheet } from "./ScheduleForm.tsx";
+import { VariableSheet } from "./VariableSheet.tsx";
 
 /**
  * A page of its own for each thing a workspace holds that had only a row in a
@@ -58,6 +60,7 @@ function Gate<T>({
 
 export function ConnectionPage({ root, link, path }: { root: string; link: string; path: string }) {
   const found = useLoad<ConnectionRow>(`${root}/connection-bindings/${path}`);
+  const uses = useReferences(root, "connection");
   // The same sheet the list opens, here on the page itself.
   const [editing, setEditing] = useState<ConnectionRow | null>(null);
   return (
@@ -70,9 +73,7 @@ export function ConnectionPage({ root, link, path }: { root: string; link: strin
             title={one.path}
             state={
               <>
-                <StatePill state={one.bound ? "bound" : "unbound"}>
-                  {one.bound ? "Set up here" : "Not set up here"}
-                </StatePill>
+                <StatePill state={one.bound ? "bound" : "unbound"} />
                 <ConnectionHealth root={root} row={one} />
               </>
             }
@@ -84,6 +85,16 @@ export function ConnectionPage({ root, link, path }: { root: string; link: strin
                 <Button onClick={() => setEditing(one)}>
                   {one.bound ? "Change where it points" : "Set up"}
                 </Button>
+                {one.bound ? (
+                  <RemoveButton
+                    label="Unbind"
+                    confirm={`Unbind ${one.path}? Scripts that use it will fail until it is bound again.`}
+                    affected={usersOf(uses(one.path))}
+                    usesUnread={uses.failed || !uses.loaded}
+                    run={() => api.delete(`${root}/connection-bindings/${one.path}`)}
+                    onDone={() => found.reload?.()}
+                  />
+                ) : null}
               </>
             }
             meta={
@@ -163,40 +174,60 @@ interface Variable {
 
 export function VariablePage({ root, link, path }: { root: string; link: string; path: string }) {
   const found = useLoad<Variable>(`${root}/variable-values/${path}`);
+  const [editing, setEditing] = useState<Variable | null>(null);
   return (
     <Gate found={found} list={`${link}/variables`} noun="variable">
       {(one) => (
-        <ObjectPage
-          back={{ to: `${link}/variables`, label: "Variables" }}
-          eyebrow="Variable"
-          title={one.path}
-          meta={
-            <KeyValues
-              rows={[
-                ...(one.description ? [{ label: "What it is for", value: one.description }] : []),
-                {
-                  label: "Value here",
-                  value:
-                    one.value ?? (one.default !== null ? `The default: ${one.default}` : "Not set"),
-                  mono: one.value !== null,
-                },
-                ...(one.default !== null
-                  ? [{ label: "Default", value: one.default, mono: true }]
-                  : []),
-                ...(one.updatedAt
-                  ? [{ label: "Last set", value: <Time value={one.updatedAt} /> }]
-                  : []),
-              ]}
-            />
-          }
-          tabs={[
-            {
-              id: "used-by",
-              label: "Used by",
-              content: <ReferenceList root={root} link={link} kind="variable" name={one.path} />,
-            },
-          ]}
-        />
+        <>
+          <ObjectPage
+            back={{ to: `${link}/variables`, label: "Variables" }}
+            eyebrow="Variable"
+            title={one.path}
+            actions={
+              <Button onClick={() => setEditing(one)}>
+                {one.value !== null ? "Change value" : "Set value"}
+              </Button>
+            }
+            meta={
+              <KeyValues
+                rows={[
+                  ...(one.description ? [{ label: "What it is for", value: one.description }] : []),
+                  {
+                    label: "Value here",
+                    value:
+                      one.value ??
+                      (one.default !== null ? `The default: ${one.default}` : "Not set"),
+                    mono: one.value !== null,
+                  },
+                  ...(one.default !== null
+                    ? [{ label: "Default", value: one.default, mono: true }]
+                    : []),
+                  ...(one.updatedAt
+                    ? [{ label: "Last set", value: <Time value={one.updatedAt} /> }]
+                    : []),
+                ]}
+              />
+            }
+            tabs={[
+              {
+                id: "used-by",
+                label: "Used by",
+                content: <ReferenceList root={root} link={link} kind="variable" name={one.path} />,
+              },
+            ]}
+          />
+          <Closing subject={editing}>
+            {(variable, shown) => (
+              <VariableSheet
+                root={root}
+                variable={variable}
+                open={shown}
+                onClose={() => setEditing(null)}
+                onSaved={() => found.reload?.()}
+              />
+            )}
+          </Closing>
+        </>
       )}
     </Gate>
   );
@@ -311,7 +342,17 @@ interface Resource {
   body: { description?: string; schema?: unknown; payload?: unknown };
 }
 
-export function EventPage({ root, link, path }: { root: string; link: string; path: string }) {
+export function EventPage({
+  root,
+  link,
+  path,
+  production = false,
+}: {
+  root: string;
+  link: string;
+  path: string;
+  production?: boolean;
+}) {
   const found = useLoad<Resource>(`${root}/resources/${path}`);
   return (
     <Gate found={found} list={`${link}/events`} noun="event">
@@ -321,9 +362,17 @@ export function EventPage({ root, link, path }: { root: string; link: string; pa
           eyebrow="Event"
           title={one.path}
           actions={
-            <Button onClick={() => navigate(`${link}/resources/edit/event/${one.path}`)}>
-              Change its declaration
-            </Button>
+            <>
+              <PublishEventButton
+                root={root}
+                production={production}
+                event={one.path}
+                label="Publish it"
+              />
+              <Button onClick={() => navigate(`${link}/resources/edit/event/${one.path}`)}>
+                Change its declaration
+              </Button>
+            </>
           }
           meta={
             <KeyValues

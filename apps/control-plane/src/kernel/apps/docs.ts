@@ -226,7 +226,7 @@ main { min-width: 0; padding: 20px 18px 64px; }
 .lead { padding-bottom: 24px; margin-bottom: 28px; border-bottom: 1px solid var(--vx-line); }
 .vd-doc { font-size: 16px; }
 .foot { margin-top: 56px; display: grid; gap: 16px; }
-.updated { margin: 0; font-size: 13px; color: var(--vx-ink-muted); }
+.updated, .since { margin: 0; font-size: 13px; color: var(--vx-ink-muted); }
 .pager { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .pager a {
   display: flex; flex-direction: column; gap: 2px; padding: 14px 16px; border: 1px solid var(--vx-line); border-radius: 12px;
@@ -1136,7 +1136,7 @@ export function docPage(at: Drawn, path: string): string {
           })
           .join("")}</ol>`
       : "";
-  const { title, description } = entry.frontmatter;
+  const { title, description, since } = entry.frontmatter;
   const updated = entry.updated ? new Date(entry.updated) : undefined;
   return shell(at, {
     title,
@@ -1146,7 +1146,7 @@ export function docPage(at: Drawn, path: string): string {
     data: { page: { title, url: urlOf(path), crumb: crumbOf(set, path) } },
     main: `${tocbar}<header class="lead">${crumbs}<h1>${escapeHtml(title)}</h1>${
       description ? `<p>${escapeHtml(description)}</p>` : ""
-    }<div class="actions"><button class="button" type="button" data-copy="${href(at, `${urlOf(path) || "index"}.md`)}" hidden>${icon("copy", 14)}<span>Copy as Markdown</span></button><button class="button" type="button" data-copy="link" hidden>${icon("link", 14)}<span>Copy link</span></button></div></header>
+    }${since ? `<p class="since">New in version ${escapeHtml(since)}</p>` : ""}<div class="actions"><button class="button" type="button" data-copy="${href(at, `${urlOf(path) || "index"}.md`)}" hidden>${icon("copy", 14)}<span>Copy as Markdown</span></button><button class="button" type="button" data-copy="link" hidden>${icon("link", 14)}<span>Copy link</span></button></div></header>
 <article class="vd-doc">${body}</article>
 <footer class="foot">${feedbackOf(at, path)}${
       updated && !Number.isNaN(updated.getTime())

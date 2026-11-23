@@ -13,6 +13,13 @@ export interface GridColumn {
   type: string;
   /** Lets a cell be changed in place. */
   editable?: boolean;
+  /**
+   * The grid asks `editor` for the control that changes this column's cell, in place of a box
+   * to type the raw value in. A cell the screen draws itself (a chip, a name) can then be changed too.
+   */
+  control?: boolean;
+  /** A yes/no cell can go back to having no value: it goes empty, yes, no, empty. */
+  clearable?: boolean;
   sortable?: boolean;
   filterable?: boolean;
 }
@@ -58,9 +65,13 @@ export interface GridProps<Row extends Record<string, unknown>> {
   columns: GridColumn[];
   rows: Row[];
   rowKey: (row: Row) => string;
-  sort?: GridSort | undefined;
-  /** Called with the column whose header was pressed. */
-  onSort?: (column: string) => void;
+  /** What the rows are sorted by: one column, or several, the first most important. */
+  sort?: GridSort | GridSort[] | undefined;
+  /**
+   * Called with the column whose header was pressed, and whether Shift was held: a press with
+   * Shift adds the column to the sort, or turns it the other way, and one without starts again.
+   */
+  onSort?: (column: string, additive: boolean) => void;
   /** What is typed in the filter row, by column. */
   filters?: Record<string, string>;
   onFilter?: (column: string, text: string) => void;
@@ -68,6 +79,18 @@ export interface GridProps<Row extends Record<string, unknown>> {
   filterErrors?: Record<string, string>;
   /** Saves one changed cell. A rejection's message is shown in the cell. */
   onEdit?: (row: Row, column: string, value: unknown) => Promise<unknown>;
+  /**
+   * The control that changes a cell of a column with `control`: a choice, a date, a row of
+   * another table. `save` stores the value and closes it, `cancel` closes it with nothing changed.
+   * Return undefined for the grid's own box.
+   */
+  editor?: (edit: {
+    row: Row;
+    column: GridColumn;
+    value: unknown;
+    save: (next: unknown) => Promise<void>;
+    cancel: () => void;
+  }) => ReactNode | undefined;
   /** Replaces how a cell is shown. Return undefined to keep the grid's own rendering. */
   cell?: (row: Row, column: GridColumn) => ReactNode | undefined;
   rowActions?: (row: Row) => ReactNode;
@@ -103,6 +126,10 @@ export interface GridProps<Row extends Record<string, unknown>> {
 }
 
 const NUMERIC = new Set(["integer", "number"]);
+
+/** The sort as a list, whether it was given as one column or several. */
+const sortsOf = (sort: GridSort | GridSort[] | undefined): GridSort[] =>
+  sort === undefined ? [] : Array.isArray(sort) ? sort : [sort];
 
 /**
  * Whether a key typed into a field of the grid stays there. The grid's own keys do;
@@ -249,11 +276,13 @@ function EditableCell<Row extends Record<string, unknown>>({
   onEdit,
   editing,
   onEnd,
+  editor,
 }: {
   row: Row;
   column: GridColumn;
   shown: ReactNode;
   onEdit: NonNullable<GridProps<Row>["onEdit"]>;
+  editor?: GridProps<Row>["editor"];
   /** Set by a navigable grid, which decides when a cell is edited. */
   editing?: boolean;
   /** Called when editing ends; `back` is true when focus should return to the cell. */
@@ -291,7 +320,10 @@ function EditableCell<Row extends Record<string, unknown>>({
   const toggling = useRef<() => void>(() => {});
   toggling.current = () => {
     onEnd?.(false);
-    void save(value !== true);
+    // A cell that may be empty goes round: empty, yes, no, empty.
+    void save(
+      column.clearable ? (value === true ? false : value === false ? null : true) : value !== true,
+    );
   };
   const flipping = controlled && editing === true && column.type === "boolean";
   useEffect(() => {
@@ -318,6 +350,40 @@ function EditableCell<Row extends Record<string, unknown>>({
     );
   }
 
+  const control =
+    controlled && editing === true && column.control && editor
+      ? editor({
+          row,
+          column,
+          value,
+          save: async (next) => {
+            setBusy(true);
+            setError(undefined);
+            try {
+              await onEdit(row, column.name, next);
+              onEnd?.(true);
+            } catch (caught) {
+              setError((caught as Error).message);
+              throw caught;
+            } finally {
+              setBusy(false);
+            }
+          },
+          cancel: () => onEnd?.(true),
+        })
+      : undefined;
+  if (control !== undefined) {
+    return (
+      <span className="flex min-w-0 flex-col gap-0.5" aria-busy={busy || undefined}>
+        {control}
+        {error ? (
+          <span role="alert" className="text-meta text-danger">
+            {error}
+          </span>
+        ) : null}
+      </span>
+    );
+  }
   if (text === undefined && controlled) {
     return (
       <span className="flex min-w-0 flex-col gap-0.5">
@@ -413,7 +479,8 @@ function EditableCell<Row extends Record<string, unknown>>({
  * | Space | Check or uncheck the row |
  */
 function NavigableGrid<Row extends Record<string, unknown>>(props: GridProps<Row>) {
-  const { columns, rows, sort, filters, onFilter, onEdit, checked, onCheck } = props;
+  const { columns, rows, filters, onFilter, onEdit, checked, onCheck } = props;
+  const sorts = sortsOf(props.sort);
   const checking = checked !== undefined && onCheck !== undefined;
   const filterable = onFilter !== undefined && columns.some((column) => column.filterable);
   const offset = checking ? 1 : 0;
@@ -488,12 +555,12 @@ function NavigableGrid<Row extends Record<string, unknown>>(props: GridProps<Row
     if (event.key !== "Enter" && event.key !== "F2") return;
     event.preventDefault();
     if (r === 0) {
-      if (column?.sortable) props.onSort?.(column.name);
+      if (column?.sortable) props.onSort?.(column.name, event.shiftKey);
       else if (c === 0 && checking) onCheck(everyChecked ? new Set() : new Set(all));
       return;
     }
     if (!row) return;
-    if (column?.editable && onEdit && props.cell?.(row, column) === undefined) {
+    if (column?.editable && onEdit && (column.control || props.cell?.(row, column) === undefined)) {
       setEditing(`${r}:${c}`);
       return;
     }
@@ -519,7 +586,7 @@ function NavigableGrid<Row extends Record<string, unknown>>(props: GridProps<Row
         // biome-ignore lint/a11y/noNoninteractiveElementToInteractiveRole: a table navigated cell by cell is a grid (WAI-ARIA grid pattern)
         role="grid"
         aria-label={props.label}
-        aria-rowcount={rows.length + 1}
+        aria-rowcount={rows.length + (filterable ? 2 : 1)}
         aria-multiselectable={checking || undefined}
         className="w-full border-separate border-spacing-0 text-left"
         onKeyDown={onKeyDown}
@@ -540,7 +607,8 @@ function NavigableGrid<Row extends Record<string, unknown>>(props: GridProps<Row
               </th>
             ) : null}
             {columns.map((column, index) => {
-              const sorted = sort?.column === column.name ? sort : undefined;
+              const place = sorts.findIndex((one) => one.column === column.name);
+              const sorted = place >= 0 ? sorts[place] : undefined;
               const pinned =
                 lockFirst && index === 0 ? `sticky ${checking ? "left-8" : "left-0"}` : "";
               return (
@@ -551,7 +619,9 @@ function NavigableGrid<Row extends Record<string, unknown>>(props: GridProps<Row
                   className={`${head} ${pad} whitespace-nowrap ${pinned} ${
                     NUMERIC.has(column.type) ? "text-right" : ""
                   } ${column.sortable && props.onSort ? "cursor-pointer hover:text-ink" : ""}`}
-                  onClick={() => column.sortable && props.onSort?.(column.name)}
+                  onClick={(event) =>
+                    column.sortable && props.onSort?.(column.name, event.shiftKey)
+                  }
                   {...cellProps(0, index + offset)}
                 >
                   <TermText>{column.label ?? column.name}</TermText>
@@ -559,6 +629,7 @@ function NavigableGrid<Row extends Record<string, unknown>>(props: GridProps<Row
                   {sorted ? (
                     <span aria-hidden="true" className="ml-1 inline-flex align-middle text-action">
                       {sorted.descending ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
+                      {sorts.length > 1 ? <span className="text-meta">{place + 1}</span> : null}
                     </span>
                   ) : null}
                 </th>
@@ -611,8 +682,8 @@ function NavigableGrid<Row extends Record<string, unknown>>(props: GridProps<Row
               return (
                 <tr
                   key={key}
-                  // The header row is the first of `aria-rowcount`: rows of data count from 2.
-                  aria-rowindex={r + 2}
+                  // The heading row, and the filter row when it is drawn, come first in `aria-rowcount`.
+                  aria-rowindex={rowIndex + (filterable ? 3 : 2)}
                   aria-selected={checking ? ticked : chosen}
                   className={`${ground} hover:bg-sunken/60`}
                   onClick={(event) => {
@@ -657,19 +728,24 @@ function NavigableGrid<Row extends Record<string, unknown>>(props: GridProps<Row
                           NUMERIC.has(column.type) ? "text-right tabular-nums" : ""
                         } ${lockFirst && index === 0 ? `sticky ${checking ? "left-8" : "left-0"} ${ground}` : ""}`}
                         onDoubleClick={() => {
-                          if (column.editable && onEdit && custom === undefined) {
+                          if (
+                            column.editable &&
+                            onEdit &&
+                            (column.control || custom === undefined)
+                          ) {
                             setActive({ r, c });
                             setEditing(here);
                           }
                         }}
                         {...cellProps(r, c)}
                       >
-                        {column.editable && onEdit && custom === undefined ? (
+                        {column.editable && onEdit && (column.control || custom === undefined) ? (
                           <EditableCell
                             row={row}
                             column={column}
                             shown={shown}
                             onEdit={onEdit}
+                            {...(props.editor ? { editor: props.editor } : {})}
                             editing={editing === here}
                             onEnd={(back) => {
                               setEditing(undefined);
@@ -699,7 +775,9 @@ export function Grid<Row extends Record<string, unknown>>(props: GridProps<Row>)
 
 /** The grid tenant apps have had: each value to change is a button of its own. */
 function PlainGrid<Row extends Record<string, unknown>>(props: GridProps<Row>) {
-  const { columns, rows, sort, filters, onFilter, onEdit } = props;
+  const { columns, rows, filters, onFilter, onEdit } = props;
+  // This grid sorts by one column: of several, the first.
+  const sort = sortsOf(props.sort)[0];
   const filterable = onFilter !== undefined && columns.some((column) => column.filterable);
   const choosing = props.onSelect !== undefined;
   const group = useId();
@@ -726,7 +804,7 @@ function PlainGrid<Row extends Record<string, unknown>>(props: GridProps<Row>) {
                     <button
                       type="button"
                       className="inline-flex items-center gap-1 font-medium text-inherit hover:text-ink"
-                      onClick={() => props.onSort?.(column.name)}
+                      onClick={(event) => props.onSort?.(column.name, event.shiftKey)}
                     >
                       {column.label ?? column.name}
                       <span

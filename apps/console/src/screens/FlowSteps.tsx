@@ -15,6 +15,7 @@ import {
 import { useEffect, useState } from "react";
 import type { GraphNode } from "../FlowGraph.tsx";
 import { ExpressionField } from "./ExpressionField.tsx";
+import { DurationField, TagsField } from "./FlowStepFields.tsx";
 
 /**
  * The settings of the steps a flow is drawn from, where a step has more to
@@ -156,6 +157,35 @@ export function NodeInputs({
     onChange({ inputs: next, with: updateGrants(spec, node.with, inputs, next) });
   };
   const required = new Set(spec.input.required ?? []);
+  // A field that offers a list can be given by an expression instead: the switch holds
+  // while the expression is still empty, and a value that is not on the list shows it on.
+  const [asExpression, setAsExpression] = useState<ReadonlySet<string>>(new Set());
+  const switchTo = (name: string, on: boolean) =>
+    setAsExpression((before) => {
+      const next = new Set(before);
+      if (on) next.add(name);
+      else next.delete(name);
+      return next;
+    });
+  const expressionSwitch = (name: string, on: boolean, drops: boolean) => (
+    <CheckboxField
+      name={`input-${name}-expression`}
+      label="Use an expression"
+      {...(on
+        ? {
+            hint: drops
+              ? "Untick to choose from the list again. The expression is dropped."
+              : "Untick to choose from the list again.",
+          }
+        : {})}
+      checked={on}
+      onChange={(checked) => {
+        switchTo(name, checked);
+        // Back to the list: an expression that is not a value on it is dropped.
+        if (!checked && drops) set(name, undefined);
+      }}
+    />
+  );
   return (
     <>
       {spec.description ? (
@@ -190,52 +220,65 @@ export function NodeInputs({
         Object.entries(spec.input.properties ?? {}).map(([name, property]) => {
           const label = `${property.title ?? name}${required.has(name) ? "" : " (optional)"}`;
           const kind = property["x-pick"];
-          if (kind) {
-            return (
-              <ComboboxField
-                key={name}
-                label={label}
-                options={choices[kind]}
-                value={unquoted(inputs[name])}
-                hint={property.description}
-                empty={`This workspace has no ${kind} yet.`}
-                onChange={(value) => set(name, value === undefined ? undefined : quoted(value))}
-              />
-            );
-          }
           const listed = property.enum ?? (property.type === "boolean" ? [true, false] : undefined);
           // An expression that is not one of the listed values is shown as the expression it is.
-          if (listed && (!inputs[name] || listedBy(inputs[name], listed) !== undefined)) {
+          const given = (inputs[name] ?? "").trim();
+          const literal = kind
+            ? unquoted(inputs[name]) !== undefined
+            : listed
+              ? listedBy(inputs[name], listed) !== undefined
+              : true;
+          const byExpression =
+            Boolean(kind || listed) && (asExpression.has(name) || (given !== "" && !literal));
+          if (kind && !byExpression) {
+            return (
+              <div key={name} className="flex flex-col gap-1.5">
+                <ComboboxField
+                  label={label}
+                  options={choices[kind]}
+                  value={unquoted(inputs[name])}
+                  hint={property.description}
+                  empty={`This workspace has no ${kind} yet.`}
+                  onChange={(value) => set(name, value === undefined ? undefined : quoted(value))}
+                />
+                {expressionSwitch(name, false, false)}
+              </div>
+            );
+          }
+          if (listed && !byExpression) {
             const yesNo = property.enum === undefined;
             return (
-              <SelectField
-                key={name}
-                name={`input-${name}`}
-                label={label}
-                value={listedBy(inputs[name], listed) ?? ""}
-                options={[
-                  {
-                    value: "",
-                    label:
-                      property.default === undefined
-                        ? "Not set"
-                        : `Default: ${yesNo ? (property.default ? "Yes" : "No") : property.default}`,
-                  },
-                  ...listed.map((one) => ({
-                    value: String(one),
-                    label: yesNo ? (one ? "Yes" : "No") : String(one),
-                  })),
-                ]}
-                {...(property.description ? { hint: property.description } : {})}
-                onChange={(value) => {
-                  const one = listed.find((each) => String(each) === value);
-                  set(name, one === undefined ? undefined : literalOf(one));
-                }}
-              />
+              <div key={name} className="flex flex-col gap-1.5">
+                <SelectField
+                  key={name}
+                  name={`input-${name}`}
+                  label={label}
+                  value={listedBy(inputs[name], listed) ?? ""}
+                  options={[
+                    {
+                      value: "",
+                      label:
+                        property.default === undefined
+                          ? "Not set"
+                          : `Default: ${yesNo ? (property.default ? "Yes" : "No") : property.default}`,
+                    },
+                    ...listed.map((one) => ({
+                      value: String(one),
+                      label: yesNo ? (one ? "Yes" : "No") : String(one),
+                    })),
+                  ]}
+                  {...(property.description ? { hint: property.description } : {})}
+                  onChange={(value) => {
+                    const one = listed.find((each) => String(each) === value);
+                    set(name, one === undefined ? undefined : literalOf(one));
+                  }}
+                />
+                {expressionSwitch(name, false, false)}
+              </div>
             );
           }
           const text = property.type === "string";
-          return (
+          const field = (
             <ExpressionField
               key={name}
               name={`input-${name}`}
@@ -243,11 +286,25 @@ export function NodeInputs({
               rows={text ? 1 : 2}
               value={inputs[name] ?? ""}
               placeholder={text ? "'text', or trigger.field" : "An expression"}
-              hint={[property.description, text ? "An expression: put plain text in quotes." : ""]
+              hint={[
+                property.description,
+                text ? "An expression: put plain text in quotes." : "",
+                kind
+                  ? `An expression that gives the ${kind}'s path. What the script may reach is not handed over by an expression: add it under "What the script may reach".`
+                  : "",
+              ]
                 .filter(Boolean)
                 .join(" ")}
               onChange={(value) => set(name, value)}
             />
+          );
+          return byExpression ? (
+            <div key={name} className="flex flex-col gap-1.5">
+              {field}
+              {expressionSwitch(name, true, given !== "" && !literal)}
+            </div>
+          ) : (
+            field
           );
         })
       )}
@@ -266,8 +323,21 @@ export interface WebhookTrigger {
     secret: string;
     encoding?: string;
     prefix?: string;
+    signed?: string;
+    timestampHeader?: string;
+    toleranceSeconds?: number;
   };
+  tags?: string[];
 }
+
+/** What a sender signs, as the settings write it. A sender with another layout writes its own. */
+const SIGNED_AS: Option[] = [
+  { value: "{body}", label: "The body of the request" },
+  { value: "{timestamp}.{body}", label: "The timestamp, a dot, then the body" },
+  { value: "v0:{timestamp}:{body}", label: "v0, the timestamp, then the body" },
+  { value: "custom", label: "Something else" },
+];
+const SIGNED_PRESETS = SIGNED_AS.map((one) => one.value).filter((one) => one !== "custom");
 
 /** What a webhook hands the flow, how it is checked, and who answers the request. */
 export function WebhookSettings({
@@ -291,6 +361,13 @@ export function WebhookSettings({
     onChange(next as unknown as WebhookTrigger);
   };
   const verify = trigger.verify;
+  // What was signed is one of the layouts senders use, or written out.
+  const [own, setOwn] = useState(
+    Boolean(verify?.signed) && !SIGNED_PRESETS.includes(verify?.signed as string),
+  );
+  const signed = verify?.signed ?? "{body}";
+  const signedAs = own ? "custom" : signed;
+  const stamped = signed.includes("{timestamp}");
   return (
     <>
       <SelectField
@@ -405,8 +482,84 @@ export function WebhookSettings({
               put({ verify: prefix ? { ...rest, prefix } : rest });
             }}
           />
+          <SelectField
+            name="verify-signed"
+            label="What the sender signed"
+            value={signedAs}
+            options={SIGNED_AS}
+            hint="Most senders sign the body alone. Some sign the time they sent it too, so an old request cannot be sent again."
+            onChange={(next) => {
+              const { signed: _was, ...rest } = verify;
+              if (next === "custom") {
+                setOwn(true);
+                put({ verify: { ...rest, signed } });
+                return;
+              }
+              setOwn(false);
+              put({ verify: next === "{body}" ? rest : { ...rest, signed: next } });
+            }}
+          />
+          {own ? (
+            <TextField
+              name="verify-signed-text"
+              label="The signed text"
+              value={verify.signed ?? ""}
+              placeholder="{timestamp}.{body}"
+              hint="Write {body} where the raw body goes and {timestamp} where the timestamp goes."
+              {...(!verify.signed?.includes("{body}")
+                ? { error: "Include {body}, or nothing the sender sent is checked." }
+                : {})}
+              onChange={(text) => put({ verify: { ...verify, signed: text } })}
+            />
+          ) : null}
+          <TextField
+            name="verify-timestamp-header"
+            label={
+              stamped
+                ? "Header the timestamp is sent in"
+                : "Header the timestamp is sent in (optional)"
+            }
+            value={verify.timestampHeader ?? ""}
+            required={stamped}
+            placeholder="x-request-timestamp"
+            hint="Holds when it was sent, in seconds since 1970. A request without it is refused."
+            {...(stamped && !verify.timestampHeader
+              ? { error: "Name the header: what was signed includes the timestamp." }
+              : {})}
+            onChange={(header) => {
+              const { timestampHeader: _was, toleranceSeconds: tolerance, ...rest } = verify;
+              put({
+                verify: header
+                  ? {
+                      ...rest,
+                      timestampHeader: header,
+                      ...(tolerance ? { toleranceSeconds: tolerance } : {}),
+                    }
+                  : rest,
+              });
+            }}
+          />
+          {verify.timestampHeader ? (
+            <DurationField
+              name="verify-tolerance"
+              label="How old a request may be"
+              value={verify.toleranceSeconds}
+              required={false}
+              max={86400}
+              hint="Counted by its timestamp. A request older than this, or from the future by as much, is refused. Left empty, 5 minutes."
+              onChange={(seconds) => {
+                const { toleranceSeconds: _was, ...rest } = verify;
+                put({ verify: seconds ? { ...rest, toleranceSeconds: seconds } : rest });
+              }}
+            />
+          ) : null}
         </>
       ) : null}
+      <TagsField
+        value={trigger.tags}
+        given="the request as the flow is given it"
+        onChange={(tags) => put({ tags })}
+      />
     </>
   );
 }

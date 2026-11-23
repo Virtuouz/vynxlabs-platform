@@ -39,6 +39,8 @@ import {
 } from "./Execution.tsx";
 import { type FlowDetail, type FlowRunDetail, FlowRunView } from "./Flows.tsx";
 import { NotFound } from "./NotFound.tsx";
+import { RetryOnVersion } from "./RetryOnVersion.tsx";
+import { RunAlert, RunEvents } from "./RunAlert.tsx";
 import { type PreviousSuccess, RunCompare } from "./RunCompare.tsx";
 import type { Insight } from "./Runs.tsx";
 import {
@@ -494,24 +496,14 @@ function ScriptRunPage({ root, link, id }: { root: string; link: string; id: str
                   >
                     <Mono>{one.connection}</Mono>
                     <Tag tone={one.bound ? "live" : "production"}>
-                      {one.bound ? "Bound" : "Not bound"}
+                      {one.bound ? "Set up here" : "Not set up here"}
                     </Tag>
                   </Link>
                 ))}
               </section>
             ) : null}
-            {run.alert?.handlerRunId ? (
-              <Link to={`${link}/runs/${String(run.alert.handlerRunId)}`} className="text-meta">
-                The failure handler's run
-              </Link>
-            ) : null}
-            {run.alert?.suppressed && typeof run.alert.sameAs === "string" ? (
-              <p className="m-0 text-meta text-ink-muted">
-                No alert was sent: it is counted on{" "}
-                <Link to={`${link}/runs/${run.alert.sameAs}`}>the alert of an earlier failure</Link>
-                , sent less than ten minutes before.
-              </p>
-            ) : null}
+            <RunAlert alert={run.alert} link={link} />
+            {ended ? <RunEvents root={root} link={link} runId={run.id} /> : null}
           </aside>
         }
         second={
@@ -648,6 +640,7 @@ function FlowRunHeader({
   reconnecting: boolean;
 }) {
   const [editing, setEditing] = useState(false);
+  const [choosing, setChoosing] = useState(false);
   const live = LIVE.includes(run.state);
   const finishedBadly = run.state === "failed" || run.state === "canceled";
   const trigger = flow?.nodes[run.triggerNode] as
@@ -834,6 +827,7 @@ function FlowRunHeader({
                     : []),
                   { label: "Again from the start", onSelect: () => void fromStart("original") },
                   { label: "Again, with other input…", onSelect: () => setEditing(true) },
+                  { label: "On another version…", onSelect: () => setChoosing(true) },
                   {
                     label: "On the version deployed now",
                     onSelect: () => void fromStart("active"),
@@ -853,6 +847,11 @@ function FlowRunHeader({
           </>
         }
       />
+      {run.alert ? (
+        <div className="mt-4 flex flex-col gap-1.5">
+          <RunAlert alert={run.alert} link={link} />
+        </div>
+      ) : null}
       {finishedBadly ? (
         <div className="mt-4">
           <RunCompare
@@ -867,6 +866,15 @@ function FlowRunHeader({
           />
         </div>
       ) : null}
+      <RetryOnVersion
+        open={choosing}
+        onClose={() => setChoosing(false)}
+        root={root}
+        id={run.id}
+        flow={run.flow}
+        failed={finishedBadly}
+        started={again.started}
+      />
       <Closing subject={editing}>
         {(_editing, shown) => (
           <InputDialog

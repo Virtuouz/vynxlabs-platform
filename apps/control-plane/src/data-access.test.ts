@@ -350,6 +350,24 @@ describe("an external Postgres database as a data source", () => {
     expect((await bob.client.get(rows)).status).toBe(403);
   });
 
+  test("pages of a table with no key are in a fixed order, so none repeats or is skipped (DAT-29)", async () => {
+    const there = external.router.platform();
+    await sql`create table plain_log (message text, n integer, extra jsonb)`.execute(there);
+    await sql`insert into plain_log values ('c', 1, '{}'), ('a', 2, '{}'), ('b', 1, '{}'), ('a', 1, '[]'), ('c', 0, null)`.execute(
+      there,
+    );
+    const rows = `${ws()}/source-rows/plain_log/erp`;
+    const read = async (query: string) => (await alice.get(`${rows}?${query}`)).body;
+    const first = await read("limit=2");
+    const second = await read(`limit=2&cursor=${first.nextCursor}`);
+    const third = await read(`limit=2&cursor=${second.nextCursor}`);
+    const seen = [...first.items, ...second.items, ...third.items].map(
+      (row: Any) => `${row.message}${row.n}`,
+    );
+    // By every column in turn: the same rows in the same order, whatever order the database holds them.
+    expect(seen).toEqual(["a1", "a2", "b1", "c0", "c1"]);
+  });
+
   test("TAB-32 and TAB-16: whole numbers past 2^53 are not rounded, and `infinity` is shown as what it is", async () => {
     const there = external.router.platform();
     await sql`create table big (id bigint primary key, note text, seen timestamptz, price numeric)`.execute(
@@ -945,6 +963,34 @@ describe("files follow the rows that name them (D22)", () => {
     await alice.patch(`${ws()}/row/${row.id}/tasks`, { attachment: null });
     expect((await alice.delete(`${ws()}/files/${id}`)).status).toBe(204);
     expect(await exists(id)).toBe(false);
+  });
+
+  test("TAB-P10: the list says which table names each file, pages by a cursor, and finds by name", async () => {
+    const first = await upload(alice, "p10-a.txt");
+    const second = await upload(alice, "p10-b.txt");
+    const third = await upload(alice, "p10-c.txt");
+    await alice.post(`${ws()}/rows/tasks`, { title: "P10 one", attachment: first });
+    await alice.post(`${ws()}/rows/tasks`, { title: "P10 two", attachment: first });
+    const page = await alice.get(`${ws()}/files?limit=2&search=P10-`);
+    expect(page.status, JSON.stringify(page.body)).toBe(200);
+    expect(page.body.items.map((one: { id: string }) => one.id)).toEqual([third, second]);
+    expect(page.body.items[0].namedBy).toEqual([]);
+    expect(typeof page.body.nextCursor).toBe("string");
+    const next = await alice.get(
+      `${ws()}/files?limit=2&search=p10-&cursor=${encodeURIComponent(page.body.nextCursor)}`,
+    );
+    expect(next.body.items.map((one: { id: string }) => one.id)).toEqual([first]);
+    expect(next.body.nextCursor).toBeNull();
+    // Named by two rows of one table: the answer says the table, the column and how many.
+    expect(next.body.items[0].namedBy).toEqual([
+      expect.objectContaining({ table: "tasks", column: "attachment", rows: 2 }),
+    ]);
+    // A wildcard typed in the search is text.
+    expect((await alice.get(`${ws()}/files?search=%25`)).body.items).toEqual([]);
+    expect((await alice.get(`${ws()}/files?limit=0`)).status).toBe(400);
+    for (const id of [first, second, third]) {
+      await alice.delete(`${ws()}/files/${id}`);
+    }
   });
 
   test("a deleted row's files are kept for the audit period, as a replaced one is", async () => {

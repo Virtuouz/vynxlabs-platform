@@ -1,4 +1,4 @@
-import type { Manifest, PageFile, SearchHit } from "@volvel/docs-engine";
+import type { Manifest, Marked, PageFile, PageHit } from "@volvel/docs-engine";
 import { resolveLink } from "@volvel/docs-engine";
 import { Button, CheckboxField, Doc, Notice, Skeleton } from "@volvel/ui";
 import { ArrowLeft, ExternalLink, Link2, Search, X } from "lucide-react";
@@ -79,7 +79,7 @@ export function HelpPanel({
     shown ? () => loadPage(shown.path) : undefined,
     shown?.path ?? "",
   );
-  const hits = useLoaded<SearchHit[]>(
+  const hits = useLoaded<PageHit[]>(
     query.trim() === "" ? undefined : () => searchHelp(query),
     query.trim(),
   );
@@ -135,7 +135,8 @@ export function HelpPanel({
 
   // What the reader's own team has added to this topic of the help, from pages they may open.
   const team = useWorkspaceTerms(tenantId, workspaceId);
-  const shownTopic = ready?.pages.find((one) => one.path === shown?.path)?.topic;
+  const shownEntry = ready?.pages.find((one) => one.path === shown?.path);
+  const shownTopic = shownEntry?.topic;
   const fromTeam = shownTopic ? team.extensions.filter((one) => one.topic === shownTopic) : [];
 
   const copyLink = async () => {
@@ -229,6 +230,9 @@ export function HelpPanel({
           </Notice>
         ) : (
           <>
+            {shownEntry?.since ? (
+              <p className="m-0 mb-3 text-meta text-ink-muted">New in version {shownEntry.since}</p>
+            ) : null}
             <Doc
               tree={page.value.tree}
               profile="product"
@@ -312,7 +316,8 @@ function Results({
   hits,
   onOpen,
 }: {
-  hits: Loaded<SearchHit[]> | undefined;
+  hits: Loaded<PageHit[]> | undefined;
+  /** A page's path, with `#heading` when a place on it was chosen. */
   onOpen: (path: string) => void;
 }) {
   if (!hits || hits.state === "loading") {
@@ -336,11 +341,59 @@ function Results({
             onClick={() => onOpen(hit.path)}
             className="flex w-full flex-col gap-0.5 rounded-control border-0 bg-transparent px-2 py-1.5 text-left hover:bg-sunken"
           >
-            <span className="font-medium">{hit.title}</span>
-            <span className="text-meta text-ink-muted">{hit.description || hit.excerpt}</span>
+            <span className="font-medium">
+              <Words words={hit.title} />
+            </span>
+            {hit.description ? (
+              <span className="text-meta text-ink-muted">{hit.description}</span>
+            ) : null}
           </button>
+          {hit.places.length > 0 ? (
+            <ul
+              className="m-0 mb-1 ml-4 flex list-none flex-col gap-0.5 border-line border-l p-0 pl-2"
+              aria-label={`In ${plain(hit.title)}`}
+            >
+              {hit.places.map((place) => {
+                const anchor = place.url.split("#")[1];
+                return (
+                  <li key={place.url + place.type}>
+                    <button
+                      type="button"
+                      onClick={() => onOpen(anchor ? `${hit.path}#${anchor}` : hit.path)}
+                      className="w-full rounded-control border-0 bg-transparent px-2 py-1 text-left text-meta text-ink-muted hover:bg-sunken"
+                    >
+                      <span className={place.type === "heading" ? "text-ink" : undefined}>
+                        <Words words={place.words} />
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : null}
         </li>
       ))}
     </ul>
+  );
+}
+
+const plain = (words: Marked) => words.map((word) => word.text).join("");
+
+/** Words, with what was asked for set in bold. */
+function Words({ words }: { words: Marked }) {
+  return (
+    <>
+      {words.map((word, at) =>
+        word.hit ? (
+          // biome-ignore lint/suspicious/noArrayIndexKey: the words are a fixed run of one answer
+          <mark key={at} className="bg-transparent font-semibold text-ink">
+            {word.text}
+          </mark>
+        ) : (
+          // biome-ignore lint/suspicious/noArrayIndexKey: the words are a fixed run of one answer
+          <span key={at}>{word.text}</span>
+        ),
+      )}
+    </>
   );
 }

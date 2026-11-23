@@ -9,7 +9,7 @@ import {
   type ResourceLike,
   urlOf,
 } from "@volvel/docs-engine";
-import { keyOf, readFormAnswer } from "@volvel/manifest";
+import { APP_POLICY, keyOf, readFormAnswer } from "@volvel/manifest";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { MIN_PASSWORD_LENGTH } from "../../config.js";
 import { ANONYMOUS, type Db, type Principal, writeAudit } from "../audit.js";
@@ -81,20 +81,6 @@ interface Tenant {
   name: string;
 }
 
-/** What an app's page may load and do. No inline script, and nothing from another site. */
-const APP_POLICY = [
-  "default-src 'self'",
-  "script-src 'self'",
-  // Components set styles on elements, which a policy without this would refuse.
-  "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob:",
-  "font-src 'self' data:",
-  "connect-src 'self'",
-  "object-src 'none'",
-  "base-uri 'self'",
-  "form-action 'self'",
-  "frame-ancestors 'self'",
-].join("; ");
 /** The platform's own pages have no script at all. */
 const PAGE_POLICY = [
   "default-src 'none'",
@@ -1041,7 +1027,7 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
       runtime?.get(asset.path)?.content ?? (await readAsset(kernel, tenant.id, asset.sha256));
     if (isPage || asset.path === entry) {
       // The names of the app's pages: the page that draws before the app is read says them,
-      // so a slow first load shows where the person is going, not grey shapes.
+      // so a slow first load shows where the person is going, not gray shapes.
       const interfaceBody =
         generated && typeof body.interface === "string"
           ? (bundle.manifests.find(

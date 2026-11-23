@@ -263,9 +263,18 @@ test("removing a page that actions open names them in the question, and keeps th
   const dialog = within(await screen.findByRole("dialog"));
   expect(dialog.getByText(/All invoices, on Money/)).toBeTruthy();
   expect(dialog.getByText(/stops working|will open nothing/)).toBeTruthy();
-  fireEvent.click(dialog.getByRole("button", { name: "Cancel" }));
+  // Each can be gone to first: the question closes, and nothing is removed.
+  fireEvent.click(dialog.getByRole("button", { name: "Show All invoices, on Money" }));
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   expect(stored.pages).toHaveLength(2);
+  // It went to the page the action is on.
+  await waitFor(() =>
+    expect(
+      within(screen.getByRole("heading", { name: "Pages" }).closest("section") as HTMLElement)
+        .getByRole("button", { name: /Money\s*Page/ })
+        .closest("li")?.className,
+    ).toContain("bg-selected"),
+  );
 });
 
 test("a side sheet is previewed with a sample record, and another can be chosen", async () => {

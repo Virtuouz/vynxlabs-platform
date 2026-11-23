@@ -86,3 +86,23 @@ describe("enum columns, and references that say what a delete does", () => {
     });
   });
 });
+
+/** The manifest takes the platform's own columns in an index, so the SDK's types do too (TAB-P4). */
+describe("a table's indexes", () => {
+  test("an index may name the columns the platform fills in, and not one that does not exist", () => {
+    const table = defineTable({
+      path: "events",
+      columns: { kind: column.text() },
+      indexes: [["kind", "created_at"], ["updated_at"], ["id"]],
+    });
+    expect(table.toManifest("events").body).toMatchObject({
+      indexes: [["kind", "created_at"], ["updated_at"], ["id"]],
+    });
+    defineTable({
+      path: "events",
+      columns: { kind: column.text() },
+      // @ts-expect-error there is no such column
+      indexes: [["nope"]],
+    });
+  });
+});

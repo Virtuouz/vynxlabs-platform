@@ -113,34 +113,58 @@ async function fileColumns(kernel: Kernel, tenantId: string, workspaceId?: strin
   return query.execute();
 }
 
+/** A table that names a file: which table and column, and how many rows (none known when it could not be asked). */
+export interface FileNaming {
+  table: string;
+  column: string;
+  rows: number | null;
+}
+
 /**
- * Which of these files a row of the tenant still names, in any table of any workspace, a
- * dedicated database's included. A table that cannot be asked counts as naming them: a file
- * kept in doubt is better than one a row points to that is gone.
+ * What names each of these files: for each, the tables and columns whose rows hold it, in any
+ * table of any workspace, a dedicated database's included. A file no row names has no entry. A
+ * table that cannot be asked names every file, with no count: a file kept in doubt is better
+ * than one a row points to that is gone.
  */
+export async function namingOf(
+  kernel: Kernel,
+  tenantId: string,
+  ids: string[],
+  workspaceId?: string,
+): Promise<Map<string, FileNaming[]>> {
+  const naming = new Map<string, FileNaming[]>();
+  if (ids.length === 0) return naming;
+  const add = (id: string, one: FileNaming) => naming.set(id, [...(naming.get(id) ?? []), one]);
+  const store = await kernel.data.forTenant(tenantId);
+  for (const column of await fileColumns(kernel, tenantId, workspaceId)) {
+    try {
+      const found = await sql<{ id: string; rows: string }>`
+        select ${sql.ref(column.column)}::text as id, count(*) as rows
+        from ${sql.id(workspaceSchema(column.workspaceId), column.table)}
+        where ${sql.ref(column.column)} in (${sql.join(ids)})
+        group by 1
+      `.execute(store.owner);
+      for (const row of found.rows) {
+        add(row.id, { table: column.tableName, column: column.columnName, rows: Number(row.rows) });
+      }
+    } catch (error) {
+      kernel.log.warn({ err: error, table: column.tableName }, "a file column could not be read");
+      for (const id of ids) {
+        add(id, { table: column.tableName, column: column.columnName, rows: null });
+      }
+    }
+  }
+  return naming;
+}
+
+/** Which of these files a row of the tenant still names (see `namingOf`). */
 export async function namedFiles(
   kernel: Kernel,
   tenantId: string,
   ids: string[],
   workspaceId?: string,
 ): Promise<Set<string>> {
-  const named = new Set<string>();
-  if (ids.length === 0) return named;
-  const store = await kernel.data.forTenant(tenantId);
-  for (const column of await fileColumns(kernel, tenantId, workspaceId)) {
-    try {
-      const found = await sql<{ id: string }>`
-        select distinct ${sql.ref(column.column)}::text as id
-        from ${sql.id(workspaceSchema(column.workspaceId), column.table)}
-        where ${sql.ref(column.column)} in (${sql.join(ids)})
-      `.execute(store.owner);
-      for (const row of found.rows) named.add(row.id);
-    } catch (error) {
-      kernel.log.warn({ err: error, table: column.tableName }, "a file column could not be read");
-      for (const id of ids) named.add(id);
-    }
-  }
-  return named;
+  return new Set((await namingOf(kernel, tenantId, ids, workspaceId)).keys());
 }
 
 /**

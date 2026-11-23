@@ -1,4 +1,9 @@
-import { FORM_RESERVED_NAMES, RESPONSE_HEADERS_REFUSED } from "@volvel/manifest";
+import {
+  checkFlow,
+  FORM_RESERVED_NAMES,
+  type FlowBody as ManifestFlow,
+  RESPONSE_HEADERS_REFUSED,
+} from "@volvel/manifest";
 import {
   Appear,
   Button,
@@ -31,10 +36,12 @@ import {
   type ReactFlowInstance,
   useEdgesState,
   useNodesState,
+  useUpdateNodeInternals,
   type Viewport,
 } from "@xyflow/react";
 import { ago } from "../kit/format.ts";
 import { glide } from "../kit/motion.ts";
+import { listenChoices } from "../kit/platformEvents.ts";
 import "@xyflow/react/dist/style.css";
 import { Play, Plus, Redo2, TriangleAlert, Undo2 } from "lucide-react";
 import {
@@ -60,12 +67,22 @@ import { formatCombo, isTyping, keysOf, useShortcut } from "../kit/keys.ts";
 import { Loading } from "../kit/LoadState.tsx";
 import { PageHeader } from "../kit/PageHeader.tsx";
 import { RemoveDraftButton } from "../kit/RemoveDraftButton.tsx";
+import { inWords } from "../kit/refusalWords.ts";
 import { retryAfter } from "../kit/retry.ts";
 import { SplitPane } from "../kit/SplitPane.tsx";
-import { type RunState, STATE_STROKE, StatePill, stateLabel, Tag } from "../kit/status.tsx";
+import { type RunState, STATE_STROKE, StatePill, Tag } from "../kit/status.tsx";
 import { navigate, useNavigationGuard, useUrlParam } from "../router.tsx";
 import { outlineIcon } from "./builder/widgetIcons.ts";
 import { ExpressionField, ExpressionPreview } from "./ExpressionField.tsx";
+import {
+  ApproversFields,
+  DurationField,
+  EventStartFields,
+  GrantsFields,
+  InputSchemaField,
+  MAX_TAGS,
+  TagsField,
+} from "./FlowStepFields.tsx";
 import {
   FormDesigner,
   missingInputs,
@@ -74,6 +91,7 @@ import {
   type PickableNode,
   type Picked,
   RespondSettings,
+  updateGrants,
   WebhookSettings,
 } from "./FlowSteps.tsx";
 import { useFlowRunLive } from "./Flows.tsx";
@@ -217,22 +235,46 @@ const PALETTE: {
   },
 ];
 
+/** The most items a For each runs at once. */
+const MAX_AT_ONCE = 20;
+
+/**
+ * What a script step becomes when it runs another script: the fields the new script
+ * has keep what was written, and what the old script's picks handed over is taken back
+ * while the new script's picks hand over theirs. A grant written by hand stays.
+ */
+export function changedScript(
+  node: FlowNode,
+  script: string,
+  specs: ReadonlyMap<string, PickableNode>,
+): Partial<FlowNode> {
+  const before = specs.get(String(node.script));
+  const after = specs.get(script);
+  const inputs = node.inputs as Record<string, string> | undefined;
+  if (node.input !== undefined || !inputs) return { script };
+  const known = after ? Object.keys(after.input.properties ?? {}) : undefined;
+  const kept = Object.fromEntries(
+    Object.entries(inputs).filter(([name]) => known === undefined || known.includes(name)),
+  );
+  let grants = node.with;
+  if (before) grants = updateGrants(before, grants, inputs, {});
+  if (after) grants = updateGrants(after, grants, {}, kept);
+  return { script, inputs: kept, with: grants };
+}
+
 /** The handles a node offers for edges leaving it: one per case of a branch, and the error path. */
 function outputs(node: FlowNode): { id: string; label: string }[] {
   if (node.type === "branch") {
     const cases = (node.cases as { name: string }[] | undefined) ?? [];
+    // A condition that cannot be worked out fails the step, so a branch has an error path too.
     return [
       ...cases.map((one) => ({ id: `case:${one.name}`, label: one.name })),
       { id: `case:${OTHERWISE}`, label: OTHERWISE },
+      { id: "error", label: "on error" },
     ];
   }
   if (node.type === "fail") return [];
-  if (
-    node.type === "trigger" ||
-    node.type === "join" ||
-    node.type === "set" ||
-    node.type === "delay"
-  ) {
+  if (node.type === "trigger" || node.type === "join" || node.type === "delay") {
     return [{ id: "next", label: "" }];
   }
   return [
@@ -251,8 +293,17 @@ export const NodeRuns = createContext<ReadonlyMap<string, { state: RunState; too
 function FlowNodeCard({ data, selected }: NodeProps<CanvasNode>) {
   const { id, node } = data;
   const out = outputs(node);
+  const sides = out.filter((one) => one.id !== "error");
   const named = useContext(NodeNames).get(String(node.script ?? ""));
   const ran = useContext(NodeRuns).get(id);
+  // React Flow measures a node's handles once. A case renamed makes new handle ids, and an edge
+  // to a handle it has not measured is not drawn until a reload.
+  const updateInternals = useUpdateNodeInternals();
+  const handleIds = out.map((handle) => handle.id).join("\u0000");
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the ids are the trigger
+  useEffect(() => {
+    updateInternals(id);
+  }, [id, handleIds, updateInternals]);
   return (
     <div
       className={`w-52 rounded-control border bg-surface px-3 py-2 [.dragging_&]:shadow-drag ${
@@ -271,7 +322,7 @@ function FlowNodeCard({ data, selected }: NodeProps<CanvasNode>) {
           <StatePill state={ran.state} detail={ran.took} />
         </div>
       ) : null}
-      {out.map((handle, index) => (
+      {out.map((handle) => (
         <Handle
           key={handle.id}
           id={handle.id}
@@ -280,8 +331,8 @@ function FlowNodeCard({ data, selected }: NodeProps<CanvasNode>) {
           style={
             handle.id === "error"
               ? { background: "var(--vx-danger)" }
-              : out.filter((one) => one.id !== "error").length > 1
-                ? { top: `${((index + 1) / (out.length + 1)) * 100}%` }
+              : sides.length > 1
+                ? { top: `${((sides.indexOf(handle) + 1) / (sides.length + 1)) * 100}%` }
                 : {}
           }
           title={handle.label || "next"}
@@ -434,6 +485,33 @@ export interface Problem {
   field?: string;
 }
 
+/**
+ * What the build and a deploy check about a flow's graph that the editor's own list did not
+ * name, in words. A step the editor already names is left to it, so one fault is said once.
+ */
+export function manifestProblems(
+  nodes: Record<string, FlowNode>,
+  edges: GraphEdge[],
+  named: Problem[],
+): Problem[] {
+  let issues: { path: string; message: string }[];
+  try {
+    issues = checkFlow({ nodes, edges } as unknown as ManifestFlow);
+  } catch {
+    return [];
+  }
+  const seen = new Set(named.map((one) => one.node).filter(Boolean));
+  const out: Problem[] = [];
+  for (const issue of issues) {
+    const node = /^\/body\/nodes\/([^/]+)/.exec(issue.path)?.[1];
+    if (node && seen.has(node)) continue;
+    // A fault of the flow as a whole is said once, and only when nothing else is.
+    if (!node && named.length > 0) continue;
+    out.push({ message: inWords(`${issue.path} ${issue.message}`), ...(node ? { node } : {}) });
+  }
+  return out;
+}
+
 /** What is wrong with a flow that can be seen without asking the server, as words. */
 export const problemsOf = (...args: Parameters<typeof problemsAt>): string[] =>
   problemsAt(...args).map((one) => one.message);
@@ -503,7 +581,8 @@ export function problemsAt(
         type: string;
         respond?: string;
         title?: string;
-        verify?: { header?: string; secret?: string };
+        verify?: { header?: string; secret?: string; signed?: string; timestampHeader?: string };
+        tags?: string[];
         fields?: { name: string; label: string; type: string; options?: string[] }[];
       };
       if (trigger.type === "webhook" && trigger.respond === "flow" && !answers) {
@@ -517,6 +596,24 @@ export function problemsAt(
           message: `${id} checks a signature and has no secret chosen.`,
           node: id,
           field: "secret",
+        });
+      }
+      if (
+        trigger.type === "webhook" &&
+        trigger.verify?.signed?.includes("{timestamp}") &&
+        !trigger.verify.timestampHeader
+      ) {
+        problems.push({
+          message: `${id} signs the timestamp and names no header it is sent in.`,
+          node: id,
+          field: "verify-timestamp-header",
+        });
+      }
+      if ((trigger.tags ?? []).length > MAX_TAGS) {
+        problems.push({
+          message: `${id} gives more than ${MAX_TAGS} tags.`,
+          node: id,
+          field: "tags",
         });
       }
       if (trigger.type === "form") {
@@ -551,6 +648,29 @@ export function problemsAt(
             });
           }
         }
+      }
+    }
+    if (
+      node.type === "foreach" &&
+      typeof node.concurrency === "number" &&
+      (node.concurrency < 1 || node.concurrency > MAX_AT_ONCE)
+    ) {
+      problems.push({
+        message: `${id} runs ${node.concurrency} at once: choose from 1 to ${MAX_AT_ONCE}.`,
+        node: id,
+        field: "concurrency",
+      });
+    }
+    for (const [field, seconds] of [
+      ["seconds", node.type === "delay" ? node.seconds : undefined],
+      ["timeout", node.type === "approval" ? node.timeoutSeconds : undefined],
+    ] as const) {
+      if (typeof seconds === "number" && seconds > 2592000) {
+        problems.push({
+          message: `${id} waits longer than the most allowed, 30 days.`,
+          node: id,
+          field,
+        });
       }
     }
     if (node.type === "subflow" && node.flowFrom === undefined && !node.flow) {
@@ -712,9 +832,9 @@ export function FlowEditor({
   const core = useLoad<{ items: PickableNode[] }>("/core-nodes");
   const secrets = useLoad<{ items: { name: string }[] }>(`${root}/secrets`);
   const flows = useLoad<{ items: { path: string; description: string }[] }>(`${root}/flows`);
-  const drafts = useLoad<{ items: { path: string; kind: string; deleted: boolean }[] }>(
-    `${root}/drafts`,
-  );
+  const drafts = useLoad<{
+    items: { path: string; kind: string; deleted: boolean; mode?: string }[];
+  }>(`${root}/drafts`);
   const events = useLoad<{ items: { path: string; kind: string; body?: { mode?: string } }[] }>(
     `${root}/resources?limit=200`,
   );
@@ -741,7 +861,13 @@ export function FlowEditor({
       if (one.kind === kind && (!mode || one.body?.mode === mode)) known.set(one.path, undefined);
     }
     for (const draft of drafts.data?.items ?? []) {
-      if (draft.kind === kind && !draft.deleted && !known.has(draft.path) && !mode)
+      // A draft of a source says how it is asked, so it is offered where that kind is wanted.
+      if (
+        draft.kind === kind &&
+        !draft.deleted &&
+        !known.has(draft.path) &&
+        (!mode || draft.mode === mode)
+      )
         known.set(draft.path, "A draft, not yet deployed.");
     }
     return [...known].map(([value, hint]) => ({ value, label: value, ...(hint ? { hint } : {}) }));
@@ -758,7 +884,7 @@ export function FlowEditor({
   }));
   /**
    * Every script a step can run, each with a form for its input: the platform's,
-   * the workspace's labelled ones, then the rest by their path. A plain script's
+   * the workspace's labeled ones, then the rest by their path. A plain script's
    * form is drawn from its input schema.
    */
   const pickable = useMemo<PickableNode[]>(
@@ -779,6 +905,14 @@ export function FlowEditor({
     [core.data, scripts.data],
   );
   const specs = useMemo(() => new Map(pickable.map((one) => [one.path, one])), [pickable]);
+  /** Every script a step can run: the platform's and the workspace's by their labels, then drafts. */
+  const stepScripts = useMemo<Option[]>(() => {
+    const listed = new Set(pickable.map((one) => one.path));
+    return [
+      ...pickable.map((one) => ({ value: one.path, label: one.label, hint: one.path })),
+      ...scriptOptions.filter((one) => !listed.has(one.value)),
+    ];
+  }, [pickable, scriptOptions]);
   const names = useMemo(() => new Map(pickable.map((one) => [one.path, one.label])), [pickable]);
 
   /** A change to the graph: saved a moment later, and no longer what the last test ran. */
@@ -865,7 +999,13 @@ export function FlowEditor({
           `${root}/resources/${opened}`,
         );
         if (!current) return;
-        open(resource.body);
+        // Where the flow was arranged on its page since is newer than the positions in its body.
+        const arranged = await api
+          .get<{ layout?: FlowBody["layout"] }>(`${root}/flows/${opened}`)
+          .then((page) => page.layout)
+          .catch(() => undefined);
+        if (!current) return;
+        open(arranged ? { ...resource.body, layout: arranged } : resource.body);
         setState(resource.ownership === "ui" ? "deployed" : "repository");
       }
     })().catch((error) => current && setProblem(failureText(error)));
@@ -879,10 +1019,12 @@ export function FlowEditor({
     [nodes],
   );
   const flowEdges = useMemo(() => edges.map(toFlowEdge), [edges]);
-  const found = useMemo(
-    () => problemsAt(flowNodes, flowEdges, specs),
-    [flowNodes, flowEdges, specs],
-  );
+  const found = useMemo(() => {
+    const own = problemsAt(flowNodes, flowEdges, specs);
+    // What a deploy refuses is told here too, in the same words, so the two lists agree.
+    const refused = manifestProblems(flowNodes, flowEdges, own);
+    return [...own, ...refused];
+  }, [flowNodes, flowEdges, specs]);
   const chosen = nodes.find((node) => node.id === selected);
 
   const add = (entry: { base: string; make: () => FlowNode }) => {
@@ -1271,6 +1413,7 @@ export function FlowEditor({
       !dirty ||
       busy ||
       gaveUp ||
+      draft.clashed ||
       state === "new" ||
       state === "repository" ||
       state === "removed"
@@ -1286,7 +1429,7 @@ export function FlowEditor({
       if (failures.current >= 5) setGaveUp(true);
     }, wait);
     return () => clearTimeout(timer);
-  }, [dirty, busy, gaveUp, state, nodes, edges, description]);
+  }, [dirty, busy, gaveUp, state, nodes, edges, description, draft.clashed]);
   // A change after giving up is worth trying again.
   // biome-ignore lint/correctness/useExhaustiveDependencies: a change is the reason to try again
   useEffect(() => {
@@ -1436,16 +1579,18 @@ export function FlowEditor({
   const matches = (label: string, hint?: string) =>
     !wanted || label.toLowerCase().includes(wanted) || (hint ?? "").toLowerCase().includes(wanted);
   const saveState = dirty
-    ? state === "new" || state === "repository"
-      ? "Not saved"
-      : gaveUp
-        ? "Could not save."
-        : failures.current > 0
-          ? "Could not save. Trying again…"
-          : "Saving…"
+    ? draft.clashed
+      ? "Not saved: someone else saved this flow"
+      : state === "new" || state === "repository"
+        ? "Not saved"
+        : gaveUp
+          ? "Could not save."
+          : failures.current > 0
+            ? "Could not save. Trying again…"
+            : "Saving…"
     : savedAt
       ? `Draft saved ${ago(savedAt)}`
-      : stateLabel(state === "removed" ? "draft" : state);
+      : "";
 
   const keepViewport = (viewport: Viewport) => {
     if (!path) return;
@@ -1625,8 +1770,8 @@ export function FlowEditor({
                   >
                     <Background />
                     <Controls />
-                    {/* With the test panel open the canvas is short, and the map would cover the graph. */}
-                    {testing ? null : <MiniMap pannable zoomable />}
+                    {/* With the test panel open the canvas is short, and on a phone it is small: the map would cover the graph. */}
+                    {testing ? null : <MiniMap pannable zoomable className="max-sm:hidden" />}
                   </ReactFlow>
                 </NodeRuns.Provider>
               </NodeNames.Provider>
@@ -1700,6 +1845,17 @@ export function FlowEditor({
                           })
                         }
                       />
+                      {(node.trigger as { type: string }).type === "manual" ? (
+                        <InputSchemaField
+                          value={(node.trigger as { input?: Record<string, unknown> }).input}
+                          onChange={(input) => {
+                            const { input: _was, ...rest } = node.trigger as { input?: unknown };
+                            update(chosen.id, {
+                              trigger: (input ? { ...rest, input } : rest) as FlowNode["trigger"],
+                            });
+                          }}
+                        />
+                      ) : null}
                       {(node.trigger as { type: string }).type === "webhook" ? (
                         <WebhookSettings
                           trigger={node.trigger as Parameters<typeof WebhookSettings>[0]["trigger"]}
@@ -1755,37 +1911,48 @@ export function FlowEditor({
                         />
                       ) : null}
                       {(node.trigger as { type: string }).type === "event" ? (
-                        <ComboboxField
-                          label="Event"
-                          options={eventOptions}
-                          value={(node.trigger as { event?: string }).event || undefined}
-                          onChange={(event) =>
-                            update(chosen.id, {
-                              trigger: { ...(node.trigger as object), event: event ?? "" },
-                            })
-                          }
-                        />
+                        <>
+                          <EventStartFields
+                            events={listenChoices(eventOptions)}
+                            event={(node.trigger as { event?: string }).event}
+                            filter={(node.trigger as { filter?: string }).filter}
+                            onEvent={(event) =>
+                              update(chosen.id, { trigger: { ...(node.trigger as object), event } })
+                            }
+                            onFilter={(filter) => {
+                              const { filter: _was, ...rest } = node.trigger as { filter?: string };
+                              update(chosen.id, {
+                                trigger: (filter === undefined
+                                  ? rest
+                                  : { ...rest, filter }) as FlowNode["trigger"],
+                              });
+                            }}
+                          />
+                          <TagsField
+                            value={(node.trigger as { tags?: string[] }).tags}
+                            given="the event's payload"
+                            onChange={(tags) => {
+                              const { tags: _was, ...rest } = node.trigger as { tags?: string[] };
+                              update(chosen.id, {
+                                trigger: (tags ? { ...rest, tags } : rest) as FlowNode["trigger"],
+                              });
+                            }}
+                          />
+                        </>
                       ) : null}
                     </>
                   ) : null}
-                  {node.type === "script" &&
-                  specs.has(String(node.script)) &&
-                  node.input === undefined ? (
-                    <p className="m-0 text-body-sm">
-                      <span className="font-semibold">{specs.get(String(node.script))?.label}</span>{" "}
-                      <code className="font-mono text-code-sm text-ink-muted">
-                        {String(node.script)}
-                      </code>
-                    </p>
-                  ) : node.type === "script" || node.type === "foreach" ? (
+                  {node.type === "script" || node.type === "foreach" ? (
                     <ComboboxField
                       label="Script"
-                      options={scriptOptions}
+                      options={stepScripts}
                       value={(node.script as string | undefined) || undefined}
                       onChange={(script) =>
                         // A For each runs a script or a flow: choosing one clears the other.
                         update(chosen.id, {
-                          script: script ?? (node.type === "foreach" ? undefined : ""),
+                          ...(node.type === "script"
+                            ? changedScript(node, script ?? "", specs)
+                            : { script }),
                           ...(node.type === "foreach" && script
                             ? { flow: undefined, flowFrom: undefined, allow: undefined }
                             : {}),
@@ -1870,6 +2037,23 @@ export function FlowEditor({
                       }
                     />
                   ) : null}
+                  {node.type === "foreach" ? (
+                    <NumberField
+                      name="concurrency"
+                      label="How many at once (optional)"
+                      value={node.concurrency as number | undefined}
+                      min={1}
+                      max={MAX_AT_ONCE}
+                      step={1}
+                      required={false}
+                      hint={`Items run this many at a time, from 1 to ${MAX_AT_ONCE}. Left empty, one at a time.`}
+                      {...(typeof node.concurrency === "number" &&
+                      (node.concurrency < 1 || node.concurrency > MAX_AT_ONCE)
+                        ? { error: `Choose a number from 1 to ${MAX_AT_ONCE}.` }
+                        : {})}
+                      onChange={(concurrency) => update(chosen.id, { concurrency })}
+                    />
+                  ) : null}
                   {node.type === "script" && specs.has(String(node.script)) ? (
                     <NodeInputs
                       node={node}
@@ -1886,12 +2070,22 @@ export function FlowEditor({
                       "An expression. trigger is what started the flow, steps.<name>.output what a step gave.",
                     )
                   ) : null}
+                  {(node.type === "script" || node.type === "foreach") && node.script ? (
+                    <GrantsFields
+                      value={node.with as Parameters<typeof GrantsFields>[0]["value"]}
+                      choices={{
+                        connections: pickChoices.connection,
+                        tables: pickChoices.table,
+                        events: pickChoices.event,
+                      }}
+                      onChange={(grants) => update(chosen.id, { with: grants })}
+                    />
+                  ) : null}
                   {node.type === "delay" ? (
-                    <NumberField
+                    <DurationField
                       name="seconds"
-                      label="Seconds to wait"
+                      label="How long to wait"
                       value={node.seconds as number}
-                      min={1}
                       onChange={(seconds) => update(chosen.id, { seconds: seconds ?? 1 })}
                     />
                   ) : null}
@@ -1904,6 +2098,21 @@ export function FlowEditor({
                         onChange={(title) => update(chosen.id, { title })}
                       />
                       {expression("Detail to show", "detail")}
+                      <DurationField
+                        name="timeout"
+                        label="Give up after"
+                        value={node.timeoutSeconds as number | undefined}
+                        required={false}
+                        hint="When nobody has decided by then, the step fails, and its error path is taken if it has one. Left empty, it waits as long as it takes."
+                        onChange={(timeoutSeconds) => update(chosen.id, { timeoutSeconds })}
+                      />
+                      <ApproversFields
+                        root={root}
+                        value={
+                          node.approvers as { groups?: string[]; roles?: string[] } | undefined
+                        }
+                        onChange={(approvers) => update(chosen.id, { approvers })}
+                      />
                       <SelectField
                         name="surface"
                         label="Where it waits"
@@ -2034,7 +2243,7 @@ export function FlowEditor({
               ) : null}
               <span
                 role="status"
-                className={`text-meta ${gaveUp || failures.current > 0 ? "text-danger" : "text-ink-subtle"}`}
+                className={`text-meta ${gaveUp || draft.clashed || failures.current > 0 ? "text-danger" : "text-ink-subtle"}`}
               >
                 {saveState}
               </span>
@@ -2181,7 +2390,7 @@ export function FlowEditor({
                         disabled={dirty && starterId !== starter.id}
                         onClick={() => {
                           setStarterId(starter.id);
-                          open(starter.body as unknown as FlowBody);
+                          open(starter.body as unknown as ManifestFlow);
                         }}
                       >
                         {starter.label}
@@ -2206,7 +2415,13 @@ export function FlowEditor({
               steps shown are what is deployed now. Keep this flow to take the removal back.
             </Notice>
           ) : null}
-          {draft.clashed ? <DraftClash what="flow" onTake={() => setAgain((n) => n + 1)} /> : null}
+          {draft.clashed ? (
+            <DraftClash
+              what="flow"
+              mine={() => JSON.stringify(toSend.current(), null, 2)}
+              onTake={() => setAgain((n) => n + 1)}
+            />
+          ) : null}
           {state === "repository" ? (
             <Notice tone="attention">
               This flow is managed in the tenant's repository. Saving a draft of it takes it over.

@@ -54,6 +54,76 @@ function State({ domain }: { domain: Domain }) {
   );
 }
 
+/**
+ * What a hostname serves: one app at its root, or the portal and every app by path. The choice
+ * is made when a hostname is added and again when it is changed, so both ask it here.
+ */
+function useServes(
+  base: string,
+  workspaceId: string,
+  active: boolean,
+  start: { serves: "app" | "portal"; app: string },
+) {
+  const [serves, setServes] = useState(start.serves);
+  const [app, setApp] = useState(start.app);
+  const apps = useLoad<{ items: AppSummary[] }>(
+    active && workspaceId ? `${base}/workspaces/${workspaceId}/apps` : null,
+  );
+  const choices = apps.data?.items ?? [];
+  const appPath = choices.some((candidate) => candidate.path === app)
+    ? app
+    : (choices[0]?.path ?? "");
+  const options = choices.map((candidate) => ({
+    value: candidate.path,
+    label: `${candidate.title} (${candidate.path})`,
+  }));
+  const fields = (
+    <>
+      <SelectField
+        label="Serves"
+        name="serves"
+        value={serves}
+        options={[
+          { value: "app", label: "One app, at the hostname's root" },
+          { value: "portal", label: "The portal, and every app by its path" },
+        ]}
+        {...(serves === "portal"
+          ? {
+              hint: "The sign-in pages and the list of apps are at the root, and each app of the workspace is at /its-path/.",
+            }
+          : {})}
+        onChange={(value) => setServes(value === "portal" ? "portal" : "app")}
+      />
+      {serves === "app" ? (
+        <SelectField
+          label="App"
+          name="app"
+          value={appPath}
+          disabled={choices.length === 0}
+          options={options}
+          {...(apps.data && choices.length === 0
+            ? {
+                hint: "This workspace has no apps. Deploy one first, or choose another workspace.",
+              }
+            : {})}
+          error={apps.error?.message}
+          onChange={setApp}
+        />
+      ) : null}
+    </>
+  );
+  return {
+    fields,
+    /** What the API takes for `app`: the empty path is the portal. */
+    chosen: serves === "portal" ? "" : appPath,
+    ready: serves === "portal" || (!apps.loading && appPath !== ""),
+    reset: (to: { serves: "app" | "portal"; app: string }) => {
+      setServes(to.serves);
+      setApp(to.app);
+    },
+  };
+}
+
 function AddDialog({
   base,
   open,
@@ -68,19 +138,11 @@ function AddDialog({
   onAdded: (domain: Domain) => void;
 }) {
   const [chosen, setChosen] = useState("");
-  const [serves, setServes] = useState<"app" | "portal">("app");
-  const [app, setApp] = useState("");
   const [hostname, setHostname] = useState("");
   const [error, setError] = useState<ApiError>();
   const [busy, setBusy] = useState(false);
   const workspaceId = chosen || (workspaces[0]?.id ?? "");
-  const apps = useLoad<{ items: AppSummary[] }>(
-    open && workspaceId ? `${base}/workspaces/${workspaceId}/apps` : null,
-  );
-  const choices = apps.data?.items ?? [];
-  const appPath = choices.some((candidate) => candidate.path === app)
-    ? app
-    : (choices[0]?.path ?? "");
+  const serving = useServes(base, workspaceId, open, { serves: "app", app: "" });
 
   return (
     <SideSheet
@@ -98,7 +160,7 @@ function AddDialog({
           try {
             const domain = await api.post<Domain>(`${base}/domains`, {
               workspaceId,
-              app: serves === "portal" ? "" : appPath,
+              app: serving.chosen,
               hostname: hostname.trim(),
             });
             setHostname("");
@@ -117,43 +179,10 @@ function AddDialog({
           options={workspaces.map((workspace) => ({ value: workspace.id, label: workspace.name }))}
           onChange={(value) => {
             setChosen(value);
-            setApp("");
+            serving.reset({ serves: "app", app: "" });
           }}
         />
-        <SelectField
-          label="Serves"
-          name="serves"
-          value={serves}
-          options={[
-            { value: "app", label: "One app, at the hostname's root" },
-            { value: "portal", label: "The portal, and every app by its path" },
-          ]}
-          {...(serves === "portal"
-            ? {
-                hint: "The sign-in pages and the list of apps are at the root, and each app of the workspace is at /its-path/.",
-              }
-            : {})}
-          onChange={(value) => setServes(value === "portal" ? "portal" : "app")}
-        />
-        {serves === "app" ? (
-          <SelectField
-            label="App"
-            name="app"
-            value={appPath}
-            disabled={choices.length === 0}
-            options={choices.map((candidate) => ({
-              value: candidate.path,
-              label: `${candidate.title} (${candidate.path})`,
-            }))}
-            {...(apps.data && choices.length === 0
-              ? {
-                  hint: "This workspace has no apps. Deploy one first, or choose another workspace.",
-                }
-              : {})}
-            error={apps.error?.message}
-            onChange={setApp}
-          />
-        ) : null}
+        {serving.fields}
         <TextField
           label="Hostname"
           name="hostname"
@@ -166,12 +195,7 @@ function AddDialog({
         {error ? <Notice tone="danger">{error.message}</Notice> : null}
         <div className="mt-1 flex justify-end gap-2">
           <Button onClick={onClose}>Cancel</Button>
-          <Button
-            type="submit"
-            variant="primary"
-            loading={busy}
-            disabled={serves === "app" && (apps.loading || appPath === "")}
-          >
+          <Button type="submit" variant="primary" loading={busy} disabled={!serving.ready}>
             Add hostname
           </Button>
         </div>
@@ -190,6 +214,55 @@ function RecordLine({ label, value }: { label: string; value: string }) {
       </span>
       <CopyButton value={value} label={`Copy ${label.toLowerCase()}`} />
     </div>
+  );
+}
+
+/** Points a hostname at another app, or at the portal, without removing it and adding it again. */
+function ChangeServes({
+  base,
+  domain,
+  onChanged,
+}: {
+  base: string;
+  domain: Domain;
+  onChanged: (domain: Domain) => void;
+}) {
+  const serving = useServes(base, domain.workspaceId, true, {
+    serves: domain.app === "" ? "portal" : "app",
+    app: domain.app,
+  });
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<string>();
+  const changed = serving.chosen !== domain.app;
+  return (
+    <section className="flex flex-col gap-2">
+      <SectionLabel>What it serves</SectionLabel>
+      <form
+        className="flex flex-col gap-3"
+        onSubmit={async (event) => {
+          event.preventDefault();
+          setBusy(true);
+          setProblem(undefined);
+          try {
+            onChanged(
+              await api.patch<Domain>(`${base}/domains/${domain.id}`, { app: serving.chosen }),
+            );
+          } catch (error) {
+            setProblem(failed(error));
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        {serving.fields}
+        {problem ? <Notice tone="danger">{problem}</Notice> : null}
+        <div>
+          <Button type="submit" loading={busy} disabled={!changed || !serving.ready}>
+            Change what it serves
+          </Button>
+        </div>
+      </form>
+    </section>
   );
 }
 
@@ -337,6 +410,12 @@ function DetailsDialog({
       {domain ? (
         <div className="flex flex-col gap-5">
           <State domain={domain} />
+          <ChangeServes
+            key={`${domain.id}:${domain.app}`}
+            base={base}
+            domain={domain}
+            onChanged={onChanged}
+          />
           <section className="flex flex-col gap-2">
             <SectionLabel>1 · Point the name here</SectionLabel>
             <p className="m-0 text-ink-muted">

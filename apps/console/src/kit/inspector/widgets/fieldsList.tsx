@@ -22,6 +22,7 @@ import { Layers } from "lucide-react";
 import { useState } from "react";
 import { columnOptions } from "../controls.tsx";
 import { heading, tableOfInput } from "../model.ts";
+import { StartsAs } from "./fieldStart.tsx";
 import { BackHead, dashedFace, type Env, Group, setConfig } from "./recordShared.tsx";
 
 export interface FieldRow {
@@ -32,6 +33,8 @@ export interface FieldRow {
   required?: boolean;
   hidden?: boolean;
   format?: unknown;
+  /** What a form's new record starts with in this field. */
+  initial?: unknown;
   [more: string]: unknown;
 }
 
@@ -192,6 +195,7 @@ export function FieldsList({
           const merged: FieldRow = { ...row, ...change };
           for (const key of ["label", "help"] as const) if (!merged[key]) delete merged[key];
           if (!merged.hidden) delete merged.hidden;
+          if (merged.initial === undefined) delete merged.initial;
           // Not asking for a field the table asks for is said, not left out: an unset one follows the table.
           if (!merged.required && !(kind === "form" && requiredOf(env, row)))
             delete merged.required;
@@ -233,6 +237,23 @@ export function FieldsList({
               label="Format"
               value={open.format as Parameters<typeof NumberFormatRow>[0]["value"]}
               onChange={(format) => patch({ format })}
+            />
+          ) : null}
+          {kind === "form" ? (
+            <StartsAs
+              env={env}
+              row={open}
+              money={
+                type === "Money"
+                  ? {
+                      currency:
+                        (open.format as { currency?: string } | undefined)?.currency ?? "USD",
+                      minorUnits:
+                        (open.format as { minorUnits?: boolean } | undefined)?.minorUnits === true,
+                    }
+                  : undefined
+              }
+              onChange={(initial) => patch({ initial })}
             />
           ) : null}
           <DrawerBlock>

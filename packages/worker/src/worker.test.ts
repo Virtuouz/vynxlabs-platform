@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { existsSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { type Bundle, bundleDigest } from "@volvel/manifest";
@@ -493,6 +494,30 @@ describe("tasks", () => {
       expect.stringMatching(/^GET \/bundles\//),
       `POST /tasks/${control.runIds[0]}/complete`,
     ]);
+  });
+});
+
+describe("a standalone worker's health (HOST-MP7)", () => {
+  it("touches its heartbeat file when the control plane answers a request for work, work or not", async () => {
+    const { mkdtemp, readFile, rm } = await import("node:fs/promises");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const folder = await mkdtemp(join(tmpdir(), "worker-alive-"));
+    const heartbeatFile = join(folder, "alive");
+    const control = await platform([]);
+    const worker = new Worker({
+      url: control.url,
+      token: "wt-secret",
+      claimWaitSeconds: 0,
+      heartbeatFile,
+    });
+    const running = worker.run();
+    await until(() => control.requests.some((request) => request === "POST /claim"), 15_000);
+    await until(() => existsSync(heartbeatFile), 5000);
+    worker.stop();
+    await running;
+    expect((await readFile(heartbeatFile, "utf8")).trim()).toMatch(/^\d{4}-\d\d-\d\dT/);
+    await rm(folder, { recursive: true });
   });
 });
 

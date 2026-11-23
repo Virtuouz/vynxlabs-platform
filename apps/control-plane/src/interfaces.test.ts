@@ -934,6 +934,23 @@ describe("a member's own dashboards", () => {
     expect((await data(mona, "nothing")).status).toBe(404);
   });
 
+  test("what a dashboard is for is kept with it and listed (QSD-MP9)", async () => {
+    const made = await mona.post(base(), { title: "Described" });
+    const saved = await mona.put(`${base()}/${made.body.id}`, {
+      revision: 1,
+      body: { widgets: [], description: "Stock held, counted weekly." },
+    });
+    expect(saved.status, JSON.stringify(saved.body)).toBe(200);
+    expect(saved.body.description).toBe("Stock held, counted weekly.");
+    const listed = (await mona.get(base())).body.items as Any[];
+    expect(listed.find((one) => one.id === made.body.id)).toMatchObject({
+      description: "Stock held, counted weekly.",
+    });
+    // A dashboard that says nothing of what it is for has no description to show.
+    expect(listed.find((one) => one.title === "Stock at a glance")?.description).toBeUndefined();
+    await mona.delete(`${base()}/${made.body.id}`);
+  });
+
   test("a dashboard that is not one is refused, and so is a save over a newer one", async () => {
     const wrong = await mona.put(`${base()}/${id}`, { body: { widgets: [{ id: "a" }] } });
     expect(wrong.status).toBe(400);

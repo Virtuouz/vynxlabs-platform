@@ -112,12 +112,34 @@ function explained(error: unknown): ToastOptions {
   };
 }
 
+/** Whether a change was asked for and waits for a second person: nothing failed and nothing changed yet. */
+export function isWaiting(error: unknown): boolean {
+  return error instanceof ApiError && error.code === "awaiting_approval";
+}
+
+/**
+ * Says that a change waits, in a toast that leads to Releases. For a dialog that asked for a
+ * change: when this returns true the dialog is done and closes, and asking again would only
+ * make a second waiting release. Returns false for any other error, which the dialog shows.
+ */
+export function noteWaiting(error: unknown): boolean {
+  if (!isWaiting(error)) return false;
+  const tenant = /^\/t\/([^/]+)/.exec(window.location.pathname)?.[1];
+  need(toasts).info(failureText(error), {
+    title: "Waits for approval",
+    ...(tenant ? { link: { label: "Open Releases", href: `/t/${tenant}/releases` } } : {}),
+  });
+  return true;
+}
+
 export const notify = {
   /** What was done, naming the result. A link leads to it, such as the thing just made. */
   success: (message: string, options?: ToastOptions) => need(toasts).success(message, options),
   info: (message: string, options?: ToastOptions) => need(toasts).info(message, options),
   error: (error: unknown, options?: ToastOptions) =>
-    need(toasts).danger(failureText(error), { ...explained(error), ...options }),
+    noteWaiting(error)
+      ? 0
+      : need(toasts).danger(failureText(error), { ...explained(error), ...options }),
 };
 
 /** Puts text on the clipboard and says so. */

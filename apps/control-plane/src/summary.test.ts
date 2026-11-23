@@ -1,5 +1,5 @@
 import { sql } from "@volvel/db";
-import { type Bundle, type BundleManifest, bundleDigest } from "@volvel/manifest";
+import { type Bundle, type BundleManifest, bundleDigest, formatFor } from "@volvel/manifest";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { type Client, startTestApp, type TestApp } from "./testing.js";
 
@@ -28,7 +28,38 @@ function bundle(): Bundle {
         output: { type: "object" },
         timeoutSeconds: 30,
         retries: { limit: 0, delaySeconds: 0, backoff: false },
-        uses: { connections: ["erp"], secrets: [], variables: [] },
+        uses: { connections: ["erp"], secrets: [], variables: [], sources: ["warehouse"] },
+      },
+    },
+    {
+      kind: "data_source",
+      schemaVersion: 1,
+      path: "warehouse",
+      ownership: "code",
+      body: { connector: "postgres" },
+    },
+    {
+      kind: "query",
+      schemaVersion: 1,
+      path: "reports/n",
+      ownership: "code",
+      body: { sql: "select 1 as n" },
+    },
+    {
+      kind: "dashboard",
+      schemaVersion: 3,
+      path: "boards/mine",
+      ownership: "code",
+      body: {
+        title: "Mine",
+        widgets: [
+          {
+            id: "n",
+            type: "core/table",
+            at: { x: 0, y: 0, w: 12, h: 6 },
+            data: { rows: { source: { query: "reports/n" } } },
+          },
+        ],
       },
     },
     {
@@ -40,7 +71,7 @@ function bundle(): Bundle {
     },
   ];
   const unsigned = {
-    formatVersion: 1 as const,
+    formatVersion: formatFor(1, manifests),
     sdkVersion: "0.5.0",
     core: { min: "0.0.0", below: "99.0.0" },
     manifests,
@@ -206,6 +237,25 @@ describe("who uses what", () => {
       },
     ]);
     expect((await alice.get(`${ws()}/references?kind=secret`)).body.items).toEqual([]);
+  });
+
+  test("a query is used by the dashboard that shows it, and a data source by the script that reads it (REL-MP7)", async () => {
+    const query = await alice.get(`${ws()}/references?kind=query&name=reports/n`);
+    expect(query.body.items).toEqual([
+      {
+        target: { kind: "query", name: "reports/n" },
+        by: { kind: "dashboard", path: "boards/mine" },
+        how: "shows its rows",
+      },
+    ]);
+    const source = await alice.get(`${ws()}/references?kind=data_source&name=warehouse`);
+    expect(source.body.items).toEqual([
+      {
+        target: { kind: "data_source", name: "warehouse" },
+        by: { kind: "script", path: "orders/sync" },
+        how: "reads and writes it",
+      },
+    ]);
   });
 });
 

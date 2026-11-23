@@ -1,6 +1,6 @@
 /**
  * One column of a table, edited (boards 12 and 13, "Column · Total", "Column · Status"): its
- * heading, how it is shown, alignment and width, sorting, a total, and a colour for each value
+ * heading, how it is shown, alignment and width, sorting, a total, and a color for each value
  * of a choice shown as a badge. It opens from a row of the Display tab, and from a click on the
  * heading on the canvas, where it is drawn beside that heading.
  */
@@ -84,14 +84,28 @@ export function ColumnEditorBody({
       <div className="flex flex-col gap-1.5">
         <span className="text-body-sm text-ink-muted">Shown as</span>
         {number ? (
-          <div className="overflow-hidden rounded-control border border-line-control">
-            <NumberFormatRow
-              label="Format"
-              value={asNumberFormat(spec.format ?? facts?.format)}
-              sample={123.45}
-              onChange={(next) => onChange({ format: next as ValueFormat })}
-            />
-          </div>
+          <>
+            <div className="overflow-hidden rounded-control border border-line-control">
+              <NumberFormatRow
+                label="Format"
+                value={asNumberFormat(spec.format ?? facts?.format)}
+                sample={123.45}
+                onChange={(next) => onChange({ format: next as ValueFormat })}
+              />
+            </div>
+            <FullSegments>
+              <SegmentedControl
+                label="Drawn as"
+                value={spec.as === "bar" || spec.as === "delta" ? spec.as : "text"}
+                options={[
+                  { value: "text", label: "Number" },
+                  { value: "bar", label: "Bar" },
+                  { value: "delta", label: "Change" },
+                ]}
+                onChange={(next) => onChange({ as: next })}
+              />
+            </FullSegments>
+          </>
         ) : isDateType(type) ? (
           <p className="m-0 text-body-sm text-ink">Date, as the table writes dates</p>
         ) : (

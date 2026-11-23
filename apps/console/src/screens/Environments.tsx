@@ -1,8 +1,18 @@
-import { Button, ComboboxField, Notice, SelectField, SideSheet, TextField } from "@volvel/ui";
+import {
+  Button,
+  ComboboxField,
+  Notice,
+  NumberField,
+  SelectField,
+  SideSheet,
+  TextField,
+} from "@volvel/ui";
 import { type ReactNode, useEffect, useState } from "react";
 import { ApiError, api, apiFetch, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
 import { count } from "../kit/format.ts";
+import { ListCollection } from "../kit/ListCollection.tsx";
+import { ErrorState, Loading } from "../kit/LoadState.tsx";
 import {
   KeyValues,
   Panel,
@@ -13,9 +23,9 @@ import {
 } from "../kit/layout.tsx";
 import { consoleLink } from "../kit/objects.tsx";
 import { SaveBar } from "../kit/SaveBar.tsx";
-import { Code, Mono, StatePill, Tag } from "../kit/status.tsx";
+import { Code, lookUp, Mono, StatePill, Tag } from "../kit/status.tsx";
 import { Time } from "../kit/Time.tsx";
-import { ListScreen, Page, RemoveButton, when } from "../ListScreen.tsx";
+import { CreateDialog, Page, RemoveButton, when } from "../ListScreen.tsx";
 import { Link, navigate } from "../router.tsx";
 import { GiveAccess } from "./GiveAccess.tsx";
 
@@ -205,8 +215,10 @@ export function WorkspaceSettings({
   reload: () => void;
 }) {
   const root = `${base}/workspaces/${workspace.id}`;
-  const detail = useLoad<{ timeZone?: string }>(root);
+  const detail = useLoad<{ timeZone?: string; concurrencyLimit?: number }>(root);
   const storedZone = detail.data?.timeZone ?? "UTC";
+  const storedLimit = detail.data?.concurrencyLimit;
+  const [limit, setLimit] = useState<number | undefined | null>(null);
   const [zone, setZone] = useState<string>();
   const [linked, setLinked] = useState<string | null>();
   const [name, setName] = useState<string>();
@@ -216,8 +228,14 @@ export function WorkspaceSettings({
     timeZone: zone ?? storedZone,
     linkedWorkspaceId: linked !== undefined ? linked : workspace.linkedWorkspaceId,
   };
-  const blank = draft.name.trim() === "";
+  const shownLimit = limit === null ? storedLimit : limit;
+  const limitBad =
+    limit !== null &&
+    (limit === undefined || !Number.isInteger(limit) || limit < 1 || limit > 1000);
+  const limitChanged = limit !== null && limit !== storedLimit;
+  const blank = draft.name.trim() === "" || limitBad;
   const dirty =
+    limitChanged ||
     draft.name.trim() !== workspace.name ||
     draft.timeZone !== storedZone ||
     draft.linkedWorkspaceId !== workspace.linkedWorkspaceId;
@@ -225,6 +243,7 @@ export function WorkspaceSettings({
     setName(undefined);
     setZone(undefined);
     setLinked(undefined);
+    setLimit(null);
   };
   const save = async () => {
     if (blank) return;
@@ -233,6 +252,9 @@ export function WorkspaceSettings({
       await api.patch(root, {
         ...(draft.name.trim() !== workspace.name ? { name: draft.name.trim() } : {}),
         ...(draft.timeZone !== storedZone ? { timeZone: draft.timeZone } : {}),
+        ...(limitChanged && limit !== null && limit !== undefined
+          ? { concurrencyLimit: limit }
+          : {}),
         ...(draft.linkedWorkspaceId !== workspace.linkedWorkspaceId
           ? { linkedWorkspaceId: draft.linkedWorkspaceId }
           : {}),
@@ -288,6 +310,29 @@ export function WorkspaceSettings({
         }
       />
       <TimeZoneSetting zone={draft.timeZone} onZone={setZone} />
+      <section aria-labelledby="run-limit" className="flex flex-col gap-3">
+        <h2 id="run-limit" className="m-0 text-title">
+          Run limit
+        </h2>
+        <Panel className="flex flex-col gap-3 p-4">
+          <p className="m-0 text-ink-muted">
+            How many runs of this workspace may be in progress at once. The rest wait their turn.
+          </p>
+          <div className="w-full max-w-xs">
+            <NumberField
+              name="concurrencyLimit"
+              label="Runs at once"
+              value={shownLimit}
+              min={1}
+              max={1000}
+              step={1}
+              onChange={setLimit}
+              hint="1 to 1000."
+              {...(limitBad ? { error: "A whole number from 1 to 1000." } : {})}
+            />
+          </div>
+        </Panel>
+      </section>
       <WorkspaceAccess base={base} workspace={workspace} />
       <SaveBar
         dirty={dirty}
@@ -340,7 +385,7 @@ export function WorkspaceAccess({
         {held.error ? (
           <Notice tone="danger">{failed(held.error)}</Notice>
         ) : held.data === undefined ? (
-          <p className="m-0 text-ink-muted">Loading…</p>
+          <Loading what="who holds a role here" lines={2} />
         ) : held.data.items.length === 0 ? (
           <p className="m-0 text-ink-muted">Nobody holds a role here yet.</p>
         ) : (
@@ -675,7 +720,9 @@ export function Promotion({
         </div>
         {unsaved ? (
           <p className="m-0 max-w-measure text-ink-muted">
-            Save the new target to review a promotion to it.
+            {linked === null
+              ? "Saved, this workspace promotes nowhere. Save to stop, or choose a target again."
+              : "Save the new target to review a promotion to it."}
           </p>
         ) : target ? (
           // The one place that reviews, asks for and makes a promotion is the Release screen's promote step.
@@ -810,25 +857,105 @@ interface Location {
   problem: string | null;
 }
 
+/** What is said of a location whose address is not changed: the database stays, and so does its sign-in. */
+function EditLocation({ row, onDone }: { row: Location; onDone: () => void }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <Button size="small" onClick={() => setOpen(true)}>
+        Edit
+      </Button>
+      <CreateDialog
+        open={open}
+        onClose={() => setOpen(false)}
+        initial={{ description: row.description }}
+        config={{
+          action: "Edit location",
+          description: `Now ${row.database} on ${row.host}. The address is stored encrypted and never shown: leave it empty to keep it, or give a new one to point ${row.name} at another database. A new address is refused unless it holds what the tenants here keep.`,
+          fields: [
+            { name: "description", label: "What it is for", required: false },
+            {
+              name: "connectionString",
+              label: "New connection string",
+              type: "password",
+              required: false,
+              placeholder: "postgres://user:password@host:5432/database",
+              hint: "Stored encrypted, and never shown again.",
+            },
+          ],
+          submit: ({ description = "", connectionString }) =>
+            api.put(`/instance/database-locations/${row.name}`, {
+              description,
+              ...(connectionString ? { connectionString } : {}),
+            }),
+        }}
+        onCreated={() => {
+          setOpen(false);
+          notify.success(`${row.name} is saved.`);
+          onDone();
+        }}
+      />
+    </>
+  );
+}
+
+/** The tenants that keep their tables in one location: where an operator sees what removing or editing it touches. */
+function LocationTenants({ name }: { name: string }) {
+  const loaded = useLoad<{ items: { id: string; name: string; slug: string }[] }>(
+    `/tenants?dataLocation=${encodeURIComponent(name)}&limit=50`,
+  );
+  if (loaded.error)
+    return <ErrorState error={loaded.error} what="its tenants" onRetry={loaded.reload} />;
+  if (!loaded.data) return <Loading what="its tenants" />;
+  if (loaded.data.items.length === 0) {
+    return <p className="m-0 text-body-sm text-ink-muted">No tenant keeps its tables here.</p>;
+  }
+  return (
+    <ul className="m-0 flex list-none flex-col gap-1 p-0">
+      {loaded.data.items.map((one) => (
+        <li key={one.id} className="flex flex-wrap items-baseline gap-2">
+          <Link to={`/t/${one.id}`} className="font-medium text-action">
+            {one.name}
+          </Link>
+          <Mono className="text-ink-subtle">{one.slug}</Mono>
+        </li>
+      ))}
+      <li>
+        <Link to={`/?location=${encodeURIComponent(name)}`} className="text-action text-meta">
+          Show them in the tenant list
+        </Link>
+      </li>
+    </ul>
+  );
+}
+
 export function DatabaseLocations() {
   return (
-    <ListScreen<Location>
+    <ListCollection<Location>
       title="Database locations"
       description="Databases, other than the instance's own, where a tenant's custom tables can live. A tenant is placed in one when it is created or imported."
       path="/instance/database-locations"
       rowKey={(row) => row.name}
       columns={[
         { header: "Name", cell: (row) => <Code>{row.name}</Code> },
-        { header: "For", cell: (row) => <span className="text-ink-muted">{row.description}</span> },
-        { header: "Database", cell: (row) => `${row.database} on ${row.host}` },
-        { header: "Tenants", cell: (row) => row.tenants, align: "end" },
+        {
+          header: "For",
+          priority: 2,
+          cell: (row) => <span className="text-ink-muted">{row.description}</span>,
+        },
+        {
+          header: "Database",
+          priority: 3,
+          cell: (row) => (row.host ? `${row.database} on ${row.host}` : ""),
+        },
+        { header: "Tenants", priority: 2, cell: (row) => row.tenants, align: "end" },
         {
           header: "Status",
           cell: (row) =>
             row.reachable ? (
-              <StatePill state="reachable" />
+              <StatePill state="ok">Reached</StatePill>
             ) : (
-              <StatePill state="unreachable" detail={row.problem ?? undefined} />
+              <StatePill state="failed" detail={row.problem ?? undefined} />
             ),
         },
       ]}
@@ -862,15 +989,46 @@ export function DatabaseLocations() {
             ...(description ? { description } : {}),
           }),
       }}
-      rowActions={(row, reload) =>
-        row.tenants > 0 ? null : (
-          <RemoveButton
-            confirm={`Remove "${row.name}" from this instance? Nothing in that database is touched.`}
-            run={() => api.delete(`/instance/database-locations/${row.name}`)}
-            onDone={reload}
-          />
-        )
-      }
+      rowActions={(row, reload) => (
+        <>
+          <EditLocation row={row} onDone={reload} />
+          {row.tenants > 0 ? null : (
+            <RemoveButton
+              confirm={`Remove "${row.name}" from this instance? Nothing in that database is touched.`}
+              run={() => api.delete(`/instance/database-locations/${row.name}`)}
+              onDone={reload}
+            />
+          )}
+        </>
+      )}
+      inspect={{
+        title: (row) => row.name,
+        eyebrow: () => "Database location",
+        body: (row) => (
+          <div className="flex flex-col gap-5">
+            <KeyValues
+              rows={[
+                { label: "For", value: row.description || "Not said" },
+                {
+                  label: "Database",
+                  value: row.host ? `${row.database} on ${row.host}` : "Its address cannot be read",
+                },
+                {
+                  label: "Status",
+                  value: row.reachable
+                    ? "Reached"
+                    : `Failed${row.problem ? `: ${row.problem}` : ""}`,
+                },
+                { label: "Tenants", value: String(row.tenants) },
+              ]}
+            />
+            <section aria-label="Tenants here" className="flex flex-col gap-2">
+              <SectionLabel>Tenants here</SectionLabel>
+              <LocationTenants name={row.name} />
+            </section>
+          </div>
+        ),
+      }}
     />
   );
 }
@@ -950,12 +1108,74 @@ async function withPassphrase<T>(
   return body as T;
 }
 
-/** One line of what an inspection found, as a state and what it means. */
-function Check({ ok, children }: { ok: boolean | null; children: ReactNode }) {
+/**
+ * One line of what an inspection found, as a state and what it means. A long sentence wraps
+ * under its icon, as it must in a card at a phone's width. `ok` is "note" for what allows the
+ * import and still deserves a look: a warning, not a failure.
+ */
+function Check({ ok, children }: { ok: boolean | null | "note"; children: ReactNode }) {
+  const [, Icon, tone] = lookUp(
+    ok === null ? "unchecked" : ok === "note" ? "warning" : ok ? "ok" : "failed",
+  );
   return (
-    <li>
-      <StatePill state={ok === null ? "unchecked" : ok ? "ok" : "failed"}>{children}</StatePill>
+    <li
+      data-check={ok === "note" ? "note" : ok === null ? "unchecked" : ok ? "ok" : "failed"}
+      className="flex items-start gap-1.5"
+    >
+      <Icon aria-hidden="true" size={14} className={`mt-1 shrink-0 ${tone}`} />
+      <span className={`min-w-0 break-words ${tone}`}>{children}</span>
     </li>
+  );
+}
+
+/** Uploads that were checked and not imported, still kept on the instance: they survive a reload. */
+function WaitingUploads({ onOpen }: { onOpen: (upload: Staged) => void }) {
+  const loaded = useLoad<{ items: (Staged & { here: boolean })[] }>(
+    "/instance/tenant-imports/staged",
+  );
+  if (loaded.error) {
+    return <ErrorState error={loaded.error} what="the uploads that wait" onRetry={loaded.reload} />;
+  }
+  if (!loaded.data) return <Loading what="the uploads that wait" />;
+  if (loaded.data.items.length === 0) return null;
+  return (
+    <section aria-label="Uploads that wait" className="flex max-w-[60rem] flex-col gap-2">
+      <SectionLabel>Uploads that wait</SectionLabel>
+      <p className="m-0 text-body-sm text-ink-muted">
+        Checked and not imported yet. Each is kept for an hour after it came, then removed.
+      </p>
+      <ul className="m-0 flex list-none flex-col gap-2 p-0">
+        {loaded.data.items.map((one) => (
+          <li
+            key={one.id}
+            className="flex flex-wrap items-center justify-between gap-2 rounded-control border border-line p-3"
+          >
+            <span className="flex min-w-0 flex-col gap-0.5">
+              <span className="font-medium">
+                {one.inspection.tenant ? one.inspection.tenant.name : one.fileName}
+              </span>
+              <span className="text-meta text-ink-muted">
+                {one.fileName} · {bytes(one.sizeBytes)} · kept until {when(one.expiresAt)}
+                {one.here ? "" : ". Another replica keeps the file: upload it again"}
+              </span>
+            </span>
+            <span className="flex gap-2">
+              {one.here ? (
+                <Button size="small" onClick={() => onOpen(one)}>
+                  Open
+                </Button>
+              ) : null}
+              <RemoveButton
+                label="Throw away"
+                confirm={`Throw away ${one.fileName}? The file is removed from the instance. The export it came from is not touched.`}
+                run={() => api.delete(`/instance/tenant-imports/staged/${one.id}`)}
+                onDone={loaded.reload}
+              />
+            </span>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 
@@ -1065,13 +1285,16 @@ export function TenantImport() {
                 : "the instance's own database."}
             </li>
             <li>
-              All {report.pausedWorkspaces} workspaces arrived with their triggers paused. Resume
-              each one when the instance it came from has stopped.
+              {report.pausedWorkspaces === 1
+                ? "The workspace arrived with its triggers paused. Resume it"
+                : `All ${report.pausedWorkspaces} workspaces arrived with their triggers paused. Resume each one`}{" "}
+              when the instance it came from has stopped.
             </li>
             {report.cancelled.runs + report.cancelled.flowRuns > 0 ? (
               <li>
-                {report.cancelled.runs} runs and {report.cancelled.flowRuns} flow runs were
-                unfinished in the export, and are recorded as cancelled.
+                {report.cancelled.runs} {report.cancelled.runs === 1 ? "run" : "runs"} and{" "}
+                {report.cancelled.flowRuns} flow {report.cancelled.flowRuns === 1 ? "run" : "runs"}{" "}
+                were unfinished in the export, and are recorded as canceled.
               </li>
             ) : null}
             {report.notCarried.map((line) => (
@@ -1155,7 +1378,11 @@ export function TenantImport() {
                       ? "The passphrase opens it"
                       : "The passphrase does not open it"}
                 </Check>
-                <Check ok={inspection.authenticated ?? null}>
+                <Check
+                  ok={
+                    inspection.authenticated === false ? "note" : (inspection.authenticated ?? null)
+                  }
+                >
                   {inspection.authenticated === true
                     ? "Its list of contents is signed with its key, and the signature is right"
                     : inspection.authenticated === false
@@ -1257,54 +1484,63 @@ export function TenantImport() {
           </form>
         </div>
       ) : (
-        <form
-          className="flex max-w-md flex-col gap-3"
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (!file) return;
-            void run(async () => {
-              setStaged(
-                await sendTar<Staged>(
-                  `/instance/tenant-imports/staged${query({ name: file.name })}`,
-                  file,
-                  passphrase,
-                ),
-              );
-              setCheckedWith({ slug: "", passphrase });
-            });
-          }}
-        >
-          <label className="flex flex-col gap-1 text-body-sm font-medium">
-            Export file
-            <input
-              type="file"
-              accept=".tar,application/x-tar"
-              required
-              className="font-normal"
-              onChange={(event) => setFile(event.currentTarget.files?.[0])}
-            />
-          </label>
-          <TextField
-            label="Its passphrase"
-            name="passphrase"
-            type="password"
-            value={passphrase}
-            required={false}
-            autoComplete="off"
-            hint="With it, the check also says whether it opens the file."
-            onChange={setPassphrase}
+        <div className="flex flex-col gap-6">
+          <WaitingUploads
+            onOpen={(upload) => {
+              setProblem(undefined);
+              setStaged(upload);
+              setCheckedWith(undefined);
+            }}
           />
-          {problem ? <Notice tone="danger">{problem}</Notice> : null}
-          <div>
-            <Button type="submit" variant="primary" loading={working} disabled={!file}>
-              {working ? "Uploading…" : "Upload and check"}
-            </Button>
-          </div>
-          <p className="m-0 text-body-sm text-ink-muted">
-            The export must come from an instance at the same version as this one. For a large file,
-            use the command line: <Code>{"volvel tenant import <file>"}</Code>.
-          </p>
-        </form>
+          <form
+            className="flex max-w-md flex-col gap-3"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (!file) return;
+              void run(async () => {
+                setStaged(
+                  await sendTar<Staged>(
+                    `/instance/tenant-imports/staged${query({ name: file.name })}`,
+                    file,
+                    passphrase,
+                  ),
+                );
+                setCheckedWith({ slug: "", passphrase });
+              });
+            }}
+          >
+            <label className="flex flex-col gap-1 text-body-sm font-medium">
+              Export file
+              <input
+                type="file"
+                accept=".tar,application/x-tar"
+                required
+                className="font-normal"
+                onChange={(event) => setFile(event.currentTarget.files?.[0])}
+              />
+            </label>
+            <TextField
+              label="Its passphrase"
+              name="passphrase"
+              type="password"
+              value={passphrase}
+              required={false}
+              autoComplete="off"
+              hint="With it, the check also says whether it opens the file."
+              onChange={setPassphrase}
+            />
+            {problem ? <Notice tone="danger">{problem}</Notice> : null}
+            <div>
+              <Button type="submit" variant="primary" loading={working} disabled={!file}>
+                {working ? "Uploading…" : "Upload and check"}
+              </Button>
+            </div>
+            <p className="m-0 text-body-sm text-ink-muted">
+              The export must come from an instance at the same version as this one. For a large
+              file, use the command line: <Code>{"volvel tenant import <file>"}</Code>.
+            </p>
+          </form>
+        </div>
       )}
     </Page>
   );

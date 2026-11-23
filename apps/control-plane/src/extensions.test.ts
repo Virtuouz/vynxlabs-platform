@@ -690,6 +690,21 @@ export const onLetter = { execute: async (input) => ({ read: input.letter }) };
       expect(await cursorNow()).toBe("scalar");
     });
 
+    test("a source's run that fails when its answer is passed on is counted and traced as failed, never as succeeded (OPS-22)", async () => {
+      const ended = async (state: string) => {
+        const body = (await t.admin.get("/metrics")).body as string;
+        return body
+          .split("\n")
+          .filter((line) => line.startsWith("volvel_runs_finished_total{"))
+          .filter((line) => line.includes(`state="${state}"`))
+          .reduce((sum, line) => sum + Number(line.split(" ").at(-1)), 0);
+      };
+      const bad = await ended("failed");
+      const source = await tick("scalar");
+      expect((await alice.get(`${ws()}/runs/${source.id}`)).body.status).toBe("failed");
+      expect(await ended("failed")).toBe(bad + 1);
+    });
+
     test("one item that does not fit leaves the others started, the refusal visible, and nothing twice", async () => {
       const before = await letters();
       const source = await tick("mixed");

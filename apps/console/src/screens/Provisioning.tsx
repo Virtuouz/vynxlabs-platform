@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
 import { DataTable } from "../kit/DataTable.tsx";
+import { daysChosen, expiryField } from "../kit/expiry.ts";
 import { ErrorState, Loading } from "../kit/LoadState.tsx";
 import { FilterChips, SectionLabel } from "../kit/layout.tsx";
 import { OneTimeSecret } from "../kit/OneTimeSecret.tsx";
@@ -10,7 +11,7 @@ import { LoadMore } from "../kit/paged.tsx";
 import { SaveBar } from "../kit/SaveBar.tsx";
 import { Mono, StatePill } from "../kit/status.tsx";
 import { Time } from "../kit/Time.tsx";
-import { CopyButton, when } from "../ListScreen.tsx";
+import { CopyButton, type CreateConfig, CreateDialog, when } from "../ListScreen.tsx";
 import { useUrlParam } from "../router.tsx";
 
 interface Settings {
@@ -55,6 +56,7 @@ export function Provisioning({
   const [settings, setSettings] = useState<Settings>();
   const [made, setMade] = useState<{ name: string; token: string }>();
   const [busy, setBusy] = useState(false);
+  const [making, setMaking] = useState(false);
   useEffect(() => {
     if (state.data) setSettings(state.data.settings);
   }, [state.data]);
@@ -65,23 +67,22 @@ export function Provisioning({
   const dirty = JSON.stringify(settings) !== JSON.stringify(data.settings);
   const who = audience === "members" ? "member" : "end user";
 
-  const make = async () => {
-    const name = await ask.prompt({
-      title: "Make a token",
-      text: "Name it after what will use it, such as the directory's name. The token is shown once.",
-      label: "Name",
-      action: "Make the token",
-    });
-    if (!name?.trim()) return;
-    try {
+  const makeToken: CreateConfig = {
+    action: "Make the token",
+    description:
+      "Name it after what will use it, such as the directory's name. The token is shown once.",
+    fields: [{ name: "name", label: "Name", placeholder: "Okta" }, expiryField("token")],
+    submit: async (values) => {
+      const days = daysChosen(values);
       const created = await api.post<Token & { token: string }>(`${root}/tokens`, {
-        name: name.trim(),
+        name: (values.name ?? "").trim(),
+        ...(days ? { expiresInDays: days } : {}),
       });
       setMade({ name: created.name, token: created.token });
       state.reload();
-    } catch (error) {
-      notify.error(error);
-    }
+      return created;
+    },
+    done: () => "Made. Copy the token now: it is not shown again.",
   };
   const save = async () => {
     setBusy(true);
@@ -114,7 +115,7 @@ export function Provisioning({
       <section className="flex flex-col gap-2">
         <div className="flex items-center justify-between gap-2">
           <h3 className="m-0 text-emphasis font-semibold">Tokens</h3>
-          <Button variant="primary" onClick={make}>
+          <Button variant="primary" onClick={() => setMaking(true)}>
             Make a token
           </Button>
         </div>
@@ -124,6 +125,12 @@ export function Provisioning({
             <OneTimeSecret value={made.token} noun="token" onDone={() => setMade(undefined)} />
           </Notice>
         ) : null}
+        <CreateDialog
+          config={makeToken}
+          open={making}
+          onClose={() => setMaking(false)}
+          onCreated={() => setMaking(false)}
+        />
         <DataTable<Token>
           variant="static"
           framed

@@ -3,7 +3,7 @@ import type { CSSProperties } from "react";
 /**
  * For a box that scrolls up and down: a soft shadow at the top or the foot while there is more
  * that way, none when it has all been seen. It needs no script (the covers scroll with the
- * content; the shadows stay). `cover` is the colour behind the box.
+ * content; the shadows stay). `cover` is the color behind the box.
  */
 export const edgeShadows = (cover = "var(--color-structure)"): CSSProperties => ({
   backgroundImage: [

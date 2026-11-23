@@ -522,6 +522,17 @@ test("pivot data: the columns can be cut by another period", async () => {
   ]);
 });
 
+test("pivot data: a third breakdown goes between rows and columns, and can be removed (WID-M7)", async () => {
+  show(<Harness start={visits()} definition={pivot} tab="data" />);
+  fireEvent.click(screen.getByRole("button", { name: "Then by" }));
+  const groups = visualOf(last(), "rows").groupBy ?? [];
+  expect(groups).toHaveLength(3);
+  expect(groups[0]).toEqual({ column: "clinic" });
+  expect(groups[2]).toEqual({ column: "issued_at", bucket: "month" });
+  expect(screen.getByRole("button", { name: /^Then by/ })).toBeTruthy();
+  expect(screen.getByRole("button", { name: /^Columns/ }).textContent).toContain("Issued at");
+});
+
 test("pivot display: shading and the two totals, shown unless switched off", () => {
   show(<Harness start={visits()} definition={pivot} tab="display" />);
   // A new pivot is shaded, as board 15 draws it; the switch turns it off.
@@ -562,4 +573,24 @@ test("registered, the chart's display tab draws its own pieces and not the gener
   expect(panel.getAllByRole("heading", { name: "Chart type" })).toHaveLength(1);
   expect(panel.getByRole("radio", { name: /^Pie/ })).toBeTruthy();
   expect(panel.getAllByRole("switch", { name: "Show values on bars" })).toHaveLength(1);
+});
+
+test("a stat on a page with several date ranges says which one it compares across (WID-M8)", async () => {
+  const paid: PageFilter = { ...dateFilter, name: "paid", label: "Paid" };
+  show(<Harness start={unpaid()} definition={stat} tab="display" filters={[dateFilter]} />);
+  fireEvent.click(screen.getByRole("switch", { name: "Compare with the period before" }));
+  expect(screen.queryByLabelText("Compare across")).toBeNull();
+  cleanup();
+  show(
+    <Harness
+      start={unpaid({ compare: true, compareTo: "issued" })}
+      definition={stat}
+      tab="display"
+      filters={[dateFilter, paid]}
+    />,
+  );
+  const across = screen.getByLabelText("Compare across") as HTMLSelectElement;
+  expect([...across.options].map((one) => one.text)).toEqual(["Issued", "Paid"]);
+  fireEvent.change(across, { target: { value: "paid" } });
+  expect(last().config).toMatchObject({ compare: true, compareTo: "paid" });
 });

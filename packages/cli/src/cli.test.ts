@@ -325,3 +325,42 @@ test("init says how to install the CLI and sign in, and writes a tsconfig (CLI-1
     await rm(join(dir, ".."), { recursive: true });
   }
 });
+
+test("instance triggers pause and resume, and show where they stand (INS-MP10)", async () => {
+  await cli(["login", "--url", url, "--token", token]);
+  expect((await cli(["instance", "triggers"])).out).toContain("Triggers are running.");
+  const paused = await cli(["instance", "triggers", "pause", "--reason", "database move"]);
+  expect(paused).toMatchObject({ code: 0, out: expect.stringContaining("paused") });
+  const shown = await cli(["instance", "triggers"]);
+  expect(shown.out).toContain("Every trigger is paused");
+  expect(shown.out).toContain("database move");
+  expect((await t.admin.get("/instance/triggers")).body).toMatchObject({ paused: true });
+  expect((await cli(["instance", "triggers", "resume"])).out).toContain("running again");
+  expect((await t.admin.get("/instance/triggers")).body).toMatchObject({ paused: false });
+  expect((await cli(["instance", "triggers", "stop"])).err).toContain("pause|resume");
+  expect((await cli(["instance", "--help"])).out).toContain("instance triggers");
+});
+
+test("status says when the database takes no writes (INS-MP5)", async () => {
+  const { createServer } = await import("node:http");
+  const stub = createServer((request, response) => {
+    response.setHeader("content-type", "application/json");
+    response.end(
+      request.url?.endsWith("/readyz")
+        ? JSON.stringify({
+            status: "ready",
+            checks: { database: { ok: true, readOnly: true }, objectStore: { ok: true } },
+          })
+        : JSON.stringify({ coreVersion: "1.2.3", migrationLevel: 5 }),
+    );
+  });
+  await new Promise<void>((done) => stub.listen(0, "127.0.0.1", done));
+  const { port } = stub.address() as { port: number };
+  try {
+    const result = await cli(["status"], { VOLVEL_URL: `http://127.0.0.1:${port}` });
+    expect(result.out).toContain("Ready");
+    expect(result.out).toContain("Read only: the database takes no writes");
+  } finally {
+    stub.close();
+  }
+});

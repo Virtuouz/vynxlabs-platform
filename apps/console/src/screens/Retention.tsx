@@ -37,7 +37,7 @@ const KINDS: { key: Kind; label: string; about: string }[] = [
 ];
 
 /** How long this tenant's history is kept, kind by kind, with the instance's default beside each. */
-export function RetentionSettings({ base }: { base: string }) {
+export function RetentionSettings({ base, bare = false }: { base: string; bare?: boolean }) {
   const loaded = useLoad<Retention>(`${base}/retention`);
   const [draft, setDraft] = useState<Partial<Record<Kind, string>>>({});
   const [busy, setBusy] = useState(false);
@@ -131,41 +131,46 @@ export function RetentionSettings({ base }: { base: string }) {
     }
   };
 
+  const body = (
+    <Can base={base} permission="tenant:write" what="how long this tenant's history is kept">
+      <form
+        className="flex max-w-xl flex-col gap-4"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void save();
+        }}
+      >
+        {KINDS.map(({ key, label, about }) => (
+          <TextField
+            key={key}
+            name={key}
+            label={`${label} (days)`}
+            value={value(key)}
+            required={false}
+            placeholder={`${data.defaults[key]}, the instance's default`}
+            hint={`${about} Now ${data.effective[key]} days.`}
+            error={problem(key)}
+            onChange={(next) => setDraft((was) => ({ ...was, [key]: next }))}
+          />
+        ))}
+      </form>
+      <SaveBar
+        dirty={changed.length > 0}
+        saving={busy}
+        onSave={() => void save()}
+        onDiscard={() => setDraft({})}
+        what="retention"
+      />
+    </Can>
+  );
+  // In a sheet beside a list, the title is the sheet's own.
+  if (bare) return body;
   return (
     <Page
       title="Retention"
       description="How long this tenant's history is kept. Runs, events and refused requests older than their period are removed within minutes; the audit log is different, as said under it. Leave a field empty to use the instance's default."
     >
-      <Can base={base} permission="tenant:write" what="how long this tenant's history is kept">
-        <form
-          className="flex max-w-xl flex-col gap-4"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void save();
-          }}
-        >
-          {KINDS.map(({ key, label, about }) => (
-            <TextField
-              key={key}
-              name={key}
-              label={`${label} (days)`}
-              value={value(key)}
-              required={false}
-              placeholder={`${data.defaults[key]}, the instance's default`}
-              hint={`${about} Now ${data.effective[key]} days.`}
-              error={problem(key)}
-              onChange={(next) => setDraft((was) => ({ ...was, [key]: next }))}
-            />
-          ))}
-        </form>
-        <SaveBar
-          dirty={changed.length > 0}
-          saving={busy}
-          onSave={() => void save()}
-          onDiscard={() => setDraft({})}
-          what="retention"
-        />
-      </Can>
+      {body}
     </Page>
   );
 }

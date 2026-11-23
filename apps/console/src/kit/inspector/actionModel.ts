@@ -72,7 +72,7 @@ export const STEP_WORDS: Record<StepKind, { title: string; help: string }> = {
   update: { title: "Update the record", help: "Set fields of a record" },
   create: { title: "Make a record", help: "Add a row to a table" },
   delete: { title: "Remove the record", help: "Remove a record for good" },
-  flow: { title: "Run a workflow", help: "Start a flow that can be run by hand" },
+  flow: { title: "Run a flow", help: "Start a flow that can be run by hand" },
   script: { title: "Run a script", help: "Start a script of the workspace" },
   open: { title: "Open a page", help: "Go to a page, a side sheet or a dialog" },
   close: { title: "Close", help: "Close this sheet or dialog" },
@@ -128,6 +128,17 @@ export function newStep(kind: StepKind, ctx: ActionContext, firstPage?: string):
     case "rows":
       return { do: "rows" };
   }
+}
+
+/**
+ * Where a step added by hand goes. Last, except that a message goes before a closing step: said
+ * after the sheet has closed it would be said to nobody.
+ */
+export function addedAt(steps: readonly Step[], step: Step): number {
+  if (step.do !== "message") return steps.length;
+  let at = steps.length;
+  while (at > 0 && steps[at - 1]?.do === "close") at -= 1;
+  return at;
 }
 
 /** An action with a step set, added or removed; the confirmation and conditions are kept. */

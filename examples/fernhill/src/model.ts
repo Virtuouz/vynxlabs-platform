@@ -109,7 +109,7 @@ export const appointments = defineTable({
       required: true,
       default: "booked",
       description:
-        "Where the visit stands: booked, checked in, with the vet, finished, or cancelled.",
+        "Where the visit stands: booked, checked in, with the vet, finished, or canceled.",
     }),
     checked_in_at: column.timestamp(),
     reminded_at: column.timestamp(),

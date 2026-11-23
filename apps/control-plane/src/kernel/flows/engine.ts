@@ -14,7 +14,7 @@ import {
 import type { Trx } from "../audit.js";
 import { badRequest, conflict, HttpError, notFound } from "../errors.js";
 import { bundleManifest } from "../execution/bundles.js";
-import { summarize } from "../execution/redact.js";
+import { redactText, summarize } from "../execution/redact.js";
 import {
   announceCanceled,
   cancelRun,
@@ -25,14 +25,16 @@ import {
   storePayload,
   takeCanceled,
 } from "../execution/runs.js";
+import { inputWords } from "../input-words.js";
 import type { Kernel } from "../kernel.js";
 import { observe } from "../metrics.js";
 import { type AliasUse, formerPaths, resolveResource } from "../resolve.js";
 import { traceFlowRun, traceFor } from "../trace.js";
 import { expireLinks, mailApprovers } from "./approval-links.js";
 import { resolveApprovers } from "./approvers.js";
-import { buildContext, type ContextStep, readOutput } from "./context.js";
+import { buildContext, type ContextStep, readOutput, tooLargeIn } from "./context.js";
 import { ExpressionError } from "./expressions.js";
+import { flowKnown } from "./known.js";
 
 /** The most items one foreach will run. More than this belongs in a script. */
 export const MAX_FOREACH_ITEMS = 1000;
@@ -140,13 +142,7 @@ export async function checkFlowStart(
   if (entry?.type === "trigger" && entry.trigger.type === "manual" && entry.trigger.input) {
     const issues = validateJson(entry.trigger.input, request.input ?? {}, "/input");
     if (issues.length > 0) {
-      throw badRequest(
-        `The input does not match what the flow ${request.flow} takes: ${issues
-          .slice(0, 3)
-          .map((issue) => `${issue.path} ${issue.message}`)
-          .join("; ")}.`,
-        issues,
-      );
+      throw badRequest(`The flow ${request.flow} refused its input. ${inputWords(issues)}`, issues);
     }
   }
   return { request, workspace, bundle, manifest, body, alias, triggerNode };
@@ -735,12 +731,25 @@ class Advance {
     expression: string,
     extra?: Record<string, unknown>,
   ): Promise<unknown> {
+    const context = await this.#context(extra);
     try {
-      return await this.#kernel.expressions.evaluate(expression, await this.#context(extra));
+      return await this.#kernel.expressions.evaluate(expression, context);
     } catch (error) {
       if (error instanceof ExpressionError) {
+        const large = error.message.startsWith("No such key") ? tooLargeIn(context) : [];
+        // The evaluator quotes the value it choked on ("Invalid duration string: …"). What the run
+        // was given as a secret is masked here, before the failure is stored, so that every
+        // reader of it (the lists, the alerts, the events) shows it masked.
+        const said = redactText(
+          error.message,
+          await flowKnown(this.#kernel, this.#trx, this.#flowRun.id),
+        );
         throw new StepFailure(
-          `The expression for "${field}" could not be evaluated: ${error.message}`,
+          `The expression for "${field}" could not be evaluated: ${said}${
+            large.length > 0
+              ? `. ${large.map((one) => `${one} is too large to use in an expression, so it has no keys here`).join(". ")}. Read it in a script.`
+              : ""
+          }`,
         );
       }
       throw error;

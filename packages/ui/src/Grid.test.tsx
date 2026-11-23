@@ -26,6 +26,30 @@ const rows = [
 ];
 
 describe("grid", () => {
+  test("a screen reader is told rows that end at the count, with or without the filter row (TAB-39)", () => {
+    for (const filtering of [false, true]) {
+      const { container, unmount } = render(
+        <Grid
+          label="Rows of orders"
+          columns={columns}
+          rows={rows}
+          rowKey={(r) => r.id}
+          empty="None"
+          navigation="grid"
+          {...(filtering ? { onFilter: () => {} } : {})}
+        />,
+      );
+      const count = Number(container.querySelector("table")?.getAttribute("aria-rowcount"));
+      const indexes = Array.from(container.querySelectorAll("tbody tr")).map((row) =>
+        Number(row.getAttribute("aria-rowindex")),
+      );
+      // The heading row, and the filter row when there is one, come before the first row.
+      expect(indexes).toEqual(filtering ? [3, 4] : [2, 3]);
+      expect(Math.max(...indexes)).toBe(count);
+      unmount();
+    }
+  });
+
   test("with fill, the grid is the one scroller of the height left; without it, it stops at 70vh", () => {
     const grid = (fill?: boolean) => (
       <Grid
@@ -90,12 +114,47 @@ describe("grid", () => {
       />,
     );
     fireEvent.click(screen.getByRole("button", { name: /title/ }));
-    expect(onSort).toHaveBeenCalledWith("title");
+    expect(onSort).toHaveBeenCalledWith("title", false);
     expect(screen.getByRole("columnheader", { name: /total/ }).getAttribute("aria-sort")).toBe(
       "descending",
     );
     // A column that cannot be sorted has no button.
     expect(screen.queryByRole("button", { name: /^done/ })).toBeNull();
+  });
+
+  test("TAB-P9: a heading pressed with Shift adds to the sort, and several sorted columns say their order", async () => {
+    const onSort = vi.fn();
+    const sort = [
+      { column: "total", descending: true },
+      { column: "title", descending: false },
+    ];
+    render(
+      <Grid
+        navigation="grid"
+        label="Rows"
+        columns={columns}
+        rows={rows}
+        rowKey={(r) => r.id}
+        empty="None"
+        sort={sort}
+        onSort={onSort}
+      />,
+    );
+    const heading = (name: RegExp) => screen.getByRole("columnheader", { name });
+    expect(heading(/total/).getAttribute("aria-sort")).toBe("descending");
+    expect(heading(/title/).getAttribute("aria-sort")).toBe("ascending");
+    // Which comes first is said by a number beside the arrow.
+    expect(heading(/total/).textContent).toContain("1");
+    expect(heading(/title/).textContent).toContain("2");
+    fireEvent.click(heading(/title/), { shiftKey: true });
+    expect(onSort).toHaveBeenLastCalledWith("title", true);
+    fireEvent.click(heading(/total/));
+    expect(onSort).toHaveBeenLastCalledWith("total", false);
+    // The keyboard does the same: Shift with Enter on a heading.
+    const cell = heading(/title/);
+    fireEvent.focus(cell);
+    fireEvent.keyDown(cell, { key: "Enter", shiftKey: true });
+    expect(onSort).toHaveBeenLastCalledWith("title", true);
   });
 
   test("a filter is reported when it is committed", () => {
@@ -281,6 +340,6 @@ describe("grid navigation (the WAI-ARIA grid pattern)", () => {
     fireEvent.keyDown(cell, { key: "ArrowUp" });
     await flush();
     fireEvent.keyDown(document.activeElement as HTMLElement, { key: "Enter" });
-    expect(onSort).toHaveBeenCalledWith("title");
+    expect(onSort).toHaveBeenCalledWith("title", false);
   });
 });

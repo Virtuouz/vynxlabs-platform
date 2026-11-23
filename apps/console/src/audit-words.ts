@@ -31,7 +31,12 @@ const VERBS: Record<string, string> = {
   recovery_code_used: "used a recovery code",
 };
 
-const words = (text: string) => text.replace(/[_-]+/g, " ").trim();
+// The stored action keeps `cancelled`; what is read says `canceled`.
+const words = (text: string) =>
+  text
+    .replace(/[_-]+/g, " ")
+    .replace(/\bcancell/gi, (one) => one.slice(0, 6))
+    .trim();
 
 export function actionWords(action: string): string {
   const at = action.indexOf(".");

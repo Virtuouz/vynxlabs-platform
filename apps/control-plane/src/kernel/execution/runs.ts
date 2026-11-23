@@ -579,9 +579,12 @@ export async function completeRun(
     })
     .where("id", "=", run.id)
     .execute();
-  observe.runEnded(kernel.metrics, { ...run, finished_at: finishedAt }, "succeeded");
-  traceRun(kernel, { ...run, finished_at: finishedAt }, "succeeded");
-  await afterRun(kernel, run, "succeeded", output);
+  // Passing a trigger source's answer on may fail the run, so what it came to is counted and
+  // traced once that is known: never "succeeded" for a run that then failed.
+  await afterRun(kernel, run, "succeeded", output, (status, message) => {
+    observe.runEnded(kernel.metrics, { ...run, finished_at: finishedAt }, status);
+    traceRun(kernel, { ...run, finished_at: finishedAt }, status, message);
+  });
 }
 
 export interface EndedRun {
@@ -599,6 +602,8 @@ async function afterRun(
   run: EndedRun,
   reportedStatus: "succeeded" | "failed",
   reportedDetail: unknown,
+  /** Called once the run's end is known, after a trigger source's answer was passed on. */
+  settled?: (status: "succeeded" | "failed", message?: string) => void,
 ) {
   let status = reportedStatus;
   let detail = reportedDetail;
@@ -627,6 +632,7 @@ async function afterRun(
       };
     }
   }
+  settled?.(status, status === "failed" ? (detail as { message?: string }).message : undefined);
   const error = status === "failed" ? { error: (detail as { message: string }).message } : {};
   // The two events for a run that ended well or badly stay. The third says how any run ended,
   // including one that was canceled.

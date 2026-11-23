@@ -8,7 +8,7 @@ import { Tabs } from "./Tabs.tsx";
 import { Term } from "./Term.tsx";
 import { Kbd } from "./Tooltip.tsx";
 
-/** The documentation stylesheet's colours, taken from the theme's tokens. */
+/** The documentation stylesheet's colors, taken from the theme's tokens. */
 const THEMED = `
 .vd-doc {
   --vd-ink: var(--vx-ink);
@@ -35,7 +35,7 @@ const THEMED = `
 .vd-doc.vd-served { font-size: 16px; line-height: 1.6; }
 `;
 
-/** An alert's type, as its rail, icon and words are coloured. */
+/** An alert's type, as its rail, icon and words are colored. */
 const ALERT = {
   // Neutral, never the theme's accent: a green accent would make a note read as success.
   info: { rail: "bg-ink-subtle", ink: "text-ink-muted", Icon: Info, label: "Note" },
@@ -62,7 +62,7 @@ function Picture({ src, alt, title }: { src: string; alt: string; title?: string
 /** The kit's own components, for the parts of a page that are more than text. */
 const KIT: Components = {
   image: ({ src, alt, title }) => <Picture src={src} alt={alt} title={title} />,
-  // A callout, as the documentation site draws one: a coloured rail and an icon for its type,
+  // A callout, as the documentation site draws one: a colored rail and an icon for its type,
   // its border kept wherever it sits (inside a widget's card too, where a notice drops its own).
   alert: ({ type, title, children }) => {
     const tone = ALERT[type] ?? ALERT.info;

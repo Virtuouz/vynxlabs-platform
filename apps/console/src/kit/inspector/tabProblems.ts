@@ -10,7 +10,7 @@
  *   works out fewer values than the widget needs;
  * - Display: a widget that would show nothing (a list with nothing placed, a pivot with no grid, a
  *   detail with no record), a button with no label;
- * - Actions: an action with no steps, or that names a page, a table, a workflow or a script that is
+ * - Actions: an action with no steps, or that names a page, a table, a flow or a script that is
  *   gone;
  * - Rules: a group that is gone, named in who may see or run it;
  * - and what the server refused when the draft was saved, by the place it names.

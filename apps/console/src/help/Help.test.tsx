@@ -213,6 +213,28 @@ describe("the help panel", () => {
     expect(panel().className).toContain("fixed inset-0");
   });
 
+  test("a page says which version brought what it describes (DOC-MP2)", async () => {
+    // No page of the product says it yet, so one is made to.
+    const plain = globalThis.fetch;
+    vi.stubGlobal("fetch", async (url: string) => {
+      const answer = await plain(url);
+      if (!String(url).endsWith("manifest.json")) return answer;
+      const text = JSON.stringify({
+        ...manifest,
+        pages: manifest.pages.map((one: { path: string }) =>
+          one.path === "data/tables" ? { ...one, since: "0.4" } : one,
+        ),
+      });
+      return { ok: true, status: 200, json: async () => JSON.parse(text), text: async () => text };
+    });
+    show(<Screen />);
+    act(() => openHelp("data-tables"));
+    await within(panel()).findByText("New in version 0.4");
+    act(() => openHelp("start/concepts"));
+    await within(panel()).findByRole("heading", { name: /concepts/i });
+    expect(within(panel()).queryByText(/New in version/)).toBeNull();
+  });
+
   test("Escape closes it from inside", async () => {
     show(<Screen />);
     act(() => openHelp("data-tables"));
@@ -268,6 +290,23 @@ describe("the help panel", () => {
       target: { value: "zebra crossing" },
     });
     await within(panel()).findByText("Nothing in the help matches.");
+  });
+
+  test("a search shows the headings and passages that matched, and opens the page at one (DOC-MP3)", async () => {
+    show(<Screen />);
+    act(() => openHelp("index"));
+    fireEvent.change(within(panel()).getByRole("searchbox", { name: "Search the help" }), {
+      target: { value: "approval" },
+    });
+    const found = await within(panel()).findByRole("list", { name: "Pages found" });
+    const places = await within(found).findAllByRole("list", { name: /^In / });
+    expect(places.length).toBeGreaterThan(0);
+    const place = within(places[0] as HTMLElement).getAllByRole("button")[0] as HTMLElement;
+    // What was asked for is marked inside the place's words.
+    expect(place.querySelector("mark")?.textContent?.toLowerCase()).toContain("approv");
+    fireEvent.click(place);
+    expect(within(panel()).queryByRole("list", { name: "Pages found" })).toBeNull();
+    await within(panel()).findByRole("heading", { level: 2 });
   });
 
   test("a screen with no page says so and offers the rest", async () => {

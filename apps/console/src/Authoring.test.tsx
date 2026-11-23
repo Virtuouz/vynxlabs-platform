@@ -144,6 +144,16 @@ test("a script written in the console can be given a place among the flow's step
   fireEvent.change(screen.getByLabelText("Step name"), { target: { value: "" } });
   fireEvent.keyDown(code, { key: "s", metaKey: true });
   await waitFor(() => expect(puts.at(-1)?.body.node).toBeUndefined());
+  // Typed again, it has the icon and group it had.
+  fireEvent.change(screen.getByLabelText("Step name"), { target: { value: "Greet them" } });
+  fireEvent.keyDown(code, { key: "s", metaKey: true });
+  await waitFor(() =>
+    expect(puts.at(-1)?.body.node).toEqual({
+      label: "Greet them",
+      category: "Greetings",
+      icon: "mail",
+    }),
+  );
 });
 
 test("only a first save keeps the editor: any other address opens a new one", () => {
@@ -413,4 +423,49 @@ test("the list's inspector offers a script to an agent only when it is deployed 
   show(<AtAddress />);
   await screen.findByRole("button", { name: "Open editor" });
   expect(screen.getByRole("button", { name: /Offer to an agent/ })).toBeTruthy();
+});
+
+test("SCR-08, EXT-MP3: a script's memory, concurrency, worker pool, the rest of what it uses, and what happens when it fails are set in Settings", async () => {
+  routes[`GET /tenants/t1/worker-pools`] = () => ({
+    items: [
+      { id: null, name: null, description: "" },
+      { id: "p1", name: "eu-office", description: "" },
+    ],
+  });
+  routes[`GET ${base}/tables`] = () => ({ items: [{ name: "orders" }] });
+  routes[`GET ${base}/data-source-bindings`] = () => ({ items: [{ path: "warehouse" }] });
+  routes[`GET ${base}/connection-groups`] = () => ({ items: [{ path: "stores" }] });
+  routes[`GET ${base}/resources`] = () => ({ items: [{ path: "order/placed", kind: "event" }] });
+  routes[`GET ${base}/scripts`] = () => ({ items: [{ path: "ops/alert" }] });
+  routes[`GET ${base}/connection-bindings`] = () => ({ items: [{ path: "chat" }] });
+  let saved: { body: Record<string, unknown> } | undefined;
+  routes[`PUT ${base}/drafts/hello/greet`] = (body) => {
+    saved = body as { body: Record<string, unknown> };
+    return { path: "hello/greet", revision: 2, body: (body as { body: object }).body };
+  };
+  openSaved();
+  fireEvent.input(await screen.findByLabelText("Memory (MB)"), { target: { value: "1024" } });
+  fireEvent.input(screen.getByLabelText("Runs at once"), { target: { value: "4" } });
+  fireEvent.input(screen.getByLabelText("One lane for each value of"), {
+    target: { value: "input.customer" },
+  });
+  fireEvent.change(screen.getByLabelText("Worker pool"), { target: { value: "eu-office" } });
+  fireEvent.change(screen.getByLabelText("If it fails for the last time, start"), {
+    target: { value: "ops/alert" },
+  });
+  fireEvent.change(screen.getByLabelText("and send a summary through"), {
+    target: { value: "chat" },
+  });
+  fireEvent.click(await screen.findByRole("button", { name: "Save draft" }));
+  await waitFor(() => expect(saved).toBeTruthy());
+  expect(saved?.body).toMatchObject({
+    memoryMb: 1024,
+    concurrency: { key: "input.customer", limit: 4 },
+    worker: "eu-office",
+    onFailure: { script: "ops/alert", notify: "chat" },
+  });
+  expect(screen.getByText("Tables it reads and writes")).toBeTruthy();
+  expect(screen.getByText("Data sources it uses")).toBeTruthy();
+  expect(screen.getByText("Events it may publish")).toBeTruthy();
+  expect(screen.getByText("Connection groups it picks from")).toBeTruthy();
 });

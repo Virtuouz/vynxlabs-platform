@@ -80,7 +80,7 @@ export function PageHeader({
         bar
           ? "truncate text-title"
           : mono
-            ? `font-mono text-title ${compact ? "truncate" : "break-all"}`
+            ? `font-mono text-title ${compact ? "truncate" : "break-words"}`
             : size === "display-lg"
               ? "text-display-lg"
               : "text-display"
@@ -100,9 +100,10 @@ export function PageHeader({
         <div
           className={`flex items-center justify-between gap-3 ${bar ? "flex-nowrap" : "flex-wrap"}`}
         >
-          {/* The name and state give way before the actions do, so the row stays one row. */}
+          {/* The name and state give way before the actions do, so the bar stays one row. An editor's header gives the name room instead, and the actions wrap under it. */}
           <div
-            className={`flex min-w-0 flex-1 items-center gap-3 ${bar ? "flex-nowrap" : "flex-wrap"}`}
+            data-heading-block=""
+            className={`flex min-w-0 flex-1 items-center gap-3 ${bar ? "flex-nowrap" : "min-w-[min(100%,16rem)] flex-wrap"}`}
           >
             {heading}
             {state}

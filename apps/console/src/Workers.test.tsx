@@ -152,3 +152,53 @@ test("a member who may not change workers is told so, and nothing offers to (GOV
   const button = await screen.findByRole("button", { name: "Run only on our own workers" });
   expect((button.closest("fieldset") as HTMLFieldSetElement).disabled).toBe(true);
 });
+
+test("a worker credential can be for one workspace, and the list says which (GOV-P7)", async () => {
+  routes[`GET ${base}`] = () => ({ name: "Acme", slug: "acme", managedWorkers: false });
+  routes[`GET ${base}/managed-workers`] = () => ({ state: "off" });
+  routes[`GET ${base}/workspaces`] = () => ({
+    items: [
+      { id: "w1", name: "Main" },
+      { id: "w2", name: "Dev" },
+    ],
+  });
+  routes[`GET ${base}/worker-credentials`] = () => ({
+    items: [
+      {
+        id: "c1",
+        name: "Warehouse",
+        prefix: "vxw_aaaa",
+        workspaceId: "w2",
+        pool: null,
+        revokedAt: null,
+        createdAt: "2026-11-01T00:00:00.000Z",
+      },
+      {
+        id: "c2",
+        name: "Anywhere",
+        prefix: "vxw_bbbb",
+        workspaceId: null,
+        pool: null,
+        revokedAt: null,
+        createdAt: "2026-11-01T00:00:00.000Z",
+      },
+    ],
+  });
+  routes[`POST ${base}/worker-credentials`] = () => ({ id: "c3", token: "vxw_secret" });
+  show(<Workers base={base} />);
+  await screen.findByText("Warehouse");
+  expect(await screen.findByText("Dev")).toBeTruthy();
+  expect(screen.getByText("Every workspace of the tenant")).toBeTruthy();
+
+  fireEvent.click(screen.getByRole("button", { name: "Create credential" }));
+  const dialog = await screen.findByRole("dialog");
+  fireEvent.input(within(dialog).getByLabelText("Name"), { target: { value: "Branch office" } });
+  await within(dialog).findByRole("option", { name: "Main" });
+  fireEvent.change(within(dialog).getByLabelText("Runs code of"), { target: { value: "w1" } });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Create credential" }));
+  await waitFor(() => expect(calls.some((call) => call.method === "POST")).toBe(true));
+  expect(calls.find((call) => call.method === "POST")?.body).toEqual({
+    name: "Branch office",
+    workspaceId: "w1",
+  });
+});

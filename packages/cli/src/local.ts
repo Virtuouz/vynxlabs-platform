@@ -30,7 +30,12 @@ function notLocal(what: string): never {
 export async function runLocally(args: string[], io: Io) {
   const { values, positionals } = parseArgs({
     args,
-    options: { dir: { type: "string" }, input: { type: "string" } },
+    options: {
+      dir: { type: "string" },
+      entry: { type: "string" },
+      resources: { type: "string" },
+      input: { type: "string" },
+    },
     allowPositionals: true,
   });
   const [path] = positionals;
@@ -39,7 +44,11 @@ export async function runLocally(args: string[], io: Io) {
 
   const input = await inputOf(values.input);
 
-  const bundle = await buildBundle({ directory });
+  const bundle = await buildBundle({
+    directory,
+    ...(values.entry ? { entry: values.entry } : {}),
+    ...(values.resources ? { resources: values.resources } : {}),
+  });
   const manifest = bundle.manifests.find(
     (candidate) => candidate.kind === "script" && candidate.path === path,
   );

@@ -462,6 +462,11 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             "The table, with its columns, the ones retired included, and where its rows are kept.",
           tags: ["data"],
           params: WildParams,
+          querystring: Type.Object({
+            id: Type.Optional(
+              Type.String({ description: "Which table, when two retired ones had the name." }),
+            ),
+          }),
           response: {
             200: Type.Object({
               id: Type.Optional(Type.String()),
@@ -477,6 +482,11 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                   description: "The column that stands for a row where another table refers to it.",
                 }),
               ),
+              indexes: Type.Optional(
+                Type.Array(Type.Array(Type.String()), {
+                  description: "The indexes its definition lists, each a list of column names.",
+                }),
+              ),
               rowCount: Type.Integer(),
               stored: Type.Object(
                 { schema: Type.String(), table: Type.String() },
@@ -487,13 +497,15 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           },
         },
       },
-      async ({ ctx, params }) => {
+      async ({ ctx, params, query }) => {
         const name = await currentName(ctx, params, wildPath(params));
         const data = (await kernel.data.forTenant(params.t)).owner;
         const catalog = await loadCatalog(data, params.w);
-        const table =
-          catalog.find((candidate) => candidate.name === name && candidate.status === "active") ??
-          catalog.find((candidate) => candidate.name === name);
+        const table = query.id
+          ? catalog.find((candidate) => candidate.name === name && candidate.id === query.id)
+          : (catalog.find(
+              (candidate) => candidate.name === name && candidate.status === "active",
+            ) ?? catalog.find((candidate) => candidate.name === name));
         if (!table) return describeTable(data, params.w, name) as never;
         const resource = await db
           .selectFrom("resource")
@@ -506,6 +518,7 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         const defined = (resource?.body ?? {}) as {
           description?: string;
           columns?: Record<string, { description?: string }>;
+          indexes?: string[][];
         };
         const schema = workspaceSchema(params.w);
         const count = await sql<{
@@ -528,6 +541,7 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           managedIn: resource?.ownership ?? "code",
           policy: table.policy as Record<string, unknown>,
           display: table.display ?? null,
+          ...(defined.indexes && defined.indexes.length > 0 ? { indexes: defined.indexes } : {}),
           rowCount: Number(count.rows[0]?.n ?? 0),
           stored: { schema, table: table.physicalName },
           columns: table.columns.map((column) => ({

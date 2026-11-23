@@ -339,7 +339,7 @@ export function checksFor(input: {
           id: `approvals:${path}`,
           state: "warn",
           text: `Approvals lists ${title}, which asks for no approval`,
-          detail: "Nothing will wait there until the workflow has an approval step.",
+          detail: "Nothing will wait there until the flow has an approval step.",
         });
       }
     }
@@ -464,7 +464,16 @@ export function openersOf(
   pageId: string,
   definitionOf: (type: string) => WidgetDefinition | undefined,
 ): string[] {
-  const names: string[] = [];
+  return openerPlaces(body, pageId, definitionOf).map((one) => one.name);
+}
+
+/** The same, each with the page and widget it is on, so a person can be taken to it. */
+export function openerPlaces(
+  body: InterfaceBody,
+  pageId: string,
+  definitionOf: (type: string) => WidgetDefinition | undefined,
+): { name: string; page: string; widget: string }[] {
+  const names: { name: string; page: string; widget: string }[] = [];
   for (const page of body.pages) {
     if (page.id === pageId) continue;
     for (const widget of page.widgets) {
@@ -472,7 +481,8 @@ export function openersOf(
         if (!one.action.steps.some((step) => step.do === "open" && step.page === pageId)) continue;
         const own = nameAlong(widget, one.at.split("/").slice(1));
         const name = `${own ?? nameOf(widget, definitionOf(widget.type))}, on ${page.title}`;
-        if (!names.includes(name)) names.push(name);
+        if (!names.some((one) => one.name === name))
+          names.push({ name, page: page.id, widget: widget.id });
       }
     }
   }

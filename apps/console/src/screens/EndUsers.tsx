@@ -1,4 +1,4 @@
-import { Button, Closing, Dialog, Notice, TextField } from "@volvel/ui";
+import { Button, Closing, Dialog, Notice, SelectField, TextField } from "@volvel/ui";
 import { useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
@@ -37,6 +37,62 @@ interface ShownLink extends MadeLink {
 }
 
 const PAGE = 50;
+
+interface Address {
+  id: string;
+  hostname: string;
+  enabled: boolean;
+}
+const THIS_INSTANCE = "This instance's own address";
+
+/** Which of the tenant's addresses a link is built on. Asked only when there is a choice. */
+function AddressDialog({
+  asked,
+  addresses,
+  onClose,
+  onChosen,
+}: {
+  asked: { email: string; purpose: "invite" | "reset" } | undefined;
+  addresses: Address[];
+  onClose: () => void;
+  onChosen: (domainId: string | undefined) => void;
+}) {
+  const [chosen, setChosen] = useState("");
+  return (
+    <Dialog
+      open={asked !== undefined}
+      onClose={onClose}
+      title={asked?.purpose === "reset" ? "Password reset link" : "Invitation link"}
+      description={`Whoever opens it lands on the address you choose. For ${asked?.email ?? "them"}.`}
+    >
+      <form
+        className="flex flex-col gap-3"
+        onSubmit={(event) => {
+          event.preventDefault();
+          onChosen(chosen || undefined);
+        }}
+      >
+        <SelectField
+          name="domainId"
+          label="On which address"
+          options={[
+            { value: "", label: THIS_INSTANCE },
+            ...addresses.map((one) => ({ value: one.id, label: one.hostname })),
+          ]}
+          value={chosen}
+          hint="The tenant's own hostnames that are enabled. The link works on the one you pick."
+          onChange={setChosen}
+        />
+        <div className="flex justify-end gap-2">
+          <Button onClick={onClose}>Cancel</Button>
+          <Button type="submit" variant="primary">
+            Make link
+          </Button>
+        </div>
+      </form>
+    </Dialog>
+  );
+}
 
 const failed = (error: unknown) => {
   const failure = error as ApiError;
@@ -102,6 +158,13 @@ export function EndUsers({ base, framed }: { base: string; framed?: Framed }) {
   const [attributesOf, setAttributesOf] = useState<EndUser>();
   const [problem, setProblem] = useState<string>();
   const [selected, setSelected] = useUrlParam("user", undefined, { push: true });
+  const [addressFor, setAddressFor] = useState<{
+    user: EndUser;
+    purpose: "invite" | "reset";
+  }>();
+  // Someone who may not read the domains has no choice to make: links are built as they always were.
+  const domains = useLoad<{ items: Address[] }>(`${base}/domains`);
+  const addresses = (domains.data?.items ?? []).filter((one) => one.enabled);
 
   const query = new URLSearchParams({ limit: String(PAGE) });
   const cursor = trail[trail.length - 1];
@@ -121,12 +184,35 @@ export function EndUsers({ base, framed }: { base: string; framed?: Framed }) {
       setProblem(failed(error));
     }
   };
-  const makeLink = (user: EndUser, purpose: "invite" | "reset") =>
+  const makeLinkOn = (user: EndUser, purpose: "invite" | "reset", domainId?: string) =>
     act(async () => {
-      const made = await api.post<MadeLink>(`${base}/end-users/${user.id}/links`, { purpose });
+      const made = await api.post<MadeLink>(`${base}/end-users/${user.id}/links`, {
+        purpose,
+        ...(domainId ? { domainId } : {}),
+      });
       setLink({ ...made, email: user.email, purpose });
     });
+  const makeLink = (user: EndUser, purpose: "invite" | "reset") =>
+    addresses.length > 0 ? setAddressFor({ user, purpose }) : makeLinkOn(user, purpose);
   const actions = (user: EndUser) => [
+    {
+      label: "Rename",
+      onSelect: async () => {
+        const name = await ask.prompt({
+          title: `Rename ${user.email}`,
+          text: "The name is what people see beside their email. Their email, what they were given and their sign-in are not touched.",
+          label: "Name",
+          initial: user.name,
+          action: "Rename",
+          required: false,
+        });
+        if (name === null || name.trim() === user.name) return;
+        return act(async () => {
+          await api.patch(`${base}/end-users/${user.id}`, { name: name.trim() });
+          notify.success(name.trim() ? `Now called ${name.trim()}.` : "Their name is cleared.");
+        });
+      },
+    },
     {
       label: "Attributes",
       onSelect: () => setAttributesOf({ ...user, attributes: user.attributes ?? {} }),
@@ -372,9 +458,26 @@ export function EndUsers({ base, framed }: { base: string; framed?: Framed }) {
           fields: [
             { name: "email", label: "Email", type: "email" },
             { name: "name", label: "Name", required: false },
+            ...(addresses.length > 0
+              ? [
+                  {
+                    name: "domainId",
+                    label: "On which address",
+                    options: [
+                      { value: "", label: THIS_INSTANCE },
+                      ...addresses.map((one) => ({ value: one.id, label: one.hostname })),
+                    ],
+                    hint: "The link they are given opens on this address.",
+                  },
+                ]
+              : []),
           ],
-          submit: ({ email, name }) =>
-            api.post(`${base}/end-users`, { email, ...(name ? { name } : {}) }),
+          submit: ({ email, name, domainId }) =>
+            api.post(`${base}/end-users`, {
+              email,
+              ...(name ? { name } : {}),
+              ...(domainId ? { domainId } : {}),
+            }),
         }}
         open={inviting}
         onClose={() => setInviting(false)}
@@ -386,6 +489,18 @@ export function EndUsers({ base, framed }: { base: string; framed?: Framed }) {
         }}
       />
       <LinkDialog link={link} onClose={() => setLink(undefined)} />
+      <AddressDialog
+        asked={
+          addressFor ? { email: addressFor.user.email, purpose: addressFor.purpose } : undefined
+        }
+        addresses={addresses}
+        onClose={() => setAddressFor(undefined)}
+        onChosen={(domainId) => {
+          const asked = addressFor;
+          setAddressFor(undefined);
+          if (asked) void makeLinkOn(asked.user, asked.purpose, domainId);
+        }}
+      />
       <Closing subject={attributesOf}>
         {(attributesOf, shown) => (
           <AttributesDialog

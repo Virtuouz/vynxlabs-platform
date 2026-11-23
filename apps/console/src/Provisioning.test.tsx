@@ -233,3 +233,17 @@ test("people pushed past the first page say so and load on (GOV-34)", async () =
   fireEvent.click(screen.getByRole("button", { name: "Load more" }));
   await screen.findByText("Person 2");
 });
+
+test("a token is made with a length of life, and the list says when it ends (GOV-P1)", async () => {
+  show(<Provisioning root={root} instance={false} audience="members" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Make a token" }));
+  const dialog = await screen.findByRole("dialog");
+  fireEvent.input(within(dialog).getByRole("textbox"), { target: { value: "Okta" } });
+  fireEvent.change(within(dialog).getByLabelText("Expires"), { target: { value: "90" } });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Make the token" }));
+  expect(await screen.findByText("vxp_the-whole-token")).toBeTruthy();
+  expect(calls.find((call) => call.method === "POST")?.body).toEqual({
+    name: "Okta",
+    expiresInDays: 90,
+  });
+});

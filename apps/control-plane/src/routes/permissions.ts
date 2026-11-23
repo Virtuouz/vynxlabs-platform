@@ -15,6 +15,8 @@ import { pageOf } from "../pagination.js";
 import { csvCell } from "./data.js";
 import {
   AuditEntry,
+  AuditFacets,
+  AuditFilterQuery,
   AuditQuery,
   auditEntries,
   auditEntry,
@@ -889,10 +891,6 @@ export function permissionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       },
     );
 
-    const { limit: _limit, cursor: _cursor, ...filterProperties } = AuditQuery.properties;
-    const AuditFilters = Type.Object(filterProperties);
-    const Count = Type.Integer({ minimum: 0 });
-
     app.get(
       "/tenants/:t/audit-facets",
       {
@@ -904,21 +902,8 @@ export function permissionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             "with how many entries it has, most first. At most 100 of each.",
           tags: ["audit"],
           params: TenantParams,
-          querystring: AuditFilters,
-          response: {
-            200: Type.Object({
-              actions: Type.Array(Type.Object({ value: Type.String(), count: Count })),
-              actors: Type.Array(
-                Type.Object({
-                  type: Type.String(),
-                  id: Type.Union([Type.String(), Type.Null()]),
-                  label: Type.Union([Type.String(), Type.Null()]),
-                  count: Count,
-                }),
-              ),
-              targetTypes: Type.Array(Type.Object({ value: Type.String(), count: Count })),
-            }),
-          },
+          querystring: AuditFilterQuery,
+          response: { 200: AuditFacets },
         },
       },
       async ({ params, query }) => auditFacets(kernel, params.t, query),
@@ -933,7 +918,7 @@ export function permissionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           description: `The entries the filters keep, newest first, at most ${AUDIT_CSV_CAP.toLocaleString("en-US")}.`,
           tags: ["audit"],
           params: TenantParams,
-          querystring: AuditFilters,
+          querystring: AuditFilterQuery,
           produces: ["text/csv"],
           response: { 200: Type.Unknown({ description: "The entries, as CSV." }) },
         },

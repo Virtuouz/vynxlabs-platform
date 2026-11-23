@@ -1,7 +1,10 @@
 ---
 title: Arrivals
 description: Greeting a patient and marking them as here.
+subjects: [visits]
 ---
+
+## Mark a patient as arrived
 
 Find the appointment, check the name and date of birth, and mark it as arrived.
 

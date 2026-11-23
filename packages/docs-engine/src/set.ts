@@ -1,5 +1,8 @@
 import { imageKind, linkKind, type Node, TERM_RESOURCES, topicOf, walk } from "@volvel/markup";
 import {
+  DOC_TYPE_PLURALS,
+  DOC_TYPE_SUMMARIES,
+  DOC_TYPES,
   type DocType,
   diataxisIssues,
   effectiveType,
@@ -685,4 +688,38 @@ export function relatedTo(
     if (list.length < RELATED_PER_TYPE) out[type] = [...list, page];
   }
   return out;
+}
+
+/** A card of a collection's own page: one type, and where it starts. */
+export interface TypeCard {
+  type: DocType;
+  title: string;
+  summary: string;
+  count: number;
+  /** The first page of that type, in the order of the navigation. */
+  first: PageRef;
+}
+
+/**
+ * On a collection's own page, when its pages are of two types or more: a card for each, so that a
+ * reader says what they are doing and is taken to the first page that does it. Nothing for any
+ * other page. The served site and the editor's preview both draw these.
+ */
+export function typeCardsOf(set: Pick<DocSet, "nav" | "types">, path: string): TypeCard[] {
+  const trail = trailOf(set.nav, path);
+  const folder = trail.at(-1);
+  if (!folder || folder.index?.path !== path || trail.length !== 1 || folder.id === "") return [];
+  const inside = pagesInOrder({ collections: [folder] }).filter((page) => set.types[page.path]);
+  const present = DOC_TYPES.filter((one) => inside.some((page) => set.types[page.path] === one));
+  if (present.length < 2) return [];
+  return present.map((type) => {
+    const pages = inside.filter((page) => set.types[page.path] === type);
+    return {
+      type,
+      title: DOC_TYPE_PLURALS[type],
+      summary: DOC_TYPE_SUMMARIES[type],
+      count: pages.length,
+      first: pages[0] as PageRef,
+    };
+  });
 }

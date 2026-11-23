@@ -2,6 +2,7 @@ import {
   asDirectory,
   checkPageAmong,
   type DocIssue,
+  folderType,
   frontmatterOf,
   nameProblem,
   PRODUCT_PREFIX,
@@ -33,6 +34,7 @@ import {
   appFor,
   type DocPage,
   type DocsList,
+  entriesOf,
   findRow,
   folderId,
   glossaryFor,
@@ -40,10 +42,13 @@ import {
   indexOf,
   resolvers,
   rowsOf,
+  setOf,
   sourcesOf,
+  subjectsOf,
   termsOf,
 } from "./model.ts";
 import { PageDetails } from "./PageDetails.tsx";
+import { ServedAfter, ServedEyebrow } from "./Served.tsx";
 
 interface Opened {
   page: DocPage;
@@ -170,10 +175,14 @@ export function DocEditor({
 
   const typed = useDeferredValue(source ?? "");
   const app = list.data ? appFor(list.data.apps, where) : undefined;
+  // What the other pages of the app say of themselves: their types and subjects are the set-wide
+  // checks' and the preview's, as the site will draw them.
+  const index = useMemo(() => (list.data ? indexOf(list.data, app) : []), [list.data, app]);
+  const others = useMemo(() => (list.data ? entriesOf(list.data, app) : []), [list.data, app]);
   const checked = useMemo(() => {
     if (!list.data) return undefined;
     const workspaceTerms = termsOf(list.data).map((term) => term.id);
-    return checkPageAmong(inApp(app, where) || "untitled", typed, indexOf(list.data, app), {
+    return checkPageAmong(inApp(app, where) || "untitled", typed, index, {
       reservedPrefix: PRODUCT_PREFIX,
       ...(product
         ? { reservedTerms: Object.keys(product.terms), reservedTopics: Object.keys(product.topics) }
@@ -187,7 +196,24 @@ export function DocEditor({
         return found.columns?.some((one) => one.name === column) ? true : undefined;
       },
     });
-  }, [list.data, app, where, typed, product, resources]);
+  }, [list.data, app, where, typed, index, product, resources]);
+  const here = inApp(app, where) || "untitled";
+  const served = useMemo(
+    () => (checked ? setOf(others, checked.entry) : undefined),
+    [others, checked],
+  );
+  // What the folder says is under it, for a page that says none of its own.
+  const inherited = useMemo(
+    () =>
+      folderType(here, (at) =>
+        at === here ? undefined : index.find((one) => one.path === at)?.type,
+      ),
+    [here, index],
+  );
+  const knownSubjects = useMemo(
+    () => subjectsOf(index.filter((one) => one.path !== here)),
+    [index, here],
+  );
   const issues: DocIssue[] = checked?.issues ?? [];
   const errors = issues.filter((issue) => issue.severity === "error");
   const problems = useMemo<Marker[]>(
@@ -528,6 +554,7 @@ export function DocEditor({
           preview={
             <>
               {/* The served page's own title. Here it is a part of this screen, which has its heading already. */}
+              {served ? <ServedEyebrow set={served} path={here} /> : null}
               <h2 className="m-0 mb-1 text-display-lg">{title}</h2>
               {checked?.entry.frontmatter.description ? (
                 <p className="m-0 mb-5 text-ink-muted">{checked.entry.frontmatter.description}</p>
@@ -554,6 +581,13 @@ export function DocEditor({
                   }}
                 />
               ) : null}
+              {served ? (
+                <ServedAfter
+                  set={served}
+                  path={here}
+                  address={(to) => `${link}/docs/${app ? `${app.docs}/` : ""}${to}`}
+                />
+              ) : null}
             </>
           }
           sideTabs={[
@@ -566,6 +600,8 @@ export function DocEditor({
                   onChange={change}
                   index={where === "index" || where.endsWith("/index")}
                   product={product}
+                  inherited={inherited}
+                  subjects={knownSubjects}
                 />
               ),
             },

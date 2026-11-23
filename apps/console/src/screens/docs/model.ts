@@ -1,9 +1,14 @@
 import {
+  buildDocSet,
   childrenOf,
+  type DocEntry,
+  type DocSet,
+  frontmatterOf,
   type Manifest,
   orderOf,
   type PageIndex,
   type PageSource,
+  readPage,
   resolveLink,
 } from "@volvel/docs-engine";
 import type { Described } from "../../help/glossary.tsx";
@@ -101,12 +106,51 @@ export function indexOf(list: DocsList, app: DocsApp | undefined): PageIndex[] {
   if (!app) return [];
   return list.pages
     .filter((page) => page.state !== "removed" && page.path.startsWith(`${app.docs}/`))
-    .map((page) => ({
-      path: inApp(app, page.path),
-      topic: page.topic,
-      terms: page.terms.map((term) => term.id),
-      headings: page.headings,
-    }));
+    .map((page) => {
+      // What it says of its type and its place is read from its source, which the list carries:
+      // an instance that lists no more than a page's topic and terms is understood the same.
+      const top = frontmatterOf(page.source);
+      const strings = (value: unknown) =>
+        Array.isArray(value) ? value.filter((one): one is string => typeof one === "string") : [];
+      return {
+        path: inApp(app, page.path),
+        topic: page.topic,
+        terms: page.terms.map((term) => term.id),
+        headings: page.headings,
+        type: typeof top?.type === "string" ? top.type : null,
+        subjects: strings(top?.subjects),
+        moved_from: strings(top?.moved_from),
+      };
+    });
+}
+
+/** The subjects the pages of an app name, with how many pages name each: what a page's own can be chosen from. */
+export function subjectsOf(index: readonly PageIndex[]): { subject: string; pages: number }[] {
+  const counts = new Map<string, number>();
+  for (const page of index) {
+    for (const subject of new Set(page.subjects ?? [])) {
+      counts.set(subject, (counts.get(subject) ?? 0) + 1);
+    }
+  }
+  return [...counts]
+    .map(([subject, pages]) => ({ subject, pages }))
+    .sort((a, b) => b.pages - a.pages || a.subject.localeCompare(b.subject));
+}
+
+/**
+ * An app's pages as the site will be: the navigation, the types and what is related. The pages
+ * other than the one being written are read once for the list; the one being written is read
+ * as it is typed.
+ */
+export function entriesOf(list: DocsList, app: DocsApp | undefined): DocEntry[] {
+  if (!app) return [];
+  return list.pages
+    .filter((page) => page.state !== "removed" && page.path.startsWith(`${app.docs}/`))
+    .map((page) => readPage(inApp(app, page.path), page.source).entry);
+}
+
+export function setOf(others: readonly DocEntry[], current: DocEntry): DocSet {
+  return buildDocSet([...others.filter((one) => one.path !== current.path), current]).set;
 }
 
 /** Every term the workspace's pages define, whichever app they are in. */

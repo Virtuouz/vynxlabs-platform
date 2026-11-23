@@ -3,6 +3,7 @@ export {
   DIATAXIS_CODES,
   DOC_TEMPLATES,
   DOC_TYPE_LABELS,
+  DOC_TYPE_PLURALS,
   DOC_TYPE_SUMMARIES,
   DOC_TYPES,
   type DocType,
@@ -97,7 +98,9 @@ export {
   resourceKey,
   type Target,
   type Term,
+  type TypeCard,
   trailOf,
+  typeCardsOf,
   UNCATEGORIZED,
   urlOf,
 } from "./set.js";

@@ -1,7 +1,7 @@
 import { Field } from "@base-ui/react/field";
 import { moneyText, parseMoney } from "@volvel/widgets";
 import { ChevronDown } from "lucide-react";
-import type { ChangeEvent, ReactNode } from "react";
+import type { ChangeEvent, KeyboardEvent, ReactNode } from "react";
 import {
   createContext,
   useCallback,
@@ -219,6 +219,8 @@ export interface TextFieldProps extends Common {
   /** Shown and selectable, not editable. */
   readOnly?: boolean;
   onChange?: (value: string) => void;
+  /** For a field whose Enter does something of its own, such as adding what is typed to a list. */
+  onKeyDown?: (event: KeyboardEvent<HTMLInputElement>) => void;
 }
 
 export function TextField({

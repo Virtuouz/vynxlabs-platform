@@ -25,7 +25,9 @@ import { MIN_PASSWORD_LENGTH } from "../../config.js";
 import { ANONYMOUS, type Db, type Principal, writeAudit } from "../audit.js";
 import { check } from "../authorize.js";
 import { describeTable, insertRows, withData } from "../data/rows.js";
+import { describer } from "../docs/describe.js";
 import { buildDocs, consoleDirectory, PRODUCT_CLASHES, productNames } from "../docs/product.js";
+import { withWords, wordsFor } from "../docs/words.js";
 import { workingDocs } from "../docs/working.js";
 import {
   checkEndUserPassword,
@@ -976,6 +978,7 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
           look,
           tenantId: tenant.id,
           workspaceId: workspace.id,
+          principal,
           bundleId: stored.id,
           resources: bundle.manifests,
           app: {
@@ -1138,6 +1141,8 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
       look: PageFrame;
       tenantId: string;
       workspaceId: string;
+      /** Who reads: what a resource's words say is told only to one who may use the resource. */
+      principal: Principal;
       bundleId: string;
       resources: readonly ResourceLike[];
       app: DocsApp;
@@ -1281,7 +1286,26 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
     );
     if (markdown !== undefined) return sendMarkdown(reply, markdown);
     const path = pageAt(docs.built.set, at.file);
-    if (path !== undefined) return send(200, docPage(drawn, path));
+    if (path !== undefined) {
+      const words = await wordsFor({
+        config: kernel.config,
+        db,
+        workspaceId: at.workspaceId,
+        set: docs.built.set,
+        pages: [path],
+        mayKnow: describer(
+          async (permission, resourceId) =>
+            (
+              await check(db, at.principal, permission, {
+                tenantId: at.tenantId,
+                workspaceId: at.workspaceId,
+                ...(resourceId ? { resourceId } : {}),
+              })
+            ).allowed,
+        ),
+      });
+      return send(200, docPage(withWords(drawn, words), path));
+    }
 
     // A page that was renamed: its old address sends the browser to the new one, for good.
     const wanted = `${at.app.docs}/${at.file.replace(/\/+$/, "")}`;
@@ -1396,7 +1420,24 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
     const markdown = pageMarkdown(set, file, (page) => sourceIn(resources, `${app.docs}/${page}`));
     if (markdown !== undefined) return sendMarkdown(reply, markdown, true);
     const path = pageAt(set, file);
-    return path === undefined ? send(404, notFoundPage(drawn)) : send(200, docPage(drawn, path));
+    if (path === undefined) return send(404, notFoundPage(drawn));
+    const words = await wordsFor({
+      config: kernel.config,
+      db,
+      workspaceId: workspace.id,
+      set,
+      pages: [path],
+      mayKnow: describer(
+        async (permission, resourceId) =>
+          (
+            await check(db, principal, permission, {
+              ...at,
+              ...(resourceId ? { resourceId } : {}),
+            })
+          ).allowed,
+      ),
+    });
+    return send(200, docPage(withWords(drawn, words), path));
   }
 
   // ----- Which is which -----

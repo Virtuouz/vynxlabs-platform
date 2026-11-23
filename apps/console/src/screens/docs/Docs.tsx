@@ -1,9 +1,15 @@
 import {
   asDirectory,
   type Change,
+  DOC_TYPE_LABELS,
+  DOC_TYPES,
+  type DocType,
   FEEDBACK_COLUMNS,
   FEEDBACK_TABLE,
+  folderType,
+  frontmatterOf,
   inverseOf,
+  isDocType,
   type Manifest,
   nameProblem,
   type Plan,
@@ -438,6 +444,11 @@ export function Docs({
         after: follow,
         follows: true,
       }),
+    folderTypeOf: (folder) =>
+      folderType(
+        `${folder}/page`,
+        (at) => frontmatterOf(data.pages.find((one) => one.path === at)?.source ?? "")?.type,
+      ),
     commitNew: async (kind, parent, next) => {
       const plan =
         kind === "new-folder"
@@ -953,8 +964,10 @@ function toNodes(options: {
   commitNew: (
     kind: "new-page" | "new-folder",
     parent: string,
-    next: { title: string; name: string },
+    next: { title: string; name: string; type?: DocType },
   ) => Promise<string | undefined>;
+  /** The type a folder gives the pages in it that say none. */
+  folderTypeOf: (folder: string) => DocType | undefined;
   menu: (row: DocRow) => Parameters<typeof Menu>[0]["items"];
   /** Throws away the draft that removes a page. */
   onKeep: (page: DocPage) => void;
@@ -976,6 +989,7 @@ function toNodes(options: {
             suffix={folder ? "/" : ".md"}
             titleLabel={folder ? "Folder title" : "Page title"}
             follows
+            {...(folder ? {} : { types: { inherited: options.folderTypeOf(parent) } })}
             onCancel={options.onCancel}
             onSubmit={async (next) => {
               const problem = await options.commitNew(editing.kind, parent, next);
@@ -1116,6 +1130,7 @@ export function NameEditor({
   nameLocked = false,
   follows = false,
   hint,
+  types,
   onSubmit,
   onCancel,
 }: {
@@ -1127,10 +1142,13 @@ export function NameEditor({
   /** Whether the name is made from the title until it is typed in. */
   follows?: boolean;
   hint?: string | undefined;
-  onSubmit: (next: { title: string; name: string }) => Promise<string | undefined>;
+  /** For a new page: offers its type, and says what the folder gives one that is left without. */
+  types?: { inherited: DocType | undefined };
+  onSubmit: (next: { title: string; name: string; type?: DocType }) => Promise<string | undefined>;
   onCancel: () => void;
 }) {
   const [title, setTitle] = useState(initialTitle);
+  const [type, setType] = useState("");
   const [name, setName] = useState(initialName);
   const [own, setOwn] = useState(!follows);
   const [problem, setProblem] = useState<string>();
@@ -1157,7 +1175,11 @@ export function NameEditor({
       return;
     }
     setBusy(true);
-    const answer = await onSubmit({ title: title.trim(), name });
+    const answer = await onSubmit({
+      title: title.trim(),
+      name,
+      ...(isDocType(type) ? { type } : {}),
+    });
     setBusy(false);
     setProblem(answer);
   };
@@ -1209,6 +1231,24 @@ export function NameEditor({
         <span className="text-ink-subtle">{suffix}</span>
       </div>
       <LimitNote value={name} max={80} />
+      {types ? (
+        <SelectField
+          name="new-page-type"
+          label="Type"
+          required={false}
+          value={type}
+          options={[
+            {
+              value: "",
+              label: types.inherited
+                ? `Use the folder's (${DOC_TYPE_LABELS[types.inherited]})`
+                : "None",
+            },
+            ...DOC_TYPES.map((one) => ({ value: one, label: DOC_TYPE_LABELS[one] })),
+          ]}
+          onChange={setType}
+        />
+      ) : null}
       {wrong ? (
         <p className="m-0 text-meta text-danger">
           Use lowercase letters, numbers, - and _.

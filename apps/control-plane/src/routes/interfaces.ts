@@ -2,7 +2,7 @@ import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import { enumColor, type InterfaceBody, interfaceTables, type TableBody } from "@volvel/manifest";
 import { type Static, Type } from "typebox";
 import { humanize } from "../kernel/data/query/inputs.js";
-import { forbidden, forbiddenBecause, notFound } from "../kernel/errors.js";
+import { forbiddenBecause, notFound } from "../kernel/errors.js";
 import { access, findWorkspace, guestLimit } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
 import { groupNamesFor } from "../kernel/pages/who.js";

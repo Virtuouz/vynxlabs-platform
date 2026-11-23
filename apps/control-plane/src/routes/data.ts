@@ -25,7 +25,7 @@ import {
   scopeFor,
   withData,
 } from "../kernel/data/rows.js";
-import { badRequest, forbidden, forbiddenBecause } from "../kernel/errors.js";
+import { badRequest, forbiddenBecause } from "../kernel/errors.js";
 import { publishPlatformEvent } from "../kernel/flows/events.js";
 import { access, findWorkspace, guestLimit, type RequestContext } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";

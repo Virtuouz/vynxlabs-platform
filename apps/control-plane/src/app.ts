@@ -1,5 +1,3 @@
-import { existsSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import rateLimit from "@fastify/rate-limit";
 import fastifyStatic from "@fastify/static";
 import swagger from "@fastify/swagger";

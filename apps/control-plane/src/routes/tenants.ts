@@ -1,5 +1,6 @@
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
-import { type DataLocation, newId } from "@volvel/db";
+import { type DataLocation, newId, sql } from "@volvel/db";
+import { ACCESS_DESCRIPTION_MAX } from "@volvel/manifest";
 import { Type } from "typebox";
 import { MIN_PASSWORD_LENGTH, RETENTION_BOUNDS } from "../config.js";
 import { endSessions, isOperator, keepingAnAdmin } from "../kernel/administer.js";
@@ -551,6 +552,25 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
 
     // ----- Members of a tenant -----
 
+    /** A tenant's members, each with how many roles they are given directly and groups they are in. */
+    const tenantMembers = (tenantId: string) =>
+      db
+        .selectFrom("member")
+        .innerJoin("tenant_member", "tenant_member.member_id", "member.id")
+        .select([
+          "member.id",
+          "member.name",
+          "member.email",
+          "member.created_at",
+          "tenant_member.suspended_at",
+          sql<number>`(select count(*) from binding b where b.tenant_id = ${tenantId}
+            and b.principal_type = 'member' and b.principal_id = member.id)`.as("direct_roles"),
+          sql<number>`(select count(*) from group_member gm
+            join principal_group g on g.id = gm.group_id
+            where gm.member_id = member.id and g.tenant_id = ${tenantId})`.as("group_count"),
+        ])
+        .where("tenant_member.tenant_id", "=", tenantId);
+
     app.get(
       "/tenants/:t/members",
       {
@@ -566,17 +586,7 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       },
       async ({ params, query }) => {
         const args = pageArgs(query);
-        let select = db
-          .selectFrom("member")
-          .innerJoin("tenant_member", "tenant_member.member_id", "member.id")
-          .select([
-            "member.id",
-            "member.name",
-            "member.email",
-            "member.created_at",
-            "tenant_member.suspended_at",
-          ])
-          .where("tenant_member.tenant_id", "=", params.t);
+        let select = tenantMembers(params.t);
         if (query.search) {
           const term = likeTerm(query.search);
           select = select.where((eb) =>
@@ -592,6 +602,27 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           .limit(args.limit + 1)
           .execute();
         return toPage(rows, args, (row) => row.id, toMember);
+      },
+    );
+
+    app.get(
+      "/tenants/:t/members/:memberId",
+      {
+        config: { access: access.tenant("member:read") },
+        schema: {
+          summary: "One member of a tenant",
+          description: "So that a link to a member opens whatever page of the list they are on.",
+          tags: ["identity"],
+          params: Type.Object({ t: Id, memberId: Id }),
+          response: { 200: Member },
+        },
+      },
+      async ({ params }) => {
+        const row = await tenantMembers(params.t)
+          .where("member.id", "=", params.memberId)
+          .executeTakeFirst();
+        if (!row) throw notFound("The member");
+        return toMember(row);
       },
     );
 
@@ -860,7 +891,7 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           params: TenantParams,
           body: Type.Object({
             name: Name,
-            description: Type.Optional(Type.String({ maxLength: 300 })),
+            description: Type.Optional(Type.String({ maxLength: ACCESS_DESCRIPTION_MAX })),
           }),
           response: { 201: Group, 202: Waiting },
         },
@@ -914,7 +945,7 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           params: GroupParams,
           body: Type.Object({
             name: Type.Optional(Name),
-            description: Type.Optional(Type.String({ maxLength: 300 })),
+            description: Type.Optional(Type.String({ maxLength: ACCESS_DESCRIPTION_MAX })),
           }),
           response: { 200: Group, 202: Waiting },
         },
@@ -1147,7 +1178,7 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           params: TenantParams,
           body: Type.Object({
             name: Name,
-            description: Type.Optional(Type.String({ maxLength: 300 })),
+            description: Type.Optional(Type.String({ maxLength: ACCESS_DESCRIPTION_MAX })),
           }),
           response: { 201: ServiceAccount, 202: Waiting },
         },
@@ -1199,7 +1230,7 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           params: Type.Object({ t: Id, id: Id }),
           body: Type.Object({
             name: Type.Optional(Name),
-            description: Type.Optional(Type.String({ maxLength: 300 })),
+            description: Type.Optional(Type.String({ maxLength: ACCESS_DESCRIPTION_MAX })),
           }),
           response: { 200: ServiceAccount, 202: Waiting },
         },

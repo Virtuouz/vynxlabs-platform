@@ -112,8 +112,18 @@ export async function runLocally(args: string[], io: Io) {
           config: unknown;
           credential?: string;
         };
+        // Only an http connection can be opened here: say which kind this one is.
+        const connector = bundle.manifests.find(
+          (candidate) => candidate.kind === "connection" && candidate.path === name,
+        )?.body.connector;
+        if (typeof connector === "string" && connector !== "http") {
+          throw new Error(
+            `The connection "${name}" is a ${connector} connection. A local run can only open http connections. Deploy to a dev workspace to try this script.`,
+          );
+        }
         return sdk.httpConnector.create(bound.config, bound.credential, abort.signal);
       },
+      connections: () => notLocal("Connection groups"),
       secret: async (name: string) =>
         need("secret", name, body.uses.secrets, bindings.secrets?.[name]),
       variable: async (name: string) =>

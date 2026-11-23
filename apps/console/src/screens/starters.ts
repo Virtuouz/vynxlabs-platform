@@ -48,9 +48,9 @@ export const input = z.object({
   amounts: z.array(z.number()).describe("The amounts to add up").default([12.5, 30, 7.25]),
 });
 
-/** Adds up what it is given, and says what it found. Run with nothing, it adds up an example. */
-export default async function (given: Partial<z.infer<typeof input>>, ctx: ScriptContext) {
-  const amounts = given.amounts ?? [12.5, 30, 7.25];
+/** Adds up what it is given, and says what it found. Run with nothing, the input's default is an example to add up. */
+export default async function (given: z.infer<typeof input>, ctx: ScriptContext) {
+  const { amounts } = given;
   const total = amounts.reduce((sum, amount) => sum + amount, 0);
   const count = amounts.length;
   ctx.log.info("Added up", { count, total });

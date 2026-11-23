@@ -763,13 +763,20 @@ export async function deriveSchemas(
   kernel: Kernel,
   workspace: WorkspaceRef,
   principal: Principal,
-  draft: { path: string; revision: number },
+  draft: { path: string; key: string; revision: number; body?: Record<string, unknown> },
 ): Promise<string | undefined> {
   // A draft that does not build, or names what the workspace does not have yet, is
   // saved all the same. It is read once it is whole.
   try {
     const { bundle } = await composeDrafts(kernel, kernel.db, workspace, [draft.path]);
-    return await describeIn(kernel, workspace, principal, draft, bundle);
+    const worker = draft.body?.worker;
+    return await describeIn(
+      kernel,
+      workspace,
+      principal,
+      { ...draft, pool: typeof worker === "string" ? worker : null },
+      bundle,
+    );
   } catch (error) {
     if (error instanceof HttpError) return undefined;
     throw error;
@@ -780,7 +787,7 @@ async function describeIn(
   kernel: Kernel,
   workspace: WorkspaceRef,
   principal: Principal,
-  draft: { path: string; revision: number },
+  draft: { path: string; key: string; revision: number; pool?: string | null },
   bundle: Bundle,
 ): Promise<string> {
   return mutate(kernel.db, { principal }, async (trx, audit) => {
@@ -788,11 +795,14 @@ async function describeIn(
     const task = await queueTask(trx, {
       tenantId: workspace.tenantId,
       workspaceId: workspace.id,
+      // Where the script runs: a worker of another pool may not be there to read it.
+      pool: typeof draft.pool === "string" ? draft.pool : null,
       kind: "describe",
       subject: `${draft.revision}:${draft.path}`,
       request: {
         bundle: { id: stored.bundle.id, digest: stored.bundle.digest },
-        entry: entryFor("script", draft.path),
+        // By the key: after a rename the path is not what the entry is made from.
+        entry: entryFor("script", draft.key),
       },
     });
     return task.id;

@@ -14,6 +14,7 @@ import indexTypes from "../../../../packages/sdk/dist/index.d.ts?raw";
 import oauth2Types from "../../../../packages/sdk/dist/oauth2.d.ts?raw";
 import smtpTypes from "../../../../packages/sdk/dist/smtp.d.ts?raw";
 import tableTypes from "../../../../packages/sdk/dist/tables.d.ts?raw";
+import { NODE_TYPES } from "./nodeTypes.ts";
 
 (globalThis as { MonacoEnvironment?: unknown }).MonacoEnvironment = {
   getWorker(_id: string, label: string) {
@@ -34,7 +35,12 @@ monaco.typescript.typescriptDefaults.setCompilerOptions({
   // A script runs in Node, which has the globals a web worker has (fetch, URL, AbortSignal,
   // crypto…) and none of a page's (window, document).
   lib: ["es2023", "webworker"],
+  allowSyntheticDefaultImports: true,
 });
+monaco.typescript.typescriptDefaults.addExtraLib(
+  NODE_TYPES,
+  "file:///node_modules/@types/node-subset/index.d.ts",
+);
 // The SDK's own declarations, as built, so the editor knows every export the SDK has.
 const sdk = "file:///node_modules/@volvel/sdk";
 const libraries: Record<string, string> = {

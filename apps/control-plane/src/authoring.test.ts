@@ -1139,3 +1139,55 @@ describe("what is drafted is listed where it will be", () => {
     expect((await find()).draft).toBeNull();
   });
 });
+
+describe("schemas read from code", () => {
+  test("after a rename, a script's schemas are still read from its code", async () => {
+    const typed =
+      'import { z } from "@volvel/sdk";\n' +
+      "export const input = z.object({ name: z.string() });\n" +
+      "export default async (input: { name: string }) => ({ hello: input.name });\n";
+    // biome-ignore lint/suspicious/noExplicitAny: task bodies are inspected freely
+    const ended = async (id: string): Promise<any> => {
+      for (let i = 0; i < 150; i++) {
+        const task = (await alice.get(`${ws()}/tasks/${id}`)).body;
+        if (task.status === "succeeded" || task.status === "failed") return task;
+        await sleep(100);
+      }
+      throw new Error(`Task ${id} did not end.`);
+    };
+    expect((await draft("orders/renamer", scriptBody(typed))).status).toBe(200);
+    expect((await alice.post(`${ws()}/changes/deploy`, { paths: ["orders/renamer"] })).status).toBe(
+      201,
+    );
+    const renamed = await alice.put(`${ws()}/drafts/orders/renamer`, {
+      kind: "script",
+      schemaVersion: 1,
+      body: scriptBody(typed),
+      path: "greetings/renamer",
+    });
+    expect(renamed.status, JSON.stringify(renamed.body)).toBe(200);
+    expect(renamed.body.key).toBe("orders/renamer");
+    expect((await ended(renamed.body.schemaTaskId)).status).toBe("succeeded");
+    const read = (await alice.get(`${ws()}/drafts/greetings/renamer`)).body;
+    expect(read.body).toMatchObject({
+      schemaSource: "code",
+      input: { type: "object", properties: { name: { type: "string" } } },
+    });
+    await alice.delete(`${ws()}/drafts/greetings/renamer`);
+  });
+
+  test("a schema is read in the pool of the script that has it", async () => {
+    const saved = await draft(
+      "orders/on-site",
+      scriptBody("export default async () => ({});\n", { worker: "plant-floor" }),
+    );
+    expect(saved.status, JSON.stringify(saved.body)).toBe(200);
+    const task = await t.db
+      .selectFrom("task")
+      .select("pool")
+      .where("id", "=", saved.body.schemaTaskId)
+      .executeTakeFirstOrThrow();
+    expect(task.pool).toBe("plant-floor");
+    await alice.delete(`${ws()}/drafts/orders/on-site`);
+  });
+});

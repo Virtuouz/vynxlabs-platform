@@ -858,6 +858,53 @@ describe("worker pools", () => {
     expect((await alice.patch(`/tenants/${tenant}`, { managedWorkers: true })).status).toBe(200);
   });
 
+  test("a test of a connection, and a test alert, go to the pool of the script that uses it", async () => {
+    const pooled = (
+      await alice.post(`/tenants/${tenant}/workspaces`, {
+        slug: "pooled",
+        name: "Pooled",
+        type: "production",
+      })
+    ).body.id;
+    const bound = await alice.put(`${ws(pooled)}/connection-bindings/hook`, {
+      config: { baseUrl: "https://hook.example.com" },
+    });
+    expect(bound.status, JSON.stringify(bound.body)).toBeLessThan(300);
+    const local = script("read-the-line", { connections: ["hook"] });
+    (local.body as Any).worker = "plant-floor";
+    const deployed = await deploy(
+      alice,
+      pooled,
+      bundle([local, manifest("connection", "hook", { connector: "http" })]),
+    );
+    expect(deployed.status, JSON.stringify(deployed.body)).toBe(201);
+    const tested = await alice.post(`${ws(pooled)}/connection-tests`, { path: "hook" });
+    const alerted = await alice.post(`${ws(pooled)}/alert-tests`, { connection: "hook" });
+    expect(tested.status, JSON.stringify(tested.body)).toBe(202);
+    expect(alerted.status, JSON.stringify(alerted.body)).toBe(202);
+    const claim = async (token: string) =>
+      (
+        await t.app.inject({
+          method: "POST",
+          url: "/api/v1/worker/claim",
+          headers: { authorization: `Bearer ${token}` },
+          payload: {
+            workerId: "018f0000-0000-7000-8000-0000000000d1",
+            waitSeconds: 0,
+            kinds: ["test-connection", "deliver"],
+          },
+        })
+      ).json().job as Any;
+    // A worker of the default pool has nothing to take; one of the script's pool takes both.
+    const general = (await credential({ name: "pooled general" })).body;
+    expect(await claim(general.token)).toBe(null);
+    const floor = (await credential({ name: "pooled floor", pool: "plant-floor" })).body;
+    const claimed = [await claim(floor.token), await claim(floor.token)];
+    expect(claimed.map((job) => job?.taskId).sort()).toEqual(
+      [tested.body.id, alerted.body.id].sort(),
+    );
+  });
+
   test("a pool's name is checked when the bundle is uploaded", async () => {
     const bad = script("bad");
     (bad.body as Any).worker = "Plant Floor";

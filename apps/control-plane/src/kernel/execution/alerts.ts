@@ -5,7 +5,7 @@ import type { Kernel } from "../kernel.js";
 import { observe } from "../metrics.js";
 import { readConnection } from "./bindings.js";
 import { type ScriptBody, startRun } from "./runs.js";
-import { onTaskEnded, queueTask } from "./tasks.js";
+import { onTaskEnded, poolOfConnection, queueTask } from "./tasks.js";
 
 /**
  * A notification is posted by one of the tenant's workers, not by the control
@@ -34,6 +34,8 @@ interface FailedRun {
   attempt: number;
   trigger_type: string;
   error: { message: string } | null;
+  /** The pool the run waited for: its failure is posted from there. */
+  pool?: string | null;
 }
 
 interface Failure {
@@ -47,8 +49,8 @@ interface Failure {
   error: string;
   /** What the failed thing asks for itself. Wins over the workspace's default. */
   own?: FailureAlert | undefined;
-  /** The pool the failed run ran on: its alert is posted from where it ran. */
-  pool?: string | null;
+  /** The pool of the run that failed. A flow has none of its own. */
+  pool?: string | null | undefined;
 }
 
 /**
@@ -187,7 +189,9 @@ async function alert(
       await queueTask(kernel.db, {
         tenantId: failure.tenantId,
         workspaceId: failure.workspaceId,
-        pool: failure.pool ?? null,
+        // The run's own pool; a flow has none, so where a script that uses the connection runs.
+        pool:
+          failure.pool ?? (await poolOfConnection(kernel.db, failure.workspaceId, wanted.notify)),
         kind: "deliver",
         subject: `${table}:${failure.id}`,
         request: {

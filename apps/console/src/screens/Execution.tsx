@@ -318,7 +318,13 @@ export function Scripts({
                   deployed={open.deployed !== false}
                   draft={open.draft === true}
                 />
-                <OfferButton root={root} kind="script" path={open.path} size="small" />
+                <OfferButton
+                  root={root}
+                  kind="script"
+                  path={open.path}
+                  size="small"
+                  deployed={open.deployed !== false}
+                />
               </>
             }
           >

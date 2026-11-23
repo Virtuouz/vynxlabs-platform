@@ -224,7 +224,7 @@ const NEW_BODY: ScriptBody = {
   input: { type: "object", properties: { name: { type: "string" } } },
   output: { type: "object" },
   timeoutSeconds: 60,
-  retries: { limit: 0, delaySeconds: 0, backoff: false },
+  retries: { limit: 0, delaySeconds: 30, backoff: true },
   uses: { connections: [], secrets: [], variables: [] },
   source: { language: "typescript", code: SCRIPT_STARTERS[0]?.code ?? STARTER },
 };
@@ -659,12 +659,36 @@ export function ScriptEditor({
               disabled={readOnly}
               onChange={(value) =>
                 change({
-                  retries: {
-                    delaySeconds: 0,
-                    backoff: false,
-                    ...body.retries,
-                    limit: value ?? 0,
-                  },
+                  retries: { delaySeconds: 30, backoff: true, ...body.retries, limit: value ?? 0 },
+                })
+              }
+            />
+          ) : null}
+          {body.retries ? (
+            <NumberField
+              name="retry-delay"
+              label="Wait between tries (seconds)"
+              value={body.retries.delaySeconds}
+              min={0}
+              max={3600}
+              disabled={readOnly}
+              error={fieldError("/body/retries/delaySeconds")}
+              onChange={(value) =>
+                change({
+                  retries: { limit: 0, backoff: true, ...body.retries, delaySeconds: value ?? 30 },
+                })
+              }
+            />
+          ) : null}
+          {body.retries ? (
+            <CheckboxField
+              name="retry-backoff"
+              label="Wait longer after each failed try"
+              checked={body.retries.backoff}
+              disabled={readOnly}
+              onChange={(checked) =>
+                change({
+                  retries: { limit: 0, delaySeconds: 30, ...body.retries, backoff: checked },
                 })
               }
             />
@@ -895,8 +919,13 @@ export function ScriptEditor({
         actions={
           <>
             {/* Something deployed can be given to an agent; a draft cannot, until it is. */}
-            {kind === "script" && opened && (state === "deployed" || state === "repository") ? (
-              <OfferButton root={root} kind="script" path={opened} />
+            {kind === "script" && opened ? (
+              <OfferButton
+                root={root}
+                kind="script"
+                path={opened}
+                deployed={state === "deployed" || state === "repository"}
+              />
             ) : null}
             {removed && editable && opened ? (
               <RemoveDraftButton

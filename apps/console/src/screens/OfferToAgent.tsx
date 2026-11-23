@@ -210,13 +210,17 @@ export function OfferButton({
   kind,
   path,
   size,
+  deployed = true,
 }: {
   root: string;
   kind: "script" | "flow";
   path: string;
   size?: "small";
+  /** Only something deployed can be offered: a draft meets a 404. One condition for the editor and the list. */
+  deployed?: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  if (!deployed) return null;
   const [, , tenantId = "", , workspaceId = ""] = root.split("/");
   return (
     <>

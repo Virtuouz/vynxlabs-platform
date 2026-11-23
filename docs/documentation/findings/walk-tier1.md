@@ -77,3 +77,22 @@ Walked on the throwaway instance at `8f8fa3f7`. Rows of the same shape as the ot
 - A refused name shows the raw pattern ("must match pattern ^[a-z]…"); a short export passphrase shows the browser's own bubble: the shared piece words a pattern refusal per field.
 - A domain hostname breaks mid-word; the role Summary says "Rows, Rows, past the row policy".
 - Disabling an operator who belongs to no tenant shows no notice that it was done. (The Operators list's Disabled state belongs to lane ins2.)
+
+### WLK-13 The flow editor's "Last test" panel shows a step's output with a secret unmasked, and the preview counts a secret
+- **Outcome:** reproduced (walk, 1440 light, `shots29/flow/90-preview-1440-light.png`)
+- **Severity:** security
+- **Where:** `apps/control-plane/src/routes/flows.ts` `expressionContext` (the shield), and the step output the Last test panel reads. `size(trigger.api_key)` gave 10 (the mask's length) while the run gave 23; `show`'s output showed the raw key.
+- **Fix:** every place a step's input or output reaches a person is masked by the same piece (D13/SCR-01), including the editor's test panel; an expression over a masked value says it cannot be previewed, rather than computing on the mask. Lane mask2.
+
+### WLK-14 An approval detail written as a string from a secret field goes into the queue and the mail unmasked
+- **Outcome:** reproduced (walk)
+- **Severity:** security
+- **Where:** `apps/control-plane/src/kernel/flows/approval-detail.ts:9` masks map details only. Lane mask2: a detail string is masked by the run's known values like any text.
+
+### WLK-15 From the flow walk
+- Renaming a case with Enter makes its edge disappear from the canvas until a reload (`FlowEditor.tsx:268`: handle ids change, `useUpdateNodeInternals` is not called).
+- Header names compare case-sensitively, so `X-One` and `x-one` both save (`FlowEditor.tsx:2579`).
+- A 300 KB trigger input fails with "No such key: blob", and the input panel shows `{"stored": "flow-runs/…/input.json"}`: a large input is read where it is kept, and said plainly if it cannot be.
+- A deploy with problems shows a raw "bundle's manifests are not valid … /body/nodes/mail", and names a problem the editor's list does not: one list, in words, the same in both.
+- In Add step, Enter does not pick the first match.
+- Minor: the header says "Draft Draft" / "Deployed Deployed"; a reserved case name says "already used"; the edge label "otherwise" is cut; the approval link page shows times with no zone; the Triggers path breaks mid-word at 1440; at 390 the minimap covers the canvas.

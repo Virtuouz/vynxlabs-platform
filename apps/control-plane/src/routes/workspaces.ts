@@ -3,11 +3,11 @@ import { newId, sql } from "@volvel/db";
 import { PATH_PATTERN } from "@volvel/manifest";
 import { Type } from "typebox";
 import { refuseDirectProductionWrite } from "../kernel/authoring.js";
-import { check } from "../kernel/authorize.js";
+import { boundInside, check } from "../kernel/authorize.js";
 import { refuseMissingTargets, refuseRetiringReferred } from "../kernel/data/apply.js";
 import { badRequest, conflict, HttpError, notFound } from "../kernel/errors.js";
 import { instanceTriggersPaused } from "../kernel/execution/control.js";
-import { access, type WorkspaceRef } from "../kernel/http.js";
+import { access, reachedFromInside, type WorkspaceRef } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
 import { requireStanding } from "../kernel/pages/standing.js";
 import { resolveResource } from "../kernel/resolve.js";
@@ -55,6 +55,12 @@ const Workspace = Type.Object({
     notify: Type.Optional(Type.String()),
   }),
   createdAt: Time,
+  onlyInside: Type.Optional(
+    Type.Boolean({
+      description:
+        "True when the caller holds a grant on something inside this workspace and none on the workspace: it is answered the name, slug and kind alone.",
+    }),
+  ),
 });
 interface WorkspaceRow {
   id: string;
@@ -82,6 +88,15 @@ const toWorkspace = (row: WorkspaceRow, pausedByInstance: boolean) => ({
   timeZone: row.time_zone ?? "UTC",
   failureAlert: row.failure_alert,
   createdAt: iso(row.created_at),
+});
+
+/** What the shell draws a workspace from: no link, limit or alert, which are its settings. */
+const shellOf = (whole: ReturnType<typeof toWorkspace>) => ({
+  ...whole,
+  onlyInside: true,
+  linkedWorkspaceId: null,
+  concurrencyLimit: 0,
+  failureAlert: {},
 });
 
 const SecretName = Type.String({ pattern: "^[A-Za-z_][A-Za-z0-9_]*$", maxLength: 127 });
@@ -216,15 +231,28 @@ export function workspaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           await ctx.authorize("workspace:read", { tenantId: params.t });
           return { items: rows.map((row) => toWorkspace(row, byInstance)) };
         }
-        const readable = [];
+        const readable: typeof rows = [];
+        // A workspace where the caller holds a grant on a resource is listed for its name alone.
+        const inside: typeof rows = [];
         for (const row of rows) {
           if (await ctx.allowed("workspace:read", { tenantId: params.t, workspaceId: row.id })) {
             readable.push(row);
+          } else if (await boundInside(db, ctx.principal, params.t, row.id)) {
+            inside.push(row);
           }
         }
         // Nothing readable here: answer exactly as the tenant-level check would.
-        if (readable.length === 0) await ctx.authorize("workspace:read", { tenantId: params.t });
-        return { items: readable.map((row) => toWorkspace(row, byInstance)) };
+        if (readable.length === 0 && inside.length === 0) {
+          await ctx.authorize("workspace:read", { tenantId: params.t });
+        }
+        const listed = [...readable, ...inside].sort((a, b) => (a.slug < b.slug ? -1 : 1));
+        return {
+          items: listed.map((row) =>
+            inside.includes(row)
+              ? shellOf(toWorkspace(row, byInstance))
+              : toWorkspace(row, byInstance),
+          ),
+        };
       },
     );
 
@@ -342,22 +370,24 @@ export function workspaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       "/tenants/:t/workspaces/:w",
       {
-        config: { access: access.workspace("workspace:read") },
+        config: { access: reachedFromInside(access.workspace("workspace:read")) },
         schema: {
           summary: "One workspace",
-          description: "The workspace's name, its slug and its kind, dev or production.",
+          description:
+            "The workspace's name, its slug and its kind, dev or production. Someone whose only grant is on one resource inside it is answered the name, slug and kind alone: its link, limits and alert are left empty.",
           tags: ["tenancy"],
           params: WorkspaceParams,
           response: { 200: Workspace },
         },
       },
-      async ({ params }) => {
+      async ({ ctx, params }) => {
         const row = await db
           .selectFrom("workspace")
           .selectAll()
           .where("id", "=", params.w)
           .executeTakeFirstOrThrow();
-        return toWorkspace(row, await instanceTriggersPaused(kernel));
+        const whole = toWorkspace(row, await instanceTriggersPaused(kernel));
+        return ctx.insideOnly ? shellOf(whole) : whole;
       },
     );
 

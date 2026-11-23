@@ -433,6 +433,7 @@ export function TriggersWorkbench({
       </Closing>
       <CollectionView
         actions={newTrigger}
+        needs={{ base: root, permission: "resource:write", what: "the triggers" }}
         title="Triggers"
         description="What starts work here without anyone asking. Pause one to stop just it, in any workspace; the pause lasts through deploys until it is resumed."
         state={
@@ -818,6 +819,7 @@ export function EventsWorkbench({
       title="Events"
       description="What has been published here, newest first. Flows and scripts listen for an event by name."
       actions={<PublishEventButton root={root} production={production} onPublished={list.reload} />}
+      needs={{ base: root, permission: "event:write", what: "the events" }}
       toolbar={
         <form
           className="flex flex-wrap items-end gap-2"

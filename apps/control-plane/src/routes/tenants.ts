@@ -5,7 +5,7 @@ import { Type } from "typebox";
 import { MIN_PASSWORD_LENGTH, RETENTION_BOUNDS } from "../config.js";
 import { endSessions, isOperator, keepingAnAdmin } from "../kernel/administer.js";
 import { badRequest, conflict, forbiddenBecause, notFound } from "../kernel/errors.js";
-import { access } from "../kernel/http.js";
+import { access, reachedFromInside } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
 import { createMember } from "../kernel/members.js";
 import { effectivePolicy } from "../kernel/retention.js";
@@ -344,10 +344,11 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       "/tenants/:t",
       {
-        config: { access: access.tenantOrInstance("tenant:read") },
+        config: { access: reachedFromInside(access.tenantOrInstance("tenant:read")) },
         schema: {
           summary: "One tenant",
-          description: "The tenant's name, its slug and its settings.",
+          description:
+            "The tenant's name, its slug and its settings. Someone whose only grants are on resources inside it is answered the name and slug, with the settings at their defaults.",
           tags: ["tenancy"],
           params: TenantParams,
           response: {
@@ -375,10 +376,18 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           ])
           .where("id", "=", params.t)
           .executeTakeFirstOrThrow();
-        return {
-          ...toTenant(row),
-          mayRename: await ctx.allowed("tenant:write", { tenantId: params.t }),
-        };
+        const whole = toTenant(row);
+        if (ctx.insideOnly) {
+          return {
+            ...whole,
+            dataLocation: null,
+            managedWorkers: false,
+            managedWorkersLocked: false,
+            consoleCode: true,
+            mayRename: false,
+          };
+        }
+        return { ...whole, mayRename: await ctx.allowed("tenant:write", { tenantId: params.t }) };
       },
     );
 

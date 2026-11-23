@@ -10,7 +10,7 @@ import {
   type Trx,
   writeAudit,
 } from "./audit.js";
-import { check, type Target } from "./authorize.js";
+import { boundInside, check, type Target } from "./authorize.js";
 import { forbidden, forbiddenBecause, notFound, unauthenticated } from "./errors.js";
 import type { WorkerScope } from "./execution/runs.js";
 import { resolveWorker } from "./execution/workers.js";
@@ -38,7 +38,16 @@ export type Access =
   | { kind: "worker-host" }
   /** Called by an identity provider with a token made for it, under SCIM. */
   | { kind: "scim" }
-  | { kind: "permission"; permission: string; scope: Scope };
+  | {
+      kind: "permission";
+      permission: string;
+      scope: Scope;
+      /**
+       * Also answered, with no more than the shell needs to draw, to someone whose only grants
+       * are on resources inside (`boundInside`). The handler trims its answer by `ctx.insideOnly`.
+       */
+      inside?: boolean;
+    };
 
 export const access = {
   public: { kind: "public" } as Access,
@@ -64,6 +73,10 @@ export const access = {
     scope: "workspace",
   }),
 };
+
+/** Lets someone who holds a grant on one resource inside reach a route, for the shell alone. */
+export const reachedFromInside = (declared: Access): Access =>
+  declared.kind === "permission" ? { ...declared, inside: true } : declared;
 
 /**
  * A limit for routes an app may call for someone who is not signed in. It counts
@@ -114,6 +127,8 @@ export class RequestContext {
   /** Set on workspace-scoped routes, after the workspace was found in the tenant. */
   workspace: WorkspaceRef | undefined;
   mutated = false;
+  /** Set when the route was reached by a grant on one resource inside, not by its own permission. */
+  insideOnly = false;
   /** Set when the request named a resource by a path it no longer has. The answer says so. */
   moved: AliasUse | undefined;
   readonly #request: FastifyRequest;
@@ -289,11 +304,22 @@ export function installAccessControl(app: FastifyInstance, kernel: Kernel) {
       }
       throw error;
     }
-    await ctx.authorize(declared.permission, {
+    const target = {
       tenantId,
       workspaceId: declared.scope === "workspace" ? params.w : undefined,
       orInstance: declared.scope === "tenant-or-instance",
-    });
+    };
+    // A grant on one flow lets its holder reach the flow's workspace and tenant to draw the page,
+    // by the same match `check` uses, and nothing the route would read beyond that.
+    if (
+      declared.inside &&
+      !(await check(kernel.db, principal, declared.permission, target)).allowed &&
+      (await boundInside(kernel.db, principal, tenantId, target.workspaceId))
+    ) {
+      ctx.insideOnly = true;
+    } else {
+      await ctx.authorize(declared.permission, target);
+    }
     if (declared.scope === "workspace") {
       ctx.workspace = await findWorkspace(kernel, tenantId, params.w as string);
     }

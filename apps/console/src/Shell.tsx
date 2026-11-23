@@ -81,6 +81,8 @@ interface WorkspaceSummary {
   triggersPaused?: boolean;
   pausedByInstance?: boolean;
   linkedWorkspaceId?: string | null;
+  /** True when the person holds a grant on something inside and nothing on the workspace itself. */
+  onlyInside?: boolean;
 }
 
 /** What `GET …/summary` answers for a workspace. A count the person may not read is null. */
@@ -154,6 +156,8 @@ function panelFor(
   /** An area of the rail that was pressed: its sections are shown, wherever the person is. */
   reveal?: { area: Area; workspaceId: string },
   workspaceType?: string,
+  /** The person reaches only what was given to them inside: no section of the workspace is theirs to open. */
+  onlyInside?: boolean,
 ): { title: string; groups: { label?: string; entries: Entry[] }[] } {
   const { tenantId } = where;
   const workspaceId = reveal?.workspaceId ?? where.workspaceId;
@@ -176,7 +180,7 @@ function panelFor(
       title: AREA_LABEL[area],
       groups: [
         {
-          entries: WORKSPACE_SECTIONS[area].map((section) => ({
+          entries: (onlyInside ? [] : WORKSPACE_SECTIONS[area]).map((section) => ({
             key: section.slug,
             label: sectionLabel(section, workspaceType),
             icon: section.icon,
@@ -783,6 +787,8 @@ export function Shell({
     { workspace: wsCounts.data, tenant: tenantCounts.data },
     reveal,
     workspaces.data?.items.find((one) => one.id === (reveal?.workspaceId ?? workspaceId))?.type,
+    workspaces.data?.items.find((one) => one.id === (reveal?.workspaceId ?? workspaceId))
+      ?.onlyInside,
   );
   // The overview is one screen, and an editor wants the width: neither has a panel.
   const hasPanel = where.area !== "overview" && !where.editor;

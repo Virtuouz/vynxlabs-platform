@@ -401,10 +401,45 @@ export const filterColumn = (filter: PageFilter): string => filter.from?.column 
  * The columns of a table by its name: a table of the workspace, with the columns every table has,
  * or a table of a data source, with only the columns it has.
  */
-export function columnsNamed(catalog: Catalog, name: string | undefined): CatalogColumn[] {
+export function columnsNamed(
+  catalog: Catalog,
+  name: string | undefined,
+  /** The reference columns the query follows: a column of each table they point to is `via.column`. */
+  joins: readonly string[] = [],
+): CatalogColumn[] {
   const own = catalog.tables.find((one) => one.name === name);
-  if (own) return withSystemColumns(own.columns);
-  return catalog.sources?.find((one) => one.name === name)?.columns ?? [];
+  if (!own) return catalog.sources?.find((one) => one.name === name)?.columns ?? [];
+  const base = withSystemColumns(own.columns);
+  return [
+    ...base,
+    ...joins.flatMap((via) => {
+      const target = base.find((one) => one.name === via)?.references;
+      const table = target ? catalog.tables.find((one) => one.name === target) : undefined;
+      return (table?.columns ?? []).map((column) => ({
+        ...column,
+        name: `${via}.${column.name}`,
+        references: null,
+      }));
+    }),
+  ];
+}
+
+/** The most tables one query may follow. */
+export const MAX_JOINS = 6;
+
+/** The tables a table's own reference columns point to, that the workspace lets this page read. */
+export function followable(
+  catalog: Catalog,
+  table: string | undefined,
+): { via: string; table: string; columns: CatalogColumn[] }[] {
+  const own = catalog.tables.find((one) => one.name === table);
+  if (!own) return [];
+  return own.columns.flatMap((column) => {
+    const target = column.references
+      ? catalog.tables.find((one) => one.name === column.references)
+      : undefined;
+    return target ? [{ via: column.name, table: target.name, columns: target.columns }] : [];
+  });
 }
 
 const hasColumn = (catalog: Catalog, table: string, column: string) =>

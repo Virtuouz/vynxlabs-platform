@@ -25,17 +25,20 @@ export function CheckChip({
   checked,
   onChange,
   children,
+  disabled = false,
 }: {
   checked: boolean;
   onChange: (next: boolean) => void;
   children: ReactNode;
+  disabled?: boolean;
 }) {
   return (
     <button
       type="button"
       aria-pressed={checked}
+      disabled={disabled}
       onClick={() => onChange(!checked)}
-      className={`inline-flex min-h-7 cursor-pointer items-center gap-1.5 rounded-control border px-3 py-0.5 text-left text-body-sm ${focus} ${
+      className={`inline-flex min-h-7 cursor-pointer items-center gap-1.5 rounded-control border px-3 py-0.5 text-left text-body-sm disabled:cursor-not-allowed disabled:opacity-60 ${focus} ${
         checked
           ? "border-action bg-action-soft text-action"
           : "border-dashed border-line-strong text-ink-muted hover:text-ink"

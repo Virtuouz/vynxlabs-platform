@@ -50,11 +50,14 @@ import {
   bindFilter,
   type CatalogColumn,
   choiceWords,
+  columnsNamed,
   type DataPart,
   dataParts,
   defaultInputs,
   filterColumn,
+  followable,
   heading,
+  MAX_JOINS,
   MAX_SEARCH_COLUMNS,
   resultNames,
   searchColumns,
@@ -136,6 +139,7 @@ export function RowsItUses({
           setWriting={setWriting}
         />
       ) : null}
+      {visual && rows.source ? <AlsoFrom env={env} input={input} visual={visual} /> : null}
       {showSql ? <SqlBlock env={env} input={input} /> : null}
       {data && ("query" in data.source || "sql" in data.source) ? (
         <ConstantValues env={env} input={input} />
@@ -175,6 +179,101 @@ export function RowsItUses({
         />
       ) : null}
     </DrawerGroup>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Also from
+
+/** What of a query still needs the table followed by `via`, in words; empty when nothing does. */
+function neededBy(visual: VisualQuery, via: string): string[] {
+  const uses = (name: string | undefined) => name?.startsWith(`${via}.`) === true;
+  return [
+    ...((visual.groupBy ?? []).some((one) => uses(one.column)) ? ["Breakdown"] : []),
+    ...((visual.measures ?? []).some((one) => uses(one.column)) ? ["Values"] : []),
+  ];
+}
+
+/**
+ * "Also from": the tables the chosen table points to, each a chip that follows it, and for each
+ * one followed the columns of it to show. Every visual source gets it through "Rows it uses".
+ */
+function AlsoFrom({ env, input, visual }: { env: Env; input: string; visual: VisualQuery }) {
+  const options = followable(env.catalog, visual.table);
+  if (options.length === 0) return null;
+  const joins = visual.joins ?? [];
+  const key = `joins:${env.widget.id}:${input}`;
+  const summary = (visual.measures?.length ?? 0) > 0 || (visual.groupBy?.length ?? 0) > 0;
+  const own = columnsNamed(env.catalog, visual.table).map((one) => one.name);
+  const write = (next: VisualQuery, words: string) => writeVisual(env, input, next, words, key);
+
+  const follow = (via: string, on: boolean) => {
+    if (on) {
+      write({ ...visual, joins: [...joins, via] }, "following a table");
+      return;
+    }
+    const gone = (name: string | undefined) => name?.startsWith(`${via}.`) === true;
+    const next: VisualQuery = { ...visual, joins: joins.filter((one) => one !== via) };
+    if (visual.columns) next.columns = visual.columns.filter((one) => !gone(one));
+    if (visual.filters) next.filters = visual.filters.filter((one) => !gone(one.column));
+    if (visual.sort) next.sort = visual.sort.filter((one) => !gone(one.by));
+    write(next, "no longer following a table");
+  };
+  const choose = (via: string, column: string, on: boolean) => {
+    const name = `${via}.${column}`;
+    const have = visual.columns ?? own.filter((one) => !["created_at", "updated_at"].includes(one));
+    write(
+      { ...visual, columns: on ? [...have, name] : have.filter((one) => one !== name) },
+      "choosing the columns of another table",
+    );
+  };
+  return (
+    <DrawerBlock label="Also from">
+      <ChipSet label="Tables this also reads from">
+        {options.map((one) => {
+          const on = joins.includes(one.via);
+          const needed = on ? neededBy(visual, one.via) : [];
+          return (
+            <CheckChip
+              key={one.via}
+              checked={on}
+              disabled={needed.length > 0 || (!on && joins.length >= MAX_JOINS)}
+              onChange={(next) => follow(one.via, next)}
+            >
+              {heading(one.table)} by {heading(one.via).toLowerCase()}
+            </CheckChip>
+          );
+        })}
+      </ChipSet>
+      {options
+        .filter((one) => joins.includes(one.via))
+        .map((one) => {
+          const needed = neededBy(visual, one.via);
+          return (
+            <div key={one.via} className="flex flex-col gap-1">
+              {needed.length > 0 ? (
+                <p className="m-0 text-body-sm text-ink-muted">
+                  {heading(one.table)} is used by {needed.join(" and ")}: change that to stop
+                  following it.
+                </p>
+              ) : null}
+              {summary ? null : (
+                <ChipSet label={`Columns from ${heading(one.table)}`}>
+                  {one.columns.map((column) => (
+                    <CheckChip
+                      key={column.name}
+                      checked={(visual.columns ?? []).includes(`${one.via}.${column.name}`)}
+                      onChange={(on) => choose(one.via, column.name, on)}
+                    >
+                      {heading(column.name)}
+                    </CheckChip>
+                  ))}
+                </ChipSet>
+              )}
+            </div>
+          );
+        })}
+    </DrawerBlock>
   );
 }
 
@@ -837,7 +936,8 @@ function wordsOf(type: string): {
   return { desc: "Z to A", asc: "A to Z", phrase: { desc: "Z to A", asc: "A to Z" } };
 }
 
-function SortRow({
+/** The row "Sorted by" (and "Show at most"): the Data tab's, and a chart's own Order group. */
+export function SortRow({
   env,
   input,
   visual,

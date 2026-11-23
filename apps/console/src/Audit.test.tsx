@@ -236,7 +236,6 @@ const NOT_AUDIT = new Set([
   "old",
   "input",
   "operation",
-  "sql",
 ]);
 
 function sourcesOf(dir: string): string[] {

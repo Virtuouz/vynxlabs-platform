@@ -14,16 +14,63 @@ export const EXPORT_FORMAT = "volvel-tenant-export";
  */
 export const EXPORT_FORMAT_VERSION = 2;
 export const EXPORT_FORMATS_READ = [1, 2];
-/** What an export never carries, said in the manifest so that whoever imports it knows what to make again. */
-export const NOT_CARRIED = [
-  "API keys: create new ones on the instance the tenant moves to.",
-  "Worker credentials: create new ones and restart the tenant's own workers with them.",
-  "Operator access grants: they belong to the instance the tenant is leaving.",
-  "Runs that were queued or in progress: a run belongs to the instance that started it.",
-  "End users' sign-ins and unused invitation and reset links: people sign in again, with the password they had.",
-  "Hostnames registered for apps: a name points at one instance. Register it again where the tenant arrives.",
+const API_KEYS = "API keys: create new ones on the instance the tenant moves to.";
+const WORKERS =
+  "Worker credentials: create new ones and restart the tenant's own workers with them.";
+const SIGN_INS =
+  "End users' sign-ins and unused invitation and reset links: people sign in again, with the password they had.";
+const MEMBER_PREFERENCES =
+  "Members' saved views of lists, and where they last were: each person's own, kept by the instance they use.";
+
+/**
+ * What an export never carries, by the table it leaves out, so that a test can fail when a table
+ * is left out and not named here. Said in the manifest so that whoever imports it knows what to
+ * make again. The tenant's key is not in it: it travels, wrapped under the passphrase.
+ */
+export const NOT_CARRIED_BY_TABLE: Record<string, string> = {
+  api_key: API_KEYS,
+  worker_credential: WORKERS,
+  worker: WORKERS,
+  access_grant: "Operator access grants: they belong to the instance the tenant is leaving.",
+  task: "Runs that were queued or in progress, and work handed to workers: a run belongs to the instance that started it.",
+  end_user_token: SIGN_INS,
+  app_session: SIGN_INS,
+  app_handoff: SIGN_INS,
+  app_domain:
+    "Hostnames registered for apps: a name points at one instance. Register it again where the tenant arrives.",
+  scim_token:
+    "Provisioning tokens (SCIM): a directory is given a new one at the address the tenant arrives at.",
+  scim_refusal:
+    "Refused pushes from directories: the list begins empty where the tenant arrives, and fills as directories push again.",
+  webhook_refusal:
+    "Refused webhook requests: seen again where the tenant arrives, if they are sent again.",
+  health_check: "How sources answered their last check: asked again where the tenant arrives.",
+  sso_state:
+    "Single sign-ins in progress, and the assertions already used: they last minutes and answer to this instance's address.",
+  sso_assertion:
+    "Single sign-ins in progress, and the assertions already used: they last minutes and answer to this instance's address.",
+  connection_oauth_state:
+    "Authorizations of connections that were in progress: they last minutes and answer to this instance's address.",
+  approval_link:
+    "Approval links sent by mail: a link leads to the instance that sent it. Ask for new ones where the tenant arrives.",
+  promotion_request:
+    "Requests to promote one workspace to another that were waiting: they name this instance's bundles and members. Ask again.",
+  workspace_clone: "A copy of a workspace that was being made: make it again.",
+  member_recent_scope: MEMBER_PREFERENCES,
+  member_recent_item: MEMBER_PREFERENCES,
+  member_saved_view: MEMBER_PREFERENCES,
+};
+
+/** What is not carried and is not a table of the tenant's own. */
+const NOT_CARRIED_ELSEWHERE = [
   "Passwords of members who also belong to another tenant or run the instance: their account is one for the whole instance, so it is not the tenant's to give away. They keep their password where they already have an account, and need a new one where they have none.",
-  "SCIM tokens: a directory is given a new one at the address the tenant arrives at.",
+  "Recovery codes: they are a member's own, for the whole instance. Make new ones where the member owns a tenant.",
+  "The audit log is cut at the tenant's retention period: entries older than it are not in the export.",
+];
+
+export const NOT_CARRIED = [
+  ...new Set(Object.values(NOT_CARRIED_BY_TABLE)),
+  ...NOT_CARRIED_ELSEWHERE,
 ];
 
 export interface ExportManifest {

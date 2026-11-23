@@ -733,3 +733,14 @@ test("a step's run, opened by its ID in the list, opens as a step of a flow run 
   expect(href("Open the flow run")).toContain(`${link}/runs/f2?step=b`);
   expect(screen.queryByText(/No run has this ID/)).toBeNull();
 });
+
+test("WLK-16: a flow run the list does not hold (a child's, or an older one) opens from its ID instead of saying no run has it", async () => {
+  routes[`GET ${root}/activity`] = () => [200, { items: [], nextCursor: null, stateCounts: {} }];
+  routes[`GET ${root}/runs/c1`] = () => [404, { status: 404, detail: "No such run." }];
+  routes[`GET ${root}/flow-runs/c1`] = () => [200, { id: "c1", flow: "orders/child" }];
+  history.replaceState(null, "", `${link}/runs?run=c1`);
+  show(<RunsWorkbench root={root} link={link} />);
+  expect(await screen.findByText(/This flow run is not in the list/)).toBeTruthy();
+  expect(href("Open the flow run")).toContain(`${link}/runs/c1`);
+  expect(screen.queryByText(/No run has this ID/)).toBeNull();
+});

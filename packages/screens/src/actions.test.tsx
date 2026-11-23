@@ -230,6 +230,28 @@ describe("confirming an action", () => {
     await waitFor(() => expect(screen.getByTestId("outcome").textContent).toBe('{"ok":true}'));
   });
 
+  test("WLK-10: the confirmation starts on its main button, and on Go back when the action removes a record", async () => {
+    show([withAction(markPaid)], clientOf());
+    await screen.findByText("INV-1");
+    fireEvent.click(screen.getByLabelText("Act on INV-1"));
+    await screen.findByText("Mark paid?");
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole("button", { name: "Mark paid" })),
+    );
+    cleanup();
+    const removal: Action = {
+      confirm: { title: "Remove it?", button: "Remove" },
+      steps: [{ do: "delete", record: "event" }],
+    };
+    show([withAction(removal)], clientOf());
+    await screen.findByText("INV-1");
+    fireEvent.click(screen.getByLabelText("Act on INV-1"));
+    await screen.findByText("Remove it?");
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole("button", { name: "Cancel" })),
+    );
+  });
+
   test("an action saved but not started says so, and the page is read again", async () => {
     const client = clientOf({
       client: [],

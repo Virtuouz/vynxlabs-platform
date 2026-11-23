@@ -207,6 +207,13 @@ export function sourceFailure(path: string, error: unknown): unknown {
       "source_unreachable",
       `The data source "${path}" could not be reached. Check its address.`,
     );
+  // The server asked for a password and none is stored: the address changed, or none was given.
+  if (/client password must be a string/i.test(message))
+    return new HttpError(
+      502,
+      "source_refused",
+      `No password is set for the data source "${path}". Change it and type the password.`,
+    );
   if (code === "28P01" || code === "28000")
     return new HttpError(
       502,

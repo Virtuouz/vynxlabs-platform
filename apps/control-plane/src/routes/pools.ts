@@ -30,6 +30,7 @@ const ManagedWorkers = Type.Object({
   state: Type.Union(
     [
       Type.Literal("off"),
+      Type.Literal("unavailable"),
       Type.Literal("host"),
       Type.Literal("isolated"),
       Type.Literal("shared"),
@@ -37,7 +38,8 @@ const ManagedWorkers = Type.Object({
     ],
     {
       description:
-        "`off`: the instance starts no workers for this tenant. `host`: it does, in a worker " +
+        "`off`: this tenant has the instance starting its workers turned off. `unavailable`: it has them " +
+        "on, and the instance starts none for anyone. `host`: it does, in a worker " +
         "host on a network of its own. `isolated`: it does, beside the control plane, as a " +
         "user of their own, because only the operator writes this tenant's code. `shared`: " +
         "the same, as the control plane's own user. `refused`: it would, but workers beside " +
@@ -68,7 +70,8 @@ export function poolRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           .where("id", "=", params.t)
           .executeTakeFirstOrThrow();
         const mode = workerUserMode();
-        if (!tenant.managed_workers || mode === "off") return { state: "off" as const };
+        if (!tenant.managed_workers) return { state: "off" as const };
+        if (mode === "off") return { state: "unavailable" as const };
         if (mode === "host") return { state: "host" as const };
         // MANAGED_WORKER_USER=same: the operator says everyone who writes code works for them.
         if (mode === "shared") return { state: "shared" as const };

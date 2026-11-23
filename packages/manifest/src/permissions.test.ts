@@ -44,3 +44,10 @@ test("trigger:write says it pauses and resumes, as the routes it guards do (OPS-
   const trigger = PERMISSION_KINDS.find((entry) => entry.kind === "trigger");
   expect(trigger?.verbs.write).toMatch(/Pause and resume/);
 });
+
+test("Workers: write does not claim the managed-workers switch, which needs tenant:write (GOV-29)", () => {
+  const worker = PERMISSION_KINDS.find((one) => one.kind === "worker");
+  expect(worker?.verbs.write).not.toMatch(/managed/i);
+  expect(worker?.verbs.write).toMatch(/credentials/);
+  expect(worker?.verbs.write).toMatch(/pools/);
+});

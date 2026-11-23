@@ -173,7 +173,7 @@ export const PERMISSION_KINDS: readonly PermissionKind[] = [
     scope: "tenant",
     verbs: {
       read: "See the workers that are connected.",
-      write: "Create worker credentials and turn managed workers on or off.",
+      write: "Create and revoke worker credentials, and make and remove worker pools.",
     },
   },
   {
@@ -387,7 +387,7 @@ export const PERMISSION_KINDS: readonly PermissionKind[] = [
   },
   {
     kind: "data_all",
-    label: "Rows, past the row policy",
+    label: "Rows past the row policy",
     group: "Data",
     scope: "workspace",
     appFacing: true,

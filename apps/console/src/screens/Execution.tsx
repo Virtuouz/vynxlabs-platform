@@ -1118,9 +1118,9 @@ export function Workers({ base }: { base: string }) {
   const instance = useLoad<{ publicUrl?: string | null }>("/instance");
   const instanceUrl = instance.data?.publicUrl ?? location.origin;
   const tenant = useLoad<{ managedWorkers: boolean; managedWorkersLocked?: boolean }>(base);
-  const managed = useLoad<{ state: "off" | "host" | "isolated" | "shared" | "refused" }>(
-    `${base}/managed-workers`,
-  );
+  const managed = useLoad<{
+    state: "off" | "unavailable" | "host" | "isolated" | "shared" | "refused";
+  }>(`${base}/managed-workers`);
   const [adding, setAdding] = useState(false);
   const made = (pools.data?.items ?? []).filter((pool) => pool.name !== null);
   const poolOptions = [
@@ -1232,9 +1232,15 @@ export function Workers({ base }: { base: string }) {
         {tenant.data ? (
           <div className="flex flex-wrap items-center gap-3">
             <span>
-              {tenant.data.managedWorkers
-                ? "The instance starts workers for the default pool when there is work."
-                : "The instance starts no workers for this tenant."}
+              {!tenant.data.managedWorkers
+                ? "The instance starts no workers for this tenant."
+                : managed.data?.state === "unavailable"
+                  ? "This tenant lets the instance start workers, but the instance starts no workers for any tenant. Ask its operator, or run your own."
+                  : managed.data?.state === "refused"
+                    ? "The instance would start workers for this tenant, and does not: see above."
+                    : managed.data
+                      ? "The instance starts workers for the default pool when there is work."
+                      : "Checking what the instance starts…"}
             </span>
             {!tenant.data.managedWorkers && tenant.data.managedWorkersLocked ? (
               <span className="text-ink-muted">
@@ -1251,12 +1257,13 @@ export function Workers({ base }: { base: string }) {
                       () =>
                         notify.success(
                           on
-                            ? "The instance starts workers for this tenant when there is work."
+                            ? "This tenant now lets the instance start workers for it."
                             : "The instance no longer starts workers for this tenant.",
                         ),
                       notify.error,
                     );
                   tenant.reload();
+                  managed.reload();
                 }}
               >
                 {tenant.data.managedWorkers

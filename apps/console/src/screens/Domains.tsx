@@ -6,6 +6,7 @@ import { DataTable } from "../kit/DataTable.tsx";
 import { Loading } from "../kit/LoadState.tsx";
 import { SectionLabel } from "../kit/layout.tsx";
 import { Code, StatePill } from "../kit/status.tsx";
+import { useOpenRow } from "../kit/useOpenRow.ts";
 import { CopyButton, Page, when } from "../ListScreen.tsx";
 import { useUrlParam } from "../router.tsx";
 import type { AppSummary } from "./Apps.tsx";
@@ -20,6 +21,8 @@ interface Domain {
   verifiedAt: string | null;
   checkedAt: string | null;
   checkError: string | null;
+  /** When a check first missed the record of a verified name: it stays verified, and this says so. */
+  recordGoneAt: string | null;
   /** The DNS TXT record that shows whoever controls the name agrees. */
   challenge: { name: string; value: string };
   createdAt: string;
@@ -41,7 +44,11 @@ function State({ domain }: { domain: Domain }) {
   return (
     <span className="flex flex-wrap gap-3">
       <StatePill state={domain.enabled ? "on" : "off"} />
-      <StatePill state={domain.verifiedAt ? "verified" : "unverified"} />
+      {domain.verifiedAt && domain.recordGoneAt ? (
+        <StatePill state="warning">Verified, record gone</StatePill>
+      ) : (
+        <StatePill state={domain.verifiedAt ? "verified" : "unverified"} />
+      )}
     </span>
   );
 }
@@ -219,14 +226,20 @@ function DetailsDialog({
   const steps = domain
     ? [
         {
-          label: "Record created and found",
-          state: domain.verifiedAt
-            ? ("ok" as const)
-            : domain.checkError
-              ? ("failed" as const)
-              : ("queued" as const),
+          label:
+            domain.verifiedAt && domain.recordGoneAt
+              ? "Record found when verified, and not since"
+              : "Record created and found",
+          state:
+            domain.verifiedAt && !domain.recordGoneAt
+              ? ("ok" as const)
+              : domain.checkError
+                ? ("failed" as const)
+                : ("queued" as const),
           detail: domain.verifiedAt
-            ? `Verified ${when(domain.verifiedAt)}.`
+            ? domain.recordGoneAt
+              ? `Verified ${when(domain.verifiedAt)}. The record has not been found since ${when(domain.recordGoneAt)}. The name stays verified: create the record again and check.`
+              : `Verified ${when(domain.verifiedAt)}.`
             : domain.checkedAt
               ? `Not verified. Last checked ${when(domain.checkedAt)}.`
               : "Not checked yet.",
@@ -234,7 +247,11 @@ function DetailsDialog({
         {
           label: "Enabled",
           state: domain.enabled ? ("ok" as const) : ("queued" as const),
-          detail: domain.enabled ? "Serving." : "Serves nothing until enabled.",
+          detail: domain.enabled
+            ? "Serving."
+            : domain.verifiedAt
+              ? "Serves nothing: the name answers “not served here” until it is enabled."
+              : "Not enabled. Until it is verified, the name opens this instance's own address, as any name the instance does not know does.",
         },
       ]
     : [];
@@ -350,9 +367,7 @@ export function Domains({ base }: { base: string }) {
   const [adding, setAdding] = useState(false);
   // The hostname open is in the address, so a link opens it and Back closes it.
   const [open, setOpen] = useUrlParam("hostname", undefined, { push: true });
-  const [fresh, setFresh] = useState<Domain>();
-  const shown =
-    (fresh?.id === open ? fresh : undefined) ?? list.data?.items.find((one) => one.id === open);
+  const [shown, setFresh] = useOpenRow(list, open);
   const setShown = (domain: Domain | undefined) => {
     setFresh(domain);
     setOpen(domain?.id);
@@ -400,12 +415,12 @@ export function Domains({ base }: { base: string }) {
                     href={row.url}
                     target="_blank"
                     rel="noreferrer"
-                    className="font-medium break-all text-action"
+                    className="font-medium break-words text-action"
                   >
                     {row.hostname}
                   </a>
                 ) : (
-                  <span className="font-medium break-all">{row.hostname}</span>
+                  <span className="font-medium break-words">{row.hostname}</span>
                 ),
             },
             {
@@ -421,7 +436,11 @@ export function Domains({ base }: { base: string }) {
             {
               header: "Last check",
               cell: (row) =>
-                row.checkError ? (
+                row.verifiedAt && row.recordGoneAt ? (
+                  <span className="text-danger">
+                    Verified {when(row.verifiedAt)}; record gone since {when(row.recordGoneAt)}
+                  </span>
+                ) : row.checkError ? (
                   <span className="text-danger">{row.checkError}</span>
                 ) : row.checkedAt ? (
                   <span className="whitespace-nowrap text-ink-muted">

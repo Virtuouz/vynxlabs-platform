@@ -3,6 +3,41 @@ import { grants } from "@volvel/manifest";
 import { useCallback, useContext } from "react";
 import { sessionIsOpen, whenRenewed } from "./session.ts";
 
+/** Whom to ask when a refusal names a permission and nobody who can give it. */
+const ASK_FOR_ACCESS =
+  "Ask a member who can give access in this tenant (an owner or administrator) to give you a role with it.";
+
+/** The same, for the screens of the instance, where the ones to ask are its operators. */
+const ASK_AN_OPERATOR = "Ask an operator of this instance to give you access.";
+
+/** Whom to ask for access, by the screen the person is on. */
+export const askForAccess = () =>
+  location.pathname.startsWith("/instance/") ? ASK_AN_OPERATOR : ASK_FOR_ACCESS;
+
+/**
+ * A pattern refusal as the field would say it: the characters that are allowed, not the
+ * expression. Anything else the server said is kept as it was.
+ */
+export function fieldWords(message: string): string {
+  const found = /^must match pattern (.+)$/.exec(message);
+  if (!found) return message;
+  const pattern = found[1] as string;
+  const allowed = [
+    pattern.includes("a-z") ? "lowercase letters" : "",
+    pattern.includes("A-Z") ? "capital letters" : "",
+    pattern.includes("0-9") ? "digits" : "",
+    /[-](?!z|9)|-\]|-/.test(pattern.replace(/[a-zA-Z0-9]-[a-zA-Z0-9]/g, "")) ? "hyphens" : "",
+    pattern.includes("_") ? "underscores" : "",
+    pattern.includes("\\.") ? "dots" : "",
+  ].filter(Boolean);
+  if (allowed.length === 0) return "Use the form that is allowed here: check the characters in it.";
+  const list =
+    allowed.length === 1
+      ? (allowed[0] as string)
+      : `${allowed.slice(0, -1).join(", ")} and ${allowed.at(-1)}`;
+  return `Use only ${list}.`;
+}
+
 /** A failed API call, carrying the problem document the server sent. */
 export class ApiError extends Error {
   readonly status: number;
@@ -22,10 +57,15 @@ export class ApiError extends Error {
     },
     requestId?: string | null,
   ) {
-    super(problem.detail ?? problem.title ?? `The request failed (${status}).`);
+    const said = problem.detail ?? problem.title ?? `The request failed (${status}).`;
+    // A refusal that names a permission is owed whom to ask, wherever it is shown.
+    super(status === 403 && /permissions?\.$/.test(said) ? `${said} ${askForAccess()}` : said);
     this.status = status;
     this.code = problem.code ?? "error";
-    this.fields = problem.errors ?? [];
+    this.fields = (problem.errors ?? []).map((one) => ({
+      ...one,
+      message: fieldWords(one.message),
+    }));
     this.requestId = problem.requestId ?? requestId ?? undefined;
   }
 }

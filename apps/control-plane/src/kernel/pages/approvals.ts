@@ -372,7 +372,7 @@ export async function readApprovals(
       approvers: null,
       decision: {
         approved: row.status === "succeeded",
-        by: row.name || row.email || "A member",
+        by: row.name || row.email || row.service_name || "A member",
         at: row.finished_at ? row.finished_at.toISOString() : null,
         comment: row.decision_comment,
         via: row.via,
@@ -412,8 +412,18 @@ async function decidedSteps(
   const rows = await db
     .selectFrom("step_run")
     .innerJoin("flow_run", "flow_run.id", "step_run.flow_run_id")
-    .leftJoin("member", "member.id", "step_run.decided_by")
+    .leftJoin("member", (join) =>
+      join
+        .onRef("member.id", "=", "step_run.decided_by")
+        .on("step_run.decided_by_type", "=", "member"),
+    )
+    .leftJoin("service_account", (join) =>
+      join
+        .onRef("service_account.id", "=", "step_run.decided_by")
+        .on("step_run.decided_by_type", "=", "service_account"),
+    )
     .select([
+      "service_account.name as service_name",
       "step_run.flow_run_id",
       "step_run.node_id",
       "step_run.detail",
@@ -557,8 +567,18 @@ export async function decideFromPage(
     const step = await trx
       .selectFrom("step_run")
       .innerJoin("flow_run", "flow_run.id", "step_run.flow_run_id")
-      .leftJoin("member", "member.id", "step_run.decided_by")
+      .leftJoin("member", (join) =>
+        join
+          .onRef("member.id", "=", "step_run.decided_by")
+          .on("step_run.decided_by_type", "=", "member"),
+      )
+      .leftJoin("service_account", (join) =>
+        join
+          .onRef("service_account.id", "=", "step_run.decided_by")
+          .on("step_run.decided_by_type", "=", "service_account"),
+      )
       .select([
+        "service_account.name as decider_service",
         "step_run.status",
         "step_run.detail",
         "step_run.decided_by",
@@ -647,6 +667,7 @@ async function whoDecided(
     decided_by: string | null;
     decider_name: string | null;
     decider_email: string | null;
+    decider_service?: string | null;
     decision_comment: string | null;
     finished_at: Date | null;
     flow_status: string;
@@ -654,7 +675,7 @@ async function whoDecided(
   wanted: "approve" | "reject",
 ): Promise<string> {
   if (step.decided_by) {
-    const who = step.decider_name || step.decider_email || "Someone";
+    const who = step.decider_name || step.decider_email || step.decider_service || "Someone";
     const what = step.status === "succeeded" ? "approved" : "rejected";
     const same = (wanted === "approve") === (step.status === "succeeded");
     return `${who} ${what} this ${agoWords(step.finished_at)}${same ? ", as you meant to" : ""}.`;

@@ -127,6 +127,26 @@ test("while the organization's sign-in is required, an owner can sign in with a 
   expect(calls.at(-1)?.body).toEqual({ email: "olive@acme.example", password: "her-password" });
 });
 
+test("a wrong password with a recovery code says the code is spent (GOV-12, D18)", async () => {
+  routes["GET /api/v1/sso/providers?email=olive%40acme.example"] = () => [
+    200,
+    { providers: [{ id: "p1", name: "Acme Login", url: "/api/v1/sso/p1/start" }], password: false },
+  ];
+  routes["POST /api/v1/auth/sign-in/email"] = () => [
+    401,
+    { code: "INVALID_EMAIL_OR_PASSWORD", message: "Invalid email or password" },
+  ];
+  show(<SignIn onSignedIn={vi.fn()} />);
+  fireEvent.input(screen.getByLabelText("Email"), { target: { value: "olive@acme.example" } });
+  fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Use a recovery code" }));
+  expect(screen.getByText(/even if the password is wrong/)).toBeTruthy();
+  fireEvent.input(screen.getByLabelText("Password"), { target: { value: "typo" } });
+  fireEvent.input(screen.getByLabelText(/Recovery code/), { target: { value: "aaaa-bbbb" } });
+  fireEvent.click(screen.getByRole("button", { name: "Sign in with the recovery code" }));
+  expect((await screen.findByRole("alert")).textContent).toContain("code was used up");
+});
+
 test("where a member is is sent once it settles, and only when it changes", async () => {
   vi.useFakeTimers();
   routes["PUT /api/v1/me/recent"] = () => [204, null];
@@ -234,6 +254,8 @@ test("disabling a member from the list asks first, and does not open the inspect
   await answer("Disable");
   expect(await screen.findByText("Disabled")).toBeTruthy();
   expect(screen.queryByRole("complementary")).toBeNull();
+  // Disabling someone whose tenants keep an admin still says it was done.
+  expect(await screen.findByText(/is disabled\./)).toBeTruthy();
 });
 
 test("a tenant is renamed from the inspector, keeping its slug", async () => {

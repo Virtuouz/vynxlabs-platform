@@ -410,6 +410,22 @@ test("MP-1: in production, or for a script a repository holds, the settings are 
   expect(screen.queryByRole("button", { name: "Change the settings" })).toBeNull();
 });
 
+test("a script the repository holds offers no way to change its settings (P31)", async () => {
+  routes[`${root}/scripts`] = () => [
+    200,
+    { items: [{ path: "orders/sync", description: "", ownership: "code", lastRun: null }] },
+  ];
+  routes[`${root}/references`] = () => [200, { items: [] }];
+  routes[`${root}/resources/orders/sync`] = () => [
+    200,
+    { kind: "script", path: "orders/sync", ownership: "code", version: 3, body: {} },
+  ];
+  show(<ScriptPage root={root} link={link} path="orders/sync" />);
+  fireEvent.click(await screen.findByRole("tab", { name: "Settings" }));
+  await screen.findByText(/repository/);
+  expect(screen.queryByRole("button", { name: "Change the settings" })).toBeNull();
+});
+
 const scriptList = (path: string, extra = {}) => {
   routes[`${root}/scripts`] = () => [
     200,

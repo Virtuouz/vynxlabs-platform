@@ -17,6 +17,7 @@ import {
   frontmatterOf,
   loadSearchIndex,
   manifestOf,
+  neighboursOf,
   PRODUCT_PREFIX,
   packageOutput,
   pagePath,
@@ -239,6 +240,18 @@ describe("structure from folders", () => {
       "about",
       "faq",
     ]);
+  });
+
+  test("a page's neighbours stay in its collection, and the home goes on to the first page", () => {
+    const { set } = build(files);
+    const around = (path: string) => {
+      const { before, after } = neighboursOf(set.nav, path);
+      return [before?.path, after?.path];
+    };
+    expect(around("support/index")).toEqual([undefined, "support/returns"]);
+    expect(around("support/refunds")).toEqual(["support/escalations/tier-two", undefined]);
+    expect(around("ops/closing/checklist")).toEqual([undefined, "ops/opening"]);
+    expect(around("index")).toEqual([undefined, "support/index"]);
   });
 
   test("folders go as deep as they are written", () => {

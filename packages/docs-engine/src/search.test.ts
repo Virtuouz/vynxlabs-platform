@@ -54,6 +54,18 @@ describe("the search index", () => {
     expect(hits[0]?.excerpt.length).toBeGreaterThan(0);
   });
 
+  test("a result's words carry no list markers, headings or quotes", () => {
+    const listed = setOf({
+      "index.md": page("title: Home", "Welcome.\n"),
+      "a/lists.md": page("title: Lists", "- Concepts: tenants and spaces.\n- Tables: rows.\n"),
+    });
+    const [hit] = loadSearchIndex(buildSearchIndex(listed)).search("tenants");
+    expect(hit?.excerpt.startsWith("Concepts")).toBe(true);
+    const stored = JSON.stringify(JSON.parse(buildSearchIndex(listed)).storedFields);
+    expect(stored).not.toContain("- Concepts");
+    expect(stored).not.toContain("- Tables");
+  });
+
   test("keeps only a clipped passage for each page and section", () => {
     const stored = JSON.parse(buildSearchIndex(set)).storedFields as Record<string, unknown>;
     for (const fields of Object.values(stored)) {

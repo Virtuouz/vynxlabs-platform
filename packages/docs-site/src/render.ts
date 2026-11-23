@@ -21,6 +21,7 @@ import {
   type Folder,
   folderItems,
   glossaryOf,
+  homeTypeCardsOf,
   type Marked,
   neighboursOf,
   type PageHit,
@@ -48,7 +49,7 @@ import {
   walk,
 } from "@volvel/markup";
 import { docsAssetHref } from "./assets.js";
-import { escapeHtml, iconLinks } from "./html.js";
+import { described, escapeHtml, iconLinks } from "./html.js";
 import { icon } from "./icons.js";
 
 /** The page an address under the app names: `support/refunds`, a folder for its index, or nothing for the home page. */
@@ -219,13 +220,13 @@ function side(
   let switcher = "";
   if (collection && collections.length > 1) {
     switcher = `<details class="switcher"><summary><span class="badge">${badge(collection)}</span><span class="words"><b>${escapeHtml(collection.title)}</b>${
-      collection.description ? `<small>${escapeHtml(collection.description)}</small>` : ""
+      collection.description ? `<small>${described(collection.description)}</small>` : ""
     }</span>${icon("chevrons-up-down", 16)}</summary><ul>${collections
       .map((one) => {
         const to = firstOf(one);
         if (!to) return "";
         return `<li><a href="${pageHref(at, to.url)}"${one === collection ? ' aria-current="true"' : ""}><span class="badge">${badge(one)}</span><span class="words"><b>${escapeHtml(one.title)}</b>${
-          one.description ? `<small>${escapeHtml(one.description)}</small>` : ""
+          one.description ? `<small>${described(one.description)}</small>` : ""
         }</span></a></li>`;
       })
       .join("")}</ul></details>`;
@@ -274,7 +275,15 @@ function data(at: SiteView, extra: Record<string, unknown>): string {
   return `<script type="application/json" id="docs-data">${json}</script>`;
 }
 
-function head(at: SiteView, title: string, noindex: boolean): string {
+/** What the tab says: the page, the folder or collection it is in, then the site, each said once. */
+function tabTitle(title: string, section: string | undefined, site: string): string {
+  const parts = [title];
+  if (section && section !== title && section !== site) parts.push(section);
+  if (site !== title) parts.push(site);
+  return parts.join(" · ");
+}
+
+function head(at: SiteView, title: string, noindex: boolean, section?: string): string {
   const { look, title: site } = at;
   const platform = at.platform ?? "/_platform/";
   return `<!doctype html>
@@ -282,7 +291,7 @@ function head(at: SiteView, title: string, noindex: boolean): string {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">${noindex || at.notice ? '\n<meta name="robots" content="noindex">' : ""}
-<title>${escapeHtml(title === site ? site : `${title} · ${site}`)}</title>
+<title>${escapeHtml(tabTitle(title, section, site))}</title>
 <link rel="stylesheet" href="${attr(look.themeHref)}">${look.scriptHref ? `\n<script src="${attr(look.scriptHref)}"></script>` : ""}
 <link rel="stylesheet" href="${attr(docsAssetHref(platform, "css"))}">${iconLinks(look.iconsHref)}
 <script src="${attr(docsAssetHref(platform, "js"))}" defer></script>
@@ -297,12 +306,14 @@ function shell(
     collection?: Collection | undefined;
     main: string;
     toc?: string;
+    /** The folder or collection the page is in, said after its title in the tab so that pages of one name in two places differ. */
+    section?: string | undefined;
     /** A page nobody should find by a search engine: results, and what is not there. */
     noindex?: boolean;
     data?: Record<string, unknown>;
   },
 ): string {
-  return `${head(at, options.title, options.noindex ?? false)}
+  return `${head(at, options.title, options.noindex ?? false, options.section)}
 <body>
 <a class="skip" href="#content">Skip to the page</a>${
     at.notice ? `\n<p class="preview" role="status">${escapeHtml(at.notice)}</p>` : ""
@@ -426,7 +437,10 @@ function feedbackOf(at: SiteView, path: string): string {
  * reader says what they are doing and is taken to the first page that does it.
  */
 function typeCards(at: SiteView, path: string): string {
-  const cards = typeCardsOf(at.set, path);
+  return cardsHtml(at, path === "index" ? homeTypeCardsOf(at.set) : typeCardsOf(at.set, path));
+}
+
+function cardsHtml(at: SiteView, cards: ReturnType<typeof typeCardsOf>): string {
   if (cards.length === 0) return "";
   return `<section class="types" aria-labelledby="types"><h2 id="types">What do you want to do?</h2><ul class="cards">${cards
     .map(
@@ -497,8 +511,12 @@ export function docPage(at: SiteView, path: string): string {
   const trail = trailOf(set.nav, path).filter(
     (folder) => folder.id !== "" && folder.index?.path !== path,
   );
+  // A collection's own page is where its trail begins: it says it is under the site.
+  const landing = trailOf(set.nav, path).length === 1 && trail.length === 0 && collection?.id !== "";
   const crumbs =
-    trail.length > 0
+    landing
+      ? `<ol class="crumbs" aria-label="Where this page is"><li><a href="${attr(at.base)}">${escapeHtml(at.title)}</a></li></ol>`
+      : trail.length > 0
       ? `<ol class="crumbs" aria-label="Where this page is">${trail
           .map((folder) => {
             const to = folder.index ?? firstOf(folder);
@@ -512,14 +530,18 @@ export function docPage(at: SiteView, path: string): string {
     ? `<p class="eyebrow" data-type="${type}">${escapeHtml(DOC_TYPE_LABELS[type])}</p>`
     : "";
   const updated = entry.updated ? new Date(entry.updated) : undefined;
+  const section = trailOf(set.nav, path)
+    .filter((folder) => folder.id !== "" && folder.index?.path !== path)
+    .at(-1)?.title;
   return shell(at, {
     title,
+    section,
     current: path,
     collection,
     toc,
     data: { page: { title, url: urlOf(path), crumb: crumbOf(set, path) } },
     main: `${tocbar}<header class="lead">${crumbs}${eyebrow}<h1>${escapeHtml(title)}</h1>${
-      description ? `<p>${escapeHtml(description)}</p>` : ""
+      description ? `<p>${described(description)}</p>` : ""
     }${since ? `<p class="since">New in version ${escapeHtml(since)}</p>` : ""}<div class="actions"><button class="button" type="button" data-copy="${href(at, `${urlOf(path) || "index"}.md`)}" hidden>${icon("copy", 14)}<span>Copy as Markdown</span></button><button class="button" type="button" data-copy="link" hidden>${icon("link", 14)}<span>Copy link</span></button></div></header>
 <article class="vd-doc">${body}</article>${typeCards(at, path)}${relatedBlock(at, path)}
 <footer class="foot">${feedbackOf(at, path)}${
@@ -534,7 +556,8 @@ export function docPage(at: SiteView, path: string): string {
 export function homePage(at: SiteView): string {
   const { set } = at;
   const home = set.pages.get("index");
-  const title = home?.frontmatter.title ?? at.title;
+  // The product's own documentation is named once, by the site, and not by whatever its panel calls the page.
+  const title = at.profile === "product" ? at.title : (home?.frontmatter.title ?? at.title);
   const description = home?.frontmatter.description;
   const collections = collectionsOf(set);
   const pages = [...set.pages.values()];
@@ -562,7 +585,7 @@ export function homePage(at: SiteView): string {
               to
                 ? `<a href="${pageHref(at, to.url)}">${escapeHtml(one.title)}</a>`
                 : escapeHtml(one.title)
-            }</h3>${one.description ? `<p>${escapeHtml(one.description)}</p>` : ""}${
+            }</h3>${one.description ? `<p>${described(one.description)}</p>` : ""}${
               listed.length > 0
                 ? `<ul>${listed.map((page) => `<li><a href="${pageHref(at, page.url)}">${escapeHtml(page.title)}</a></li>`).join("")}</ul>`
                 : ""
@@ -578,7 +601,7 @@ export function homePage(at: SiteView): string {
             const when = new Date(one.updated as string);
             return `<li><a href="${pageHref(at, urlOf(one.path))}"><span class="what"><b>${escapeHtml(one.frontmatter.title)}</b>${
               one.frontmatter.description
-                ? `<small>${escapeHtml(one.frontmatter.description)}</small>`
+                ? `<small>${described(one.frontmatter.description)}</small>`
                 : ""
             }</span><span class="where">${escapeHtml(crumbOf(set, one.path))}</span><time datetime="${attr(when.toISOString())}">${SHORT.format(when)}</time></a></li>`;
           })
@@ -603,12 +626,12 @@ ${brand(at)}
 <main id="content" class="home">
 ${latest ? `<p class="pill">Updated ${DATE.format(new Date(latest))}</p>` : ""}
 <h1>${escapeHtml(title)}</h1>
-${description ? `<p class="intro">${escapeHtml(description)}</p>` : ""}
+${description ? `<p class="intro">${described(description)}</p>` : ""}
 <form class="search-form" action="${searchHref(at)}" method="get" role="search">
 <label class="find big" data-search>${icon("search", 18)}<input class="grow" type="search" name="q" placeholder="Search ${attr(title)}" aria-label="Search ${attr(title)}"><kbd class="key">⌘K</kbd></label>
 </form>
 ${own}
-${cards}
+${typeCards(at, "index")}${cards}
 ${recent}
 </main>
 <footer class="sitefoot"><p>${escapeHtml(at.title)}${at.version ? ` · Version ${escapeHtml(at.version)}` : ""}</p></footer>
@@ -629,7 +652,11 @@ export function searchPage(at: SiteView, query: string, hits: readonly SearchHit
         : `<ul class="results">${hits
             .map(
               (hit) =>
-                `<li><a href="${pageHref(at, hit.url)}">${escapeHtml(hit.title)}</a><p>${escapeHtml(hit.description || hit.excerpt)}</p></li>`,
+                `<li><a href="${pageHref(at, hit.url)}">${escapeHtml(hit.title)}</a>${
+                  crumbOf(at.set, hit.path)
+                    ? `<small class="where">${escapeHtml(crumbOf(at.set, hit.path))}</small>`
+                    : ""
+                }<p>${hit.description ? described(hit.description) : escapeHtml(hit.excerpt)}</p></li>`,
             )
             .join("")}</ul>`;
   return shell(at, {

@@ -100,6 +100,7 @@ export {
   type Term,
   type TypeCard,
   trailOf,
+  homeTypeCardsOf,
   typeCardsOf,
   UNCATEGORIZED,
   urlOf,

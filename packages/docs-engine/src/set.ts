@@ -573,11 +573,14 @@ export function pagesInOrder(nav: Nav): PageRef[] {
 }
 
 /**
- * The page before and the page after one, in the order of the whole navigation. The one function
- * the served site's pager and the console's help panel both use, so they lead to the same pages.
+ * The page before and the page after one, in the order of its collection: the first page of a
+ * collection has no page before it, and the last none after, so a reader is never carried into
+ * another collection by "Next". The home page, which is in none, goes on to the first of all.
+ * The one function the served site's pager and the console's help panel both use.
  */
 export function neighboursOf(nav: Nav, path: string): { before?: PageRef; after?: PageRef } {
-  const order = pagesInOrder(nav);
+  const own = trailOf(nav, path)[0];
+  const order = pagesInOrder(own ? { collections: [own] } : nav);
   const at = order.findIndex((one) => one.path === path);
   const before = at > 0 ? order[at - 1] : undefined;
   const after = at >= 0 ? order[at + 1] : undefined;
@@ -709,17 +712,29 @@ export function typeCardsOf(set: Pick<DocSet, "nav" | "types">, path: string): T
   const trail = trailOf(set.nav, path);
   const folder = trail.at(-1);
   if (!folder || folder.index?.path !== path || trail.length !== 1 || folder.id === "") return [];
-  const inside = pagesInOrder({ collections: [folder] }).filter((page) => set.types[page.path]);
+  return cardsOf(set, pagesInOrder({ collections: [folder] }));
+}
+
+/**
+ * The same cards for a site's home page: one for each type that the site's pages have, when it has
+ * two or more, taken to the first page of that type in the order of the whole site.
+ */
+export function homeTypeCardsOf(set: Pick<DocSet, "nav" | "types">): TypeCard[] {
+  return cardsOf(set, pagesInOrder(set.nav));
+}
+
+function cardsOf(set: Pick<DocSet, "types">, pages: readonly PageRef[]): TypeCard[] {
+  const inside = pages.filter((page) => set.types[page.path]);
   const present = DOC_TYPES.filter((one) => inside.some((page) => set.types[page.path] === one));
   if (present.length < 2) return [];
   return present.map((type) => {
-    const pages = inside.filter((page) => set.types[page.path] === type);
+    const ofType = inside.filter((page) => set.types[page.path] === type);
     return {
       type,
       title: DOC_TYPE_PLURALS[type],
       summary: DOC_TYPE_SUMMARIES[type],
-      count: pages.length,
-      first: pages[0] as PageRef,
+      count: ofType.length,
+      first: ofType[0] as PageRef,
     };
   });
 }

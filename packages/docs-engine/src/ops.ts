@@ -460,16 +460,12 @@ export function planNewPage(
           : `There is already something named ${next.name} here.`,
     };
   }
-  const source = newPageSource(
-    next.title.trim(),
-    next.type,
-    next.type
-      ? folderType(
-          path,
-          (at) => frontmatterOf(pages.find((page) => page.path === at)?.source ?? "")?.type,
-        )
-      : undefined,
+  const inherited = folderType(
+    path,
+    (at) => frontmatterOf(pages.find((page) => page.path === at)?.source ?? "")?.type,
   );
+  // A page left to the folder's type starts from that type's template too, and says nothing of it.
+  const source = newPageSource(next.title.trim(), next.type ?? inherited, inherited);
   return { changes: [{ path, source, created: true }] };
 }
 

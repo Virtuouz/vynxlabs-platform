@@ -150,7 +150,11 @@ export function mark(text: string, terms: readonly string[]): Marked {
 /** What an index kept of a hit's words: a passage, or in an older index the whole text. */
 function passageOf(hit: Record<string, unknown>): string {
   const own = hit.kind === "section" ? hit.text : hit.intro;
-  return String(hit.passage ?? own ?? hit.text ?? "");
+  // An index built before passages were cleaned of list markers may start with one.
+  return String(hit.passage ?? own ?? hit.text ?? "").replace(
+    /^\s*(?:[-*+\u2022]|\d+[.)]|#{1,6}|>)\s+/,
+    "",
+  );
 }
 
 /** Reads an index back, to ask it questions. */

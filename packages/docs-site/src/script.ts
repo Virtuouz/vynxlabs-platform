@@ -356,7 +356,8 @@ export const DOCS_SCRIPT = `${ENHANCE_SCRIPT}
     note = make("div", { class: "none", role: "status" });
     const close = make("button", { type: "button", class: "key", text: "Esc", "aria-label": "Close" });
     chips = make("div", { class: "chips", role: "group", "aria-label": "Where to search" });
-    const collections = [{ id: "", title: "All" }, ...(data.collections || [])];
+    // A collection with no id is the pages that are in none: search cannot be narrowed to them, and "All" covers them.
+    const collections = [{ id: "", title: "All" }, ...(data.collections || []).filter((one) => one.id)];
     if (collections.length > 2) {
       for (const one of collections) {
         const chip = make("button", { type: "button", text: one.title, "aria-pressed": String(one.id === scope) });

@@ -2,6 +2,7 @@ import { TextField } from "@volvel/ui";
 import { useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
+import { Can } from "../kit/Can.tsx";
 import { count } from "../kit/format.ts";
 import { ErrorState, Pending } from "../kit/LoadState.tsx";
 import { SaveBar } from "../kit/SaveBar.tsx";
@@ -135,34 +136,36 @@ export function RetentionSettings({ base }: { base: string }) {
       title="Retention"
       description="How long this tenant's history is kept. Runs, events and refused requests older than their period are removed within minutes; the audit log is different, as said under it. Leave a field empty to use the instance's default."
     >
-      <form
-        className="flex max-w-xl flex-col gap-4"
-        onSubmit={(event) => {
-          event.preventDefault();
-          void save();
-        }}
-      >
-        {KINDS.map(({ key, label, about }) => (
-          <TextField
-            key={key}
-            name={key}
-            label={`${label} (days)`}
-            value={value(key)}
-            required={false}
-            placeholder={`${data.defaults[key]}, the instance's default`}
-            hint={`${about} Now ${data.effective[key]} days.`}
-            error={problem(key)}
-            onChange={(next) => setDraft((was) => ({ ...was, [key]: next }))}
-          />
-        ))}
-      </form>
-      <SaveBar
-        dirty={changed.length > 0}
-        saving={busy}
-        onSave={() => void save()}
-        onDiscard={() => setDraft({})}
-        what="retention"
-      />
+      <Can base={base} permission="tenant:write" what="how long this tenant's history is kept">
+        <form
+          className="flex max-w-xl flex-col gap-4"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void save();
+          }}
+        >
+          {KINDS.map(({ key, label, about }) => (
+            <TextField
+              key={key}
+              name={key}
+              label={`${label} (days)`}
+              value={value(key)}
+              required={false}
+              placeholder={`${data.defaults[key]}, the instance's default`}
+              hint={`${about} Now ${data.effective[key]} days.`}
+              error={problem(key)}
+              onChange={(next) => setDraft((was) => ({ ...was, [key]: next }))}
+            />
+          ))}
+        </form>
+        <SaveBar
+          dirty={changed.length > 0}
+          saving={busy}
+          onSave={() => void save()}
+          onDiscard={() => setDraft({})}
+          what="retention"
+        />
+      </Can>
     </Page>
   );
 }

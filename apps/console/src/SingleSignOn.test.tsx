@@ -599,3 +599,36 @@ test("the people who signed in are paged, and say so (GOV-34)", async () => {
   fireEvent.click(screen.getByRole("button", { name: "Load more" }));
   await screen.findAllByText("p2@acme.example");
 });
+
+test("a member who may only read single sign-on is told so, and nothing offers to change it (GOV-37)", async () => {
+  routes["GET /api/v1/me"] = () => [
+    200,
+    {
+      principal: { type: "member", id: "m1", name: "Rae", email: "rae@acme.example" },
+      instancePermissions: [],
+      tenants: [],
+    },
+  ];
+  routes["GET /api/v1/tenants/t1/access/member/m1"] = () => [
+    200,
+    { principal: {}, sources: [], permissions: [{ permission: "sso:read" }] },
+  ];
+  routes[`GET ${base}`] = () => [200, { items: [oidc] }];
+  routes[`GET ${base}/p1/group-maps`] = () => [200, { items: [] }];
+  show(<SingleSignOn base="/tenants/t1" />);
+  // Even the way in is not offered.
+  const connect = (await screen.findAllByRole("button", { name: "Connect a provider" }))[0];
+  await waitFor(() => expect((connect as HTMLButtonElement).disabled).toBe(true));
+  fireEvent.click(await screen.findByRole("button", { name: "Acme Login" }));
+  await waitFor(() =>
+    expect((screen.getByRole("button", { name: "Turn on" }) as HTMLButtonElement).disabled).toBe(
+      true,
+    ),
+  );
+  expect((screen.getByRole("button", { name: "Remove" }) as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(screen.getByRole("tab", { name: "Settings" }));
+  const field = (await screen.findAllByLabelText("Name"))[0] as HTMLElement;
+  expect((field.closest("fieldset") as HTMLFieldSetElement | null)?.disabled).toBe(true);
+  expect(document.body.textContent).toContain("You can see this provider, not change it");
+  expect(document.body.textContent).toContain("sso:write");
+});

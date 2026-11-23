@@ -525,6 +525,27 @@ test("turning a served hostname off says what stops, and asks first (GOV-35)", a
   await waitFor(() => expect(sent("PATCH")[0]?.body).toEqual({ enabled: false }));
 });
 
+test("a member who may not change hostnames is told so, and the way to add one is off (GOV-37)", async () => {
+  routes["GET /api/v1/me"] = () => [
+    200,
+    {
+      principal: { type: "member", id: "m1", name: "Rae", email: null },
+      instancePermissions: [],
+      tenants: [],
+    },
+  ];
+  routes[`GET /api/v1${base}/access/member/m1`] = () => [
+    200,
+    { principal: {}, sources: [], permissions: [{ permission: "domain:read" }] },
+  ];
+  routes[`GET /api/v1${base}/domains`] = () => [200, { items: [] }];
+  routes[`GET /api/v1${base}/workspaces`] = () => [200, { items: [] }];
+  show(<Domains base={base} />);
+  await screen.findByText(/You can see this tenant's hostnames, not change it/);
+  const add = screen.getAllByRole("button", { name: "Add a hostname" })[0] as HTMLButtonElement;
+  expect(add.disabled).toBe(true);
+});
+
 test("a hostname can serve the portal and every app, even from a workspace with no app chosen", async () => {
   let domains: (typeof domain)[] = [];
   routes[`GET /api/v1${base}/domains`] = () => [200, { items: domains }];

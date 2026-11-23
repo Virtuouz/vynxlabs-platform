@@ -133,3 +133,22 @@ test("the worker command hands the credential on standard input, never on the co
   expect(command.textContent).not.toMatch(/--token\s/);
   expect(command.textContent).toContain("vwk_abcdef0123456789");
 });
+
+test("a member who may not change workers is told so, and nothing offers to (GOV-37)", async () => {
+  routes["GET /me"] = () => ({
+    principal: { type: "member", id: "m1", name: "Rae", email: null },
+    instancePermissions: [],
+    tenants: [],
+  });
+  routes[`GET ${base}/access/member/m1`] = () => ({
+    principal: {},
+    sources: [],
+    permissions: [{ permission: "worker:read" }],
+  });
+  routes[`GET ${base}`] = () => ({ name: "Acme", slug: "acme", managedWorkers: true });
+  routes[`GET ${base}/managed-workers`] = () => ({ state: "host" });
+  show(<Workers base={base} />);
+  await screen.findByText(/You can see this tenant's workers, not change them|not change it/);
+  const button = await screen.findByRole("button", { name: "Run only on our own workers" });
+  expect((button.closest("fieldset") as HTMLFieldSetElement).disabled).toBe(true);
+});

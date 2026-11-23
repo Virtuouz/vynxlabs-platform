@@ -12,6 +12,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError, api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
 import { InputDialog } from "../InputDialog.tsx";
+import { Can } from "../kit/Can.tsx";
 import { CollectionView } from "../kit/CollectionView.tsx";
 import { DataTable } from "../kit/DataTable.tsx";
 import { ago, between, count, duration } from "../kit/format.ts";
@@ -1128,281 +1129,285 @@ export function Workers({ base }: { base: string }) {
     ...made.map((pool) => ({ value: pool.name as string, label: pool.name as string })),
   ];
   return (
-    <div className="flex flex-col gap-8">
-      <Page
-        title="Workers"
-        description="Workers run this tenant's scripts. A pool is one place code runs, such as inside a client's network: a script names its pool, and only workers started with a credential for that pool run it."
-        action={
-          <Button variant="primary" onClick={() => setAdding(true)}>
-            Add pool
-          </Button>
-        }
-      >
-        <QueuePanel base={base} />
-        {pools.error ? (
-          <ErrorState error={pools.error} onRetry={pools.reload} />
-        ) : !pools.data ? (
-          <Loading />
-        ) : (
-          <DataTable<WorkerPool>
-            label="Worker pools"
-            rows={pools.data.items}
-            rowKey={(pool) => pool.id ?? pool.name ?? "default"}
-            columns={[
-              {
-                header: "State",
-                width: "w-56",
-                cell: (pool) => <PoolState pool={pool} />,
-              },
-              {
-                header: "Pool",
-                cell: (pool) => (
-                  <span className="flex min-w-0 flex-col">
-                    <span className="flex flex-wrap items-center gap-2">
-                      {pool.name ? <Mono>{pool.name}</Mono> : "Default pool"}
-                      {pool.managed ? <Tag>Instance-run</Tag> : null}
-                      {pool.name && !pool.id ? <Tag tone="danger">Not made</Tag> : null}
+    <Can base={base} permission="worker:write" what="this tenant's workers">
+      <div className="flex flex-col gap-8">
+        <Page
+          title="Workers"
+          description="Workers run this tenant's scripts. A pool is one place code runs, such as inside a client's network: a script names its pool, and only workers started with a credential for that pool run it."
+          action={
+            <Button variant="primary" onClick={() => setAdding(true)}>
+              Add pool
+            </Button>
+          }
+        >
+          <QueuePanel base={base} />
+          {pools.error ? (
+            <ErrorState error={pools.error} onRetry={pools.reload} />
+          ) : !pools.data ? (
+            <Loading />
+          ) : (
+            <DataTable<WorkerPool>
+              label="Worker pools"
+              rows={pools.data.items}
+              rowKey={(pool) => pool.id ?? pool.name ?? "default"}
+              columns={[
+                {
+                  header: "State",
+                  width: "w-56",
+                  cell: (pool) => <PoolState pool={pool} />,
+                },
+                {
+                  header: "Pool",
+                  cell: (pool) => (
+                    <span className="flex min-w-0 flex-col">
+                      <span className="flex flex-wrap items-center gap-2">
+                        {pool.name ? <Mono>{pool.name}</Mono> : "Default pool"}
+                        {pool.managed ? <Tag>Instance-run</Tag> : null}
+                        {pool.name && !pool.id ? <Tag tone="danger">Not made</Tag> : null}
+                      </span>
+                      {pool.description ? (
+                        <span className="truncate text-meta text-ink-muted">
+                          {pool.description}
+                        </span>
+                      ) : null}
                     </span>
-                    {pool.description ? (
-                      <span className="truncate text-meta text-ink-muted">{pool.description}</span>
-                    ) : null}
-                  </span>
-                ),
-              },
-              {
-                header: "Runs code of",
-                priority: 2,
-                cell: (pool) =>
-                  pool.workspaces.length > 0 ? (
-                    pool.workspaces.map((workspace) => workspace.name).join(", ")
-                  ) : (
-                    <span className="text-ink-subtle">No workspace yet</span>
                   ),
-              },
-              {
-                header: "Credentials",
-                priority: 3,
-                align: "end",
-                cell: (pool) => <Mono>{pool.credentials}</Mono>,
-              },
-            ]}
-            actions={(pool) =>
-              pool.id
-                ? [
-                    {
-                      label: "Remove the pool",
-                      danger: true,
-                      onSelect: async () => {
-                        const label = pool.name ?? "Default pool";
-                        const sure = await ask.confirm({
-                          title: `Remove the pool "${label}"?`,
-                          text: "Scripts that name it wait until it is made again.",
-                          action: "Remove",
-                          danger: true,
-                        });
-                        if (!sure) return;
-                        try {
-                          await api.delete(`${base}/worker-pools/${pool.id}`);
-                          notify.success(`The pool "${label}" is removed.`);
-                          pools.reload();
-                        } catch (error) {
-                          notify.error(error);
-                        }
+                },
+                {
+                  header: "Runs code of",
+                  priority: 2,
+                  cell: (pool) =>
+                    pool.workspaces.length > 0 ? (
+                      pool.workspaces.map((workspace) => workspace.name).join(", ")
+                    ) : (
+                      <span className="text-ink-subtle">No workspace yet</span>
+                    ),
+                },
+                {
+                  header: "Credentials",
+                  priority: 3,
+                  align: "end",
+                  cell: (pool) => <Mono>{pool.credentials}</Mono>,
+                },
+              ]}
+              actions={(pool) =>
+                pool.id
+                  ? [
+                      {
+                        label: "Remove the pool",
+                        danger: true,
+                        onSelect: async () => {
+                          const label = pool.name ?? "Default pool";
+                          const sure = await ask.confirm({
+                            title: `Remove the pool "${label}"?`,
+                            text: "Scripts that name it wait until it is made again.",
+                            action: "Remove",
+                            danger: true,
+                          });
+                          if (!sure) return;
+                          try {
+                            await api.delete(`${base}/worker-pools/${pool.id}`);
+                            notify.success(`The pool "${label}" is removed.`);
+                            pools.reload();
+                          } catch (error) {
+                            notify.error(error);
+                          }
+                        },
                       },
-                    },
-                  ]
-                : []
-            }
-            empty={{ title: "No pool yet", text: "Scripts that name no pool use the default." }}
-          />
-        )}
-        {managed.data?.state === "refused" ? (
-          <Notice tone="attention">
-            <strong>This tenant's code runs on standalone workers only.</strong> People outside the
-            instance's operators write its code, and the workers this instance starts run beside its
-            control plane, on its network, so it starts none for this tenant. Make a credential
-            below and start a worker with it, or ask the operator to run a worker host: see "Workers
-            the instance starts" in the self-hosting guide.
-          </Notice>
-        ) : managed.data?.state === "shared" && tenant.data?.managedWorkers ? (
-          <p className="m-0 text-meta text-ink-muted">
-            Workers the instance starts run as the control plane's own user.
-          </p>
-        ) : null}
-        {tenant.data ? (
-          <div className="flex flex-wrap items-center gap-3">
-            <span>
-              {!tenant.data.managedWorkers
-                ? "The instance starts no workers for this tenant."
-                : managed.data?.state === "unavailable"
-                  ? "This tenant lets the instance start workers, but the instance starts no workers for any tenant. Ask its operator, or run your own."
-                  : managed.data?.state === "refused"
-                    ? "The instance would start workers for this tenant, and does not: see above."
-                    : managed.data
-                      ? "The instance starts workers for the default pool when there is work."
-                      : "Checking what the instance starts…"}
-            </span>
-            {!tenant.data.managedWorkers && tenant.data.managedWorkersLocked ? (
-              <span className="text-ink-muted">
-                An operator turned this off. Only an operator can turn it on again.
-              </span>
-            ) : (
-              <Button
-                size="small"
-                onClick={async () => {
-                  const on = !tenant.data?.managedWorkers;
-                  if (!on) {
-                    // Every run of the default pool waits for a worker that is not the instance's.
-                    const served = pools.data?.items.find(
-                      (pool) => pool.name === null,
-                    )?.credentials;
-                    const sure = await ask.confirm({
-                      title: "Stop the instance starting workers?",
-                      text: `Runs of the default pool wait for a worker you start yourself. ${
-                        served === undefined
-                          ? "Check the credentials below first."
-                          : served > 0
-                            ? `${served === 1 ? "One credential serves" : `${served} credentials serve`} the default pool, so a worker started with it takes them.`
-                            : "No credential serves the default pool, so every run of it waits until one does."
-                      }`,
-                      action: "Stop",
-                      danger: true,
-                    });
-                    if (!sure) return;
-                  }
-                  await api
-                    .patch(base, { managedWorkers: on })
-                    .then(
-                      () =>
-                        notify.success(
-                          on
-                            ? "This tenant now lets the instance start workers for it."
-                            : "The instance no longer starts workers for this tenant.",
-                        ),
-                      notify.error,
-                    );
-                  tenant.reload();
-                  managed.reload();
-                }}
-              >
-                {tenant.data.managedWorkers
-                  ? "Run only on our own workers"
-                  : "Let the instance run workers"}
-              </Button>
-            )}
-          </div>
-        ) : null}
-        <CreateDialog
-          config={{
-            action: "Add pool",
-            description:
-              "Scripts name the pool with `worker`. Then make a credential for it and start a worker there.",
-            fields: [
-              {
-                name: "name",
-                label: "Name",
-                placeholder: "warehouse",
-                hint: "Lower case letters, digits and dashes.",
-              },
-              { name: "description", label: "Description", required: false },
-            ],
-            submit: ({ name, description }) =>
-              api.post(`${base}/worker-pools`, {
-                name,
-                ...(description ? { description } : {}),
-              }),
-          }}
-          open={adding}
-          onClose={() => setAdding(false)}
-          onCreated={() => {
-            setAdding(false);
-            pools.reload();
-          }}
-        />
-      </Page>
-      <ListScreen<{
-        id: string;
-        name: string;
-        prefix: string;
-        workspaceId: string | null;
-        pool: string | null;
-        revokedAt: string | null;
-        createdAt: string;
-      }>
-        as="section"
-        title="Credentials for standalone workers"
-        description={`A worker outside the platform signs in with one of these: volvel-worker --url ${instanceUrl} --token-stdin, with the credential on its standard input. The full command is shown when a credential is made.`}
-        path={`${base}/worker-credentials`}
-        rowKey={(row) => row.id}
-        columns={[
-          { header: "Name", cell: (row) => row.name },
-          { header: "Credential", cell: (row) => <Code>{`${row.prefix}…`}</Code> },
-          {
-            header: "Pool",
-            cell: (row) => (row.pool ? <Mono>{row.pool}</Mono> : "Default pool"),
-          },
-          { header: "Created", cell: (row) => <Time value={row.createdAt} mode="ago" /> },
-          {
-            header: "Status",
-            cell: (row) =>
-              row.revokedAt ? <StatePill state="revoked" /> : <StatePill state="active" />,
-          },
-        ]}
-        empty={{
-          title: "No standalone workers",
-          text: "You only need one to run scripts inside your own network.",
-        }}
-        create={{
-          action: "Create credential",
-          fields: [
-            { name: "name", label: "Name", placeholder: "Warehouse network" },
-            {
-              name: "pool",
-              label: "Pool",
-              options: poolOptions,
-              hint: "The worker runs only the scripts of this pool.",
-            },
-          ],
-          submit: async ({ name, pool }) => {
-            const result = await api.post(`${base}/worker-credentials`, {
-              name,
-              ...(pool ? { pool } : {}),
-            });
-            pools.reload();
-            return result;
-          },
-          afterCreate: (result, dismiss) => {
-            const token = (result as { token: string }).token;
-            // The credential goes in on standard input: a command line is readable by every process on the host.
-            const command = `printf '%s\\n' '${token}' | volvel-worker --url ${instanceUrl} --token-stdin`;
-            return (
-              <OneTimeSecret value={token} noun="credential" onDone={dismiss}>
-                <p className="m-0">Start a worker with it:</p>
-                <div className="flex flex-wrap items-center gap-2">
-                  <code className="min-w-0 flex-1 rounded-control border border-line bg-surface px-2 py-1.5 font-mono text-code break-all select-all">
-                    {command}
-                  </code>
-                  <CopyButton value={command} label="Copy the command" />
-                </div>
-              </OneTimeSecret>
-            );
-          },
-        }}
-        rowActions={(row, reload) =>
-          row.revokedAt ? null : (
-            <RemoveButton
-              label="Revoke"
-              confirm={`Revoke "${row.name}"? A worker using it stops.`}
-              run={() => api.delete(`${base}/worker-credentials/${row.id}`)}
-              onDone={() => {
-                reload();
-                pools.reload();
-              }}
+                    ]
+                  : []
+              }
+              empty={{ title: "No pool yet", text: "Scripts that name no pool use the default." }}
             />
-          )
-        }
-      />
-    </div>
+          )}
+          {managed.data?.state === "refused" ? (
+            <Notice tone="attention">
+              <strong>This tenant's code runs on standalone workers only.</strong> People outside
+              the instance's operators write its code, and the workers this instance starts run
+              beside its control plane, on its network, so it starts none for this tenant. Make a
+              credential below and start a worker with it, or ask the operator to run a worker host:
+              see "Workers the instance starts" in the self-hosting guide.
+            </Notice>
+          ) : managed.data?.state === "shared" && tenant.data?.managedWorkers ? (
+            <p className="m-0 text-meta text-ink-muted">
+              Workers the instance starts run as the control plane's own user.
+            </p>
+          ) : null}
+          {tenant.data ? (
+            <div className="flex flex-wrap items-center gap-3">
+              <span>
+                {!tenant.data.managedWorkers
+                  ? "The instance starts no workers for this tenant."
+                  : managed.data?.state === "unavailable"
+                    ? "This tenant lets the instance start workers, but the instance starts no workers for any tenant. Ask its operator, or run your own."
+                    : managed.data?.state === "refused"
+                      ? "The instance would start workers for this tenant, and does not: see above."
+                      : managed.data
+                        ? "The instance starts workers for the default pool when there is work."
+                        : "Checking what the instance starts…"}
+              </span>
+              {!tenant.data.managedWorkers && tenant.data.managedWorkersLocked ? (
+                <span className="text-ink-muted">
+                  An operator turned this off. Only an operator can turn it on again.
+                </span>
+              ) : (
+                <Button
+                  size="small"
+                  onClick={async () => {
+                    const on = !tenant.data?.managedWorkers;
+                    if (!on) {
+                      // Every run of the default pool waits for a worker that is not the instance's.
+                      const served = pools.data?.items.find(
+                        (pool) => pool.name === null,
+                      )?.credentials;
+                      const sure = await ask.confirm({
+                        title: "Stop the instance starting workers?",
+                        text: `Runs of the default pool wait for a worker you start yourself. ${
+                          served === undefined
+                            ? "Check the credentials below first."
+                            : served > 0
+                              ? `${served === 1 ? "One credential serves" : `${served} credentials serve`} the default pool, so a worker started with it takes them.`
+                              : "No credential serves the default pool, so every run of it waits until one does."
+                        }`,
+                        action: "Stop",
+                        danger: true,
+                      });
+                      if (!sure) return;
+                    }
+                    await api
+                      .patch(base, { managedWorkers: on })
+                      .then(
+                        () =>
+                          notify.success(
+                            on
+                              ? "This tenant now lets the instance start workers for it."
+                              : "The instance no longer starts workers for this tenant.",
+                          ),
+                        notify.error,
+                      );
+                    tenant.reload();
+                    managed.reload();
+                  }}
+                >
+                  {tenant.data.managedWorkers
+                    ? "Run only on our own workers"
+                    : "Let the instance run workers"}
+                </Button>
+              )}
+            </div>
+          ) : null}
+          <CreateDialog
+            config={{
+              action: "Add pool",
+              description:
+                "Scripts name the pool with `worker`. Then make a credential for it and start a worker there.",
+              fields: [
+                {
+                  name: "name",
+                  label: "Name",
+                  placeholder: "warehouse",
+                  hint: "Lower case letters, digits and dashes.",
+                },
+                { name: "description", label: "Description", required: false },
+              ],
+              submit: ({ name, description }) =>
+                api.post(`${base}/worker-pools`, {
+                  name,
+                  ...(description ? { description } : {}),
+                }),
+            }}
+            open={adding}
+            onClose={() => setAdding(false)}
+            onCreated={() => {
+              setAdding(false);
+              pools.reload();
+            }}
+          />
+        </Page>
+        <ListScreen<{
+          id: string;
+          name: string;
+          prefix: string;
+          workspaceId: string | null;
+          pool: string | null;
+          revokedAt: string | null;
+          createdAt: string;
+        }>
+          as="section"
+          title="Credentials for standalone workers"
+          description={`A worker outside the platform signs in with one of these: volvel-worker --url ${instanceUrl} --token-stdin, with the credential on its standard input. The full command is shown when a credential is made.`}
+          path={`${base}/worker-credentials`}
+          rowKey={(row) => row.id}
+          columns={[
+            { header: "Name", cell: (row) => row.name },
+            { header: "Credential", cell: (row) => <Code>{`${row.prefix}…`}</Code> },
+            {
+              header: "Pool",
+              cell: (row) => (row.pool ? <Mono>{row.pool}</Mono> : "Default pool"),
+            },
+            { header: "Created", cell: (row) => <Time value={row.createdAt} mode="ago" /> },
+            {
+              header: "Status",
+              cell: (row) =>
+                row.revokedAt ? <StatePill state="revoked" /> : <StatePill state="active" />,
+            },
+          ]}
+          empty={{
+            title: "No standalone workers",
+            text: "You only need one to run scripts inside your own network.",
+          }}
+          create={{
+            action: "Create credential",
+            fields: [
+              { name: "name", label: "Name", placeholder: "Warehouse network" },
+              {
+                name: "pool",
+                label: "Pool",
+                options: poolOptions,
+                hint: "The worker runs only the scripts of this pool.",
+              },
+            ],
+            submit: async ({ name, pool }) => {
+              const result = await api.post(`${base}/worker-credentials`, {
+                name,
+                ...(pool ? { pool } : {}),
+              });
+              pools.reload();
+              return result;
+            },
+            afterCreate: (result, dismiss) => {
+              const token = (result as { token: string }).token;
+              // The credential goes in on standard input: a command line is readable by every process on the host.
+              const command = `printf '%s\\n' '${token}' | volvel-worker --url ${instanceUrl} --token-stdin`;
+              return (
+                <OneTimeSecret value={token} noun="credential" onDone={dismiss}>
+                  <p className="m-0">Start a worker with it:</p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <code className="min-w-0 flex-1 rounded-control border border-line bg-surface px-2 py-1.5 font-mono text-code break-all select-all">
+                      {command}
+                    </code>
+                    <CopyButton value={command} label="Copy the command" />
+                  </div>
+                </OneTimeSecret>
+              );
+            },
+          }}
+          rowActions={(row, reload) =>
+            row.revokedAt ? null : (
+              <RemoveButton
+                label="Revoke"
+                confirm={`Revoke "${row.name}"? A worker using it stops.`}
+                run={() => api.delete(`${base}/worker-credentials/${row.id}`)}
+                onDone={() => {
+                  reload();
+                  pools.reload();
+                }}
+              />
+            )
+          }
+        />
+      </div>
+    </Can>
   );
 }
 

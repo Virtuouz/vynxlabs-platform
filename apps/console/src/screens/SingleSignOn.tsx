@@ -14,9 +14,10 @@ import {
   TextField,
 } from "@volvel/ui";
 import { Plus, Trash2 } from "lucide-react";
-import { useMemo, useRef, useState } from "react";
+import { type ReactNode, useMemo, useRef, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, failureText, notify } from "../ask.tsx";
+import { Can, useCan } from "../kit/Can.tsx";
 import { DataTable } from "../kit/DataTable.tsx";
 import { listOf } from "../kit/format.ts";
 import { ErrorState, Loading } from "../kit/LoadState.tsx";
@@ -1204,6 +1205,17 @@ function ProviderDetail({
     }
   };
   const who = provider.audience === "members" ? "members" : "end users";
+  // What changes a provider needs: switched off for a member who may only read.
+  const gate = {
+    base: instance ? "/instance" : base,
+    permission: instance ? "instance:write" : "sso:write",
+  };
+  const can = useCan(gate.base, gate.permission);
+  const guarded = (content: ReactNode) => (
+    <Can {...gate} what="this provider">
+      {content}
+    </Can>
+  );
 
   return (
     <section className="flex flex-col gap-4">
@@ -1219,7 +1231,7 @@ function ProviderDetail({
           <>
             <Button
               variant="danger"
-              disabled={busy}
+              disabled={busy || !can}
               onClick={async () => {
                 const sure = await ask.typeToConfirm({
                   title: `Remove ${provider.name}?`,
@@ -1240,7 +1252,7 @@ function ProviderDetail({
             </Button>
             {provider.enabled && !provider.paused ? (
               <Button
-                disabled={busy}
+                disabled={busy || !can}
                 onClick={async () => {
                   const sure = await ask.confirm(
                     provider.enforce
@@ -1275,6 +1287,7 @@ function ProviderDetail({
             <Button
               variant="primary"
               loading={busy}
+              disabled={!can}
               onClick={async () => {
                 if (on) {
                   // Turning it off ends sign-in through it for everyone it covers: that is said first.
@@ -1335,22 +1348,26 @@ function ProviderDetail({
           {
             id: "setup",
             label: "Set up",
-            content: <SetUp root={root} provider={provider} onChanged={onChanged} />,
+            content: guarded(<SetUp root={root} provider={provider} onChanged={onChanged} />),
           },
-          { id: "domains", label: "Domains", content: <Domains root={root} instance={instance} /> },
+          {
+            id: "domains",
+            label: "Domains",
+            content: guarded(<Domains root={root} instance={instance} />),
+          },
           ...(instance
             ? []
             : [
                 {
                   id: "groups",
                   label: "Groups",
-                  content: <Groups base={base} root={root} audience={provider.audience} />,
+                  content: guarded(<Groups base={base} root={root} audience={provider.audience} />),
                 },
               ]),
           {
             id: "settings",
             label: "Settings",
-            content: (
+            content: guarded(
               <Settings
                 key={provider.id}
                 base={base}
@@ -1358,19 +1375,19 @@ function ProviderDetail({
                 instance={instance}
                 provider={provider}
                 onChanged={onChanged}
-              />
+              />,
             ),
           },
-          { id: "people", label: "People", content: <People root={root} /> },
+          { id: "people", label: "People", content: guarded(<People root={root} />) },
           {
             id: "provisioning",
             label: "Provisioning",
-            content: (
+            content: guarded(
               <Provisioning
                 root={`${base}/provisioning/${provider.id}`}
                 instance={instance}
                 audience={provider.audience}
-              />
+              />,
             ),
           },
         ]}
@@ -1384,6 +1401,7 @@ export function SingleSignOn({ base }: { base: string }) {
   const instance = base === "/instance";
   const list = useLoad<{ items: IdentityProvider[] }>(`${base}/identity-providers`);
   const [connecting, setConnecting] = useState(false);
+  const canConnect = useCan(base, instance ? "instance:write" : "sso:write");
   // The provider open is in the address: a link opens it, and the breadcrumb leads back.
   const [open, setOpen] = useUrlParam("provider", undefined, { push: true });
   const [shown, setFresh] = useOpenRow(list, open);
@@ -1413,7 +1431,7 @@ export function SingleSignOn({ base }: { base: string }) {
     );
   }
   const connect = (
-    <Button variant="primary" onClick={() => setConnecting(true)}>
+    <Button variant="primary" disabled={!canConnect} onClick={() => setConnecting(true)}>
       Connect a provider
     </Button>
   );

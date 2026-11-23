@@ -56,3 +56,13 @@ Migration: none.
 
 ## Found
 - The role picker in provider Settings (`SingleSignOn.tsx`, `roles?limit=200`) is cut at 200 roles without saying.
+
+## GOV-37
+- Tests failed before: `SingleSignOn.test.tsx` "a member who may only read single sign-on is told so, and nothing offers to change it (GOV-37)"; `Retention.test.tsx`, `Workers.test.tsx`, `Portal.test.tsx` (Domains), one each, same name ending (GOV-37). `OneTimeSecret.test.tsx` now expects the GOV-36 command.
+- New shared piece `apps/console/src/kit/Can.tsx`: `useCan(base, permission)` (from `/me` for the instance; from `GET <tenant>/access/member/<me>` for a tenant, the route a member may read about themselves; says yes while not known or in an unexpected shape, because the server decides again), `NotAllowed` (the line: "You can see X, not change it. It needs `perm`. Ask ...", words from `askForAccess()`), and `Can` (the line plus a disabled `<fieldset className="contents">` round what is inside, the same tree either way).
+- Applied: SingleSignOn (Connect a provider; the provider's Turn on/off, Require, Remove; the Set up, Domains, Groups, Settings, People and Provisioning tabs, so the tabs themselves stay readable) with `sso:write` or, for the instance's own, `instance:write`; Domains (`domain:write`: Add a hostname, and Remove, Disable and Check now in the detail); Workers (`worker:write`, the whole screen incl. credentials); Retention (`tenant:write`); tenant Branding (`portal:write`).
+- Siblings, not done (each needs only the same one-line wrapper): Audit and Instance screens other than SSO (Instance branding, Workers' instance side, Triggers), tenant Members/Roles/Groups/End users screens (those belong to the access slice), Environments export/import, Portal end-user actions. A permission held only at one workspace counts as held (the access route lists it), so a control for a tenant-level action may show to someone the server then refuses; the server remains the judge.
+- Screens: the same screens as a member with a read-only role (`sso:read`, `domain:read`, `worker:read`, `tenant:read`, `portal:read`) at 390/768/1440, light and dark; reload keeps it; Tab skips the disabled controls; owner and administrator see no line and nothing disabled.
+
+## Found
+- `kit/Can.tsx` `useCan` makes one more request per screen (`/me` is cached; the access route is read once per tenant and permission set).

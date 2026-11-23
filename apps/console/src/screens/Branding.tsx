@@ -11,6 +11,7 @@ import {
 import { type CSSProperties, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
+import { Can } from "../kit/Can.tsx";
 import { sendIcons } from "../kit/icons.ts";
 import { ErrorState, Loading } from "../kit/LoadState.tsx";
 import { SaveBar } from "../kit/SaveBar.tsx";
@@ -532,42 +533,50 @@ function BrandingForm({ base, data, reload }: { base: string; data: Portal; relo
       title="Branding"
       description="How this tenant's portal and apps look to its end users, and whether people may create their own account there. Changes are saved together, from the bar that appears below."
     >
-      <section className={panel}>
-        <h2 className="m-0 text-title font-semibold">Portal</h2>
-        <p className="m-0 max-w-measure">
-          <a
-            href={data.portalUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="break-all text-action"
-          >
-            {data.portalUrl}
-          </a>
-        </p>
-        <p className="m-0 max-w-measure text-ink-muted">
-          The portal is where this tenant's end users sign in, choose or reset their password, and
-          find the apps that are open to them.{" "}
-          {data.mail
-            ? "This instance sends mail, so invitations and password reset links are emailed to them."
-            : "This instance sends no mail, so invitation and password reset links have to be passed on by hand. They are shown under End users when they are made."}
-        </p>
-        <CheckboxField
-          label="People may create their own account"
-          name="signUp"
-          checked={signUp}
-          hint="When this is off, only people invited under End users have an account."
-          onChange={setSignUp}
+      <Can base={base} permission="portal:write" what="this tenant's branding">
+        <section className={panel}>
+          <h2 className="m-0 text-title font-semibold">Portal</h2>
+          <p className="m-0 max-w-measure">
+            <a
+              href={data.portalUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="break-all text-action"
+            >
+              {data.portalUrl}
+            </a>
+          </p>
+          <p className="m-0 max-w-measure text-ink-muted">
+            The portal is where this tenant's end users sign in, choose or reset their password, and
+            find the apps that are open to them.{" "}
+            {data.mail
+              ? "This instance sends mail, so invitations and password reset links are emailed to them."
+              : "This instance sends no mail, so invitation and password reset links have to be passed on by hand. They are shown under End users when they are made."}
+          </p>
+          <CheckboxField
+            label="People may create their own account"
+            name="signUp"
+            checked={signUp}
+            hint="When this is off, only people invited under End users have an account."
+            onChange={setSignUp}
+          />
+        </section>
+        <ThemeEditor
+          light={light}
+          dark={dark}
+          setLight={setLight}
+          setDark={setDark}
+          error={error}
         />
-      </section>
-      <ThemeEditor light={light} dark={dark} setLight={setLight} setDark={setDark} error={error} />
-      <Logo base={base} has={data.logo} reload={reload} />
-      <SaveBar
-        dirty={dirty}
-        saving={saving}
-        onSave={() => void save()}
-        onDiscard={discard}
-        what="this tenant's branding"
-      />
+        <Logo base={base} has={data.logo} reload={reload} />
+        <SaveBar
+          dirty={dirty}
+          saving={saving}
+          onSave={() => void save()}
+          onDiscard={discard}
+          what="this tenant's branding"
+        />
+      </Can>
     </Page>
   );
 }

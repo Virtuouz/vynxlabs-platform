@@ -1,0 +1,10 @@
+# Lane fe, round 3
+
+- Versions repeats rows after a rollback: `apps/console/src/screens/Release.tsx` (`LedgerStep`) lists each version once, newest deployment speaking, with "deployed N times". Test: `Release.test.tsx` "Versions is the one list". Walk: Versions of a production workspace after a rollback (1440/768/390, light/dark, keyboard to Roll back, reload). Other caller of the ledger: none.
+- Version in "Since it last worked" vs compare page: both read the run's own bundle version; the compare page's empty state said "Both runs used version N" using only this run's. `RunCompare.tsx` now names each version when they differ. Test: `RunCompare.test.tsx` "names each run's own version". Walk: a failed run, "Compare the source" with no code change between versions.
+- Docs site home had no feedback question: `packages/docs-site/src/render.ts` `homePage` now draws `feedbackOf(at, "index")` (when the site has a home document). Test: `walkfix.test.ts` "the home page asks whether it helped". Walk: a served docs site with feedback, home, answer once, reload (thanks shown), preview (disabled note), 390 px.
+- "Changes the input it takes." on a one-line edit: the draft's body and the live one differ in key order (the database orders keys); `kernel/describe.ts` `same` now compares with sorted keys, so every kind's description and the drift/promotion lists benefit. Test: `authoring.test.ts` "a one-line script edit". Walk: edit one line of a deployed typed script, Deploy review list.
+- Unfollowing a joined table: `kit/inspector/model.ts` `withoutColumns` drops every column setting (column, columns, slots, groupRows, fields hints; `columns`), and filter bindings' column/columns, that name the table's columns; used by `AlsoFrom` in `rowsItUses.tsx`, its only caller. Test: `rows-it-uses.test.tsx` "p31 fe". Walk: a list with a followed table, set Title/Under the title to its columns, switch it off; 390 px, keyboard on the chip.
+- MCP serverInfo name: not a fault on the current build; `mcp.test.ts` "the server names itself for the product and the workspace" asserts `volvel:main` and passes. The older build was commit before 44e90772.
+
+Found: none.

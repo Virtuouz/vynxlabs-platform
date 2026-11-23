@@ -607,6 +607,9 @@ export function homePage(at: SiteView): string {
           })
           .join("")}</ul>`
       : "";
+  // The home page is a page: a reader says whether it helped, as on any other (when it has a document to name).
+  const asked = home ? feedbackOf(at, "index") : "";
+  const feedback = asked ? `<div class="foot">${asked}</div>\n` : "";
   const nav = collections
     .map((one) => {
       const to = firstOf(one);
@@ -633,7 +636,7 @@ ${description ? `<p class="intro">${described(description)}</p>` : ""}
 ${own}
 ${typeCards(at, "index")}${cards}
 ${recent}
-</main>
+${feedback}</main>
 <footer class="sitefoot"><p>${escapeHtml(at.title)}${at.version ? ` · Version ${escapeHtml(at.version)}` : ""}</p></footer>
 ${data(at, { collection: "" })}
 </body>

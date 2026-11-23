@@ -228,7 +228,11 @@ export function RunComparePage({
               return (
                 <EmptyCanvas
                   title="The code is the same in both"
-                  text={`Both runs used version ${now.data.bundleVersion ?? "?"}. What differs is the input or the environment, not the code.`}
+                  text={`${
+                    now.data.bundleVersion === then.data.bundleVersion
+                      ? `Both runs used v${now.data.bundleVersion ?? "?"}.`
+                      : `The last success used v${then.data.bundleVersion ?? "?"} and this run v${now.data.bundleVersion ?? "?"}, and the code did not change between them.`
+                  } What differs is the input or the environment, not the code.`}
                   action={
                     <span className="flex flex-wrap justify-center gap-4 text-meta">
                       <Link to={`${link}/runs/${id}`}>Input of this run</Link>

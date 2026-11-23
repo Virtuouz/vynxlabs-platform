@@ -366,16 +366,18 @@ test("Versions is the one list: a repeated version rolls back from its row, and 
     />,
   );
   await screen.findByText("Versions of Clinics");
-  // Two history rows for version 1 and one bundle never run: three buttons, none on the running one:
-  // version 1 (earlier than the running 2) rolls back, version 3 (never run) deploys.
+  // Version 1 was deployed twice and is listed once, with how often: two buttons, none on the
+  // running one: version 1 (earlier than the running 2) rolls back, version 3 (never run) deploys.
   const buttons = await screen.findAllByRole("button", {
     name: /^(Roll back to|Deploy) this version$/,
   });
   expect(buttons.map((one) => one.textContent)).toEqual([
     "Roll back to this version",
-    "Roll back to this version",
     "Deploy this version",
   ]);
+  expect(screen.getAllByText("v1")).toHaveLength(1);
+  expect(screen.getAllByText("v2")).toHaveLength(1);
+  expect(screen.getByText(/deployed 2 times/)).toBeTruthy();
   expect(screen.getByText("Not yet run here")).toBeTruthy();
   expect(screen.queryByText("Bundles and rollback")).toBeNull();
   fireEvent.click(buttons[0] as HTMLElement);

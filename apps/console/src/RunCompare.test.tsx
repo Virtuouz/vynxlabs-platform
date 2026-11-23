@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { cleanup, fireEvent, screen } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { RunCompare } from "./screens/RunCompare.tsx";
+import { RunCompare, RunComparePage } from "./screens/RunCompare.tsx";
 import { show } from "./testing.tsx";
 
 const root = "/tenants/t1/workspaces/w1";
@@ -84,4 +84,21 @@ test("when only masked values differ, the difference says so instead of showing 
   fireEvent.click(await screen.findByRole("button", { name: "Show the input's difference" }));
   expect(await screen.findByText("Only masked values differ.")).toBeTruthy();
   expect(screen.queryByTestId("input-diff")).toBeNull();
+});
+
+test("the compare page names each run's own version when the code is the same in both (P31 fe)", async () => {
+  vi.stubGlobal("fetch", async (address: string) => {
+    const path = address.replace("/api/v1", "");
+    const json = (value: unknown) => new Response(JSON.stringify(value), { status: 200 });
+    if (path === `${root}/runs/r-bad`) return json({ script: "stock/check" });
+    const files = [{ path: "stock/check.script.ts", content: "export default 1;\n" }];
+    if (path.includes("run=r-bad")) return json({ available: true, files, bundleVersion: 38 });
+    if (path.includes("run=r-ok")) return json({ available: true, files, bundleVersion: 37 });
+    return json({});
+  });
+  show(<RunComparePage root={root} link="/t/t1/workspaces/w1" id="r-bad" other="r-ok" />);
+  const text = await screen.findByText(/What differs is the input/);
+  expect(text.textContent).toContain("v37");
+  expect(text.textContent).toContain("v38");
+  expect(text.textContent).not.toMatch(/Both runs used version/);
 });

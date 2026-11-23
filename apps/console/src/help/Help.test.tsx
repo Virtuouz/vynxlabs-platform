@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { ERROR_CODES } from "@volvel/manifest";
+import { parse } from "@volvel/markup";
 import { Dialog, TextField } from "@volvel/ui";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { ApiError } from "../api.ts";
@@ -19,6 +20,7 @@ import {
 } from "../nav.ts";
 import { setPreference } from "../prefs.ts";
 import { show } from "../testing.tsx";
+import { around } from "./around.ts";
 import { forgetHelp } from "./content.ts";
 import { FieldAbout, forgetFields } from "./FieldAbout.tsx";
 import { AttachedPages, WorkspaceGlossary } from "./glossary.tsx";
@@ -595,4 +597,237 @@ describe("a field of a form written by hand", () => {
 
 test("help is on F1 everywhere, a field included, and on ⌘/", () => {
   expect(SHORTCUTS.help.keys).toEqual(["F1", "Mod+/"]);
+});
+
+describe("where the help panel's page is, and where it leads", () => {
+  function Screen() {
+    useHelpInAddress();
+    return <HelpDock />;
+  }
+  const panel = () => screen.getByRole("complementary", { name: "Help" });
+  const url = (path: string) =>
+    manifest.pages.find((one: { path: string }) => one.path === path).url;
+
+  /** A page of the product answered with another page's file, or another manifest. */
+  function answer(files: Record<string, unknown>) {
+    const plain = globalThis.fetch;
+    vi.stubGlobal("fetch", async (address: string) => {
+      const found = files[String(address).replace(/^\/help\//, "")];
+      if (found === undefined) return plain(address);
+      const text = JSON.stringify(found);
+      return { ok: true, status: 200, json: async () => JSON.parse(text), text: async () => text };
+    });
+  }
+  const pageFile = (path: string, source: string) => ({
+    path,
+    title: manifest.pages.find((one: { path: string }) => one.path === path).title,
+    tree: parse(source),
+  });
+
+  test("an old address still opens the page it became, with the heading asked for", () => {
+    const moves = manifest.redirects as Record<string, string>;
+    const [from, to] = Object.entries(moves)[0] as [string, string];
+    // The manifest's own moves are known with none given.
+    expect(pageFor(manifest, from)).toEqual({ path: to });
+    expect(pageFor(manifest, `${from}#a-heading`, moves)).toEqual({
+      path: to,
+      anchor: "a-heading",
+    });
+    // A page that is there is not taken for an old one, and a page deleted is led on by the file's word.
+    expect(pageFor(manifest, to, { [to]: "index" })).toEqual({ path: to });
+    expect(pageFor(manifest, "gone/page", { "gone/page": "index" })).toEqual({ path: "index" });
+    expect(pageFor(manifest, "never/was", moves)).toBeUndefined();
+  });
+
+  test("a saved ?help= link to an old path opens the page, in the panel", async () => {
+    const [from, to] = Object.entries(manifest.redirects as Record<string, string>).find(
+      ([, now]) => now === "start/explanation/concepts",
+    ) as [string, string];
+    expect(to).toBe("start/explanation/concepts");
+    show(<Screen />);
+    act(() => openHelp(from));
+    await within(panel()).findByRole("heading", { level: 2, name: "Concepts" });
+  });
+
+  test("the trail says where the page is, each step but the last leads there, and Home leads to the root", async () => {
+    show(<Screen />);
+    act(() => openHelp("start/explanation/concepts"));
+    const trail = await within(panel()).findByRole("navigation", { name: "Where this page is" });
+    const steps = around(manifest, "start/explanation/concepts", String).trail;
+    expect(
+      within(trail)
+        .getAllByRole("listitem")
+        .map((one) => one.textContent),
+    ).toEqual(steps.map((one) => one.title));
+    expect(
+      within(trail).getByText("Concepts").closest("[aria-current]")?.getAttribute("aria-current"),
+    ).toBe("page");
+    fireEvent.click(within(trail).getByRole("link", { name: steps[0]?.title as string }));
+    await within(panel()).findByRole("heading", { level: 2, name: steps[0]?.title as string });
+    fireEvent.click(within(panel()).getByRole("button", { name: "Help home" }));
+    await within(panel()).findByRole("heading", { level: 2, name: manifest.nav.home.title });
+    // Already at the root: nothing to go to.
+    expect(within(panel()).queryByRole("button", { name: "Help home" })).toBeNull();
+  });
+
+  test("previous and next lead through the folder, and the heading takes focus on the new page", async () => {
+    const folder = manifest.pages
+      .map((one: { path: string }) => one.path)
+      .find((path: string) => {
+        const set = around(manifest, path, String);
+        return set.before && set.after;
+      }) as string;
+    const set = around(manifest, folder, String);
+    show(<Screen />);
+    act(() => openHelp(folder));
+    const pager = await within(panel()).findByRole("navigation", {
+      name: "Pages before and after",
+    });
+    expect(
+      within(pager).getByRole("link", { name: new RegExp(set.before?.title as string) }),
+    ).toBeTruthy();
+    fireEvent.click(
+      within(pager).getByRole("link", { name: new RegExp(`Next.*${set.after?.title}`) }),
+    );
+    const heading = await within(panel()).findByRole("heading", {
+      level: 2,
+      name: set.after?.title as string,
+    });
+    await waitFor(() => expect(document.activeElement).toBe(heading));
+  });
+
+  test("pages of other types about the same things are listed, by type", async () => {
+    answer({
+      "manifest.json": {
+        ...manifest,
+        pages: manifest.pages.map((one: { path: string }) =>
+          one.path === "start/explanation/concepts" ||
+          one.path === "console/reference/screens/home/tenants"
+            ? { ...one, subjects: ["tenants"] }
+            : one,
+        ),
+      },
+    });
+    show(<Screen />);
+    act(() => openHelp("start/explanation/concepts"));
+    const related = await within(panel()).findByRole("region", { name: "Related" });
+    expect(within(related).getByRole("heading", { name: "Reference" })).toBeTruthy();
+    fireEvent.click(within(related).getByRole("link", { name: "Your tenants" }));
+    await within(panel()).findByRole("heading", { level: 2, name: "Your tenants" });
+    expect(within(panel()).queryByRole("region", { name: "Related" })).not.toBeNull();
+  });
+
+  test("Open in documentation is a plain link to the same page on this instance, in a new tab", async () => {
+    show(<Screen />);
+    act(() => openHelp("start/explanation/concepts#what-is-a-tenant"));
+    const link = await within(panel()).findByRole("link", { name: /Open in documentation/ });
+    expect(link.getAttribute("href")).toBe(
+      `/docs/${url("start/explanation/concepts")}#what-is-a-tenant`,
+    );
+    expect(link.getAttribute("target")).toBe("_blank");
+    expect(link.getAttribute("rel")).toContain("noopener");
+    act(() => openHelp("index"));
+    await waitFor(() =>
+      expect(
+        within(panel())
+          .getByRole("link", { name: /Open in documentation/ })
+          .getAttribute("href"),
+      ).toBe("/docs/"),
+    );
+  });
+
+  test("a picture beside a page is shown from the build's files", async () => {
+    answer({
+      "pages/start/explanation/concepts.json": pageFile(
+        "start/explanation/concepts",
+        "A picture.\n\n![A tenant's shape](tenant.png)\n",
+      ),
+    });
+    show(<Screen />);
+    act(() => openHelp("start/explanation/concepts"));
+    const picture = (await within(panel()).findByAltText("A tenant's shape")) as HTMLImageElement;
+    expect(picture.getAttribute("src")).toBe("/help/assets/start/explanation/tenant.png");
+  });
+
+  test("the terms a page lists with ::glossary, and the pages with ::pages, are listed", async () => {
+    answer({
+      "pages/start/explanation/concepts.json": pageFile(
+        "start/explanation/concepts",
+        "::glossary\n\n::pages\n",
+      ),
+    });
+    show(<Screen />);
+    act(() => openHelp("start/explanation/concepts"));
+    const first = Object.values(manifest.terms as Record<string, { term: string }>)[0]
+      ?.term as string;
+    await within(panel()).findAllByText(first);
+    expect(panel().querySelector(".vd-glossary, dl, ul")).not.toBeNull();
+  });
+
+  test("a diagram is drawn, not left as its source", async () => {
+    vi.doMock("mermaid", () => ({
+      default: {
+        initialize: () => {},
+        render: async () => ({ svg: '<svg viewBox="0 0 10 10" data-drawn="yes"></svg>' }),
+      },
+    }));
+    answer({
+      "pages/start/explanation/concepts.json": pageFile(
+        "start/explanation/concepts",
+        "```mermaid\ngraph TD; A-->B;\n```\n",
+      ),
+    });
+    show(<Screen />);
+    act(() => openHelp("start/explanation/concepts"));
+    await waitFor(() => expect(panel().querySelector("svg[data-drawn]")).not.toBeNull(), {
+      timeout: 3000,
+    });
+    vi.doUnmock("mermaid");
+  });
+
+  test("a search is asked of the instance's /docs first, and its answer opens the page", async () => {
+    const asked: string[] = [];
+    const plain = globalThis.fetch;
+    const page = manifest.pages.find(
+      (one: { path: string }) => one.path === "start/explanation/concepts",
+    );
+    vi.stubGlobal("fetch", async (address: string) => {
+      if (!String(address).startsWith("/docs/_search.json")) return plain(address);
+      asked.push(String(address));
+      const text = JSON.stringify({
+        pages: [
+          {
+            url: page.url,
+            title: [{ text: "Concepts", hit: true }],
+            crumb: "Start here",
+            places: [],
+          },
+        ],
+      });
+      return { ok: true, status: 200, json: async () => JSON.parse(text), text: async () => text };
+    });
+    show(<Screen />);
+    act(() => openHelp("index"));
+    fireEvent.change(within(panel()).getByRole("searchbox", { name: "Search the help" }), {
+      target: { value: "tenant shape" },
+    });
+    const found = await within(panel()).findByRole("list", { name: "Pages found" });
+    expect(asked).toEqual(["/docs/_search.json?q=tenant%20shape"]);
+    fireEvent.click(within(found).getAllByRole("button")[0] as HTMLElement);
+    await within(panel()).findByRole("heading", { level: 2, name: "Concepts" });
+  });
+
+  test("when the instance cannot answer a search, the help's own index does", async () => {
+    const plain = globalThis.fetch;
+    vi.stubGlobal("fetch", async (address: string) => {
+      if (String(address).startsWith("/docs/")) throw new TypeError("Failed to fetch");
+      return plain(address);
+    });
+    show(<Screen />);
+    act(() => openHelp("index"));
+    fireEvent.change(within(panel()).getByRole("searchbox", { name: "Search the help" }), {
+      target: { value: "approval" },
+    });
+    await within(panel()).findByRole("list", { name: "Pages found" });
+  });
 });

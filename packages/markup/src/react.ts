@@ -72,6 +72,7 @@ const RENAMED: Record<string, string> = {
   class: "className",
   tabindex: "tabIndex",
   checked: "defaultChecked",
+  srcset: "srcSet",
 };
 
 function style(text: string): Record<string, string> {

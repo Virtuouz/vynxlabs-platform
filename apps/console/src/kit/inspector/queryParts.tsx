@@ -164,9 +164,14 @@ export function ChoiceList<Value extends string>({
                 className="sr-only"
               />
               {Icon ? <Icon size={14} aria-hidden className="shrink-0 text-ink-muted" /> : null}
-              <span className="min-w-0 flex-1 truncate">{one.label}</span>
+              {/* A long hint gives way before the name does: the name keeps two fifths of the row. */}
+              <span className="min-w-[40%] flex-1 truncate" title={one.label}>
+                {one.label}
+              </span>
               {one.hint ? (
-                <span className="shrink-0 text-meta text-ink-muted">{one.hint}</span>
+                <span className="min-w-0 max-w-[50%] truncate text-meta text-ink-muted" title={one.hint}>
+                  {one.hint}
+                </span>
               ) : null}
             </label>
           );

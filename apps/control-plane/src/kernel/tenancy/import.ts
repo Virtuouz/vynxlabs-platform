@@ -1,12 +1,14 @@
 import { createHash } from "node:crypto";
 import { type FileHandle, open } from "node:fs/promises";
-import { sql } from "@volvel/db";
+import { isId, sql } from "@volvel/db";
+import { COLUMN_TYPES } from "@volvel/manifest";
 import { type Actor, mutate, type Trx } from "../audit.js";
 import type { PassphraseWrappedKey } from "../crypto.js";
 import { restoreRules, restoreStructure, workspaceSchema } from "../data/apply.js";
 import { badRequest, conflict, HttpError } from "../errors.js";
 import type { Kernel } from "../kernel.js";
-import { EXPORT_FORMAT, EXPORT_FORMAT_VERSION, type ExportManifest } from "./export.js";
+import { INSTANCE_ONLY_ROLE } from "../kinds.js";
+import { EXPORT_FORMAT, EXPORT_FORMATS_READ, type ExportManifest, manifestText } from "./export.js";
 import { removeStored } from "./remove.js";
 import { OWNED_TABLES } from "./tables.js";
 import { type TarIndexEntry, tarIndex, tarRead } from "./tar.js";
@@ -75,9 +77,9 @@ async function check(file: FileHandle): Promise<Checked> {
     throw refuse("The export's list of contents cannot be read.");
   }
   if (manifest.format !== EXPORT_FORMAT) throw refuse("This file is not a tenant export.");
-  if (manifest.formatVersion !== EXPORT_FORMAT_VERSION) {
+  if (!EXPORT_FORMATS_READ.includes(manifest.formatVersion)) {
     throw refuse(
-      `This export is in format ${manifest.formatVersion}. This instance reads format ${EXPORT_FORMAT_VERSION}.`,
+      `This export is in format ${manifest.formatVersion}. This instance reads formats ${EXPORT_FORMATS_READ.join(" and ")}.`,
     );
   }
   const byPath = new Map(index.slice(0, -1).map((entry) => [entry.path, entry]));
@@ -93,7 +95,90 @@ async function check(file: FileHandle): Promise<Checked> {
       throw refuse(`The export is damaged: ${listed.path} is not what was written.`);
     }
   }
+  checkLayout(manifest, [...byPath.keys()]);
   return { file, manifest, byPath };
+}
+
+const SLUG = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+const PART = /\.\d{4}\.jsonl$/;
+const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]{0,62}$/;
+const unsafeKey = (key: string) =>
+  key === "" ||
+  key.split("/").some((segment) => segment === "" || segment === "." || segment === "..");
+
+/**
+ * Holds the archive to the files this format has. The list of contents is the archive's
+ * own word, and in format 1 nothing signs it, so a file it lists is not a file to trust:
+ * a table this format does not export, a workspace the manifest does not name, or an
+ * object key that leaves the store's folders is refused before anything is read as rows.
+ */
+function checkLayout(manifest: ExportManifest, paths: string[]) {
+  const tenant = manifest.tenant;
+  if (
+    !tenant ||
+    !isId(String(tenant.id)) ||
+    typeof tenant.slug !== "string" ||
+    !SLUG.test(tenant.slug) ||
+    typeof tenant.name !== "string"
+  ) {
+    throw refuse("The export's list of contents does not name a valid tenant.");
+  }
+  if (
+    !Array.isArray(manifest.workspaces) ||
+    manifest.workspaces.some((one) => !isId(String(one?.id)))
+  ) {
+    throw refuse("The export's list of contents names a workspace that is not valid.");
+  }
+  const workspaces = new Set(manifest.workspaces.map((one) => one.id));
+  const tables = new Set(
+    OWNED_TABLES.filter(
+      (entry) => entry.export === "always" || (entry.export === "history" && manifest.history),
+    ).map((entry) => entry.table as string),
+  );
+  for (const path of paths) {
+    if (path === "key.json") continue;
+    if (path.startsWith("objects/")) {
+      if (unsafeKey(path.slice("objects/".length))) {
+        throw refuse(`The export holds an object with a name that is not allowed: ${path}.`);
+      }
+      continue;
+    }
+    if (PART.test(path)) {
+      const base = path.replace(PART, "");
+      if (base === "members" || base === "data/catalog/data_table") continue;
+      if (base === "data/catalog/data_column") continue;
+      if (base.startsWith("platform/") && tables.has(base.slice("platform/".length))) continue;
+      const custom = /^data\/([^/]+)\/([^/]+)$/.exec(base);
+      if (custom && workspaces.has(custom[1] as string) && IDENTIFIER.test(custom[2] as string)) {
+        continue;
+      }
+    }
+    throw refuse(`The export holds a file that this format does not have: ${path}.`);
+  }
+}
+
+/**
+ * Format 2 signs the list of contents under the tenant's key, which only the passphrase
+ * opens. Returns true when the signature is right, false for a format that has none, and
+ * refuses a signature that is wrong or missing.
+ */
+function authenticate(kernel: Kernel, manifest: ExportManifest, wrappedKey: Buffer): boolean {
+  if (manifest.formatVersion < 2) return false;
+  const given = manifest.authentication;
+  if (
+    given?.alg !== "hmac-sha256" ||
+    !kernel.vault.manifestMacMatches(
+      manifest.tenant.id,
+      wrappedKey,
+      manifestText(manifest),
+      given.mac,
+    )
+  ) {
+    throw refuse(
+      "The export's list of contents was not signed with this export's key, or was changed after it was. It is not imported.",
+    );
+  }
+  return true;
 }
 
 /** The numbered parts of one table, in order. */
@@ -120,6 +205,13 @@ export interface ImportInspection {
   notCarried: string[];
   /** Null when no passphrase was given to try. */
   passphraseOk: boolean | null;
+  formatVersion: number | null;
+  /**
+   * Whether the list of contents is signed under the export's key and the signature is right.
+   * False for a format with no signature: such a file is held to the tenant's own rows and files,
+   * but nobody vouches for it. Null until a passphrase is given to check a signed one.
+   */
+  authenticated: boolean | null;
   tenantPresent: boolean;
   slugTaken: boolean;
 }
@@ -148,6 +240,8 @@ export async function inspectImport(
     pendingRuns: 0,
     notCarried: [],
     passphraseOk: null,
+    formatVersion: null,
+    authenticated: null,
     tenantPresent: false,
     slugTaken: false,
   };
@@ -161,6 +255,8 @@ export async function inspectImport(
     }
     const { manifest } = checked;
     let passphraseOk: boolean | null = null;
+    let authenticated: boolean | null = manifest.formatVersion < 2 ? false : null;
+    let problem: string | null = null;
     if (options.passphrase) {
       const entry = checked.byPath.get("key.json");
       const exported = entry
@@ -168,8 +264,18 @@ export async function inspectImport(
         : null;
       try {
         if (!exported) throw new Error("no key");
-        kernel.vault.importTenantKey(manifest.tenant.id, exported, options.passphrase);
+        const wrapped = kernel.vault.importTenantKey(
+          manifest.tenant.id,
+          exported,
+          options.passphrase,
+        );
         passphraseOk = true;
+        try {
+          authenticated = authenticate(kernel, manifest, wrapped);
+        } catch (error) {
+          authenticated = false;
+          problem = (error as Error).message;
+        }
       } catch {
         passphraseOk = false;
       }
@@ -181,7 +287,7 @@ export async function inspectImport(
       .where((eb) => eb.or([eb("id", "=", manifest.tenant.id), eb("slug", "=", slug)]))
       .execute();
     return {
-      problem: null,
+      problem,
       tenant: { id: manifest.tenant.id, slug: manifest.tenant.slug, name: manifest.tenant.name },
       exportedAt: manifest.exportedAt,
       coreVersion: manifest.coreVersion,
@@ -194,6 +300,8 @@ export async function inspectImport(
       pendingRuns: manifest.pendingRuns,
       notCarried: manifest.notCarried,
       passphraseOk,
+      formatVersion: manifest.formatVersion,
+      authenticated,
       tenantPresent: present.some((one) => one.id === manifest.tenant.id),
       slugTaken: present.some((one) => one.slug === slug && one.id !== manifest.tenant.id),
     };
@@ -243,6 +351,7 @@ export async function importTenant(
     } catch {
       throw refuse("The passphrase does not open this export.");
     }
+    authenticate(kernel, manifest, wrappedKey);
 
     const existing = await kernel.db
       .selectFrom("tenant")
@@ -296,6 +405,81 @@ export async function importTenant(
       // IDs are unique everywhere, so replacing one wherever it appears is exact.
       for (const [from, to] of renamed) result = result.replaceAll(from, to);
       return result;
+    };
+
+    // What the archive may say about whose a row is. The list of contents is not trusted, so
+    // every row is held to this tenant and its workspaces, however the file was made.
+    const memberIds = new Set(members.map((member) => rewrite(member.id)));
+    const workspaceIds = new Set(manifest.workspaces.map((one) => one.id));
+    const seen = new Map<string, Set<string>>();
+    const seenIds = (table: string) => seen.get(table) ?? new Set<string>();
+    const REMEMBERED = new Set([
+      "workspace",
+      "bundle",
+      "principal_group",
+      "resource",
+      "flow_run",
+      "run",
+      "end_user_group",
+      "scim_group",
+      "member_dashboard",
+      "data_table",
+    ]);
+    // Tables with no tenant of their own are held to a parent that was loaded before them.
+    const PARENTS: Record<string, [column: string, parent: string]> = {
+      group_member: ["group_id", "principal_group"],
+      flow_layout: ["resource_id", "resource"],
+      step_run: ["flow_run_id", "flow_run"],
+      run_log: ["run_id", "run"],
+      end_user_group_member: ["group_id", "end_user_group"],
+      scim_group_member: ["group_id", "scim_group"],
+      dashboard_share: ["dashboard_id", "member_dashboard"],
+    };
+    const owning = await sql<{ table: string; column: string }>`
+      select table_name as "table", column_name as "column" from information_schema.columns
+      where table_schema = 'public' and column_name in ('tenant_id', 'workspace_id')
+    `.execute(kernel.db);
+    const hasColumn = (table: string, column: string) =>
+      owning.rows.some((one) => one.table === table && one.column === column);
+    /** The object keys the loaded rows name. Only these may be in the archive. */
+    const named = new Set<string>();
+    const validate = (table: string, row: Record<string, unknown>) => {
+      const wrong = (what: string) => refuse(`The export is refused: ${table} holds ${what}.`);
+      if (hasColumn(table, "tenant_id") && row.tenant_id !== tenantId) {
+        throw wrong("a row that is not this tenant's own, or is of the instance");
+      }
+      if (row.scope_type === "instance") throw wrong("a row of the whole instance");
+      if (
+        hasColumn(table, "workspace_id") &&
+        row.workspace_id != null &&
+        !seenIds("workspace").has(String(row.workspace_id))
+      ) {
+        throw wrong("a row of a workspace that is not in this export");
+      }
+      const parent = PARENTS[table];
+      if (parent && !seenIds(parent[1]).has(String(row[parent[0]]))) {
+        throw wrong("a row of something that is not in this export");
+      }
+      if (table === "workspace") {
+        if (!workspaceIds.has(String(row.id))) throw wrong("a workspace the list does not name");
+        if (row.linked_workspace_id != null && !workspaceIds.has(String(row.linked_workspace_id))) {
+          throw wrong("a link to a workspace that is not in this export");
+        }
+      }
+      if (table === "tenant_member" && !memberIds.has(String(row.member_id))) {
+        throw wrong("a member the export does not list");
+      }
+      if (REMEMBERED.has(table) && typeof row.id === "string") {
+        const ids = seen.get(table) ?? new Set<string>();
+        ids.add(row.id);
+        seen.set(table, ids);
+      }
+      for (const column of OWNED_TABLES.find((entry) => entry.table === table)?.stored ?? []) {
+        const key = row[column];
+        if (key == null) continue;
+        if (typeof key !== "string" || unsafeKey(key)) throw wrong("a stored file with a bad name");
+        named.add(key);
+      }
     };
 
     /** Loads one table's parts with the database's own JSON-to-row conversion. */
@@ -389,6 +573,7 @@ export async function importTenant(
           sql.table(entry.table) as never,
           entry.table === "workspace"
             ? (row) => {
+                validate(entry.table, row);
                 links.push({
                   id: row.id as string,
                   active: row.active_bundle_id as string | null,
@@ -399,7 +584,7 @@ export async function importTenant(
                 // The instance it came from may still be running. Two must not both act.
                 row.triggers_paused = true;
               }
-            : undefined,
+            : (row) => validate(entry.table, row),
           // An instance keeps a tenant's audit entries when the tenant is deleted. If the
           // tenant comes back, the entries it brings that are already here are the same ones.
           entry.keep === true,
@@ -422,7 +607,29 @@ export async function importTenant(
             : undefined,
         );
       }
+      // Nothing here may point at another tenant's rows: a role is this tenant's own or one
+      // every tenant has, and what a binding or a link names is in this export.
+      const stray = await sql<{ what: string }>`
+        select 'a binding names a role that is not of this tenant or built in' as what
+        from binding b where b.tenant_id = ${tenantId}
+          and not exists (
+            select 1 from role r where r.id = b.role_id
+              and (r.tenant_id = ${tenantId} or (r.tenant_id is null and r.name <> ${INSTANCE_ONLY_ROLE}))
+          )
+        union all
+        select 'a binding names a resource that is not in this export' from binding b
+          where b.tenant_id = ${tenantId}
+            and ((b.resource_id is not null
+                  and not exists (select 1 from resource r where r.id = b.resource_id and r.tenant_id = ${tenantId}))
+              or (b.source_resource_id is not null
+                  and not exists (select 1 from resource r where r.id = b.source_resource_id and r.tenant_id = ${tenantId})))
+        limit 1
+      `.execute(trx);
+      if (stray.rows[0]) throw refuse(`The export is refused: ${stray.rows[0].what}.`);
       for (const link of links) {
+        if (link.active !== null && !seenIds("bundle").has(link.active)) {
+          throw refuse("The export is refused: a workspace names a bundle that is not in it.");
+        }
         await trx
           .updateTable("workspace")
           .set({ active_bundle_id: link.active, linked_workspace_id: link.linked })
@@ -468,8 +675,30 @@ export async function importTenant(
 
       // Custom tables: their catalog, then each table as the catalog describes it, then its rows.
       const { db: data, store } = await kernel.data.withinLocation(trx, location);
-      await load(data, "data/catalog/data_table", sql.table("data_table") as never);
-      await load(data, "data/catalog/data_column", sql.table("data_column") as never);
+      const tableKeys = new Set<string>();
+      await load(data, "data/catalog/data_table", sql.table("data_table") as never, (row) => {
+        validate("data_table", row);
+        if (typeof row.physical_name !== "string" || !IDENTIFIER.test(row.physical_name)) {
+          throw refuse("The export is refused: a custom table has a name that is not allowed.");
+        }
+        tableKeys.add(`${row.workspace_id}/${row.physical_name}`);
+      });
+      await load(data, "data/catalog/data_column", sql.table("data_column") as never, (row) => {
+        if (
+          !seenIds("data_table").has(String(row.table_id)) ||
+          typeof row.physical_name !== "string" ||
+          !IDENTIFIER.test(row.physical_name) ||
+          !(COLUMN_TYPES as readonly string[]).includes(String(row.type))
+        ) {
+          throw refuse("The export is refused: a custom column is not one of a table in it.");
+        }
+      });
+      for (const path of checked.byPath.keys()) {
+        const custom = /^data\/([^/]+)\/([^/]+)\.\d{4}\.jsonl$/.exec(path);
+        if (custom && custom[1] !== "catalog" && !tableKeys.has(`${custom[1]}/${custom[2]}`)) {
+          throw refuse(`The export is refused: ${path} is a table its catalog does not have.`);
+        }
+      }
       const indexes = new Map<string, Map<string, string[][]>>();
       const definitions = await trx
         .selectFrom("resource")
@@ -505,13 +734,38 @@ export async function importTenant(
       }
 
       // Bundles, files and large payloads go to this instance's object store under the same keys.
-      let objects = 0;
-      for (const entry of checked.byPath.values()) {
-        if (!entry.path.startsWith("objects/")) continue;
+      // Only what the loaded rows name comes in, and nothing that is stored already is
+      // replaced or, if the import fails, removed: that belongs to someone else.
+      const incoming = [...checked.byPath.values()].filter((entry) =>
+        entry.path.startsWith("objects/"),
+      );
+      const offered = new Set(incoming.map((entry) => entry.path.slice("objects/".length)));
+      for (const key of offered) {
+        if (!named.has(key)) {
+          throw refuse(`The export is refused: the object ${key} is not named by any row in it.`);
+        }
+      }
+      for (const key of named) {
+        if (!offered.has(key)) {
+          throw refuse(`The export is refused: a row names the object ${key}, which is not in it.`);
+        }
+      }
+      const fresh: [string, Buffer][] = [];
+      for (const entry of incoming) {
         const key = entry.path.slice("objects/".length);
-        await kernel.storage.put(key, await tarRead(file, entry), "application/octet-stream");
+        const content = await tarRead(file, entry);
+        const stored = await kernel.storage.get(key).catch(() => null);
+        if (stored === null) fresh.push([key, content]);
+        else if (!stored.equals(content)) {
+          throw refuse(
+            `The export is refused: the object ${key} is already stored here with other content.`,
+          );
+        }
+      }
+      const objects = incoming.length;
+      for (const [key, content] of fresh) {
         written.push(key);
-        objects += 1;
+        await kernel.storage.put(key, content, "application/octet-stream");
       }
 
       // Count what arrived, and hold it against what the export says it holds.

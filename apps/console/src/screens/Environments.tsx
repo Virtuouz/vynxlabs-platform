@@ -952,6 +952,8 @@ interface Inspection {
   pendingRuns: number;
   notCarried: string[];
   passphraseOk: boolean | null;
+  formatVersion?: number | null;
+  authenticated?: boolean | null;
   tenantPresent: boolean;
   slugTaken: boolean;
 }
@@ -1168,6 +1170,13 @@ export function TenantImport() {
                     : inspection.passphraseOk
                       ? "The passphrase opens it"
                       : "The passphrase does not open it"}
+                </Check>
+                <Check ok={inspection.authenticated ?? null}>
+                  {inspection.authenticated === true
+                    ? "Its list of contents is signed with its key, and the signature is right"
+                    : inspection.authenticated === false
+                      ? `Format ${inspection.formatVersion ?? 1} has no signature: nobody vouches that the file is as its author wrote it. It is held to the tenant's own rows and files, but import it only from a source you trust`
+                      : "Signature not checked yet: enter the passphrase"}
                 </Check>
                 <Check ok={!inspection.tenantPresent}>
                   {inspection.tenantPresent

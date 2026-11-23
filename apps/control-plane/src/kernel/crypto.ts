@@ -1,4 +1,12 @@
-import { createCipheriv, createDecipheriv, createHash, randomBytes, scryptSync } from "node:crypto";
+import {
+  createCipheriv,
+  createDecipheriv,
+  createHash,
+  createHmac,
+  randomBytes,
+  scryptSync,
+  timingSafeEqual,
+} from "node:crypto";
 
 const VERSION = 1;
 const NONCE_BYTES = 12;
@@ -166,6 +174,23 @@ export class Vault {
     return this.#seal(key, `tenant-key:${tenantId}`);
   }
 
+  /**
+   * What authenticates an export's list of contents: an HMAC under a key derived from the
+   * tenant's data key, which only whoever holds the passphrase can open. `wrapped` is the
+   * tenant's key under this instance's master key.
+   */
+  manifestMac(tenantId: string, wrapped: Buffer, text: string): string {
+    return manifestMac(this.unwrapTenantKey(tenantId, wrapped), tenantId, text);
+  }
+
+  /** Whether `mac` is the one the tenant's key gives for `text`. */
+  manifestMacMatches(tenantId: string, wrapped: Buffer, text: string, mac: unknown): boolean {
+    if (typeof mac !== "string") return false;
+    const expected = Buffer.from(this.manifestMac(tenantId, wrapped, text), "hex");
+    const given = Buffer.from(mac, "hex");
+    return given.length === expected.length && timingSafeEqual(given, expected);
+  }
+
   /** Encrypts something that belongs to the instance itself, such as the address of a database. */
   sealForInstance(context: string, value: string): Buffer {
     return this.#seal(Buffer.from(value, "utf8"), `instance:${context}`);
@@ -183,6 +208,11 @@ export class Vault {
   decrypt(tenantKey: Buffer, id: SecretName, ciphertext: Buffer): string {
     return open(tenantKey, ciphertext, context(id)).toString("utf8");
   }
+}
+
+function manifestMac(tenantKey: Buffer, tenantId: string, text: string): string {
+  const key = createHmac("sha256", tenantKey).update(`tenant-export-manifest:${tenantId}`).digest();
+  return createHmac("sha256", key).update(text).digest("hex");
 }
 
 function context(id: SecretName): string {

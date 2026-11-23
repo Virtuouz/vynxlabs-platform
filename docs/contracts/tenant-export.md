@@ -1,10 +1,12 @@
 # Tenant export format
 
-Format version 1. Last updated: 2026-11-12
+Format version 2. Last updated: 2026-11-22
 
 A tenant export is everything one tenant has on an instance, in one file. It is what makes the ownership promise something a tenant can act on: the file can be kept as it is, read without the platform, or imported into another instance.
 
-This document describes the file. It is a contract in the same sense as the manifest format and the worker protocol: a later version of the platform keeps reading format 1, or says clearly that it does not.
+This document describes the file. It is a contract in the same sense as the manifest format and the worker protocol: a later version of the platform keeps reading formats 1 and 2, or says clearly that it does not.
+
+Format 2 differs from format 1 in one way: the list of contents is authenticated (see "The list of contents"). Format 1 stays importable, with every ownership check below but without that authentication, and the import's check says so.
 
 ## The file
 
@@ -110,7 +112,7 @@ A resource, each of its versions, a draft and each kept version of a draft carry
 | Field | Meaning |
 | --- | --- |
 | `format` | `volvel-tenant-export` |
-| `formatVersion` | `1` |
+| `formatVersion` | `2` (`1` in older files) |
 | `coreVersion` | The version of the platform that wrote the file |
 | `migrationLevel` | Its database level |
 | `exportedAt` | When |
@@ -121,6 +123,7 @@ A resource, each of its versions, a draft and each kept version of a draft carry
 | `pendingRuns` | Runs that were queued or in progress when the export was made |
 | `notCarried` | What the export leaves out, in words |
 | `entries` | Every other file: `path`, `bytes`, `sha256` |
+| `authentication` | Format 2. `{ alg: "hmac-sha256", mac }`: the HMAC-SHA-256, in hex, of the list as JSON without this field. The key is `HMAC-SHA-256(tenant data key, "tenant-export-manifest:<tenant id>")`. Only someone who can open `key.json` with the passphrase can make it. Absent in format 1 |
 
 The file is read from one snapshot of each database, so it is the tenant as it was at one moment, even if the tenant was working while it was written.
 
@@ -143,12 +146,12 @@ Never:
 
 An import:
 
-1. Reads the list of contents and checks every file's size and SHA-256 against it, before writing anything.
+1. Reads the list of contents and checks every file's size and SHA-256 against it, before writing anything. Every file must be one this format has: `key.json`, `members`, `platform/<table>` for a table that is exported (history tables only when the list says history), the two catalog files, `data/<workspace id>/<table>` for a workspace the list names, and `objects/<key>` with a key that has no empty, `.` or `..` part. Anything else refuses the file.
 2. Requires `migrationLevel` to equal its own. An export from an older or newer version is refused, with both versions named.
-3. Opens the key with the passphrase, and wraps it again with its own master key.
+3. Opens the key with the passphrase, and wraps it again with its own master key. In format 2 it then checks `authentication`: a missing or wrong one refuses the file. A format 1 file has none, and the check screen says that nobody vouches for it.
 4. Refuses if the tenant's ID or slug is already taken there. A different slug can be given.
 5. Matches members by email. A member who already has an account there keeps it, with their own password, and every place the export names them is rewritten to name that account. Other members are created with the hash they had.
-6. Loads every table, keeping every ID. Custom tables are built from the catalog exactly as it describes them, their rows loaded, and their rules put back.
+6. Loads every table, keeping every ID, and holds each row to the archive's own tenant, even for a file whose list is authenticated: a row whose `tenant_id` is not the tenant's (including no tenant, the instance), a row in a workspace not loaded from the file, a row of a table with no tenant of its own whose parent is not in the file, a binding of scope `instance`, a binding naming a role that is neither the tenant's nor built in (`operator_admin` is never), and a tenant member the member list does not name. Custom tables are held to catalog rows of the tenant, with valid names and column types, and a data file for a table the catalog lacks refuses the file. Custom tables are built from the catalog exactly as it describes them, their rows loaded, and their rules put back. Objects: only a key that a loaded row names (a `stored` column of its table) may be in `objects/`, and every key a row names must be there. An object already stored under that key is never replaced: the same content is left as it is, other content refuses the file. A failed import removes only the objects it wrote itself.
 7. Sets every workspace's triggers to paused, pauses the repository's sync and every identity provider, and marks every identity provider's domains as not proved.
 8. Counts what arrived against `counts`. Any difference undoes the whole import.
 

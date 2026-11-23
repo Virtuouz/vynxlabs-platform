@@ -60,6 +60,9 @@ export async function rollbackDataTransactions(trx: object): Promise<void> {
       .catch(() => {});
 }
 
+/** How long what a replica knows of where tables live is trusted before it is read again. */
+const STALE_MS = 2000;
+
 const unreachable = (name: string, error: unknown) =>
   new HttpError(
     503,
@@ -81,8 +84,14 @@ export class DataStores {
   readonly #log: FastifyBaseLogger;
   #platform: Promise<DataStore> | undefined;
   readonly #dedicated = new Map<string, Promise<DataStore>>();
-  /** A tenant's location never changes, so it is looked up once. */
-  readonly #locations = new Map<string, string | null>();
+  /**
+   * Where each tenant keeps its tables, as last read. Another replica may move a tenant (deleted
+   * and imported elsewhere) or change a location's address, so what is remembered is read again
+   * after a moment, as the control plane's own settings are.
+   */
+  readonly #locations = new Map<string, { name: string | null; at: number }>();
+  /** The `updated_at` each open location was opened at, and when it was last compared. */
+  readonly #versions = new Map<string, { updated: string; checked: number }>();
   /**
    * Each tenant's share of the platform database's row connections. A dedicated
    * database is its tenant's alone, and needs none.
@@ -152,16 +161,28 @@ export class DataStores {
    * The store registered under a name. A caller inside a transaction passes it as `db`,
    * so that opening the store for the first time does not wait for a second connection.
    */
-  location(name: string, db: Db | Trx = this.#db): Promise<DataStore> {
+  async location(name: string, db: Db | Trx = this.#db): Promise<DataStore> {
+    // Another replica may have changed the address: a store opened at an older version is closed.
+    const version = this.#versions.get(name);
+    if (version && this.#dedicated.has(name) && Date.now() - version.checked > STALE_MS) {
+      const now = await db
+        .selectFrom("database_location")
+        .select("updated_at")
+        .where("name", "=", name)
+        .executeTakeFirst();
+      if (now?.updated_at.toISOString() === version.updated) version.checked = Date.now();
+      else await this.forget(name);
+    }
     let store = this.#dedicated.get(name);
     if (!store) {
       store = (async () => {
         const row = await db
           .selectFrom("database_location")
-          .select("connection_encrypted")
+          .select(["connection_encrypted", "updated_at"])
           .where("name", "=", name)
           .executeTakeFirst();
         if (!row) throw notFound(`The database location ${name}`);
+        this.#versions.set(name, { updated: row.updated_at.toISOString(), checked: Date.now() });
         const address = this.#vault.openForInstance(
           `database-location:${name}`,
           row.connection_encrypted,
@@ -183,6 +204,7 @@ export class DataStores {
   async forget(name: string): Promise<void> {
     const store = this.#dedicated.get(name);
     this.#dedicated.delete(name);
+    this.#versions.delete(name);
     await store?.then((opened) => opened.close()).catch(() => {});
   }
 
@@ -193,7 +215,7 @@ export class DataStores {
   /** The name of the dedicated location a tenant uses, or null for the platform database. */
   async locationOf(tenantId: string, db: Db | Trx = this.#db): Promise<string | null> {
     const known = this.#locations.get(tenantId);
-    if (known !== undefined) return known;
+    if (known !== undefined && Date.now() - known.at < STALE_MS) return known.name;
     const tenant = await db
       .selectFrom("tenant")
       .select("data_location")
@@ -201,7 +223,7 @@ export class DataStores {
       .executeTakeFirst();
     if (!tenant) throw notFound("The tenant");
     const name = tenant.data_location.kind === "dedicated" ? tenant.data_location.ref : null;
-    this.#locations.set(tenantId, name);
+    this.#locations.set(tenantId, { name, at: Date.now() });
     return name;
   }
 

@@ -1,5 +1,5 @@
 import { createWriteStream } from "node:fs";
-import { mkdir, mkdtemp, rm, stat } from "node:fs/promises";
+import { mkdtemp, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable, Transform } from "node:stream";
@@ -15,7 +15,7 @@ import { access } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
 import { exportTenant } from "../kernel/tenancy/export.js";
 import { importTenant, inspectImport } from "../kernel/tenancy/import.js";
-import { STAGE_DIR } from "../kernel/tenancy/staging.js";
+import { ensureStageDir, STAGE_DIR } from "../kernel/tenancy/staging.js";
 import { Id, NoContent, NullableString, Slug, TenantParams } from "./shared.js";
 
 /** Long enough that guessing it is not a way in to a file that holds every secret a tenant has. */
@@ -103,7 +103,7 @@ export function portabilityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           );
         },
       });
-      await pipeline(body, limit, createWriteStream(path));
+      await pipeline(body, limit, createWriteStream(path, { flags: "wx", mode: 0o600 }));
       return received;
     };
     const stagedPath = (id: string) => join(STAGE_DIR, `${id}.tar`);
@@ -125,6 +125,11 @@ export function portabilityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         pendingRuns: Type.Integer(),
         notCarried: Type.Array(Type.String()),
         passphraseOk: Type.Union([Type.Boolean(), Type.Null()]),
+        formatVersion: Type.Union([Type.Integer(), Type.Null()]),
+        authenticated: Type.Union([Type.Boolean(), Type.Null()], {
+          description:
+            "Whether the export's list of contents is signed under its key and the signature is right. False for a format with no signature, and for one whose signature is wrong (then `problem` says so). Null until a passphrase is given.",
+        }),
         tenantPresent: Type.Boolean(),
         slugTaken: Type.Boolean(),
       },
@@ -270,7 +275,7 @@ export function portabilityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           },
         },
         async ({ ctx, body, query, headers }, reply) => {
-          await mkdir(STAGE_DIR, { recursive: true });
+          await ensureStageDir();
           const id = newId();
           const path = stagedPath(id);
           let size: number;
@@ -378,7 +383,7 @@ export function portabilityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                 );
               },
             });
-            await pipeline(body, limit, createWriteStream(path));
+            await pipeline(body, limit, createWriteStream(path, { flags: "wx", mode: 0o600 }));
             ctx.mutated = true;
             const report = await importTenant(kernel, ctx.actor, path, {
               passphrase: headers["x-export-passphrase"],

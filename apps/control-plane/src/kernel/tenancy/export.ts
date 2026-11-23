@@ -8,7 +8,9 @@ import { OWNED_TABLES, type OwnedTable } from "./tables.js";
 import { TAR_END, tarEntry } from "./tar.js";
 
 export const EXPORT_FORMAT = "volvel-tenant-export";
-export const EXPORT_FORMAT_VERSION = 1;
+/** Format 2 authenticates the list of contents under the passphrase-wrapped key. Format 1 is still read. */
+export const EXPORT_FORMAT_VERSION = 2;
+export const EXPORT_FORMATS_READ = [1, 2];
 /** What an export never carries, said in the manifest so that whoever imports it knows what to make again. */
 export const NOT_CARRIED = [
   "API keys: create new ones on the instance the tenant moves to.",
@@ -37,6 +39,14 @@ export interface ExportManifest {
   notCarried: string[];
   /** Every other file in the archive, with its size and SHA-256. */
   entries: { path: string; bytes: number; sha256: string }[];
+  /** Format 2: an HMAC of this list without this field, under a key only the passphrase opens. */
+  authentication?: { alg: "hmac-sha256"; mac: string };
+}
+
+/** What the list's authentication covers: the list as written, without the authentication. */
+export function manifestText(manifest: ExportManifest): string {
+  const { authentication: _, ...rest } = manifest;
+  return JSON.stringify(rest);
 }
 
 interface ControlledTransaction extends Transaction<PlatformSchema> {
@@ -278,6 +288,10 @@ export async function* exportTenant(
       pendingRuns: Number(pending.n),
       notCarried: NOT_CARRIED,
       entries,
+    };
+    manifest.authentication = {
+      alg: "hmac-sha256",
+      mac: kernel.vault.manifestMac(tenantId, key.wrapped_key, manifestText(manifest)),
     };
     // Last, because it lists everything before it. An archive without it is incomplete.
     yield* tarEntry("manifest.json", Buffer.from(`${JSON.stringify(manifest, null, 2)}\n`));

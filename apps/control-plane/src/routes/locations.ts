@@ -1,6 +1,7 @@
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import { sql } from "@volvel/db";
 import { Type } from "typebox";
+import { workspaceSchema } from "../kernel/data/apply.js";
 import { badRequest, conflict, notFound } from "../kernel/errors.js";
 import { access } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
@@ -78,6 +79,59 @@ export function locationRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       },
     );
 
+    /**
+     * Tenants that keep their tables under a name read them from whatever database the name
+     * points at. Pointing it at another is a change of address, and the other must hold what
+     * the tenants have: every table of their catalog and every workspace's schema. Otherwise
+     * their tables answer "not found" and a table made then would exist in one database only.
+     * When the database now registered cannot be reached there is nothing to compare, which is
+     * the case a change of address is for.
+     */
+    const requireCatalogOfTenants = async (
+      next: Awaited<ReturnType<Kernel["data"]["connect"]>>,
+      name: string,
+    ) => {
+      const tenants = await sql<{ id: string }>`
+        select id from tenant where data_location ->> 'ref' = ${name}
+      `.execute(kernel.db);
+      if (tenants.rows.length === 0) return;
+      const current = await kernel.data.location(name).catch(() => null);
+      if (!current) return;
+      const ids = tenants.rows.map((row) => row.id);
+      const held = await current.owner
+        .selectFrom("data_table")
+        .select(["id", "workspace_id"])
+        .where("tenant_id", "in", ids)
+        .execute();
+      const there = new Set(
+        (
+          await next.owner
+            .selectFrom("data_table")
+            .select("id")
+            .where("tenant_id", "in", ids)
+            .execute()
+        ).map((row) => row.id),
+      );
+      const schemas = new Set(
+        (
+          await sql<{
+            name: string;
+          }>`select nspname as name from pg_namespace where nspname like 'ws\_%'`.execute(
+            next.owner,
+          )
+        ).rows.map((row) => row.name),
+      );
+      const missingTables = held.filter((row) => !there.has(row.id)).length;
+      const missingSchemas = new Set(
+        held.map((row) => workspaceSchema(row.workspace_id)).filter((one) => !schemas.has(one)),
+      ).size;
+      if (missingTables > 0 || missingSchemas > 0) {
+        throw conflict(
+          `${tenants.rows.length} tenant${tenants.rows.length === 1 ? " keeps" : "s keep"} their tables under "${name}", and that database does not hold them (${missingTables} tables and ${missingSchemas} workspaces missing). Restore a copy of the tenants' database there first, or move the tenants.`,
+        );
+      }
+    };
+
     app.put(
       "/instance/database-locations/:name",
       {
@@ -87,7 +141,9 @@ export function locationRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           description:
             "The platform connects first, and prepares the database: a catalog of custom " +
             "tables and a restricted sign-in for row requests. The user given must own the " +
-            "database and be allowed to create roles. The address is stored encrypted.",
+            "database and be allowed to create roles. The address is stored encrypted. Pointing " +
+            "a name that tenants use at another database is refused with 409 unless that " +
+            "database holds each tenant's tables and workspaces.",
           tags: ["instance"],
           params: Params,
           body: Type.Object({
@@ -115,7 +171,11 @@ export function locationRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         const store = await kernel.data.connect(body.connectionString).catch((error: Error) => {
           throw badRequest(`That database could not be prepared. ${error.message}`);
         });
-        await store.close();
+        try {
+          await requireCatalogOfTenants(store, params.name);
+        } finally {
+          await store.close();
+        }
         await ctx.mutate(async (trx, audit) => {
           const sealed = kernel.data.seal(params.name, body.connectionString);
           await trx

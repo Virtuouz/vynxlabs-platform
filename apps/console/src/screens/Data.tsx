@@ -759,6 +759,9 @@ function CellControl({
   );
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
+  // The dialog is put on the page shut and opened, so that it arrives with its motion.
+  const [arrived, setArrived] = useState(false);
+  useEffect(() => setArrived(true), []);
   if (column.type === "enum") {
     return (
       <select
@@ -803,7 +806,7 @@ function CellControl({
     // biome-ignore lint/a11y/noStaticElementInteractions: only keeps the press from reaching the row behind the dialog.
     // biome-ignore lint/a11y/useKeyWithClickEvents: the dialog's own controls take the keys.
     <span onClick={(event) => event.stopPropagation()}>
-      <Dialog open onClose={cancel} title={`Change ${column.name}`}>
+      <Dialog open={arrived} onClose={cancel} title={`Change ${column.name}`}>
         <form
           className="flex flex-col gap-4"
           onSubmit={async (event) => {

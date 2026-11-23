@@ -10,6 +10,7 @@ import { bytes, count } from "../kit/format.ts";
 import { FilterChips, Inspector, KeyValues } from "../kit/layout.tsx";
 import { RemoveDraftButton } from "../kit/RemoveDraftButton.tsx";
 import { Mono, Tag } from "../kit/status.tsx";
+import { useRecordRecent } from "../recent.ts";
 import { useUrlParam } from "../router.tsx";
 
 export interface AppSummary {
@@ -476,6 +477,8 @@ function AppList({ root, onShare }: { root: string; onShare: (app: AppSummary) =
   const instance = useLoad<{ appsAddress?: "separate" | "console" | "none" }>("/instance");
   const [chosen, setChosen] = useUrlParam("app", undefined, { push: true });
   const open = list.data?.items.find((row) => row.id === chosen);
+  const ids = /^\/tenants\/([^/]+)\/workspaces\/([^/]+)/.exec(root);
+  useRecordRecent(ids?.[1], ids?.[2], open ? "app" : undefined, open?.path);
   const [search, setSearch] = useState("");
   const [built, setBuilt] = useState<"all" | "builder" | "code" | "docs">("all");
   const [sort, setSort] = useState<SortState>();

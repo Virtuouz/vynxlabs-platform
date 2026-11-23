@@ -222,3 +222,17 @@ test("WLK-15: header names that differ only in case are one name, and only the f
   // Other values are named exactly as typed.
   expect(valueRowProblem(rows, 1, false)).toBeUndefined();
 });
+
+test("an approval that asks a group the tenant no longer has is said, once the groups are known", () => {
+  const nodes = {
+    start: { type: "trigger", trigger: { type: "manual" } },
+    ok: { type: "approval", title: "Ship it?", approvers: { groups: ["ops", "gone"] } },
+  } as never;
+  const edges = [{ from: "start", to: "ok" }];
+  // Not read yet: nothing is said, as nothing is known.
+  expect(problemsOf(nodes, edges)).toEqual([]);
+  expect(problemsOf(nodes, edges, new Map(), new Set(["ops"]))).toEqual([
+    "ok asks the group gone, which this tenant does not have. Choose another group, or ask a tenant admin to make it.",
+  ]);
+  expect(problemsOf(nodes, edges, new Map(), new Set(["ops", "gone"]))).toEqual([]);
+});

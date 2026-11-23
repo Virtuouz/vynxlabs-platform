@@ -735,6 +735,11 @@ export function ScriptPage({
                 content: <ReferenceList root={root} link={link} kind="script" name={script.path} />,
               },
               {
+                id: "settings",
+                label: "Settings",
+                content: <ScriptSettings root={root} link={link} path={script.path} />,
+              },
+              {
                 id: "source",
                 label: "Source",
                 content: <SourceAt root={root} link={link} path={script.path} />,
@@ -744,5 +749,79 @@ export function ScriptPage({
         </>
       )}
     </Gate>
+  );
+}
+
+interface ScriptSettingsBody {
+  timeoutSeconds?: number;
+  memoryMb?: number;
+  concurrency?: number | { key: string; limit: number };
+  worker?: string;
+  onFailure?: { script?: string; notify?: string };
+  retries?: { limit: number; delaySeconds: number; backoff: boolean };
+  uses?: Record<string, string[] | undefined>;
+}
+
+/** What a script runs with, as the editor's Settings set it: read here, changed in the editor. */
+function ScriptSettings({ root, link, path }: { root: string; link: string; path: string }) {
+  const found = useLoad<{ kind: string; body: ScriptSettingsBody }>(`${root}/resources/${path}`);
+  if (found.error) {
+    return (
+      <ErrorState what="the settings of this script" error={found.error} onRetry={found.reload} />
+    );
+  }
+  if (!found.data) return <Loading />;
+  const body = found.data.body;
+  const list = (names: string[] | undefined) =>
+    names && names.length > 0 ? names.join(", ") : undefined;
+  const concurrency =
+    typeof body.concurrency === "object"
+      ? `${body.concurrency.limit} for each value of ${body.concurrency.key}`
+      : body.concurrency !== undefined
+        ? String(body.concurrency)
+        : undefined;
+  const rows: { label: string; value: string | undefined; mono?: boolean }[] = [
+    {
+      label: "Stops after",
+      value: body.timeoutSeconds !== undefined ? `${body.timeoutSeconds} seconds` : undefined,
+    },
+    {
+      label: "Tries again",
+      value: body.retries
+        ? `${body.retries.limit} time${body.retries.limit === 1 ? "" : "s"}, ${body.retries.delaySeconds} seconds apart${body.retries.backoff ? ", waiting longer each time" : ""}`
+        : undefined,
+    },
+    { label: "Memory", value: body.memoryMb !== undefined ? `${body.memoryMb} MB` : undefined },
+    { label: "Runs at once", value: concurrency },
+    { label: "Worker pool", value: body.worker },
+    { label: "Connections", value: list(body.uses?.connections) },
+    { label: "Secrets", value: list(body.uses?.secrets) },
+    { label: "Variables", value: list(body.uses?.variables) },
+    { label: "Tables", value: list(body.uses?.tables) },
+    { label: "Data sources", value: list(body.uses?.sources) },
+    { label: "Events it may publish", value: list(body.uses?.events) },
+    { label: "Connection groups", value: list(body.uses?.connectionGroups) },
+    { label: "Starts, when it fails for the last time", value: body.onFailure?.script },
+    {
+      label: "Sends a summary through, when it fails for the last time",
+      value: body.onFailure?.notify,
+    },
+  ];
+  const set = rows.filter((row) => row.value !== undefined);
+  return (
+    <div className="flex max-w-2xl flex-col gap-3">
+      {set.length === 0 ? (
+        <p className="m-0 text-ink-muted">
+          Nothing is set: it runs with the workspace's defaults and uses nothing it has not been
+          given.
+        </p>
+      ) : (
+        <KeyValues rows={set.map((row) => ({ label: row.label, value: row.value }))} />
+      )}
+      <p className="m-0 text-meta text-ink-subtle">
+        These are changed in the editor's Settings.{" "}
+        <Link to={`${link}/scripts/edit/${path}`}>Open the code</Link>
+      </p>
+    </div>
   );
 }

@@ -62,9 +62,9 @@ export function objectHref(link: string, kind: string, path: string): string {
       return `${link}/sources/${at}`;
     case "doc":
       return `${link}/docs/${at}`;
-    // A dashboard's page is by its ID, which a path does not give.
+    // A dashboard the workspace keeps opens by its path, as its draft has no ID.
     case "dashboard":
-      return `${link}/dashboards`;
+      return `${link}/dashboards/at/${at}`;
     default:
       // Only the kinds the editor makes have an editor. The rest are found in the list of resources.
       return isEditedKind(kind) ? `${link}/resources/edit/${kind}/${at}` : `${link}/resources`;

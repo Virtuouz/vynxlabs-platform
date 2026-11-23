@@ -594,3 +594,19 @@ test("a stat on a page with several date ranges says which one it compares acros
   fireEvent.change(across, { target: { value: "paid" } });
   expect(last().config).toMatchObject({ compare: true, compareTo: "paid" });
 });
+
+test("WID-M6: a chart takes up to six measures, one row each, and a scatter tile", async () => {
+  show(<Harness start={byClinic()} definition={chart} tab="data" />);
+  for (let n = 2; n <= 6; n++) {
+    fireEvent.click(screen.getByRole("button", { name: "Add another measure" }));
+    expect(visualOf(last(), "rows").measures).toHaveLength(n);
+    expect(screen.getByRole("button", { name: new RegExp(`^Measure ${n}`) })).toBeTruthy();
+  }
+  // At six there is no room for another.
+  expect(screen.queryByRole("button", { name: "Add another measure" })).toBeNull();
+  cleanup();
+  show(<Harness start={byClinic()} definition={chart} tab="display" />);
+  const scatter = screen.getByRole("radio", { name: /^Scatter/ }) as HTMLInputElement;
+  expect(scatter.disabled).toBe(true);
+  expect(screen.getByText("needs a number")).toBeTruthy();
+});

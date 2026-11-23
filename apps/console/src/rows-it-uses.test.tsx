@@ -210,6 +210,46 @@ test("a money column's condition is typed in dollars and kept in cents (WID-26)"
   expect(last().filters).toEqual([{ column: "total", op: "gt", value: 1250 }]);
 });
 
+test('a money column\'s "is between" is typed in dollars and kept in cents (WID-26)', async () => {
+  const money: Catalog = {
+    ...catalog,
+    tables: [
+      {
+        name: "invoices",
+        columns: [
+          {
+            name: "total",
+            type: "integer",
+            references: null,
+            description: "What is owed, in cents.",
+          },
+        ],
+      },
+    ],
+  };
+  const start = listWidget();
+  render(
+    <Inspector
+      widget={start}
+      definition={list as never}
+      surface="app"
+      filters={[]}
+      catalog={money}
+      onChange={(next) => written.push(next)}
+      onDuplicate={() => {}}
+      onRemove={() => {}}
+      rowRules={() => "/rules"}
+    />,
+  );
+  fireEvent.click(panel().getByRole("button", { name: "Condition" }));
+  const editor = await dialog();
+  fireEvent.click(editor.getByRole("radio", { name: "is between" }));
+  fireEvent.change(editor.getByLabelText("From"), { target: { value: "12.50" } });
+  fireEvent.change(editor.getByLabelText("To"), { target: { value: "20" } });
+  fireEvent.click(editor.getByRole("button", { name: "Add" }));
+  expect(last().filters).toEqual([{ column: "total", op: "between", value: [1250, 2000] }]);
+});
+
 test("a condition is removed by its ×", async () => {
   const start = listWidget();
   start.data = {
@@ -385,4 +425,26 @@ test("there is one formatter: the kit's samples are the widget SDK's formatValue
     expect(sampleOf(43120.5, format)).toBe(formatValue(43120.5, format));
   }
   expect(sampleOf(43120, { style: "currency", notation: "compact" })).toBe("$43.1k");
+});
+
+test("WID-M11: a saved query is given values of its own, and SQL its numbered values", async () => {
+  const start = listWidget();
+  start.data = { rows: { source: { query: "reports/late" } } };
+  show(<Harness start={start} definition={list as never} />);
+  fireEvent.click(panel().getByRole("button", { name: "Add a value" }));
+  fireEvent.change(panel().getByLabelText("Name of parameter 1"), { target: { value: "days" } });
+  fireEvent.change(panel().getByLabelText("Value of days"), { target: { value: "30" } });
+  const source = () => written.at(-1)?.data?.rows?.source;
+  expect(source()).toEqual({ query: "reports/late", values: { days: 30 } });
+  fireEvent.click(panel().getByRole("button", { name: "Remove the value of days" }));
+  expect(source()).toEqual({ query: "reports/late" });
+});
+
+test("WID-M11: SQL written here keeps its numbered values, and shows them", async () => {
+  const start = listWidget();
+  start.data = { rows: { source: { sql: "select $1::int", values: [7] } } };
+  show(<Harness start={start} definition={list as never} />);
+  expect((panel().getByLabelText("Value of $1") as HTMLInputElement).value).toBe("7");
+  fireEvent.change(panel().getByLabelText("Value of $1"), { target: { value: "9" } });
+  expect(written.at(-1)?.data?.rows?.source).toEqual({ sql: "select $1::int", values: [9] });
 });

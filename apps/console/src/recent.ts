@@ -13,6 +13,9 @@ export type RecentKind =
   | "variable"
   | "query"
   | "data_source"
+  | "trigger"
+  | "schedule"
+  | "app"
   | "run"
   | "flow_run";
 
@@ -42,6 +45,15 @@ export function openedAt(
 ): { kind: RecentKind; ref: string } | undefined {
   const queries = /^\/t\/[^/]+\/workspaces\/[^/]+\/queries\/?$/.exec(path);
   if (queries) return query ? { kind: "query", ref: query } : undefined;
+  const edited = /^\/t\/[^/]+\/workspaces\/[^/]+\/resources\/edit\/(trigger|schedule)\/(.+)$/.exec(
+    path,
+  );
+  if (edited) {
+    return {
+      kind: edited[1] as "trigger" | "schedule",
+      ref: decodeURIComponent(edited[2] as string),
+    };
+  }
   const match =
     /^\/t\/[^/]+\/workspaces\/[^/]+\/(scripts\/edit|scripts|flows(?:\/edit)?|tables|screens|connections|events|docs|variables|sources)\/(.+)$/.exec(
       path,

@@ -29,7 +29,15 @@ const catalog: Catalog = {
         { name: "client", type: "text", references: "clients" },
         { name: "notes", type: "text", references: null },
         { name: "total", type: "number", references: null },
-        { name: "status", type: "enum", references: null },
+        {
+          name: "status",
+          type: "enum",
+          references: null,
+          values: [
+            { value: "paid", count: 3 },
+            { value: "unpaid", count: 2 },
+          ],
+        },
         { name: "issued_at", type: "timestamp", references: null },
       ],
     },
@@ -618,4 +626,45 @@ test("a form field says what it starts as: today, the person filling it in, or a
   fireEvent.change(screen.getByLabelText("Starts as"), { target: { value: "value" } });
   fireEvent.change(screen.getByLabelText(/^Value/), { target: { value: "12.50" } });
   expect(fields()[2]?.initial).toEqual({ kind: "value", value: 1250 });
+});
+
+test("WID-M4: a detail's choice field can be drawn as a badge, with the colors of its values", async () => {
+  const seen = mount(
+    detail,
+    {
+      data: { record: { source: { visual: { table: "invoices" } } } },
+      config: { fields: [{ column: "status" }, { column: "notes" }] },
+    },
+    DetailDisplaySection,
+  );
+  const fields = () => mine(seen).config.fields as { as?: string; badges?: object }[];
+  fireEvent.click(screen.getAllByRole("button", { name: /^Status/ })[0] as HTMLElement);
+  fireEvent.click(screen.getByRole("radio", { name: "Badge" }));
+  expect(fields()[0]?.as).toBe("badge");
+  fireEvent.click(screen.getByRole("button", { name: "Color of paid" }));
+  fireEvent.click(await screen.findByRole("menuitem", { name: "Green" }));
+  expect(fields()[0]?.badges).toEqual({ paid: "success" });
+  fireEvent.click(screen.getByRole("radio", { name: "Text" }));
+  expect(fields()[0]).toEqual({ column: "status" });
+  // A field that is not a choice has nothing to show as a badge.
+  fireEvent.click(screen.getByRole("button", { name: /^Back/ }));
+  fireEvent.click(screen.getByRole("button", { name: /^Notes/ }));
+  expect(screen.queryByRole("radio", { name: "Badge" })).toBeNull();
+});
+
+test("WID-M4: the status chip of a detail has the colors of its values", async () => {
+  const seen = mount(
+    detail,
+    {
+      data: { record: { source: { visual: { table: "invoices" } } } },
+      config: { status: "status" },
+    },
+    DetailDisplaySection,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Color of unpaid" }));
+  fireEvent.click(await screen.findByRole("menuitem", { name: "Red" }));
+  expect(mine(seen).config.statusBadges).toEqual({ unpaid: "danger" });
+  fireEvent.click(screen.getByRole("button", { name: "Color of unpaid" }));
+  fireEvent.click(await screen.findByRole("menuitem", { name: "Automatic" }));
+  expect(mine(seen).config).not.toHaveProperty("statusBadges");
 });

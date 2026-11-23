@@ -22,6 +22,8 @@ import { Layers } from "lucide-react";
 import { useState } from "react";
 import { columnOptions } from "../controls.tsx";
 import { heading, tableOfInput } from "../model.ts";
+import { FieldAsBadge } from "./choiceBadges.tsx";
+import type { Tone } from "./columnModel.ts";
 import { StartsAs } from "./fieldStart.tsx";
 import { BackHead, dashedFace, type Env, Group, setConfig } from "./recordShared.tsx";
 
@@ -196,6 +198,11 @@ export function FieldsList({
           for (const key of ["label", "help"] as const) if (!merged[key]) delete merged[key];
           if (!merged.hidden) delete merged.hidden;
           if (merged.initial === undefined) delete merged.initial;
+          // A field drawn as text, with no colors of its own, says nothing of either.
+          if (merged.as === "text") delete merged.as;
+          if (merged.as !== "badge") delete merged.badges;
+          else if (merged.badges && Object.keys(merged.badges as object).length === 0)
+            delete merged.badges;
           // Not asking for a field the table asks for is said, not left out: an unset one follows the table.
           if (!merged.required && !(kind === "form" && requiredOf(env, row)))
             delete merged.required;
@@ -237,6 +244,15 @@ export function FieldsList({
               label="Format"
               value={open.format as Parameters<typeof NumberFormatRow>[0]["value"]}
               onChange={(format) => patch({ format })}
+            />
+          ) : null}
+          {kind === "detail" ? (
+            <FieldAsBadge
+              env={env}
+              column={open.column}
+              as={open.as}
+              badges={open.badges as Record<string, Tone> | undefined}
+              onChange={(change) => patch(change)}
             />
           ) : null}
           {kind === "form" ? (

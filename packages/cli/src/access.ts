@@ -161,11 +161,11 @@ export async function tenantAccess(
       throw api.refusal(released, `change the access of ${values.tenant}`);
     if (released.status === 202) {
       io.out(
-        `Access change ${released.body.number} of ${values.tenant}'s access waits for a second person: ${counts(released.body.summary)}.`,
+        `Access change ${released.body.release.number} of ${values.tenant}'s access waits for a second person: ${counts(released.body.release.summary)}.`,
       );
-      for (const line of lines(released.body.summary)) io.out(line);
+      for (const line of lines(released.body.release.summary)) io.out(line);
       io.out(
-        `Nothing changed yet. Someone else approves it with: volvel tenant approve ${released.body.number} --tenant ${values.tenant}`,
+        `Nothing changed yet. Someone else approves it with: volvel tenant approve ${released.body.release.number} --tenant ${values.tenant}`,
       );
       return;
     }
@@ -323,10 +323,10 @@ export async function tenantAccess(
       if (back.status >= 300) throw api.refusal(back, `go back to access change ${number}`);
       io.out(
         back.status === 202
-          ? `Going back to access change ${number} waits for a second person, as access change ${back.body.number}.`
+          ? `Going back to access change ${number} waits for a second person, as access change ${back.body.release.number}.`
           : `${values.tenant}'s access is what access change ${number} left, as access change ${back.body.number}: ${counts(back.body.summary)}.`,
       );
-      for (const line of lines(back.body.summary)) io.out(line);
+      for (const line of lines((back.body.release ?? back.body).summary)) io.out(line);
       return;
     }
     // Whoever answers sees what it is they are answering.

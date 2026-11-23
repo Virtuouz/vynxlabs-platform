@@ -231,7 +231,9 @@ function Decider({
   const approve = config.approveLabel || "Approve";
   const reject = config.rejectLabel || "Reject";
   const askWhy = config.askWhy ?? "rejecting";
-  const [asking, setAsking] = useState<"approve" | "reject" | "confirm" | undefined>();
+  const [asking, setAsking] = useState<
+    "approve" | "reject" | "confirm" | "confirmReject" | undefined
+  >();
   const [comment, setComment] = useState("");
   const [problem, setProblem] = useState<string>();
   const box = useRef<HTMLDivElement>(null);
@@ -244,7 +246,9 @@ function Decider({
   useEffect(() => {
     if (asking === "approve" || asking === "reject")
       box.current?.querySelector("textarea")?.focus();
-    if (asking === "confirm") box.current?.querySelector("button")?.focus();
+    if (asking === "confirm" || asking === "confirmReject") {
+      box.current?.querySelector("button")?.focus();
+    }
   }, [asking]);
 
   const run = async (decision: "approve" | "reject") => {
@@ -259,7 +263,9 @@ function Decider({
   };
   const choose = (which: "approve" | "reject") => {
     setProblem(undefined);
-    if (which === "reject" || needs("approve")) setAsking(which);
+    // Never asking why: a rejection is still asked about once, with no box, as approving is when it asks.
+    if (which === "reject" && askWhy === "never") setAsking("confirmReject");
+    else if (which === "reject" || needs("approve")) setAsking(which);
     else if (config.confirm) setAsking("confirm");
     else void run("approve");
   };
@@ -348,14 +354,18 @@ function Decider({
           {disabledReason}
         </p>
       ) : null}
-      {asking === "confirm" ? (
+      {asking === "confirm" || asking === "confirmReject" ? (
         <div className="flex flex-col gap-2 rounded-control border border-line bg-sunken p-3">
           <p className="m-0 text-body-sm">
-            {approve} “{item.title}”?
+            {asking === "confirm" ? approve : reject} “{item.title}”?
           </p>
           <div className="flex flex-wrap gap-2">
-            <Button variant="primary" loading={pending} onClick={() => void run("approve")}>
-              {approve}
+            <Button
+              variant={asking === "confirm" ? "primary" : "danger"}
+              loading={pending}
+              onClick={() => void run(asking === "confirm" ? "approve" : "reject")}
+            >
+              {asking === "confirm" ? approve : reject}
             </Button>
             <Button variant="quiet" disabled={pending} onClick={cancel}>
               Cancel

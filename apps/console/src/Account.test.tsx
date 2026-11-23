@@ -3,7 +3,7 @@ import { cleanup, fireEvent, renderHook, screen, waitFor, within } from "@testin
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { useRememberPlace } from "./App.tsx";
 import { Account } from "./screens/Account.tsx";
-import { InstanceMembers } from "./screens/Instance.tsx";
+import { InstanceMembers, Operators } from "./screens/Instance.tsx";
 import { SignIn } from "./screens/SignIn.tsx";
 import { Tenants } from "./screens/Tenants.tsx";
 import { answer, show } from "./testing.tsx";
@@ -313,4 +313,34 @@ test("a person changes their own password on Account, and the form says what wen
   });
   // What was typed is gone once it is used.
   expect((form.getByLabelText("New password") as HTMLInputElement).value).toBe("");
+});
+
+test("an operator who is disabled says so on the Operators list, and cannot be mistaken for one who can sign in (ACC)", async () => {
+  routes["GET /api/v1/bindings"] = () => [
+    200,
+    {
+      items: [
+        {
+          id: "b1",
+          memberEmail: "ada@ops.example",
+          roleName: "operator_admin",
+          createdAt: "2026-11-01T00:00:00Z",
+          memberDisabled: false,
+        },
+        {
+          id: "b2",
+          memberEmail: "bo@ops.example",
+          roleName: "operator_admin",
+          createdAt: "2026-11-01T00:00:00Z",
+          memberDisabled: true,
+        },
+      ],
+      nextCursor: null,
+    },
+  ];
+  show(<Operators />);
+  const row = (await screen.findByText("bo@ops.example")).closest("tr") as HTMLElement;
+  expect(within(row).getByText("Disabled")).toBeTruthy();
+  const other = screen.getByText("ada@ops.example").closest("tr") as HTMLElement;
+  expect(within(other).queryByText("Disabled")).toBeNull();
 });

@@ -19,11 +19,11 @@ export function setUpAddress(link: string, entry: RefusalEntry): string | undefi
     case "connections":
       return `${link}/connections?setup=${encodeURIComponent(path)}`;
     case "variables":
-      return `${link}/variables`;
+      return `${link}/variables?setup=${encodeURIComponent(path)}`;
     case "secrets":
-      return `${link}/secrets`;
+      return `${link}/secrets?setup=${encodeURIComponent(path)}`;
     case "sources":
-      return `${link}/sources`;
+      return `${link}/sources?setup=${encodeURIComponent(path)}`;
     default:
       return undefined;
   }

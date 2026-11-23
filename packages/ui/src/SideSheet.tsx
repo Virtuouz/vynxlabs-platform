@@ -1,6 +1,7 @@
 import { Dialog as Base } from "@base-ui/react/dialog";
 import { X } from "lucide-react";
-import type { ReactNode } from "react";
+import { type ReactNode, useRef } from "react";
+import { firstField } from "./Dialog.tsx";
 import { useOpening } from "./presence.tsx";
 
 export interface SideSheetProps {
@@ -53,11 +54,20 @@ export function SideSheet({
         ? "sm:w-[min(20rem,92vw)]"
         : "sm:w-[min(30rem,92vw)]";
   const shown = useOpening(open);
+  const popup = useRef<HTMLDivElement>(null);
   return (
     <Base.Root open={shown} onOpenChange={(next: boolean) => !next && onClose()}>
       <Base.Portal>
         <Base.Backdrop className="fixed inset-0 layer-sheet bg-scrim transition-opacity motion-slow data-[ending-style]:opacity-0 data-[starting-style]:opacity-0" />
         <Base.Popup
+          ref={popup}
+          // As a dialog does: what marks itself `data-autofocus`, else the first field to type in
+          // or choose from, else the first control. A form does not open with Enter on Close.
+          initialFocus={() =>
+            popup.current?.querySelector<HTMLElement>("[data-autofocus]") ??
+            firstField(popup.current) ??
+            true
+          }
           {...(returnFocus ? { finalFocus: () => returnFocus() ?? true } : {})}
           className={`fixed inset-y-0 layer-sheet flex w-full flex-col border-line bg-surface shadow-modal transition-transform motion-slow ${
             side === "left"

@@ -15,6 +15,10 @@ export interface DevOptions {
   principal: { type: string; id?: string | null; name: string | null; email: string | null };
 }
 
+interface ProxyRequest {
+  setHeader(name: string, value: string): void;
+}
+
 const forHtml = (value: unknown) => JSON.stringify(value).replace(/</g, "\\u003c");
 
 /**
@@ -33,13 +37,24 @@ export async function startDevServer(options: DevOptions) {
   }
   const { vite, plugins } = await loadVite(directory);
   const instance = options.instance.url.replace(/\/+$/, "");
+  // The instance knows whether the tenant has a logo; an app asks so as to show none that is
+  // not there. Left unsaid when the instance cannot be reached, as an older platform leaves it.
+  const logo = await fetch(`${instance}/api/v1/tenants/${options.tenant.id}/portal/logo`, {
+    method: "HEAD",
+  })
+    .then((response) =>
+      response.status === 200 ? true : response.status === 404 ? false : undefined,
+    )
+    .catch(() => undefined);
   const context = {
     api: "/api/v1",
-    tenant: options.tenant,
+    tenant: { ...options.tenant, ...(logo === undefined ? {} : { logo }) },
     workspace: options.workspace,
     app: { path: app.path, title: app.path },
     base: "/",
-    portal: `${instance}/portal/${options.tenant.slug}`,
+    // The sign-in pages are the instance's, reached through this server, so that a person
+    // who signs in comes back here and not to the instance.
+    portal: `/portal/${options.tenant.slug}`,
     principal: { id: null, ...options.principal },
   };
   const theme = `/api/v1/tenants/${options.tenant.id}/workspaces/${options.workspace.id}/theme.css`;
@@ -68,6 +83,14 @@ export async function startDevServer(options: DevOptions) {
       port: options.port,
       strictPort: false,
       proxy: {
+        "/portal": {
+          target: instance,
+          changeOrigin: true,
+          // A form sent from this server is checked against the instance's own address.
+          configure: (proxy: {
+            on: (event: string, handler: (req: ProxyRequest) => void) => void;
+          }) => proxy.on("proxyReq", (req) => req.setHeader("origin", instance)),
+        },
         "/api": {
           target: instance,
           changeOrigin: true,

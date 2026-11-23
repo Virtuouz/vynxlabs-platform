@@ -70,7 +70,14 @@ import {
 import { ConfirmPreview } from "./confirmPreview.tsx";
 import type { Env } from "./controls.tsx";
 import { useChosenGroups } from "./groupChoices.tsx";
-import { type ConfigSetting, heading, resultNames, visualOf, withSystemColumns } from "./model.ts";
+import {
+  type ConfigSetting,
+  heading,
+  readsTable,
+  resultNames,
+  visualOf,
+  withSystemColumns,
+} from "./model.ts";
 import { StepTimeline, type TimelineItem } from "./stepTimeline.tsx";
 import { TokenText } from "./TokenText.tsx";
 import { parseTokens, stepSummary, valueChipWords } from "./timelineModel.ts";
@@ -112,7 +119,10 @@ export function actionContext(env: Env): ActionContext {
     eventTable: raisesRecord ? own : undefined,
     defaultRef: raisesRecord || !thisTable ? "event" : "this",
     groupEvent: events.some((one) => one.gives === "group"),
-    rowsEvent: events.some((one) => one.gives === "group") || env.widget.type === "core/stat",
+    // Only a table has rows behind a figure: a saved query or SQL does not.
+    rowsEvent:
+      (events.some((one) => one.gives === "group") || env.widget.type === "core/stat") &&
+      readsTable(env.widget.data),
     openAs: kind === "sheet" ? "sheet" : kind === "modal" ? "modal" : "page",
     columnsOf,
   };

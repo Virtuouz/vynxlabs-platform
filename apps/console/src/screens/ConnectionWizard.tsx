@@ -26,9 +26,12 @@ export interface ConnectionRow {
   bound: boolean;
   /** Declared by a workspace linked to this one: it arrives with the next promotion. */
   arrives?: boolean;
+  /** A change made in the console that waits to be deployed. */
+  draft?: "new" | "changed" | "removed" | null;
   config: { baseUrl?: string; host?: string; [more: string]: unknown } | null;
   configSchema: Record<string, unknown>;
   hasCredential: boolean;
+  updatedAt?: string | null;
   credentialSetAt?: string | null;
   credentialSetBy?: string | null;
   health: {
@@ -56,6 +59,8 @@ export const CONNECTOR_NAMES: Record<string, string> = {
   http: "HTTP",
   smtp: "Mail (SMTP)",
   oauth2: "OAuth 2.0",
+  /** A binding no deployed, drafted or uploaded declaration speaks for. */
+  unknown: "Not declared anywhere",
 };
 
 /** What the stored secret is called, by kind. */
@@ -242,10 +247,12 @@ export function ConnectionWizard({
     }));
     setFormKey((key) => key + 1);
   };
-  // biome-ignore lint/correctness/useExhaustiveDependencies: only when the kind becomes OAuth
+  // An OAuth connection with no settings yet, whichever way it was reached (new, chosen from the
+  // list, or opened from a row), starts from a provider's addresses: the field says Google, so it is.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only when the kind or the connection changes
   useEffect(() => {
-    if (!row && isOAuth && Object.keys(config).length === 0) applyPreset("google");
-  }, [isOAuth]);
+    if (isOAuth && Object.keys(config).length === 0) applyPreset("google");
+  }, [isOAuth, choice]);
 
   const following = useTaskEnd(root, taskId, (task) => {
     setTaskId(undefined);

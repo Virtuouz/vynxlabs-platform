@@ -291,7 +291,7 @@ export const CONFIG_VARS = {
   EGRESS_ALLOW: {
     group: "Network",
     description:
-      "Private networks and hosts that scripts and connections may reach, as a list with commas: `10.0.0.0/8,db.internal`. Everything else private is refused.",
+      "Private networks and hosts the control plane may reach for a tenant (an OAuth token address, an identity provider, a Git remote, a domain check, a data source), as a list with commas: `10.0.0.0/8,db.internal`. Everything else private is refused. It does not limit what scripts and connections reach: they run on workers, which have their own network.",
   },
 
   TRUSTED_PROXIES: {

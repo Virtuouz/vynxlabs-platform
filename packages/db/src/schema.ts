@@ -747,7 +747,11 @@ export interface StepRunTable {
   child_flow_run_id: string | null;
   wake_at: Date | null;
   detail: ColumnType<Record<string, unknown>, string | undefined, string>;
+  /** The ID of the principal that decided: a member, a service account. */
   decided_by: string | null;
+  decided_by_type: string | null;
+  /** Where: console, api, mcp, app or email. */
+  decided_via: string | null;
   decision_comment: string | null;
   started_at: Generated<Date>;
   finished_at: Date | null;
@@ -985,6 +989,8 @@ export interface AppDomainTable {
   hostname: string;
   enabled: Generated<boolean>;
   verified_at: Date | null;
+  /** Enabled by an operator without verifying: the tenant may enable it again after disabling it. */
+  enabled_by_operator: Generated<boolean>;
   checked_at: Date | null;
   check_error: string | null;
   created_by_type: string;

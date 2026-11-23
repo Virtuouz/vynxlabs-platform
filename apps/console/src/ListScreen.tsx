@@ -11,7 +11,7 @@ import {
   TextField,
 } from "@volvel/ui";
 import type { ReactNode } from "react";
-import { useId, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { type ApiError, useLoad } from "./api.ts";
 import { ask, notify } from "./ask.tsx";
 import { type DataColumn, DataTable } from "./kit/DataTable.tsx";
@@ -19,6 +19,7 @@ import { clock } from "./kit/format.ts";
 import { Loading } from "./kit/LoadState.tsx";
 import { PageHeader } from "./kit/layout.tsx";
 import { usePagedList } from "./kit/paged.tsx";
+import { useQueryValue } from "./router.tsx";
 export interface FormField {
   name: string;
   label: string;
@@ -121,6 +122,11 @@ export interface ListScreenProps<Row> {
   rowKey: (row: Row) => string;
   empty: { title: string; text?: string };
   create?: CreateConfig;
+  /**
+   * The create field that `?setup=<value>` fills: a refused deploy or promotion links to a list
+   * with the name of what it lacks, and the dialog that makes it opens with that name in.
+   */
+  setupField?: string;
   /** Adds a last column of actions per row. */
   rowActions?: (row: Row, reload: () => void) => ReactNode;
   /** A button beside the title, for a screen whose way to add something is not a dialog. */
@@ -193,10 +199,21 @@ export function CreateDialog({
   const [unpicked, setUnpicked] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const formId = useId();
+  // Opened again, it starts from what exists now: a save in between changed it.
+  const [wasOpen, setWasOpen] = useState(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    if (open) setValues(initial ?? {});
+  }
+  // The first reason the server gave for something no field of the form shows: "The table's
+  // definition is not valid" alone would not say what to change.
+  const unplaced = (caught: ApiError) =>
+    caught.fields?.find((one) => !config.fields.some((field) => one.path === `/body/${field.name}`))
+      ?.message;
   const fieldError = (name: string) =>
     unpicked.includes(name)
       ? "Choose one."
-      : error?.fields.find((field) => field.path === `/body/${name}`)?.message;
+      : error?.fields?.find((field) => field.path === `/body/${name}`)?.message;
   // Cancelled means forgotten: what was typed, a password included, does not wait for the next time.
   const close = () => {
     setValues(initial ?? {});
@@ -300,7 +317,9 @@ export function CreateDialog({
           />
         ),
       )}
-      {error ? <Notice tone="danger">{error.message}</Notice> : null}
+      {error ? (
+        <Notice tone="danger">{[error.message, unplaced(error)].filter(Boolean).join(" ")}</Notice>
+      ) : null}
       {roomy ? null : <div className="mt-1 flex justify-end gap-2">{buttons}</div>}
     </form>
   );
@@ -321,7 +340,16 @@ export function ListScreen<Row>(props: ListScreenProps<Row>) {
   const list = useLoad<{ items: Row[] }>(props.path);
   const [creating, setCreating] = useState(false);
   const [created, setCreated] = useState<ReactNode>();
-  const { create } = props;
+  const { create, setupField } = props;
+  const [setup, setSetup] = useQueryValue("setup");
+  const [filling, setFilling] = useState<string>();
+  useEffect(() => {
+    // Only a list that makes things this way reads it: Connections reads its own.
+    if (!setup || !create || !setupField) return;
+    setFilling(setup);
+    setCreating(true);
+    setSetup(null);
+  }, [setup, create, setupField, setSetup]);
 
   const columns: DataColumn<Row>[] = props.rowActions
     ? [
@@ -368,8 +396,11 @@ export function ListScreen<Row>(props: ListScreenProps<Row>) {
       )}
       {create ? (
         <CreateDialog
+          // A name given by the address starts the form again, with the name in.
+          key={filling ?? ""}
           config={create}
           open={creating}
+          {...(filling && setupField ? { initial: { [setupField]: filling } } : {})}
           onClose={() => setCreating(false)}
           onCreated={(result) => {
             setCreating(false);
@@ -424,6 +455,7 @@ export function RemoveButton({
   run,
   onDone,
   affected,
+  usesUnread = false,
   typeToConfirm,
 }: {
   label?: string;
@@ -432,6 +464,8 @@ export function RemoveButton({
   onDone: () => void;
   /** What uses the thing and is affected, named in the confirmation so its reach is seen first. */
   affected?: string[] | undefined;
+  /** What uses it is not known (still loading, or could not be read): the confirmation says so. */
+  usesUnread?: boolean | undefined;
   /** For what cannot be undone: the name to type before the action is offered. */
   typeToConfirm?: string | undefined;
 }) {
@@ -440,9 +474,11 @@ export function RemoveButton({
       variant="danger"
       size="small"
       onClick={async () => {
-        const text = affected?.length
-          ? `${question} Used by ${affected.length}: ${listed(affected)}.`
-          : question;
+        const text = usesUnread
+          ? `${question} What uses it could not be read, so what it affects is not listed here.`
+          : affected?.length
+            ? `${question} Used by ${affected.length}: ${listed(affected)}.`
+            : question;
         const options = { title: `${label}?`, text, action: label, danger: true };
         const sure = typeToConfirm
           ? await ask.typeToConfirm({ ...options, expected: typeToConfirm })

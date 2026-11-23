@@ -18,6 +18,7 @@ import {
   deployDrafts,
   deriveSchemas,
   discardDraft,
+  draftsUsedBy,
   isCodeKind,
   saveDraft,
 } from "../kernel/authoring.js";
@@ -1013,6 +1014,15 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         const workspace = at;
         let summary: Awaited<ReturnType<typeof deployDrafts>>["summary"] | undefined;
         try {
+          // What a deploy would refuse the caller for SQL or a data source's table, this says too.
+          let pending = db
+            .selectFrom("resource_draft")
+            .select(["kind", "path", "body", "deleted"])
+            .where("workspace_id", "=", workspace.id);
+          if (paths) pending = pending.where("path", "in", paths);
+          await requireStanding(kernel, ctx, workspace, await pending.execute(), {
+            deploying: true,
+          });
           await mutate(db, ctx.actor, async (trx, audit) => {
             summary = (await deployDrafts(kernel, trx, audit, workspace, ctx.principal, { paths }))
               .summary;
@@ -1204,7 +1214,8 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         schema: {
           summary: "Run a script or a flow as its draft has it",
           description:
-            "Builds a bundle with the workspace's drafts in it, deploys nothing, and starts one " +
+            "Builds a bundle with the draft and the drafts it names in it (every draft with " +
+            "`withAllDrafts`), deploys nothing, and starts one " +
             "run of the script, or of the flow from its manual trigger, from that bundle. Read " +
             "the run as any other. A script needs `code:write`; a flow needs `flow_run:write`, " +
             "and `code:write` too while code is among the drafts, since the flow may run it.",
@@ -1228,6 +1239,14 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                 description:
                   "For a flow: the trigger to start it from, of any kind, with `input` as what " +
                   "that trigger would receive. Default: its manual trigger.",
+              }),
+            ),
+            withAllDrafts: Type.Optional(
+              Type.Boolean({
+                description:
+                  "Build with every draft of the workspace, as a deploy of all would, so that " +
+                  "any draft that does not build refuses the test. Default: the draft being " +
+                  "tested and the drafts it names.",
               }),
             ),
             testFrom: Type.Optional(
@@ -1281,19 +1300,22 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           if (!uploaded) throw notFound("The bundle");
           await mayWriteCode(ctx, workspace);
         }
+        // Its own draft and those it names; with none of its own, what is deployed.
+        const used = body.withAllDrafts ? undefined : await draftsUsedBy(db, workspace, path);
         if (kind === "flow") {
           await ctx.authorize("flow_run:write", {
             tenantId: workspace.tenantId,
             workspaceId: workspace.id,
           });
           if (body.bundleId === undefined) {
-            const code = await db
+            let query = db
               .selectFrom("resource_draft")
               .select("path")
               .where("workspace_id", "=", workspace.id)
               .where("kind", "in", ["script", "connector", "trigger_source"])
-              .where("deleted", "=", false)
-              .executeTakeFirst();
+              .where("deleted", "=", false);
+            if (used) query = query.where("path", "in", used.length > 0 ? used : [""]);
+            const code = await query.executeTakeFirst();
             if (code) await mayWriteCode(ctx, workspace);
           }
         } else if (body.bundleId === undefined) {
@@ -1305,7 +1327,10 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         let activeId: string | undefined;
         if (body.bundleId === undefined) {
           try {
-            composed = (await composeDrafts(kernel, db, workspace)).bundle;
+            if (used && used.length === 0) {
+              throw new HttpError(409, "nothing_to_deploy", "There are no drafts to deploy.");
+            }
+            composed = (await composeDrafts(kernel, db, workspace, used)).bundle;
           } catch (error) {
             if (!(error instanceof HttpError) || error.problemCode !== "nothing_to_deploy")
               throw error;

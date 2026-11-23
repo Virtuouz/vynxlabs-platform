@@ -205,7 +205,7 @@ export const scriptKind: KindDefinition = {
       uses: {
         type: "object",
         description:
-          "Everything the script may read at run time. Each must be bound before a deploy.",
+          "Everything the script may read at run time. Each must be bound before a deploy to production or a promotion. A deploy to a dev workspace goes ahead with a warning.",
         properties: {
           connections: { type: "array", items: path, uniqueItems: true },
           connectionGroups: {
@@ -921,6 +921,33 @@ export const QUERY_PARAMETER_TYPES = [
 export type QueryParameterType = (typeof QUERY_PARAMETER_TYPES)[number];
 
 /**
+ * Why a value does not fit a parameter of this type, in words that follow "must be", or
+ * undefined when it does. The server and the console say the same thing.
+ */
+export function parameterMisfit(type: string, value: unknown): string | undefined {
+  switch (type) {
+    case "text":
+      return typeof value === "string" ? undefined : "text";
+    case "integer":
+      return Number.isSafeInteger(value) ? undefined : "a whole number";
+    case "number":
+      return typeof value === "number" && Number.isFinite(value) ? undefined : "a number";
+    case "boolean":
+      return typeof value === "boolean" ? undefined : "true or false";
+    case "date":
+      return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)
+        ? undefined
+        : "a date, such as 2026-01-31";
+    case "timestamp":
+      return typeof value === "string" && !Number.isNaN(Date.parse(value))
+        ? undefined
+        : "a date and time, such as 2026-01-31T09:30:00Z";
+    default:
+      return "something this parameter can hold";
+  }
+}
+
+/**
  * A query kept by name: one SELECT over the workspace's tables, with the
  * parameters it takes. It is run by whoever may read it and the tables it
  * names, as themselves: each table's row policy applies to them.
@@ -1063,14 +1090,14 @@ export const tableKind: KindDefinition = {
             onDelete: {
               enum: ["restrict", "set_null", "cascade"],
               description:
-                "For a reference: what happens to this row when the row it points to is deleted. `restrict` refuses the deletion, `set_null` empties the column, `cascade` deletes this row too. Left out, `restrict`.",
+                "For a reference: what happens to this row when the row it points to is deleted. `restrict` refuses the deletion, `set_null` empties the column, `cascade` deletes this row too. Left out, `restrict`. The database does the last two: a row it deletes or empties this way is not announced as a row change, only the row that was deleted is.",
             },
             values: {
               type: "array",
               minItems: 1,
               maxItems: 200,
               description:
-                "For an enum or an enum_list: the values a row may hold, in the order they are offered and sorted.",
+                "For an enum or an enum_list: the values a row may hold, in the order they are offered. A sort by the column goes by the spelling of the value, not by this order.",
               items: {
                 oneOf: [
                   enumValue,

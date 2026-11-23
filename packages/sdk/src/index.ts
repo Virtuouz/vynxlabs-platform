@@ -210,7 +210,11 @@ export interface ScriptOptions<Input extends z.ZodType, Output extends z.ZodType
    * place's worker a credential made for the same pool.
    */
   worker?: string;
-  /** What happens when a run fails for the last time. */
+  /**
+   * What happens when a run fails for the last time. It replaces the workspace's default alert for
+   * this script, as a whole: a script that names only `notify` does not also start the default's
+   * `script`.
+   */
   onFailure?: { script?: string | { path: string }; notify?: string | { path: string } };
   /**
    * Makes the script a step people can pick in the flow editor. Its input
@@ -996,7 +1000,7 @@ export interface TableOptions<C extends Record<string, ColumnSpec<unknown, boole
             | { everyone: true }
             /** The column holds the person's own ID. */
             | { column: Extract<keyof C, string>; is: "principal" }
-            /** The column names a group the person is in: its ID, or its name in a text column. */
+            /** The column names a group the person is in: its ID, or its key in a text column (its name too, in rows written before groups had keys). */
             | { column: Extract<keyof C, string>; in: "groups" }
             /** The column equals one of the person's attributes. */
             | { column: Extract<keyof C, string>; equals: { attribute: string } };
@@ -1071,6 +1075,14 @@ export type ThemeToken =
   | "danger-soft"
   | "success"
   | "success-soft"
+  | "structure"
+  | "raised"
+  | "selected"
+  | "line-strong"
+  | "line-control"
+  | "ink-subtle"
+  | "code-bg"
+  | "focus"
   | "radius-control"
   | "radius-panel"
   | "font"

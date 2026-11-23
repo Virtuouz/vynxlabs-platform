@@ -355,6 +355,24 @@ describe("records and actions (phase 26)", () => {
     );
   });
 
+  it("the rows behind a figure are asked for only of a widget that reads a table", () => {
+    const behind = { on: { pointClick: { steps: [{ do: "rows" as const }] } } };
+    const over = (source: object): PageWidget => ({
+      ...chart,
+      ...behind,
+      data: { rows: { source } } as never,
+    });
+    const said2 = (widget: PageWidget) =>
+      checkDashboard({ widgets: [widget] }, tableOf).map((one) => one.message);
+    const table = { visual: { table: "invoices", groupBy: [{ column: "status" }] } };
+    expect(said2(over(table)).filter((one) => /rows behind/.test(one))).toEqual([]);
+    for (const source of [{ query: "reports/open" }, { sql: "select 1" }]) {
+      expect(said2(over(source)).join("|")).toContain(
+        "this widget reads a saved query or SQL: only a table has rows behind it",
+      );
+    }
+  });
+
   it("a record page says the table of its record", () => {
     const body = app([rows]);
     const { record: _record, ...nameless } = detailPage;

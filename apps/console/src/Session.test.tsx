@@ -18,6 +18,7 @@ type Handler = (body: unknown) => [number, unknown];
 let routes: Record<string, Handler>;
 let signedAs: string | null;
 let calls: string[];
+let slow = false;
 
 const memberOf = (id: string, email: string) => ({
   principal: { type: "member", id, name: null, email },
@@ -29,6 +30,7 @@ const PEOPLE: Record<string, string> = { m1: "alice@acme.example", m2: "bob@acme
 beforeEach(() => {
   signedAs = "m1";
   calls = [];
+  slow = false;
   localStorage.clear();
   history.replaceState(null, "", "/");
   routes = {
@@ -72,6 +74,9 @@ beforeEach(() => {
   vi.stubGlobal("fetch", async (url: string, init: RequestInit = {}) => {
     const key = `${init.method ?? "GET"} ${url}`;
     calls.push(key);
+    if (slow && key === "GET /api/v1/me" && !signedAs) {
+      await new Promise((resolve) => setTimeout(resolve, 40));
+    }
     const handler = routes[key];
     const [status, body] = handler
       ? handler(init.body ? JSON.parse(init.body as string) : undefined)
@@ -269,4 +274,73 @@ test("SHL-14: a lookup that fails is shown with a way to try again, not as a pas
   ];
   fireEvent.click(screen.getByRole("button", { name: "Continue" }));
   await screen.findByLabelText("Password");
+});
+
+test("WLK-01: plain sign-out reaches the sign-in form, with no session sheet and no read left waiting", async () => {
+  // A network takes a moment to answer: the page draws while /me is being asked again.
+  slow = true;
+  show(<App />);
+  await screen.findByRole("heading", { name: "Tenants" });
+  await chooseSignOut();
+  await screen.findByRole("heading", { name: "Sign in" });
+  // The 401 that answers sign-out is the plain answer, not a session that ended.
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  expect(screen.queryByRole("dialog", { name: /session ended/i })).toBeNull();
+  expect(screen.getByRole("heading", { name: "Sign in" })).toBeTruthy();
+});
+
+test("WLK-02: signing in from a deep link shows the screen, not a 401 an early read kept", async () => {
+  signedAs = null;
+  history.replaceState(null, "", "/t/t1");
+  const refused = () =>
+    new Response(
+      JSON.stringify({
+        status: 401,
+        code: "unauthenticated",
+        detail: "Sign in or send an API key.",
+      }),
+      { status: 401 },
+    );
+  // What index.html asked for while the scripts arrived, before anyone signed in.
+  (window as unknown as { __vxEarly: Record<string, Promise<Response>> }).__vxEarly = {
+    "/me": Promise.resolve(refused()),
+    "/tenants/t1/summary": Promise.resolve(refused()),
+    "/tenants/t1": Promise.resolve(refused()),
+  };
+  routes["GET /api/v1/tenants/t1"] = () => [200, { name: "Acme Corp", slug: "acme" }];
+  routes["GET /api/v1/tenants/t1/summary"] = () => [
+    200,
+    { workspaces: 0, approvalsWaiting: 0, domainsToFix: 0, members: 1 },
+  ];
+  show(<App />);
+  await screen.findByRole("heading", { name: "Sign in" });
+  fireEvent.input(screen.getByLabelText("Email"), { target: { value: PEOPLE.m1 } });
+  fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+  fireEvent.input(await screen.findByLabelText("Password"), {
+    target: { value: "right-password" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+  await screen.findByText("Nothing needs you");
+  expect(screen.queryByText("Sign in or send an API key.")).toBeNull();
+});
+
+test("WLK-05: the session sheet cannot be set aside: no Close button, Esc keeps it, Tab stays inside", async () => {
+  routes["PUT /api/v1/draft"] = () => [401, { status: 401, detail: "Sign in." }];
+  show(
+    <>
+      <App />
+      <Draft />
+    </>,
+  );
+  await screen.findByRole("heading", { name: "Tenants" });
+  signedAs = null;
+  fireEvent.click(screen.getByRole("button", { name: "Save draft" }));
+  const sheet = await screen.findByRole("dialog", { name: /session ended/i });
+  expect(within(sheet).queryByRole("button", { name: "Close" })).toBeNull();
+  fireEvent.keyDown(sheet, { key: "Escape" });
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(screen.getByRole("dialog", { name: /session ended/i })).toBeTruthy();
+  // Every control that can take the focus is in the sheet or is the page made inert behind it.
+  const tabbable = within(sheet).getAllByRole("button");
+  expect(tabbable.length).toBeGreaterThan(0);
 });

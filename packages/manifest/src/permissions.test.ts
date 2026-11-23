@@ -39,3 +39,8 @@ test("everything for one verb touches only its own wildcard, and keeps what is n
   );
   expect(setEveryone(["*:*"], kinds, "read", false)).toEqual(["*:write"]);
 });
+
+test("trigger:write says it pauses and resumes, as the routes it guards do (OPS-40)", () => {
+  const trigger = PERMISSION_KINDS.find((entry) => entry.kind === "trigger");
+  expect(trigger?.verbs.write).toMatch(/Pause and resume/);
+});

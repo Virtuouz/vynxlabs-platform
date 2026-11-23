@@ -3,6 +3,7 @@ import { badRequest, HttpError } from "../../errors.js";
 import type { Kernel } from "../../kernel.js";
 import { type DataScope, withData } from "../rows.js";
 import { type CheckedQuery, checkQuery, QueryRefused } from "./parse.js";
+import { viewName } from "./view-name.js";
 import { ensureQueryViews } from "./views.js";
 
 /**
@@ -58,6 +59,58 @@ function typeOf(value: unknown): string {
   return "text";
 }
 
+/**
+ * The columns of a row Postgres wrote as one JSON object, in the order it wrote them, with their
+ * values. Keys that repeat are kept, and a whole number a double cannot hold is kept as text.
+ */
+export function readColumns(text: string): [string, unknown][] {
+  const out: [string, unknown][] = [];
+  let at = text.indexOf("{") + 1;
+  const end = text.lastIndexOf("}");
+  const skipSpace = () => {
+    while (at < end && /\s/.test(text[at] as string)) at++;
+  };
+  /** The end of the string that starts at `from`, which holds a quote. */
+  const closeString = (from: number) => {
+    let i = from + 1;
+    while (text[i] !== '"') i += text[i] === "\\" ? 2 : 1;
+    return i + 1;
+  };
+  while (at < end) {
+    skipSpace();
+    if (text[at] === ",") {
+      at++;
+      continue;
+    }
+    if (at >= end) break;
+    const keyEnd = closeString(at);
+    const name = JSON.parse(text.slice(at, keyEnd)) as string;
+    at = keyEnd;
+    skipSpace();
+    at++; // the colon
+    skipSpace();
+    const start = at;
+    let depth = 0;
+    while (at < end) {
+      const char = text[at] as string;
+      if (char === '"') {
+        at = closeString(at);
+        continue;
+      }
+      if (char === "{" || char === "[") depth++;
+      else if (char === "}" || char === "]") depth--;
+      else if (char === "," && depth === 0) break;
+      at++;
+    }
+    const raw = text.slice(start, at).trim();
+    out.push([
+      name,
+      /^-?\d+$/.test(raw) && !Number.isSafeInteger(Number(raw)) ? raw : JSON.parse(raw),
+    ]);
+  }
+  return out;
+}
+
 const plain = (value: unknown): unknown => (value === undefined ? null : value);
 
 /**
@@ -101,11 +154,15 @@ export async function checkFor(
 ): Promise<CheckedQuery & { resources: Map<string, { resourceId: string | null }> }> {
   const store = await kernel.data.forTenant(tenantId);
   const views = await ensureQueryViews(store.owner, store.role, workspaceId);
-  const checked = await checkQuery(text, {
-    schema: views.schema,
-    tables: new Set(views.tables.keys()),
-  });
-  return { ...checked, resources: views.tables };
+  // A table is read by its view's name, which is its path unless that is too long for Postgres
+  // to keep whole. What is said of the tables read, and each one's permission, goes by path.
+  const byView = new Map([...views.tables.keys()].map((path) => [viewName(path), path]));
+  const checked = await checkQuery(text, { schema: views.schema, tables: new Set(byView.keys()) });
+  return {
+    ...checked,
+    tables: checked.tables.map((name) => byView.get(name) ?? name).sort(),
+    resources: views.tables,
+  };
 }
 
 export async function runQuery(kernel: Kernel, request: QueryRequest): Promise<QueryResult> {
@@ -140,29 +197,42 @@ export async function runQuery(kernel: Kernel, request: QueryRequest): Promise<Q
         // Nothing here can write, whatever got this far; and a name means Postgres's own, nobody else's.
         await sql`set transaction read only`.execute(trx);
         await sql`select set_config('search_path', 'pg_catalog', true)`.execute(trx);
-        // Each row comes back as JSON written by Postgres, which keeps the columns in order and
-        // says a number as a number and a date as text, whatever the driver would make of them.
+        // Each row comes back as JSON text written by Postgres, which keeps the columns in order
+        // (and those of one name), and says a number as a number and a date as text. The text is
+        // read here, not by the driver, which would make an object of it and reorder its keys.
         // One row more than is wanted is read, to know whether there were more.
-        const fetched = await trx.executeQuery<{ r: Record<string, unknown> }>(
+        const fetched = await trx.executeQuery<{ r: string }>(
           CompiledQuery.raw(
-            `select row_to_json(vx_q) as r from (${checked.sql}) as vx_q offset ${Math.max(Math.trunc(request.offset ?? 0), 0)} limit ${limit + 1}`,
+            `select row_to_json(vx_q)::text as r from (${checked.sql}) as vx_q offset ${Math.max(Math.trunc(request.offset ?? 0), 0)} limit ${limit + 1}`,
             given,
           ),
         );
-        return fetched.rows.map((row) => row.r);
+        const rows = fetched.rows.map((row) => readColumns(row.r));
+        if (rows.length > 0) return { rows, names: undefined };
+        // With no rows there is still a result with columns: one row of nothing says which.
+        const shape = await trx.executeQuery<{ r: string }>(
+          CompiledQuery.raw(
+            `select row_to_json(vx_a)::text as r from (select vx_q.* from (select 1) as vx_one left join (${checked.sql}) as vx_q on false) as vx_a limit 1`,
+            given,
+          ),
+        );
+        return {
+          rows,
+          names: shape.rows[0] ? readColumns(shape.rows[0].r).map(([name]) => name) : [],
+        };
       },
       { timeoutMs },
     ),
   );
 
-  const truncatedByCount = found.length > limit;
-  const kept = truncatedByCount ? found.slice(0, limit) : found;
-  const names = kept[0] ? Object.keys(kept[0]) : [];
+  const truncatedByCount = found.rows.length > limit;
+  const kept = truncatedByCount ? found.rows.slice(0, limit) : found.rows;
+  const names = kept[0] ? kept[0].map(([name]) => name) : (found.names ?? []);
   const rows: unknown[][] = [];
   let weight = 0;
   let truncatedBySize = false;
   for (const row of kept) {
-    const values = names.map((name) => plain(row[name]));
+    const values = row.map(([, value]) => plain(value));
     weight += JSON.stringify(values).length;
     if (weight > QUERY_BYTES) {
       truncatedBySize = true;

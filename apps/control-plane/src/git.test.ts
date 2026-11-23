@@ -251,6 +251,20 @@ describe("connecting a repository", () => {
     expect(again.status).toBe(200);
   });
 
+  test("a stored token does not follow a changed address to another host (D10)", async () => {
+    const elsewhere = repoUrl.replace("127.0.0.1", "localhost");
+    expect(elsewhere).not.toBe(repoUrl);
+    const refused = await alice.put(`/tenants/${tenant}/git-repository`, { url: elsewhere });
+    expect(refused.status, JSON.stringify(refused.body)).toBe(400);
+    expect(refused.body.detail).toMatch(/Enter the access token again/);
+    expect((await alice.get(`/tenants/${tenant}/git-repository`)).body.repository.url).toBe(
+      repoUrl,
+    );
+    // The same host, another path: the token is still for it.
+    const samePlace = await alice.put(`/tenants/${tenant}/git-repository`, { url: repoUrl });
+    expect(samePlace.status).toBe(200);
+  });
+
   test("a dev workspace follows a branch of its own, never the default one", async () => {
     expect((await alice.put(`${ws()}/git`, { branch: "main" })).status).toBe(409);
     expect((await alice.put(`${ws()}/git`, { branch: "bad..name" })).status).toBe(400);
@@ -919,6 +933,38 @@ describe("safety", () => {
       "title: IT Service Desk",
     );
     expect(sh(["rev-list", "--count", `${main}..vx/access`], bare())).toBe("2");
+  });
+
+  test("a pull brings SQL into the workspace only for someone who may write it (DAT-02)", async () => {
+    const role = await alice.post(`/tenants/${tenant}/roles`, {
+      name: "puller",
+      permissions: ["deployment:write", "code:write", "git:read", "resource:read", "data:read"],
+    });
+    expect(role.status, JSON.stringify(role.body)).toBe(201);
+    const made = await alice.post(`/tenants/${tenant}/members`, {
+      email: "puller@acme.example",
+      name: "Puller",
+      password: PASSWORD,
+    });
+    await alice.post(`/tenants/${tenant}/bindings`, {
+      principalType: "member",
+      principalId: made.body.id,
+      roleId: role.body.id,
+    });
+    const puller = await t.signIn("puller@acme.example", PASSWORD);
+    commitOnBranch(
+      {
+        "platform/reports/open.query.yaml": "schemaVersion: 1\nbody:\n  sql: select 1 as n\n",
+      },
+      "A query written in an editor",
+    );
+    const refused = await puller.post(`${ws()}/git/pull`, {});
+    expect(refused.status, JSON.stringify(refused.body)).toBe(403);
+    expect(refused.body.detail).toContain("sql:read");
+    expect((await alice.get(`${ws()}/resources/reports/open`)).status).toBe(404);
+    const taken = await alice.post(`${ws()}/git/pull`, {});
+    expect(taken.body, JSON.stringify(taken.body)).toMatchObject({ status: "done" });
+    expect((await alice.get(`${ws()}/resources/reports/open`)).status).toBe(200);
   });
 
   test("every push and pull is recorded, and the token is in none of it", async () => {

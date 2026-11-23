@@ -34,11 +34,15 @@ export interface Subscriber {
   /** Who it is, for the limit on open streams. */
   principal: string;
   /**
-   * Set for someone who may read only the runs they started, such as an end user
-   * of an app: `<principal type>:<id>`. They are sent the events of those runs and
-   * flow runs only, wherever they are, and `may` is not looked at.
+   * Whoever it is (`<principal type>:<id>`), when it has an ID. The events of the runs
+   * and flow runs they started are sent wherever they are, besides what `may` allows.
    */
   own?: string;
+  /**
+   * Set for someone who may read only the runs they started, such as an end user of an
+   * app. `may` is empty and they are limited to `MAX_OWN_STREAMS`.
+   */
+  ownOnly?: boolean;
   send(event: string, data: unknown): void;
   /** Ends the stream from this side. */
   close?(): void;
@@ -119,7 +123,7 @@ export class StreamHub {
    */
   async subscribe(subscriber: Subscriber): Promise<(() => void) | false> {
     const open = this.#open.get(subscriber.principal) ?? 0;
-    if (open >= (subscriber.own ? MAX_OWN_STREAMS : MAX_STREAMS)) return false;
+    if (open >= (subscriber.ownOnly ? MAX_OWN_STREAMS : MAX_STREAMS)) return false;
     await this.#listen();
     this.#open.set(subscriber.principal, open + 1);
     let set = this.#subscribers.get(subscriber.tenantId);
@@ -223,15 +227,16 @@ export class StreamHub {
     // A script run that is a step of a flow is the flow's to show.
     const flows = event.k === "flow_run" || event.k === "step" || Boolean(event.flow);
     for (const subscriber of set) {
-      if (subscriber.own !== undefined) {
-        // Their own run, its log, their own flow run and its steps. Never the work of others,
-        // nor a script run a flow of theirs started, which the flow's steps stand for.
-        if (by === subscriber.own && event.k !== "task") subscriber.send(event.k, event);
+      const may = subscriber.may.get(event.w);
+      if (may && (flows ? may.flows : may.scripts)) {
+        subscriber.send(event.k, event);
         continue;
       }
-      const may = subscriber.may.get(event.w);
-      if (!may || !(flows ? may.flows : may.scripts)) continue;
-      subscriber.send(event.k, event);
+      // Their own run, its log, their own flow run and its steps, where they may not read
+      // runs. Never the work of others.
+      if (subscriber.own !== undefined && by === subscriber.own && event.k !== "task") {
+        subscriber.send(event.k, event);
+      }
     }
   }
 

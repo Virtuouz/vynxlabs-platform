@@ -937,6 +937,8 @@ export function checkWidgets(
     typed: readonly string[] = [],
     /** Whether the event clicks a group (a point, a cell): `narrow` takes its value from one. */
     eventGivesGroup = false,
+    /** Whether the widget reads a table, which is all that has rows behind a figure. */
+    readsTable = true,
   ) {
     checkConditions(action.when, `${path}/when`, eventGivesRecord, say);
     // An unfinished action is kept in a draft; it is said here, and publishing refuses it.
@@ -1016,6 +1018,12 @@ export function checkWidgets(
         context.page?.kind !== "modal"
       ) {
         say(at, "only a side sheet or a modal can be closed");
+      }
+      if (step.do === "rows" && !readsTable) {
+        say(
+          at,
+          "shows the rows behind a figure, and this widget reads a saved query or SQL: only a table has rows behind it",
+        );
       }
       if (step.do === "narrow" && !eventGivesGroup) {
         say(
@@ -1241,6 +1249,7 @@ export function checkWidgets(
         say,
         [],
         declared.gives === "group",
+        readsTables(widget.data),
       );
     }
     for (const [property, schema] of Object.entries(definition.config.properties)) {
@@ -1315,6 +1324,12 @@ export function checkWidgets(
     }
   });
   return issues;
+}
+
+/** Whether a widget's data comes from a table (or a data source's table): what has rows behind it. */
+function readsTables(data: Record<string, { source?: object }> | undefined): boolean {
+  const inputs = Object.values(data ?? {});
+  return inputs.length === 0 || inputs.some((one) => one.source && "visual" in one.source);
 }
 
 /** Whether a form field may start with this value in a column of this type. */

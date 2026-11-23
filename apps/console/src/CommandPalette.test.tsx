@@ -279,3 +279,11 @@ test("with single keys off, the sheet marks only the shortcuts that turn off (SH
   expect(screen.getByText("Overview (off)")).toBeTruthy();
   localStorage.clear();
 });
+
+test("WLK-04: the shortcut sheet writes the space bar as Space, not as an empty key cap", async () => {
+  show(<ShortcutSheet />);
+  act(() => openShortcuts());
+  await screen.findByText("Keyboard shortcuts");
+  const row = screen.getByText("Check the row").previousElementSibling as HTMLElement;
+  expect(Array.from(row.children).map((cap) => cap.textContent)).toEqual(["x", "Space"]);
+});

@@ -22,6 +22,7 @@ import { OneTimeSecret } from "../kit/OneTimeSecret.tsx";
 import { consoleLink, ObjectLink } from "../kit/objects.tsx";
 import { UsedBy, useReferences, usersOf } from "../kit/references.tsx";
 import { mayPass, retryAfter } from "../kit/retry.ts";
+import { STARTED_BY } from "../kit/starts.ts";
 import { Code, Mono, type RunState, StatePill, Tag } from "../kit/status.tsx";
 import { Time } from "../kit/Time.tsx";
 import { Truncate } from "../kit/Truncate.tsx";
@@ -77,17 +78,45 @@ export function took(run: Pick<Run, "startedAt" | "finishedAt">) {
   return between(run.startedAt, run.finishedAt);
 }
 
-export const TRIGGER: Record<string, string> = {
-  manual: "Started by hand",
-  schedule: "Schedule",
-  webhook: "Webhook",
-  event: "Event",
-  form: "Form",
-  flow: "A flow",
-  alert: "Failure handler",
-  rerun: "Re-run",
-  retry: "Retry",
-};
+export const TRIGGER = STARTED_BY;
+
+/**
+ * "Schedule reminders/hourly", with the trigger a link, and an event's run linked to its event.
+ * The one place that says what started a run, for scripts and flows, on the run's page and in
+ * the list's details. Runs of schedules before phase 29 name the schedule under `schedule`.
+ * Nothing for a run that repeats another: the link to that run says it.
+ */
+export function startedBy(link: string, trigger: { type: string; [detail: string]: unknown }) {
+  if (trigger.type === "retry" || trigger.type === "rerun") return null;
+  // A step of a flow: its flow run, opened on the step.
+  if (trigger.type === "flow" && typeof trigger.flowRunId === "string") {
+    const node = typeof trigger.node === "string" ? trigger.node : "";
+    return (
+      <Link
+        to={`${link}/runs/${trigger.flowRunId}${node ? `?step=${encodeURIComponent(node)}` : ""}`}
+      >
+        Step {node} of a flow run
+      </Link>
+    );
+  }
+  const word = TRIGGER[trigger.type] ?? trigger.type;
+  const named = typeof trigger.trigger === "string" ? trigger.trigger : trigger.schedule;
+  const event = typeof trigger.eventId === "string" ? trigger.eventId : undefined;
+  if (typeof named === "string") {
+    return (
+      <span className="inline-flex flex-wrap items-baseline gap-x-2">
+        <Link to={`${link}/triggers?trigger=${encodeURIComponent(named)}`}>
+          {word} {named}
+        </Link>
+        {event ? (
+          <Link to={`${link}/events?item=${encodeURIComponent(event)}`}>The event</Link>
+        ) : null}
+      </span>
+    );
+  }
+  if (event) return <Link to={`${link}/events?item=${encodeURIComponent(event)}`}>{word}</Link>;
+  return word;
+}
 
 interface ScriptRow {
   path: string;
@@ -612,7 +641,7 @@ export function ActivateVersion({
  * Has one of the workspace's workers try a connection, from where scripts run,
  * and says what it found. What it found is kept, as the list's health.
  */
-function TestConnection({
+export function TestConnection({
   root,
   path,
   onDone,
@@ -693,14 +722,18 @@ export function Connections({ root, production = false }: { root: string; produc
   // The list below reads the same address, from the same cache: reading it here reads it there.
   const reload = () => list.reload();
   // A refused promotion links here to set up what it names.
-  const [setup, setSetup] = useQueryValue("setup");
+  // A connection's page sends here with `item`, as other lists are asked to show one.
+  const [setupParam, setSetup] = useQueryValue("setup");
+  const [itemParam, setItem] = useQueryValue("item");
+  const setup = setupParam ?? itemParam;
   useEffect(() => {
     if (!setup || !list.data) return;
     const row = list.data.items.find((item) => item.path === setup);
     if (row) setEditing({ row });
     else notify.error(new Error(`There is no connection ${setup} here to set up.`));
     setSetup(null);
-  }, [setup, list.data, setSetup]);
+    setItem(null);
+  }, [setup, list.data, setSetup, setItem]);
   const newButton = (
     <Button variant="primary" onClick={() => setEditing({})}>
       {production ? "Set up a connection" : "New connection"}
@@ -726,6 +759,11 @@ export function Connections({ root, production = false }: { root: string; produc
                   <ObjectLink link={consoleLink(root)} kind="connection" path={row.path} />
                 )}
                 {row.arrives ? <Tag tone="neutral">Arrives with the next promotion</Tag> : null}
+                {row.draft === "new" ? (
+                  <StatePill state="draft">Draft, never deployed</StatePill>
+                ) : row.draft ? (
+                  <Tag tone="draft">{row.draft === "removed" ? "Removing" : "Draft"}</Tag>
+                ) : null}
               </span>
             ),
           },
@@ -737,6 +775,7 @@ export function Connections({ root, production = false }: { root: string; produc
               <UsedBy
                 uses={connectionUses(row.path)}
                 failed={connectionUses.failed}
+                loaded={connectionUses.loaded}
                 link={consoleLink(root)}
                 all={`${consoleLink(root)}/connections/${row.path}?tab=used-by`}
               />
@@ -780,6 +819,7 @@ export function Connections({ root, production = false }: { root: string; produc
                   label="Unbind"
                   confirm={`Unbind ${row.path}? Scripts that use it will fail until it is bound again.`}
                   affected={usersOf(connectionUses(row.path))}
+                  usesUnread={connectionUses.failed || !connectionUses.loaded}
                   run={() => api.delete(`${root}/connection-bindings/${row.path}`)}
                   onDone={done}
                 />
@@ -822,6 +862,7 @@ export function Variables({ root }: { root: string }) {
       draft?: "new" | "changed" | "removed" | null;
     }>
       title="Variables"
+      setupField="path"
       description="Settings a script reads at run time. Each workspace can set its own value. Without one, the default from the repository applies."
       path={`${root}/variable-values`}
       rowKey={(row) => row.path}
@@ -859,6 +900,7 @@ export function Variables({ root }: { root: string }) {
             <UsedBy
               uses={variableUses(row.path)}
               failed={variableUses.failed}
+              loaded={variableUses.loaded}
               link={consoleLink(root)}
               all={`${consoleLink(root)}/variables/${row.path}?tab=used-by`}
             />
@@ -1319,6 +1361,8 @@ interface ConnectionGroup {
   members: GroupMember[];
   /** A change made in the console that waits to be deployed. */
   draft?: "new" | "changed" | "removed" | null;
+  /** False: nothing declares the group any more, and its members were left behind. */
+  declared?: boolean;
 }
 
 /**
@@ -1361,11 +1405,16 @@ export function ConnectionGroups({ root }: { root: string }) {
                   <Tag tone="draft">{group.draft === "removed" ? "Removing" : "Draft"}</Tag>
                 </span>
               ) : null}
+              {group.declared === false ? (
+                <span className="ml-3">
+                  <Tag tone="neutral">Not declared</Tag>
+                </span>
+              ) : null}
               {group.description ? (
                 <span className="ml-3 text-ink-muted">{group.description}</span>
               ) : null}
             </div>
-            {group.draft === "new" ? (
+            {group.declared === false ? null : group.draft === "new" ? (
               // Its members are kept by the deployed group, so there is nowhere to put one yet.
               <Button
                 size="small"
@@ -1379,6 +1428,12 @@ export function ConnectionGroups({ root }: { root: string }) {
               </Button>
             )}
           </div>
+          {group.declared === false ? (
+            <p className="m-0 border-line border-b px-4 py-3 text-ink-muted">
+              No deployed resource or draft declares this group any more, and its members were left.
+              Remove them, or declare the group again as the kind they are.
+            </p>
+          ) : null}
           {group.members.length === 0 ? (
             <p className="m-0 px-4 py-3 text-ink-muted">
               No members yet. A script that asks this group for a key will fail until one is added.
@@ -1414,9 +1469,11 @@ export function ConnectionGroups({ root }: { root: string }) {
                   align: "end",
                   cell: (member) => (
                     <span className="flex flex-wrap justify-end gap-2">
-                      <Button size="small" onClick={() => setEditing({ group, member })}>
-                        Change
-                      </Button>
+                      {group.declared === false ? null : (
+                        <Button size="small" onClick={() => setEditing({ group, member })}>
+                          Change
+                        </Button>
+                      )}
                       <RemoveButton
                         confirm={`Scripts that ask ${group.path} for "${member.key}" will fail until it is added again.`}
                         run={() =>

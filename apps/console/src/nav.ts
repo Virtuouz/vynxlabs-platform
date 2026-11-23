@@ -295,7 +295,8 @@ export const EDITORS: readonly { pattern: RegExp; help: string }[] = [
   { pattern: /^scripts\/(new|edit\/)/, help: "build-scripts-editor" },
   { pattern: /^extensions\/[a-z_]+\/(new|edit\/)/, help: "build-extensions-editor" },
   { pattern: /^screens\/.+/, help: "build-screens-editor" },
-  { pattern: /^dashboards\/.+/, help: "data-dashboards-editor" },
+  // A dashboard looked at has its section's help; the editor says its own while it is edited.
+  { pattern: /^dashboards\/.+/, help: "data-dashboards" },
   { pattern: /^resources\/(new|edit\/)/, help: "build-resources-editor" },
   { pattern: /^docs\/(new$|edit\/)/, help: "build-docs-editor" },
 ];

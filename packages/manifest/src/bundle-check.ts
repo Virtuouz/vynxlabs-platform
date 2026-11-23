@@ -1,4 +1,5 @@
 import {
+  assetPathProblem,
   type Bundle,
   type BundleManifest,
   keyOf,
@@ -209,6 +210,14 @@ export function checkBundleManifests(manifests: BundleManifest[]): string[] {
       for (const path of body.uses?.sources ?? []) expect(manifest, "sources", path, "data_source");
       expect(manifest, "onFailure.script", body.onFailure?.script, "script");
       expect(manifest, "onFailure.notify", body.onFailure?.notify, "connection");
+      // A failure is posted over HTTP: another kind of connection would fail only when a run does.
+      const notified = byPath.get(body.onFailure?.notify ?? "");
+      const connector = (notified?.body as { connector?: string } | undefined)?.connector;
+      if (notified?.kind === "connection" && connector !== undefined && connector !== "http") {
+        problems.push(
+          `${manifest.path} (script): onFailure.notify names "${notified.path}", which is a ${connector} connection. A failure is posted to an HTTP connection.`,
+        );
+      }
       const keyed = (body as { concurrency?: unknown }).concurrency;
       if (typeof keyed === "object" && keyed !== null && "key" in keyed) {
         const missing = keyMissing(
@@ -444,6 +453,8 @@ export function checkBundleAssets(
         `assets: ${asset.path} belongs to "${asset.app}", which is not an app in this bundle.`,
       );
     }
+    const unnamed = assetPathProblem(asset.path);
+    if (unnamed) problems.push(`${asset.app} (app): ${unnamed}`);
     if (asset.path.startsWith(RESERVED_ASSET_PREFIX) || asset.path === "_") {
       problems.push(
         `${asset.app} (app): ${asset.path} is under "_", which the platform keeps for its own pages.`,

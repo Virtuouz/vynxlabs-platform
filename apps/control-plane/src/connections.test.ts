@@ -444,6 +444,33 @@ describe("an OAuth connection", () => {
     expect((await listed("google")).oauth.status).toBe("connected");
   });
 
+  test("a connection removed while the member was at the provider ends in a word, not JSON (CFG-19)", async () => {
+    const started = await alice.post(`${ws()}/connection-oauth`, {
+      path: "google",
+      returnTo: "/t/acme/workspaces/main/connections",
+    });
+    const state = new URL(started.body.url).searchParams.get("state");
+    const kept = await t.db
+      .selectFrom("connection_binding")
+      .selectAll()
+      .where("path", "=", "google")
+      .executeTakeFirstOrThrow();
+    await alice.delete(`${ws()}/connection-bindings/google`);
+    const back = await alice.get(`/oauth/connections/callback?state=${state}&code=code-9`);
+    expect(back.status).toBe(302);
+    expect(location(back).pathname).toBe("/t/acme/workspaces/main/connections");
+    expect(location(back).searchParams.get("oauth_error")).toMatch(/was removed/);
+    // Put back as it was, for what follows.
+    await t.db
+      .insertInto("connection_binding")
+      .values({
+        ...kept,
+        config: JSON.stringify(kept.config),
+        oauth: kept.oauth ? JSON.stringify(kept.oauth) : null,
+      } as never)
+      .execute();
+  });
+
   test("a Test reaches the API with the access token, and passes", async () => {
     const task = await tried("google");
     expect(task.result).toMatchObject({ ok: true, status: 200 });

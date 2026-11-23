@@ -432,6 +432,84 @@ test("sharing an app gives a group the app and the tables it shows, and stopping
   ]);
 });
 
+test("stopping to share an app keeps the tables another shared app reads, and says so (APP-12, APP-14)", async () => {
+  const tenant = "/api/v1/tenants/t1";
+  const mine = (id: string, resourceId: string) => ({
+    id,
+    scopeType: "resource",
+    resourceId,
+    principalType: "end_user_group",
+    principalId: "g1",
+    principalLabel: "finance",
+    roleName: "portal_reader",
+    managedByResource: false,
+  });
+  let held: Any[] = [mine("b1", "a1"), mine("b2", "t1"), mine("b3", "t2"), mine("b4", "a2")];
+  const app = (id: string, path: string, reads: string[], more: object = {}) => ({
+    id,
+    path,
+    title: path === "sales" ? "Sales" : "Reports",
+    description: null,
+    url: `https://vx.example/apps/acme/main/${path}/`,
+    domains: [],
+    files: 0,
+    bytes: 0,
+    access: [],
+    reads,
+    ...more,
+  });
+  routes[`GET ${api}/apps`] = () => [
+    200,
+    {
+      items: [
+        app("a1", "sales", ["customers", "orders"], {
+          broaderAccess: [{ scope: "workspace", label: "anyone" }],
+        }),
+        app("a2", "reports", ["orders"], { published: false }),
+      ],
+    },
+  ];
+  routes[`GET ${api}/resources`] = () => [
+    200,
+    {
+      items: [
+        { id: "a1", kind: "app", path: "sales", body: { title: "Sales" } },
+        { id: "t1", kind: "table", path: "customers", body: {} },
+        { id: "t2", kind: "table", path: "orders", body: {} },
+      ],
+    },
+  ];
+  routes[`GET ${tenant}/bindings`] = () => [200, { items: held }];
+  routes[`GET ${tenant}/groups`] = () => [200, { items: [] }];
+  routes[`GET ${tenant}/end-user-groups`] = () => [200, { items: [{ id: "g1", name: "finance" }] }];
+  routes[`GET ${tenant}/roles`] = () => [200, { items: [{ id: "r1", name: "portal_reader" }] }];
+  for (const id of ["b1", "b2", "b3"]) {
+    routes[`DELETE ${tenant}/bindings/${id}`] = () => {
+      held = held.filter((binding) => binding.id !== id);
+      return [204, null];
+    };
+  }
+  const { Apps } = await import("./screens/Apps.tsx");
+  show(<Apps root={root} />);
+  // The list names a binding that reaches every app, and an app switched off has no link.
+  expect(await screen.findByText("anyone (whole workspace)")).toBeTruthy();
+  expect(screen.getByText("Not published")).toBeTruthy();
+  fireEvent.click(await screen.findByText("Sales"));
+  fireEvent.click(await screen.findByRole("button", { name: "Share" }));
+  const dialog = within(await screen.findByRole("dialog", { name: "Share Sales" }));
+  await dialog.findByText(/may open every app of the whole workspace/);
+  fireEvent.click(await dialog.findByRole("button", { name: "Stop sharing with finance" }));
+  const asked = (await screen.findAllByRole("dialog")).at(-1) as HTMLElement;
+  expect(asked.textContent).toContain("their access to its 1 table goes with it");
+  expect(asked.textContent).toContain("1 table stays, for 1 other app that uses it: Reports");
+  fireEvent.click(within(asked).getByRole("button", { name: "Stop sharing" }));
+  await waitFor(() => expect(held.map((binding) => binding.id)).toEqual(["b3", "b4"]));
+  expect(sent("DELETE", "/bindings/").map((call) => call.url.split("/").pop())).toEqual([
+    "b1",
+    "b2",
+  ]);
+});
+
 // biome-ignore lint/suspicious/noExplicitAny: what was sent is inspected freely
 type Any = any;
 

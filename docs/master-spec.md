@@ -431,7 +431,7 @@ Nodes can be placed freely on a canvas. Positions are stored apart from the logi
 ### Authoring
 
 - In the developer-focused version, flows are defined in code and files.
-- The admin console first shows a flow as a read-only graph. Visual editing comes later, as UI-managed flows.
+- The console draws a flow as a graph, and a dev workspace edits it there: steps, connections, settings and a test run. A flow drawn in the console is a UI-managed flow; a flow written in code is read there.
 
 ### Data pipelines
 

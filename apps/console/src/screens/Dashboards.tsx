@@ -18,6 +18,7 @@ import { Ellipsis, RefreshCw } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, failureText, notify, takenText } from "../ask.tsx";
+import { useHelpTopic } from "../help/store.ts";
 import { DataTable } from "../kit/DataTable.tsx";
 import { useHistory } from "../kit/history.ts";
 import { useShortcut } from "../kit/keys.ts";
@@ -198,6 +199,7 @@ export function DashboardView({ root, link, id }: { root: string; link: string; 
   const body = loaded?.body;
   const editingNow = loaded?.kind === "member" && loaded.mine && mode === "1";
   useBleedWhile(editingNow);
+  useHelpTopic(editingNow ? "data-dashboards-editor" : undefined);
   useShortcut("undo", history.undo, { enabled: editingNow });
   useShortcut("redo", history.redo, { enabled: editingNow });
 

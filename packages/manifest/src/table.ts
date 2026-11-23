@@ -50,7 +50,7 @@ export type RowCondition =
   | { everyone: true }
   /** The column holds the person's own ID. */
   | { column: string; is: "principal" }
-  /** The column names a group the person is in: its ID in a uuid column, its name in a text column. */
+  /** The column names a group the person is in: its ID in a uuid column, its key in a text column (its name too, in rows written before groups had keys). */
   | { column: string; in: "groups" }
   /** The column equals one of the person's attributes, such as the customer they belong to. */
   | { column: string; equals: { attribute: string } };
@@ -100,6 +100,84 @@ export function displayGuess(
   );
 }
 
+const UUID_TEXT = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const DATE_TEXT = /^(\d{4})-(\d{2})-(\d{2})$/;
+const TIME_TEXT =
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.\d{1,9})?)?(?:Z|[+-]\d{2}:?\d{2})$/i;
+
+/** Whether a year, month and day name a day that exists. Years run 0001 to 9999. */
+function dayExists(year: number, month: number, day: number): boolean {
+  if (year < 1 || month < 1 || month > 12 || day < 1) return false;
+  const last = [
+    31,
+    year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0) ? 29 : 28,
+    31,
+    30,
+    31,
+    30,
+    31,
+    31,
+    30,
+    31,
+    30,
+    31,
+  ][month - 1] as number;
+  return day <= last;
+}
+
+/** Whether text is a day that exists, written 2026-01-31. */
+export function isCalendarDate(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  const found = DATE_TEXT.exec(value);
+  return found !== null && dayExists(Number(found[1]), Number(found[2]), Number(found[3]));
+}
+
+/**
+ * Whether text is a moment that exists, in ISO 8601 with its zone: 2026-01-31T09:30:00Z or
+ * 2026-01-31T09:30:00+02:00. A time with no zone means a different moment in each place, so it
+ * is not taken.
+ */
+export function isIsoTime(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  const found = TIME_TEXT.exec(value);
+  if (!found) return false;
+  const [, year, month, day, hour, minute, second] = found;
+  return (
+    dayExists(Number(year), Number(month), Number(day)) &&
+    Number(hour) < 24 &&
+    Number(minute) < 60 &&
+    Number(second ?? 0) < 60 &&
+    !Number.isNaN(Date.parse(value))
+  );
+}
+
+/** A day, or a day and time with no zone, that exists: what a column default has always been allowed to say. */
+function isLooseDefaultTime(value: unknown): boolean {
+  if (typeof value !== "string") return false;
+  if (isCalendarDate(value)) return true;
+  const found = /^(\d{4}-\d{2}-\d{2})[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.\d{1,9})?)?$/.exec(value);
+  return (
+    found !== null &&
+    isCalendarDate(found[1]) &&
+    Number(found[2]) < 24 &&
+    Number(found[3]) < 60 &&
+    Number(found[4] ?? 0) < 60
+  );
+}
+
+/** Whether text is an ID, such as a column of type uuid holds. */
+export const isUuid = (value: unknown): value is string =>
+  typeof value === "string" && UUID_TEXT.test(value);
+
+/** Whether a value holds the character with code 0, which Postgres cannot store in text or json. */
+export function hasNul(value: unknown): boolean {
+  if (typeof value === "string") return value.includes("\u0000");
+  if (Array.isArray(value)) return value.some(hasNul);
+  if (typeof value === "object" && value !== null)
+    return Object.entries(value).some(([key, one]) => hasNul(key) || hasNul(one));
+  return false;
+}
+
 /** Whether a default can be stored in a column of this type. */
 function defaultFits(type: ColumnType, value: unknown, values: string[] = []): boolean {
   switch (type) {
@@ -112,10 +190,15 @@ function defaultFits(type: ColumnType, value: unknown, values: string[] = []): b
         new Set(value).size === value.length
       );
     case "text":
+      return typeof value === "string" && !hasNul(value);
     case "uuid":
+      return isUuid(value);
     case "timestamp":
+      // A default is read by the database, so a bundle written with a day, or a time with no
+      // zone, keeps working. One that does not exist (31 February) or reads as nothing is refused.
+      return isIsoTime(value) || isLooseDefaultTime(value);
     case "date":
-      return typeof value === "string";
+      return isCalendarDate(value);
     case "integer":
       return Number.isSafeInteger(value);
     case "number":
@@ -123,7 +206,7 @@ function defaultFits(type: ColumnType, value: unknown, values: string[] = []): b
     case "boolean":
       return typeof value === "boolean";
     case "json":
-      return true;
+      return !hasNul(value);
     default:
       return false;
   }

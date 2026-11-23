@@ -36,6 +36,21 @@ const sendEmail = {
   },
 };
 
+const gate = {
+  path: "core/gate",
+  label: "Gate",
+  category: "Core",
+  description: "Lets a few through.",
+  takes: [],
+  input: {
+    properties: {
+      level: { type: "integer", title: "Level", enum: [1, 2] },
+      flag: { type: "boolean", title: "Flag" },
+    },
+    required: [],
+  },
+};
+
 beforeEach(() => {
   puts = [];
   zone = undefined;
@@ -54,7 +69,7 @@ beforeEach(() => {
     if (path === `${api}/resources/orders/sync`)
       return send(200, { ownership: "ui", body: deployed });
     if (path === api) return send(200, { timeZone: zone });
-    if (path === "/api/v1/core-nodes") return send(200, { items: [sendEmail] });
+    if (path === "/api/v1/core-nodes") return send(200, { items: [sendEmail, gate] });
     return send(200, { items: [] });
   });
 });
@@ -240,5 +255,169 @@ describe("the flow editor, as a person uses it", () => {
     fireEvent.click(screen.getAllByRole("button", { name: "Remove case" })[1] as HTMLElement);
     const saved = await lastSaved();
     expect(saved.edges.some((edge) => edge.output === "maybe")).toBe(false);
+  });
+
+  test("a For each added from the palette holds no empty script, so a flow chosen for it saves (FLW-10)", async () => {
+    await openAt(
+      { nodes: { start: manual }, edges: [] },
+      "start",
+      "Press Enter to rename. Expressions that read this step are changed to the new name.",
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Add step/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /^For each/ }));
+    const saved = await lastSaved();
+    expect(saved.nodes.each).toBeDefined();
+    expect("script" in (saved.nodes.each as object)).toBe(false);
+  });
+
+  test("a For each that takes its flow from the data is finished, and says so (FLW-14)", async () => {
+    await openAt(
+      {
+        nodes: {
+          start: manual,
+          each: {
+            type: "foreach",
+            items: "trigger.items",
+            flowFrom: "trigger.flow",
+            allow: ["a/child"],
+          },
+        },
+        edges: [{ from: "start", to: "each" }],
+      },
+      "each",
+      "Expression that gives the flow's path",
+    );
+    expect(screen.queryByText(/needs a script or a flow to run for each item/)).toBeNull();
+    expect((screen.getByLabelText("Which flow") as HTMLSelectElement).value).toBe("chosen");
+  });
+
+  test("clearing the expression of a flow chosen by the data keeps it chosen by the data (FLW-21)", async () => {
+    await openAt(
+      {
+        nodes: {
+          start: manual,
+          sub: { type: "subflow", flowFrom: "trigger.flow", allow: ["a/child"] },
+        },
+        edges: [{ from: "start", to: "sub" }],
+      },
+      "sub",
+      "Expression that gives the flow's path",
+    );
+    fireEvent.change(screen.getByLabelText("Expression that gives the flow's path"), {
+      target: { value: "" },
+    });
+    // The field stays, and the draft says it is unfinished, as it was before the last key.
+    expect(screen.getByLabelText("Expression that gives the flow's path")).toBeTruthy();
+    expect((screen.getByLabelText("Which flow") as HTMLSelectElement).value).toBe("chosen");
+    const saved = await lastSaved();
+    expect(saved.nodes.sub).toMatchObject({ flowFrom: "", allow: ["a/child"] });
+  });
+
+  test("a number chosen from a list is written as a number, and an expression shows as one (FLW-20)", async () => {
+    await openAt(
+      {
+        nodes: {
+          start: manual,
+          pass: { type: "script", script: "core/gate", inputs: { flag: "trigger.flag" } },
+        },
+        edges: [{ from: "start", to: "pass" }],
+      },
+      "pass",
+      "Lets a few through.",
+    );
+    // An expression in a yes/no field is shown as the expression it is, not as "Not set".
+    expect((screen.getByLabelText(/^Flag/) as HTMLInputElement | HTMLTextAreaElement).value).toBe(
+      "trigger.flag",
+    );
+    fireEvent.change(screen.getByLabelText(/^Level/), { target: { value: "2" } });
+    const saved = await lastSaved();
+    expect((saved.nodes.pass as { inputs: Record<string, string> }).inputs.level).toBe("2");
+  });
+
+  test("a needed field is not marked optional (FLW-29)", async () => {
+    await openAt(
+      {
+        nodes: { start: manual, stop: { type: "fail", message: "'Stopped'" } },
+        edges: [{ from: "start", to: "stop" }],
+      },
+      "stop",
+      "An expression that gives text.",
+    );
+    expect((screen.getByLabelText(/^Message/) as HTMLTextAreaElement).required).toBe(true);
+  });
+
+  test("a question named for the form itself is flagged as it is typed (FLW-18)", async () => {
+    await openAt(
+      {
+        nodes: {
+          start: {
+            type: "trigger",
+            trigger: {
+              type: "form",
+              title: "Tell us",
+              fields: [{ name: "website", label: "Site", type: "text" }],
+            },
+          },
+        },
+        edges: [],
+      },
+      "start",
+      "What it asks",
+    );
+    expect((await screen.findAllByText(/kept for the form itself/)).length).toBeGreaterThan(0);
+  });
+
+  test("a choice list takes Enter and spaces as they are typed (FLW-19)", async () => {
+    await openAt(
+      {
+        nodes: {
+          start: {
+            type: "trigger",
+            trigger: {
+              type: "form",
+              title: "Tell us",
+              fields: [
+                { name: "rating", label: "Rating", type: "select", options: ["One", "Two"] },
+              ],
+            },
+          },
+        },
+        edges: [],
+      },
+      "start",
+      "What it asks",
+    );
+    const list = screen.getByLabelText("The list, one to a line") as HTMLTextAreaElement;
+    fireEvent.change(list, { target: { value: "One\nTwo\n" } });
+    // The new line is still there after the draft was changed.
+    expect(list.value).toBe("One\nTwo\n");
+    fireEvent.change(list, { target: { value: "One\nTwo\nVery good" } });
+    expect(list.value).toBe("One\nTwo\nVery good");
+    const saved = await lastSaved();
+    const field = (saved.nodes.start as { trigger: { fields: { options: string[] }[] } }).trigger
+      .fields[0];
+    expect(field?.options).toEqual(["One", "Two", "Very good"]);
+  });
+
+  test("removing a step does not ask, says so, and Undo brings it back (D34)", async () => {
+    await openAt(
+      {
+        nodes: { start: manual, fill: { type: "set", values: { a: "1" } } },
+        edges: [{ from: "start", to: "fill" }],
+      },
+      "fill",
+      "Values",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Remove this step" }));
+    // No question is put: the step is gone, and the message names it and offers Undo.
+    expect(screen.queryByRole("dialog")).toBeNull();
+    const undo = await screen.findByText(/Removed fill\./);
+    expect(undo).toBeTruthy();
+    expect(screen.queryByText("Values")).toBeNull();
+    // The message's own Undo is the last of the buttons called that.
+    fireEvent.click(screen.getAllByRole("button", { name: "Undo" }).at(-1) as HTMLElement);
+    const saved = await lastSaved();
+    expect(Object.keys(saved.nodes).sort()).toEqual(["fill", "start"]);
+    expect(saved.edges).toContainEqual({ from: "start", to: "fill" });
   });
 });

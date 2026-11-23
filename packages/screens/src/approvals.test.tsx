@@ -353,24 +353,16 @@ describe("deciding", () => {
     expect(screen.getByRole("button", { name: "Approve" })).toBeTruthy();
   });
 
-  test("ask why: never asks no why, only whether to reject; always asks for an approval too (WID-24)", async () => {
+  test("ask why: never still asks for a rejection's reason; always asks for an approval too", async () => {
     const decide = vi.fn<Decide>(async () => ok());
     const first = draw({ opens: "nothing", askWhy: "never" }, data([item(1)]), { decide });
     fireEvent.click(screen.getByRole("button", { name: "Reject" }));
-    expect(screen.queryByLabelText(/Why are you rejecting/)).toBeNull();
-    expect(screen.getByText("Reject “Approve order 1”?")).toBeTruthy();
-    expect(decide).not.toHaveBeenCalled();
-    const buttons = screen.getAllByRole("button", { name: "Reject" });
-    fireEvent.click(buttons[buttons.length - 1] as HTMLElement);
-    await waitFor(() =>
-      expect(decide).toHaveBeenCalledWith(expect.anything(), "reject", undefined),
-    );
+    expect(screen.getByLabelText("Why are you rejecting this?")).toBeTruthy();
     first.unmount();
-    const second = vi.fn<Decide>(async () => ok());
-    draw({ opens: "nothing", askWhy: "always" }, data([item(2)]), { decide: second });
+    draw({ opens: "nothing", askWhy: "always" }, data([item(2)]), { decide });
     fireEvent.click(screen.getByRole("button", { name: "Approve" }));
     expect(screen.getByLabelText("Why are you approving this?")).toBeTruthy();
-    expect(second).not.toHaveBeenCalled();
+    expect(decide).not.toHaveBeenCalled();
   });
 
   test("ask before approving: a question first, and Cancel puts it away", async () => {

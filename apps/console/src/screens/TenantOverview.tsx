@@ -2,7 +2,7 @@ import { CircleCheck, CirclePause, Cpu, Globe, LifeBuoy } from "lucide-react";
 import type { ReactNode } from "react";
 import { useLoad } from "../api.ts";
 import { actionWords } from "../audit-words.ts";
-import { ErrorState, Loading } from "../kit/LoadState.tsx";
+import { ErrorState, Loading, Pending } from "../kit/LoadState.tsx";
 import { KeyValues, NextStep, PageHeader, Panel, SectionLabel } from "../kit/layout.tsx";
 import { EnvTag, Mono, StatePill } from "../kit/status.tsx";
 import { when } from "../ListScreen.tsx";
@@ -158,7 +158,7 @@ export function TenantOverview({ base, tenantId }: { base: string; tenantId: str
           ) : null
         }
       />
-      {counts.error ? <ErrorState error={counts.error} onRetry={counts.reload} /> : null}
+      {counts.error && c ? <ErrorState error={counts.error} onRetry={counts.reload} /> : null}
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
         <div className="flex min-w-0 flex-col gap-6">
@@ -169,7 +169,7 @@ export function TenantOverview({ base, tenantId }: { base: string; tenantId: str
             {c?.promotionRequests && attention.length === 0 ? null : (
               <Panel className="divide-y divide-line">
                 {!c ? (
-                  <Loading />
+                  <Pending of={counts} what="the counts" />
                 ) : attention.length > 0 ? (
                   attention
                 ) : (
@@ -333,9 +333,9 @@ function WorkspaceLine({
         {s ? (
           <>
             {failed > 0 ? (
-              <StatePill state="failed">{plural(failed, "failed run")} today</StatePill>
+              <StatePill state="failed">{plural(failed, "failed run")} in 24 hours</StatePill>
             ) : (
-              <StatePill state="ok">No failures today</StatePill>
+              <StatePill state="ok">No failures in 24 hours</StatePill>
             )}
             {s.drafts ? <StatePill state="draft">{plural(s.drafts, "draft")}</StatePill> : null}
           </>

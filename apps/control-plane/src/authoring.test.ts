@@ -877,6 +877,113 @@ describe("testing a flow", () => {
     expect(refused.body.detail).toContain("(a)");
   });
 
+  test("a test uses its own draft and the drafts it uses, not someone else's broken one (D32)", async () => {
+    await draft("solo/ok", scriptBody("export default async () => ({ ok: true });\n"));
+    await draft(
+      "solo/flow",
+      {
+        description: "",
+        nodes: {
+          start: { type: "trigger", trigger: { type: "manual" } },
+          a: { type: "script", script: "solo/ok" },
+        },
+        edges: [{ from: "start", to: "a" }],
+      },
+      "flow",
+    );
+    // Another person's draft, which does not build and which nothing here names.
+    await draft("elsewhere/broken", scriptBody("export default async ( => {{{\n"));
+    const started = await alice.post(`${ws()}/test-runs`, { flow: "solo/flow" });
+    expect(started.status, JSON.stringify(started.body)).toBe(201);
+    expect((await flowRun(started.body.runId)).status).toBe("succeeded");
+    const script = await alice.post(`${ws()}/test-runs`, { script: "solo/ok" });
+    expect(script.status, JSON.stringify(script.body)).toBe(201);
+    // As a choice, the test takes every draft, as a deploy of all would, and that one blocks it.
+    const all = await alice.post(`${ws()}/test-runs`, { flow: "solo/flow", withAllDrafts: true });
+    expect(all.status).toBe(400);
+    expect(JSON.stringify(all.body)).toContain("elsewhere/broken");
+    for (const path of ["solo/flow", "solo/ok", "elsewhere/broken"]) {
+      await alice.delete(`${ws()}/drafts/${path}`);
+    }
+  });
+
+  test("every starter flow runs, on an input that fits it (FLW-11)", async () => {
+    const { FLOW_STARTERS } = (await import(
+      /* @vite-ignore */ new URL("../../console/src/screens/starters.ts", import.meta.url).href
+    )) as { FLOW_STARTERS: { id: string; body: Record<string, unknown> }[] };
+    for (const starter of FLOW_STARTERS) {
+      const path = `starter/${starter.id}`;
+      await draft(path, { description: "", ...starter.body }, "flow");
+      for (const amount of [500, 5]) {
+        const started = await alice.post(`${ws()}/test-runs`, { flow: path, input: { amount } });
+        expect(started.status, JSON.stringify(started.body)).toBe(201);
+        const done = await flowRun(started.body.runId);
+        expect(done.status, `${starter.id} with ${amount}`).toBe("succeeded");
+      }
+      await alice.delete(`${ws()}/drafts/${path}`);
+    }
+  });
+
+  test("a last step with an error path still gives the flow its output (FLW-25)", async () => {
+    await draft(
+      "err/flow",
+      {
+        description: "",
+        nodes: {
+          start: { type: "trigger", trigger: { type: "manual" } },
+          last: { type: "set", values: { done: "true" } },
+          oops: { type: "set", values: { failed: "true" } },
+        },
+        edges: [
+          { from: "start", to: "last" },
+          { from: "last", to: "oops", error: true },
+        ],
+      },
+      "flow",
+    );
+    const started = await alice.post(`${ws()}/test-runs`, { flow: "err/flow" });
+    expect(started.status, JSON.stringify(started.body)).toBe(201);
+    const ended = (await flowRun(started.body.runId)) as unknown as Record<string, unknown>;
+    expect(ended.status).toBe("succeeded");
+    expect(ended.output).toEqual({ last: { done: true } });
+    await alice.delete(`${ws()}/drafts/err/flow`);
+  });
+
+  test("a flow is drawn where the newer of the two arrangements says, on every screen (FLW-15)", async () => {
+    const at = (x: number) => ({ a: { x, y: 0 }, start: { x: 0, y: 0 } });
+    const body = (x: number) => ({
+      description: "",
+      nodes: {
+        start: { type: "trigger", trigger: { type: "manual" } },
+        a: { type: "set", values: { n: "1" } },
+      },
+      edges: [{ from: "start", to: "a" }],
+      layout: at(x),
+    });
+    await draft("lay/flow", body(0), "flow");
+    expect((await alice.post(`${ws()}/changes/deploy`, { paths: ["lay/flow"] })).status).toBe(201);
+    expect((await alice.put(`${ws()}/flow-layouts/lay/flow`, { positions: at(777) })).status).toBe(
+      204,
+    );
+    const started = await alice.post(`${ws()}/flow-runs`, { flow: "lay/flow" });
+    expect(started.status, JSON.stringify(started.body)).toBe(201);
+    const page = async () => (await alice.get(`${ws()}/flows/lay/flow`)).body.layout.a.x;
+    const defined = async () =>
+      (await alice.get(`${ws()}/flow-runs/${started.body.id}/definition`)).body.layout.a.x;
+    // What was arranged on the flow page is what the flow page and the run's page draw.
+    expect(await page()).toBe(777);
+    expect(await defined()).toBe(777);
+    // A deploy that brings a layout of its own is the newer: the saved arrangement is cleared.
+    await draft("lay/flow", body(5000), "flow");
+    expect((await alice.post(`${ws()}/changes/deploy`, { paths: ["lay/flow"] })).status).toBe(201);
+    expect(await page()).toBe(5000);
+    const later = await alice.post(`${ws()}/flow-runs`, { flow: "lay/flow" });
+    expect((await alice.get(`${ws()}/flow-runs/${later.body.id}/definition`)).body.layout.a.x).toBe(
+      5000,
+    );
+    await alice.delete(`${ws()}/drafts/lay/flow`);
+  });
+
   test("a flow is tested from any of its triggers, with what that trigger would receive", async () => {
     await draft("pipe/flow", pipe("{'n': 3}"), "flow");
     const started = await alice.post(`${ws()}/test-runs`, {

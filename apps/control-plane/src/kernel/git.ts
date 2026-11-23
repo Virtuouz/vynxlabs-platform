@@ -32,6 +32,7 @@ import { conflict, HttpError, notFound } from "./errors.js";
 import { decryptFor, encryptFor } from "./execution/bindings.js";
 import type { WorkspaceRef } from "./http.js";
 import type { Kernel } from "./kernel.js";
+import { sameOrigin } from "./origin.js";
 import { currentAccess } from "./tenant/releases.js";
 
 /**
@@ -576,6 +577,15 @@ export async function saveRepository(
       "An access token is needed to connect a repository.",
     );
   }
+  // A token given for one repository is not sent to another place: pointing at another origin
+  // asks for the token again (the rule for every stored credential that has an address).
+  if (existing && !input.token && !sameOrigin(existing.url, input.url)) {
+    throw new HttpError(
+      400,
+      "validation_failed",
+      "The address is at another host than the one the stored token was given for. Enter the access token again.",
+    );
+  }
   const token =
     input.token ??
     (await decryptFor(
@@ -1080,6 +1090,13 @@ export async function pull(
     resolutions?: Record<string, "mine" | "theirs"> | undefined;
     /** Paths the pull may delete although it looks like a rename done as a delete and a create. */
     allowDelete?: readonly string[] | undefined;
+    /**
+     * Asked of what the pull would put on a page or in a query, before anything is deployed: it
+     * throws when whoever pulls may not write it, as a save in the console would.
+     */
+    standing?:
+      | ((changes: { kind: string; path: string; body: unknown }[]) => Promise<void>)
+      | undefined;
   } = {},
 ) {
   const db = kernel.db;
@@ -1199,6 +1216,18 @@ export async function pull(
         const mcp = had.get(keyOf(manifest))?.mcp;
         return mcp ? { ...manifest, mcp } : manifest;
       });
+      if (take.length > 0 && options.standing) {
+        // What the branch changes of a page or a query is held to what a console save is.
+        await options.standing(
+          manifests
+            .filter((manifest) => ["dashboard", "interface", "query"].includes(manifest.kind))
+            .filter(
+              (manifest) =>
+                JSON.stringify(had.get(keyOf(manifest))?.body) !== JSON.stringify(manifest.body),
+            )
+            .map((manifest) => ({ kind: manifest.kind, path: manifest.path, body: manifest.body })),
+        );
+      }
       if (take.length > 0) {
         try {
           await mutate(db, actor, (trx, audit) =>

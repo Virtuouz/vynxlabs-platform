@@ -9,6 +9,7 @@ import {
   Grid,
   type GridColumn,
   type GridSort,
+  localWall,
   Menu,
   MoveButtons,
   MultiSelectField,
@@ -21,6 +22,7 @@ import {
   TextAreaField,
   TextField,
   useFlip,
+  utcOf,
   ValueChip,
 } from "@volvel/ui";
 import { Download, Ellipsis, Keyboard } from "lucide-react";
@@ -28,6 +30,7 @@ import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, failureText, notify } from "../ask.tsx";
 import { AttachedPages, workspaceOf } from "../help/glossary.tsx";
+import { useAddressBox } from "../kit/addressBox.ts";
 import { DataTable } from "../kit/DataTable.tsx";
 import { count } from "../kit/format.ts";
 import { HealthCell } from "../kit/health.tsx";
@@ -35,7 +38,7 @@ import { useHistory } from "../kit/history.ts";
 import { useShortcut } from "../kit/keys.ts";
 import { ErrorState, Loading, Pending } from "../kit/LoadState.tsx";
 import { Inspector } from "../kit/layout.tsx";
-import { Code, StatePill } from "../kit/status.tsx";
+import { Code, StatePill, Tag } from "../kit/status.tsx";
 import { UndoRedo } from "../kit/UndoRedo.tsx";
 import { ColumnsMenu, ViewsMenu } from "../kit/views.tsx";
 import { type CreateConfig, CreateDialog, ListScreen, Page, RemoveButton } from "../ListScreen.tsx";
@@ -66,6 +69,27 @@ const TYPES: { value: string; label: string }[] = [
   { value: "enum", label: "One of a list" },
   { value: "enum_list", label: "Several of a list" },
 ];
+
+/**
+ * The Values field of a form that makes a column, shared by Create table and Add column: an
+ * enum or a list of values with none could not be made, and said so with no field named.
+ */
+const VALUES_FIELD = {
+  name: "values",
+  label: "Values",
+  required: false,
+  placeholder: "new, paid, shipped",
+  hint: "Separated by commas, in the order they are offered. Labels and colors are set afterwards, under Values.",
+  when: (values: Record<string, string>) => values.type === "enum" || values.type === "enum_list",
+};
+
+/** What a column's definition holds when it is made with these values from a form. */
+function newColumn(type: string, values: string | undefined) {
+  return {
+    type,
+    ...(type === "enum" || type === "enum_list" ? { values: listOf(values ?? "") } : {}),
+  };
+}
 
 /** One value an enum column offers, with what people read and the colour it is drawn on. */
 interface ColumnValue {
@@ -105,11 +129,15 @@ interface RowsBrowserProps {
   /** The address of one row, or null when rows cannot be changed. */
   rowPath: ((key: string) => string) | null;
   keyColumn: string | null;
+  /** Whether a row can be added, when that is not what changing one takes (a source's table with no key). */
+  canAdd?: boolean;
   columns: RowColumn[];
   /** Where files are uploaded to, when the table can hold them. */
   filesPath?: string;
   /** Explains why rows cannot be changed, when they cannot. */
   readOnlyNote?: string;
+  /** What the table is, whatever it is called: its saved views are kept under this. */
+  tableId?: string | undefined;
 }
 
 type DataRow = Record<string, unknown>;
@@ -166,17 +194,23 @@ function RowsBrowser(
       return {};
     }
   })();
-  // What is typed reaches the address, and the server, once typing pauses.
-  const [typed, setTyped] = useState<Record<string, string>>(applied);
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      const kept = Object.fromEntries(Object.entries(typed).filter(([, text]) => text.trim()));
-      const next = Object.keys(kept).length > 0 ? JSON.stringify(kept) : undefined;
-      if (next !== url.filter) setUrl({ filter: next, page: undefined });
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [typed, url.filter, setUrl]);
-  const [filterError, setFilterError] = useState<string>();
+  // What is typed reaches the address, and the server, once typing pauses. A filter put in the
+  // address from elsewhere (a saved view, a link, Back) is what the boxes show.
+  const [typed, setTyped] = useAddressBox<Record<string, string>>(
+    url.filter,
+    (text) => {
+      try {
+        return text ? (JSON.parse(text) as Record<string, string>) : {};
+      } catch {
+        return {};
+      }
+    },
+    (boxes) => {
+      const kept = Object.fromEntries(Object.entries(boxes).filter(([, text]) => text.trim()));
+      return Object.keys(kept).length > 0 ? JSON.stringify(kept) : undefined;
+    },
+    (next) => setUrl({ filter: next, page: undefined }),
+  );
   /** The cursors of the pages before this one, so "Previous" has somewhere to go. */
   const [back, setBack] = useState<string[]>([]);
   const [adding, setAdding] = useState(false);
@@ -200,16 +234,22 @@ function RowsBrowser(
   const lockFirst = url.unlock !== "1";
   const compact = url.density === "compact";
 
-  let filter: object | undefined;
-  try {
-    const parts = columns.flatMap((column) => {
+  // What the filter boxes hold in the address, as a filter, and what in them cannot be read.
+  // Worked out from the text each time, so a message goes with the text that caused it.
+  const parts: object[] = [];
+  const filterErrors: Record<string, string> = {};
+  for (const column of columns) {
+    try {
       const built = toFilter(column.type, applied[column.name] ?? "");
-      return built ? [{ column: column.name, ...built }] : [];
-    });
-    if (parts.length > 0) filter = { and: parts };
-  } catch (error) {
-    if (filterError !== (error as Error).message) setFilterError((error as Error).message);
+      if (built) parts.push({ column: column.name, ...built });
+    } catch (error) {
+      filterErrors[column.name] = (error as Error).message;
+    }
   }
+  const filterBroken = Object.keys(filterErrors).length > 0;
+  // While a box cannot be read nothing is asked for: showing every row as if it were filtered,
+  // or exporting them, would say something the filter does not.
+  const filter: object | undefined = parts.length > 0 && !filterBroken ? { and: parts } : undefined;
   const query = new URLSearchParams({ limit: String(PAGE) });
   if (filter) query.set("filter", JSON.stringify(filter));
   if (url.sort) query.set("sort", url.sort);
@@ -221,13 +261,16 @@ function RowsBrowser(
     items: DataRow[];
     nextCursor: string | null;
     expanded?: Record<string, Record<string, unknown>>;
-  }>(`${props.rowsPath}?${query}`);
+  }>(filterBroken ? null : `${props.rowsPath}?${query}`);
+  const pageData = filterBroken ? undefined : page.data;
   const canChange = rowPath !== null && keyColumn !== null;
+  /** A row may be added to a table with no key: only changing and deleting need one. */
+  const canAdd = props.canAdd ?? canChange;
   const keyOf = (row: DataRow) => String(row[keyColumn ?? ""] ?? JSON.stringify(row));
   // Rows saved in place since this page was loaded. They are shown as saved without loading again.
   const [saved, setSaved] = useState<{ of: unknown; rows: Record<string, DataRow> }>();
-  const changed = saved && saved.of === page.data ? saved.rows : {};
-  const rows = (page.data?.items ?? []).map((row) => changed[keyOf(row)] ?? row);
+  const changed = saved && saved.of === pageData ? saved.rows : {};
+  const rows = (pageData?.items ?? []).map((row) => changed[keyOf(row)] ?? row);
   const toFirst = { page: undefined } as const;
   // How many rows the filters leave, from the totals of a custom table. A source has none.
   const custom = props.rowsPath.includes("/rows/");
@@ -235,7 +278,7 @@ function RowsBrowser(
     ? `${props.rowsPath.replace("/rows/", "/aggregate/")}${filter ? `?filter=${encodeURIComponent(JSON.stringify(filter))}` : ""}`
     : null;
   const total = useLoad<{ items: { values: { count?: number } }[] }>(totalPath);
-  const counted = total.data?.items[0]?.values.count;
+  const counted = (filterBroken ? undefined : total.data)?.items[0]?.values.count;
   const open = rows.find((row) => keyOf(row) === url.row);
   // Edits typed in the inspector and not saved: another row, or closing it, asks first.
   const unsaved = useRef(false);
@@ -258,9 +301,10 @@ function RowsBrowser(
   const exportQuery = new URLSearchParams();
   if (filter) exportQuery.set("filter", JSON.stringify(filter));
   if (url.sort) exportQuery.set("sort", url.sort);
-  const exportHref = custom
-    ? `/api/v1${props.rowsPath.replace("/rows/", "/rows-export/")}?${exportQuery}`
-    : null;
+  const exportHref =
+    custom && !filterBroken
+      ? `/api/v1${props.rowsPath.replace("/rows/", "/rows-export/")}?${exportQuery}`
+      : null;
   const grid: GridColumn[] = order
     .flatMap((name) => columns.find((column) => column.name === name) ?? [])
     .map((column) => ({
@@ -274,7 +318,7 @@ function RowsBrowser(
   const saveRow = async (row: DataRow, values: Record<string, unknown>) => {
     if (!rowPath) return;
     const now = await api.patch<DataRow>(rowPath(keyOf(row)), values);
-    setSaved({ of: page.data, rows: { ...changed, [keyOf(row)]: now } });
+    setSaved({ of: pageData, rows: { ...changed, [keyOf(row)]: now } });
   };
   const deleteChecked = async () => {
     const ids = [...checked];
@@ -359,22 +403,35 @@ function RowsBrowser(
           >
             {compact ? "Standard rows" : "Compact rows"}
           </Button>
-          {viewsOf(props.rowsPath) ? (
-            <ViewsMenu {...(viewsOf(props.rowsPath) as ViewsOf)} omit={["row", "page"]} />
+          {viewsOf(props.rowsPath, props.tableId) ? (
+            <ViewsMenu
+              {...(viewsOf(props.rowsPath, props.tableId) as ViewsOf)}
+              omit={["row", "page"]}
+            />
           ) : null}
           {exportHref ? (
             <Button size="small" href={exportHref} download>
               <Download aria-hidden="true" size={14} /> CSV
             </Button>
+          ) : custom ? (
+            <Button size="small" disabled>
+              <Download aria-hidden="true" size={14} /> CSV
+            </Button>
           ) : null}
-          {canChange ? (
+          {canAdd ? (
             <Button variant="primary" onClick={() => setAdding(true)}>
               Add row
             </Button>
           ) : null}
         </span>
       </div>
-      {filterError ? <Notice tone="danger">{filterError}</Notice> : null}
+      {filterBroken ? (
+        <Notice tone="danger">
+          {Object.entries(filterErrors)
+            .map(([column, message]) => `${column}: ${message}`)
+            .join(" ")}
+        </Notice>
+      ) : null}
       {page.error ? <ErrorState error={page.error} what="the rows" onRetry={page.reload} /> : null}
       {checked.size > 0 && canBatch ? (
         <div
@@ -416,8 +473,8 @@ function RowsBrowser(
               setUrl({ sort: next, ...toFirst });
             }}
             filters={typed}
+            filterErrors={filterErrors}
             onFilter={(column, text) => {
-              setFilterError(undefined);
               setBack([]);
               setTyped((current) => ({ ...current, [column]: text }));
             }}
@@ -451,7 +508,7 @@ function RowsBrowser(
               }
               if (column.type === "reference" && typeof value === "string") {
                 // The row it points to, by what that table says stands for a row.
-                const label = page.data?.expanded?.[column.name]?.[value];
+                const label = pageData?.expanded?.[column.name]?.[value];
                 if (label !== undefined && label !== null) return String(label);
                 return (
                   <span className="font-mono text-code-sm text-ink-muted">{String(value)}</span>
@@ -465,11 +522,7 @@ function RowsBrowser(
               return undefined;
             }}
             empty={
-              !page.data
-                ? ""
-                : filter
-                  ? "No rows match the filters."
-                  : "This table has no rows yet."
+              !pageData ? "" : filter ? "No rows match the filters." : "This table has no rows yet."
             }
           />
         </div>
@@ -534,11 +587,11 @@ function RowsBrowser(
           </Button>
           <Button
             size="small"
-            disabled={!page.data?.nextCursor}
+            disabled={!pageData?.nextCursor}
             onClick={() => {
               // One step forward: the page shown now is where Previous comes back to.
               setBack((current) => [...current, url.page ?? ""]);
-              setUrl({ page: page.data?.nextCursor ?? undefined });
+              setUrl({ page: pageData?.nextCursor ?? undefined });
             }}
           >
             Next
@@ -615,6 +668,28 @@ const OFFERED = 50;
 const TYPING_MS = 250;
 
 /**
+ * What a typed search asks of a table whose rows are named by this column: text is looked for
+ * inside the name, a number or a yes or no is matched whole, and a column that cannot be searched
+ * (JSON, a file, a list) or text that does not read as its type asks for nothing.
+ */
+export function pickerFilter(
+  display: string | undefined,
+  type: string | undefined,
+  text: string,
+): object | null {
+  const typed = text.trim();
+  if (!display || typed === "") return null;
+  if (type === undefined || type === "text")
+    return { column: display, op: "contains", value: text };
+  if (["json", "file", "enum_list"].includes(type)) return null;
+  try {
+    return { column: display, op: "eq", value: parseValue(type, typed) };
+  } catch {
+    return null;
+  }
+}
+
+/**
  * A reference column: the row it points to is chosen by what its table says stands for a row,
  * as the grid shows it, and the ID is not typed. What is typed is sent to the server, which
  * finds the rows whose name contains it, so a row past the first page can be found. Where the
@@ -649,10 +724,12 @@ function ReferenceField({
     const timer = setTimeout(() => setSent(typed), TYPING_MS);
     return () => clearTimeout(timer);
   }, [typed, sent]);
-  const filter =
-    display && sent
-      ? `&filter=${encodeURIComponent(JSON.stringify({ column: display, op: "contains", value: sent }))}`
-      : "";
+  const asked = pickerFilter(
+    display,
+    table.data?.columns?.find((one) => one.name === display)?.type,
+    sent,
+  );
+  const filter = asked ? `&filter=${encodeURIComponent(JSON.stringify(asked))}` : "";
   const rows = useLoad<{ items: DataRow[]; nextCursor: string | null }>(
     root && table.data ? `${root}/rows/${target}?limit=${OFFERED}${filter}` : null,
   );
@@ -676,7 +753,8 @@ function ReferenceField({
     () => (held ? [{ value, label: heldLabel }, ...options] : options),
     [held, value, heldLabel, options],
   );
-  if (!root || table.error || rows.error) {
+  // The ID is typed only where the table cannot be read at all. A search that fails keeps the picker.
+  if (!root || table.error || (rows.error && !filter)) {
     return (
       <TextField
         name={column.name}
@@ -827,7 +905,10 @@ function RowEditor({
           : JSON.stringify(row[column.name], null, 2)
         : row[column.name] === null || row[column.name] === undefined
           ? ""
-          : String(row[column.name]);
+          : column.type === "timestamp"
+            ? // The reader's own clock, as a date field holds it; what is stored shows on hover.
+              localWall(String(row[column.name]), "T")
+            : String(row[column.name]);
   const dirty = Object.keys(text).length > 0;
   useNavigationGuard(dirty, "Your changes to this row are not saved.");
   useEffect(() => {
@@ -907,6 +988,22 @@ function RowEditor({
             onChange={(value) =>
               setText((current) => ({ ...current, [column.name]: value.join(",") }))
             }
+          />
+        ) : editable &&
+          column.writable &&
+          (column.type === "date" || column.type === "timestamp") ? (
+          <DateField
+            key={column.name}
+            name={column.name}
+            label={column.name}
+            value={text[column.name] ?? shown(column)}
+            required={false}
+            {...(column.type === "timestamp" ? { withTime: true } : {})}
+            {...(column.type === "timestamp" && typeof row[column.name] === "string"
+              ? { hint: `Your time zone. Stored as ${utcOf(String(row[column.name]))}` }
+              : {})}
+            error={errors[column.name]}
+            onChange={(value) => setText((current) => ({ ...current, [column.name]: value }))}
           />
         ) : editable && column.writable && column.type !== "file" && roomy(column) ? (
           <TextAreaField
@@ -1130,8 +1227,8 @@ function AddRow({
               label={column.name}
               value={values[column.name] ?? ""}
               required={false}
-              {...(column.type === "timestamp" ? { withTime: true, timeZone: "UTC" as const } : {})}
-              hint={`${typeLabel(column.type)}${column.required ? "" : ", optional"}${column.type === "timestamp" ? "." : ""}`}
+              {...(column.type === "timestamp" ? { withTime: true } : {})}
+              hint={`${typeLabel(column.type)}${column.required ? "" : ", optional"}${column.type === "timestamp" ? ", in your time zone." : ""}`}
               error={errors[column.name]}
               onChange={(value) => setValues((current) => ({ ...current, [column.name]: value }))}
             />
@@ -1231,13 +1328,14 @@ export function Tables({ root, link }: { root: string; link: string }) {
             label: "It holds",
             options: TYPES.filter((type) => type.value !== "reference"),
           },
+          VALUES_FIELD,
         ],
-        submit: async ({ name = "", column = "", type = "text" }) => {
+        submit: async ({ name = "", column = "", type = "text", values }) => {
           await api.put(`${root}/resources/${name}`, {
             kind: "table",
             schemaVersion: 1,
             ownership: "ui",
-            body: { columns: { [column]: { type } } },
+            body: { columns: { [column]: newColumn(type, values) } },
             // A new table: one already at this name is said so, not replaced.
             create: true,
           });
@@ -1362,6 +1460,7 @@ export function TableView({ root, name, link }: { root: string; name: string; li
           }
           key={active.map((column) => column.name).join(",")}
           label={`Rows of ${data.name}`}
+          tableId={data.id}
           rowsPath={`${root}/rows/${data.name}`}
           rowPath={(key) => `${root}/row/${key}/${data.name}`}
           keyColumn="id"
@@ -1725,7 +1824,62 @@ interface TableBody {
   description?: string;
   columns: Record<string, Record<string, unknown>>;
   policy?: { type: string; column?: string; rules?: Rule[] };
+  /** The column that stands for a row where another table refers to it. */
+  display?: string;
+  indexes?: string[][];
   [key: string]: unknown;
+}
+
+/**
+ * Renames a column, or with no new name retires it, everywhere the definition names it: the
+ * column that stands for a row, the indexes, and the rules for who sees rows. One piece for
+ * both, so a rename never leaves a name behind that the server then refuses, and a retire
+ * never leaves an index or a display on a column that is gone. A column a rule needs to say
+ * whose a row is cannot be retired until that rule is changed, and the message says which.
+ */
+export function moveColumn(body: TableBody, from: string, to?: string) {
+  const policy = body.policy;
+  const rules = policy?.rules ?? [];
+  if (to === undefined) {
+    if (policy?.type === "owner" && policy.column === from) {
+      throw new Error(
+        `"${from}" says whose a row is, in this table's rule for who sees rows. Change that rule, then retire the column.`,
+      );
+    }
+    const used = rules.findIndex((rule) => "column" in rule.when && rule.when.column === from);
+    if (used >= 0) {
+      throw new Error(
+        `"${from}" is used by rule ${used + 1} of who sees rows. Change that rule, then retire the column.`,
+      );
+    }
+  }
+  const { [from]: definition, ...others } = body.columns;
+  body.columns = others;
+  if (to !== undefined && definition) {
+    const { renamedFrom: _old, ...kept } = definition;
+    body.columns[to] = { ...kept, renamedFrom: from };
+  }
+  if (body.display === from) {
+    if (to !== undefined) body.display = to;
+    else delete body.display;
+  }
+  if (body.indexes) {
+    const moved = body.indexes
+      .map((index) =>
+        to !== undefined
+          ? index.map((name) => (name === from ? to : name))
+          : index.filter((name) => name !== from),
+      )
+      .filter((index) => index.length > 0);
+    if (moved.length > 0) body.indexes = moved;
+    else delete body.indexes;
+  }
+  if (to !== undefined) {
+    if (policy?.column === from) policy.column = to;
+    for (const rule of rules) {
+      if ("column" in rule.when && rule.when.column === from) rule.when.column = to;
+    }
+  }
 }
 
 /** Stops a change that would put a column over one that has its name, and says so. */
@@ -1961,16 +2115,7 @@ function Definition({
               await change(
                 (body) => {
                   takenColumn(body, next);
-                  const { renamedFrom: _old, ...kept } = body.columns[row.name] ?? {};
-                  delete body.columns[row.name];
-                  body.columns[next] = { ...kept, renamedFrom: row.name };
-                  if (body.policy?.column === row.name) body.policy.column = next;
-                  // A rule that looks at the column follows it to its new name.
-                  for (const rule of body.policy?.rules ?? []) {
-                    if ("column" in rule.when && rule.when.column === row.name) {
-                      rule.when.column = next;
-                    }
-                  }
+                  moveColumn(body, row.name, next);
                 },
                 { label: `renaming ${row.name} to ${next}`, report: false },
               );
@@ -1995,7 +2140,7 @@ function Definition({
         });
         if (!sure) return;
         void quietly(
-          change((body) => delete body.columns[row.name], { label: `retiring ${row.name}` }),
+          change((body) => moveColumn(body, row.name), { label: `retiring ${row.name}` }),
         );
       },
     },
@@ -2375,14 +2520,7 @@ function Definition({
               when: (values) => values.type === "reference",
               options: ON_DELETE.map((one) => ({ value: one.value, label: one.label })),
             },
-            {
-              name: "values",
-              label: "Values",
-              required: false,
-              placeholder: "new, paid, shipped",
-              hint: "Separated by commas, in the order they are offered. Labels and colors are set afterwards, under Values.",
-              when: (values) => values.type === "enum" || values.type === "enum_list",
-            },
+            VALUES_FIELD,
             {
               name: "required",
               label: "Must every row have one?",
@@ -2438,6 +2576,8 @@ interface SourceBinding {
   description: string;
   defined: boolean;
   bound: boolean;
+  /** Declared by a workspace linked to this one: it arrives with the next promotion. */
+  arrives?: boolean;
   health?: {
     ok: boolean;
     problem: string | null;
@@ -2471,9 +2611,13 @@ const SOURCE_FIELDS = [
   {
     name: "ssl",
     label: "Encrypt the connection",
+    // A new source starts encrypted. The server's certificate is checked, so a database with a
+    // private certificate authority needs No until that is arranged (D41).
+    initial: "yes",
+    hint: "The server's certificate is checked. Choose No for a database whose certificate a public authority did not sign.",
     options: [
-      { value: "no", label: "No" },
       { value: "yes", label: "Yes" },
+      { value: "no", label: "No" },
     ],
   },
 ] satisfies CreateConfig["fields"];
@@ -2587,20 +2731,25 @@ export function Sources({ root, link }: { root: string; link: string }) {
   return (
     <ListScreen<SourceBinding>
       title="Data sources"
+      setupField="path"
       description="Databases outside the platform that this workspace reads and writes. The address and password are set here, never in the repository, so dev and production can point at different databases."
       path={`${root}/data-source-bindings`}
       rowKey={(row) => row.path}
       columns={[
         {
           header: "Source",
-          cell: (row) =>
-            row.bound ? (
-              <Link to={`${link}/sources/${row.path}`} className="font-medium text-action">
-                {row.path}
-              </Link>
-            ) : (
-              <Code>{row.path}</Code>
-            ),
+          cell: (row) => (
+            <span className="inline-flex flex-wrap items-center gap-2">
+              {row.bound ? (
+                <Link to={`${link}/sources/${row.path}`} className="font-medium text-action">
+                  {row.path}
+                </Link>
+              ) : (
+                <Code>{row.path}</Code>
+              )}
+              {row.arrives ? <Tag tone="neutral">Arrives with the next promotion</Tag> : null}
+            </span>
+          ),
         },
         // On a phone a source keeps its name and its health; where it points, from a tablet up.
         {
@@ -2736,19 +2885,21 @@ export function SourceView({ root, path, link }: { root: string; path: string; l
               fill
               key={table.name}
               label={`Rows of ${table.name}`}
-              rowsPath={`${root}/source-rows/${table.name}/${path}`}
+              rowsPath={`${root}/source-rows/${encodeURIComponent(table.name)}/${path}`}
               rowPath={
                 table.key
-                  ? (key) => `${root}/source-row/${table.name}/${encodeURIComponent(key)}/${path}`
+                  ? (key) =>
+                      `${root}/source-row/${encodeURIComponent(table.name)}/${encodeURIComponent(key)}/${path}`
                   : null
               }
               keyColumn={table.key}
+              canAdd
               columns={table.columns}
               {...(table.key
                 ? {}
                 : {
                     readOnlyNote:
-                      "This table has no primary key, so rows can be read and added but not changed or deleted.",
+                      "This table has no primary key, so rows can be added but not changed or deleted.",
                   })}
             />
           </div>
@@ -2759,13 +2910,18 @@ export function SourceView({ root, path, link }: { root: string; path: string; l
 }
 
 type ViewsOf = { tenantId: string; workspaceId: string; list: string };
-/** A table's rows have saved views of their own, named for the table, kept to what a list name may be. */
-function viewsOf(rowsPath: string): ViewsOf | undefined {
+/** A table's rows have saved views of their own, named for the table, kept to what a list name may be (a letter, then up to 39 letters, digits and dashes). */
+export function viewsOf(rowsPath: string, tableId?: string): ViewsOf | undefined {
   const match = /^\/tenants\/([^/]+)\/workspaces\/([^/]+)\/rows\/(.+)$/.exec(rowsPath);
   if (!match) return undefined;
   const [, tenantId, workspaceId, table] = match as unknown as [string, string, string, string];
-  const slug = `rows-${table.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`
-    .slice(0, 40)
-    .replace(/-+$/, "");
+  // By what the table is: two names that differ only in marks are two lists, and a renamed
+  // table keeps its views. The random end of its ID, since the start of one is a time.
+  const slug = tableId
+    ? `rows-${tableId
+        .replace(/[^a-z0-9]/gi, "")
+        .toLowerCase()
+        .slice(-20)}`
+    : `rows-${table.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`.slice(0, 40).replace(/-+$/, "");
   return { tenantId, workspaceId, list: slug };
 }

@@ -28,7 +28,7 @@ interface Settings {
 
 /**
  * Failure alerts: who is told when a run fails for the last time, and what was
- * sent. A script's own `onFailure` wins over the workspace's default. Failures
+ * sent. A script's own `onFailure` replaces the workspace's default. Failures
  * of one script within ten minutes of an alert are counted on it, not sent.
  */
 export function Alerts({
@@ -121,7 +121,7 @@ export function Alerts({
   return (
     <Page
       title="Alerts"
-      description="Who is told when a script or a flow fails for the last time. A script's own onFailure wins over this workspace's default. More failures of one script within ten minutes of an alert are counted on it, not sent again."
+      description="Who is told when a script or a flow fails for the last time. A script's own onFailure replaces this workspace's default, as a whole. More failures of one script within ten minutes of an alert are counted on it, not sent again."
     >
       <section aria-label="Default" className="flex max-w-2xl flex-col gap-3">
         <h2 className="m-0 text-title font-semibold">This workspace's default</h2>

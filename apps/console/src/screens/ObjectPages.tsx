@@ -19,7 +19,8 @@ import { Time } from "../kit/Time.tsx";
 import { when } from "../ListScreen.tsx";
 import { Link, navigate, useUrlParam } from "../router.tsx";
 import { RecentRuns } from "./Authoring.tsx";
-import { RunButton } from "./Execution.tsx";
+import { CONNECTOR_NAMES, type ConnectionRow, ConnectionWizard } from "./ConnectionWizard.tsx";
+import { ConnectionHealth, RunButton, TestConnection } from "./Execution.tsx";
 import { NotFound } from "./NotFound.tsx";
 import { type Trigger, TriggerState, useTriggerPause } from "./Operate.tsx";
 import { NewScheduleSheet } from "./ScheduleForm.tsx";
@@ -55,87 +56,98 @@ function Gate<T>({
   return <>{children(found.data)}</>;
 }
 
-interface Connection {
-  path: string;
-  connector: string;
-  description: string;
-  defined: boolean;
-  bound: boolean;
-  config: Record<string, unknown> | null;
-  hasCredential: boolean;
-  updatedAt: string | null;
-  health: {
-    ok: boolean;
-    problem: string | null;
-    latencyMs: number | null;
-    checkedAt: string;
-  } | null;
-}
-
 export function ConnectionPage({ root, link, path }: { root: string; link: string; path: string }) {
-  const found = useLoad<Connection>(`${root}/connection-bindings/${path}`);
+  const found = useLoad<ConnectionRow>(`${root}/connection-bindings/${path}`);
+  // The same sheet the list opens, here on the page itself.
+  const [editing, setEditing] = useState<ConnectionRow | null>(null);
   return (
     <Gate found={found} list={`${link}/connections`} noun="connection">
       {(one) => (
-        <ObjectPage
-          back={{ to: `${link}/connections`, label: "Connections" }}
-          eyebrow="Connection"
-          title={one.path}
-          state={
-            <>
-              <StatePill state={one.bound ? "bound" : "unbound"}>
-                {one.bound ? "Set up here" : "Not set up here"}
-              </StatePill>
-              {one.health ? (
-                <StatePill state={one.health.ok ? "reachable" : "unreachable"}>
-                  {one.health.ok ? "Answered" : "Did not answer"}
+        <>
+          <ObjectPage
+            back={{ to: `${link}/connections`, label: "Connections" }}
+            eyebrow="Connection"
+            title={one.path}
+            state={
+              <>
+                <StatePill state={one.bound ? "bound" : "unbound"}>
+                  {one.bound ? "Set up here" : "Not set up here"}
                 </StatePill>
-              ) : null}
-            </>
-          }
-          actions={
-            <Button
-              onClick={() => navigate(`${link}/connections?item=${encodeURIComponent(one.path)}`)}
-            >
-              Change where it points
-            </Button>
-          }
-          meta={
-            <KeyValues
-              rows={[
-                { label: "Kind", value: one.connector, mono: true },
-                ...(one.description ? [{ label: "What it is for", value: one.description }] : []),
-                { label: "Credential", value: one.hasCredential ? "Set" : "None" },
-                {
-                  label: "Declared",
-                  value: one.defined ? "Deployed" : "Only set up here, or in a draft",
-                },
-                ...(one.updatedAt
-                  ? [{ label: "Last changed", value: <Time value={one.updatedAt} /> }]
-                  : []),
-                ...(one.health && !one.health.ok && one.health.problem
-                  ? [{ label: "Last check", value: one.health.problem }]
-                  : []),
-              ]}
-            />
-          }
-          tabs={[
-            {
-              id: "used-by",
-              label: "Used by",
-              content: <ReferenceList root={root} link={link} kind="connection" name={one.path} />,
-            },
-            {
-              id: "settings",
-              label: "Where it points",
-              content: one.config ? (
-                <JsonView label="Settings" value={one.config} />
-              ) : (
-                <p className="m-0 text-ink-muted">Not set up in this workspace yet.</p>
-              ),
-            },
-          ]}
-        />
+                <ConnectionHealth root={root} row={one} />
+              </>
+            }
+            actions={
+              <>
+                {one.bound && (!one.oauth || one.oauth.status === "connected") ? (
+                  <TestConnection root={root} path={one.path} onDone={() => found.reload?.()} />
+                ) : null}
+                <Button onClick={() => setEditing(one)}>
+                  {one.bound ? "Change where it points" : "Set up"}
+                </Button>
+              </>
+            }
+            meta={
+              <KeyValues
+                rows={[
+                  {
+                    label: "Kind",
+                    value: CONNECTOR_NAMES[one.connector] ?? one.connector,
+                  },
+                  ...(one.description ? [{ label: "What it is for", value: one.description }] : []),
+                  { label: "Credential", value: one.hasCredential ? "Set" : "None" },
+                  {
+                    label: "Declared",
+                    value: one.defined
+                      ? "Deployed"
+                      : one.draft === "new"
+                        ? "In a draft, never deployed"
+                        : "Only set up here",
+                  },
+                  ...(one.oauth?.connectedAt
+                    ? [{ label: "Connected", value: <Time value={one.oauth.connectedAt} /> }]
+                    : []),
+                  ...(one.updatedAt
+                    ? [{ label: "Last changed", value: <Time value={one.updatedAt} /> }]
+                    : []),
+                  ...(one.health && !one.health.ok && one.health.problem
+                    ? [{ label: "Last check", value: one.health.problem }]
+                    : []),
+                ]}
+              />
+            }
+            tabs={[
+              {
+                id: "used-by",
+                label: "Used by",
+                content: (
+                  <ReferenceList root={root} link={link} kind="connection" name={one.path} />
+                ),
+              },
+              {
+                id: "settings",
+                label: "Where it points",
+                content: one.config ? (
+                  <JsonView label="Settings" value={one.config} />
+                ) : (
+                  <p className="m-0 text-ink-muted">Not set up in this workspace yet.</p>
+                ),
+              },
+            ]}
+          />
+          <Closing subject={editing}>
+            {(row, shown) => (
+              <ConnectionWizard
+                key={row.path}
+                root={root}
+                open={shown}
+                row={row}
+                rows={[row]}
+                onClose={() => setEditing(null)}
+                onSaved={() => found.reload?.()}
+              />
+            )}
+          </Closing>
+        </>
       )}
     </Gate>
   );
@@ -344,7 +356,7 @@ export function EventPage({ root, link, path }: { root: string; link: string; pa
               id: "recent",
               label: "Recent",
               content: (
-                <Link to={`${link}/events?q=${encodeURIComponent(one.path)}`}>
+                <Link to={`${link}/events?name=${encodeURIComponent(one.path)}`}>
                   See it in the event log
                 </Link>
               ),
@@ -418,7 +430,8 @@ export function TriggersOf({
       </Closing>
       <DataTable<Trigger>
         actions={(one) => [
-          ...(one.type === "schedule"
+          // A schedule that is turned off may be run to try it; one that is held may not.
+          ...(one.type === "schedule" && !one.paused && !one.pausedBy
             ? [
                 {
                   label: "Run it now",
@@ -458,7 +471,7 @@ export function TriggersOf({
             header: "State",
             cell: (one) => (
               <span className="flex flex-col">
-                <TriggerState row={one} workspacePaused={false} />
+                <TriggerState row={one} />
                 {one.cron ? (
                   <span className="text-meta text-ink-muted">
                     <Mono>{one.cron}</Mono>

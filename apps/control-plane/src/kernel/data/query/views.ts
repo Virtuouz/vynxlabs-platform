@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { type Kysely, type PlatformSchema, sql } from "@volvel/db";
 import { loadCatalog, workspaceSchema } from "../apply.js";
+import { viewName } from "./view-name.js";
 
 /**
  * The views a query reads (Decision 0003, guard 3). Each workspace has a
@@ -12,9 +13,6 @@ import { loadCatalog, workspaceSchema } from "../apply.js";
 
 export const querySchema = (workspaceId: string) => `q_${workspaceId.replaceAll("-", "")}`;
 
-/** The longest name Postgres keeps whole. A table whose path is longer has no view. */
-const MAX_NAME_BYTES = 63;
-
 const SYSTEM = ["id", "created_at", "updated_at"];
 
 /** Serializes the making of one workspace's views between requests that find them out of date. */
@@ -23,7 +21,7 @@ const viewsLock = (workspaceId: string) =>
 
 export interface QueryTables {
   schema: string;
-  /** The paths of the tables that can be queried, with the resource each belongs to. */
+  /** The paths of the tables that have a view, with the resource each belongs to. */
   tables: Map<string, { resourceId: string | null }>;
 }
 
@@ -41,10 +39,10 @@ export async function ensureQueryViews(
   const schema = querySchema(workspaceId);
   const source = workspaceSchema(workspaceId);
   const catalog = (await loadCatalog(owner, workspaceId)).filter(
-    (table) => table.status === "active" && Buffer.byteLength(table.name, "utf8") <= MAX_NAME_BYTES,
+    (table) => table.status === "active",
   );
   const shape = catalog.map((table) => ({
-    name: table.name,
+    name: viewName(table.name),
     physical: table.physicalName,
     columns: table.columns
       .filter((column) => column.status === "active")

@@ -1,4 +1,5 @@
 import { Worker } from "node:worker_threads";
+import { EXPRESSION_ROOTS } from "@volvel/manifest";
 
 /** An expression that could not be parsed or evaluated. The message is meant for the flow's author. */
 export class ExpressionError extends Error {
@@ -21,14 +22,20 @@ export interface ExpressionLimits {
  */
 const THREAD = `
 const { parentPort, workerData } = require("node:worker_threads");
-const ready = import(workerData.library).then(({ Environment }) =>
+const make = (Environment, unlisted) =>
   new Environment({
-    unlistedVariablesAreDyn: true,
+    unlistedVariablesAreDyn: unlisted,
     homogeneousAggregateLiterals: false,
     limits: { maxAstNodes: 2000, maxDepth: 64, maxListElements: 200, maxMapEntries: 200, maxCallArguments: 16 },
   // A timestamp as text: ISO 8601 in UTC, so string(now).substring(0, 10) is today's date.
-  }).registerFunction("string(google.protobuf.Timestamp): string", (time) => time.toISOString()),
-);
+  }).registerFunction("string(google.protobuf.Timestamp): string", (time) => time.toISOString());
+const ready = import(workerData.library).then(({ Environment }) => {
+  const environment = make(Environment, true);
+  // For a check of the names: only what a flow's expressions may read is known.
+  const strict = make(Environment, false);
+  for (const name of workerData.roots) strict.registerVariable(name, "dyn");
+  return { environment, strict };
+});
 // CEL integers are 64-bit and maps are Maps. Results go back as plain JSON values.
 const plain = (value) => {
   if (typeof value === "bigint") return Number(value);
@@ -41,12 +48,17 @@ const plain = (value) => {
   }
   return value === undefined ? null : value;
 };
-parentPort.on("message", async ({ id, expression, data, parseOnly }) => {
+parentPort.on("message", async ({ id, expression, data, parseOnly, names }) => {
   try {
-    const environment = await ready;
+    const both = await ready;
+    const environment = parseOnly && names ? both.strict : both.environment;
     // The clock starts now: not while the thread was starting, nor while this waited its turn.
     parentPort.postMessage({ id, started: true });
     const program = environment.parse(expression);
+    if (parseOnly && names) {
+      const checked = program.check();
+      if (!checked.valid) throw checked.error;
+    }
     parentPort.postMessage({ id, value: parseOnly ? null : plain(program(data)) });
   } catch (error) {
     parentPort.postMessage({ id, error: String(error && error.message ? error.message : error) });
@@ -58,7 +70,13 @@ interface Waiting {
   resolve: (value: unknown) => void;
   reject: (error: Error) => void;
   /** What was asked, to ask a new thread when this one is replaced before it started. */
-  message: { id: number; expression: string; data: unknown; parseOnly: boolean };
+  message: {
+    id: number;
+    expression: string;
+    data: unknown;
+    parseOnly: boolean;
+    names: boolean;
+  };
   /** Set once the thread has started on it. */
   timer?: NodeJS.Timeout | undefined;
   /** How long it may wait to be started at all: a thread that cannot start is given up on. */
@@ -100,7 +118,7 @@ export class Expressions {
     if (this.#worker) return this.#worker;
     const worker = new Worker(THREAD, {
       eval: true,
-      workerData: { library: this.#library },
+      workerData: { library: this.#library, roots: EXPRESSION_ROOTS },
       resourceLimits: {
         maxOldGenerationSizeMb: this.#memoryMb,
         maxYoungGenerationSizeMb: 16,
@@ -167,12 +185,12 @@ export class Expressions {
     for (const other of this.#waiting.values()) this.#thread().postMessage(other.message);
   }
 
-  #send(expression: string, data: unknown, parseOnly: boolean): Promise<unknown> {
+  #send(expression: string, data: unknown, parseOnly: boolean, names = false): Promise<unknown> {
     if (this.#closed)
       return Promise.reject(new ExpressionError("The expression evaluator is closed."));
     return new Promise((resolve, reject) => {
       const id = ++this.#next;
-      const message = { id, expression, data, parseOnly };
+      const message = { id, expression, data, parseOnly, names };
       const patience = setTimeout(() => {
         // Not started in all this time: the thread itself is wrong. It is replaced, and
         // everything it held fails.
@@ -192,9 +210,12 @@ export class Expressions {
     return this.#send(expression, data, false);
   }
 
-  /** Throws an ExpressionError if the expression does not parse. */
-  async check(expression: string): Promise<void> {
-    await this.#send(expression, {}, true);
+  /**
+   * Throws an ExpressionError if the expression does not parse. With `names`, also when it
+   * reads a name a flow's expression never has, such as `input`.
+   */
+  async check(expression: string, names = false): Promise<void> {
+    await this.#send(expression, {}, true, names);
   }
 
   async close(): Promise<void> {

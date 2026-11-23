@@ -2,6 +2,7 @@ import { createHmac } from "node:crypto";
 import type { AddressInfo } from "node:net";
 import { createServer as createTcpServer, type Server as TcpServer } from "node:net";
 import { setTimeout as sleep } from "node:timers/promises";
+import { sql } from "@volvel/db";
 import { type Bundle, type BundleManifest, bundleDigest } from "@volvel/manifest";
 import { Worker } from "@volvel/worker";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
@@ -445,6 +446,20 @@ describe("a trigger source", () => {
         resource("trigger_source", "sources/inbox", { entry: "inbox", mode: "poll" }),
         script("on-payment", "onPayment", {}),
         script("on-letter", "onLetter", {}),
+        script("on-watch", "onLetter", {}),
+        // Listening to the platform's own events is what makes it keep them to be read.
+        resource("trigger", "watch/ended", {
+          type: "event",
+          script: "on-watch",
+          event: "platform/run-succeeded",
+          filter: "event.payload.script == 'sources/inbox'",
+        }),
+        resource("trigger", "watch/failed", {
+          type: "event",
+          script: "on-watch",
+          event: "platform/run-failed",
+          filter: "event.payload.script == 'sources/inbox'",
+        }),
         resource("trigger", "hooks/payments", {
           type: "webhook",
           script: "on-payment",
@@ -566,6 +581,13 @@ export const onLetter = { execute: async (input) => ({ read: input.letter }) };
       ),
     );
     expect(everything).not.toContain("whsec_test_1");
+  });
+
+  test("a webhook whose source started runs says it fired (OPS-19)", async () => {
+    const shown = ((await alice.get(`${ws()}/triggers`)).body.items as Any[]).find(
+      (item) => item.path === "hooks/payments",
+    );
+    expect(shown.lastFiredAt).toEqual(expect.any(String));
   });
 
   test("nobody starts a trigger source by hand", async () => {
@@ -690,6 +712,70 @@ export const onLetter = { execute: async (input) => ({ read: input.letter }) };
       expect(await letters()).toBe(before + 2);
     });
 
+    test("an item refused for good is told through the workspace's failure alert, once for the pass (EXT-03)", async () => {
+      // The alert posts to an HTTP connection of the workspace: one is bound for it here.
+      expect(
+        (
+          await alice.put(`${ws()}/connection-bindings/chat`, {
+            config: { baseUrl: "http://127.0.0.1:9" },
+          })
+        ).status,
+      ).toBeLessThan(300);
+      expect((await alice.patch(ws(), { failureAlert: { notify: "chat" } })).status).toBeLessThan(
+        300,
+      );
+      try {
+        const source = await tick("mixed");
+        const stored = await t.db
+          .selectFrom("run")
+          .select("alert")
+          .where("id", "=", source.id)
+          .executeTakeFirstOrThrow();
+        expect(stored.alert).toMatchObject({ alertedAt: expect.any(String) });
+        const said = (await refusal()) as Any;
+        expect(said.reason).toBe("input");
+        // Where the refused item is kept.
+        expect(said.problem).toContain(source.id);
+        expect(said.problem).toContain("refused");
+        const shown = (await alice.get(`${ws()}/runs/${source.id}`)).body;
+        expect(shown.output.refused).toEqual([expect.objectContaining({ index: 1 })]);
+      } finally {
+        await alice.patch(ws(), { failureAlert: {} });
+      }
+    });
+
+    test("a source run that fails after its answer was passed on is announced as failed, not as succeeded (Found)", async () => {
+      const source = await tick("flood");
+      const eventsOf = () =>
+        t.db.selectFrom("event").select("name").where("source_id", "=", source.id).execute();
+      let events = await eventsOf();
+      for (let i = 0; i < 40 && events.length === 0; i++) {
+        await sleep(50);
+        events = await eventsOf();
+      }
+      expect(events.map((event) => event.name)).toEqual(["platform/run-failed"]);
+    });
+
+    test("Fire now on a schedule with a source starts the source, which then starts what it finds (OPS-18)", async () => {
+      await t.db
+        .updateTable("trigger_state")
+        .set({ cursor: JSON.stringify(10) })
+        .where("type", "=", "schedule")
+        .execute();
+      const before = await letters();
+      const fired = await alice.post(`${ws()}/schedule-firings`, { path: "every-minute" });
+      expect(fired.status, JSON.stringify(fired.body)).toBe(201);
+      const run = (await alice.get(`${ws()}/runs/${fired.body.id}`)).body;
+      expect(run.script).toBe("sources/inbox");
+      expect(run.trigger).toMatchObject({
+        type: "schedule",
+        trigger: "every-minute",
+        manual: true,
+      });
+      for (let i = 0; i < 100 && (await letters()) === before; i++) await sleep(50);
+      expect(await letters()).toBeGreaterThan(before);
+    });
+
     test("an answer that comes after the trigger was paused is refused where refusals are shown", async () => {
       const source = (await t.db
         .selectFrom("run")
@@ -726,6 +812,68 @@ export const onLetter = { execute: async (input) => ({ read: input.letter }) };
       } finally {
         await t.db.updateTable("run").set({ status: "succeeded" }).where("id", "=", last).execute();
       }
+    });
+
+    test("a schedule that skips while its last run goes does so when the run is one its source started (OPS-38)", async () => {
+      const inboxRuns = async () =>
+        (
+          await t.db
+            .selectFrom("run")
+            .select("id")
+            .where("script_path", "=", "sources/inbox")
+            .execute()
+        ).length;
+      const going = (
+        await t.db
+          .selectFrom("run")
+          .select("id")
+          .where("script_path", "=", "on-letter")
+          .orderBy("created_at", "desc")
+          .executeTakeFirstOrThrow()
+      ).id;
+      await t.db
+        .updateTable("trigger_state")
+        .set({ config: sql`config || '{"overlap":"skip"}'::jsonb` })
+        .where("type", "=", "schedule")
+        .execute();
+      await t.db.updateTable("run").set({ status: "running" }).where("id", "=", going).execute();
+      try {
+        const before = await inboxRuns();
+        minutes += 2;
+        await fireDueSchedules(t.kernel, new Date(Date.now() + minutes * 60_000));
+        // Its source was not asked, because what it started last time is still going.
+        expect(await inboxRuns()).toBe(before);
+        const shown = (await alice.get(`${ws()}/triggers`)).body.items.find(
+          (item: Any) => item.path === "every-minute",
+        ) as Any;
+        expect(shown.lastSkipReason).toBe("overlap");
+      } finally {
+        await t.db
+          .updateTable("run")
+          .set({ status: "succeeded" })
+          .where("id", "=", going)
+          .execute();
+        await t.db
+          .updateTable("trigger_state")
+          .set({ config: sql`config || '{"overlap":"allow"}'::jsonb` })
+          .where("type", "=", "schedule")
+          .execute();
+      }
+    });
+
+    test("a run of a source says so, and cannot be run again by hand (OPS-22)", async () => {
+      const source = (await runsOf("sources/inbox", 1)).at(-1) as Any;
+      const shown = (await alice.get(`${ws()}/runs/${source.id}`)).body;
+      expect(shown.trigger.relay).toMatchObject({ mode: "poll" });
+      const listed = (await alice.get(`${ws()}/activity?q=${source.id}`)).body.items[0];
+      expect(listed).toMatchObject({ id: source.id, source: true });
+      const letter = (await runsOf("on-letter", 1)).at(-1) as Any;
+      expect(
+        ((await alice.get(`${ws()}/activity?q=${letter.id}`)).body.items[0] as Any).source,
+      ).toBe(false);
+      const again = await alice.post(`${ws()}/runs/${source.id}/rerun`, {});
+      expect(again.status, JSON.stringify(again.body)).toBe(409);
+      expect(again.body.detail).toContain("trigger source");
     });
   });
 });

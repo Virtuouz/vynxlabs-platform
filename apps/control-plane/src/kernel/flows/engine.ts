@@ -383,6 +383,8 @@ async function seedRetry(
           },
         }),
         decided_by: step.decided_by,
+        decided_by_type: step.decided_by_type,
+        decided_via: step.decided_via,
         decision_comment: step.decision_comment,
         started_at: step.started_at,
         finished_at: step.finished_at,
@@ -1128,14 +1130,15 @@ class Advance {
     error?: { message: string },
   ): Promise<Finished> {
     for (const step of [...this.#steps.values()].filter(isActive)) await this.#cancelStep(step);
-    // A flow's output is what its last steps produced: the nodes nothing leads on from.
+    // A flow's output is what its last steps produced: the nodes nothing leads on from. A step
+    // that went well has no use for an error path, so one with only that after it is last too.
     const output: Record<string, unknown> = {};
     if (status === "succeeded") {
       for (const step of this.#steps.values()) {
         if (
           step.item_key === "" &&
           step.status === "succeeded" &&
-          this.#outgoing(step.node_id).length === 0
+          this.#outgoing(step.node_id).every((edge) => edge.error)
         ) {
           output[step.node_id] = await this.#outputOf(step);
         }
@@ -1245,6 +1248,16 @@ export async function cancelFlowRun(
   return flowRun;
 }
 
+/** Who a decision is kept as: a member or a service account. Anyone else leaves no one. */
+export function deciderOf(principal: {
+  type: string;
+  id: string | null;
+}): { type: string; id: string } | null {
+  return (principal.type === "member" || principal.type === "service_account") && principal.id
+    ? { type: principal.type, id: principal.id }
+    : null;
+}
+
 /** Records a person's decision on a waiting approval step. */
 export async function decideApproval(
   trx: Trx,
@@ -1254,9 +1267,10 @@ export async function decideApproval(
     node: string;
     approve: boolean;
     comment?: string | undefined;
-    memberId: string | null;
+    /** Who decided, by type and ID: a member, or a service account. */
+    decidedBy: { type: string; id: string } | null;
     /** Where it was decided, kept on the step so a list can say so without searching the audit. */
-    via?: "app" | undefined;
+    via: "console" | "api" | "mcp" | "app" | "email";
   },
 ) {
   await sql`select pg_advisory_xact_lock(hashtextextended(${request.flowRunId}, 1))`.execute(trx);
@@ -1278,6 +1292,12 @@ export async function decideApproval(
   if (step.status !== "waiting" || step.flow_status !== "running") {
     throw conflict("This approval is no longer waiting for a decision.");
   }
+  // Every route asks, not the mail page alone: the flow and its people read the reason.
+  if (!request.approve && !request.comment?.trim()) {
+    throw badRequest("Say why it is rejected: the flow and its people read it.", [
+      { path: "/comment", message: "is needed" },
+    ]);
+  }
   await trx
     .updateTable("step_run")
     .set({
@@ -1285,12 +1305,14 @@ export async function decideApproval(
       output: JSON.stringify({
         approved: request.approve,
         comment: request.comment ?? null,
-        ...(request.via ? { via: request.via } : {}),
+        ...(request.via === "app" ? { via: request.via } : {}),
       }),
       error: request.approve
         ? null
         : JSON.stringify({ message: `Rejected${request.comment ? `: ${request.comment}` : "."}` }),
-      decided_by: request.memberId,
+      decided_by: request.decidedBy?.id ?? null,
+      decided_by_type: request.decidedBy?.type ?? null,
+      decided_via: request.via,
       decision_comment: request.comment ?? null,
       wake_at: null,
       finished_at: new Date(),

@@ -290,6 +290,93 @@ export async function insertRowsKeepingFiles(
   return rows;
 }
 
+/** A row that would be deleted along with another, and the files it names. */
+interface Cascaded {
+  table: string;
+  id: string;
+  /** The row asked to be deleted, which brings this one with it. */
+  root: string;
+  row: Row;
+  columns: string[];
+}
+
+/**
+ * The rows that go when these rows are deleted, because a reference column says `cascade`, at
+ * any depth, and name a file. Read before the delete: the database removes them by itself.
+ */
+async function cascadedRows(
+  kernel: Kernel,
+  workspace: { tenantId: string; id: string },
+  tableName: string,
+  ids: string[],
+): Promise<Cascaded[]> {
+  const edges = await kernel.db
+    .selectFrom("data_column")
+    .innerJoin("data_table", "data_table.id", "data_column.table_id")
+    .select([
+      "data_table.name as table",
+      "data_table.physical_name as physical",
+      "data_column.physical_name as column",
+      "data_column.reference_table as parent",
+    ])
+    .where("data_table.workspace_id", "=", workspace.id)
+    .where("data_table.status", "=", "active")
+    .where("data_column.status", "=", "active")
+    .where("data_column.on_delete", "=", "cascade")
+    .where("data_column.reference_table", "is not", null)
+    .execute();
+  if (edges.length === 0) return [];
+  const files = await fileColumns(kernel, workspace.tenantId, workspace.id);
+  const owner = (await kernel.data.forTenant(workspace.tenantId)).owner;
+  const schema = workspaceSchema(workspace.id);
+  const found: Cascaded[] = [];
+  const seen = new Set<string>([tableName]);
+  let frontier = new Map<string, Map<string, string>>([
+    [tableName, new Map(ids.map((id) => [id, id]))],
+  ]);
+  for (let depth = 0; depth < 20 && frontier.size > 0; depth += 1) {
+    const next = new Map<string, Map<string, string>>();
+    for (const [parent, members] of frontier) {
+      for (const edge of edges.filter((one) => one.parent === parent)) {
+        const named = files.filter(
+          (one) => one.tableName === edge.table && one.workspaceId === workspace.id,
+        );
+        const keys = [...members.keys()];
+        const result = await sql<Row>`
+          select id::text as id, ${sql.ref(edge.column)}::text as parent_id${
+            named.length > 0
+              ? sql`, ${sql.join(named.map((one) => sql`${sql.ref(one.column)}::text as ${sql.id(one.columnName)}`))}`
+              : sql``
+          }
+          from ${sql.id(schema, edge.physical)}
+          where ${sql.ref(edge.column)}::text in (${sql.join(keys)})
+        `.execute(owner);
+        for (const row of result.rows) {
+          const root = members.get(String(row.parent_id));
+          if (root === undefined) continue;
+          if (named.length > 0)
+            found.push({
+              table: edge.table,
+              id: String(row.id),
+              root,
+              row,
+              columns: named.map((one) => one.columnName),
+            });
+          // A table is followed once: a loop of rules ends where it began.
+          if (!seen.has(edge.table) || next.has(edge.table)) {
+            const level = next.get(edge.table) ?? new Map<string, string>();
+            level.set(String(row.id), root);
+            next.set(edge.table, level);
+          }
+        }
+      }
+    }
+    for (const name of next.keys()) seen.add(name);
+    frontier = next;
+  }
+  return found;
+}
+
 /**
  * Deletes rows and notes the files they named in each row's history, as a replaced file is,
  * so they stay until that history has run out. Rows that are not there are reported missing.
@@ -313,7 +400,22 @@ export async function deleteRowsKeepingFiles(
       }
     }
   }
+  // Rows another table's `cascade` rule takes with them are read now, and noted once they are gone.
+  const cascaded = await cascadedRows(kernel, workspace, target.name, ids);
   const done = await deleteRows(data, target, ids);
+  const gone = new Set(done.deleted);
+  for (const one of cascaded) {
+    if (gone.has(one.root))
+      await noteFiles(
+        kernel,
+        workspace,
+        by,
+        { name: one.table } as RowTarget,
+        one.id,
+        one.row,
+        one.columns,
+      );
+  }
   for (const id of done.deleted) {
     const row = before.get(id);
     if (row)
@@ -423,4 +525,77 @@ export async function updateRowKeepingFiles(
     await noteFiles(kernel, workspace, by, target, id, { [column.name]: was }, [column.name]);
   }
   return after;
+}
+
+/**
+ * The files that rows of a retired table, or a retired file column, name, read before it is
+ * dropped for good. Noted after the drop, they stay for the audit period as any deleted row's do.
+ */
+export async function filesOfPurge(
+  kernel: Kernel,
+  workspace: { tenantId: string; id: string },
+  request: {
+    table: string;
+    column?: string | undefined;
+    columnId?: string | undefined;
+    tableId?: string | undefined;
+  },
+): Promise<{ table: string; rowId: string; column: string; file: string }[]> {
+  let query = kernel.db
+    .selectFrom("data_column")
+    .innerJoin("data_table", "data_table.id", "data_column.table_id")
+    .select([
+      "data_table.name as tableName",
+      "data_table.physical_name as table",
+      "data_column.name as columnName",
+      "data_column.physical_name as column",
+    ])
+    .where("data_table.workspace_id", "=", workspace.id)
+    .where("data_table.name", "=", request.table)
+    .where("data_column.type", "=", "file");
+  if (request.column !== undefined || request.columnId !== undefined) {
+    query = query.where("data_column.status", "=", "retired");
+    if (request.column !== undefined) query = query.where("data_column.name", "=", request.column);
+    if (request.columnId !== undefined)
+      query = query.where("data_column.id", "=", request.columnId);
+  } else {
+    query = query.where("data_table.status", "=", "retired");
+    if (request.tableId !== undefined) query = query.where("data_table.id", "=", request.tableId);
+  }
+  const owner = (await kernel.data.forTenant(workspace.tenantId)).owner;
+  const named: { table: string; rowId: string; column: string; file: string }[] = [];
+  for (const column of await query.execute()) {
+    const result = await sql<{ id: string; file: string }>`
+      select id::text as id, ${sql.ref(column.column)}::text as file
+      from ${sql.id(workspaceSchema(workspace.id), column.table)}
+      where ${sql.ref(column.column)} is not null
+    `.execute(owner);
+    for (const row of result.rows)
+      named.push({
+        table: column.tableName,
+        rowId: row.id,
+        column: column.columnName,
+        file: row.file,
+      });
+  }
+  return named;
+}
+
+/** Notes files that went with rows dropped for good. */
+export async function noteDroppedFiles(
+  kernel: Kernel,
+  workspace: { tenantId: string; id: string },
+  by: Principal | { type: string; id: string | null },
+  named: { table: string; rowId: string; column: string; file: string }[],
+) {
+  for (const one of named)
+    await noteFiles(
+      kernel,
+      workspace,
+      by,
+      { name: one.table } as RowTarget,
+      one.rowId,
+      { [one.column]: one.file },
+      [one.column],
+    );
 }

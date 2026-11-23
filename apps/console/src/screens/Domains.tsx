@@ -152,7 +152,7 @@ function AddDialog({
           value={hostname}
           placeholder="portal.example.com"
           hint="The name alone, without https:// or a path."
-          error={error?.fields.find((field) => field.path.endsWith("/hostname"))?.message}
+          error={error?.fields?.find((field) => field.path.endsWith("/hostname"))?.message}
           onChange={setHostname}
         />
         {error ? <Notice tone="danger">{error.message}</Notice> : null}

@@ -1,4 +1,4 @@
-import { Button, Facts, Notice, ResultView, SelectField } from "@volvel/ui";
+import { Button, CheckboxField, Facts, Notice, ResultView, SelectField } from "@volvel/ui";
 import { X } from "lucide-react";
 import { InputForm } from "../InputDialog.tsx";
 import { between } from "../kit/format.ts";
@@ -35,6 +35,8 @@ export function FlowTestPanel({
   error,
   changed,
   onRun,
+  withAll,
+  onWithAll,
   onChoose,
   onClose,
 }: {
@@ -53,6 +55,9 @@ export function FlowTestPanel({
   /** The graph was changed after this run started. */
   changed: boolean;
   onRun: (input: unknown) => Promise<void>;
+  /** Test with every draft of the workspace, not only this flow's and those it uses. */
+  withAll?: boolean | undefined;
+  onWithAll?: ((all: boolean) => void) | undefined;
   onChoose: (node: string) => void;
   onClose: () => void;
 }) {
@@ -85,6 +90,15 @@ export function FlowTestPanel({
                   onChange={onTrigger}
                   options={triggers.map((one) => ({ value: one.node, label: one.label }))}
                   hint="The input is what that trigger would receive."
+                />
+              ) : null}
+              {onWithAll ? (
+                <CheckboxField
+                  name="with-all-drafts"
+                  label="Build with all drafts"
+                  checked={withAll === true}
+                  onChange={onWithAll}
+                  hint="Off: this flow's draft and the drafts it uses. On: every draft of the workspace, so another draft that does not build stops the test."
                 />
               ) : null}
               <InputForm

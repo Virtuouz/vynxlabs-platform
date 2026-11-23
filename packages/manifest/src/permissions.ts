@@ -318,7 +318,7 @@ export const PERMISSION_KINDS: readonly PermissionKind[] = [
     scope: "workspace",
     verbs: {
       read: "See schedules, webhooks and event triggers.",
-      write: "See a webhook's address, which is a credential.",
+      write: "Pause and resume a trigger, and see a webhook's address, which is a credential.",
     },
   },
   {
@@ -334,7 +334,10 @@ export const PERMISSION_KINDS: readonly PermissionKind[] = [
     group: "Flows",
     scope: "workspace",
     appFacing: true,
-    verbs: { read: "See flow runs and their steps.", write: "Start and cancel a flow." },
+    verbs: {
+      read: "See flow runs and their steps.",
+      write: "Start, retry and test a flow, and cancel its runs.",
+    },
   },
   {
     kind: "approval",

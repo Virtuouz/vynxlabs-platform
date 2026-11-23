@@ -60,6 +60,7 @@ export function SessionSheet({ email, open }: { email: string; open: boolean }) 
     <Dialog
       open={open}
       onClose={() => {}}
+      dismissible={false}
       title="Your session ended"
       description={`Sign in again as ${email} to carry on. Nothing on this page was lost.`}
     >

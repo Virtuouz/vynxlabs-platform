@@ -50,7 +50,16 @@ export {
 } from "./Fields.tsx";
 export { checkForm, Form, type FormProperty, type FormProps, type FormSchema } from "./Form.tsx";
 export { duration } from "./format.ts";
-export { Grid, type GridColumn, type GridSort, parseValue, showValue } from "./Grid.tsx";
+export {
+  Grid,
+  type GridColumn,
+  type GridSort,
+  instantFromText,
+  localWall,
+  parseValue,
+  showValue,
+  utcOf,
+} from "./Grid.tsx";
 export { HeadingSlot, hasHeadingControls, OnHeading } from "./HeadingSlot.tsx";
 export { JsonView, type JsonViewProps } from "./JsonView.tsx";
 export {

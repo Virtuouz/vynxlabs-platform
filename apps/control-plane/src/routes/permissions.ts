@@ -5,6 +5,7 @@ import { Type } from "typebox";
 import { keepingAnAdmin } from "../kernel/administer.js";
 import type { Audit, Db, Trx } from "../kernel/audit.js";
 import { holdsAppFacing, PERMISSION_PATTERN } from "../kernel/authorize.js";
+import { principalLabel } from "../kernel/binding-labels.js";
 import { badRequest, conflict, notFound } from "../kernel/errors.js";
 import { access } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
@@ -381,13 +382,7 @@ export function permissionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             resourceId: row.resource_id,
             principalType: row.principal_type,
             principalId: row.principal_id,
-            principalLabel:
-              row.email ??
-              row.end_user_email ??
-              row.group_name ??
-              row.end_user_group_name ??
-              row.account_name ??
-              (row.principal_type === "end_users" ? "every end user" : "anyone"),
+            principalLabel: principalLabel(row),
             roleId: row.role_id,
             roleName: row.role_name,
             managedByResource: row.source_resource_id !== null,

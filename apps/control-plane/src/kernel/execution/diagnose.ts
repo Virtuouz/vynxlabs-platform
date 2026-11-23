@@ -67,8 +67,13 @@ export function diagnose(run: FailedRun): Diagnosis | undefined {
       ? ` It failed on all ${run.maxAttempts} attempts.`
       : "";
 
-  if (run.unbound && run.unbound.length > 0) {
-    const names = run.unbound.join(", ");
+  // An unbound connection is the cause only when the failure names it: a run that failed for
+  // another reason is not blamed on whatever else its script uses.
+  const unbound = (run.unbound ?? []).filter((name) =>
+    message.toLowerCase().includes(name.toLowerCase()),
+  );
+  if (unbound.length > 0) {
+    const names = unbound.join(", ");
     return {
       cause: `Connection ${names} has nothing bound in this workspace.${exhausted}`,
       next: `Bind ${names} under Connections, then run it again.`,

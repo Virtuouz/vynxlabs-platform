@@ -83,6 +83,29 @@ export async function queueTask(
     .executeTakeFirstOrThrow()) as TaskRow;
 }
 
+/**
+ * The worker pool that can reach a connection: the pool a script that uses it runs on (the first
+ * by path, when several name one), or the default pool when none names a pool. A Test, or a test
+ * alert, then speaks for the network a script would.
+ */
+export async function poolOfConnection(
+  db: Db | Trx,
+  workspaceId: string,
+  connection: string,
+): Promise<string | null> {
+  const found = await sql<{ pool: string }>`
+    select body->>'worker' as pool from resource
+    where workspace_id = ${workspaceId} and kind in ('script', 'trigger_source')
+      and body->>'worker' is not null
+      and (
+        coalesce(body->'uses'->'connections', '[]'::jsonb) @> to_jsonb(${connection}::text)
+        or body->'onFailure'->>'notify' = ${connection}
+      )
+    order by path limit 1
+  `.execute(db);
+  return found.rows[0]?.pool ?? null;
+}
+
 /** The oldest queued task a worker may take, now its own; or nothing. */
 export async function claimTask(
   kernel: Kernel,

@@ -66,3 +66,16 @@ test("when some were not, each says why with its request ID, and only those are 
   expect(await screen.findByText("1 done, 0 not done.")).toBeTruthy();
   expect(retry).toHaveBeenCalledWith(["r2"]);
 });
+
+test("a batch of more than a hundred is sent in slices the server accepts, and the answers add up (OPS-14)", async () => {
+  const { inSlices } = await import("./kit/BatchResult.tsx");
+  const ids = Array.from({ length: 250 }, (_, i) => `r${i}`);
+  const sizes: number[] = [];
+  const total = await inSlices(ids, async (slice) => {
+    sizes.push(slice.length);
+    return answer(slice.map((id) => ({ id, ok: id !== "r120", status: 200 })));
+  });
+  expect(sizes).toEqual([100, 100, 50]);
+  expect(total.results).toHaveLength(250);
+  expect(total).toMatchObject({ done: 249, failed: 1 });
+});

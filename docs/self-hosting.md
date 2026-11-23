@@ -287,7 +287,7 @@ To stop everything at once, pause every trigger in the instance under **Instance
 
 `TRIGGERS_PAUSED=true` does the same from where the instance runs, and the console cannot undo it. Use it when the instance cannot stay up long enough to pause from the console.
 
-To clear a backlog, use **Cancel queued runs** on a workspace's Runs, or `volvel runs cancel --tenant <slug> --workspace <slug>`. `--all` cancels what is going too, flow runs included.
+To clear a backlog, use **Cancel N queued** on a workspace's Runs, or `volvel runs cancel --tenant <slug> --workspace <slug>`. `--all` cancels what is going too, flow runs included.
 
 | Variable | Default | Meaning |
 | --- | --- | --- |

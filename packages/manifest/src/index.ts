@@ -1,6 +1,7 @@
 export * from "./action.js";
 export {
   ASSET_PATH_PATTERN,
+  assetPathProblem,
   Bundle,
   BundleAsset,
   BundleManifest,
@@ -64,6 +65,7 @@ export {
 export {
   addressedStarts,
   checkFlow,
+  EXPRESSION_ROOTS,
   type FlowBody,
   type FlowEdge,
   type FlowGrants,
@@ -105,6 +107,7 @@ export {
   isThemeValue,
   MAX_SOURCE_LENGTH,
   PERMISSION_PATTERN,
+  parameterMisfit,
   platformKinds,
   QUERY_PARAMETER_TYPES,
   type QueryBody,
@@ -232,7 +235,11 @@ export {
   type EnumValue,
   enumColor,
   enumValues,
+  hasNul,
+  isCalendarDate,
   isEnumType,
+  isIsoTime,
+  isUuid,
   MAX_ROW_RULES,
   type OnDelete,
   type RowCondition,

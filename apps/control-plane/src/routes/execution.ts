@@ -10,7 +10,7 @@ import type { FastifyReply } from "fastify";
 import { Type } from "typebox";
 import { keepConsoleManaged } from "../kernel/authoring.js";
 import { forgetHealth } from "../kernel/data/health.js";
-import { badRequest, HttpError, notFound } from "../kernel/errors.js";
+import { badRequest, guestStart, HttpError, notFound } from "../kernel/errors.js";
 import { arrivingManifests } from "../kernel/execution/arriving.js";
 import { bindConnection, bindGroupMember } from "../kernel/execution/bindings.js";
 import {
@@ -33,6 +33,7 @@ import {
   storeBundle,
 } from "../kernel/execution/bundles.js";
 import { BUILTIN_CONFIG_SCHEMAS, connectorSchema } from "../kernel/execution/connectors.js";
+import { instanceTriggersPaused } from "../kernel/execution/control.js";
 import { deployBundle } from "../kernel/execution/deploy.js";
 import { previewPromotion, promote, promotionOf } from "../kernel/execution/promote.js";
 import { redact, redactError, redactText } from "../kernel/execution/redact.js";
@@ -45,7 +46,7 @@ import {
   runState,
   runStateSql,
 } from "../kernel/execution/state.js";
-import { queueTask, type TaskRow, toTask } from "../kernel/execution/tasks.js";
+import { poolOfConnection, queueTask, type TaskRow, toTask } from "../kernel/execution/tasks.js";
 import {
   fireScheduleNow,
   fireWebhook,
@@ -399,6 +400,20 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         .where("kind", "=", "connector")
         .execute();
 
+    /** The manifests of the workspace's latest uploaded bundles, newest first, deployed or not. */
+    const uploadedManifests = async (workspaceId: string) => {
+      const uploaded = await db
+        .selectFrom("bundle")
+        .select(["id", "storage_key"])
+        .where("workspace_id", "=", workspaceId)
+        .orderBy("id", "desc")
+        .limit(5)
+        .execute();
+      const loaded: { kind: string; path: string; body: unknown }[][] = [];
+      for (const stored of uploaded) loaded.push((await loadBundle(kernel, stored)).manifests);
+      return loaded;
+    };
+
     const configSchemaOf = async (
       workspaceId: string,
       kind: "connection" | "connection_group",
@@ -433,15 +448,8 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         found = from([...arriving, ...deployed]);
       }
       if (!found) {
-        const uploaded = await db
-          .selectFrom("bundle")
-          .select(["id", "storage_key"])
-          .where("workspace_id", "=", workspaceId)
-          .orderBy("id", "desc")
-          .limit(5)
-          .execute();
-        for (const stored of uploaded) {
-          found = from((await loadBundle(kernel, stored)).manifests);
+        for (const manifests of await uploadedManifests(workspaceId)) {
+          found = from(manifests);
           if (found) break;
         }
       }
@@ -1205,6 +1213,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           workspaceId: params.w,
           resourceId: target?.id,
         });
+        if (ctx.principal.type === "anonymous") throw guestStart("script");
         const result = await ctx.mutate(async (trx, audit) => {
           const started = await startRun(kernel, trx, {
             tenantId: params.t,
@@ -1272,6 +1281,13 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             409,
             "conflict",
             "This run is a step of a flow run. Retry the flow run instead.",
+          );
+        }
+        if (original.trigger_detail?.relay) {
+          throw new HttpError(
+            409,
+            "conflict",
+            `This run is of the trigger source ${original.script_path}, which starts nothing by hand. Its trigger runs it on its own.`,
           );
         }
         const input =
@@ -1698,6 +1714,19 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                     Type.Object({ at: Time, by: NullableId, reason: Type.String() }),
                     Type.Null(),
                   ]),
+                  pausedBy: Type.Union(
+                    [
+                      Type.Literal("instance"),
+                      Type.Literal("workspace"),
+                      Type.Literal("trigger"),
+                      Type.Null(),
+                    ],
+                    {
+                      description:
+                        "What holds it, widest first: the whole instance, this workspace, or the " +
+                        "trigger's own pause. Null when nothing does.",
+                    },
+                  ),
                   lastRun: Type.Union([
                     Type.Object({
                       kind: Type.Union([Type.Literal("script"), Type.Literal("flow")]),
@@ -1771,6 +1800,15 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           .selectAll()
           .where("workspace_id", "=", params.w)
           .execute();
+        const instancePaused = await instanceTriggersPaused(kernel);
+        const workspacePaused =
+          (
+            await db
+              .selectFrom("workspace")
+              .select("triggers_paused")
+              .where("id", "=", params.w)
+              .executeTakeFirst()
+          )?.triggers_paused ?? false;
         const refusals = await sql<{
           path: string;
           node_id: string;
@@ -1785,11 +1823,13 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         /** The newest run a trigger started: by its label, or for an event by its target and event. */
         const lastRunOf = async (row: (typeof rows)[number]) => {
           const label = row.node_id ? `${row.path}#${row.node_id}` : row.path;
+          // A run started by hand is not the trigger's own: it says "Last fired" is not counted.
+          const byHand = sql`coalesce(trigger_detail->>'manual', 'false') <> 'true'`;
           const match =
             row.type === "event"
-              ? sql`trigger_type = 'event' and trigger_detail->>'event' = ${row.event_name}`
-              : // A schedule names itself under `schedule`, every other trigger under `trigger`.
-                sql`coalesce(trigger_detail->>'trigger', trigger_detail->>'schedule') = ${label}`;
+              ? sql`trigger_type = 'event' and trigger_detail->>'event' = ${row.event_name} and ${byHand}`
+              : // Runs of schedules before phase 29 name them under `schedule`, every other under `trigger`.
+                sql`coalesce(trigger_detail->>'trigger', trigger_detail->>'schedule') = ${label} and ${byHand}`;
           const found = await sql<{
             kind: "script" | "flow";
             id: string;
@@ -1827,7 +1867,10 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             const refusal = refusals.rows.find(
               (one) => one.path === row.path && one.node_id === row.node_id,
             );
-            const body = row.body as { cron?: string; timezone?: string };
+            // A flow's schedule keeps its cron and zone in its trigger's state, not in the flow's body.
+            const body = (
+              typeof (row.config as { cron?: unknown }).cron === "string" ? row.config : row.body
+            ) as { cron?: string; timezone?: string };
             const token =
               mayAddress && (row.type === "webhook" || row.type === "form")
                 ? await webhookToken(kernel, row)
@@ -1847,6 +1890,13 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               paused: pause
                 ? { at: iso(pause.paused_at), by: pause.paused_by, reason: pause.reason }
                 : null,
+              pausedBy: instancePaused
+                ? ("instance" as const)
+                : workspacePaused
+                  ? ("workspace" as const)
+                  : pause
+                    ? ("trigger" as const)
+                    : null,
               lastRun: await lastRunOf(row),
               lastRefusal: refusal
                 ? {
@@ -1865,7 +1915,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               lastSkipReason:
                 (row.config as { lastSkipReason?: "overlap" | "backlog" }).lastSkipReason ??
                 ((row.config as { lastSkippedAt?: string }).lastSkippedAt ? "overlap" : null),
-              nextFireAt: isoOrNull(row.next_fire_at),
+              nextFireAt: row.enabled ? isoOrNull(row.next_fire_at) : null,
               lastFiredAt: isoOrNull(row.last_fired_at),
               url: token ? address : null,
               resourceKind: row.kind,
@@ -1909,6 +1959,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             event: body.event ?? null,
             enabled: body.enabled ?? true,
             paused: null,
+            pausedBy: null,
             lastRun: null,
             lastRefusal: null,
             cron: body.cron ?? null,
@@ -2119,6 +2170,14 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       defined: Type.Boolean({
         description: "Whether a deployed resource declares this connection.",
       }),
+      draft: Type.Union(
+        [Type.Literal("new"), Type.Literal("changed"), Type.Literal("removed"), Type.Null()],
+        {
+          description:
+            "A change made in the console that waits to be deployed. `new` is a connection " +
+            "that has never been deployed: a script cannot use it yet.",
+        },
+      ),
       arrives: Type.Boolean({
         description:
           "Declared by a workspace linked to this one, and not deployed here yet: it arrives " +
@@ -2175,13 +2234,27 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         .where("kind", "=", "connection")
         .execute();
       // A connection declared in a draft is shown as what the draft says it is, until it is deployed.
-      const drafted = await db
+      const draftRows = await db
         .selectFrom("resource_draft")
-        .select(["path", "body"])
+        .select(["path", "body", "deleted"])
         .where("workspace_id", "=", params.w)
         .where("kind", "=", "connection")
-        .where("deleted", "=", false)
         .execute();
+      const drafted = draftRows.filter((row) => !row.deleted);
+      // A change made in the console that waits to be deployed, as groups say theirs.
+      const draftedState = new Map(
+        draftRows.flatMap((row) => {
+          const deployed = definitions.some((one) => one.path === row.path);
+          const state = !deployed
+            ? row.deleted
+              ? null
+              : "new"
+            : row.deleted
+              ? "removed"
+              : "changed";
+          return state ? [[row.path, state] as const] : [];
+        }),
+      );
       const bindings = await db
         .selectFrom("connection_binding")
         .select([
@@ -2207,29 +2280,73 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       const arriving = await arrivingManifests(kernel, db, params.w);
       const arrives = arriving.filter((one) => one.kind === "connection");
       const paths = [
-        ...new Set([...definitions, ...bindings, ...arrives].map((row) => row.path)),
+        ...new Set([...definitions, ...bindings, ...arrives, ...drafted].map((row) => row.path)),
       ].sort();
+      const draftedConnectors = await db
+        .selectFrom("resource_draft")
+        .select(["path", "body"])
+        .where("workspace_id", "=", params.w)
+        .where("kind", "=", "connector")
+        .where("deleted", "=", false)
+        .execute();
       const connectors = [
         ...(await deployedConnectors(params.w)),
+        ...draftedConnectors.map((one) => ({ path: one.path, body: one.body })),
         ...arriving
           .filter((one) => one.kind === "connector")
           .map((one) => ({ path: one.path, body: one.body })),
       ];
       type Declared = { connector?: string; description?: string } | undefined;
+      // A binding no deployed, drafted or arriving declaration speaks for is what the bundles
+      // uploaded here say it is: it was bound, or its declaration deployed away, as that.
+      const orphans = bindings.filter(
+        (one) =>
+          !definitions.some((row) => row.path === one.path) &&
+          !drafted.some((row) => row.path === one.path) &&
+          !arrives.some((row) => row.path === one.path),
+      );
+      const uploaded = new Map<string, Declared>();
+      if (orphans.length > 0) {
+        for (const manifests of await uploadedManifests(params.w)) {
+          for (const manifest of manifests) {
+            if (
+              manifest.kind === "connector" &&
+              !connectors.some((one) => one.path === manifest.path)
+            )
+              connectors.push({
+                path: manifest.path,
+                body: manifest.body as Record<string, unknown>,
+              });
+            if (
+              manifest.kind === "connection" &&
+              orphans.some((one) => one.path === manifest.path) &&
+              !uploaded.has(manifest.path)
+            )
+              uploaded.set(manifest.path, manifest.body as Declared);
+          }
+        }
+      }
       return {
         items: paths.map((path) => {
           const deployed = definitions.find((row) => row.path === path)?.body as Declared;
           const coming = arrives.find((row) => row.path === path)?.body as Declared;
-          const definition =
-            deployed ?? (drafted.find((row) => row.path === path)?.body as Declared) ?? coming;
+          const draftBody = drafted.find((row) => row.path === path)?.body as Declared;
+          const definition = deployed ?? draftBody ?? coming ?? uploaded.get(path);
           const binding = bindings.find((row) => row.path === path);
           const checked = health.find((row) => row.path === path);
-          const connector = definition?.connector ?? "http";
+          // Nothing declares it: it is as HTTP only when its settings fit HTTP's, else unknown.
+          const connector =
+            definition?.connector ??
+            (binding &&
+            validateJson(BUILTIN_CONFIG_SCHEMAS.http as object, binding.config ?? {}).length > 0
+              ? "unknown"
+              : "http");
           return {
             path,
             connector,
             description: definition?.description ?? "",
             defined: deployed !== undefined,
+            draft: draftedState.get(path) ?? null,
             arrives: deployed === undefined && coming !== undefined,
             bound: binding !== undefined,
             config: binding?.config ?? null,
@@ -2382,6 +2499,11 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                       },
                     ),
                   ),
+                  declared: Type.Boolean({
+                    description:
+                      "False for a group no deployed resource or draft declares any more, whose " +
+                      "members were left. Each can be removed.",
+                  }),
                   configSchema: AnyObject,
                   members: Type.Array(
                     Type.Object({
@@ -2420,12 +2542,12 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           if (!deployed.some((one) => one.path === path)) return "new";
           return draft.deleted ? "removed" : "changed";
         };
-        const groups = [
+        const declared = [
           ...deployed,
           ...drafts
             .filter((one) => !one.deleted && !deployed.some((row) => row.path === one.path))
             .map((one) => ({ path: one.path, body: one.body })),
-        ].sort((a, b) => a.path.localeCompare(b.path));
+        ];
         const members = await db
           .selectFrom("connection_group_member")
           .select([
@@ -2442,6 +2564,23 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           .where("workspace_id", "=", params.w)
           .orderBy("key")
           .execute();
+        // Members of a group nothing declares any more stay, with their credentials: listed as
+        // left over, so that each can be seen and removed.
+        const leftover = [...new Set(members.map((member) => member.group_path))].filter(
+          (path) => !declared.some((row) => row.path === path),
+        );
+        const left: { path: string; body: unknown }[] = [];
+        if (leftover.length > 0) {
+          const named = new Map<string, unknown>();
+          for (const manifests of await uploadedManifests(params.w)) {
+            for (const manifest of manifests) {
+              if (manifest.kind === "connection_group" && !named.has(manifest.path))
+                named.set(manifest.path, manifest.body);
+            }
+          }
+          for (const path of leftover) left.push({ path, body: named.get(path) ?? {} });
+        }
+        const groups = [...declared, ...left].sort((a, b) => a.path.localeCompare(b.path));
         const setBy = await credentialSetters(db, members);
         const connectors = await deployedConnectors(params.w);
         return {
@@ -2449,6 +2588,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             const body = group.body as { description?: string; connector?: string };
             return {
               path: group.path,
+              declared: !leftover.includes(group.path),
               draft: stateOf(group.path),
               description: body.description ?? "",
               connector: body.connector ?? "http",
@@ -2697,6 +2837,8 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           const queued = await queueTask(trx, {
             tenantId: params.t,
             workspaceId: params.w,
+            // From where a script that uses it runs: another pool may reach what the default cannot.
+            pool: await poolOfConnection(trx, params.w, path),
             kind: "test-connection",
             subject: path,
             request: {
@@ -2792,7 +2934,13 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           const done = await finishAuthorization(kernel, query, request.ctx.actor);
           return back(done.returnTo, { oauth: "connected", connection: done.connection.path });
         } catch (error) {
-          if (!(error instanceof AuthorizationRefused)) throw error;
+          if (!(error instanceof AuthorizationRefused)) {
+            // A browser is sent back to the console with a word, never left on a page of JSON.
+            request.log.warn({ err: error }, "an OAuth authorization failed");
+            return back(null, {
+              oauth_error: "The authorization could not be finished. Press Connect again.",
+            });
+          }
           request.log.info({ reason: error.message }, "an OAuth connection was not authorized");
           return back(error.returnTo, {
             oauth_error: error.message,

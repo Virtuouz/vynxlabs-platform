@@ -4,6 +4,7 @@ import { PATH_PATTERN } from "@volvel/manifest";
 import { Type } from "typebox";
 import { refuseDirectProductionWrite } from "../kernel/authoring.js";
 import { check } from "../kernel/authorize.js";
+import { refuseMissingTargets, refuseRetiringReferred } from "../kernel/data/apply.js";
 import { badRequest, conflict, HttpError, notFound } from "../kernel/errors.js";
 import { access, type WorkspaceRef } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
@@ -346,6 +347,36 @@ export function workspaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           );
         }
         await checkLink(params.t, current.type, linked, params.w);
+        const notify = body.failureAlert?.notify;
+        if (notify) {
+          // A run's failure is posted over HTTP: say now what would only fail when a run does.
+          const declared = await db
+            .selectFrom("resource")
+            .select("body")
+            .where("workspace_id", "=", params.w)
+            .where("kind", "=", "connection")
+            .where("path", "=", notify)
+            .executeTakeFirst();
+          const bound = await db
+            .selectFrom("connection_binding")
+            .select("id")
+            .where("workspace_id", "=", params.w)
+            .where("path", "=", notify)
+            .executeTakeFirst();
+          const connector = (declared?.body as { connector?: string } | undefined)?.connector;
+          if (!declared && !bound) {
+            throw badRequest(
+              `${notify} is not a connection of this workspace. Set it up under Connections first.`,
+              [{ path: "/failureAlert/notify", message: "Not a connection." }],
+            );
+          }
+          if (connector !== undefined && connector !== "http") {
+            throw badRequest(
+              `${notify} is a ${connector} connection. A failure is posted to an HTTP connection.`,
+              [{ path: "/failureAlert/notify", message: "Not an HTTP connection." }],
+            );
+          }
+        }
         const row = await ctx.mutate(async (trx, audit) => {
           const updated = await trx
             .updateTable("workspace")
@@ -654,11 +685,23 @@ export function workspaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                 `Something is already at "${path}". Choose another name, or change what is there.`,
               );
           }
-          return putResource(kernel, trx, audit, workspace, {
+          const saved = await putResource(kernel, trx, audit, workspace, {
             ...body,
             path,
             ...(version !== undefined ? { expectedVersion: version } : {}),
           });
+          // A deploy checks this once everything is in place; a table saved alone is checked now.
+          if (body.kind === "table") {
+            const { db: data } = await kernel.data.within(trx, workspace.tenantId);
+            await refuseMissingTargets(
+              data,
+              workspace.id,
+              path,
+              (body.body as { columns?: Record<string, { type?: string; references?: string }> })
+                .columns ?? {},
+            );
+          }
+          return saved;
         });
         return reply
           .code(result.created ? 201 : 200)
@@ -787,7 +830,20 @@ export function workspaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             }),
           paths: [path],
         });
-        await ctx.mutate((trx, audit) => deleteResource(trx, audit, workspace, path, kernel.hooks));
+        await ctx.mutate(async (trx, audit) => {
+          // A table that others refer to would leave every later deploy refused.
+          const kind = await trx
+            .selectFrom("resource")
+            .select("kind")
+            .where("workspace_id", "=", workspace.id)
+            .where("path", "=", path)
+            .executeTakeFirst();
+          if (kind?.kind === "table") {
+            const { db: data } = await kernel.data.within(trx, workspace.tenantId);
+            await refuseRetiringReferred(data, workspace.id, path);
+          }
+          await deleteResource(trx, audit, workspace, path, kernel.hooks);
+        });
         return reply.code(204).send(null);
       },
     );

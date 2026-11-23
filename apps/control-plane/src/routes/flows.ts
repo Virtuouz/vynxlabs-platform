@@ -2,18 +2,20 @@ import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import { sql } from "@volvel/db";
 import { type FlowBody, PATH_PATTERN } from "@volvel/manifest";
 import { Type } from "typebox";
-import { badRequest, conflict, HttpError, notFound } from "../kernel/errors.js";
+import { badRequest, conflict, guestStart, HttpError, notFound } from "../kernel/errors.js";
 import { cancelFlowRuns } from "../kernel/execution/bulk-cancel.js";
 import { bundleManifest, payloadSchemas } from "../kernel/execution/bundles.js";
+import { instanceTriggersPaused } from "../kernel/execution/control.js";
 import { redact } from "../kernel/execution/redact.js";
 import { readPayload } from "../kernel/execution/runs.js";
 import {
   flowStateSql,
   type RunState,
   RunStateSchema,
+  runStateSql,
   stepState,
 } from "../kernel/execution/state.js";
-import { kickStarted, webhookToken } from "../kernel/execution/triggers.js";
+import { kickStarted, notPausedAlone, webhookToken } from "../kernel/execution/triggers.js";
 import { approvalDetail } from "../kernel/flows/approval-detail.js";
 import {
   approvalStepsOf,
@@ -27,6 +29,7 @@ import { type ContextStep, expressionContext } from "../kernel/flows/context.js"
 import {
   cancelFlowRun,
   decideApproval,
+  deciderOf,
   keptNodes,
   kickFlow,
   startFlowRun,
@@ -55,6 +58,38 @@ import {
 
 const pathPattern = new RegExp(PATH_PATTERN);
 const WildParams = Type.Object({ t: Id, w: Id, "*": Type.String() });
+/** Whether the workspace's triggers are all paused. */
+async function workspacePaused(db: Kernel["db"], workspaceId: string): Promise<boolean> {
+  const row = await db
+    .selectFrom("workspace")
+    .select("triggers_paused")
+    .where("id", "=", workspaceId)
+    .executeTakeFirst();
+  return row?.triggers_paused ?? false;
+}
+
+/** What listens for an event: those that would start something, and those that are on but held. */
+function listenersOf(
+  found: { n: string; active: string } | undefined,
+  everyonePaused: boolean,
+): { listeners: number; pausedListeners: number } {
+  const on = Number(found?.n ?? 0);
+  const active = everyonePaused ? 0 : Number(found?.active ?? 0);
+  return { listeners: active, pausedListeners: on - active };
+}
+
+/**
+ * Where a flow's steps are drawn: the layout its body carries, and over it what was
+ * arranged on the flow page since. A deploy that brings a new layout clears the saved
+ * one, so the newer of the two is what every screen draws.
+ */
+function flowPositions(
+  inBody: unknown,
+  saved: Record<string, { x: number; y: number }> | undefined,
+): Record<string, { x: number; y: number }> {
+  return { ...((inBody as Record<string, { x: number; y: number }> | undefined) ?? {}), ...saved };
+}
+
 function wildPath(params: { "*": string }): string {
   const path = params["*"];
   if (!pathPattern.test(path) || path.length > 255) throw badRequest("The path is not valid.");
@@ -234,11 +269,28 @@ const DecidedApproval = Type.Object({
   title: Type.String(),
   approved: Type.Boolean(),
   comment: NullableString,
-  decidedBy: Type.Union([Type.Object({ id: Id, label: Type.String() }), Type.Null()]),
+  decidedBy: Type.Union([
+    Type.Object({
+      id: Id,
+      label: Type.String(),
+      type: Type.String({ description: "member or service_account" }),
+    }),
+    Type.Null(),
+  ]),
   decidedAt: NullableTime,
-  via: Type.Union([Type.Literal("console"), Type.Literal("email")], {
-    description: "Where it was decided: the console or the API, or a link in the mail.",
-  }),
+  via: Type.Union(
+    [
+      Type.Literal("console"),
+      Type.Literal("api"),
+      Type.Literal("mcp"),
+      Type.Literal("app"),
+      Type.Literal("email"),
+    ],
+    {
+      description:
+        "Where it was decided: the console, the API, MCP, an app, or a link in the mail.",
+    },
+  ),
   waitedSeconds: Type.Union([Type.Number(), Type.Null()]),
 });
 
@@ -487,7 +539,8 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             count(*) filter (where created_at > now() - interval '24 hours') as day,
             count(*) filter (where created_at > now() - interval '24 hours' and status = 'failed') as failed,
             count(*) filter (where status = 'running' and exists (
-              select 1 from step_run s where s.flow_run_id = flow_run.id and s.status = 'waiting'
+              select 1 from step_run s
+              where s.flow_run_id = flow_run.id and s.status = 'waiting' and s.detail ? 'title'
             )) as waiting
           from flow_run where workspace_id = ${params.w} and parent_flow_run_id is null
           group by flow_path
@@ -621,10 +674,7 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           nodes: body.nodes as unknown as Record<string, unknown>,
           edges: body.edges as unknown as Record<string, unknown>[],
           // A flow drawn in the console carries its layout in its body. Others keep it apart.
-          layout: {
-            ...((body.layout as Record<string, { x: number; y: number }> | undefined) ?? {}),
-            ...(layout?.positions ?? {}),
-          },
+          layout: flowPositions(body.layout, layout?.positions),
           triggers: await Promise.all(
             states.map(async (state) => {
               const token =
@@ -634,7 +684,7 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               return {
                 node: state.node_id,
                 type: state.type,
-                nextFireAt: isoOrNull(state.next_fire_at),
+                nextFireAt: state.enabled ? isoOrNull(state.next_fire_at) : null,
                 url: token ? `${kernel.config.publicUrl}/api/v1/hooks/${token}` : null,
               };
             }),
@@ -783,6 +833,7 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           workspaceId: params.w,
           resourceId: target?.id,
         });
+        if (ctx.principal.type === "anonymous") throw guestStart("flow");
         const started = await ctx.mutate(async (trx, audit) => {
           const result = await startFlowRun(kernel, trx, {
             tenantId: params.t,
@@ -993,10 +1044,7 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           bundleVersion: row.bundle_version,
           nodes: body.nodes as unknown as Record<string, unknown>,
           edges: body.edges as unknown as Record<string, unknown>[],
-          layout: {
-            ...(positions ?? {}),
-            ...((body.layout as Record<string, { x: number; y: number }> | undefined) ?? {}),
-          },
+          layout: flowPositions(body.layout, positions),
           changed: shape(now) !== shape(manifest),
         };
       },
@@ -1418,13 +1466,24 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       db
         .selectFrom("step_run")
         .innerJoin("flow_run", "flow_run.id", "step_run.flow_run_id")
-        .leftJoin("member", "member.id", "step_run.decided_by")
+        .leftJoin("member", (join) =>
+          join
+            .onRef("member.id", "=", "step_run.decided_by")
+            .on("step_run.decided_by_type", "=", "member"),
+        )
+        .leftJoin("service_account", (join) =>
+          join
+            .onRef("service_account.id", "=", "step_run.decided_by")
+            .on("step_run.decided_by_type", "=", "service_account"),
+        )
         .select([
           "step_run.flow_run_id",
           "step_run.node_id",
           "step_run.detail",
           "step_run.status",
           "step_run.decided_by",
+          "step_run.decided_by_type",
+          "step_run.decided_via",
           "step_run.decision_comment",
           "step_run.started_at",
           "step_run.finished_at",
@@ -1432,6 +1491,7 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           "flow_run.workspace_id",
           "member.email",
           "member.name",
+          "service_account.name as service_name",
           sql<boolean>`exists (
             select 1 from approval_link l
             where l.flow_run_id = step_run.flow_run_id and l.node_id = step_run.node_id
@@ -1453,10 +1513,19 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       approved: row.status === "succeeded",
       comment: row.decision_comment,
       decidedBy: row.decided_by
-        ? { id: row.decided_by, label: row.email ?? row.name ?? "A member" }
+        ? {
+            id: row.decided_by,
+            label: row.service_name ?? row.email ?? row.name ?? "A member",
+            type: row.decided_by_type ?? "member",
+          }
         : null,
       decidedAt: isoOrNull(row.finished_at),
-      via: row.by_link ? ("email" as const) : ("console" as const),
+      via: (row.decided_via ?? (row.by_link ? "email" : "console")) as
+        | "console"
+        | "api"
+        | "mcp"
+        | "app"
+        | "email",
       waitedSeconds: row.finished_at
         ? Math.round((row.finished_at.getTime() - row.started_at.getTime()) / 1000)
         : null,
@@ -1649,7 +1718,8 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             node: params.node,
             approve: body.decision === "approve",
             comment: body.comment,
-            memberId: ctx.principal.type === "member" ? ctx.principal.id : null,
+            decidedBy: deciderOf(ctx.principal),
+            via: ctx.principal.type === "member" ? "console" : "api",
           });
           await audit({
             action: body.decision === "approve" ? "approval.approved" : "approval.rejected",
@@ -1685,10 +1755,16 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           id: Id,
           target: Type.String(),
           status: Type.String(),
+          state: RunStateSchema,
         }),
       ),
       listeners: Type.Integer({
-        description: "How many deployed triggers here listen for an event of this name.",
+        description:
+          "How many deployed triggers here would start something for an event of this name: on, and not paused.",
+      }),
+      pausedListeners: Type.Integer({
+        description:
+          "How many that are on would start nothing for now, because they, the workspace or the instance is paused.",
       }),
     });
 
@@ -1745,13 +1821,16 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                   id: string;
                   target: string;
                   status: string;
+                  state: RunState;
                 }>`
-                  select trigger_detail->>'eventId' as event, 'script' as kind, id, script_path as target, status::text as status
+                  select trigger_detail->>'eventId' as event, 'script' as kind, id, script_path as target, status::text as status,
+                    ${runStateSql("status")} as state
                   from run where workspace_id = ${params.w} and trigger_detail ? 'eventId'
                     and trigger_detail->>'eventId' in (${sql.join(ids)}) and flow_run_id is null
                   union all
-                  select trigger_detail->>'eventId', 'flow', id, flow_path, status::text
-                  from flow_run where workspace_id = ${params.w} and trigger_detail ? 'eventId'
+                  select trigger_detail->>'eventId', 'flow', f.id, f.flow_path, f.status::text,
+                    ${flowStateSql("f")}
+                  from flow_run f where workspace_id = ${params.w} and trigger_detail ? 'eventId'
                     and trigger_detail->>'eventId' in (${sql.join(ids)})
                 `.execute(db)
               ).rows;
@@ -1759,16 +1838,26 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         // An event is shown as the run it started is: by its key names and by its schema.
         const schemas = new Map<string, Record<string, unknown> | undefined>();
         for (const name of names) schemas.set(name, await eventSchema(db, params.w, name));
+        // Only a trigger that is on and not paused listens. The others are counted apart, so
+        // that "2 triggers" is never said of two that would start nothing.
+        const everyonePaused =
+          (await instanceTriggersPaused(kernel)) || (await workspacePaused(db, params.w));
         const listening =
           names.length === 0
             ? []
             : await db
                 .selectFrom("trigger_state")
-                .select((eb) => ["event_name", eb.fn.countAll<string>().as("n")])
-                .where("workspace_id", "=", params.w)
-                .where("type", "=", "event")
-                .where("event_name", "in", names)
-                .groupBy("event_name")
+                .innerJoin("resource", "resource.id", "trigger_state.resource_id")
+                .select((eb) => [
+                  "trigger_state.event_name",
+                  eb.fn.countAll<string>().as("n"),
+                  sql<string>`count(*) filter (where ${notPausedAlone})`.as("active"),
+                ])
+                .where("trigger_state.workspace_id", "=", params.w)
+                .where("trigger_state.type", "=", "event")
+                .where("trigger_state.enabled", "=", true)
+                .where("trigger_state.event_name", "in", names)
+                .groupBy("trigger_state.event_name")
                 .execute();
         return toPage(
           rows,
@@ -1788,8 +1877,17 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               publishedBy: script ? { run: script.id, script: script.script_path } : null,
               started: started
                 .filter((one) => one.event === row.id)
-                .map(({ kind, id, target, status }) => ({ kind, id, target, status })),
-              listeners: Number(listening.find((one) => one.event_name === row.name)?.n ?? 0),
+                .map(({ kind, id, target, status, state }) => ({
+                  kind,
+                  id,
+                  target,
+                  status,
+                  state,
+                })),
+              ...listenersOf(
+                listening.find((one) => one.event_name === row.name),
+                everyonePaused,
+              ),
             };
           },
         );

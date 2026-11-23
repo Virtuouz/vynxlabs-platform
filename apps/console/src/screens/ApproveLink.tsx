@@ -2,6 +2,7 @@ import { Button, ContainedArea, Notice, ResultView, TextAreaField } from "@volve
 import { useEffect, useState } from "react";
 import { type ApiError, api } from "../api.ts";
 import { failureText } from "../ask.tsx";
+import { REJECTING } from "../kit/approvals.ts";
 import { BrandMark, useBrand } from "../kit/brand.tsx";
 import { clock } from "../kit/format.ts";
 import { Loading } from "../kit/LoadState.tsx";
@@ -102,10 +103,8 @@ export function ApproveLink({ token }: { token: string }) {
                   {decided.approver.name}.
                 </h1>
                 <p className="m-0 text-ink-muted">
-                  {decided.decision === "approve"
-                    ? "The flow carries on."
-                    : "The flow stops here, and says why."}{" "}
-                  Your decision and your comment are recorded under your name.
+                  {decided.decision === "approve" ? "The flow carries on." : REJECTING} Your
+                  decision and your comment are recorded under your name.
                 </p>
                 <p className="m-0">
                   <a

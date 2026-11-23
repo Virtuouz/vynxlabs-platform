@@ -32,6 +32,27 @@ function issues(input: unknown) {
   return result.ok ? [] : result.issues;
 }
 
+describe("a field left empty", () => {
+  const withPath = new KindRegistry().register({
+    kind: "fixture",
+    schemaVersion: 1,
+    body: {
+      type: "object",
+      properties: { script: { type: "string", pattern: PATH_PATTERN } },
+      required: ["script"],
+    },
+  });
+  test("is said to be empty, not to fail a pattern", () => {
+    const result = withPath.validateManifest({ ...valid, body: { script: "" } });
+    expect(result.ok).toBe(false);
+    const message = result.ok ? "" : (result.issues[0]?.message ?? "");
+    expect(message).toBe("is empty: it needs a value");
+    // A value that is not empty and still wrong keeps the grammar's own words.
+    const wrong = withPath.validateManifest({ ...valid, body: { script: "Not A Path" } });
+    expect(wrong.ok ? "" : (wrong.issues[0]?.message ?? "")).toContain("must match pattern");
+  });
+});
+
 describe("path grammar", () => {
   const pattern = new RegExp(PATH_PATTERN);
   test.each(["sync_orders", "billing/invoices/send-reminder", "a", "2fa/setup"])(

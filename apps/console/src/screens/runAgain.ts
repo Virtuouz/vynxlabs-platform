@@ -1,5 +1,6 @@
 import { api } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
+import { curlFor } from "../kit/copy.tsx";
 
 /**
  * Running a run again, from wherever it is offered: the run page and the
@@ -93,3 +94,19 @@ export async function flowFromStart(
     .post<{ id: string }>(`${run.root}/flow-runs/${run.id}/retry`, { from: "start", bundle })
     .then((one) => run.started(one.id), notify.error);
 }
+
+/** A run of a trigger source: it has no script page, and it is not run again by hand. */
+export const isSourceRun = (trigger: { [detail: string]: unknown }) => trigger.relay != null;
+
+/** Where a trigger source is read and changed. */
+export const sourceLink = (link: string, path: string) =>
+  `${link}/extensions/trigger_source/edit/${path}`;
+
+/**
+ * What a command line should send to run a run again: the server's own copy of its input. The
+ * input shown here is masked, and may be a pointer to a stored one, so it is never pasted.
+ */
+export const scriptAgainCurl = (root: string, id: string) =>
+  curlFor("POST", `${root}/runs/${id}/rerun`, { bundle: "original" });
+export const flowAgainCurl = (root: string, id: string) =>
+  curlFor("POST", `${root}/flow-runs/${id}/retry`, { from: "start" });

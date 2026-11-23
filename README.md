@@ -2,7 +2,7 @@
 
 Volvel is one self-hostable foundation for custom internal apps, business workflows and system integrations. The design is in [docs/master-spec.md](docs/master-spec.md). Work is delivered in phases, each with a design doc under [docs/phases](docs/phases).
 
-The platform is at phase 6, apps. A developer defines scripts, flows, tables, data sources and apps in a tenant's repository and deploys them. An app is served by the instance to the tenant's staff, to its own pool of end users, or to anyone, as its bindings say, with the tenant's branding. Changes move from a dev workspace to production as the same bundle, a tenant's data can live in a database of its own, and a whole tenant can be exported from one instance and imported into another. Editing by end users is the next track.
+The platform is built in phases, and the later ones added the console, the app builder and its widgets. A developer defines scripts, flows, tables, data sources and apps in a tenant's repository and deploys them. An app is served by the instance to the tenant's staff, to its own pool of end users, or to anyone, as its bindings say, with the tenant's branding. Changes move from a dev workspace to production as the same bundle, a tenant's data can live in a database of its own, and a whole tenant can be exported from one instance and imported into another. Editing by end users is the next track.
 
 To run an instance, read [docs/self-hosting.md](docs/self-hosting.md).
 

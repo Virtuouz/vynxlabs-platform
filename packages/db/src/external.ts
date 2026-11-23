@@ -50,7 +50,7 @@ export function openExternalPostgres(config: ExternalPostgres): Kysely<any> {
     max: 4,
     idleTimeoutMillis: 30_000,
     connectionTimeoutMillis: 5_000,
-    options: "-c statement_timeout=15000",
+    options: "-c statement_timeout=15000 -c TimeZone=UTC",
     application_name: "volvel",
     ...(config.lookup ? { stream: socketWith(config.lookup) } : {}),
   });

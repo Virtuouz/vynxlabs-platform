@@ -586,9 +586,11 @@ describe("deciding", () => {
     });
   });
 
-  test("ask why: never lets either through; always needs it for an approval too; at most 2000 characters", async () => {
+  test("ask why: never lets an approval through, a rejection always has its reason; always needs it for an approval too; at most 2000 characters", async () => {
     const a = await ask("orders/reorder");
-    expect((await decide(bob, a.id, "reject", {}, "quiet")).status).toBe(200);
+    // Rejecting is asked about on every route, as the flow and its people read the reason.
+    expect((await decide(bob, a.id, "reject", {}, "quiet")).status).toBe(400);
+    expect((await decide(bob, a.id, "reject", { comment: "No" }, "quiet")).status).toBe(200);
     const b = await ask("orders/reorder");
     expect((await decide(bob, b.id, "approve", {}, "everything")).status).toBe(400);
     expect((await decide(bob, b.id, "approve", { comment: "ok" }, "everything")).status).toBe(200);

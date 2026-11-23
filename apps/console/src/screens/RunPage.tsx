@@ -12,9 +12,9 @@ import {
 import { type ReactNode, useEffect, useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { ask, copyText, notify } from "../ask.tsx";
-import { InputDialog, isStoredInput } from "../InputDialog.tsx";
+import { InputDialog } from "../InputDialog.tsx";
 import { StateAnnouncer } from "../kit/Announce.tsx";
-import { CopyIcon, curlFor, Identifier } from "../kit/copy.tsx";
+import { CopyIcon, Identifier } from "../kit/copy.tsx";
 import { Current } from "../kit/current.ts";
 import { Elapsed, WaitedAndRan } from "../kit/Elapsed.tsx";
 import { clock } from "../kit/format.ts";
@@ -33,7 +33,7 @@ import { Link, navigate, useUrlParam } from "../router.tsx";
 import {
   type LiveRun,
   LogWindowNote,
-  TRIGGER,
+  startedBy,
   useLiveRun,
   wholeLogDownload,
 } from "./Execution.tsx";
@@ -42,10 +42,14 @@ import { NotFound } from "./NotFound.tsx";
 import { type PreviousSuccess, RunCompare } from "./RunCompare.tsx";
 import type { Insight } from "./Runs.tsx";
 import {
+  flowAgainCurl,
   flowFromFailed,
   flowFromStart,
+  isSourceRun,
   type RetryPlan,
   scriptAgain,
+  scriptAgainCurl,
+  sourceLink,
   type Version,
 } from "./runAgain.ts";
 
@@ -199,34 +203,6 @@ function RunHeader({
 }
 
 /**
- * "Schedule reminders/hourly", with the trigger a link. Nothing for a run that
- * repeats another: the link to that run says it.
- */
-function startedBy(link: string, trigger: { type: string; [detail: string]: unknown }) {
-  if (trigger.type === "retry" || trigger.type === "rerun") return null;
-  // A step of a flow: its flow run, opened on the step.
-  if (trigger.type === "flow" && typeof trigger.flowRunId === "string") {
-    const node = typeof trigger.node === "string" ? trigger.node : "";
-    return (
-      <Link
-        to={`${link}/runs/${trigger.flowRunId}${node ? `?step=${encodeURIComponent(node)}` : ""}`}
-      >
-        Step {node} of a flow run
-      </Link>
-    );
-  }
-  const word = TRIGGER[trigger.type] ?? trigger.type;
-  if (typeof trigger.trigger === "string") {
-    return (
-      <Link to={`${link}/triggers?trigger=${encodeURIComponent(trigger.trigger)}`}>
-        {word} {trigger.trigger}
-      </Link>
-    );
-  }
-  return word;
-}
-
-/**
  * Opens the script in a dev workspace's editor with this run's input loaded:
  * here when this is a dev workspace, or the dev workspace that promotes here.
  */
@@ -256,6 +232,11 @@ function ScriptRunPage({ root, link, id }: { root: string; link: string; id: str
   if (!run) return <Loading />;
   const active = run.state === "queued" || run.state === "running";
   const diagnosis = insight.data?.diagnosis;
+  // A run of a trigger source has a source, not a script: its page is the source's editor, and
+  // nothing starts it by hand.
+  const fromSource = isSourceRun(run.trigger);
+  const scriptPage = fromSource ? sourceLink(link, run.script) : `${link}/scripts/${run.script}`;
+  const editPage = fromSource ? sourceLink(link, run.script) : `${link}/scripts/edit/${run.script}`;
   const logFile = `${run.script.replaceAll("/", "-")}-${run.id.slice(-12)}.log`;
   const wholeLog = wholeLogDownload(root, run.id, logFile, earlier);
 
@@ -306,7 +287,7 @@ function ScriptRunPage({ root, link, id }: { root: string; link: string; id: str
                   },
                 ]
               : []),
-            ...(run.trigger.type === "flow"
+            ...(run.trigger.type === "flow" || fromSource
               ? []
               : [
                   {
@@ -326,7 +307,7 @@ function ScriptRunPage({ root, link, id }: { root: string; link: string; id: str
               key: "edit",
               label: `Open ${run.script} in the editor`,
               icon: FileCode2,
-              run: () => navigate(`${link}/scripts/edit/${run.script}`),
+              run: () => navigate(editPage),
             },
             {
               key: "compare",
@@ -355,7 +336,7 @@ function ScriptRunPage({ root, link, id }: { root: string; link: string; id: str
         link={link}
         id={run.id}
         path={run.script}
-        pathLink={`${link}/scripts/${run.script}`}
+        pathLink={scriptPage}
         state={run.state}
         detail={
           run.maxAttempts > 1
@@ -363,7 +344,9 @@ function ScriptRunPage({ root, link, id }: { root: string; link: string; id: str
             : undefined
         }
         timing={<WaitedAndRan run={run} />}
-        versionTo={`${link}/scripts/${run.script}?tab=source&run=${run.id}`}
+        versionTo={
+          fromSource ? scriptPage : `${link}/scripts/${run.script}?tab=source&run=${run.id}`
+        }
         started={startedBy(link, run.trigger)}
         version={run.bundleVersion}
         tags={run.tags ?? []}
@@ -386,7 +369,7 @@ function ScriptRunPage({ root, link, id }: { root: string; link: string; id: str
               </Button>
             ) : null}
             {/* A step of a flow is run again by retrying its flow run. */}
-            {run.trigger.type === "flow" ? null : (
+            {run.trigger.type === "flow" || fromSource ? null : (
               <Menu
                 label={
                   <span className="flex items-center gap-1.5">
@@ -407,11 +390,13 @@ function ScriptRunPage({ root, link, id }: { root: string; link: string; id: str
                 ]}
               />
             )}
-            <EditInDev root={root} path={run.script} runId={run.id} />
-            <CopyIcon
-              value={curlFor("POST", `${root}/runs`, { script: run.script, input: run.input })}
-              label="Copy as curl: start this script again with the same input"
-            />
+            {fromSource ? null : <EditInDev root={root} path={run.script} runId={run.id} />}
+            {fromSource ? null : (
+              <CopyIcon
+                value={scriptAgainCurl(root, run.id)}
+                label="Copy as curl: run this again with the same input"
+              />
+            )}
           </>
         }
       />
@@ -438,7 +423,14 @@ function ScriptRunPage({ root, link, id }: { root: string; link: string; id: str
                       <span className={one.failed ? "text-danger" : "text-ink-muted"}>
                         #{one.attempt} {one.failed ? "failed" : "succeeded"}
                       </span>
-                      <Mono className="ml-auto text-ink-subtle">{clock(one.startedAt)}</Mono>
+                      {one.errorsLogged > 0 ? (
+                        <span className="text-ink-subtle">
+                          {one.errorsLogged} error line{one.errorsLogged === 1 ? "" : "s"}
+                        </span>
+                      ) : null}
+                      <Mono className="ml-auto text-ink-subtle">
+                        {one.startedAt ? clock(one.startedAt) : "nothing logged"}
+                      </Mono>
                     </li>
                   ))}
                 </ol>
@@ -715,32 +707,43 @@ function FlowRunHeader({
                 },
               ]
             : [
-                ...(finishedBadly
+                ...(run.parentFlowRunId
                   ? [
                       {
-                        key: "retry",
-                        label: "Retry from the failed step",
+                        key: "parent",
+                        label: "Retry the flow run that started this one",
                         icon: RotateCcw,
-                        run: () => fromFailed(),
+                        run: () => navigate(`${link}/runs/${run.parentFlowRunId}`),
                       },
                     ]
-                  : []),
-                ...(finishedBadly && fix !== undefined
-                  ? [
+                  : [
+                      ...(finishedBadly
+                        ? [
+                            {
+                              key: "retry",
+                              label: "Retry from the failed step",
+                              icon: RotateCcw,
+                              run: () => fromFailed(),
+                            },
+                          ]
+                        : []),
+                      ...(finishedBadly && fix !== undefined
+                        ? [
+                            {
+                              key: "retry-fix",
+                              label: `Retry from the failed step on v${fix}`,
+                              icon: RotateCcw,
+                              run: () => fromFailed("active"),
+                            },
+                          ]
+                        : []),
                       {
-                        key: "retry-fix",
-                        label: `Retry from the failed step on v${fix}`,
+                        key: "rerun",
+                        label: "Run again from the start",
                         icon: RotateCcw,
-                        run: () => fromFailed("active"),
+                        run: () => fromStart("original"),
                       },
-                    ]
-                  : []),
-                {
-                  key: "rerun",
-                  label: "Run again from the start",
-                  icon: RotateCcw,
-                  run: () => fromStart("original"),
-                },
+                    ]),
                 {
                   key: "edit",
                   label: `Open ${run.flow} in the editor`,
@@ -799,6 +802,14 @@ function FlowRunHeader({
               <Button size="small" variant="danger" onClick={cancel}>
                 Cancel flow run
               </Button>
+            ) : run.parentFlowRunId ? (
+              // A step of another flow run is run again with that flow run: the server refuses it alone.
+              <Link
+                to={`${link}/runs/${run.parentFlowRunId}`}
+                className="flex h-8 items-center gap-1.5 rounded-control border border-line px-3 text-meta hover:bg-surface"
+              >
+                <RotateCcw aria-hidden="true" size={14} /> Retry the flow that started it
+              </Link>
             ) : (
               <Menu
                 label={
@@ -831,9 +842,11 @@ function FlowRunHeader({
                 ]}
               />
             )}
-            {isStoredInput(run.input) ? null : (
+            {run.parentFlowRunId ? null : (
+              // The retry route starts it again from its own stored input: it needs no manual
+              // start, and sends nothing that is masked or too large to be shown.
               <CopyIcon
-                value={curlFor("POST", `${root}/flow-runs`, { flow: run.flow, input: run.input })}
+                value={flowAgainCurl(root, run.id)}
                 label="Copy as curl: start this flow again with the same input"
               />
             )}

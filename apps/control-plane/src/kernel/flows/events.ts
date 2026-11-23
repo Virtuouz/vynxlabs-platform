@@ -132,7 +132,17 @@ export async function publishEvent(kernel: Kernel, trx: Trx, asked: PublishEvent
       started.push(
         await startTarget(kernel, trx, subscriber, {
           input: event.payload,
-          trigger: { type: "event", detail: { event: event.name, eventId: id, depth: depth + 1 } },
+          trigger: {
+            type: "event",
+            detail: {
+              trigger: subscriber.node_id
+                ? `${subscriber.path}#${subscriber.node_id}`
+                : subscriber.path,
+              event: event.name,
+              eventId: id,
+              depth: depth + 1,
+            },
+          },
           idempotencyKey: `event:${id}:${subscriber.resource_id}:${subscriber.node_id}`,
         }),
       );

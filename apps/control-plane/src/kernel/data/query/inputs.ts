@@ -26,7 +26,7 @@ import {
   scopeFor,
   withData,
 } from "../rows.js";
-import { openSource, sourceTable } from "../sources.js";
+import { onSource, sourceTable } from "../sources.js";
 import {
   dayAfter,
   type FilterValues,
@@ -575,66 +575,82 @@ export async function readWidget(
     if ((visual.groupBy?.length ?? 0) > 0 || (visual.measures?.length ?? 0) > 0) {
       throw badRequest("Rows of a data source's table can be listed, not totalled.");
     }
-    const source = await openSource(kernel, kernel.db, tenantId, workspaceId, sourcePath);
-    const target: RowTarget = await sourceTable(source.db, source.schema, sourcePath, table);
-    const extra = conditionsFor(input, filters, request.values);
-    const conditions: Filter[] = [
-      ...(visual.filters ?? []),
-      ...extra.filter((one): one is VisualCondition => !("search" in one)),
-    ].flatMap((one, index): Filter[] => {
-      if (one.op === "not_null") return [{ column: one.column, op: "is_null", value: false }];
-      if (one.op === "last" || one.op === "between") {
-        // Written as the two ends it stands for; the end day is whole, as a page's date range reads it.
-        const type = target.columns.find((column) => column.name === one.column)?.type;
-        if (!type) throw badRequest(`${target.name} has no column "${one.column}".`);
-        const problem = conditionProblem(one, type);
-        if (problem)
-          throw badRequest("The condition is not valid.", [
-            { path: `/filters/${index}/value`, message: problem },
-          ]);
-        if (one.op === "between" && typeof (one.value as unknown[])[0] === "number") {
-          const [from, to] = one.value as number[];
+    // What the source refuses or cannot do is said as the rows route says it.
+    const { target, page } = await onSource(
+      kernel,
+      kernel.db,
+      { tenantId, workspaceId },
+      sourcePath,
+      async (source) => {
+        const target: RowTarget = await sourceTable(source.db, source.schema, sourcePath, table);
+        const extra = conditionsFor(input, filters, request.values);
+        const conditions: Filter[] = [
+          ...(visual.filters ?? []),
+          ...extra.filter((one): one is VisualCondition => !("search" in one)),
+        ].flatMap((one, index): Filter[] => {
+          if (one.op === "not_null") return [{ column: one.column, op: "is_null", value: false }];
+          if (one.op === "last" || one.op === "between") {
+            // Written as the two ends it stands for; the end day is whole, as a page's date range reads it.
+            const type = target.columns.find((column) => column.name === one.column)?.type;
+            if (!type) throw badRequest(`${target.name} has no column "${one.column}".`);
+            const problem = conditionProblem(one, type);
+            if (problem)
+              throw badRequest("The condition is not valid.", [
+                { path: `/filters/${index}/value`, message: problem },
+              ]);
+            if (one.op === "between" && typeof (one.value as unknown[])[0] === "number") {
+              const [from, to] = one.value as number[];
+              return [
+                { column: one.column, op: "gte", value: from },
+                { column: one.column, op: "lte", value: to },
+              ];
+            }
+            const range =
+              one.op === "last"
+                ? lastRange((one.value as LastValue).count, (one.value as LastValue).unit)
+                : {
+                    from: (one.value as string[])[0] as string,
+                    to: (one.value as string[])[1] as string,
+                  };
+            return [
+              { column: one.column, op: "gte", value: range.from },
+              { column: one.column, op: "lt", value: dayAfter(range.to) },
+            ];
+          }
           return [
-            { column: one.column, op: "gte", value: from },
-            { column: one.column, op: "lte", value: to },
+            {
+              column: one.column,
+              op: one.op,
+              ...(one.value !== undefined ? { value: one.value } : {}),
+            },
           ];
-        }
-        const range =
-          one.op === "last"
-            ? lastRange((one.value as LastValue).count, (one.value as LastValue).unit)
-            : {
-                from: (one.value as string[])[0] as string,
-                to: (one.value as string[])[1] as string,
-              };
-        return [
-          { column: one.column, op: "gte", value: range.from },
-          { column: one.column, op: "lt", value: dayAfter(range.to) },
-        ];
-      }
-      return [
-        {
-          column: one.column,
-          op: one.op,
-          ...(one.value !== undefined ? { value: one.value } : {}),
-        },
-      ];
-    });
-    // A search is each word found in one of its columns: an "or" of "contains" for each word.
-    for (const one of extra) {
-      if (!("search" in one)) continue;
-      for (const word of wordsOf(one.search)) {
-        conditions.push({
-          or: one.columns.map((column) => ({ column, op: "contains", value: word })),
         });
-      }
-    }
-    const sort = (visual.sort ?? []).map((one) => `${one.descending ? "-" : ""}${one.by}`);
-    const page = await findRows(source.db, target, {
-      ...(conditions.length > 0 ? { filter: { and: conditions } } : {}),
-      sort,
-      limit: Math.min(pageOf(widget, request.size), visual.limit ?? pageOf(widget, request.size)),
-      offset,
-    });
+        // A search is each word found in one of its columns: an "or" of "contains" for each word.
+        for (const one of extra) {
+          if (!("search" in one)) continue;
+          for (const word of wordsOf(one.search)) {
+            conditions.push({
+              or: one.columns.map((column) => ({ column, op: "contains", value: word })),
+            });
+          }
+        }
+        const sort = (visual.sort ?? []).map((one) => `${one.descending ? "-" : ""}${one.by}`);
+        const found = await findRows(source.db, target, {
+          ...(conditions.length > 0 ? { filter: { and: conditions } } : {}),
+          sort,
+          // Never past the list's own limit, whichever page is asked for.
+          limit: Math.max(
+            1,
+            Math.min(
+              pageOf(widget, request.size),
+              (visual.limit ?? Number.MAX_SAFE_INTEGER) - offset,
+            ),
+          ),
+          offset,
+        });
+        return { target, page: found };
+      },
+    );
     const shown =
       visual.columns && visual.columns.length > 0
         ? visual.columns
@@ -647,7 +663,12 @@ export async function readWidget(
       ...(target.key ? { id: row[target.key] } : {}),
       ...Object.fromEntries(columns.map((column) => [column.name, row[column.name] ?? null])),
     }));
-    return { columns, rows, nextOffset: page.nextOffset };
+    const capped = visual.limit !== undefined && offset + page.items.length >= visual.limit;
+    return {
+      columns,
+      rows: offset >= (visual.limit ?? Infinity) ? [] : rows,
+      nextOffset: capped ? null : page.nextOffset,
+    };
   };
 
   /** The caller, as `{ user: "id" }` names them. */

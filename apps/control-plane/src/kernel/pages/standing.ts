@@ -70,6 +70,7 @@ async function keptAt(
         .where("path", "=", path)
         .executeTakeFirst();
   if (draft) return draft.body;
+  // Exact path on purpose: the path of the change being compared, which is what is there now.
   const deployed = await kernel.db
     .selectFrom("resource")
     .select("body")

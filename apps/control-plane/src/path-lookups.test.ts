@@ -22,6 +22,8 @@ const ALLOWED: Record<string, number> = {
   "kernel/authoring.ts": 2,
   "kernel/execution/runs.ts": 1,
   "kernel/execution/triggers.ts": 2,
+  // The path of the change being compared: what is there now.
+  "kernel/pages/standing.ts": 1,
   "kernel/resolve.ts": 1,
   "kernel/resources.ts": 4,
   "routes/apps.ts": 2,
@@ -34,6 +36,9 @@ const ALLOWED: Record<string, number> = {
   "routes/interfaces.ts": 1,
   "routes/search.ts": 1,
   "routes/worker.ts": 3,
+  // A failure alert's connection as declared now; a create refused only where something is at the
+  // path now; a delete of the resource at exactly this path.
+  "routes/workspaces.ts": 3,
 };
 
 const root = fileURLToPath(new URL("../src", import.meta.url));

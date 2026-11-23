@@ -3,7 +3,6 @@ import { existsSync, readFileSync } from "node:fs";
 import type { IncomingMessage } from "node:http";
 import { join } from "node:path";
 import {
-  buildApp,
   buildSearchIndex,
   type DocsApp,
   loadSearchIndex,
@@ -16,7 +15,7 @@ import { MIN_PASSWORD_LENGTH } from "../../config.js";
 import { ANONYMOUS, type Db, type Principal, writeAudit } from "../audit.js";
 import { check } from "../authorize.js";
 import { describeTable, insertRows, withData } from "../data/rows.js";
-import { consoleDirectory, productNames } from "../docs/product.js";
+import { buildWorkspaceApp, consoleDirectory, productNames } from "../docs/product.js";
 import { workingDocs } from "../docs/working.js";
 import {
   checkEndUserPassword,
@@ -1307,7 +1306,8 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
     const { resources, apps } = await workingDocs(db, workspace.id);
     const app = apps.find((one) => one.path === appPath);
     if (!app) return missing();
-    const { set } = buildApp(
+    const { set } = buildWorkspaceApp(
+      kernel.config,
       app,
       resources.filter((one) => one.state !== "removed"),
     );

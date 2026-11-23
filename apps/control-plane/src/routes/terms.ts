@@ -1,14 +1,8 @@
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
-import {
-  buildApp,
-  type DocSet,
-  type DocsApp,
-  docsApps,
-  type ResourceLike,
-  urlOf,
-} from "@volvel/docs-engine";
+import { type DocSet, type DocsApp, docsApps, type ResourceLike, urlOf } from "@volvel/docs-engine";
 import { type Static, Type } from "typebox";
 import { appUrl } from "../kernel/apps/address.js";
+import { buildWorkspaceApp } from "../kernel/docs/product.js";
 import type { RequestContext, WorkspaceRef } from "../kernel/http.js";
 import { access, findWorkspace, guestLimit } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
@@ -137,7 +131,12 @@ export function termRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       const apps: Built[] = [];
       for (const app of docsApps(rows)) {
         const row = rows.find((one) => one.kind === "app" && one.path === app.path);
-        if (row) apps.push({ app, id: row.id, set: buildApp(app, [...rows, ...around]).set });
+        if (row)
+          apps.push({
+            app,
+            id: row.id,
+            set: buildWorkspaceApp(kernel.config, app, [...rows, ...around]).set,
+          });
       }
       kept.set(workspaceId, { bundle, apps });
       if (kept.size > 200) kept.delete(kept.keys().next().value as string);

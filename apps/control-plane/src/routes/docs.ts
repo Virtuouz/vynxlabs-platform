@@ -1,7 +1,6 @@
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import {
   appOf,
-  buildApp,
   buildSearchIndex,
   type DocsApp,
   docsApps,
@@ -14,6 +13,7 @@ import {
 import { walk } from "@volvel/markup";
 import { type Static, Type } from "typebox";
 import { appUrl } from "../kernel/apps/address.js";
+import { buildWorkspaceApp } from "../kernel/docs/product.js";
 import { type WorkingResource, workingDocs } from "../kernel/docs/working.js";
 import { notFound } from "../kernel/errors.js";
 import type { RequestContext } from "../kernel/http.js";
@@ -335,7 +335,7 @@ export function docRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         const kept = resources.filter((one) => one.state !== "removed");
         const items = [];
         for (const one of apps) {
-          const { set } = buildApp(one, kept);
+          const { set } = buildWorkspaceApp(kernel.config, one, kept);
           for (const hit of loadSearchIndex(buildSearchIndex(set)).search(query.q, 10)) {
             items.push({
               path: `${one.docs}/${hit.path}`,

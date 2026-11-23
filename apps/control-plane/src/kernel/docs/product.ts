@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { buildApp } from "@volvel/docs-engine";
 import type { Config } from "../../config.js";
 
 /** Where the console's built files are: where the image put them, or beside this code in a checkout. */
@@ -43,4 +44,18 @@ export function productNames(config: Pick<Config, "consoleDir">): ProductNames |
     read.set(folder, names);
   }
   return read.get(folder);
+}
+
+/**
+ * A workspace's docs app built as a deploy builds it: held to the names the
+ * product's own help has taken. Every place that builds one for a person to
+ * see (a draft preview, the search of drafts, the terms) goes through this, so
+ * that none shows what the deployed site would drop.
+ */
+export function buildWorkspaceApp(
+  config: Pick<Config, "consoleDir">,
+  app: Parameters<typeof buildApp>[0],
+  resources: Parameters<typeof buildApp>[1],
+) {
+  return buildApp(app, resources, { product: productNames(config) });
 }

@@ -985,6 +985,28 @@ describe("someone who writes documentation in the console, and is not a develope
     expect((await wren.delete(`${devWs()}/drafts/guide/support/exchanges`)).status).toBe(204);
   });
 
+  test("DOC-08 a draft preview, the terms and the search leave out what a deploy would refuse: a term the product owns", async () => {
+    const at = (url: string) => t.app.inject({ url, headers: { host: MAIN, ...wren.headers } });
+    expect(
+      (
+        await save(
+          wren,
+          "guide/clash",
+          text(
+            "title: Clash\nterms:\n  - id: workspace\n    term: workspace\n    short: Ours alone.",
+            "::glossary\n",
+          ),
+        )
+      ).status,
+    ).toBe(200);
+    const preview = await at("/apps/acme/dev/guide-site/_draft/clash");
+    expect(preview.statusCode).toBe(200);
+    expect(preview.body).not.toContain("Ours alone.");
+    const known = (await wren.get(`${devWs()}/terms`)).body.terms as Any[];
+    expect(known.map((one) => one.id)).not.toContain("workspace");
+    expect((await wren.delete(`${devWs()}/drafts/guide/clash`)).status).toBe(204);
+  });
+
   test("a change to the tree of pages is saved whole, or not at all", async () => {
     const batch = (who: Client, changes: object[]) =>
       who.post(`${devWs()}/drafts/batch`, { changes });

@@ -54,3 +54,14 @@ Walked on the throwaway instance at `8f8fa3f7`. Rows of the same shape as the ot
 - "Name and path" is enabled on a removal draft in Queries.
 - Undo refused after another window's change says "Reload it" though the page shows the change already.
 - At 390, Data sources scrolls sideways with Unbind out of view and no cue.
+
+### WLK-10 Dialogs open with focus on Close, so Enter cancels
+- **Outcome:** reproduced (data and widget walks: Add column, Change source, an action's confirmation)
+- **Severity:** rough
+- **Where:** `packages/ui/src/Dialog.tsx` / `SideSheet`: the shared piece. A form's first field takes focus; a confirmation's main button does, unless it destroys, when Cancel does. Check every caller still reads right (POLISH-013).
+
+### WLK-11 Smaller, from the widget walk
+- A custom confirmation title with a field ("Remove the invoice {number}?") reads "Remove the invoice?" for several rows: it gives the count, as the default title does (`packages/screens/src/actions.tsx`, `fillText`).
+- A flow that refuses its input is shown as "does not match what the flow flows/wid-strict takes: /input must have required property 'why'." in two alerts: once, in words ("The flow needs why").
+- The rows behind a money pivot cell show cents (135,795) where the widget shows $1,357.95: the same column format.
+- Clearing an action's message and adding it again with Close on gives create, close, message: the message comes before the close.

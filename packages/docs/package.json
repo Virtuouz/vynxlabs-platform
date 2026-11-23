@@ -7,8 +7,11 @@
   "exports": {
     "./manifest.json": "./dist/manifest.json",
     "./search.json": "./dist/search.json",
+    "./fields.json": "./dist/fields.json",
     "./pages/*": "./dist/pages/*",
     "./content/*": "./content/*",
+    "./assets/*": "./dist/assets/*",
+    "./openapi.json": "./generated/openapi.json",
     "./package.json": "./package.json"
   },
   "files": [

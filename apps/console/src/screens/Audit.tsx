@@ -231,6 +231,7 @@ export function AuditTable({
   const [error, setError] = useState<ApiError>();
   const [loaded, setLoaded] = useState(false);
   const [closed, setClosed] = useState(false);
+  const [moreOpen, setMoreOpen] = useState<boolean>();
   const [linked, setLinked] = useState<Entry>();
   const wide = useWide(WIDE.inspector);
   const tenantId = /^\/tenants\/([^/]+)/.exec(path)?.[1];
@@ -333,6 +334,10 @@ export function AuditTable({
   );
   const aboutName =
     entries.find((entry) => entry.targetId === url.about)?.targetLabel ?? url.about ?? "";
+  // The filters that are used less sit behind one control that says how many are set, so the first
+  // row holds the same few whatever the labels are. All are in the address (GOV-P8).
+  const moreSet = [url.actor, url.action, url.kind].filter(Boolean).length;
+  const moreShown = moreOpen ?? moreSet > 0;
   const select = "h-8 rounded-control border border-line bg-surface px-2 text-ink";
 
   const columns: CollectionColumn<Entry>[] = [
@@ -434,6 +439,16 @@ export function AuditTable({
       toolbar={
         <div className="flex flex-col gap-3">
           <div className="flex flex-wrap items-end gap-2">
+            <label className="flex w-full flex-col text-meta text-ink-muted sm:w-64">
+              <span className="sr-only">Search</span>
+              <input
+                type="search"
+                value={typed}
+                placeholder="An action, name, email or host"
+                onChange={(event) => setTyped(event.currentTarget.value)}
+                className={select}
+              />
+            </label>
             <label className="flex flex-col text-meta text-ink-muted">
               <span className="sr-only">Area</span>
               <select
@@ -507,68 +522,66 @@ export function AuditTable({
                 </select>
               </label>
             ) : null}
-            {
-              <>
-                <label className="flex flex-col text-meta text-ink-muted">
-                  <span className="sr-only">Who</span>
-                  <select
-                    value={url.actor ?? ""}
-                    onChange={(event) => setUrl({ actor: event.currentTarget.value || undefined })}
-                    className={`${select} max-w-40`}
-                  >
-                    <option value="">Anyone</option>
-                    {(facets.data?.actors ?? [])
-                      .filter((one) => one.id)
-                      .map((one) => (
-                        <option key={one.id} value={one.id ?? ""}>
-                          {one.label ?? `${one.type} ${one.id?.slice(-8)}`} ({one.count})
-                        </option>
-                      ))}
-                  </select>
-                </label>
-                <label className="flex flex-col text-meta text-ink-muted">
-                  <span className="sr-only">Action</span>
-                  <select
-                    value={url.action ?? ""}
-                    onChange={(event) => setUrl({ action: event.currentTarget.value || undefined })}
-                    className={`${select} max-w-40`}
-                  >
-                    <option value="">Any action</option>
-                    {(facets.data?.actions ?? []).map((one) => (
-                      <option key={one.value} value={one.value}>
-                        {actionWords(one.value)} ({one.count})
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="flex flex-col text-meta text-ink-muted">
-                  <span className="sr-only">Done to</span>
-                  <select
-                    value={url.kind ?? ""}
-                    onChange={(event) => setUrl({ kind: event.currentTarget.value || undefined })}
-                    className={`${select} max-w-48`}
-                  >
-                    <option value="">Anything</option>
-                    {(facets.data?.targetTypes ?? []).map((one) => (
-                      <option key={one.value} value={one.value}>
-                        {targetTypeWords(one.value)} ({one.count})
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </>
-            }
-            <label className="flex min-w-44 flex-1 flex-col text-meta text-ink-muted sm:max-w-64">
-              <span className="sr-only">Search</span>
-              <input
-                type="search"
-                value={typed}
-                placeholder="An action, name, email or host"
-                onChange={(event) => setTyped(event.currentTarget.value)}
-                className={select}
-              />
-            </label>
+            <Button
+              size="small"
+              aria-expanded={moreShown}
+              aria-controls="audit-more-filters"
+              onClick={() => setMoreOpen(!moreShown)}
+            >
+              More filters{moreSet > 0 ? ` (${moreSet})` : ""}
+            </Button>
           </div>
+          {moreShown ? (
+            <div id="audit-more-filters" className="flex flex-wrap items-end gap-2">
+              <label className="flex flex-col text-meta text-ink-muted">
+                <span className="sr-only">Who</span>
+                <select
+                  value={url.actor ?? ""}
+                  onChange={(event) => setUrl({ actor: event.currentTarget.value || undefined })}
+                  className={`${select} max-w-40`}
+                >
+                  <option value="">Anyone</option>
+                  {(facets.data?.actors ?? [])
+                    .filter((one) => one.id)
+                    .map((one) => (
+                      <option key={one.id} value={one.id ?? ""}>
+                        {one.label ?? `${one.type} ${one.id?.slice(-8)}`} ({one.count})
+                      </option>
+                    ))}
+                </select>
+              </label>
+              <label className="flex flex-col text-meta text-ink-muted">
+                <span className="sr-only">Action</span>
+                <select
+                  value={url.action ?? ""}
+                  onChange={(event) => setUrl({ action: event.currentTarget.value || undefined })}
+                  className={`${select} max-w-40`}
+                >
+                  <option value="">Any action</option>
+                  {(facets.data?.actions ?? []).map((one) => (
+                    <option key={one.value} value={one.value}>
+                      {actionWords(one.value)} ({one.count})
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex flex-col text-meta text-ink-muted">
+                <span className="sr-only">Done to</span>
+                <select
+                  value={url.kind ?? ""}
+                  onChange={(event) => setUrl({ kind: event.currentTarget.value || undefined })}
+                  className={`${select} max-w-48`}
+                >
+                  <option value="">Anything</option>
+                  {(facets.data?.targetTypes ?? []).map((one) => (
+                    <option key={one.value} value={one.value}>
+                      {targetTypeWords(one.value)} ({one.count})
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          ) : null}
           {backwards ? (
             <p className="m-0 text-meta text-danger">The end date is before the start date.</p>
           ) : null}

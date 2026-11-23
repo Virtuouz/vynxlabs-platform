@@ -239,13 +239,6 @@ export function Provisioning({
             ) : null}
           </>
         )}
-        <SaveBar
-          dirty={dirty}
-          saving={busy}
-          onSave={() => void save()}
-          onDiscard={() => setSettings(data.settings)}
-          what="how pushes are taken"
-        />
       </section>
 
       <section className="flex flex-col gap-2">
@@ -271,6 +264,13 @@ export function Provisioning({
         </p>
       </section>
       <Pushed root={root} />
+      <SaveBar
+        dirty={dirty}
+        saving={busy}
+        onSave={() => void save()}
+        onDiscard={() => setSettings(data.settings)}
+        what="how pushes are taken"
+      />
     </div>
   );
 }

@@ -114,3 +114,16 @@ test("R-last: Discard and Save give the focus back to where it was, not to the p
   await waitFor(() => expect(screen.queryByRole("button", { name: "Discard" })).toBeNull());
   expect(document.activeElement).toBe(field);
 });
+
+test("R-final: a page with a save bar fills the scroll container, so the bar rests on its bottom edge", async () => {
+  const { Page } = await import("./ListScreen.tsx");
+  show(
+    <Page title="Retention">
+      <SaveBar dirty onSave={() => {}} onDiscard={() => {}} />
+    </Page>,
+  );
+  const bar = screen.getByRole("region", { name: "Unsaved changes" });
+  // The bar takes the free height above it (auto margin) in a page that is itself at least as tall as the scroll area.
+  expect(bar.className).toContain("mt-auto");
+  expect(bar.parentElement?.className).toContain("flex-1");
+});

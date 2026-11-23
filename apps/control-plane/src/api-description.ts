@@ -193,7 +193,8 @@ const SIGN_IN_ROUTES: Record<string, LibraryRoute> = {
   },
   "GET /list-sessions": {
     summary: "List the caller's sessions",
-    description: "Every session of the signed-in member that has not ended.",
+    description:
+      "The sessions of the signed-in member that have not ended, up to 100: the library answers with one page of rows and no cursor. Ending the others ends every one, listed or not.",
   },
   "POST /revoke-session": {
     summary: "End one of the caller's sessions",

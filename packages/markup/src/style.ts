@@ -1,7 +1,7 @@
 /**
  * The stylesheet for a page of documentation, wherever it is drawn: served as
  * a site, or shown in a console. It styles only what is inside an element of
- * class `vd-doc`, and takes its colours from custom properties, each with a
+ * class `vd-doc`, and takes its colors from custom properties, each with a
  * plain default, so whoever shows the page maps them onto a theme:
  *
  *   --vd-ink  --vd-muted  --vd-line  --vd-surface  --vd-sunken  --vd-action

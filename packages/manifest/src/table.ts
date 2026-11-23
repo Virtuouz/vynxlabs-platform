@@ -25,7 +25,7 @@ export interface TableColumn {
   references?: string;
   /** For a reference. Left out, `restrict`. */
   onDelete?: OnDelete;
-  /** For an enum or an enum_list: a value alone, or with its label and colour. */
+  /** For an enum or an enum_list: a value alone, or with its label and color. */
   values?: (string | EnumValue)[];
   renamedFrom?: string;
 }
@@ -53,7 +53,7 @@ export function enumValues(values: readonly (string | EnumValue)[] | undefined):
   return (values ?? []).map((one) => (typeof one === "string" ? { value: one } : one));
 }
 
-/** The colour a value is drawn on, as `#rrggbb`, or nothing when it has none. */
+/** The color a value is drawn on, as `#rrggbb`, or nothing when it has none. */
 export function enumColor(color: string | undefined): string | undefined {
   if (!color) return undefined;
   return color in ENUM_COLORS ? ENUM_COLORS[color as keyof typeof ENUM_COLORS] : color;

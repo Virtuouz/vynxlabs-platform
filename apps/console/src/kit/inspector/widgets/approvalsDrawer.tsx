@@ -188,7 +188,7 @@ export function ApprovalsDataSection({ env }: { env: Env }) {
             {
               value: "all",
               title: "Every one, theirs or not",
-              line: "The others are shown with their buttons greyed",
+              line: "The others are shown with their buttons grayed",
             },
           ]}
           onChange={(whose) => write({ flows: source.flows, whose }, "choosing whose requests")}

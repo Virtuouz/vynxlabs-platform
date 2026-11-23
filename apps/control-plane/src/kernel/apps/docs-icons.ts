@@ -112,7 +112,7 @@ const SHAPES: Record<string, string> = {
 /** The names a folder's `icon` may take and be drawn. */
 export const DOCS_ICON_NAMES: readonly string[] = Object.keys(SHAPES);
 
-/** An icon as inline SVG, or nothing for a name it does not know. Drawn in the colour of the text around it. */
+/** An icon as inline SVG, or nothing for a name it does not know. Drawn in the color of the text around it. */
 export function icon(name: string | undefined, size = 16): string {
   const shape = name === undefined ? undefined : SHAPES[name];
   if (shape === undefined) return "";

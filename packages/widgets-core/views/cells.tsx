@@ -34,7 +34,7 @@ const TONE_CLASS: Record<Tone, string> = {
 
 /**
  * A status: a chip with a dot, as the boards draw it. Its tone is the widget's (`badges`); with
- * none, the colour the column gives the value, drawn as a tint with that colour's dot.
+ * none, the color the column gives the value, drawn as a tint with that color's dot.
  */
 export function DotBadge({
   tone,

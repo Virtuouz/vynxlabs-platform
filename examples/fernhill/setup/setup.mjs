@@ -850,5 +850,5 @@ mkdirSync(join(HERE, ".platform"), { recursive: true });
 writeFileSync(join(HERE, ".platform/demo.json"), `${JSON.stringify(demo, null, 2)}\n`);
 console.log(`\nDone. Sign-ins and addresses are in ${join(HERE, ".platform/demo.json")}`);
 console.log(
-  `Who may mark an invoice paid: Practice managers (Maya Brooks, Rowan Ellis) and Billing (Rowan Ellis, Devi Shah). Everyone else sees "Mark paid" greyed.`,
+  `Who may mark an invoice paid: Practice managers (Maya Brooks, Rowan Ellis) and Billing (Rowan Ellis, Devi Shah). Everyone else sees "Mark paid" grayed.`,
 );

@@ -359,7 +359,7 @@ test("Rules: a button's can be pressed when and who can run it write the action"
   const start: PageWidget = { ...pressMe, on: { click: { steps: [{ do: "close" }] } } };
   show(<Rules start={start} />);
   expect(
-    screen.getByText("Shown but greyed out otherwise, with the reason as a tooltip."),
+    screen.getByText("Shown but grayed out otherwise, with the reason as a tooltip."),
   ).toBeTruthy();
   expect(
     screen.getByText(

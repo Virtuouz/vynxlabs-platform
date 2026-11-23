@@ -487,6 +487,18 @@ test("a source's column the database fills in is not asked for when a row is add
   expect(calls.find((call) => call.method === "POST")?.body).toEqual({ name: "Bo" });
 });
 
+test("the Data sources screens use the product's words, not the platform (P31)", async () => {
+  routes[`GET /api/v1${root}/data-source-tables/erp`] = () => [200, { items: [] }];
+  routes[`GET /api/v1${root}/data-source-bindings`] = () => [200, { items: [] }];
+  show(<SourceView root={root} path="erp" link="/t/t1/workspaces/w1" />);
+  await screen.findByText(/An external database/);
+  expect(document.body.textContent).not.toMatch(/the platform/i);
+  cleanup();
+  show(<Sources root={root} link="/t/t1/workspaces/w1" />);
+  await waitFor(() => expect(document.body.textContent).toContain("outside Volvel"));
+  expect(document.body.textContent).not.toMatch(/the platform/i);
+});
+
 test("filter text becomes a filter of the column's type", () => {
   expect(toFilter("text", " ada ")).toEqual({ op: "contains", value: "ada" });
   expect(toFilter("text", "!~ ada")).toEqual({ op: "not_contains", value: "ada" });

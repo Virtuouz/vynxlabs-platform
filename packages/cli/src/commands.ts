@@ -186,7 +186,8 @@ export type CommandName = (typeof COMMANDS)[number]["command"];
 
 /** What is true of several commands, said once under the list. */
 export const COMMAND_NOTES = [
-  "build, run, dev, deploy and pull read the repository in the current directory, or --dir <path>. All but pull take --entry <file>; all take --resources <folder>.",
+  "build, schemas, run, dev, deploy, pull, tenant plan and tenant release read the repository in the current directory, or --dir <path>.",
+  "build, run, dev and deploy take --entry <file>, where the code is exported from (src/index.ts); these and pull take --resources <folder>, where the console's resources are (platform). `entry` and `resources` in volvel.yaml say the same.",
   "Create an API key in the console under your account menu.",
   "VOLVEL_URL and VOLVEL_TOKEN override the saved settings.",
   "volvel --version prints the version. volvel <command> --help shows that command's lines.",

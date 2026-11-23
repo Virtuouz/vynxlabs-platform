@@ -266,6 +266,8 @@ describe("a verified name whose record is gone (GOV-25, D45)", () => {
     expect(gone.verifiedAt).toBe(first.verifiedAt);
     expect(gone.recordGoneAt).not.toBeNull();
     expect(gone.checkError).toContain("No TXT record");
+    // The tenant's count of hostnames to look at includes it.
+    expect((await alice.get(`/tenants/${tenant}/summary`)).body.domainsToFix).toBeGreaterThan(0);
     await sleep(15);
     // Gone since the first check that did not find it, not since the latest.
     expect((await alice.post(url)).body.recordGoneAt).toBe(gone.recordGoneAt);

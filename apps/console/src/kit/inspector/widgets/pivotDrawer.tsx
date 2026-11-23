@@ -2,10 +2,12 @@
  * The pivot's drawer (board 15). Data: Measure, Rows and Columns, with a small shaded preview
  * of the grid. Display: its heading, how numbers look, shading, and the totals.
  */
-import { DrawerBlock, DrawerGroup } from "@volvel/ui";
+import { DashedAdd, DrawerBlock, DrawerGroup } from "@volvel/ui";
 import { formatNumber, type SummaryData } from "@volvel/widgets";
 import { headingWords, shadeOf } from "@volvel/widgets-core/views";
+import { columnsByGrouping } from "../grouping.ts";
 import { BreakdownRow, MeasureRow } from "../measureControls.tsx";
+import { columnsOf, writeVisual } from "../queryParts.tsx";
 import {
   ConfigToggle,
   type DrawerData,
@@ -118,6 +120,48 @@ const cellWords = (value: number | null, format: Parameters<typeof formatNumber>
     ? ""
     : formatNumber(value, { ...(format ?? { style: "number" }), notation: "compact" });
 
+/**
+ * "Then by": a third breakdown between the rows and the columns. It starts on the column with the
+ * fewest kinds of value that the other two do not use, and is changed or removed like the others.
+ */
+function ThenBy({ env }: { env: SectionProps["env"] }) {
+  const query = queryOf(env, "rows");
+  if (!query) return null;
+  const groups = query.visual.groupBy ?? [];
+  const table = env.catalog.tables.find((one) => one.name === query.visual.table);
+  const free = columnsOf(env, query.visual).filter(
+    (one) => !groups.some((g) => g.column === one.name),
+  );
+  const best = columnsByGrouping(free, table?.rows)[0];
+  if (!best) return null;
+  return (
+    <div className="p-2">
+      <DashedAdd
+        onClick={() =>
+          writeVisual(
+            env,
+            "rows",
+            {
+              ...query.visual,
+              groupBy: [
+                ...groups.slice(0, 1),
+                {
+                  column: best.name,
+                  ...(TEMPORAL.has(best.type) ? { bucket: "month" as const } : {}),
+                },
+                ...groups.slice(1),
+              ],
+            },
+            "adding a breakdown",
+          )
+        }
+      >
+        Then by
+      </DashedAdd>
+    </div>
+  );
+}
+
 export function PivotData({ env, data }: SectionProps) {
   const query = queryOf(env, "rows");
   if (!query) return null;
@@ -130,7 +174,9 @@ export function PivotData({ env, data }: SectionProps) {
     >
       <MeasureRow env={env} input="rows" at={0} label="Measure" />
       <BreakdownRow env={env} input="rows" at={0} label="Rows" />
+      {groups.length >= 3 ? <BreakdownRow env={env} input="rows" at={1} label="Then by" /> : null}
       <BreakdownRow env={env} input="rows" at={columnsAt} label="Columns" none="Nothing" />
+      {groups.length === 2 ? <ThenBy env={env} /> : null}
       <DrawerBlock>
         <PivotPreview
           query={query}

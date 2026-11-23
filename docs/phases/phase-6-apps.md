@@ -147,9 +147,9 @@ Everything that is not the API and not the console is served before routing, by 
 
 ## The kit, the client and the CLI
 
-- `@vynxlabs/ui` gains tabs, toasts, pagination, checkbox, number, date and text-area fields, a form drawn from a JSON Schema, a page frame and a chart. It can be built and published. Workspace consumers still read its sources.
+- `@volvel/ui` gains tabs, toasts, pagination, checkbox, number, date and text-area fields, a form drawn from a JSON Schema, a page frame and a chart. It can be built and published. Workspace consumers still read its sources.
 - The interface widget extension point is `InterfaceWidget` in the SDK: a name, a JSON Schema for its configuration, and a render function. The kit's table, form and chart are registered through `registerWidget`.
-- `@vynxlabs/app` is the browser client: `table`, `runScript`, `session`, `signOut`, `useQuery`, `useSession`. It reads the page's context and calls the public API.
+- `@volvel/app` is the browser client: `table`, `runScript`, `session`, `signOut`, `useQuery`, `useSession`. It reads the page's context and calls the public API.
 - SDK: `defineApp`, `defineTheme`, `defineRole`, `defineBinding`.
 - CLI: `build` compiles apps, `deploy` uploads the files the tenant lacks and then the bundle, and `dev` serves an app from its source with reload, against a workspace, as the developer.
 - Console: a workspace's Apps tab, and End users, Branding and Domains for a tenant. It shows a tenant's colors while that tenant is open.
@@ -198,7 +198,7 @@ Checked on 2026-11-12 against the build on the `claude/modest-johnson-9fi53e` br
 | 6. Minimal footprint | Met. No container was added. Mail is optional |
 | 7. No central dependency | Met. Nothing calls out unless mail or a hostname check is asked for. No fonts or scripts from elsewhere |
 | 8. Tenant portability | Met. End users, app files and branding travel. Hostnames and sign-ins do not, and the export says so |
-| 9. The core uses its own SDK | Met where it applies. The kit's widgets register through the published interface. The console does not yet use `@vynxlabs/app` |
+| 9. The core uses its own SDK | Met where it applies. The kit's widgets register through the published interface. The console does not yet use `@volvel/app` |
 | 10. Reuse libraries and engines, not applications | Met. Vega-Lite is an engine wrapped in the kit's styling. Nodemailer is a library |
 | 11. Keep the end-user version possible | Met. Forms, tables and charts are drawn from JSON descriptions through the widget interface, which is what generated screens need |
 | 12. Kernel before features | Met. No generated apps, no builder, no single sign-on for end users |
@@ -250,7 +250,7 @@ One full run of the tests, out of five, failed seven tests in `execution.test.ts
 - Mail was exercised through a stand-in for the transport, not against a mail server.
 - The guest limit is per replica and by address.
 - Files of apps that no bundle lists any more are kept until the tenant is deleted.
-- The console keeps its own API client. It does not use `@vynxlabs/app`.
+- The console keeps its own API client. It does not use `@volvel/app`.
 - The console's picker for one end user in Access shows the first 200.
 - The start page of a portal lists production's apps only. A dev workspace's app is reached by its address.
 - `platform dev` acts as the developer, with an API key. It does not show the app as an end user would see it.
@@ -277,6 +277,6 @@ From the approved plan:
 | Groups of end users | Not built. One end user, or all of them | Not needed for the exit criterion. Listed as a gap |
 | `ctx.caller` | `ctx.run.startedBy` | It is a fact about the run, and schedules and webhooks have one too |
 | The app SDK generates typed table access | Types come from the table's definition, imported as a type | Nothing to generate, and no server code reaches the browser |
-| The console moves onto `@vynxlabs/app` | It keeps its own small client | The console is not served as an app and has no app context. Listed as a gap |
+| The console moves onto `@volvel/app` | It keeps its own small client | The console is not served as an app and has no app context. Listed as a gap |
 | `portal_user` includes files | It does not | A file has no owner |
 | A chart of volume in the example | A chart of orders by status | The example's table has the data for it |

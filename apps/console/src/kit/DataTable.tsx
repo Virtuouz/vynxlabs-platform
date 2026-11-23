@@ -468,7 +468,7 @@ export function DataTable<Row>(props: DataTableProps<Row>) {
                         : undefined
                     }
                     // A width asked for is for a table with room: on a phone the columns take what they need, or the one beside it is squeezed.
-                    className={`px-3 py-2 font-medium ${column.width ? `${column.width} max-sm:w-auto` : ""} ${SHOWN[column.priority ?? 1]} ${
+                    className={`whitespace-nowrap px-3 py-2 font-medium ${column.width ? `${column.width} max-sm:w-auto` : ""} ${SHOWN[column.priority ?? 1]} ${
                       column.align === "end" ? "text-right" : ""
                     } ${edges}`}
                   >

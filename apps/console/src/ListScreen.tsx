@@ -15,6 +15,7 @@ import { useEffect, useId, useState } from "react";
 import { type ApiError, useLoad } from "./api.ts";
 import { ask, notify } from "./ask.tsx";
 import { type DataColumn, DataTable } from "./kit/DataTable.tsx";
+import { keepPlace } from "./kit/focus.ts";
 import { clock } from "./kit/format.ts";
 import { Loading } from "./kit/LoadState.tsx";
 import { PageHeader } from "./kit/layout.tsx";
@@ -457,8 +458,11 @@ export function RemoveButton({
   affected,
   usesUnread = false,
   typeToConfirm,
+  disabled,
 }: {
   label?: string;
+  /** Why it cannot be done now, shown as the button's title; the button is then off. */
+  disabled?: string | undefined;
   confirm: string;
   run: () => Promise<unknown>;
   onDone: () => void;
@@ -473,7 +477,10 @@ export function RemoveButton({
     <Button
       variant="danger"
       size="small"
-      onClick={async () => {
+      disabled={disabled !== undefined}
+      {...(disabled !== undefined ? { title: disabled } : {})}
+      onClick={async (event) => {
+        const settle = keepPlace(event.currentTarget);
         const text = usesUnread
           ? `${question} What uses it could not be read, so what it affects is not listed here.`
           : affected?.length
@@ -487,6 +494,7 @@ export function RemoveButton({
         try {
           await run();
           onDone();
+          settle();
         } catch (error) {
           notify.error(error);
         }

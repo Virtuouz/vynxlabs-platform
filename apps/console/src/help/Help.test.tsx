@@ -98,7 +98,7 @@ describe("every screen has help", () => {
     ["/t/acme/workspaces/dev/flows/edit/sales/sync", "build-flows-editor"],
     ["/t/acme/workspaces/dev/scripts/new", "build-scripts-editor"],
     ["/t/acme/workspaces/dev/screens/portal", "build-screens-editor"],
-    ["/t/acme/workspaces/dev/dashboards/sales", "data-dashboards-editor"],
+    ["/t/acme/workspaces/dev/dashboards/sales", "data-dashboards"],
     ["/t/acme/workspaces/dev/flow-runs/123", "operate-runs"],
     ["/t/acme/workspaces/dev/changes", "operate-release"],
     ["/t/acme", "tenant-overview"],

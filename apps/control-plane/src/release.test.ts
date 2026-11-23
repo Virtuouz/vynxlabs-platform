@@ -258,6 +258,15 @@ describe("describing a change", () => {
     ]);
   });
 
+  test("WLK-17h: a kind is said as people say it, with no underscore", () => {
+    expect(describeChange("trigger_source", { a: 1 }, undefined)).toEqual([
+      "Removes the trigger source.",
+    ]);
+    expect(describeChange("trigger_source", undefined, { a: 1 })).toEqual([
+      "A new trigger source.",
+    ]);
+  });
+
   test("a script's reach and limits, a table's columns, and nothing at all", () => {
     expect(
       describeChange(

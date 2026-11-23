@@ -128,6 +128,18 @@ describe("a connection says what it is, and what is drafted is listed (CFG-05, C
     expect(after.configSchema.properties.host).toBeDefined();
   });
 
+  test("WLK-cfg2: a connection bound as SMTP is still SMTP when its bundle is more than five uploads old", async () => {
+    for (let n = 0; n < 7; n++) {
+      const uploaded = await alice.post(
+        `${ws(lone)}/bundles`,
+        bundle([manifest("variable", `later${n}`, {})]),
+      );
+      expect(uploaded.status, JSON.stringify(uploaded.body)).toBe(201);
+    }
+    const after = await connectionOf(lone, "mail");
+    expect(after).toMatchObject({ defined: false, bound: true, connector: "smtp" });
+  });
+
   test("a drafted connection is listed with its draft state, and found by its path", async () => {
     const saved = await alice.put(`${ws(lone)}/drafts/crm`, {
       kind: "connection",

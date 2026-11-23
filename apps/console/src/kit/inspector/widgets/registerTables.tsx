@@ -52,7 +52,7 @@ registerDrawer(TABLE, {
   group: "Searching",
   order: 50,
   when: (env) => searchOf(env) !== undefined,
-  note: "Which columns the search box looks in is set on the Search and filter widget, where the box is.",
+  note: "Which columns the search box looks in is set under Where each one goes, in this widget's Data tab.",
   render: (env) => {
     const found = searchOf(env);
     return (

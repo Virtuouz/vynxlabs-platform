@@ -3,7 +3,6 @@ import { existsSync, readFileSync } from "node:fs";
 import type { IncomingMessage } from "node:http";
 import { join } from "node:path";
 import {
-  buildApp,
   buildSearchIndex,
   type DocsApp,
   loadSearchIndex,
@@ -16,7 +15,7 @@ import { MIN_PASSWORD_LENGTH } from "../../config.js";
 import { ANONYMOUS, type Db, type Principal, writeAudit } from "../audit.js";
 import { check } from "../authorize.js";
 import { describeTable, insertRows, withData } from "../data/rows.js";
-import { consoleDirectory, productNames } from "../docs/product.js";
+import { buildDocs, consoleDirectory, PRODUCT_CLASHES, productNames } from "../docs/product.js";
 import { workingDocs } from "../docs/working.js";
 import {
   checkEndUserPassword,
@@ -149,6 +148,31 @@ function decodeSegments(path: string): string[] | null {
  * the request came to. At a hostname a tenant registered, every path belongs
  * to that tenant's app, including paths the console also has.
  */
+/** The bundles and apps whose clashes with the product's names were already said in the log. */
+const clashesSaid = new Set<string>();
+
+/**
+ * A page that took a name the product's help has since it was deployed drops it from the
+ * site without a word. Said once in the log for each bundle, so someone looking for the
+ * cause is told.
+ */
+function warnOfClashes(
+  kernel: Kernel,
+  bundleId: string,
+  app: string,
+  issues: readonly { path: string; code: string }[],
+) {
+  const clashes = issues.filter((issue) => PRODUCT_CLASHES.includes(issue.code));
+  const key = `${bundleId}:${app}`;
+  if (clashes.length === 0 || clashesSaid.has(key)) return;
+  clashesSaid.add(key);
+  if (clashesSaid.size > 500) clashesSaid.delete(clashesSaid.values().next().value as string);
+  kernel.log.warn(
+    { bundleId, app, pages: [...new Set(clashes.map((issue) => issue.path))] },
+    "pages of a docs app take names the product's help has, so the site leaves them out",
+  );
+}
+
 export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
   const { db } = kernel;
   /** How often someone who is not signed in may ask for pages and files, and send forms. */
@@ -1141,6 +1165,7 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
           ).map((row) => [row.path, row.updated_at] as const),
         );
     const docs = docsOf(at.bundleId, at.app, at.resources, productNames(kernel.config), updated);
+    warnOfClashes(kernel, at.bundleId, at.app.path, docs.built.issues);
     // The pages this reader said whether they helped, kept in their browser and nowhere else.
     const voted = new Set((readCookie(request, VOTE_COOKIE) ?? "").split(".").filter(Boolean));
     const voteOf = (page: string) =>
@@ -1293,7 +1318,8 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
     const { resources, apps } = await workingDocs(db, workspace.id);
     const app = apps.find((one) => one.path === appPath);
     if (!app) return missing();
-    const { set } = buildApp(
+    const { set } = buildDocs(
+      kernel.config,
       app,
       resources.filter((one) => one.state !== "removed"),
     );

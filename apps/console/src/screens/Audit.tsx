@@ -514,7 +514,7 @@ export function AuditTable({
                   <select
                     value={url.actor ?? ""}
                     onChange={(event) => setUrl({ actor: event.currentTarget.value || undefined })}
-                    className={`${select} max-w-56`}
+                    className={`${select} max-w-40`}
                   >
                     <option value="">Anyone</option>
                     {(facets.data?.actors ?? [])
@@ -531,7 +531,7 @@ export function AuditTable({
                   <select
                     value={url.action ?? ""}
                     onChange={(event) => setUrl({ action: event.currentTarget.value || undefined })}
-                    className={`${select} max-w-56`}
+                    className={`${select} max-w-40`}
                   >
                     <option value="">Any action</option>
                     {(facets.data?.actions ?? []).map((one) => (

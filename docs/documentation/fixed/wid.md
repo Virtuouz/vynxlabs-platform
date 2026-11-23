@@ -80,3 +80,10 @@ Commits are named by the row in their subject: `git log --grep "(WID-01)"`.
 - **Siblings looked at:** the flow and script input rows (`actionControls.tsx` ~565) pass no type and still read the text as it looks: the control does not know the input's type there (the schema's `properties` could give it; left, see Found). Condition values and filter "Starts as" use other controls.
 - **A person sees:** "Code becomes 007" is stored "007" and runs.
 - **Found:** flow and script inputs are typed by how the text looks; their schemas' property types (`FlowChoice.manualInput`, `ScriptChoice.inputSchema`) could be passed as `type` the same way.
+
+## WID-14 Clearing a section's name to retype it removed the section; WID-15 a field set to money lost its Format row
+- **Tests:** `apps/console/src/kit/inspector/widgets/records.test.tsx` > "a field set to money still has its Format row" and "clearing a section's name to retype it keeps the section and its fields" (both failed before).
+- **Changed:** `kit/inspector/widgets/fieldsList.tsx`: the Format row shows for "Number" and "Money"; the section's name is held in a new `SectionName` (draft in the editor) and written only when it is a name no other section has, so an emptied box, or typing through another section's name, writes nothing and says why ("A section needs a name." / "X is another section's name.").
+- **Siblings looked at:** the one `FieldsList` is shared by Detail and Form, so both are fixed; the "new section" box on add is separate and unchanged.
+- **A person sees:** the Format row on a money field; a section can be retyped without its fields dropping out.
+- **Walk:** Detail and Form drawers, a section renamed, a money field's format; 1440/390, keyboard, reload. Not run in a browser.

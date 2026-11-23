@@ -511,3 +511,39 @@ test("a text's style is chosen by looking at it, and its words show rendered", a
   expect(await screen.findByText("dollars")).toBeTruthy();
   expect(screen.getByText(/For steps, tabs and folds/)).toBeTruthy();
 });
+
+test("a field set to money still has its Format row", () => {
+  mount(
+    detail,
+    {
+      data: { record: { source: { visual: { table: "invoices" } } } },
+      config: {
+        fields: [
+          { column: "total", format: { style: "currency", currency: "USD", minorUnits: true } },
+        ],
+      },
+    },
+    DetailDisplaySection,
+  );
+  fireEvent.click(screen.getByRole("button", { name: /^Total/ }));
+  expect(screen.getByText("Format")).toBeTruthy();
+});
+
+test("clearing a section's name to retype it keeps the section and its fields", () => {
+  const seen = mount(
+    detail,
+    {
+      data: { record: { source: { visual: { table: "invoices" } } } },
+      config: { fields: [{ column: "client" }, { column: "notes", section: "Notes" }] },
+    },
+    DetailDisplaySection,
+  );
+  fireEvent.click(screen.getAllByRole("button", { name: /SECTION · NOTES/ }).at(-1) as HTMLElement);
+  const name = screen.getByLabelText("Name");
+  fireEvent.change(name, { target: { value: "" } });
+  const sections = () => (mine(seen).config.fields as { section?: string }[]).map((f) => f.section);
+  expect(sections()).toEqual([undefined, "Notes"]);
+  fireEvent.change(screen.getByLabelText("Name"), { target: { value: "C" } });
+  fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Cost" } });
+  expect(sections()).toEqual([undefined, "Cost"]);
+});

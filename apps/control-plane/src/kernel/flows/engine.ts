@@ -23,6 +23,7 @@ import {
   storable,
   storePayload,
 } from "../execution/runs.js";
+import { inputWords } from "../input-words.js";
 import type { Kernel } from "../kernel.js";
 import { observe } from "../metrics.js";
 import { type AliasUse, formerPaths, resolveResource } from "../resolve.js";
@@ -138,13 +139,7 @@ export async function checkFlowStart(
   if (entry?.type === "trigger" && entry.trigger.type === "manual" && entry.trigger.input) {
     const issues = validateJson(entry.trigger.input, request.input ?? {}, "/input");
     if (issues.length > 0) {
-      throw badRequest(
-        `The input does not match what the flow ${request.flow} takes: ${issues
-          .slice(0, 3)
-          .map((issue) => `${issue.path} ${issue.message}`)
-          .join("; ")}.`,
-        issues,
-      );
+      throw badRequest(`The flow ${request.flow} refused its input. ${inputWords(issues)}`, issues);
     }
   }
   return { request, workspace, bundle, manifest, body, alias, triggerNode };

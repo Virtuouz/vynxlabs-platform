@@ -3618,7 +3618,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       {
         // Read by a member who holds `instance:read`, or by a scraper that presents the
         // instance's metrics token: the handler checks which.
-        config: { access: access.public },
+        config: { access: access.public, traced: false },
         schema: {
           summary: "Instance metrics in Prometheus text format",
           description:

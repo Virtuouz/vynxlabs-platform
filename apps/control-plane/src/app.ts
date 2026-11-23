@@ -173,7 +173,7 @@ export async function buildApp(options: AppOptions) {
     const kind = request.routeOptions.config?.access?.kind;
     // A worker asking for work, and a scrape, are not work anyone follows.
     if (!kernel.telemetry.tracing || kind === "worker" || kind === "worker-host") return;
-    if (route.endsWith("/metrics") || route.endsWith("/health")) return;
+    if (request.routeOptions.config?.traced === false) return;
     const end = Date.now();
     kernel.telemetry.span({
       ...request.trace,

@@ -3,7 +3,7 @@ import { buildApp } from "./app.js";
 import { ConfigError, loadConfig } from "./config.js";
 import { bootstrapAdmin, recoverOperator } from "./kernel/bootstrap.js";
 import { setWorkerUserMode } from "./kernel/execution/isolation.js";
-import { rekey, rekeyIfRotating } from "./kernel/rekey.js";
+import { rekey, rekeyDataRole, rekeyIfRotating } from "./kernel/rekey.js";
 import { S3ObjectStore } from "./storage.js";
 import { version } from "./version.js";
 import { createWriter } from "./writer.js";
@@ -52,13 +52,34 @@ const startWriting = writer.start;
 
 // `node dist/main.js rekey`: seals again with MASTER_KEY whatever is sealed with
 // MASTER_KEY_SECONDARY, says what it did, and exits. 1 when a value opens with neither.
+// With `--data-role` it also changes the seed of the data role's password: stop every replica
+// first, and start them again after.
 if (process.argv[2] === "rekey") {
-  const result = await rekey(app.kernel).catch(async (error) => {
+  const dataRole = process.argv.slice(3).includes("--data-role");
+  const result = await (async () => {
+    if (dataRole) await rekeyDataRole(app.kernel);
+    return rekey(app.kernel);
+  })().catch(async (error) => {
     console.error(`The rewrap failed: ${error instanceof Error ? error.message : error}`);
     await app.close();
     process.exit(1);
   });
-  console.log(JSON.stringify({ masterKey: app.kernel.vault.fingerprints, ...result }, null, 2));
+  console.log(
+    JSON.stringify(
+      {
+        masterKey: app.kernel.vault.fingerprints,
+        ...(dataRole ? { dataRole: "changed" } : {}),
+        ...result,
+      },
+      null,
+      2,
+    ),
+  );
+  if (dataRole) {
+    console.error(
+      "The data role's seed is changed. Restart every replica now: until it is, it cannot read tenants' tables.",
+    );
+  }
   await app.close();
   process.exit(result.unopened.length > 0 ? 1 : 0);
 }

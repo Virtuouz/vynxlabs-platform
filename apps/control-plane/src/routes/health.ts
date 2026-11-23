@@ -49,7 +49,7 @@ export function healthRoutes(deps: {
     app.get(
       "/healthz",
       {
-        config: { access: access.public },
+        config: { access: access.public, traced: false },
         schema: {
           summary: "Liveness",
           description: "Returns 200 whenever the process is serving requests.",
@@ -63,7 +63,7 @@ export function healthRoutes(deps: {
     app.get(
       "/readyz",
       {
-        config: { access: access.public },
+        config: { access: access.public, traced: false },
         schema: {
           summary: "Readiness",
           description:

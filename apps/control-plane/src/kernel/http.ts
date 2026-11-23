@@ -80,6 +80,11 @@ declare module "fastify" {
      * `PREFERENCE_ROUTES` may say so.
      */
     preference?: true;
+    /**
+     * `false`: the route is polled by machines (a probe, a scrape) and is not a trace. A route
+     * names itself; the request hook does not guess from the end of a name.
+     */
+    traced?: false;
   }
   interface FastifyRequest {
     ctx: RequestContext;

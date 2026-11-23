@@ -346,6 +346,13 @@ describe("one trace, from the request to the worker", () => {
     expect(stepRun.trace_id).toBe(trace);
   });
 
+  test("health probes are not spans (HOST-29, INS-22)", async () => {
+    for (const path of ["/api/v1/healthz", "/api/v1/readyz"]) await t.app.inject({ url: path });
+    await t.kernel.telemetry.flush();
+    const names = new Set(spans().map((span) => span.name as string));
+    expect([...names].filter((name) => /healthz|readyz/.test(name))).toEqual([]);
+  });
+
   test("a worker asking for work and a scrape are not spans", async () => {
     await t.app.inject({
       url: "/api/v1/metrics",

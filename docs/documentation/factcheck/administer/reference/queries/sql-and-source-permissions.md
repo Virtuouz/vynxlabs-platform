@@ -18,4 +18,4 @@ Code as of commit `14f7d5b9` (branch `phase-31-write-the-docs`), 2026-11-23. Wri
 Labels, quoted messages and limits of the page were swept against the console and control-plane source (every bold label and quoted refusal found; messages built from parts checked at their template).
 
 - The built-in role table was checked against `apps/console/src/builtinRoles.ts` (held to the migrations by a test), and on the instance in tenant qry31chk: viewer (no `sql:read`, `resource:write`, `dashboard:write`) can list queries, run by name, see sources, test a source, and is refused `POST queries/run` and `POST dashboards`; app_maintainer is refused `resource:read` and `data_source:read` and may make a dashboard.
-- Corrected with the screens: the list disables **Test** without `data_source:write`; the source's own page does not (fault: see data-sources).
+- Corrected with the screens: the list disables **Test** without `data_source:write`; the source's own page does not (fault fixed (fc): the source page now turns Test off without data_source:write too, confirmed in the code (Data.tsx useSourceWrite); the page line is true as written).

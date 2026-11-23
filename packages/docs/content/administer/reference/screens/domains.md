@@ -60,7 +60,7 @@ The footer has **Remove**, **Disable** or **Enable**, and **Check now**.
 | **Disable** | Asks "Turn off <hostname>?" The hostname stops answering, and sign-ins made at that hostname end. The record stays. A verified name that is off answers 404, "This hostname is not served here. Its registration is turned off." |
 | **Remove** | Asks "Remove <hostname>?" The app is no longer served there, and sign-ins made at that hostname end. |
 
-Enabling a hostname that is not verified is refused: "This hostname is not verified yet, so it cannot be enabled. Create the TXT record shown here, wait for DNS to carry it, and press Check now. For a name that exists only inside a network and cannot be checked from here, ask an operator of this instance to enable it." An operator of the instance, who holds `instance:write`, can enable an unverified name. The instance then serves it, and the step says "Serving." The tenant can then disable it and enable it again, until an operator disables it.
+Enabling a hostname that is not verified is refused: "This hostname is not verified yet, so it cannot be enabled. Create the TXT record shown here, wait for DNS to carry it, and press Check now. For a name that exists only inside a network and cannot be checked from here, ask an operator of this instance to enable it." An operator of the instance, who holds `instance:write`, can enable an unverified name. The instance then serves it, and the step says "Serving, though the name is not verified. An operator of this instance enabled it without proof, so the name opens this app for whoever points it here." The tenant can then disable it and enable it again, until an operator disables it.
 
 ### Steps and what they say
 
@@ -70,6 +70,7 @@ Enabling a hostname that is not verified is refused: "This hostname is not verif
 | Verified, record gone | "Verified <time>. The record has not been found since <time>. The name stays verified: create the record again and check." |
 | Not verified | "Not verified. Last checked <time>." or "Not checked yet." |
 | Enabled | "Serving." |
+| Enabled by an operator, not verified | "Serving, though the name is not verified. An operator of this instance enabled it without proof, so the name opens this app for whoever points it here." |
 | Verified and not enabled | "Serves nothing: the name answers "not served here" until it is enabled." |
 | Not verified and not enabled | "Not enabled. Until it is verified, the name opens this instance's own address, as any name the instance does not know does." |
 

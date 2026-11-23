@@ -79,7 +79,7 @@ The check runs again by itself 600 ms after the slug or the passphrase stops cha
 A notice reads "NAME was imported: N rows and N stored objects. Members created: N. Members linked to accounts already here: N." Under it:
 
 - Where the custom tables are: "the database location "NAME"" or "the instance's own database".
-- "The workspace arrived with its triggers paused. Resume it when the instance it came from has stopped." or "All N workspaces arrived with their triggers paused. Resume each one when the instance it came from has stopped." (also said as "All 0 workspaces" when the tenant has none).
+- "The workspace arrived with its triggers paused. Resume it when the instance it came from has stopped." or "All N workspaces arrived with their triggers paused. Resume each one when the instance it came from has stopped." or, when the tenant had none, "The tenant had no workspaces, so there are no triggers to resume."
 - "N runs and N flow runs were unfinished in the export, and are recorded as canceled." when there were some.
 - "Not carried: …" for each item above.
 

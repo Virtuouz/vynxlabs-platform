@@ -14,7 +14,6 @@ The instance's screens are the ones in the **Instance** area: [All tenants](../.
 - **Moving a tenant in place.** A tenant's database location is chosen when it is made or imported, and the screens and the API offer no way to change it. Moving a tenant between locations, or between instances, is export, delete and import: see [Move a tenant](../../how-to/instance/moving-a-tenant). Deleting is part of it, because a tenant that is still here cannot be imported.
 - **Isolation beyond the database.** A database location holds a tenant's custom tables. It does not move the tenant's other data, such as its resources and members, which stay in the instance's database.
 - **Renaming a tenant's slug.** The slug is permanent.
-- **Rename and the console-code switch on every tenant row.** They are drawn for a tenant the operator belongs to or holds a grant for. For another tenant the API accepts the change from an operator, and the screen does not offer it.
 - **A command for the console-code switch.** `tenant.console_code` is changed on the screen and through the API. The CLI has no command for it.
 
 ## Members and operators

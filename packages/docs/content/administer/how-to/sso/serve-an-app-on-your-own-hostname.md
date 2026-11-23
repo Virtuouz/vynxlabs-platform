@@ -40,7 +40,7 @@ Open the hostname from the list with **Details**. Under **What it serves**, chan
 
 ## A name that exists only inside a network
 
-DNS from outside cannot show a record for a name that exists only inside your network. **Enable** is then refused: "This hostname is not verified yet, so it cannot be enabled." An operator of the instance, who holds `instance:write`, may enable it. The instance then serves the name, and the step **Enabled** says "Serving." although the name is not verified. After that the tenant can disable it and enable it again, until an operator disables it.
+DNS from outside cannot show a record for a name that exists only inside your network. **Enable** is then refused: "This hostname is not verified yet, so it cannot be enabled." An operator of the instance, who holds `instance:write`, may enable it. The instance then serves the name, and the step **Enabled** says "Serving, though the name is not verified. An operator of this instance enabled it without proof, so the name opens this app for whoever points it here." After that the tenant can disable it and enable it again, until an operator disables it.
 
 ## The result
 

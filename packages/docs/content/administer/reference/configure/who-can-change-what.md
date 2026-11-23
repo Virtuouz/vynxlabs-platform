@@ -53,7 +53,7 @@ The console reads what you hold and turns off what you do not. Nothing is hidden
 
 | Screen | What you see |
 | --- | --- |
-| **Connections** | The list and the pages, with a line "You can see this workspace's connections, not change it. It needs `connection:write`." and whom to ask. There is no **New connection**, and the buttons of the rows are off. Buttons for connection group members are not turned off: the instance refuses them. |
+| **Connections** | The list and the pages, with a line "You can see this workspace's connections, not change it. It needs `connection:write`." and whom to ask. There is no **New connection**, and the buttons of the rows are off. On **Connection groups**, **Add a member**, **Change** and **Remove** are off too, with the same line and the reason on each. |
 | **Variables** | The list, with "You can see this workspace's variables, not change it. It needs `variable:write`." **Set variable** and the row buttons are off. A variable's page has no **Change value**. |
 | **Secrets** | The list, with "You can see this workspace's secrets, not change it. It needs `secret:write`." **New secret** and **Delete** are off. A secret's **Value** tab says "Replacing the value needs the secret:write permission: ask an administrator of this workspace." |
 | **Alerts** | "You can see where this workspace's alerts go, not change it. It needs `workspace:write`." The two lists and **Save** are off. **Send a test alert** needs `connection:write`. |

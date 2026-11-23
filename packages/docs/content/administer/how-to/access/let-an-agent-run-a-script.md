@@ -47,7 +47,7 @@ The tool names, limits and the approval tools are in the [MCP reference](../../.
 
 - A run another person started, and an approval waiting for someone else, are masked for the agent as they are on screen. The agent's own are given as they are.
 - A tool waits up to 25 seconds for the run to end, then returns a run ID for `get_run`.
-- Giving the account **Agent runner** for the whole workspace, from **Access**, does not let it connect: the connection needs `workspace:read` in the workspace or a binding to a script or flow in it. The notice "An agent would be refused here: the account has no place in this workspace" says so.
+- Giving the account **Agent runner** for the whole workspace, from **Access**, is enough to connect. It is then offered every script and flow in the workspace it may start. An account with no role in the workspace and none on a script or flow in it is refused, and the Agent tools tab says so in a notice.
 
 ### If it does not work
 

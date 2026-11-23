@@ -15,7 +15,7 @@ Written at commit `14f7d5b9`. Lines are those of that commit. Checked by: second
 
 ## Second check (2026-11-23)
 
-Restored again in the Postgres upgrade run (5 expected errors, exit 1). fault: self-host restore exit status.
+Restored again in the Postgres upgrade run (5 expected errors, exit 1, before the role step). fault fixed (fd): see the next line.
 
 ## Fault fixed (lane fd, 2026-11-23)
 

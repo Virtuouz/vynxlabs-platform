@@ -33,7 +33,7 @@ The Settings reference has a section for each group.
 
 ## What the Compose file passes
 
-`deploy/compose/compose.yaml` passes every variable of the table to the control plane except `HOST`, `PORT`, `MAIL_CAPTURE_DIR`, `CONSOLE_DIR` and `SCREENS_DIR`. A variable you leave out of `.env` is passed as an empty string, which the control plane reads as not set. The worker host does not: it refuses an empty `MANAGED_WORKER_UID`, `MANAGED_WORKER_GID` or `MANAGED_WORKER_USERS`. See [Install an instance with Compose](../../how-to/running/install-with-compose).
+`deploy/compose/compose.yaml` passes every variable of the table to the control plane except `HOST`, `PORT`, `MAIL_CAPTURE_DIR`, `CONSOLE_DIR` and `SCREENS_DIR`. A variable you leave out of `.env` is passed as an empty string, which the control plane reads as not set. The worker host reads an empty value as not set too, and Compose gives `MANAGED_WORKER_UID`, `MANAGED_WORKER_GID` and `MANAGED_WORKER_USERS` their defaults, `10001`, `10001` and `256`.
 
 `deploy/fly/fly.toml` sets `HOST = "::"`.
 

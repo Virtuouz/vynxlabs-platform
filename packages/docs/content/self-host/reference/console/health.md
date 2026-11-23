@@ -59,7 +59,7 @@ The section is **This replica's settings**, under "What the process that answere
 | --- | --- |
 | **Workers** | "Started in a worker host" (`MANAGED_WORKERS=host`), "Started beside the control plane, for code only operators write" (`process`), or "None started here: standalone workers ask for work". |
 | **Run slots**, **Memory floor**, **Most workers alive** | The value set, or "Not set: worked out from this machine". |
-| **Database pools** | "N for the platform, N for rows", and ", N for one tenant at once" when `DATA_TENANT_CONNECTIONS` is set. |
+| **Database pools** | "N for Volvel's own work, N for rows", and ", N for one tenant at once" when `DATA_TENANT_CONNECTIONS` is set. |
 | **Time limits** | "N s for a data operation, N s for a query". |
 | **Schedule backlog** | "No limit", or "A schedule skips its time past N queued runs". |
 | **Triggers** | "Paused by TRIGGERS_PAUSED where the instance runs", or "Not paused by the environment". This is the environment only: a pause made on [Triggers](triggers) is not shown here. |

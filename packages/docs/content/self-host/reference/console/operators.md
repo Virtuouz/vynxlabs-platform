@@ -19,7 +19,7 @@ The title is **Operators**. The description reads "Members who run this instance
 
 | Control | What it does |
 | --- | --- |
-| **Add operator** | Opens a dialog with one field, **Member** ("Find a member by email"). Type to search members; the field lists the first matches and says "Showing the first of many. Type to search." when there are more. Press **Add operator**. The member holds `operator_admin` from then on. Pressing **Add operator** with no member chosen is refused with the server's text: "The request body is not valid. must have required property 'memberId'". |
+| **Add operator** | Opens a dialog with one field, **Member** ("Find a member by email"). Type to search members; the field lists the first matches and says "Showing the first of many. Type to search." when there are more. Press **Add operator**. The member holds `operator_admin` from then on. Pressing **Add operator** with no member chosen is refused at the field: "Choose one." |
 | **Search operators** | Filters the operators loaded by email, as you type. Kept in the address as `q`. |
 | **Remove** | In each row. Asks "Remove EMAIL as an operator?" Press **Remove**. |
 | **Remove yourself** | On your own row, in place of **Remove**. Asks "Remove yourself as an operator? You lose the Instance area at once, and another operator has to add you back." |

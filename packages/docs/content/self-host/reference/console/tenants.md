@@ -37,7 +37,7 @@ The columns, left to right. A column that does not fit gives way on a narrow win
 | **Name** | The tenant's name, as a link that opens the tenant. |
 | **Slug** | The slug, the tenant's permanent short name. |
 | **Workspaces** | How many workspaces the tenant has, dev and production together. |
-| **You** | **Member** if you belong to the tenant, otherwise **Through a grant**. The tag says how you would reach the tenant. It does not say that a grant is open: a tenant you have just made without making yourself a member also reads **Through a grant**. |
+| **You** | **Member** if you belong to the tenant, otherwise **Not a member**. The list does not know of grants: a tenant you work in through an operator access grant also reads **Not a member**. |
 | **Tables kept in** | The name of the database location that holds the tenant's custom tables, or "The instance's database". Plain text here. |
 | **Created** | How long ago. |
 
@@ -77,7 +77,7 @@ The inspector's buttons, from the left:
 | **Turn off code in the console** / **Turn on code in the console** | Asks first, with "Turn off code in the console for NAME?" or "Turn on code in the console for NAME?". Off: people can no longer save or test scripts, connectors and trigger sources in the console, in any workspace of the tenant. Drafts are kept and what is deployed keeps running. A tenant admin or an operator can turn it on again, and the dialog for that says "People with the code permission can write and test code in the console again." The result is "Code in the console is off for NAME." or "Code in the console is on for NAME." Code from a repository is not affected. | When the server says the signed-in person may change the tenant. |
 | **Delete** | Deletes the tenant. See [Delete a tenant](#delete-a-tenant). | Operators only. |
 
-**Rename** and the console-code switch are offered when the list says the person holds `tenant:write` in that tenant. For an operator, that is a tenant the operator belongs to or holds an open grant for. For any other tenant they are not drawn on this screen, although the API accepts the same change from an operator at the instance (`PATCH /tenants/{id}`).
+**Rename** and the console-code switch are offered when the server says the person holds `tenant:write` in that tenant, or at the instance. An operator sees both for every tenant, a member of it or not (`PATCH /tenants/{id}`).
 
 ### Create tenant
 
@@ -121,7 +121,7 @@ If the database location holding the tenant's tables does not answer, and the te
 | See the list | Being signed in. An operator sees every tenant, anyone else the tenants they belong to. |
 | **Create tenant**, **Delete** | `tenant:write` at the instance. |
 | **Workers the instance starts**, **History kept** (change) | `tenant:write` at the instance, or in the tenant. Turning workers on again after an operator turned them off needs an operator. |
-| **Rename**, console-code switch | `tenant:write` in the tenant (a tenant admin has it; an operator has it for a tenant they are a member of or hold a grant for). |
+| **Rename**, console-code switch | `tenant:write` in the tenant (a tenant admin has it; an operator has it for every tenant, through the instance). |
 
 The role `operator_admin` holds `tenant:*` at the instance. It gives no access inside a tenant. See the [permissions reference](../../../administer/reference/permissions).
 

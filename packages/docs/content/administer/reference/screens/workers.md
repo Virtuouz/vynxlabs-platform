@@ -22,8 +22,8 @@ The screen is under **Tenant**, in the group **Delivery**. F1 opens the help top
 | A notice | "Runs are waiting in <workspace>" (or "in N places"), "the oldest for <time>.", when any run is due and waiting. |
 | The table | **Workspace** (a link to the workspace's queued runs), **Pool** (`default` for none), **Waiting**, **Oldest**, **Later** and **Running**. |
 | Empty | "Nothing is waiting, and nothing is running." |
-| Tasks | "N tasks for the platform waiting too: reading schemas, sending alerts, trying connections." |
-| **Workers online** | Each worker's credential name, its version, "idle" or "running <scripts>". A worker older than 0.6.0 shows **Older version** and "takes no tasks". |
+| Tasks | "N tasks for Volvel waiting too: reading schemas, sending alerts, trying connections." |
+| **Workers online** | Each worker's credential name, its version, "idle" or "running <scripts>". A worker older than 0.6.0 shows **Older version** and "takes no tasks". An instance older than 0.6.0 counts a worker of its own version as current. |
 
 ## Pools
 

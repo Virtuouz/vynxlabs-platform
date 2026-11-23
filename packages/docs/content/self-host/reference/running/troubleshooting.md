@@ -11,7 +11,7 @@ Find the symptom, then the cause, then the page. Every message is as the instanc
 | What you see | Cause | What to do |
 | --- | --- | --- |
 | The container restarts on start, and the log names a setting | A setting is missing or malformed. Every problem is listed at once. | Fix them. `check-config` lists them without starting. See [Commands](commands). |
-| The worker host restarts: "MANAGED_WORKER_UID must be a positive whole number." (or `_GID`, or "MANAGED_WORKER_USERS must be a whole number from 1 to 60000.") | The Compose file passed an empty value. | Write the defaults into `.env`: [Install an instance with Compose](../../how-to/running/install-with-compose). |
+| The worker host restarts: "MANAGED_WORKER_UID must be a positive whole number." (or `_GID`, or "MANAGED_WORKER_USERS must be a whole number from 1 to 60000.") | The setting holds something that is not a whole number in range. An empty value is read as not set. | Correct the value in `.env`, or take the line out to use the default: [Install an instance with Compose](../../how-to/running/install-with-compose). |
 | "The database is at migration N but this build only knows migrations up to M. Run a newer image against this database." | An older image was started on a newer database. | Start the newer image. |
 | "Migration N (name) was applied with different contents than the file in this build." | A shipped migration changed. | Use the build the database was made by, or restore. |
 | The log says "boot failed" with "Unsupported state or unable to authenticate data" | `MASTER_KEY` is not the key that sealed the instance's data. | Set the right key, or both as a pair. [Rotate the master key](../../how-to/running/rotate-the-master-key). |

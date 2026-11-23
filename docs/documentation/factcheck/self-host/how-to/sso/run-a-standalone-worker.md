@@ -13,7 +13,7 @@ Code as of commit `14f7d5b9` (branch `phase-31-write-the-docs`), 2026-11-23. Wri
 | 0.6.0 | `apps/control-plane/src/routes/execution.ts:103` | second agent, code, 2026-11-23 | holds |
 | 1 online | `apps/console/src/screens/Execution.tsx:1113` | second agent, run, 2026-11-23 | holds |
 | Compose: worker starts from deploy/worker/compose.yaml with the platform image, shows 1 online with its credential's name and version 0.5.0, container healthy after about a minute, stops cleanly; the secret file must be readable by uid 1000 | `deploy/worker/compose.yaml:1` | second agent, run, 2026-11-23 | holds (run with a host-network override because the instance is on the host; page gained the uid note) |
-| Older version warning for a worker below 0.6.0 | `apps/control-plane/src/routes/execution.ts:103` | second agent, run, 2026-11-23 | holds as the code stands; fault: sso/workers TASKS_SINCE |
+| Older version warning for a worker below 0.6.0 | `apps/control-plane/src/routes/execution.ts:103` | second agent, run, 2026-11-23 | holds as the code stands; fault fixed (fa): outdated is older than the lower of 0.6.0 and the control plane's own version, confirmed in the code (execution.ts:103-110) |
 
 ## Merged (2026-11-23, running checker)
 

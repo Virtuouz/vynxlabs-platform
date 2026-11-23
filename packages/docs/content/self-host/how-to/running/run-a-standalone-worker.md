@@ -70,7 +70,7 @@ The token comes from `--token-file`, which the Compose file points at a Compose 
 - **Scripts do not arrive.** The pool names differ, or the credential is for one workspace only.
 - **The log warns "kernel.yama.ptrace_scope is 0: a script could read this worker's memory. Set it to 1 or more."** Scripts run as the worker's own user. Set `kernel.yama.ptrace_scope` to 1 or more on the machine.
 - **The worker cannot read the token file.** See step 4: uid 1000.
-- **The worker shows "Older version, takes no tasks" at the same version as the instance.** A known fault of this release. See [Run a standalone worker](../sso/run-a-standalone-worker).
+- **The worker shows "Older version, takes no tasks".** The worker is older than 0.6.0, or older than the instance. Update it to the instance's version.
 - **The worker has no memory guard.** A standalone worker has no run slots and no floor. Size it by `VOLVEL_WORKER_CONCURRENCY`.
 
 Related: [Workers, users and what a script can reach](../../explanation/running/managed-workers-and-isolation), [Sizing and scaling](../../explanation/running/sizing-and-scaling).

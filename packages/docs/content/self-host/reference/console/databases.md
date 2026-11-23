@@ -39,7 +39,7 @@ Choosing a row opens the inspector (eyebrow **Database location**, title the nam
 
 ### Register database
 
-The dialog's line reads "The platform connects first and prepares the database. The user must own it and be allowed to create roles. Registering a name again changes its address."
+The dialog's line reads "Volvel connects first and prepares the database. The user must own it and be allowed to create roles. Registering a name again changes its address."
 
 | Field | What it takes |
 | --- | --- |
@@ -49,7 +49,7 @@ The dialog's line reads "The platform connects first and prepares the database. 
 
 Registering connects to the database and prepares it: a catalog of the tenants' custom tables and a restricted sign-in for row requests. The user in the connection string must own the database and be allowed to create roles. When it works the console says "Created." and the row shows **Reached**. A database that cannot be prepared is refused with "That database could not be prepared." and the reason, for example the connection refused.
 
-A registration is refused when the address is the instance's own database ("That is this instance's own database, the platform's own database. Register a different database for tenants' tables."), or one already registered under another name ("That is the database "NAME" already reaches. Change "NAME" instead, or use another database.").
+A registration is refused when the address is the instance's own database ("That is this instance's own database. Register a different database for tenants' tables."), or one already registered under another name ("That is the database "NAME" already reaches. Change "NAME" instead, or use another database.").
 
 ### Edit location
 

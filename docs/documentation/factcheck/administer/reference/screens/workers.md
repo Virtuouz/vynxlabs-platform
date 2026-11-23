@@ -23,4 +23,4 @@ Code as of commit `14f7d5b9` (branch `phase-31-write-the-docs`), 2026-11-23. Wri
 | Empty states No pool yet / No standalone workers | `apps/console/src/screens/Execution.tsx:1486` | second agent, run, 2026-11-23 | holds |
 | Whole screen behind worker:write via Can | `apps/console/src/screens/Execution.tsx:1257` | second agent, code, 2026-11-23 | holds |
 | worker verbs | `packages/manifest/src/permissions.ts:170` | second agent, code, 2026-11-23 | holds |
-| Older version, takes no tasks for a worker below 0.6.0 | `apps/control-plane/src/routes/execution.ts:103` | second agent, run, 2026-11-23 | holds as the code stands; fault: sso/workers TASKS_SINCE |
+| Older version, takes no tasks for a worker below 0.6.0 | `apps/control-plane/src/routes/execution.ts:103` | second agent, run, 2026-11-23 | holds as the code stands; fault fixed (fa): outdated is older than the lower of 0.6.0 and the control plane's own version, confirmed in the code (execution.ts:103-110); the page says so, and says "Volvel" for "the platform" (fc 18) |

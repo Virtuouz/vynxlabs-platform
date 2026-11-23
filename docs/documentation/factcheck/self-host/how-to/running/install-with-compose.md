@@ -15,4 +15,4 @@ Written at commit `14f7d5b9`. Lines are those of that commit. Checked by: second
 
 ## Second check (2026-11-23)
 
-Run again with the page's `.env` including the three worker-user lines: all four services healthy. Overlap: the tutorials inventory lists 'Install on one machine'; no such tutorial page exists (self-host/tutorials/index.md has no pages), so this how-to is the one page. fault: self-host empty MANAGED_WORKER_* in Compose.
+Run again with the page's `.env` including the three worker-user lines: all four services healthy. Overlap: the tutorials inventory lists 'Install on one machine'; no such tutorial page exists (self-host/tutorials/index.md has no pages), so this how-to is the one page. fault fixed (fa): Compose passes 10001/10001/256 defaults and the worker host reads an empty setting as unset, confirmed in the code (compose.yaml:61-63, 122-124; host-bin.ts setting); the warning and the table note are gone from the page.

@@ -59,7 +59,7 @@ Someone a provider signs in gets neither link: a link would add a password besid
 
 | Field | What it takes |
 | --- | --- |
-| **Name** | Lowercase letters, digits and underscores, starting with a letter, 63 characters at most. Example `customer_id`. A name used twice is refused at the field: "<name> is given twice. Each name takes one value." |
+| **Name** | Lowercase letters, digits and underscores, starting with a letter, 63 characters at most. Example `customer_id`. A name that cannot be one is refused at the field: "<name> cannot be a name. Use lowercase letters, digits and underscores, starting with a letter, up to 63 characters." So is a name used twice: "<name> is given twice. Each name takes one value." **Save** sends nothing while either shows. |
 | **Value** | 500 characters at most. |
 | **Add an attribute**, **Remove** | Add or take away a row. |
 

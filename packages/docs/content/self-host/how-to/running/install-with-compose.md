@@ -37,11 +37,7 @@ By the end you will have an instance running on one machine, with its own Postgr
    | `PUBLIC_URL` | The address people will type, for example `https://volvel.example.com`. For a trial, `http://localhost:8080`. |
    | `BOOTSTRAP_ADMIN_EMAIL`, `BOOTSTRAP_ADMIN_PASSWORD` | The first operator. The password is at least 12 characters. |
    | `VOLVEL_BIND` | Where it listens on the host. The default is `127.0.0.1:8080`. |
-   | `MANAGED_WORKER_UID`, `MANAGED_WORKER_GID`, `MANAGED_WORKER_USERS` | `10001`, `10001` and `256`. See the note below. |
-
-   :::alert[Write the worker user settings]{type=warning}
-   The Compose file passes `MANAGED_WORKER_UID`, `MANAGED_WORKER_GID` and `MANAGED_WORKER_USERS` to the worker host even when you leave them out of `.env`, and then they are empty. The worker host refuses an empty value ("MANAGED_WORKER_UID must be a positive whole number.") and restarts, and `docker compose up --wait` ends with "container ... is unhealthy". Write their defaults into `.env`.
-   :::
+   | `MANAGED_WORKER_UID`, `MANAGED_WORKER_GID`, `MANAGED_WORKER_USERS` | Leave them out. The defaults, `10001`, `10001` and `256`, are used. Write them only to change them. |
 
 3. Start it:
 
@@ -72,7 +68,7 @@ Next:
 - **A container restarts on start.** Read its log: `docker compose -f deploy/compose/compose.yaml logs control-plane`. A missing or malformed setting is named there, every problem at once. `docker compose run --rm --no-deps control-plane node dist/main.js check-config` says whether the settings are valid and opens nothing.
 - **`up` stops with "set PUBLIC_URL in .env".** The Compose file requires `PUBLIC_URL`, `AUTH_SECRET`, `MASTER_KEY` and `WORKER_HOST_TOKEN`.
 - **No database starts.** `COMPOSE_PROFILES=postgres,objectstore` is missing from `.env`.
-- **The worker host is unhealthy.** See the note above, then `docker compose logs worker-host`.
+- **The worker host is unhealthy.** Read `docker compose logs worker-host`. A worker user setting that is not a whole number stops it.
 - **Sign-in fails.** The instance made the first operator only at its first start, and only with both settings. If the instance has members and nobody can sign in, see [Recover an operator](recover-an-operator).
 - **"The instance has no members. Set BOOTSTRAP_ADMIN_EMAIL and BOOTSTRAP_ADMIN_PASSWORD and restart..."** in the log: add them and restart.
 

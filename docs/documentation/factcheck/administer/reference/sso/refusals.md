@@ -17,4 +17,4 @@ Code as of commit `14f7d5b9` (branch `phase-31-write-the-docs`), 2026-11-23. Wri
 | Transient name ID refusal | `apps/control-plane/src/kernel/sso/saml.ts:243` | second agent, code, 2026-11-23 | holds |
 | SHA-1 too weak message | `apps/control-plane/src/kernel/sso/saml.ts:132` | second agent, code, 2026-11-23 | holds |
 | Unknown reason fallback | `apps/console/src/screens/SignIn.tsx:45` | second agent, code, 2026-11-23 | holds |
-| An end user at a portal sees "You could not be signed in" with the refusal's own message, not the console's words | `apps/control-plane/src/kernel/apps/front.ts:643` | second agent, run, 2026-11-23 | page corrected; new product fault: the two sign-in screens word one reason differently |
+| An end user at a portal sees "You could not be signed in" with the refusal's own message, not the console's words | `apps/control-plane/src/kernel/apps/front.ts:643` | second agent, run, 2026-11-23 | page corrected; fault fixed (fa): one list, SSO_REFUSAL_WORDS (packages/manifest/src/sso-words.ts), read by both sign-in screens, confirmed in the code; the page says the words are the same on both |

@@ -12,4 +12,4 @@ Checked by: second agent, 2026-11-23.
 | Group dialogs | `apps/console/src/screens/Groups.tsx:385-684` | writer, 2026-11-23; second agent, 2026-11-23 | holds as read |
 | Sign-up switch label | `apps/console/src/screens/Branding.tsx:557` | writer, 2026-11-23; second agent, 2026-11-23 | holds as read |
 | Invite, inspector buttons, Attributes, Groups tab, link dialogs, statuses | `apps/console/src/screens/EndUsers.tsx`, `Groups.tsx` | second agent, 2026-11-23 | holds; driven in the browser (Rename, Delete not run) |
-| Attribute name refused at the field | run | second agent, 2026-11-23 | partly: only a repeated name is refused at the field; a bad name is refused after Save in a notice. fault: instance (raw path in the notice, new) |
+| Attribute name refused at the field | run | second agent, 2026-11-23 | partly: only a repeated name is refused at the field; a bad name is refused after Save in a notice. fault fixed (fc): a bad attribute name is now refused at the field with "<name> cannot be a name. Use lowercase letters, digits and underscores, ..." and Save sends nothing, confirmed in the code (Groups.tsx AttributesDialog); the page now says so |

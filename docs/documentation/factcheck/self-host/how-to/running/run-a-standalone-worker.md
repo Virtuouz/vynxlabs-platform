@@ -13,4 +13,4 @@ Written at commit `14f7d5b9`. Lines are those of that commit. Checked by: second
 
 ## Second check (2026-11-23)
 
-Run: credential with pool `plant`, worker from deploy/worker/compose.yaml (with a networks block), a draft script with `worker: "plant"` run through test-runs succeeded while the worker was up and stayed queued with the worker stopped. Merged in from the sso page: token options, uid 1000 note, ptrace warning. fault: sso/workers TASKS_SINCE (worker shows outdated at its own version).
+Run: credential with pool `plant`, worker from deploy/worker/compose.yaml (with a networks block), a draft script with `worker: "plant"` run through test-runs succeeded while the worker was up and stayed queued with the worker stopped. Merged in from the sso page: token options, uid 1000 note, ptrace warning. fault fixed (fa): a worker of the instance's own version is no longer shown Older version, confirmed in the code (execution.ts:103-110); the "known fault" troubleshooting line is replaced.

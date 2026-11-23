@@ -38,7 +38,7 @@ Sign-up is off by default. The switch **People may create their own account** is
 ### If it does not work
 
 - The link says it was used or has run out: select the person and press **New invitation link** or **Password reset link** again.
-- An attribute name must be lowercase letters, digits and underscores, starting with a letter. A name given twice is refused at the field: "<name> is given twice. Each name takes one value." A name with other characters is refused when you press **Save**, in a notice that begins "An attribute's name is lowercase letters, digits and underscores."
+- An attribute name must be lowercase letters, digits and underscores, starting with a letter. A name that is not, or is given twice, is refused at the field, and **Save** sends nothing: "<name> cannot be a name. Use lowercase letters, digits and underscores, starting with a letter, up to 63 characters." or "<name> is given twice. Each name takes one value."
 
 ## Related
 

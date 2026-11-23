@@ -12,4 +12,4 @@ Checked by: second agent, 2026-11-23.
 | Agent tools tab texts, settings JSON | `apps/console/src/screens/AgentAccess.tsx` | writer, 2026-11-23; second agent, 2026-11-23 | holds as read |
 | service_account:write | `apps/control-plane/src/routes/tenants.ts:1258-1468` | writer, 2026-11-23; second agent, 2026-11-23 | holds as read |
 | Key shown in a dialog | run | second agent, 2026-11-23 | corrected: a notice above the table |
-| Agent tools tab; Try dialog has Fields and JSON | `apps/console/src/screens/AgentAccess.tsx` | second agent, 2026-11-23 | holds; run. fault: access (notice 'An agent would be refused here' for agent_runner at the workspace) |
+| Agent tools tab; Try dialog has Fields and JSON | `apps/console/src/screens/AgentAccess.tsx` | second agent, 2026-11-23 | holds; run. fault fixed (fa): agent_runner for the whole workspace now makes the account reachable (mcp.ts mayStartHere), so the notice shows only for an account with no place; confirmed in the code. The notice line stays on the page |

@@ -1,7 +1,7 @@
 # Phase 30: Volvel's documentation is served, typed and generated like a tenant's docs site
 
-Status: built through M11, at the owner's stop after M8 (look at /docs and a tenant docs site), on branch `phase-30-docs-system`, off `phase-29-correct-the-product`.
-Last updated: 2026-11-23
+Status: built, not merged; at the owner's end-of-phase look, on branch `phase-30-docs-system`, off `phase-29-correct-the-product`.
+Last updated: 2026-11-24
 
 The owner asked for documentation of every screen and feature, the console and local development, with self-hosting and administration (2026-11-22). Phase 29 corrected the product first. This phase builds the system the pages live in; phase 31 writes them. The plan is `~/.claude/plans/i-would-like-to-fuzzy-meteor-of-45518b7f-b8fc-41f4-9613-9ba4253edadd.md`; the design is [docs-platform-design](../documentation/inventory/docs-platform-design.md).
 
@@ -49,9 +49,10 @@ The owner asked for documentation of every screen and feature, the console and l
 - **Walks** (`docs/documentation/walks/p30-*.md`, on a throwaway Fernhill instance at :8091): five walks found 29 faults, a re-walk found 6 more, a third found one; all are fixed and confirmed in the browser (p30-r-last, p30-r-explain). Not walkable yet: diagrams, dark screenshots and related pages on /docs, since no page has a diagram or subjects and the local build takes no screenshots (CI does); the Repository page's "Set in volvel.yaml" state needs a remote repository.
 - **Two lanes drew the same thing two ways** (dark screenshots; previous/next): kept one each, by the page's own look and by the whole navigation.
 - **Visible on existing tenant sites** (not only typed ones): tab titles "page · folder · site", a breadcrumb on collection pages, previous/next within a collection. Asked of the owner.
-- **Not run yet:** the full `pnpm test` and `pnpm e2e`, once at the end of the phase.
+- **Full suites, once at the end.** `pnpm test`: 4763 of 4769 passed; the 2 failures were tests out of date with this phase (the metrics guide test now reads the typed metric list; nothing under /help but its files), fixed. `pnpm e2e`: 162 of 183 passed, 19 failed. 16 had one cause, found by the e2e and by no unit test: Prism's language files ran before its core in the bundled app runtime, so every published app stopped at "Loading the app" (fixed by putting the core on the global first, `packages/markup/src/prism-global.ts`, with a test that holds the import order). The other three: the help's search ranked generated reference above the written screen pages, since M6 moved those under `reference` (generated pages now rank after written ones; the server answers as many as the panel shows); a record's Fields list lost the heading column after TAB-30 reordered columns (the heading and status stay listed, hidden); and one spec's selector. Every failed spec was rerun and passes.
+- **Highlighting** (D67): Prism on the server, classes only, with `diff-<lang>` and marked lines; light token colors raised so every token keeps 4.5:1, on a marked line too.
 
-## Asked of the owner at the stop after M8
+## Asked of the owner at the stop after M8 (answered 2026-11-23, D66 to D69)
 
 1. Reset links: from a tenant, a member who also belongs to another tenant or holds an instance role is refused; only an operator makes theirs.
 2. Code highlighting: the small built-in highlighter (no new dependency, since none could be installed offline), or `lowlight` later.

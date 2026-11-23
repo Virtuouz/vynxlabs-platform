@@ -12,9 +12,10 @@
 - `apps/console/src/screens/Data.tsx` `AddRow`: text, number, date and json fields and the enum select take `required={column.required}` (the row's `required` already means "needs a value", a column with a default being not required). The label shows the asterisk, not "optional". The form is `noValidate`; an empty required value is refused at its field: "number needs a value." Test: `Data.test.tsx` "w-limits 2"; the add-row test now expects that line.
 - Siblings: `BooleanField`, `ReferenceField` (combobox) are unchanged: their option text already says "Choose" for required.
 
-## Found
-- Raw `<input maxLength>` still cuts silently, outside the shared field: `builder/BuilderHeader.tsx:49`, `packages/screens/src/Frame.tsx`, `Docs.tsx`, `DocEditor.tsx`, `AddFormDialog.tsx`, `NewPageDialog.tsx`, `FlowEditor.tsx`, `Environments.tsx`, `inspector/heading.tsx` (those files hold a raw input beside their shared ones; each raw one needs a look).
-- `BooleanField` and `ReferenceField` in the add-row dialog show no required mark.
+## Finished from Found
+- `LimitNote` and `pastLimit` in `packages/ui/src/Fields.tsx` (exported): the count and the refusal for a box that is not a `TextField`. The raw inputs lost their native `maxLength`: `builder/BuilderHeader.tsx` (RenameField; Enter keeps it open past 100), `packages/screens/src/Frame.tsx` (widget title), `docs/Docs.tsx` (title and file name; submit refuses), `docs/DocEditor.tsx` (page title), `kit/inspector/heading.tsx`. The other files listed (AddFormDialog, NewPageDialog, FlowEditor, Environments) only hold shared fields. Test: `builder-frame.test.tsx` (101 characters kept, said, not saved).
+- Add-row boolean and reference fields take `required` and are refused empty ("paid needs a value."). Test: `Data.test.tsx` second "w-limits 2".
+- `actions.test.tsx` and `core-actions.test.tsx` (packages/screens, busy button) fail in this worktree for a reason outside this lane.
 
 ## Polish gate
 States: over-limit error and count. Keyboard: unchanged, error is a role=alert. Copy: plain. Screens to walk: Data Add row (required marks, empty submit, 390 px), any name field with a 101-character paste.

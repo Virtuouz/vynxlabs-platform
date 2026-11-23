@@ -884,6 +884,7 @@ function BooleanField({
       name={column.name}
       label={column.name}
       value={value}
+      required={column.required}
       options={[
         { value: "", label: column.required ? "Choose" : "No value" },
         { value: "true", label: "Yes" },
@@ -1004,6 +1005,7 @@ function ReferenceField({
   return (
     <ComboboxField
       label={column.name}
+      required={column.required}
       options={offered}
       value={value || undefined}
       error={error}
@@ -1323,11 +1325,7 @@ function AddRow({
     const found: Record<string, string> = {};
     for (const column of columns) {
       if (column.type === "file") continue;
-      if (
-        column.required &&
-        column.type !== "boolean" &&
-        (values[column.name] ?? "").trim() === ""
-      ) {
+      if (column.required && (values[column.name] ?? "").trim() === "") {
         found[column.name] = `${column.name} needs a value.`;
         continue;
       }

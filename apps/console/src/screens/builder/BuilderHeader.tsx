@@ -1,4 +1,4 @@
-import { Button, Menu, Popover, Tooltip } from "@volvel/ui";
+import { Button, LimitNote, Menu, Popover, Tooltip } from "@volvel/ui";
 import {
   ChevronDown,
   Eye,
@@ -38,6 +38,8 @@ export function RenameField({
   useEffect(() => field.current?.select(), []);
   const finish = (keep: boolean) => {
     const next = draft.trim();
+    // A name past its limit is not saved, and is not cut: Enter leaves it for the person to shorten.
+    if (keep && draft.length > NAME_MAX) return;
     onDone(keep && next !== "" && next !== title ? next : undefined);
   };
   return (
@@ -46,7 +48,6 @@ export function RenameField({
         ref={field}
         aria-label="Name of the app"
         value={draft}
-        maxLength={NAME_MAX}
         size={Math.max(12, Math.min(draft.length + 2, 40))}
         onChange={(event) => setDraft(event.target.value)}
         onBlur={() => finish(true)}
@@ -63,12 +64,7 @@ export function RenameField({
         }}
         className="h-9 min-w-0 max-w-full rounded-control border border-action bg-surface px-2 font-[inherit] text-[length:inherit]"
       />
-      <span
-        data-field-count=""
-        className="shrink-0 text-meta font-normal text-ink-muted tabular-nums"
-      >
-        {draft.length} of {NAME_MAX}
-      </span>
+      <LimitNote value={draft} max={NAME_MAX} always className="shrink-0 font-normal" />
     </span>
   );
 }

@@ -8,7 +8,7 @@ import {
   planRename,
   setFrontmatter,
 } from "@volvel/docs-engine";
-import { Button, Doc, Notice, Panel, TextField } from "@volvel/ui";
+import { Button, Doc, LimitNote, Notice, Panel, TextField } from "@volvel/ui";
 import { CircleAlert, CircleCheck, ExternalLink, FilePen, Pencil } from "lucide-react";
 import { type KeyboardEvent, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { api, useLoad } from "../../api.ts";
@@ -147,6 +147,7 @@ export function DocEditor({
   const [cursor, setCursor] = useState({ line: 1, column: 1 });
   const [moving, setMoving] = useState(false);
   const [retitling, setRetitling] = useState(false);
+  const [retitleText, setRetitleText] = useState("");
   const handle = useRef<CodeEditorHandle | null>(null);
   const product = useProduct();
   const brand = useBrand();
@@ -271,8 +272,10 @@ export function DocEditor({
     });
 
   const retitle = (typed: string) => {
-    setRetitling(false);
     const next = typed.trim();
+    // A title past its limit is said at the field and kept to shorten, not cut.
+    if (next.length > 120) return;
+    setRetitling(false);
     if (next === "" || next === title) return;
     const written = setFrontmatter(source, { title: next });
     if (written === undefined) {
@@ -347,19 +350,22 @@ export function DocEditor({
         }
         title={
           retitling ? (
-            <input
-              aria-label="Page title"
-              // biome-ignore lint/a11y/noAutofocus: it is opened by pressing its pencil, to be typed in.
-              autoFocus
-              defaultValue={title}
-              maxLength={120}
-              onBlur={(event) => retitle(event.currentTarget.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") retitle(event.currentTarget.value);
-                if (event.key === "Escape") setRetitling(false);
-              }}
-              className="w-full min-w-[16rem] rounded-control border border-action bg-surface px-2 text-ink outline-none"
-            />
+            <>
+              <input
+                aria-label="Page title"
+                // biome-ignore lint/a11y/noAutofocus: it is opened by pressing its pencil, to be typed in.
+                autoFocus
+                defaultValue={title}
+                onChange={(event) => setRetitleText(event.currentTarget.value)}
+                onBlur={(event) => retitle(event.currentTarget.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") retitle(event.currentTarget.value);
+                  if (event.key === "Escape") setRetitling(false);
+                }}
+                className="w-full min-w-[16rem] rounded-control border border-action bg-surface px-2 text-ink outline-none"
+              />
+              <LimitNote value={retitleText} max={120} />
+            </>
           ) : (
             title
           )
@@ -371,7 +377,10 @@ export function DocEditor({
                 size="small"
                 variant="quiet"
                 aria-label="Change the title"
-                onClick={() => setRetitling(true)}
+                onClick={() => {
+                  setRetitleText(title);
+                  setRetitling(true);
+                }}
               >
                 <Pencil aria-hidden size={14} />
               </Button>

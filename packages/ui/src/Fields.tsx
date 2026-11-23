@@ -174,6 +174,34 @@ function lengthLimit(value: string | undefined, max: number | undefined, always:
   };
 }
 
+/** The count and the refusal of a limit, for a box that is not a `TextField`: said under or beside it. */
+export function LimitNote({
+  value,
+  max,
+  always = false,
+  className = "",
+}: {
+  value: string;
+  max: number;
+  always?: boolean;
+  className?: string;
+}) {
+  const limit = lengthLimit(value, max, always);
+  if (!limit.count) return null;
+  return (
+    <span
+      data-field-count=""
+      {...(limit.error ? { role: "alert" } : {})}
+      className={`${countClass} ${limit.error ? "text-danger" : ""} ${className}`}
+    >
+      {limit.error ?? limit.count}
+    </span>
+  );
+}
+
+/** Whether a text is past its limit: what a save of it refuses. */
+export const pastLimit = (value: string, max: number) => value.length > max;
+
 const countClass = "text-right text-meta text-ink-muted tabular-nums";
 
 export interface TextFieldProps extends Common {

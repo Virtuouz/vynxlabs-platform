@@ -94,7 +94,7 @@ export interface InspectorProps {
   page?: Page | undefined;
   /** The interface's pages, for "Open a page" and the `page` setting. */
   pages?: readonly Page[];
-  /** The workspace's flows; only those with a manual trigger are offered to "Run a workflow". */
+  /** The workspace's flows; only those with a manual trigger are offered to "Run a flow". */
   flows?: readonly FlowChoice[];
   scripts?: readonly ScriptChoice[];
   /** Every widget of the page, this one included: a filter followed or a tab removed reaches the others. */

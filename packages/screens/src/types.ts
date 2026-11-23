@@ -64,7 +64,7 @@ export interface ActResponse {
   client: Step[];
   made?: { table: string; id: string };
   message?: string;
-  /** How many scripts and workflows it started: what they change comes after the answer. */
+  /** How many scripts and flows it started: what they change comes after the answer. */
   started?: number;
   /** What could not be started after the data was saved: the data is kept, and it is said. */
   notStarted?: { do: string; path: string }[];

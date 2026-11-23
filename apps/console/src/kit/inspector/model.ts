@@ -72,7 +72,7 @@ export interface Catalog {
 /** A flow that can be started by hand, and what its manual trigger takes (JSON Schema). */
 export interface FlowChoice {
   path: string;
-  /** What the workflow is called, where it has a name of its own. */
+  /** What the flow is called, where it has a name of its own. */
   title?: string | null;
   manualInput?: { properties?: Record<string, unknown>; required?: string[] } | null;
 }

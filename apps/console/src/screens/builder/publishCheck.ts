@@ -339,7 +339,7 @@ export function checksFor(input: {
           id: `approvals:${path}`,
           state: "warn",
           text: `Approvals lists ${title}, which asks for no approval`,
-          detail: "Nothing will wait there until the workflow has an approval step.",
+          detail: "Nothing will wait there until the flow has an approval step.",
         });
       }
     }

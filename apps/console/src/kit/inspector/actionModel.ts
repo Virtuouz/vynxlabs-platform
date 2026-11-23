@@ -72,7 +72,7 @@ export const STEP_WORDS: Record<StepKind, { title: string; help: string }> = {
   update: { title: "Update the record", help: "Set fields of a record" },
   create: { title: "Make a record", help: "Add a row to a table" },
   delete: { title: "Remove the record", help: "Remove a record for good" },
-  flow: { title: "Run a workflow", help: "Start a flow that can be run by hand" },
+  flow: { title: "Run a flow", help: "Start a flow that can be run by hand" },
   script: { title: "Run a script", help: "Start a script of the workspace" },
   open: { title: "Open a page", help: "Go to a page, a side sheet or a dialog" },
   close: { title: "Close", help: "Close this sheet or dialog" },

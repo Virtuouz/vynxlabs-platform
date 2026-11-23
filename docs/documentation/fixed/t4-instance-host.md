@@ -21,3 +21,13 @@ Items: INS-10, 15, 22, 25, 27, 28; HOST-16, 19, 28, 30.
 - Test: `environments.test.ts` "the platform's own database is not a dedicated location, nor is one database under two names (INS-15)" (204 before).
 - Siblings: `POST /tenants` and import take a name, not an address; no other route registers an address. Console Databases page shows the 400's text through its existing toast.
 - Person sees: a refusal naming the cause where there was a silent 204.
+
+## INS-25
+- `kernel/data/rows.ts` `withData`: the tenant gate runs for every store, not only the platform database's (a limit per tenant on each location it uses; several tenants may name one). Comments in `kernel/data/stores.ts` and `docs/self-hosting.md` ("Sizing: the database", and the connection count line) say so.
+- Test: `data-load.test.ts` "tenants that share a dedicated database each have a share of it ... (INS-25)" (second request of the same tenant did not wait before).
+- Siblings: every row, query and action path goes through `withData`; the platform's own-tenant paths (`kernel/data/stores.ts:296` shared transaction) do not hold a gate and are unchanged. A lone tenant on a dedicated database now has at most `DATA_TENANT_CONNECTIONS` requests open at once (default 3 of 5 connections).
+- Line for CHANGELOG: tenants on a dedicated database have the same per-tenant share of connections as on the platform database.
+
+## Found
+- `guide.test.ts` "every series ... (INS-29)" fails on the phase branch: the series are `volvel_*` now and the test looks for `platform_*`. Not this lane's.
+- `kernel/data/query/visual.test.ts` "a joined column of a table it follows ..." fails here (date-bound parameters); not touched by this lane.

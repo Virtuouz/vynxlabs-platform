@@ -94,8 +94,8 @@ export class DataStores {
   /** The `updated_at` each open location was opened at, and when it was last compared. */
   readonly #versions = new Map<string, { updated: string; checked: number }>();
   /**
-   * Each tenant's share of the platform database's row connections. A dedicated
-   * database is its tenant's alone, and needs none.
+   * Each tenant's share of the row connections of whatever database it uses. Several tenants
+   * may name one dedicated database, so it needs the share as the platform database does.
    */
   readonly gate: TenantGate;
 
@@ -104,7 +104,7 @@ export class DataStores {
     vault: Vault,
     secret: () => Promise<Buffer>,
     log: FastifyBaseLogger,
-    /** Row requests one tenant may have open at once on the platform database. */
+    /** Row requests one tenant may have open at once on its database. */
     tenantConnections = 3,
   ) {
     this.gate = new TenantGate(tenantConnections);

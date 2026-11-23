@@ -241,7 +241,7 @@ Plan on 2 GB for a machine that runs the control plane and scripts together. Giv
 
 ### Sizing: the database
 
-Every tenant's table requests on the platform database share one pool of connections per replica. Each tenant has a share of it:
+Every tenant's table requests share one pool of connections per replica, on the platform database and on each dedicated database. Each tenant has a share of it:
 - A tenant's requests past its share wait their turn, so one tenant's slow searches leave the others room.
 - After 5 seconds of waiting, a request is answered 503 with `Retry-After`, never 500. Nothing was done, so it is safe to try again.
 - `@volvel/app` and scripts try again by themselves, twice.
@@ -256,7 +256,7 @@ Every data request has a time limit. Past it, the statement is stopped and the r
 | `DATA_STATEMENT_TIMEOUT_MS` | 15000 | How long one data request may take |
 | `SQL_STATEMENT_TIMEOUT_MS` | 15000 | How long one query written in SQL may run before it is stopped |
 
-Each replica opens up to `DATABASE_POOL_SIZE + DATA_POOL_SIZE + 3` connections (2 more for the queue, 1 to listen for changes to runs), and a tenant on a dedicated database or a data source adds its own: 5 and 5 for each replica for a dedicated database, 4 for a data source; keep their total across replicas under the database's `max_connections`. A tenant on a dedicated database has that database's connections to itself and no share. `volvel_db_pool{pool,state}` in the metrics shows each pool's open, idle and waiting connections: a `waiting` above 0 that does not go away means a pool too small, or a database too slow.
+Each replica opens up to `DATABASE_POOL_SIZE + DATA_POOL_SIZE + 3` connections (2 more for the queue, 1 to listen for changes to runs), and a tenant on a dedicated database or a data source adds its own: 5 and 5 for each replica for a dedicated database, 4 for a data source; keep their total across replicas under the database's `max_connections`. Tenants on a dedicated database have the same share of its connections: several tenants may use one database. `volvel_db_pool{pool,state}` in the metrics shows each pool's open, idle and waiting connections: a `waiting` above 0 that does not go away means a pool too small, or a database too slow.
 
 ### When the database takes no writes
 

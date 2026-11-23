@@ -380,6 +380,7 @@ export const screens = (ctx: Polish) => [
   ["queries", `${ctx.ws}/queries`],
   ["sources", `${ctx.ws}/sources`],
   ["dashboards", `${ctx.ws}/dashboards`],
+  ["files", `${ctx.ws}/files`],
   ["variables", `${ctx.ws}/variables`],
   ["alerts", `${ctx.ws}/alerts`],
   ["retention", `/t/${ctx.tenant.id}/retention`],

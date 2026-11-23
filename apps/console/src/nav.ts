@@ -26,6 +26,7 @@ import {
   LifeBuoy,
   type LucideIcon,
   Palette,
+  Paperclip,
   Play,
   Plug,
   Radio,
@@ -130,6 +131,8 @@ export const WORKSPACE_SECTIONS: Record<
     { slug: "queries", label: "Queries", icon: FileSearch, help: "data-queries" },
     { slug: "sources", label: "Data sources", icon: Database, help: "data-sources" },
     { slug: "dashboards", label: "Dashboards", icon: Gauge, help: "data-dashboards" },
+    // The help of Tables says what a file column is; a topic of its own is for the docs lane.
+    { slug: "files", label: "Files", icon: Paperclip, help: "data-tables" },
   ],
   configure: [
     { slug: "connections", label: "Connections", icon: Plug, help: "configure-connections" },

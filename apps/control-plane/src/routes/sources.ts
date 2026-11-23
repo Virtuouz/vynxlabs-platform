@@ -9,6 +9,7 @@ import {
   MAX_FILE_BYTES,
   mayReadFile,
   namedFiles,
+  namingOf,
   readFile,
   storeFile,
   toStoredFile,
@@ -57,6 +58,21 @@ const StoredFile = Type.Object({
   contentType: Type.String(),
   sizeBytes: Type.Integer(),
   createdAt: Time,
+});
+
+/** A file as the list gives it: with the tables whose rows hold it. */
+const ListedFile = Type.Object({
+  ...StoredFile.properties,
+  namedBy: Type.Array(
+    Type.Object({
+      table: Type.String(),
+      column: Type.String(),
+      rows: Type.Union([Type.Integer(), Type.Null()], {
+        description: "How many rows hold it. Null when the table could not be read just now.",
+      }),
+    }),
+    { description: "The tables whose rows name the file. Empty when no row does." },
+  ),
 });
 
 export function sourceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
@@ -516,22 +532,55 @@ export function sourceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         schema: {
           summary: "Files stored in a workspace, newest first",
           description:
-            "Every file of the workspace, so it also needs `data_all:read`. A person who only has `file:read` gets a file by its ID, through a row they may read or because they uploaded it.",
+            "Every file of the workspace, so it also needs `data_all:read`. A person who only has `file:read` gets a file by its ID, through a row they may read or because they uploaded it. " +
+            "Each file says which tables name it (`namedBy`): a file that a row names cannot be deleted. " +
+            "`nextCursor` is given while there are more: send it back as `cursor`.",
           tags: ["files"],
           params: WorkspaceParams,
-          response: { 200: Type.Object({ items: Type.Array(StoredFile) }) },
+          querystring: Type.Object({
+            limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 200, default: 200 })),
+            cursor: Type.Optional(Id),
+            search: Type.Optional(
+              Type.String({
+                maxLength: 255,
+                description: "Files whose name has this in it, whatever its case.",
+              }),
+            ),
+          }),
+          response: {
+            200: Type.Object({
+              items: Type.Array(ListedFile),
+              nextCursor: Type.Union([Type.String(), Type.Null()]),
+            }),
+          },
         },
       },
-      async ({ ctx, params }) => {
+      async ({ ctx, params, query }) => {
         await ctx.authorize("data_all:read", { tenantId: params.t, workspaceId: params.w });
-        const rows = await db
+        const limit = query.limit ?? 200;
+        let found = db
           .selectFrom("file")
           .selectAll()
           .where("workspace_id", "=", params.w)
           .orderBy("id", "desc")
-          .limit(200)
-          .execute();
-        return { items: rows.map(toStoredFile) };
+          .limit(limit + 1);
+        if (query.cursor) found = found.where("id", "<", query.cursor);
+        if (query.search) {
+          const text = query.search.replace(/[\\%_]/g, "\\$&");
+          found = found.where("name", "ilike", `%${text}%`);
+        }
+        const rows = await found.execute();
+        const page = rows.slice(0, limit);
+        const naming = await namingOf(
+          kernel,
+          params.t,
+          page.map((row) => row.id),
+          params.w,
+        );
+        return {
+          items: page.map((row) => ({ ...toStoredFile(row), namedBy: naming.get(row.id) ?? [] })),
+          nextCursor: rows.length > limit ? (page.at(-1)?.id ?? null) : null,
+        };
       },
     );
 

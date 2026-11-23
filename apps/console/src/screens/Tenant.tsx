@@ -30,6 +30,7 @@ import { Domains } from "./Domains.tsx";
 import { EndUsers } from "./EndUsers.tsx";
 import { TenantExport, WorkspaceSettings } from "./Environments.tsx";
 import { ConnectionGroups, Connections, Scripts, Variables, Workers } from "./Execution.tsx";
+import { Files } from "./Files.tsx";
 import { GitSync } from "./GitSync.tsx";
 import { NotFound } from "./NotFound.tsx";
 import { OldPaths } from "./OldPaths.tsx";
@@ -407,6 +408,7 @@ const WORKSPACE_TABS = new Set([
   "docs",
   "events",
   "extensions",
+  "files",
   "flow-runs",
   "flows",
   "git",
@@ -604,6 +606,8 @@ function WorkspaceDetail({
         />
       ) : tab === "sources" ? (
         <Sources root={root} link={`/t/${tenantId}/workspaces/${workspaceId}`} />
+      ) : tab === "files" ? (
+        <Files root={root} />
       ) : null}
       {tab === "apps" ? (
         <Apps root={root} />

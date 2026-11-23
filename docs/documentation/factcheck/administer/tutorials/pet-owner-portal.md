@@ -12,3 +12,5 @@ Code as of commit `5ebf1c80`, 2026-11-23. Written by the page's writer; run 2026
 | "My Fernhill account" is open to every end user and App Builder-made | Apps list row, run | writer, run | holds |
 | Changing the attribute changes the rows the app shows | run | writer, run | holds |
 | Inviting needs the tenant admin role | `packages/docs/generated` permissions | writer | not looked up |
+
+Checked by: second agent, 2026-11-23. Run with a new end user `chk.owner@example.com` on the current build. Corrected: **My Fernhill account** in the portal opens Clinics' copy (`/apps/fernhill/clinics/my-account/`, which shows only Willow for `C-1001`), not the Sandbox's; the page now sends the reader to `/apps/fernhill/sandbox/my-account/`. Held: every label, the attribute dialog opens with one empty row, `C-1001` gives Pepper, Shadow, Willow; `C-1005` gives Kiwi and Rosie; the rules text.

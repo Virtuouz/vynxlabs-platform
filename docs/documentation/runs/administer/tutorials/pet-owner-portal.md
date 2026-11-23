@@ -19,3 +19,6 @@
 
 ## Not run
 My pets and My invoices before an attribute is set (the second user's attempt failed); **Password reset link**; **See it as**; the repository-only pet portal app; a real phone; 768 px; dark; keyboard-only.
+
+## Second check, 2026-11-23 (second agent)
+Steps 1 to 9 in one pass on the current build, owner window 390 x 844 in dark (no overflow). The owner's pass before an attribute was seen (**My details**). Not run: **Password reset link**.

@@ -22,3 +22,6 @@
 
 ## Product notes
 - The MCP `serverInfo.name` is `platform:sandbox` and its version `0.5.0` (old product name in the string).
+
+## Second check, 2026-11-23 (second agent)
+Whole page in one pass on the current build, Maya in Playwright, `curl` for MCP; account `tut-agent-chk`, key `tut-key` (revoked at the end). Steps 1 to 9 held as written. Not as the log said: **Try**'s Clinic is a segmented control; the Create API key dialog closes onto the key shown in the page. 390 px, dark: Agent tools (no overflow), Access, Keys (table scrolls inside; **Revoke** off screen: page now says so). Reload after the offer kept the tools. The `claude mcp add` step and a flow offer were not run (no Claude Code here).

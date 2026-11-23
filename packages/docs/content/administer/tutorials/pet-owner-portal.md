@@ -9,7 +9,7 @@ You will have a pet owner who signed in to Fernhill's portal on a phone-sized sc
 ## Before you start
 
 - You can sign in to the console as Maya Brooks, `maya.brooks@fernhill.example`, a tenant admin of Fernhill. The seeded password is `fernhill-demo-2026`. Inviting an end user and giving one attributes are tenant admin acts.
-- Fernhill is set up. Its app **My Fernhill account** is published in the Sandbox and open to every end user, and the tables it reads, including `invoices`, have rules that match an end user's `client_id`. See the [rules a table keeps](../../console/explanation/how-tables-work) for what a rule is.
+- Fernhill is set up. Its app **My Fernhill account** is published in the Sandbox and in Clinics, and open to every end user, and the tables it reads, including `invoices`, have rules that match an end user's `client_id`. See the [rules a table keeps](../../console/explanation/how-tables-work) for what a rule is.
 - A browser, and a second window. The steps use a narrow window, 390 pixels wide, as a phone is. The console needs no mail server for this: the invitation link is shown on screen.
 
 :::steps
@@ -21,11 +21,11 @@ You will have a pet owner who signed in to Fernhill's portal on a phone-sized sc
 
 4. **Choose a password as the owner.** Open a second window, 390 pixels wide, and paste the link. The page says "Welcome", "Choose a password for tut.owner@example.com." Type `tut-owner-pass-2026` and press **Save and sign in**. You land on the portal's home, **Apps**, with **My Fernhill account** and "Your pets, your invoices, and asking for a visit." and "Signed in as tut.owner@example.com."
 
-5. **Open the app.** Press **My Fernhill account**. The app's menu has **My details**, **My pets** and **My invoices**. **My details** says "Your details" and "There is nothing here for you yet." The owner is signed in and may open the app, and no row is theirs yet.
+5. **Open the app.** Press **My Fernhill account**. The portal opens the app's copy in the production workspace Clinics, at `/apps/fernhill/clinics/my-account/`. This tutorial follows the Sandbox's copy, which has other rows: in the address bar open `/apps/fernhill/sandbox/my-account/`. The app's menu has **My details**, **My pets** and **My invoices**. **My details** says "Your details" and "There is nothing here for you yet." The owner is signed in and may open the app, and no row is theirs yet.
 
 6. **Say who this person is.** As Maya, in **End users**, search for `tut.owner` and open the row. The panel shows **Groups** "None" and **ATTRIBUTES** "None. A table's rules can match facts such as which customer they belong to." Press **Attributes**. In **Name** type `client_id` and in **Value** type `C-1001`. Press **Save**. The panel now reads **ATTRIBUTES** `client_id` `C-1001`.
 
-7. **Look again as the owner.** In the owner's window reload `/apps/fernhill/sandbox/my-account/` and press **My pets**. It lists Pepper, Shadow and Willow, each with **Request an appointment**, and "Visits you have asked for" says "There is nothing here yet." Press **My invoices**. It lists invoices of that client, each with its number, clinic, date, amount and **Paid** or **Unpaid**.
+7. **Look again as the owner.** In the owner's window reload `/apps/fernhill/sandbox/my-account/` and press **My pets**. It lists Pepper, Shadow and Willow, each with **Request an appointment**, and "Visits you have asked for" says "There is nothing here yet." (Clinics' copy keeps its own rows: it lists only Willow, a Dachshund.) Press **My invoices**. It lists invoices of that client, each with its number, clinic, date, amount and **Paid** or **Unpaid**.
 
 8. **Read the rule.** As Maya, press **Data**, then **Tables**, and open `invoices`. Choose **Definition**. Under **Who sees rows** it says "By 2 rules.", and one of them is "People whose client_id is in client_code may read the row." The rule matches the person's `client_id` to the row's `client_code`: that is why step 6 changed what they see.
 

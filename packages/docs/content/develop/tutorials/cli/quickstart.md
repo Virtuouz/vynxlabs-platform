@@ -187,6 +187,9 @@ You will have a repository on your machine with one script in it, the same scrip
 
     ```text
     Promoted to cli-start-live (production) as version 1: 3 created, 0 updated, 0 deleted, 0 unchanged.
+      created  variable   greeting
+      created  script     hello
+      created  schedule   hello-every-morning
     ```
 
     The same bundle that runs in dev is now active in production. Nothing was built again. In production the schedule is not paused: `hello-every-morning` fires each weekday at 08:00 UTC, the time zone a schedule has unless its definition says another.

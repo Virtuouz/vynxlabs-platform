@@ -26,3 +26,6 @@
 
 ## Not run
 `volvel dev`, `volvel pull`, `volvel run --remote`; a dev workspace's triggers resumed; the agent part (`setup/agent.mjs`); 768/390 px; dark; keyboard.
+
+## Second check, 2026-11-23 (second agent)
+One pass of steps 1 to 13 on the current build, CLI from `pnpm pack` in a scratch folder, tenant `he-check`; key `tut-cli-chk2` revoked at the end. Console steps by Playwright. Step 11 (portal sign-in, **Ask for a device**, **Send request**) and step 12 (approval page, **Approve**) walked at 390 px in dark: no horizontal overflow, "Collect it from" is a segmented control. Not run: `volvel dev`, `pull`, the agent part.

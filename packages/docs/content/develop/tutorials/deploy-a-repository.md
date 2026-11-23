@@ -14,7 +14,7 @@ You will have a tenant `higher-ed` that runs a device-lending repository: its ta
 - A browser at least as wide as a laptop screen. Command lines run in the folder `examples/higher-ed-devices`.
 
 :::steps
-1. **Make the tenant and its two workspaces.** On **Instance** press **Create tenant**, with **Name** `Lakeshore State University` and **Slug** `higher-ed`, leaving **Make me a member, as tenant admin** checked. In the tenant, press **Create one** and make a workspace with **Name** `Devices`, **Slug** `devices`, **Type** **Production**. Then **Create workspace** again: **Name** `Devices (dev)`, **Slug** `devices-dev`, **Type** **Dev**, **Promotes to** **Devices (production)**. The repository does not make these for you.
+1. **Make the tenant and its two workspaces.** On **Instance** press **Create tenant**, with **Name** `Lakeshore State University` and **Slug** `higher-ed`, leaving **Make me a member, as tenant admin** checked. In the tenant, press **Create one**, which opens **Workspaces**, then **Create workspace** and make one with **Name** `Devices`, **Slug** `devices`, **Type** **Production**. Press **Create workspace** again: **Name** `Devices (dev)`, **Slug** `devices-dev`, **Type** **Dev**, **Promotes to** **Devices (production)**. The repository does not make these for you.
 
 2. **Make a key for the command line.** Open your own **Account**, at `/account/api-keys`: "A key acts as you, with your permissions. Use one for the command line or a script." Press **Create API key**, type `tut-cli` in **Name**, choose **In 30 days** in **Expires**, press **Create API key**, copy the key (it is shown once), and press **Done**.
 
@@ -26,7 +26,7 @@ You will have a tenant `higher-ed` that runs a device-lending repository: its ta
    volvel status
    ```
 
-   `login` says "Signed in to http://localhost:8091 as admin@example.com." `whoami` lists the tenants you can use, among them `Lakeshore State University (higher-ed)`. `status` says "Version 0.5.0, migration level 99" and "Ready". `status` exits with 1 when the instance is not ready.
+   `login` says "Signed in to http://localhost:8091 as admin@example.com." `whoami` lists the tenants you can use, among them `Lakeshore State University (higher-ed)`. `status` says "Version 0.5.0", a "migration level" (a number that grows with the instance: 100 on the instance this was checked on) and "Ready". `status` exits with 1 when the instance is not ready.
 
 4. **Plan the tenant's access.** The repository has two files under `tenant/`: the group Tech Desk and the service account `helpdesk-assistant`. From `examples/higher-ed-devices`:
 
@@ -72,7 +72,7 @@ You will have a tenant `higher-ed` that runs a device-lending repository: its ta
    volvel promote --tenant higher-ed --workspace devices-dev
    ```
 
-   The preview says "Bundle 8a0025118d82, version 1 here, to devices (production)." and "Promoting would leave devices (production) with: 43 created, …". The second says "Promoted to devices (production) as version 1: 43 created, 0 updated, 0 deleted, 0 unchanged." The bundle's identifier is the same as in step 7: the same code runs in both.
+   The preview says "Bundle <digest>, version 1 here, to devices (production)." (the digest is the build's own and differs on your machine) and "Promoting would leave devices (production) with: 43 created, …". The second says "Promoted to devices (production) as version 1: 43 created, 0 updated, 0 deleted, 0 unchanged." The bundle's identifier is the same as in step 7: the same code runs in both.
 
 9. **Fill production with sample data.** Put the operator's password in a variable without printing it, then:
 

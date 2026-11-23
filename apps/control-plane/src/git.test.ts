@@ -599,6 +599,13 @@ describe("seeing both sides, drafts and releases", () => {
       status: "nothing",
       branch: "release/main",
     });
+    // History tells a release commit from a push: the console words it "Release".
+    const history = (await alice.get(`${ws(prod)}/git/operations`)).body.items;
+    expect(history[0]).toMatchObject({ kind: "release", status: "nothing" });
+    expect(history.find((one: { status: string }) => one.status === "done")).toMatchObject({
+      kind: "release",
+      detail: { release: "release/main" },
+    });
     const branches = (await alice.get(`/tenants/${tenant}/git-branches`)).body.items;
     expect(branches).toEqual(
       expect.arrayContaining([
@@ -1089,6 +1096,84 @@ describe("safety", () => {
     commitOnBranch({ "volvel.yaml": "roots:\n  - platform\n  - src\n" }, "Leave it to the page");
     expect((await alice.post(`${ws()}/git/pull`, {})).body.status).not.toBe("failed");
     expect(await folderOf()).toMatchObject({ folderInForce: "platform", folderFrom: "setting" });
+  });
+
+  test("after a pull, a resource made here still counts toward what a push would write", async () => {
+    await deployDraft("orders/madehere", "export default async () => ({ here: 1 });\n");
+    commitOnBranch({ "notes/readme.txt": "Somebody was here.\n" }, "A note");
+    expect((await alice.post(`${ws()}/git/pull`, {})).body.status).not.toBe("failed");
+    const compared = (await alice.get(`${ws()}/git/compare`)).body;
+    const made = compared.files.filter((file: { path: string }) =>
+      file.path.startsWith("platform/orders/madehere."),
+    );
+    expect(made.length).toBeGreaterThan(0);
+    for (const file of made) expect(file).toMatchObject({ change: "new_here", here: true });
+    expect(compared.ahead).toBeGreaterThanOrEqual(made.length);
+    expect((await alice.post(`${ws()}/git/push`, {})).body.status).toBe("done");
+  });
+
+  test("a folder moved by volvel.yaml does not make an edited file changed on both sides", async () => {
+    // The two agree, with the console's files in platform/.
+    await deployDraft("orders/moveme", "export default async () => ({ here: 1 });\n");
+    expect((await alice.post(`${ws()}/git/pull`, {})).body.status).not.toBe("failed");
+    expect((await alice.post(`${ws()}/git/push`, {})).body.status).toBe("done");
+    expect(sh(["ls-tree", "-r", "--name-only", "vx/dev"], bare())).toContain(
+      "platform/orders/moveme.script.ts",
+    );
+    // A developer moves the folder and says so; the workspace has not pulled it yet.
+    checkout();
+    sh(["mv", "platform", "moved"], clone);
+    writeFileSync(join(clone, "volvel.yaml"), "roots:\n  - moved\n  - src\nresources: moved\n");
+    sh(["add", "-A"], clone);
+    sh(
+      ["-c", "user.name=Dev", "-c", "user.email=dev@acme.example", "commit", "-q", "-m", "Move"],
+      clone,
+    );
+    sh(["push", "-q", "origin", "work:vx/dev"], clone);
+    await deployDraft("orders/moveme", "export default async () => ({ here: 2 });\n");
+    const compared = (await alice.get(`${ws()}/git/compare`)).body;
+    const edited = compared.files.filter((file: { path: string }) =>
+      file.path.startsWith("moved/orders/moveme."),
+    );
+    expect(edited.length).toBeGreaterThan(0);
+    for (const file of edited) {
+      expect(file, JSON.stringify(file)).toMatchObject({
+        here: true,
+        branch: false,
+        conflict: false,
+        change: "changed",
+      });
+    }
+    expect(compared.conflicts).toBe(0);
+    // Put it back for what follows.
+    checkout();
+    sh(["mv", "moved", "platform"], clone);
+    rmSync(join(clone, "volvel.yaml"));
+    sh(["add", "-A"], clone);
+    sh(
+      ["-c", "user.name=Dev", "-c", "user.email=dev@acme.example", "commit", "-q", "-m", "Back"],
+      clone,
+    );
+    sh(["push", "-q", "origin", "work:vx/dev"], clone);
+    expect((await alice.post(`${ws()}/git/pull`, {})).body.status).not.toBe("failed");
+    expect((await alice.post(`${ws()}/git/push`, {})).body.status).not.toBe("failed");
+  });
+
+  test("after a push with drafts, the drafted file is not counted as removed here", async () => {
+    await alice.put(`${ws()}/drafts/orders/sketch`, {
+      kind: "script",
+      schemaVersion: 1,
+      body: scriptBody("export default async () => ({ sketch: true });\n"),
+    });
+    expect((await alice.post(`${ws()}/git/push`, { drafts: true })).body.status).toBe("done");
+    const compared = (await alice.get(`${ws()}/git/compare`)).body;
+    expect(
+      compared.files.filter((file: { path: string }) => file.path.includes("orders/sketch.")),
+    ).toEqual([]);
+    expect(compared.ahead).toBe(0);
+    expect((await alice.get(`${ws()}/git`)).body.state).toBe("synced");
+    await alice.delete(`${ws()}/drafts/orders/sketch`);
+    expect((await alice.post(`${ws()}/git/push`, {})).body.status).toBe("done");
   });
 
   test("disconnecting leaves the repository as it is", async () => {

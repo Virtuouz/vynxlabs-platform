@@ -456,6 +456,8 @@ export interface WorkspaceGitTable {
   synced_commit: Generated<string | null>;
   synced_files: ColumnType<Record<string, string>, string | undefined, string>;
   synced_said: ColumnType<Record<string, string> | null, string | null | undefined, string | null>;
+  /** The folder those files were kept in, null for a sync before this was kept. */
+  synced_folder: Generated<string | null>;
   state: Generated<GitState>;
   last_error: Generated<string | null>;
   lease_until: Generated<Date | null>;

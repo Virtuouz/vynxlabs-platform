@@ -85,7 +85,7 @@ export function manifestOf(set: DocSet, version: string): Manifest {
  */
 export function packageOutput(
   set: DocSet,
-  options: { version: string; productName?: string },
+  options: { version: string; productName?: string; generated?: ReadonlySet<string> },
 ): Map<string, string> {
   const files = new Map<string, string>();
   files.set("manifest.json", `${JSON.stringify(manifestOf(set, options.version))}\n`);
@@ -96,7 +96,10 @@ export function packageOutput(
   }
   files.set(
     "search.json",
-    buildSearchIndex(set, options.productName ? { productName: options.productName } : {}),
+    buildSearchIndex(set, {
+      ...(options.productName ? { productName: options.productName } : {}),
+      ...(options.generated ? { generated: options.generated } : {}),
+    }),
   );
   return files;
 }

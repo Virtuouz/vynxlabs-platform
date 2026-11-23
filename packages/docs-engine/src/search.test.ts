@@ -1,5 +1,12 @@
 import { describe, expect, test } from "vitest";
-import { buildDocSet, buildSearchIndex, loadSearchIndex, pagePath, readPage } from "./index.js";
+import {
+  buildDocSet,
+  buildSearchIndex,
+  loadSearchIndex,
+  pagePath,
+  RESULT_LIMIT,
+  readPage,
+} from "./index.js";
 
 const page = (frontmatter: string, body: string) => `---\n${frontmatter}\n---\n\n${body}`;
 
@@ -89,6 +96,42 @@ describe("the search index", () => {
     expect(grouped.indexOf("guide/refunds")).toBeLessThan(
       grouped.indexOf("reference/refund-limits"),
     );
+  });
+
+  test("a written page under reference outranks a generated page that says the word more often", () => {
+    const mixed = setOf({
+      "console/reference/screens/approvals.md": page(
+        "title: Approvals\ndescription: Flows waiting for a person.",
+        "Approvals wait here.\n",
+      ),
+      "develop/reference/audit.md": page(
+        "title: Approval audit approval log",
+        `${"An approval was granted. Approval denied. Approval asked. ".repeat(20)}\n`,
+      ),
+    });
+    const generated = new Set(["develop/reference/audit"]);
+    const index = loadSearchIndex(buildSearchIndex(mixed, { generated }));
+    const paths = index.search("approval").map((hit) => hit.path);
+    expect(paths[0]).toBe("console/reference/screens/approvals");
+    expect(index.grouped("approval").map((hit) => hit.path)[0]).toBe(
+      "console/reference/screens/approvals",
+    );
+    // Typed as its title, a generated page is first.
+    expect(index.search("approval audit approval log")[0]?.path).toBe("develop/reference/audit");
+  });
+
+  test("a search answers as many pages as the panel shows", () => {
+    const many = setOf(
+      Object.fromEntries(
+        Array.from({ length: 20 }, (_, n) => [
+          `guide/p${n}.md`,
+          page(`title: Page ${n} widget`, "A widget.\n"),
+        ]),
+      ),
+    );
+    const found = loadSearchIndex(buildSearchIndex(many)).grouped("widget");
+    expect(found).toHaveLength(RESULT_LIMIT);
+    expect(RESULT_LIMIT).toBe(12);
   });
 
   test("keeps each page's type, empty for an untyped page, stored and not searched", () => {

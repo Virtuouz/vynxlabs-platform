@@ -1,10 +1,11 @@
-import { newId } from "@volvel/db";
-import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { newId, sql } from "@volvel/db";
+import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import { appCookieName } from "./kernel/apps/sessions.js";
 import { writeAudit } from "./kernel/audit.js";
 import { recoverOperator } from "./kernel/bootstrap.js";
 import { createPasswordToken, setPasswordWithToken } from "./kernel/endusers.js";
 import { generateApiKey } from "./kernel/principal.js";
+import { StreamHub } from "./kernel/stream.js";
 import { type Client, startTestApp, type TestApp } from "./testing.js";
 
 const PASSWORD = "a-good-long-password";
@@ -387,7 +388,85 @@ describe("disabling an account at the instance says which tenants it leaves with
     });
     expect(unsubscribe).not.toBe(false);
     await t.admin.patch(`/members/${a.members.sam}`, { disabled: true });
-    expect(closed).toBe(1);
+    await vi.waitFor(() => expect(closed).toBe(1));
+  });
+
+  test("they end on every replica, not only the one that handled it, and only once the change is kept (INS-02)", async () => {
+    const a = await tenantWith("replicas", ["rex", "ruth"]);
+    // Another replica: its own hub, with its own listening connection to the same database.
+    const elsewhere = new StreamHub(t.database, t.kernel.log);
+    const closed: string[] = [];
+    const open = async (hub: StreamHub, principal: string, label: string) =>
+      hub.subscribe({
+        tenantId: a.id,
+        may: new Map(),
+        principal,
+        send: () => undefined,
+        close: () => closed.push(label),
+      });
+    await open(elsewhere, `member:${a.members.rex}`, "rex elsewhere");
+    await open(elsewhere, `member:${a.members.ruth}`, "ruth elsewhere");
+    await open(t.kernel.stream, `member:${a.members.rex}`, "rex here");
+    // What other replicas hear is on the database's channel.
+    const heard: string[] = [];
+    const listener = await t.database.listen({
+      channels: ["vx_ended"],
+      onMessage: (_channel, payload) => heard.push(payload),
+      onError: () => undefined,
+    });
+    try {
+      await t.admin.patch(`/members/${a.members.rex}`, { disabled: true });
+      await vi.waitFor(() => expect(closed.sort()).toEqual(["rex elsewhere", "rex here"]));
+      expect(heard.map((one) => JSON.parse(one).p)).toEqual([`member:${a.members.rex}`]);
+    } finally {
+      await listener.close();
+      await elsewhere.close();
+    }
+  });
+
+  test("an end user disabled loses their pending sign-in codes and open streams too (INS-02)", async () => {
+    const a = await tenantWith("endusers", ["eva"]);
+    const user = await t.db
+      .insertInto("end_user")
+      .values({ id: newId(), tenant_id: a.id, email: "ed@endusers.example", name: "Ed" })
+      .returning("id")
+      .executeTakeFirstOrThrow();
+    const provider = newId();
+    await sql`
+      insert into identity_provider (id, tenant_id, audience, protocol, name, config)
+      values (${provider}, ${a.id}, 'end_users', 'oidc', 'Customers', '{}'::jsonb)
+    `.execute(t.db);
+    const pending = async (code: string, person: string) =>
+      sql`
+        insert into sso_state (id, provider_id, tenant_id, purpose, state_hash, browser_hash, origin,
+          expires_at, finish_hash, principal_id)
+        values (${newId()}, ${provider}, ${a.id}, 'sign_in', ${newId()}, '', 'http://localhost:8080',
+          now() + interval '10 minutes', ${code}, ${person})
+      `.execute(t.db);
+    await pending("code-of-ed", user.id);
+    await pending("code-of-someone-else", newId());
+    let closed = 0;
+    await t.kernel.stream.subscribe({
+      tenantId: a.id,
+      may: new Map(),
+      principal: `end_user:${user.id}`,
+      own: `end_user:${user.id}`,
+      send: () => undefined,
+      close: () => {
+        closed += 1;
+      },
+    });
+    const done = await (a.clients.eva as Client).patch(`/tenants/${a.id}/end-users/${user.id}`, {
+      disabled: true,
+    });
+    expect(done.status, JSON.stringify(done.body)).toBe(200);
+    const codes = await t.db
+      .selectFrom("sso_state")
+      .select("finish_hash")
+      .where("tenant_id", "=", a.id)
+      .execute();
+    expect(codes.map((one) => one.finish_hash)).toEqual(["code-of-someone-else"]);
+    await vi.waitFor(() => expect(closed).toBe(1));
   });
 });
 

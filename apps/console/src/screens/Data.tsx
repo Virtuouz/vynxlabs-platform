@@ -145,6 +145,8 @@ const ROWS_URL = {
   row: { type: "string", push: true },
 } as const;
 
+const NONE_CHECKED: Set<string> = new Set();
+
 function RowsBrowser(
   props: RowsBrowserProps & {
     fill?: boolean;
@@ -178,7 +180,15 @@ function RowsBrowser(
   /** The cursors of the pages before this one, so "Previous" has somewhere to go. */
   const [back, setBack] = useState<string[]>([]);
   const [adding, setAdding] = useState(false);
-  const [checked, setChecked] = useState<Set<string>>(new Set());
+  // What is checked belongs to the page, order and filter it was checked on: on another, it is
+  // not there to see, and a delete must not take it along.
+  const scope = `${url.page ?? ""}|${url.sort ?? ""}|${url.filter ?? ""}`;
+  const [picked, setPicked] = useState<{ scope: string; ids: Set<string> }>({
+    scope,
+    ids: new Set(),
+  });
+  const checked = picked.scope === scope ? picked.ids : NONE_CHECKED;
+  const setChecked = (ids: Set<string>) => setPicked({ scope, ids });
   // The columns shown, in order: as chosen, or all of them less what an older link hides.
   const known = new Set(columns.map((column) => column.name));
   const chosen = url.cols.filter((name) => known.has(name));
@@ -1228,6 +1238,8 @@ export function Tables({ root, link }: { root: string; link: string }) {
             schemaVersion: 1,
             ownership: "ui",
             body: { columns: { [column]: { type } } },
+            // A new table: one already at this name is said so, not replaced.
+            create: true,
           });
           navigate(`${link}/tables/${name}`);
         },
@@ -1237,6 +1249,8 @@ export function Tables({ root, link }: { root: string; link: string }) {
 }
 
 interface TableColumn {
+  /** Tells apart two retired columns that had one name. */
+  id?: string;
   name: string;
   /** What the column holds, when its definition says. */
   description?: string;
@@ -1255,6 +1269,7 @@ interface TableColumn {
 }
 
 interface TableDetail {
+  id?: string;
   name: string;
   /** What the table is for, when its definition says. */
   description?: string;
@@ -1318,7 +1333,12 @@ export function TableView({ root, name, link }: { root: string; name: string; li
         <Notice
           tone="attention"
           action={
-            <PurgeButton root={root} table={data.name} onDone={() => navigate(`${link}/tables`)} />
+            <PurgeButton
+              root={root}
+              table={data.name}
+              {...(data.id ? { tableId: data.id } : {})}
+              onDone={() => navigate(`${link}/tables`)}
+            />
           }
         >
           This table is retired. It left its definition, so nothing can read or write it, and its{" "}
@@ -1374,11 +1394,16 @@ function PurgeButton({
   root,
   table,
   column,
+  columnId,
+  tableId,
   onDone,
 }: {
   root: string;
   table: string;
   column?: string;
+  /** Which retired column, for two that had the name. */
+  columnId?: string;
+  tableId?: string;
   onDone: () => void;
 }) {
   const what = column ? `the retired column "${column}"` : `the retired table "${table}"`;
@@ -1387,7 +1412,14 @@ function PurgeButton({
       label="Delete for good"
       confirm={`Delete ${what} and everything in it? This is the one action that destroys data, and it cannot be undone.`}
       typeToConfirm={column ?? table}
-      run={() => api.post(`${root}/table-purges`, { table, ...(column ? { column } : {}) })}
+      run={() =>
+        api.post(`${root}/table-purges`, {
+          table,
+          ...(column ? { column } : {}),
+          ...(columnId ? { columnId } : {}),
+          ...(tableId ? { tableId } : {}),
+        })
+      }
       onDone={onDone}
     />
   );
@@ -1696,6 +1728,44 @@ interface TableBody {
   [key: string]: unknown;
 }
 
+/** Stops a change that would put a column over one that has its name, and says so. */
+function takenColumn(body: TableBody, name: string) {
+  if (body.columns[name] || ["id", "created_at", "updated_at"].includes(name))
+    throw new Error(
+      `There is already a column called "${name}". Choose another name, or change that one.`,
+    );
+}
+
+/**
+ * The definition to save to go back to `state` from `now`. What was renamed since keeps its data
+ * when it goes back, so each is given the name it has now as the one it was called: a column,
+ * and a value of a choice.
+ */
+export function bodyToRestore(state: TableBody, now: TableBody | undefined): TableBody {
+  const back = structuredClone(state);
+  for (const [name, column] of Object.entries(now?.columns ?? {})) {
+    const from = column.renamedFrom;
+    if (typeof from === "string" && back.columns[from] && !back.columns[name]) {
+      back.columns[from] = { ...back.columns[from], renamedFrom: name };
+    }
+    const wasValues = back.columns[name]?.values;
+    if (!Array.isArray(column.values) || !Array.isArray(wasValues)) continue;
+    type Entry = string | { value: string; renamedFrom?: string };
+    const valueOf = (one: Entry) => (typeof one === "string" ? one : one.value);
+    for (const entry of column.values as Entry[]) {
+      if (typeof entry === "string" || typeof entry.renamedFrom !== "string") continue;
+      const at = (wasValues as Entry[]).findIndex((one) => valueOf(one) === entry.renamedFrom);
+      if (at < 0 || (wasValues as Entry[]).some((one) => valueOf(one) === entry.value)) continue;
+      const old = wasValues[at] as Entry;
+      wasValues[at] = {
+        ...(typeof old === "string" ? { value: old } : old),
+        renamedFrom: entry.value,
+      };
+    }
+  }
+  return back;
+}
+
 interface ColumnAction {
   label: string;
   onSelect: () => void;
@@ -1739,6 +1809,9 @@ function Definition({
   const retired = table.columns.filter((column) => column.status === "retired");
   // The definition as last saved from here, and every change made to it, for ⌘Z.
   const stored = useRef<TableBody>(undefined);
+  // The version of the definition as this screen last read or saved it. A save names it, so that
+  // one made after someone else's change is refused and does not take their change back.
+  const held = useRef<number>(undefined);
   const restoring = useRef<(state: TableBody) => void>(() => {});
   const history = useHistory<TableBody | undefined>(
     () => stored.current,
@@ -1747,26 +1820,21 @@ function Definition({
   restoring.current = async (state) => {
     setFailure(undefined);
     const now = stored.current;
-    // A column renamed since keeps its data when it goes back: the one it was called is named.
-    const back = structuredClone(state);
-    for (const [name, column] of Object.entries(now?.columns ?? {})) {
-      const from = column.renamedFrom;
-      if (typeof from === "string" && back.columns[from] && !back.columns[name]) {
-        back.columns[from] = { ...back.columns[from], renamedFrom: name };
-      }
-    }
+    const back = bodyToRestore(state, now);
     try {
-      await api.put(`${root}/resources/${table.name}`, {
+      const saved = await api.put<{ version?: number }>(`${root}/resources/${table.name}`, {
         kind: "table",
         schemaVersion: 1,
         ownership: "ui",
         body: back,
+        ...(held.current !== undefined ? { version: held.current } : {}),
       });
       stored.current = back;
+      held.current = saved.version;
     } catch (error) {
       // What is saved is not what the history thinks it is: it cannot be trusted any more.
       history.clear();
-      setFailure(failureText(error));
+      setFailure(`${failureText(error)} Undo and redo start again from what is saved now.`);
     }
     reload();
   };
@@ -1809,16 +1877,20 @@ function Definition({
   ) => {
     setFailure(undefined);
     try {
-      const resource = await api.get<{ body: TableBody }>(`${root}/resources/${table.name}`);
+      const resource = await api.get<{ body: TableBody; version?: number }>(
+        `${root}/resources/${table.name}`,
+      );
       const body = structuredClone(resource.body);
       const before = structuredClone(resource.body);
       edit(body);
-      await api.put(`${root}/resources/${table.name}`, {
+      const saved = await api.put<{ version?: number }>(`${root}/resources/${table.name}`, {
         kind: "table",
         schemaVersion: 1,
         ownership: "ui",
         body,
+        ...(resource.version !== undefined ? { version: resource.version } : {}),
       });
+      held.current = saved.version;
       // What it was before is what undoing takes back to; what it is now, what redoing does.
       stored.current = before;
       history.record(label);
@@ -1876,30 +1948,38 @@ function Definition({
     {
       label: "Rename",
       onSelect: async () => {
-        const next = await ask.prompt({
+        await ask.prompt({
           title: `Rename ${row.name}`,
           label: "New name",
           initial: row.name,
           action: "Rename",
+          // Said on the field, with the name kept: no request is made for a name that is taken.
+          submit: async (typed) => {
+            const next = typed.trim();
+            if (!next || next === row.name) return undefined;
+            try {
+              await change(
+                (body) => {
+                  takenColumn(body, next);
+                  const { renamedFrom: _old, ...kept } = body.columns[row.name] ?? {};
+                  delete body.columns[row.name];
+                  body.columns[next] = { ...kept, renamedFrom: row.name };
+                  if (body.policy?.column === row.name) body.policy.column = next;
+                  // A rule that looks at the column follows it to its new name.
+                  for (const rule of body.policy?.rules ?? []) {
+                    if ("column" in rule.when && rule.when.column === row.name) {
+                      rule.when.column = next;
+                    }
+                  }
+                },
+                { label: `renaming ${row.name} to ${next}`, report: false },
+              );
+              return undefined;
+            } catch (error) {
+              return failureText(error);
+            }
+          },
         });
-        if (!next || next === row.name) return;
-        void quietly(
-          change(
-            (body) => {
-              const { renamedFrom: _old, ...kept } = body.columns[row.name] ?? {};
-              delete body.columns[row.name];
-              body.columns[next] = { ...kept, renamedFrom: row.name };
-              if (body.policy?.column === row.name) body.policy.column = next;
-              // A rule that looks at the column follows it to its new name.
-              for (const rule of body.policy?.rules ?? []) {
-                if ("column" in rule.when && rule.when.column === row.name) {
-                  rule.when.column = next;
-                }
-              }
-            },
-            { label: `renaming ${row.name} to ${next}` },
-          ),
-        );
       },
     },
     {
@@ -2080,7 +2160,7 @@ function Definition({
             framed
             label="Retired columns"
             rows={retired}
-            rowKey={(row) => row.name}
+            rowKey={(row) => row.id ?? row.name}
             empty={null}
             columns={[
               { header: "Column", cell: (row) => <Code>{row.name}</Code> },
@@ -2102,6 +2182,7 @@ function Definition({
                           void quietly(
                             change(
                               (body) => {
+                                takenColumn(body, row.name);
                                 body.columns[row.name] = {
                                   type: row.type,
                                   ...(row.references ? { references: row.references } : {}),
@@ -2119,7 +2200,13 @@ function Definition({
                         Bring back
                       </Button>
                     ) : null}
-                    <PurgeButton root={root} table={table.name} column={row.name} onDone={reload} />
+                    <PurgeButton
+                      root={root}
+                      table={table.name}
+                      column={row.name}
+                      {...(row.id ? { columnId: row.id } : {})}
+                      onDone={reload}
+                    />
                   </span>
                 ),
               },
@@ -2322,6 +2409,7 @@ function Definition({
           }) =>
             change(
               (body) => {
+                takenColumn(body, name);
                 body.columns[name] = {
                   type,
                   ...(type === "reference" && references ? { references } : {}),

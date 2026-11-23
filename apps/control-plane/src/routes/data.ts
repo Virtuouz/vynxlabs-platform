@@ -160,6 +160,7 @@ export const toRowsPage = (found: {
 });
 
 const Column = Type.Object({
+  id: Type.String({ description: "Tells apart two retired columns that had one name." }),
   name: Type.String(),
   description: Type.Optional(
     Type.String({ description: "What the column holds, when its definition says." }),
@@ -375,6 +376,9 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             200: Type.Object({
               items: Type.Array(
                 Type.Object({
+                  id: Type.String({
+                    description: "Tells apart two retired tables that had one name.",
+                  }),
                   name: Type.String(),
                   description: Type.String(),
                   status: Type.String(),
@@ -410,6 +414,7 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             n: string;
           }>`select count(*) as n from ${sql.id(schema, table.physicalName)}`.execute(data);
           items.push({
+            id: table.id,
             name: table.name,
             description:
               (resource?.body as { description?: string } | undefined)?.description ?? "",
@@ -434,6 +439,7 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           params: WildParams,
           response: {
             200: Type.Object({
+              id: Type.Optional(Type.String()),
               name: Type.String(),
               description: Type.Optional(
                 Type.String({ description: "What the table is for, when its definition says." }),
@@ -490,6 +496,7 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           held.set(column.id, Number(kept.rows[0]?.n ?? 0));
         }
         return {
+          id: table.id,
           name,
           ...(defined.description ? { description: defined.description } : {}),
           status: table.status,
@@ -499,6 +506,7 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           rowCount: Number(count.rows[0]?.n ?? 0),
           stored: { schema, table: table.physicalName },
           columns: table.columns.map((column) => ({
+            id: column.id,
             name: column.name,
             ...(defined.columns?.[column.name]?.description
               ? { description: defined.columns[column.name]?.description as string }
@@ -533,6 +541,12 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           body: Type.Object({
             table: Type.String({ pattern: PATH_PATTERN }),
             column: Type.Optional(Type.String()),
+            columnId: Type.Optional(
+              Type.String({ description: "Which retired column, when two had the name." }),
+            ),
+            tableId: Type.Optional(
+              Type.String({ description: "Which retired table, when two had the name." }),
+            ),
           }),
           response: { 200: Type.Object({ dropped: Type.String() }) },
         },

@@ -583,6 +583,10 @@ const POLICY_NAMES = ["rows", "rows_read", "rows_insert", "rows_update", "rows_d
  */
 const CLAIM = sql`(select vx.claim())`;
 const PRINCIPAL = sql`(${CLAIM} ->> 'principal')`;
+/** Who is asking, when someone is: no one is nobody's, so a request from no person owns no row. */
+const SOMEONE = sql`coalesce(${PRINCIPAL}, '') <> ''`;
+/** What the database writes for `SOMEONE` in a stored policy, to find the policies compiled before it. */
+const SOMEONE_STORED = "->> 'principal'::text), ''::text) <> ''::text";
 const GROUPS = sql`(select jsonb_array_elements_text(coalesce(${CLAIM} -> 'groups', '[]'::jsonb)))`;
 const attribute = (name: string) => sql`(${CLAIM} -> 'attrs' ->> ${sql.lit(name)})`;
 
@@ -616,7 +620,7 @@ async function setPolicy(
     // A caller sees and writes a row when it is theirs, or when they may see every row.
     const allowed = sql`
       ${everything}
-      or ${await physical(policy.column)}::text = ${PRINCIPAL}
+      or (${SOMEONE} and ${await physical(policy.column)}::text = ${PRINCIPAL})
     `;
     await sql`
       create policy rows on ${target} for all to ${sql.id(role)}
@@ -629,10 +633,12 @@ async function setPolicy(
       const column = await physical(when.column);
       if ("is" in when) {
         // No one is nobody's: a request from no person matches no row.
-        return sql`(${PRINCIPAL} <> '' and ${column}::text = ${PRINCIPAL})`;
+        return sql`(${SOMEONE} and ${column}::text = ${PRINCIPAL})`;
       }
       if ("in" in when) return sql`${column}::text in ${GROUPS}`;
-      return sql`${column}::text = ${attribute(when.equals.attribute)}`;
+      // An attribute no one has is empty, and equals no row's empty text.
+      const wanted = attribute(when.equals.attribute);
+      return sql`(coalesce(${wanted}, '') <> '' and ${column}::text = ${wanted})`;
     };
     const any = async (rules: RowRule[]) =>
       rules.length === 0 ? sql`false` : sql.join(await Promise.all(rules.map(clause)), sql` or `);
@@ -670,16 +676,24 @@ async function setPolicy(
  * opened: after it, a policy trusts only the signed claim.
  */
 export async function upgradePolicies(owner: Db, role: string): Promise<number> {
-  const old = await sql<{ schema: string; table: string }>`
-    select distinct schemaname as schema, tablename as "table" from pg_policies
+  // Also those compiled before a request from no person was kept from owning a row: they
+  // read who is asking, and lack the check that someone is.
+  const old = await sql<{ schema: string; table: string; legacy: boolean }>`
+    select schemaname as schema, tablename as "table",
+      bool_or(coalesce(qual, '') like '%current_setting(''app.%'
+        or coalesce(with_check, '') like '%current_setting(''app.%') as legacy
+    from pg_policies
     where schemaname ~ '^ws_[0-9a-f]{32}$'
-      and (coalesce(qual, '') like '%current_setting(''app.%'
+    group by schemaname, tablename
+    having bool_or(coalesce(qual, '') like '%current_setting(''app.%'
         or coalesce(with_check, '') like '%current_setting(''app.%')
+      or (bool_or(coalesce(qual, '') like '%vx.claim%')
+        and not bool_or(coalesce(qual, '') like ${`%${SOMEONE_STORED}%`}))
   `.execute(owner);
   if (old.rows.length === 0) return 0;
   let done = 0;
   await owner.transaction().execute(async (trx) => {
-    for (const { schema, table } of old.rows) {
+    for (const { schema, table, legacy } of old.rows) {
       const hex = schema.slice(3);
       const workspaceId = `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
       const row = await trx
@@ -689,6 +703,12 @@ export async function upgradePolicies(owner: Db, role: string): Promise<number> 
         .where("physical_name", "=", table)
         .executeTakeFirst();
       if (!row) continue;
+      const kept = row.policy as TablePolicy;
+      const asksWho =
+        kept.type === "owner" ||
+        (kept.type === "rules" &&
+          kept.rules.some((rule) => "is" in rule.when || "equals" in rule.when));
+      if (!legacy && !asksWho) continue;
       // A retired table is read by nobody, and its policy may name a column that is gone.
       // It is then left with none, which lets nothing through, and is given its policy
       // again when the table comes back.
@@ -831,10 +851,22 @@ export async function reconcileReferences(trx: Trx, workspaceId: string, final: 
       // It points at another table, or does something else on a delete: made again as asked.
       await sql`alter table ${own} drop constraint ${sql.id(name)}`.execute(trx);
     }
+    // Rows that came back with a table may name a row that is gone. They are left as they are,
+    // and every row written from now on is held to the key. A key pointed at another table is
+    // still refused while a row would point nowhere.
+    const dangling = there
+      ? { rows: [] }
+      : await sql`
+      select 1 from ${own} as r
+      where r.${sql.id(reference.physical_name)} is not null and not exists (
+        select 1 from ${sql.id(schema, target.physical_name)} as t where t.id = r.${sql.id(reference.physical_name)}
+      ) limit 1
+    `.execute(trx);
     await sql`
       alter table ${own}
       add constraint ${sql.id(name)} foreign key (${sql.id(reference.physical_name)})
       references ${sql.id(schema, target.physical_name)} (id) ${sql.raw(ON_DELETE[rule].sql)}
+      ${sql.raw(dangling.rows.length > 0 ? "not valid" : "")}
     `.execute(trx);
     // Finding the rows that point at one, for a join or for the delete's own check, without reading them all.
     await sql`
@@ -954,6 +986,29 @@ export async function retireTable(
   trx: Trx,
   resource: { id: string; workspaceId: string; path: string },
 ) {
+  // Its rows are kept, but they are no longer part of the tables that remain: a row they refer
+  // to may be deleted without them, and is not held by them. The keys come back with the table.
+  const leaving = await trx
+    .selectFrom("data_table")
+    .select(["id", "physical_name"])
+    .where("workspace_id", "=", resource.workspaceId)
+    .where("name", "=", resource.path)
+    .where("status", "=", "active")
+    .executeTakeFirst();
+  if (leaving) {
+    const references = await trx
+      .selectFrom("data_column")
+      .select("physical_name")
+      .where("table_id", "=", leaving.id)
+      .where("reference_table", "is not", null)
+      .execute();
+    for (const column of references) {
+      await sql`alter table ${sql.id(workspaceSchema(resource.workspaceId), leaving.physical_name)}
+        drop constraint if exists ${sql.id(constraintName("fk", leaving.physical_name, column.physical_name))}`.execute(
+        trx,
+      );
+    }
+  }
   await trx
     .updateTable("data_table")
     .set({ status: "retired", retired_at: new Date(), resource_id: null })
@@ -963,6 +1018,11 @@ export async function retireTable(
     .execute();
 }
 
+const ambiguous = (what: string, name: string, table: string) =>
+  conflict(
+    `More than one retired ${what} has the name "${name}"${what === "column" ? ` in "${table}"` : ""}. Say which one, by its ID.`,
+  );
+
 /**
  * Drops retired data for good: one retired column, or a whole retired table.
  * This is the only place the platform destroys tenant data, and only on request.
@@ -970,11 +1030,17 @@ export async function retireTable(
 export async function purgeRetired(
   trx: Trx,
   workspaceId: string,
-  request: { table: string; column?: string | undefined },
+  request: {
+    table: string;
+    column?: string | undefined;
+    /** Which retired column or table, when more than one has the name. */
+    columnId?: string | undefined;
+    tableId?: string | undefined;
+  },
 ) {
   const schema = workspaceSchema(workspaceId);
-  if (request.column !== undefined) {
-    const column = await trx
+  if (request.column !== undefined || request.columnId !== undefined) {
+    let found = trx
       .selectFrom("data_column")
       .innerJoin("data_table", "data_table.id", "data_column.table_id")
       .select([
@@ -984,24 +1050,32 @@ export async function purgeRetired(
       ])
       .where("data_table.workspace_id", "=", workspaceId)
       .where("data_table.name", "=", request.table)
-      .where("data_column.name", "=", request.column)
-      .where("data_column.status", "=", "retired")
-      .executeTakeFirst();
+      .where("data_column.status", "=", "retired");
+    if (request.column !== undefined) found = found.where("data_column.name", "=", request.column);
+    if (request.columnId !== undefined)
+      found = found.where("data_column.id", "=", request.columnId);
+    // Two retired columns may have had one name: a name alone drops neither, and says which.
+    const matches = await found.limit(2).execute();
+    const column = matches[0];
     if (!column) throw notFound(`A retired column "${request.column}" in "${request.table}"`);
+    if (matches.length > 1) throw ambiguous("column", request.column ?? "", request.table);
     await sql`alter table ${sql.id(schema, column.table_physical)} drop column ${sql.id(column.physical_name)}`.execute(
       trx,
     );
     await trx.deleteFrom("data_column").where("id", "=", column.id).execute();
     return { dropped: "column" as const };
   }
-  const table = await trx
+  let wanted = trx
     .selectFrom("data_table")
     .select(["id", "physical_name"])
     .where("workspace_id", "=", workspaceId)
     .where("name", "=", request.table)
-    .where("status", "=", "retired")
-    .executeTakeFirst();
+    .where("status", "=", "retired");
+  if (request.tableId !== undefined) wanted = wanted.where("id", "=", request.tableId);
+  const tables = await wanted.limit(2).execute();
+  const table = tables[0];
   if (!table) throw notFound(`A retired table "${request.table}"`);
+  if (tables.length > 1) throw ambiguous("table", request.table, request.table);
   await sql`drop table ${sql.id(schema, table.physical_name)}`.execute(trx).catch((error) => {
     if ((error as { code?: string }).code === "2BP01") {
       throw conflict(

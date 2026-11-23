@@ -1,7 +1,14 @@
 // @vitest-environment happy-dom
 import { cleanup, configure, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { Sources, SourceView, TableView, toFilter } from "./screens/Data.tsx";
+import {
+  bodyToRestore,
+  Sources,
+  SourceView,
+  Tables,
+  TableView,
+  toFilter,
+} from "./screens/Data.tsx";
 import { answer, show } from "./testing.tsx";
 
 // The whole suite runs in parallel with tests that use a database, so waits are generous.
@@ -682,4 +689,121 @@ test("a removal that is not confirmed changes nothing", async () => {
   await answer("Cancel");
   await waitFor(() => expect(screen.queryByText(/Remove the file from/)).toBeNull());
   expect(calls.some((call) => call.method === "PATCH")).toBe(false);
+});
+
+test("TAB-10: rows checked on one page are not checked, or deleted, on another", async () => {
+  show(<TableView root={root} name="orders" link="/t/t1/workspaces/w1" />);
+  fireEvent.click(await screen.findByLabelText("Check row r1"));
+  expect(screen.getByRole("toolbar", { name: "What to do with the checked rows" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Next" }));
+  await waitFor(() => expect(lastRows().get("cursor")).toBe("NTA"));
+  await waitFor(() =>
+    expect(screen.queryByRole("toolbar", { name: "What to do with the checked rows" })).toBeNull(),
+  );
+  // The heading's box follows the rows that are shown.
+  const all = screen.getByLabelText("Check every row on this page") as HTMLInputElement;
+  expect(all.checked).toBe(false);
+  fireEvent.click(all);
+  expect((screen.getByLabelText("Check every row on this page") as HTMLInputElement).checked).toBe(
+    true,
+  );
+  // Another filter leaves none of them checked either.
+  fireEvent.change(screen.getByLabelText("Filter by number"), { target: { value: "A-1" } });
+  await waitFor(() => expect(lastRows().get("filter")).toBeTruthy());
+  await waitFor(() =>
+    expect(screen.queryByRole("toolbar", { name: "What to do with the checked rows" })).toBeNull(),
+  );
+});
+
+test("TAB-06: a column is not renamed, added or brought back over one that has the name", async () => {
+  const body = {
+    columns: {
+      number: { type: "text" },
+      total: { type: "number" },
+      notes: { type: "text" },
+    },
+  };
+  routes[`GET /api/v1${root}/tables/orders`] = () => [200, orders("ui")];
+  routes[`GET /api/v1${root}/resources/orders`] = () => [200, { body, version: 3 }];
+  routes[`PUT /api/v1${root}/resources/orders`] = () => [200, { version: 4 }];
+  show(<TableView root={root} name="orders" link="/t/t1/workspaces/w1" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Definition" }));
+  const puts = () => calls.filter((call) => call.method === "PUT");
+
+  // Rename: said on the field, and nothing is sent.
+  fireEvent.click(screen.getAllByRole("button", { name: "Rename" })[1] as HTMLElement);
+  await answer("Rename", "number");
+  expect(await screen.findByText(/already a column called "number"/)).toBeTruthy();
+  expect(puts()).toHaveLength(0);
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+  // Bring back: a live column has the name of the retired one.
+  fireEvent.click(await screen.findByRole("button", { name: "Bring back" }));
+  expect(await screen.findByText(/already a column called "notes"/)).toBeTruthy();
+  expect(puts()).toHaveLength(0);
+});
+
+test("TAB-12: a save names the version it read, and an undo after someone else's change is refused", async () => {
+  let stored: Record<string, unknown> = {
+    columns: { number: { type: "text" }, total: { type: "number" }, owner_id: { type: "uuid" } },
+  };
+  let version = 1;
+  const refuse = false;
+  routes[`GET /api/v1${root}/tables/orders`] = () => [200, orders("ui")];
+  routes[`GET /api/v1${root}/resources/orders`] = () => [200, { body: stored, version }];
+  routes[`PUT /api/v1${root}/resources/orders`] = (sent) => {
+    const asked = sent as { body: Record<string, unknown>; version?: number };
+    if (refuse || asked.version !== version)
+      return [409, { status: 409, detail: "Someone else saved orders after you opened it." }];
+    stored = asked.body;
+    version += 1;
+    return [200, { version }];
+  };
+  show(<TableView root={root} name="orders" link="/t/t1/workspaces/w1" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Definition" }));
+  fireEvent.click(screen.getAllByRole("button", { name: "Rename" })[1] as HTMLElement);
+  await answer("Rename", "amount");
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: /^Undo/ }).hasAttribute("disabled")).toBe(false),
+  );
+  expect(calls.filter((call) => call.method === "PUT")[0]?.body).toMatchObject({ version: 1 });
+  // Someone else saves in between.
+  version += 1;
+  fireEvent.click(screen.getByRole("button", { name: /^Undo/ }));
+  expect(await screen.findByText(/Someone else saved orders/)).toBeTruthy();
+  expect(Object.keys((stored as { columns: object }).columns)).toContain("amount");
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: /^Undo/ }).hasAttribute("disabled")).toBe(true),
+  );
+});
+
+test("TAB-11: undoing a renamed choice puts the old spelling back on the rows that hold the new one", () => {
+  const before = { columns: { status: { type: "enum", values: ["open", "closed"] } } };
+  const now = {
+    columns: {
+      status: { type: "enum", values: [{ value: "todo", renamedFrom: "open" }, "closed"] },
+    },
+  };
+  expect(bodyToRestore(before, now).columns.status?.values).toEqual([
+    { value: "open", renamedFrom: "todo" },
+    "closed",
+  ]);
+});
+
+test("TAB-05: Create table asks for a new table, so a name in use is refused and not replaced", async () => {
+  routes[`GET /api/v1${root}/tables`] = () => [200, { items: [] }];
+  routes[`PUT /api/v1${root}/resources/codes`] = () => [
+    409,
+    { status: 409, code: "path_taken", detail: 'Something is already at "codes".' },
+  ];
+  show(<Tables root={root} link="/t/t1/workspaces/w1" />);
+  fireEvent.click(
+    (await screen.findAllByRole("button", { name: "Create table" }))[0] as HTMLElement,
+  );
+  const dialog = await screen.findByRole("dialog");
+  fireEvent.input(within(dialog).getByLabelText("Name"), { target: { value: "codes" } });
+  fireEvent.input(within(dialog).getByLabelText("First column"), { target: { value: "title" } });
+  fireEvent.submit(dialog.querySelector("form") as HTMLFormElement);
+  expect(await screen.findByText(/already at "codes"/)).toBeTruthy();
+  expect(calls.find((call) => call.method === "PUT")?.body).toMatchObject({ create: true });
 });

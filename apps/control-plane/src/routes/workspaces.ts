@@ -3,7 +3,7 @@ import { newId, sql } from "@volvel/db";
 import { PATH_PATTERN } from "@volvel/manifest";
 import { Type } from "typebox";
 import { check } from "../kernel/authorize.js";
-import { badRequest, conflict, notFound } from "../kernel/errors.js";
+import { badRequest, conflict, HttpError, notFound } from "../kernel/errors.js";
 import { access, type WorkspaceRef } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
 import { resolveResource } from "../kernel/resolve.js";
@@ -598,7 +598,8 @@ export function workspaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           summary: "Create or update the resource at a path",
           description:
             "The body is validated against the kind's schema. `renameFrom` moves an existing " +
-            "resource to this path and keeps its ID.",
+            "resource to this path and keeps its ID. `create` says this is a new resource: " +
+            "a path that already has one is refused with `path_taken`, and nothing is replaced.",
           tags: ["resources"],
           params: ResourceParams,
           body: Type.Object({
@@ -607,16 +608,46 @@ export function workspaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             ownership: Type.Union([Type.Literal("code"), Type.Literal("ui")]),
             body: AnyObject,
             renameFrom: Type.Optional(Type.String()),
+            version: Type.Optional(
+              Type.Integer({
+                minimum: 1,
+                description:
+                  "The version read. When someone has saved since, the save is refused with `draft_changed`.",
+              }),
+            ),
+            create: Type.Optional(
+              Type.Boolean({
+                description: "Refuse, with `path_taken`, to replace a resource that is there.",
+              }),
+            ),
           }),
           response: { 200: Resource, 201: Resource },
         },
       },
-      async ({ ctx, params, body }, reply) => {
+      async ({ ctx, params, body: { create, version, ...body } }, reply) => {
         const workspace = ctx.workspace as WorkspaceRef;
         const path = resourcePath(params);
-        const result = await ctx.mutate((trx, audit) =>
-          putResource(kernel, trx, audit, workspace, { ...body, path }),
-        );
+        const result = await ctx.mutate(async (trx, audit) => {
+          if (create) {
+            const taken = await trx
+              .selectFrom("resource")
+              .select("id")
+              .where("workspace_id", "=", workspace.id)
+              .where("path", "=", path)
+              .executeTakeFirst();
+            if (taken)
+              throw new HttpError(
+                409,
+                "path_taken",
+                `Something is already at "${path}". Choose another name, or change what is there.`,
+              );
+          }
+          return putResource(kernel, trx, audit, workspace, {
+            ...body,
+            path,
+            ...(version !== undefined ? { expectedVersion: version } : {}),
+          });
+        });
         return reply
           .code(result.created ? 201 : 200)
           .send(toResource(result.resource as ResourceRow, workspace));

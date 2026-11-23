@@ -183,3 +183,29 @@ describe("volvel dev draws an interface and a docs app from their files", () => 
     expect(help).toContain("app made of files");
   });
 });
+
+describe("the interface runtime travels with the CLI", () => {
+  test("it is found with no SCREENS_DIR set, and a pack of the CLI holds it", async () => {
+    const { execFileSync } = await import("node:child_process");
+    const { existsSync } = await import("node:fs");
+    const cliFolder = fileURLToPath(new URL("..", import.meta.url));
+    // The built file, which is where the packed copy sits beside.
+    const { screensDirectory } = await import(join(cliFolder, "dist/dev-site.js"));
+    execFileSync("node", ["bundle.mjs"], { cwd: cliFolder });
+    expect(existsSync(join(cliFolder, "dist/screens/index.html"))).toBe(true);
+    const saved = process.env.SCREENS_DIR;
+    delete process.env.SCREENS_DIR;
+    try {
+      expect(screensDirectory()).toBe(join(cliFolder, "dist/screens"));
+    } finally {
+      if (saved !== undefined) process.env.SCREENS_DIR = saved;
+    }
+    const packed = execFileSync("npm", ["pack", "--dry-run", "--json", "--ignore-scripts"], {
+      cwd: cliFolder,
+      encoding: "utf8",
+    });
+    const files = (JSON.parse(packed)[0].files as { path: string }[]).map((one) => one.path);
+    expect(files).toContain("dist/volvel.mjs");
+    expect(files).toContain("dist/screens/index.html");
+  }, 120_000);
+});

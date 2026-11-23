@@ -14,7 +14,8 @@
     }
   },
   "files": [
-    "dist/volvel.mjs"
+    "dist/volvel.mjs",
+    "dist/screens"
   ],
   "scripts": {
     "bundle": "node bundle.mjs",

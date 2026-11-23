@@ -5,7 +5,7 @@
 //
 // Left outside: esbuild, which is a program for the machine it is installed
 // on, and Vite, which the CLI loads from the tenant's own repository.
-import { chmodSync } from "node:fs";
+import { chmodSync, cpSync, existsSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
@@ -29,4 +29,13 @@ await build({
   logLevel: "warning",
 });
 chmodSync(out, 0o755);
+
+// The files that draw an interface, built with the platform: `volvel dev` serves an interface
+// app with them, so they travel with the command. docs-site is inlined above.
+const screens = join(here, "../screens/runtime/dist");
+if (!existsSync(join(screens, "index.html"))) {
+  throw new Error("packages/screens/runtime/dist is not built. Run `pnpm build` first.");
+}
+rmSync(join(here, "dist/screens"), { recursive: true, force: true });
+cpSync(screens, join(here, "dist/screens"), { recursive: true });
 console.log("Wrote packages/cli/dist/volvel.mjs.");

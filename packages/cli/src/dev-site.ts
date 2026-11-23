@@ -73,13 +73,22 @@ function appsIn(manifests: readonly Manifest[]): SiteApp[] {
   });
 }
 
-/** Where the files that draw an interface are: `SCREENS_DIR` as on an instance, else beside this build of the platform. */
+/**
+ * Where the files that draw an interface are: `SCREENS_DIR` as on an instance, else the ones
+ * packed with the CLI (`dist/screens`, beside this file, put there by `bundle.mjs`), else the
+ * platform's own build in a checkout.
+ */
 export function screensDirectory(given?: string): string | undefined {
-  const found =
-    given ??
-    process.env.SCREENS_DIR ??
-    fileURLToPath(new URL("../../screens/runtime/dist", import.meta.url));
-  return existsSync(join(found, "index.html")) ? found : undefined;
+  const candidates = given
+    ? [given]
+    : [
+        process.env.SCREENS_DIR,
+        fileURLToPath(new URL("./screens", import.meta.url)),
+        fileURLToPath(new URL("../../screens/runtime/dist", import.meta.url)),
+      ];
+  return candidates.find(
+    (found): found is string => found !== undefined && existsSync(join(found, "index.html")),
+  );
 }
 
 export interface SiteServerOptions {
@@ -121,7 +130,7 @@ export async function startSiteServer(options: SiteServerOptions) {
   if (app.kind === "interface" && !screens) {
     throw new BuildError([
       "The files that draw an interface are not in this install, and an interface app is drawn with them.",
-      "Set SCREENS_DIR to the folder packages/screens/runtime/dist of a build of the platform, as an instance is told.",
+      "Reinstall @volvel/cli, or set SCREENS_DIR to the folder packages/screens/runtime/dist of a build of the platform.",
     ]);
   }
   const policy =

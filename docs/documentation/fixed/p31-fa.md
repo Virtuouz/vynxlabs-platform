@@ -25,6 +25,7 @@ Tests were written or changed first and seen failing, except where noted. Commit
 - diataxis.ts: "says it is an explanation"; diataxis.test.ts.
 - Canceled flow runs: `platform/flow-run-finished` is now published with `cancelled` (single cancel, bulk cancel, flows canceled by an ending parent), as `platform/run-finished` is for scripts; reference text says so; flows.test.ts.
 - Service account keys and `--tenant`: `GET /tenants` accepts a key (routes/tenants.ts `signedInOrKey`) and answers its own tenant; release.test.ts runs deploy, promote --preview and runs with a service-account key.
+- SSO refusal words: one list, `SSO_REFUSAL_WORDS` in manifest/sso-words.ts, read by `SsoRefusal` (what an app's page shows) and by the console sign-in screen; sso.test.ts checks every reason, SsoWords.test.tsx that the console reads the list. The second constructor argument of `SsoRefusal` is now unused; the detail still goes to the record.
 
 ## Found, not fixed
 - packages/worker tests "ends a script that ignores its time limit" and "ends a canceled run's process" failed in my one full run of that package; not examined (environment, MANAGED_WORKER_USER).

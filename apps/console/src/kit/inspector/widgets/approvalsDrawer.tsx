@@ -1,9 +1,9 @@
 /**
- * The drawer of the Approvals widget (board 8's shell). Data is which requests: the workflows
+ * The drawer of the Approvals widget (board 8's shell). Data is which requests: the flows
  * asked of, as chips with their real titles, and whose. Display is how they look (tiles), what
  * each shows (the step's own details, as the Table's columns are: a list to reorder and hide),
  * and the decided ones. Actions is how deciding goes. Who may decide is not set here but on the
- * workflow's step, and the note says so and links there.
+ * flow's step, and the note says so and links there.
  *
  * Each section is one component of the shell's groups, so it is drawn as a group of its own
  * whichever way the shell asks for it (`bare` is only its rows).
@@ -47,7 +47,7 @@ interface FieldSetting {
 /** The first four names are the ones shown when the widget names none. */
 const SHOWN_WHEN_UNNAMED = 4;
 
-/** The fields as set, or the names the workflows' steps offer when none are set yet. */
+/** The fields as set, or the names the flows' steps offer when none are set yet. */
 export function fieldsOf(env: Env, offered: readonly string[]): FieldSetting[] {
   const stored = env.config.fields;
   if (Array.isArray(stored) && stored.length > 0) return stored as FieldSetting[];
@@ -57,7 +57,7 @@ export function fieldsOf(env: Env, offered: readonly string[]): FieldSetting[] {
   }));
 }
 
-/** The names the step details of the workflows asked of offer, in the order written, once each. */
+/** The names the step details of the flows asked of offer, in the order written, once each. */
 export function offeredNames(
   flows: readonly ApprovalFlow[] | undefined,
   listed: readonly string[] | undefined,
@@ -80,14 +80,14 @@ const words = (name: string) => {
 // ---------------------------------------------------------------------------
 // Data
 
-/** WHICH REQUESTS: the workflows as chips, and whose. */
+/** WHICH REQUESTS: the flows as chips, and whose. */
 export function ApprovalsDataSection({ env }: { env: Env }) {
   const { flows: known, link } = useApprovalFlows();
   const source = sourceOf(env.widget);
   const listed = source.flows ?? [];
   const everyOne = listed.length === 0;
   const paths = (known ?? []).map((flow) => flow.path);
-  // A workflow the widget names that is no longer there is still shown, so it can be taken off.
+  // A flow the widget names that is no longer there is still shown, so it can be taken off.
   const missing = listed.filter((path) => known !== undefined && !paths.includes(path));
   const chips: { path: string; title: string; missing: boolean; titled: boolean }[] = [
     ...(known ?? []).map((flow) => ({
@@ -115,11 +115,11 @@ export function ApprovalsDataSection({ env }: { env: Env }) {
   const toggle = (path: string, on: boolean) => {
     const base = everyOne ? paths : listed;
     const next = on ? [...base, path] : base.filter((one) => one !== path);
-    // Every workflow chosen is "every workflow": new ones with an approval step join it. Never none.
+    // Every flow chosen is "every flow": new ones with an approval step join it. Never none.
     if (next.length === 0) return;
     const all =
       paths.length > 0 && paths.every((one) => next.includes(one)) && missing.length === 0;
-    write({ flows: all ? undefined : next }, "choosing the workflows");
+    write({ flows: all ? undefined : next }, "choosing the flows");
   };
   const open = listed.length === 1 ? listed[0] : undefined;
   return (
@@ -127,22 +127,22 @@ export function ApprovalsDataSection({ env }: { env: Env }) {
       label="Which requests"
       note={
         <>
-          Who may decide is set on the workflow's step.{" "}
+          Who may decide is set on the flow's step.{" "}
           {link ? (
             <Link
               to={open ? `${link}/flows/edit/${open}` : `${link}/flows`}
               className="inline-flex items-center gap-0.5 text-ink hover:text-action"
             >
-              {open ? "Open the workflow" : "Open the workflows"}
+              {open ? "Open the flow" : "Open the flows"}
               <ChevronRight aria-hidden="true" size={14} />
             </Link>
           ) : null}
         </>
       }
     >
-      <DrawerBlock label="Workflows">
+      <DrawerBlock label="Flows">
         {chips.length > 0 ? (
-          <ChipSet label="Workflows">
+          <ChipSet label="Flows">
             {chips.map((chip) => (
               <CheckChip
                 key={chip.path}
@@ -154,7 +154,7 @@ export function ApprovalsDataSection({ env }: { env: Env }) {
                     {chip.title}
                     {chip.missing ? " (not found)" : ""}
                   </span>
-                  {/* The path under the title: two workflows may share one, and an untitled one is only its path. */}
+                  {/* The path under the title: two flows may share one, and an untitled one is only its path. */}
                   {chip.path.toLowerCase() !== chip.title.toLowerCase() ? (
                     <span className="text-meta opacity-70">{chip.path}</span>
                   ) : null}
@@ -165,14 +165,14 @@ export function ApprovalsDataSection({ env }: { env: Env }) {
         ) : (
           <p className="m-0 text-body-sm text-ink-muted">
             {known === undefined
-              ? "Every workflow with an approval step."
-              : "No workflow of this workspace has an approval step yet."}
+              ? "Every flow with an approval step."
+              : "No flow of this workspace has an approval step yet."}
           </p>
         )}
         <p className="m-0 text-meta text-ink-muted">
           {everyOne
-            ? "Every workflow with an approval step, including those made later."
-            : "Only these. A workflow with no approval step has nothing to show."}
+            ? "Every flow with an approval step, including those made later."
+            : "Only these. A flow with no approval step has nothing to show."}
         </p>
       </DrawerBlock>
       <DrawerBlock label="Whose">
@@ -249,13 +249,13 @@ export function ApprovalsFieldsSection({ env }: { env: Env }) {
         />
       ) : (
         <p className="m-0 px-3 py-3 text-body-sm text-ink-muted">
-          The step's details appear here once a workflow with an approval step is chosen, or add one
-          by name.
+          The step's details appear here once a flow with an approval step is chosen, or add one by
+          name.
         </p>
       )}
       <div className="flex flex-col gap-2 px-3 py-3">
         {left.length > 0 ? (
-          <ChipSet label="More details these workflows give">
+          <ChipSet label="More details these flows give">
             {left.map((name) => (
               <button key={name} type="button" onClick={() => add(name)} className={dashedFace}>
                 <span aria-hidden="true">+</span>
@@ -280,7 +280,7 @@ export function ApprovalsFieldsSection({ env }: { env: Env }) {
             <TextField
               name={`${env.widget.id}-detail-name`}
               label="Add a detail by its name"
-              hint="As the workflow's step names it: total, on_hand."
+              hint="As the flow's step names it: total, on_hand."
               required={false}
               maxLength={80}
               value={adding}
@@ -355,7 +355,7 @@ export function ApprovalsActionsSection({ env }: { env: Env }) {
       ? env.config.askWhy
       : "rejecting";
   return (
-    <Group label="Deciding" note="Who may decide is set on the workflow's step.">
+    <Group label="Deciding" note="Who may decide is set on the flow's step.">
       {text("approveLabel", "Approve says", "Approve")}
       {text("rejectLabel", "Reject says", "Reject")}
       <LabelledBlock label="Ask why">

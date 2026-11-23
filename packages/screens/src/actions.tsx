@@ -407,7 +407,7 @@ export function useActions(host: ActionsHost): {
       for (const one of response.notStarted ?? [])
         say(`Saved. The ${one.do} ${one.path} could not be started.`, "danger");
       now.refresh();
-      // A script or a workflow is started and not waited for: what it changes is read as it lands.
+      // A script or a flow is started and not waited for: what it changes is read as it lands.
       if (response.started) {
         for (const wait of AFTER_A_START)
           later.current.push(setTimeout(() => latest.current.refresh(), wait));

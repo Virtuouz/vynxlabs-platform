@@ -6,6 +6,7 @@ import { useLoad } from "../../api.ts";
 import { useActionLists, useCatalog } from "../../kit/inspector/catalog.ts";
 import type { DocsList } from "../docs/model.ts";
 import { draftChanges } from "./changes.ts";
+import { endSentence } from "../../kit/format.ts";
 import { useGroupKeys } from "./groupKeys.ts";
 import {
   type CheckItem,
@@ -195,7 +196,7 @@ export function PublishCheck({
       {unasked ? (
         <div role="alert" className="flex flex-col items-start gap-2 text-body-sm">
           <p className="m-0 text-danger">
-            {unasked.message} Publishing is off until the check can be made.
+            {endSentence(unasked.message)} Publishing is off until the check can be made.
           </p>
           <Button onClick={() => void preview.reload()}>Check again</Button>
         </div>

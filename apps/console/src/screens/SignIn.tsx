@@ -4,6 +4,7 @@ import { useState } from "react";
 import { ApiError, api } from "../api.ts";
 import { BrandMark, useBrand } from "../kit/brand.tsx";
 import { Junction } from "../kit/motifs.tsx";
+import { endSentence } from "../kit/format.ts";
 
 interface Ways {
   providers: { id: string; name: string; url: string }[];
@@ -135,7 +136,7 @@ export function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
                   const failure = caught as ApiError;
                   setError(
                     !ways
-                      ? `We could not check how this address signs in. ${failure.message} Press Continue to try again.`
+                      ? `We could not check how this address signs in. ${endSentence(failure.message)} Press Continue to try again.`
                       : failure.status === 401
                         ? recovering
                           ? "That email and password do not match an account. The recovery code was used up by this try; use another code."

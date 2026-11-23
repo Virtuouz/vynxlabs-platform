@@ -324,3 +324,25 @@ test("a script's page shows the settings it runs with, as the editor sets them (
   );
   expect((await text("Stops after"))?.textContent).toBe("90 seconds");
 });
+
+test("w-builder 7: a script that is never tried again says so, not '0 times, waiting longer each time'", async () => {
+  routes[`${root}/scripts`] = () => [
+    200,
+    { items: [{ path: "orders/once", description: "", ownership: "ui", lastRun: null }] },
+  ];
+  routes[`${root}/references`] = () => [200, { items: [] }];
+  routes[`${root}/resources/orders/once`] = () => [
+    200,
+    {
+      kind: "script",
+      path: "orders/once",
+      ownership: "ui",
+      version: 1,
+      body: { retries: { limit: 0, delaySeconds: 30, backoff: true } },
+    },
+  ];
+  show(<ScriptPage root={root} link={link} path="orders/once" />);
+  fireEvent.click(await screen.findByRole("tab", { name: "Settings" }));
+  const row = (await screen.findByText("Tries again")).nextElementSibling;
+  expect(row?.textContent).toBe("Never: a failed run is not tried again");
+});

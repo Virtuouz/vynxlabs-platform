@@ -836,7 +836,9 @@ function ScriptSettings({ root, link, path }: { root: string; link: string; path
     {
       label: "Tries again",
       value: body.retries
-        ? `${body.retries.limit} time${body.retries.limit === 1 ? "" : "s"}, ${body.retries.delaySeconds} seconds apart${body.retries.backoff ? ", waiting longer each time" : ""}`
+        ? body.retries.limit === 0
+          ? "Never: a failed run is not tried again"
+          : `${body.retries.limit} time${body.retries.limit === 1 ? "" : "s"}, ${body.retries.delaySeconds} seconds apart${body.retries.backoff ? ", waiting longer each time" : ""}`
         : undefined,
     },
     { label: "Memory", value: body.memoryMb !== undefined ? `${body.memoryMb} MB` : undefined },

@@ -144,6 +144,16 @@ test("a script written in the console can be given a place among the flow's step
   fireEvent.change(screen.getByLabelText("Step name"), { target: { value: "" } });
   fireEvent.keyDown(code, { key: "s", metaKey: true });
   await waitFor(() => expect(puts.at(-1)?.body.node).toBeUndefined());
+  // Typed again, it has the icon and group it had.
+  fireEvent.change(screen.getByLabelText("Step name"), { target: { value: "Greet them" } });
+  fireEvent.keyDown(code, { key: "s", metaKey: true });
+  await waitFor(() =>
+    expect(puts.at(-1)?.body.node).toEqual({
+      label: "Greet them",
+      category: "Greetings",
+      icon: "mail",
+    }),
+  );
 });
 
 test("only a first save keeps the editor: any other address opens a new one", () => {

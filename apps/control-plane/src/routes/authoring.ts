@@ -83,6 +83,12 @@ const DraftSummary = Type.Object({
     description: "The resource the draft is of. Its path, for one that is new.",
   }),
   title: Type.Union([Type.String(), Type.Null()]),
+  mode: Type.Optional(
+    Type.Union([Type.Literal("webhook"), Type.Literal("poll")], {
+      description:
+        "For a draft of a trigger source: how it is asked, so it can be offered where one of that mode is chosen.",
+    }),
+  ),
   renamedFrom: Type.Optional(
     Type.String({ description: "The path the resource has now, when the draft renames it." }),
   ),
@@ -344,6 +350,12 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         return {
           items: rows.map((row) => ({
             ...summarize(row, owned.get(row.key)),
+            ...(row.kind === "trigger_source" &&
+            !row.deleted &&
+            ((row.body as { mode?: unknown }).mode === "poll" ||
+              (row.body as { mode?: unknown }).mode === "webhook")
+              ? { mode: (row.body as { mode: "poll" | "webhook" }).mode }
+              : {}),
             about: describeChange(
               row.kind,
               deployed.get(row.key),

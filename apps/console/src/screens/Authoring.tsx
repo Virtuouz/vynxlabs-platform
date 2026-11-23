@@ -386,6 +386,9 @@ export function ScriptEditor({
   });
   // The path this editor saved a new one as. Opening it again would reload what is already on screen.
   const savedAs = useRef<string>(undefined);
+  // The icon and group of a step whose name was cleared to be typed again: the manifest wants a
+  // name of at least one character, so the step is dropped while it is empty, and given back.
+  const clearedStep = useRef<ScriptBody["node"]>(undefined);
   // Where the code lives in the editor, fixed for the editor's life, so a first save keeps its undo history.
   const [modelPath] = useState(() => `${about.list}/${kind}/${opened ?? "new"}.ts`);
 
@@ -735,7 +738,13 @@ export function ScriptEditor({
             maxLength={60}
             disabled={readOnly}
             hint="Give the script a name and it joins the flow editor's steps under it. Leave it empty to keep the script out of them."
-            onChange={(label) => changeNode(label === "" ? undefined : { ...body.node, label })}
+            onChange={(label) => {
+              if (label === "") {
+                clearedStep.current = body.node ?? clearedStep.current;
+                return changeNode(undefined);
+              }
+              changeNode({ ...(body.node ?? clearedStep.current), label });
+            }}
           />
           {body.node ? (
             <>

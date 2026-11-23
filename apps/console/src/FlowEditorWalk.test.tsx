@@ -32,6 +32,8 @@ let puts: { body: { body: FlowBody } }[];
 let zone: string | undefined;
 let deployed: FlowBody;
 let scripts: unknown[] = [];
+/** Where the flow was arranged on its page. */
+let arranged: Record<string, { x: number; y: number }> | undefined;
 
 interface FlowBody {
   nodes: Record<string, Record<string, unknown>>;
@@ -72,6 +74,7 @@ beforeEach(() => {
   puts = [];
   zone = undefined;
   scripts = [];
+  arranged = undefined;
   history.replaceState(null, "", "/");
   vi.stubGlobal("fetch", async (address: string, init: RequestInit = {}) => {
     const method = init.method ?? "GET";
@@ -84,6 +87,7 @@ beforeEach(() => {
     }
     if (method !== "GET") return send(204, null);
     if (path === `${api}/drafts/orders/sync`) return send(404, { code: "not_found", detail: "" });
+    if (path === `${api}/flows/orders/sync`) return send(200, { layout: arranged });
     if (path === `${api}/resources/orders/sync`)
       return send(200, { ownership: "ui", body: deployed });
     if (path === api) return send(200, { timeZone: zone });
@@ -163,6 +167,15 @@ describe("the flow editor, as a person uses it", () => {
     await openAt({ nodes: { start: manual }, edges: [] }, "start", /Press Enter to rename/);
     await screen.findByText("Deployed");
     expect(screen.getAllByText("Deployed")).toHaveLength(1);
+  });
+
+  test("WLK-15: a deployed flow opens where it was last arranged on its page", async () => {
+    arranged = { start: { x: 777, y: 40 } };
+    await openAt({ nodes: { start: manual }, edges: [] }, "start", /Press Enter to rename/);
+    await waitFor(() => {
+      const card = document.querySelector('.react-flow__node[data-id="start"]') as HTMLElement;
+      expect(card.style.transform).toContain("777px");
+    });
   });
 
   test("renaming a webhook start keeps its address by the old name as its key (FLW-04)", async () => {

@@ -35,3 +35,28 @@ Said, not read: a payload over 256 KB is kept in storage by design and named in 
 ## mask2 found: failures that quote a payload value are masked where they are made
 - Flow-level expression errors: `kernel/flows/engine.ts` `#evaluate` masks the evaluator's message ("Invalid duration string: k-live-...", "No such key: <value>") by what the run was given before the failure is stored, so the lists, alerts, events and activity show it masked as the run page did. Test `an expression's failure that quotes a secret the run was given is masked in the lists too` in `flows.test.ts` (the list showed the key before).
 - Event-filter and input refusals (`recordRefusal`) and their log lines: `kernel/flows/events.ts` masks by the event's secret fields (by schema and by key); a webhook's input refusal likewise (`kernel/execution/triggers.ts`). Test `a filter's failure that quotes a secret in the event is kept without it` in `operations.test.ts` (failed before). Left out: the schedule's input refusal (the input is the schedule's own, not a request's); a webhook refusal has no test of its own.
+
+## flw2/ext2 found (four faults)
+- Editor opened a deployed flow without its saved arrangement: `C/screens/FlowEditor.tsx` (open of a deployed or repository flow) also reads `flows/<path>` and draws at its `layout` (body positions, then the arrangement saved on the flow page). A failing read leaves the body's own positions. Test `WLK-15: a deployed flow opens where it was last arranged on its page` in `FlowEditorWalk.test.tsx` (failed before).
+- Draft-only flow link landed on "not found": `C/screens/Flows.tsx` `FlowView`: in an editable workspace a 404 with a live draft goes to the editor (replace, so Back works). One place for every link (`kit/objects.tsx` `objectHref` and any bookmark), not each caller. Test in `FlowsList.test.tsx` (failed before). Siblings: `Flows.tsx` `flowPage` (list) already did it; `kit/objects.tsx` unchanged.
+- A poll source that is only a draft was not offered: server `routes/authoring.ts` `DraftSummary.mode` (additive, trigger source drafts only); `C/screens/ResourceEditor.tsx` and `FlowEditor.tsx` `ofKind` offer a draft whose mode is the one asked. Tests: `authoring.test.ts` (list says the mode), `ResourceEditor.test.tsx` (a schedule offers a draft-only polling source; failed before).
+- A script step's name cleared lost its icon and group: `C/screens/Authoring.tsx` keeps the cleared step's icon and group and gives them back when the name is typed again. Test extended in `Authoring.test.tsx` (EXT-08; failed before). The draft still carries no `node` while the name is empty.
+Walk: flow editor on a flow arranged on its page, a link to a draft-only flow, a schedule's Trigger source picker with only a draft source, a script's "Use as a flow step", at 390, light and dark, keyboard, reload.
+
+## Items shown done already (verify), with the test that shows it
+- WLK-15b header names compare in lower case: `FlowEditor.test.tsx` / `FlowSteps.test.tsx` (walk1). WLK-15e Enter in Add step: `FlowEditorWalk.test.tsx` `WLK-15: in Add step, Enter in the search adds the first match` (walk1). The reserved case name: `FlowSteps.test.tsx` `WLK-15: a case called otherwise...` (walk1).
+- WLK-16a a service account's decision has a name: `page-approvals.test.ts` `WLK-16` (walk1); the retry plan's `approvalsKept` has no test of its own, still (left).
+- WLK-16b `fireScheduleNow` starts a source run for a schedule with a `source`: `triggers.ts:1219` (fixed by opsb; no separate test found by walk1 either; the source-run path is exercised in `extensions.test.ts`; left without a test of its own).
+- WLK-16c a child flow run's ID and one older than When open: `RunPage.test.tsx` (walk1).
+
+## Found
+- `retry plan approvalsKept` and `fireScheduleNow` source start have no test of their own (see above).
+- The flow editor's list shows one fault of a step at a time when the editor's own list already names that step (`manifestProblems`); the second shows after the first is fixed.
+- Schema faults of a single step's fields (the server's manifest validation) are not run in the editor; they arrive, in words, from the server on deploy.
+- `packages/ui` `JsonView` recognizes `{stored: "runs|flow-runs/....json"}`: if a table row is ever shown with exactly that shape it reads as kept apart.
+
+## Lines for docs and CHANGELOG
+- A run's `trigger` in the API names `relay` (`resourceId`, `node`, `mode`) for a trigger source's run.
+- `GET drafts` items of a trigger source carry `mode`.
+- A flow that fails on an expression no longer quotes a secret the run was given in its error.
+- A payload over 256 KB is kept in storage and shown as "too large to show here"; an expression that reads a key of it says it is too large.

@@ -754,9 +754,9 @@ export function FlowEditor({
   const core = useLoad<{ items: PickableNode[] }>("/core-nodes");
   const secrets = useLoad<{ items: { name: string }[] }>(`${root}/secrets`);
   const flows = useLoad<{ items: { path: string; description: string }[] }>(`${root}/flows`);
-  const drafts = useLoad<{ items: { path: string; kind: string; deleted: boolean }[] }>(
-    `${root}/drafts`,
-  );
+  const drafts = useLoad<{
+    items: { path: string; kind: string; deleted: boolean; mode?: string }[];
+  }>(`${root}/drafts`);
   const events = useLoad<{ items: { path: string; kind: string; body?: { mode?: string } }[] }>(
     `${root}/resources?limit=200`,
   );
@@ -783,7 +783,13 @@ export function FlowEditor({
       if (one.kind === kind && (!mode || one.body?.mode === mode)) known.set(one.path, undefined);
     }
     for (const draft of drafts.data?.items ?? []) {
-      if (draft.kind === kind && !draft.deleted && !known.has(draft.path) && !mode)
+      // A draft of a source says how it is asked, so it is offered where that kind is wanted.
+      if (
+        draft.kind === kind &&
+        !draft.deleted &&
+        !known.has(draft.path) &&
+        (!mode || draft.mode === mode)
+      )
         known.set(draft.path, "A draft, not yet deployed.");
     }
     return [...known].map(([value, hint]) => ({ value, label: value, ...(hint ? { hint } : {}) }));
@@ -907,7 +913,13 @@ export function FlowEditor({
           `${root}/resources/${opened}`,
         );
         if (!current) return;
-        open(resource.body);
+        // Where the flow was arranged on its page since is newer than the positions in its body.
+        const arranged = await api
+          .get<{ layout?: FlowBody["layout"] }>(`${root}/flows/${opened}`)
+          .then((page) => page.layout)
+          .catch(() => undefined);
+        if (!current) return;
+        open(arranged ? { ...resource.body, layout: arranged } : resource.body);
         setState(resource.ownership === "ui" ? "deployed" : "repository");
       }
     })().catch((error) => current && setProblem(failureText(error)));

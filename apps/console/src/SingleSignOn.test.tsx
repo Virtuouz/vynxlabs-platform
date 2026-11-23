@@ -278,3 +278,21 @@ test("a sign-in the provider refused says why, once", async () => {
   // The reason is taken out of the address. Where to go back to stays.
   expect(window.location.search).toBe("?return=%2Fx");
 });
+
+test("WLK-12: saving an issuer that dropped the client secret says so, and says what to do", async () => {
+  routes[`GET ${base}`] = () => [200, { items: [oidc] }];
+  routes[`PATCH ${base}/p1`] = (body) => [
+    200,
+    { ...oidc, config: (body as { config: object }).config, hasSecret: false },
+  ];
+  show(<SingleSignOn base="/tenants/t1" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Acme Login" }));
+  fireEvent.click(await screen.findByRole("tab", { name: "Settings" }));
+  fireEvent.change(await screen.findByLabelText("Issuer"), {
+    target: { value: "https://other.acme.example" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  await answer("Change it");
+  expect(await screen.findByText(/client secret was dropped/i)).toBeTruthy();
+  expect(screen.queryByText("The provider was saved.")).toBeNull();
+});

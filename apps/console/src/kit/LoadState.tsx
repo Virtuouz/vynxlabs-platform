@@ -1,6 +1,6 @@
 import { Button, Skeleton } from "@volvel/ui";
 import { type ReactNode, useEffect, useState } from "react";
-import type { ApiError, Loaded } from "../api.ts";
+import { type ApiError, ASK_FOR_ACCESS, type Loaded } from "../api.ts";
 
 /** Waits this long before showing that something loads: most answers come sooner. */
 export const LOADING_DELAY_MS = 300;
@@ -76,11 +76,8 @@ export function ErrorState({
           {what ? <strong className="font-medium">Could not load {what}. </strong> : null}
           {messageOf(error)}
         </span>
-        {forbidden ? (
-          <span>
-            Ask a member who can give access in this tenant (an owner or administrator) to give you
-            a role with it.
-          </span>
+        {forbidden && !messageOf(error).includes(ASK_FOR_ACCESS) ? (
+          <span>{ASK_FOR_ACCESS}</span>
         ) : null}
         {requestId ? <RequestId id={requestId} /> : null}
       </div>

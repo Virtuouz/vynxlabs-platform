@@ -395,6 +395,12 @@ export function GitSync({
       {following ? null : (
         <GitPanel root={root} tenantLink={tenantLink} onFollowed={status.reload} />
       )}
+      {status.data?.repository ? (
+        <>
+          <GitHistory root={root} />
+          <GitBranches tenantRoot={root.split("/workspaces/")[0] as string} />
+        </>
+      ) : null}
     </div>
   );
 }
@@ -465,6 +471,93 @@ interface Operation {
   message: string | null;
   detail: { release?: string };
   createdAt: string;
+}
+
+const KIND_WORDS: Record<string, string> = { push: "Push", pull: "Pull", release: "Release" };
+const STATUS_TONE: Record<string, "live" | "neutral"> = { done: "live" };
+
+/** The last pushes and pulls of the workspace, each with what it did and what it said. */
+function GitHistory({ root, hold }: { root: string; hold?: Loaded<{ items: Operation[] }> }) {
+  const own = useLoad<{ items: Operation[] }>(hold ? null : `${root}/git/operations`);
+  const operations = hold ?? own;
+  return (
+    <section aria-labelledby="git-history" className="flex flex-col gap-2">
+      <h2 id="git-history" className="m-0 text-label text-ink-subtle uppercase">
+        History
+      </h2>
+      {operations.error ? (
+        <ErrorState error={operations.error} onRetry={operations.reload} />
+      ) : !operations.data ? (
+        <p className="m-0 text-ink-muted">Reading the history…</p>
+      ) : operations.data.items.length === 0 ? (
+        <p className="m-0 text-ink-muted">Nothing has been pushed or pulled here yet.</p>
+      ) : (
+        <Panel as="div" className="divide-y divide-line">
+          {operations.data.items.map((one) => (
+            <div key={one.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2">
+              <span className="w-16 shrink-0 font-medium">{KIND_WORDS[one.kind] ?? one.kind}</span>
+              <Tag tone={STATUS_TONE[one.status] ?? "neutral"}>{one.status}</Tag>
+              {one.commit ? <Mono>{one.commit.slice(0, 7)}</Mono> : null}
+              <span className="min-w-0 flex-1 truncate text-ink-muted" title={one.message ?? ""}>
+                {one.message ?? ""}
+              </span>
+              <span className="text-meta text-ink-muted">{ago(one.createdAt)}</span>
+            </div>
+          ))}
+        </Panel>
+      )}
+    </section>
+  );
+}
+
+/** Every branch the tenant's workspaces use: what each follows, or releases to, and how it stands. */
+function GitBranches({ tenantRoot }: { tenantRoot: string }) {
+  const branches = useLoad<{
+    items: {
+      workspaceId: string;
+      workspace: string;
+      type: string;
+      branch: string | null;
+      mode: string;
+      state: string | null;
+      lastError: string | null;
+    }[];
+  }>(`${tenantRoot}/git-branches`);
+  return (
+    <section aria-labelledby="git-branches" className="flex flex-col gap-2">
+      <h2 id="git-branches" className="m-0 text-label text-ink-subtle uppercase">
+        Branches
+      </h2>
+      {branches.error ? (
+        <ErrorState error={branches.error} onRetry={branches.reload} />
+      ) : !branches.data ? (
+        <p className="m-0 text-ink-muted">Reading the branches…</p>
+      ) : (
+        <Panel as="div" className="divide-y divide-line">
+          {branches.data.items.map((one) => (
+            <div
+              key={one.workspaceId}
+              className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2"
+            >
+              <span className="min-w-0 flex-1 truncate font-medium">{one.workspace}</span>
+              {one.branch ? (
+                <Mono>{one.branch}</Mono>
+              ) : (
+                <span className="text-ink-muted">
+                  {one.mode === "release" ? "No release branch" : "Follows none"}
+                </span>
+              )}
+              <Tag tone="neutral">{one.mode === "release" ? "Release" : "Follows"}</Tag>
+              {one.state ? <Tag tone="neutral">{one.state}</Tag> : null}
+              {one.lastError ? (
+                <span className="basis-full text-meta text-danger">{one.lastError}</span>
+              ) : null}
+            </div>
+          ))}
+        </Panel>
+      )}
+    </section>
+  );
 }
 
 /**
@@ -585,6 +678,12 @@ function ReleaseBranch({
           </div>
           {said ? <Notice tone={said.tone}>{said.text}</Notice> : null}
         </Panel>
+      ) : null}
+      {repository ? (
+        <>
+          <GitHistory root={root} />
+          <GitBranches tenantRoot={root.split("/workspaces/")[0] as string} />
+        </>
       ) : null}
     </div>
   );

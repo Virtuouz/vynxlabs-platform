@@ -19,3 +19,5 @@ Each item was in a lane's brief and was not built, or was found by a lane. The f
 - The manual start's input schema is a raw JSON box, and invalid text is lost when another step is chosen; "To fix" does not check that an approver group still exists (t3-flow-editor).
 - The instance audit log has no CSV and no single-entry route; Recent does not remember apps, triggers and schedules (t3-account).
 - The Health screen opens the help topic `instance-databases`; it needs its own (`instance-health`) once phase 31 writes the page (t3-instance).
+- The script page does not show the settings added to the editor (SCR-08); the repository form cannot show the stored user name, which the API does not return (t3-config).
+- Not a missing part, said in the phase: unpublishing an app made in the console needs a new field on the app kind (only docs apps have `published`) (t3-config).

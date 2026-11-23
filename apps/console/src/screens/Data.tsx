@@ -39,6 +39,7 @@ import { useHistory } from "../kit/history.ts";
 import { useShortcut } from "../kit/keys.ts";
 import { ErrorState, Loading, Pending } from "../kit/LoadState.tsx";
 import { Inspector } from "../kit/layout.tsx";
+import { UsedBy, useReferences } from "../kit/references.tsx";
 import { Code, StatePill, Tag } from "../kit/status.tsx";
 import { UndoRedo } from "../kit/UndoRedo.tsx";
 import { ColumnsMenu, ViewsMenu } from "../kit/views.tsx";
@@ -3269,7 +3270,20 @@ function ChangeSource({
         config={{
           action: `Change ${row.path}`,
           description: `How ${row.path} is reached. Leave the password empty to keep the stored one. It is dropped when the host, port or user changes or encryption is turned off: then type it again. Scripts that use it read the new details at once.`,
-          fields: SOURCE_FIELDS,
+          fields: [
+            ...SOURCE_FIELDS,
+            ...(row.hasPassword
+              ? [
+                  {
+                    name: "removePassword",
+                    label: "Remove the stored password",
+                    type: "checkbox" as const,
+                    required: false,
+                    hint: "For a database that lets this user in without one. Scripts that use it then connect with no password.",
+                  },
+                ]
+              : []),
+          ],
           done: () => `${row.path} was changed.`,
           submit: (values) => {
             // The stored password does not go to another address: it is asked for here, not lost in silence.
@@ -3277,7 +3291,13 @@ function ChangeSource({
               throw new Error(
                 "The host, port, user or encryption changed, so the stored password will not be sent there. Type the password again.",
               );
-            return api.put(`${root}/data-source-bindings/${row.path}`, sourceBody(values));
+            const body = sourceBody(values);
+            if (values.removePassword === "true" && values.password)
+              throw new Error("Either type a new password or remove the stored one, not both.");
+            return api.put(
+              `${root}/data-source-bindings/${row.path}`,
+              values.removePassword === "true" ? { ...body, password: null } : body,
+            );
           },
         }}
       />
@@ -3323,6 +3343,7 @@ function TestSource({
 }
 
 export function Sources({ root, link }: { root: string; link: string }) {
+  const sourceUses = useReferences(root, "data_source");
   return (
     <ListScreen<SourceBinding>
       title="Data sources"
@@ -3361,6 +3382,18 @@ export function Sources({ root, link }: { root: string; link: string }) {
             ) : (
               <StatePill state="unbound" />
             ),
+        },
+        {
+          header: "Used by",
+          priority: 2,
+          cell: (row) => (
+            <UsedBy
+              uses={sourceUses(row.path)}
+              failed={sourceUses.failed}
+              loaded={sourceUses.loaded}
+              link={link}
+            />
+          ),
         },
         {
           header: "Password",

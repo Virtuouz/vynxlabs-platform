@@ -167,7 +167,7 @@ test("a page written to do harm draws no tag of its own, no handler and no addre
     // Every "<" in the output opens or closes one of these, or it is not a tag at all.
     expect(html.match(/<(?!\/)/g)?.length ?? 0).toBe(tags.length);
     for (const [, tag, attrs = ""] of tags) {
-      expect(["h1", "p", "a", "div", "figure", "img", "pre", "code"]).toContain(tag);
+      expect(["h1", "p", "a", "div", "figure", "button", "img", "pre", "code"]).toContain(tag);
       expect(attrs).not.toMatch(/\son[a-z]+=/);
       for (const [, , value = ""] of attrs.matchAll(/\s(href|src)="([^"]*)"/g)) {
         expect(value).toMatch(/^(https:\/\/example\.com\/|\/assets\/)/);
@@ -260,7 +260,7 @@ describe("pictures", () => {
     );
     expect(validate(tree, "docs").map((issue) => issue.code)).toEqual(["image_refused"]);
     expect(renderHtml(tree)).toBe(
-      '<p><img src="./a.png" alt="a" loading="lazy"/> <img src="https://example.com/b.png" alt="b" loading="lazy"/> c</p>',
+      '<p><button type="button" class="vd-zoom" data-vd-zoom="" aria-haspopup="dialog"><img src="./a.png" alt="a" loading="lazy"/></button> <button type="button" class="vd-zoom" data-vd-zoom="" aria-haspopup="dialog"><img src="https://example.com/b.png" alt="b" loading="lazy"/></button> c</p>',
     );
   });
 
@@ -808,7 +808,7 @@ describe("a screenshot in both looks", () => {
 
   test("is one picture unless a dark one is given", () => {
     expect(draw({})).toBe(
-      '<figure class="vd-screenshot"><img src="/assets/console/deploy.png" alt="Deploy" loading="lazy"/></figure>',
+      '<figure class="vd-screenshot"><button type="button" class="vd-zoom" data-vd-zoom="" aria-haspopup="dialog"><img src="/assets/console/deploy.png" alt="Deploy" loading="lazy"/></button></figure>',
     );
   });
 
@@ -839,4 +839,62 @@ test("Prism's core is put on the global before any language loads, as a bundle n
   expect(core).toBeGreaterThanOrEqual(0);
   expect(global).toBeGreaterThan(core);
   expect(global).toBeLessThan(firstLanguage);
+});
+
+describe("a picture opens larger (p31-site 1)", () => {
+  test("every picture in the text is a button that opens it, and a picture in a link is left to the link", () => {
+    const html = renderHtml(parse("![a](./a.png) [![b](./b.png)](https://example.com)\n"));
+    expect(html).toContain(
+      '<button type="button" class="vd-zoom" data-vd-zoom="" aria-haspopup="dialog"><img src="./a.png" alt="a" loading="lazy"/></button>',
+    );
+    expect(html).toContain(
+      '<a href="https://example.com" rel="noopener noreferrer"><img src="./b.png"',
+    );
+  });
+
+  test("a screenshot is one button over both looks", () => {
+    const html = renderHtml(parse("::screenshot{name=console/deploy alt=Deploy}\n"), {
+      ...OPTIONS,
+      screenshot: () => "/a.png",
+      screenshotDark: () => "/b.png",
+    });
+    expect(html).toBe(
+      '<figure class="vd-screenshot"><button type="button" class="vd-zoom" data-vd-zoom="" aria-haspopup="dialog"><img class="vd-shot-light" src="/a.png" alt="Deploy" loading="lazy"/><img class="vd-shot-dark" src="/b.png" alt="" aria-hidden="true" loading="lazy"/></button></figure>',
+    );
+  });
+
+  test("the stylesheet draws the larger view, with motion only where it is allowed", () => {
+    expect(DOC_CSS).toContain(".vd-lightbox");
+    expect(DOC_CSS).toContain(".vd-lightbox::backdrop");
+    expect(DOC_CSS).toMatch(/\.vd-zoom\s*\{[^}]*cursor: zoom-in/);
+  });
+});
+
+describe("a table stacks on a narrow container (p31-site 3)", () => {
+  const html = renderHtml(
+    parse("| Name | Type |\n| :-- | --: |\n| id | text |\n| age | number |\n"),
+  );
+
+  test("each body cell carries its column's header as its label", () => {
+    expect(html).toContain('<td class="vd-align-left" data-label="Name">id</td>');
+    expect(html).toContain('<td class="vd-align-right" data-label="Type">number</td>');
+    expect(html).not.toMatch(/<th[^>]*data-label/);
+  });
+
+  test("a container query stacks the rows as label and value pairs, and stripes them", () => {
+    expect(DOC_CSS).toMatch(/\.vd-table\s*\{[^}]*container-type: inline-size/);
+    expect(DOC_CSS).toMatch(/@container \(max-width: [\d.]+rem\)/);
+    expect(DOC_CSS).toContain("attr(data-label)");
+    expect(DOC_CSS).toMatch(/tbody tr:nth-child\(even\)/);
+  });
+});
+
+describe("inline code is its own look (p31-site 4)", () => {
+  test("has its own background, text and border, which a block's does not use", () => {
+    const rule = /\.vd-doc :not\(pre\) > code \{([^}]*)\}/.exec(DOC_CSS)?.[1] ?? "";
+    expect(rule).toContain("var(--vd-code-bg");
+    expect(rule).toContain("var(--vd-code-ink");
+    expect(rule).toContain("var(--vd-code-line");
+    expect(rule).not.toContain("--vd-sunken");
+  });
 });

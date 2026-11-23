@@ -69,12 +69,12 @@ main { min-width: 0; padding: 20px 18px 64px; }
 .column { width: 100%; max-width: 56rem; margin: 0 auto; }
 .toc { display: none; }
 
-/* On a phone, the navigation is a sheet that slides over the page: by its address without script, by a class with it. */
+/* On a phone, the navigation is a sheet that slides in from the right, where its button is, over the page: by its address without script, by a class with it. */
 @media (max-width: 1023.98px) {
   .side {
-    position: fixed; inset: 0 auto 0 0; z-index: 40; width: min(320px, 88vw); overflow-y: auto; padding-top: 12px;
-    border-right: 1px solid var(--vx-line); box-shadow: 0 24px 64px rgb(0 0 0 / 0.35);
-    transform: translateX(-102%); visibility: hidden;
+    position: fixed; inset: 0 0 0 auto; z-index: 40; width: min(320px, 88vw); overflow-y: auto; padding-top: 12px;
+    border-left: 1px solid var(--vx-line); box-shadow: 0 24px 64px rgb(0 0 0 / 0.35);
+    transform: translateX(102%); visibility: hidden;
     transition: transform 0.24s cubic-bezier(0.2, 0, 0, 1), visibility 0s linear 0.24s;
   }
   .side:target, body.nav-open .side { transform: none; visibility: visible; transition: transform 0.24s cubic-bezier(0.2, 0, 0, 1); }
@@ -201,7 +201,7 @@ main { min-width: 0; padding: 20px 18px 64px; }
 @media (min-width: 1024px) { .tocbar { top: 0; margin: -48px -40px 32px; } .tocbar > summary { padding: 0 40px; } .tocbar ul { margin: 0 40px 12px; } }
 
 /* A description with code in it. */
-.lead code, .card code, .recent code, .results code, .switcher code { padding: 0.05em 0.3em; border-radius: 4px; background: var(--vx-sunken); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.9em; }
+.lead code, .card code, .recent code, .results code, .switcher code { padding: 0.05em 0.3em; border-radius: 4px; background: color-mix(in srgb, var(--vx-ink) 11%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--vx-ink) 26%, transparent); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.9em; }
 
 /* Results of a search, as a page. */
 .results { margin: 0; padding: 0; list-style: none; }

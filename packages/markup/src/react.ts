@@ -10,6 +10,7 @@ import {
   drawAll,
   type FieldInfo,
   hrefOf,
+  inLink,
   type RenderOptions,
   srcOf,
   type TermInfo,
@@ -61,7 +62,8 @@ export interface Components {
     children: ReactNode;
   }) => ReactNode;
   code?: (props: { value: string; lang?: string }) => ReactNode;
-  image?: (props: { src: string; alt: string; title?: string }) => ReactNode;
+  /** `zoom` is false for a picture inside a link, which the link owns. */
+  image?: (props: { src: string; alt: string; title?: string; zoom: boolean }) => ReactNode;
 }
 
 export interface ReactOptions extends RenderOptions {
@@ -120,14 +122,16 @@ function own(node: Node, ctx: Context, components: Components): ReactNode | unde
   const inside = () => ("children" in node ? toReact(drawAll(node.children, ctx)) : null);
   switch (node.type) {
     case "link": {
-      const href = hrefOf(node.href, ctx);
-      if (!components.link || href === undefined) return undefined;
-      return components.link({
-        href,
-        external: isExternal(href),
-        ...(node.title ? { title: node.title } : {}),
-        children: inside(),
-      });
+      if (components.link && hrefOf(node.href, ctx) !== undefined) {
+        const href = hrefOf(node.href, ctx) as string;
+        return components.link({
+          href,
+          external: isExternal(href),
+          ...(node.title ? { title: node.title } : {}),
+          children: inLink(ctx, inside),
+        });
+      }
+      return undefined;
     }
     case "code":
       return components.code?.({ value: node.value, ...(node.lang ? { lang: node.lang } : {}) });
@@ -137,6 +141,7 @@ function own(node: Node, ctx: Context, components: Components): ReactNode | unde
       return components.image({
         src,
         alt: node.alt,
+        zoom: !ctx.inLink,
         ...(node.title ? { title: node.title } : {}),
       });
     }

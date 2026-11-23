@@ -356,3 +356,36 @@ test("a run of a schedule from before the change, and an event's run, link to wh
     "/t/t1/workspaces/w1/events?item=e9",
   );
 });
+
+test("flow runs and script runs that have been going too long are canceled by age (FLW-MP14)", async () => {
+  show(<RunsWorkbench root={root} link="/t/t1/workspaces/w1" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Cancel by age…" }));
+  const dialog = await screen.findByRole("dialog");
+  // Nothing can be canceled until a length is given.
+  expect(
+    (within(dialog).getByRole("button", { name: "Continue" }) as HTMLButtonElement).disabled,
+  ).toBe(true);
+  fireEvent.change(within(dialog).getByLabelText("Amount"), { target: { value: "2" } });
+  fireEvent.change(within(dialog).getByLabelText("Unit"), { target: { value: "86400" } });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Continue" }));
+  expect(dialog.textContent).toContain("It cannot be undone");
+  fireEvent.click(within(dialog).getByRole("button", { name: "Cancel runs older than 2 days" }));
+  await waitFor(() => expect(sent).toHaveLength(1));
+  expect(sent[0]).toEqual({
+    address: `/api/v1${root}/flow-runs/cancel`,
+    body: { olderThanSeconds: 172800 },
+  });
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+  fireEvent.click(await screen.findByRole("button", { name: "Cancel by age…" }));
+  const again = await screen.findByRole("dialog");
+  fireEvent.change(within(again).getByLabelText("Which runs"), { target: { value: "script" } });
+  fireEvent.change(within(again).getByLabelText("Amount"), { target: { value: "3" } });
+  fireEvent.click(within(again).getByRole("button", { name: "Continue" }));
+  fireEvent.click(within(again).getByRole("button", { name: "Cancel runs older than 3 seconds" }));
+  await waitFor(() => expect(sent).toHaveLength(2));
+  expect(sent[1]).toEqual({
+    address: `/api/v1${root}/runs/cancel`,
+    body: { include: "all", olderThanSeconds: 3 },
+  });
+});

@@ -38,7 +38,9 @@ import { useTitleObject } from "../kit/title.ts";
 import { ColumnsMenu, ViewsMenu } from "../kit/views.tsx";
 import { Link, navigate, useUrlState } from "../router.tsx";
 import { useStreamConnected } from "../stream.ts";
+import { CancelOlder } from "./CancelOlder.tsx";
 import { LogWindowNote, startedBy, TRIGGER, useLiveRun, wholeLogDownload } from "./Execution.tsx";
+import { RetryOnVersion } from "./RetryOnVersion.tsx";
 import {
   flowFromFailed,
   flowFromStart,
@@ -342,10 +344,16 @@ export function RunsWorkbench({
   const total = Object.values(counts).reduce((a, b) => a + b, 0);
   const filtered = status !== "all" || Boolean(search) || tags.length > 0 || Boolean(url.target);
   const queued = counts.queued ?? 0;
-  const scope = [
+  const inProgress = LIVE.reduce((sum, state) => sum + (counts[state] ?? 0), 0);
+  const [cancelOlder, setCancelOlder] = useState(false);
+  const [retryOn, setRetryOn] = useState<Activity>();
+  const narrowedBy = [
     url.target ? `of ${url.target}` : "",
     search ? `matching "${search}"` : "",
     tags.length > 0 ? `tagged ${tags.join(" and ")}` : "",
+  ];
+  const scope = [
+    ...narrowedBy,
     from ? `from the ${WINDOWS.find((one) => one.value === hours)?.label.toLowerCase()}` : "",
   ]
     .filter(Boolean)
@@ -537,6 +545,9 @@ export function RunsWorkbench({
                 ),
             },
           ]
+        : []),
+      ...(one.kind === "flow" && !going && !one.source
+        ? [{ label: "On another version…", onSelect: () => setRetryOn(one) }]
         : []),
       ...(going
         ? [
@@ -779,6 +790,11 @@ export function RunsWorkbench({
                 Cancel {queued} queued
               </Button>
             ) : null}
+            {inProgress > 0 ? (
+              <Button size="small" onClick={() => setCancelOlder(true)}>
+                Cancel by age…
+              </Button>
+            ) : null}
             <ColumnsMenu
               columns={columns.slice(1).map((column) => ({
                 key: column.key ?? column.header,
@@ -799,6 +815,33 @@ export function RunsWorkbench({
         </div>
       </div>
 
+      <CancelOlder
+        open={cancelOlder}
+        onClose={() => setCancelOlder(false)}
+        root={root}
+        // The window of time is left out: the runs asked for are those older than a length, however old.
+        scope={narrowedBy.filter(Boolean).join(", ")}
+        filters={{
+          ...(url.target ? { target: url.target } : {}),
+          ...(search ? { q: search } : {}),
+          ...(tags.length > 0 ? { tags } : {}),
+        }}
+        done={refresh}
+      />
+      <RetryOnVersion
+        open={retryOn !== undefined}
+        onClose={() => setRetryOn(undefined)}
+        root={root}
+        id={retryOn?.id ?? ""}
+        flow={retryOn?.target ?? ""}
+        failed={retryOn?.state === "failed"}
+        started={(next) => {
+          notify.success("Started again.", {
+            action: { label: "Open it", onClick: () => navigate(`${link}/runs/${next}`) },
+          });
+          refresh();
+        }}
+      />
       <MasterDetail
         fill
         inspector={

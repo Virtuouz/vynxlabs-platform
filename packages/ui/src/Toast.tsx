@@ -237,7 +237,10 @@ export function ToastProvider({
       {children}
       {/* biome-ignore lint/a11y/noStaticElementInteractions: holding the messages while they are pointed at is not an action */}
       <div
-        className="pointer-events-none fixed right-4 bottom-4 left-4 layer-toast flex flex-col items-end gap-2"
+        // A panel docked at the right edge says how much room it takes (`--vx-toast-inset`): a
+        // message never covers the buttons of what it is about.
+        style={{ right: "calc(1rem + var(--vx-toast-inset, 0px))" }}
+        className="pointer-events-none fixed bottom-4 left-4 layer-toast flex flex-col items-end gap-2"
         onMouseEnter={hold}
         onMouseLeave={release}
         onFocus={hold}

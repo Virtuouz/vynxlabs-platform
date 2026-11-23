@@ -9,7 +9,7 @@ import { Type } from "typebox";
 import { boundInside, check } from "../kernel/authorize.js";
 import { forbidden, HttpError, notFound } from "../kernel/errors.js";
 import { payloadSchemas } from "../kernel/execution/bundles.js";
-import { redact, redactText } from "../kernel/execution/redact.js";
+import { type Known, redact, redactText } from "../kernel/execution/redact.js";
 import { startRun } from "../kernel/execution/runs.js";
 import { servedValues } from "../kernel/execution/served.js";
 import { approvalDetail } from "../kernel/flows/approval-detail.js";
@@ -20,6 +20,7 @@ import {
   isApprover,
 } from "../kernel/flows/approvers.js";
 import { decideApproval, deciderOf, kickFlow, startFlowRun } from "../kernel/flows/engine.js";
+import { flowKnown } from "../kernel/flows/known.js";
 import { access, findWorkspace, type RequestContext, type WorkspaceRef } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
 import { Id } from "./shared.js";
@@ -253,20 +254,24 @@ async function toolsFor(kernel: Kernel, ctx: Caller, workspace: WorkspaceRef): P
       ? { note: "Still running. Call get_run with this runId to see how it ends." }
       : {}),
   });
-  const showFlowRun = (run: Awaited<ReturnType<typeof readFlowRun>>, shielded: boolean) => ({
-    flowRunId: run.id,
-    flow: run.flow_path,
-    status: run.status,
-    ...(run.status === "succeeded"
-      ? { output: shielded ? redact(run.output ?? null) : (run.output ?? null) }
-      : {}),
-    ...(run.error ? { error: (run.error as { message: string }).message } : {}),
-    ...(run.status === "running"
-      ? {
-          note: "Still running. It may be waiting for an approval or a delay. Call get_flow_run with this flowRunId later.",
-        }
-      : {}),
-  });
+  const showFlowRun = async (run: Awaited<ReturnType<typeof readFlowRun>>, shielded: boolean) => {
+    const known = shielded ? await flowKnown(kernel, db, run.id) : undefined;
+    const error = run.error ? (run.error as { message: string }).message : undefined;
+    return {
+      flowRunId: run.id,
+      flow: run.flow_path,
+      status: run.status,
+      ...(run.status === "succeeded"
+        ? { output: shielded ? redact(run.output ?? null, undefined, known) : (run.output ?? null) }
+        : {}),
+      ...(error !== undefined ? { error: shielded ? redactText(error, known) : error } : {}),
+      ...(run.status === "running"
+        ? {
+            note: "Still running. It may be waiting for an approval or a delay. Call get_flow_run with this flowRunId later.",
+          }
+        : {}),
+    };
+  };
 
   /** The tool each resource got, to give it again under the names it had before a rename. */
   const named = new Map<string, { prefix: string; name: string }>();
@@ -483,6 +488,7 @@ async function toolsFor(kernel: Kernel, ctx: Caller, workspace: WorkspaceRef): P
           .execute();
         // A step that names its approvers is shown only to them, as in the console.
         const memberId = ctx.principal.type === "member" ? ctx.principal.id : null;
+        const cache = new Map<string, Promise<Known>>();
         const mine = [];
         for (const row of rows) {
           const named = approversOf(row.detail as Record<string, unknown>);
@@ -490,14 +496,19 @@ async function toolsFor(kernel: Kernel, ctx: Caller, workspace: WorkspaceRef): P
           mine.push(row);
         }
         return {
-          approvals: mine.map((row) => ({
-            flowRunId: row.flow_run_id,
-            node: row.node_id,
-            flow: row.flow_path,
-            title: (row.detail as { title?: string }).title,
-            detail: approvalDetail((row.detail as { detail?: unknown }).detail),
-            waitingSince: row.started_at.toISOString(),
-          })),
+          approvals: await Promise.all(
+            mine.map(async (row) => ({
+              flowRunId: row.flow_run_id,
+              node: row.node_id,
+              flow: row.flow_path,
+              title: (row.detail as { title?: string }).title,
+              detail: approvalDetail(
+                (row.detail as { detail?: unknown }).detail,
+                await flowKnown(kernel, db, row.flow_run_id, cache),
+              ),
+              waitingSince: row.started_at.toISOString(),
+            })),
+          ),
         };
       },
     });

@@ -4,9 +4,11 @@ import { DEFAULT_PRODUCT_NAME } from "../../routes/branding.js";
 import type { Db, Principal } from "../audit.js";
 import { check } from "../authorize.js";
 import { badRequest, conflict, forbiddenBecause, HttpError, notFound } from "../errors.js";
+import type { Known } from "../execution/redact.js";
 import { approvalDetail } from "../flows/approval-detail.js";
 import { approversOf, approverTitles, describeApprovers, isApprover } from "../flows/approvers.js";
 import { decideApproval, kickFlow } from "../flows/engine.js";
+import { flowKnown } from "../flows/known.js";
 import type { RequestContext } from "../http.js";
 import type { Kernel } from "../kernel.js";
 import { type LocatedPage, locatePage, type PageRequest } from "./locate.js";
@@ -122,8 +124,9 @@ function limited(value: unknown): unknown {
 export function fieldsOf(
   detail: unknown,
   widget: PageWidget,
+  known?: Known,
 ): { name: string; label: string; value: unknown }[] {
-  const safe = approvalDetail(detail);
+  const safe = approvalDetail(detail, known);
   if (safe === null || safe === undefined) return [];
   const named = namedFields(widget);
   if (safe === null || typeof safe !== "object" || Array.isArray(safe)) {
@@ -328,6 +331,7 @@ export async function readApprovals(
     if (batch === limits.batches - 1) more = true;
   }
   const waiting: ApprovalItem[] = [];
+  const cache = new Map<string, Promise<Known>>();
   const decidedRows = widget.config?.decided === true ? await decidedSteps(db, at, flows) : [];
   const titles = await flowTitles(db, at.workspaceId, [
     ...new Set([
@@ -340,7 +344,11 @@ export async function readApprovals(
       id: itemId(row.flow_run_id, row.node_id),
       title: String(row.detail.title),
       flow: { path: row.flow_path, title: titleOfFlow(titles, row.flow_path) },
-      fields: fieldsOf(row.detail.detail, widget),
+      fields: fieldsOf(
+        row.detail.detail,
+        widget,
+        await flowKnown(kernel, db, row.flow_run_id, cache),
+      ),
       waitingSince: row.started_at.toISOString(),
       timesOutAt: row.wake_at ? row.wake_at.toISOString() : null,
       mayDecide: may,
@@ -348,23 +356,29 @@ export async function readApprovals(
     });
   }
 
-  const decided: ApprovalItem[] = decidedRows.map((row) => ({
-    id: itemId(row.flow_run_id, row.node_id),
-    title: String(row.detail.title),
-    flow: { path: row.flow_path, title: titleOfFlow(titles, row.flow_path) },
-    fields: fieldsOf(row.detail.detail, widget),
-    waitingSince: row.started_at.toISOString(),
-    timesOutAt: null,
-    mayDecide: false,
-    approvers: null,
-    decision: {
-      approved: row.status === "succeeded",
-      by: row.name || row.email || "A member",
-      at: row.finished_at ? row.finished_at.toISOString() : null,
-      comment: row.decision_comment,
-      via: row.via,
-    },
-  }));
+  const decided: ApprovalItem[] = await Promise.all(
+    decidedRows.map(async (row) => ({
+      id: itemId(row.flow_run_id, row.node_id),
+      title: String(row.detail.title),
+      flow: { path: row.flow_path, title: titleOfFlow(titles, row.flow_path) },
+      fields: fieldsOf(
+        row.detail.detail,
+        widget,
+        await flowKnown(kernel, db, row.flow_run_id, cache),
+      ),
+      waitingSince: row.started_at.toISOString(),
+      timesOutAt: null,
+      mayDecide: false,
+      approvers: null,
+      decision: {
+        approved: row.status === "succeeded",
+        by: row.name || row.email || "A member",
+        at: row.finished_at ? row.finished_at.toISOString() : null,
+        comment: row.decision_comment,
+        via: row.via,
+      },
+    })),
+  );
   return {
     shape: "approvals",
     ...(request.elsewhere ? { decideIn: await consoleOf(kernel, at) } : {}),

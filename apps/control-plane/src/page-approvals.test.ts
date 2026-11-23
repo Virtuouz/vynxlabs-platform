@@ -107,6 +107,7 @@ const screen = {
           { flows: ["orders/reorder"] },
           { fields: [{ name: "api_key" }] },
         ),
+        approvalsWidget("texts", { flows: ["orders/reorder"] }, { fields: [{ name: "notes" }] }),
         // Never asks why.
         approvalsWidget("quiet", { flows: ["orders/reorder"] }, { askWhy: "never" }),
         // Seen by managers only.
@@ -375,6 +376,18 @@ describe("reading what waits", () => {
     expect(named.fields).toEqual([{ name: "api_key", label: "Api key", value: "[redacted]" }]);
     expect(JSON.stringify(named)).not.toContain("sk-live-123");
     expect(item.waitingSince).toMatch(/^\d{4}-/);
+    await decide(bob, step.id, "approve");
+  });
+
+  test("a field written as a text from a secret input is masked in the widget too", async () => {
+    const step = await ask("orders/reorder", {
+      password: "pw-hunter-4455",
+      notes: "use pw-hunter-4455 please",
+    });
+    const [item] = (await waitingOf(bob, "texts")).filter((one) => one.id === step.id);
+    expect(item.fields).toEqual([
+      { name: "notes", label: "Notes", value: "use [redacted] please" },
+    ]);
     await decide(bob, step.id, "approve");
   });
 

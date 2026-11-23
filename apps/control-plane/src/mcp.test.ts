@@ -464,6 +464,19 @@ describe("what an agent is shown of another's work", () => {
         (one: { flowRunId: string }) => one.flowRunId === waiting.flowRunId,
       );
       expect(mine.detail).toEqual({ order: "A-8", apiKey: "[redacted]" });
+      // A flow run's error that quotes the secret field it was started with.
+      await t.db
+        .updateTable("flow_run")
+        .set({ error: JSON.stringify({ message: "The call with k-live-98765 failed" }) })
+        .where("id", "=", waiting.flowRunId)
+        .execute();
+      const failed = answer(
+        await reader.callTool({
+          name: "get_flow_run",
+          arguments: { flowRunId: waiting.flowRunId },
+        }),
+      );
+      expect(failed.error).toBe("The call with [redacted] failed");
     } finally {
       await reader.close();
     }

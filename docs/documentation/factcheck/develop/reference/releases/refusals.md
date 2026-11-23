@@ -24,5 +24,5 @@ Code as of commit `14f7d5b9` (branch `phase-31-write-the-docs`), 2026-11-24. Wri
 
 | Claim | Source (file:line) | Checked by | Result |
 | --- | --- | --- | --- |
-| bindings_missing/bindings_invalid wording uses "set up" at HEAD | `deploy.ts:115,136,681` (HEAD) | second agent, 2026-11-23 | corrected: the page said "bound" and "Bind it again"; fault: configure bound/bind words (the instance is an older build) |
+| bindings_missing/bindings_invalid wording uses "set up" at HEAD | `deploy.ts:115,136,681` (HEAD) | second agent, 2026-11-23 | corrected: the page said "bound" and "Bind it again"; fault fixed (fb item 10): the refusal texts say "set up", confirmed in the code; the page already did |
 | bindings_missing, breaking_changes, rename_suspected, console_code_off, git_busy, git_paused statuses (409; console_code_off 403) | `deploy.ts`, `git.ts:489,940`, `authoring.ts`; run for four | second agent, 2026-11-23 | checked |

@@ -68,7 +68,7 @@ The `key` of `concurrency` is checked against the input type, so a field that is
 ## What Volvel checks
 
 - **Input and output.** The input is checked against `input` before `run`, and the return value against `output` after it. A mismatch fails the run with a `SchemaError`: "The script's input does not match its schema:" or "The script's output does not match its schema:", then the reasons. Defaults, coercion and transforms of the zod schema apply to what `run` receives.
-- **What it declares.** A script that asks `ctx` for a connection, secret, variable, table, source or event it did not declare is refused. A deploy to production, and a promotion, refuse a script whose declared connections, secrets, variables without a default, or sources are not bound; a deploy to a dev workspace warns. Connection groups need nothing bound.
+- **What it declares.** A script that asks `ctx` for a connection, secret, variable, table, source or event it did not declare is refused. A deploy to production, and a promotion, refuse a script whose declared connections, secrets, variables without a default, or sources are not set up in the workspace; a deploy to a dev workspace warns. Connection groups need nothing set up.
 - **A failure handler.** `onFailure.notify` must name an HTTP connection.
 
 ## At least once

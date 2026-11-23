@@ -40,7 +40,7 @@ A list takes `startIndex` (from 1) and `count`, at most 200 and 100 by default.
 
 A name or an external ID that is already used by someone else is refused as a clash: 409 with `scimType` `uniqueness`, such as "A user with the external ID ext-ana already exists." A push that would leave the tenant without an admin, or the instance without an operator, is refused with 409, and it shows under the refused pushes in the console. Nothing a refused push carried is kept: only its reason.
 
-Each change is in the audit log with its `via` set to `scim`, the provider's name as `identityProvider` and the token's first characters as `token` in its details. The actor is the system, not a person.
+Each change is in the audit log with its `via` set to `scim`, the provider's name as `identityProvider` and the token's first characters as `token` in its details. The actor is the system, not a person, and the log names it `SCIM: <provider name>`; the name is also kept in the entry's details as `actorName`.
 
 ## What the provider setup decides
 

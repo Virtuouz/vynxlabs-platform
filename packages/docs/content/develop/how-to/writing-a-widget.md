@@ -96,7 +96,7 @@ The Goal widget in the builder has a Data tab with a source, a **Value** and **O
 | Field | Says |
 | --- | --- |
 | `type`, `version` | `pack/name` and `x.y.z`. |
-| `title`, `description`, `category`, `icon` | What **Add to page** shows. A category is `records`, `action`, `understand`, `organize` or `content`. **Add to page** groups them as **Work with records**, **Understand data**, **Take action** and **Organize and explain**, which holds both `organize` and `content`. The icon is a platform widget's name, a page icon, or `globe`, `radio` or `table-2`; any other name draws a puzzle piece. |
+| `title`, `description`, `category`, `icon` | What **Add to page** shows. A category is `records`, `action`, `understand`, `organize` or `content`. **Add to page** groups them as **Work with records**, **Understand data**, **Take action** and **Organize and explain**, which holds both `organize` and `content`. The icon is the name of a widget that comes with Volvel, a page icon, or `globe`, `radio` or `table-2`; any other name draws a puzzle piece. |
 | `surfaces` | `app`, `dashboard`, or both. |
 | `data`, `dataHints` | What it reads, and the Data tab's controls for each input, in order. |
 | `config`, `words`, `defaults`, `initialData` | What can be set, what each setting is, what the widget is when it is added, and a source a widget starts with. |
@@ -108,7 +108,7 @@ A type is `pack/name` in small letters, at most 31 characters before the slash a
 
 ### Data
 
-A widget does not fetch. The platform reads each input under the viewer's permissions and hands it over.
+A widget does not fetch. Volvel reads each input under the viewer's permissions and hands it over.
 
 | Shape | What the view gets |
 | --- | --- |

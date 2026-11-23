@@ -23,7 +23,7 @@ Every page and file of an app of files or of an interface is served with one con
 
 Each response also has `x-content-type-options: nosniff` and `referrer-policy: same-origin`.
 
-Under `volvel dev` the policy is the same except that `script-src` also allows a nonce made for the run and `connect-src` also allows `ws://localhost:*`, `ws://127.0.0.1:*` and `ws://[::1]:*`, for reload. See [Run an app while you write it](../../how-to/apps/run-an-app-while-you-write-it).
+Under `volvel dev` the policy is the same except that `script-src` also allows a nonce made for the run, given only to the dev server's own scripts, and `connect-src` also allows `ws://localhost:*` and `ws://127.0.0.1:*`, for reload. See [Run an app while you write it](../../how-to/apps/run-an-app-while-you-write-it).
 
 ### A docs site
 

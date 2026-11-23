@@ -10,7 +10,7 @@ By the end an agent, or a script that speaks the Model Context Protocol, will ha
 
 ## Before you start
 
-- A service account for the agent, with an API key, and a role that lets it start what you want it to start: `agent_runner` at one script or flow, or `workspace:read` in the workspace and a role that holds `run:write` or `flow_run:write`. To connect at all, the account needs `workspace:read` in the workspace, or a binding to a script or flow in it. See [Call the API with an API key](call-the-api-with-a-key) and the [service accounts screen](../../../administer/reference/screens/service-accounts).
+- A service account for the agent, with an API key, and a role that lets it start what you want it to start: `agent_runner` at one script or flow or for the whole workspace, or `workspace:read` in the workspace and a role that holds `run:write` or `flow_run:write`. To connect at all, the account needs `workspace:read` in the workspace, a binding to a script or flow in it, or a role that holds `run:write` or `flow_run:write` for the whole workspace, such as `agent_runner` given there. See [Call the API with an API key](call-the-api-with-a-key) and the [service accounts screen](../../../administer/reference/screens/service-accounts).
 - To make the setting for the agent, you need `service_account:read` on the tenant. To try a tool from the console you need `service_account:write`.
 - The workspace has a deployed script. The example uses a script `hooks/echo` that returns what it is given.
 
@@ -88,7 +88,7 @@ The agent lists the tools, and its calls start runs that you can see in the work
 ## If it does not work
 
 - **401 "Send an API key to use this workspace's tools."** The request had no key.
-- **403 or `reachable: false`.** The account has no `workspace:read` in the workspace and no binding to a script or flow in it. Give it a role: see the [access reference](../../../administer/reference/screens/access).
+- **403 or `reachable: false`.** The account has no `workspace:read` in the workspace, no binding to a script or flow in it, and no role that holds `run:write` or `flow_run:write` for the whole workspace. Give it a role: see the [access reference](../../../administer/reference/screens/access).
 - **404 on a `GET` of the address.** The route takes `POST` only: no `GET`, and no server-sent events.
 - **A tool is missing.** The account may not start that script or flow. Bind the `agent_runner` role to the account at that script or flow.
 - **A tool answers `isError`.** The call was refused or the run failed. The text says why. A refusal is the account's, not the agent's.

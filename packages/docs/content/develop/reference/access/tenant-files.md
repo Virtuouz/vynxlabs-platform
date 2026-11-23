@@ -46,7 +46,7 @@ Every file has `schemaVersion: 1`. Other top-level fields are `key`, `title` and
 | `body.permissions` | Required. Up to 200 distinct permissions, each `kind:verb` with `*` for either half. |
 | `body.description` | Up to 500 characters. |
 
-A role file has no `title`.
+A role file may carry a `title`; it is read and set aside, because a role is known by its name.
 
 ### tenant_binding
 
@@ -57,7 +57,7 @@ A role file has no `title`.
 | `body.principal.key` | Required. The key of the principal. |
 | `body.workspace` | A workspace's slug. Without it the role is held in the whole tenant. |
 
-A binding file has no `title`. What makes a binding the one it is is what it gives to whom and where, not the name of its file.
+A binding file may carry a `title` too, and it is set aside. What makes a binding the one it is is what it gives to whom and where, not the name of its file.
 
 ## Examples
 
@@ -81,7 +81,7 @@ body:
 
 ## Checks
 
-The files are checked together. A problem names the file: "needs schemaVersion: 1.", "is not valid YAML.", "has keys other than key, title, schemaVersion and body: …", or a schema line such as `/body must NOT have additional properties (title)`. A binding that names a principal or a role that is not in the set or the tenant is refused. The JSON schemas are in `schemas/files/` (`group`, `end_user_group`, `service_account`, `tenant_role`, `tenant_binding`) and `volvel schemas` writes them.
+The files are checked together. A problem names the file: "needs schemaVersion: 1.", "is not valid YAML.", "has keys other than key, title, schemaVersion and body: …", or a schema line that begins with the kind and the file, such as `tenant role x (roles/x.tenant_role.yaml): …`. A binding that names a principal or a role that is not in the set or the tenant is refused. The JSON schemas are in `schemas/files/` (`group`, `end_user_group`, `service_account`, `tenant_role`, `tenant_binding`) and `volvel schemas` writes them.
 
 ## Related
 

@@ -23,4 +23,4 @@ Lines are current at commit `14f7d5b9` (branch phase-31-write-the-docs). Paths a
 
 - Messages "This repository defines no app.", "has no app at", "Say which app": `packages/cli/src/dev.ts:71-81`; "The instance at ... did not answer": `dev-site.ts:281`; SCREENS_DIR and the missing-screens text: `dev-site.ts:77-133`; ignored folders `dev-site.ts:113`; docs notice `dev-site.ts:118`. All run except the missing-screens text.
 - Port moves to the next free one (5181 busy, served on 5182): run.
-- fault: apps (inline `<script>` runs in dev; `app.title` is the path; `ws://[::1]:*` invalid source). The page describes them as they are today; revisit when fixed.
+- fault fixed (fa): the nonce goes only to the dev server's own scripts, `app.title` is the app's title, the dev policy no longer lists `ws://[::1]:*` (`cli/dev.ts`, `build.ts`), confirmed in the code; the three sentences are removed or reworded. The inline refusal was unit-tested only, not seen in a browser.

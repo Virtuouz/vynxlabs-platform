@@ -45,7 +45,6 @@ By the end you will have each kind of app of a repository open in your browser o
 
 The page is built from `source` as Vite serves it. Its context says what a deployed app's says: `base` is `/`, `portal` is `/portal/<tenant slug>`, and `tenant.logo` is true or false, read from the instance, so `logoUrl()` returns an address or null as it will when deployed. These differ from the deployed page:
 
-- `app.title` is the app's path, not its title.
 - `principal.groups`, `principal.groupKeys` and `principal.attributes` are not filled. Deployed, a member's groups and an end user's groups and attributes are.
 - You have your own permissions, often `data_all`, so the tables' row rules show you every row. Check them as the people they are for: see [Decide who sees which rows](../../../console/how-to/data/row-rules).
 - Your key is not an app session. A guest's refusals ("Sign in to start a script") do not occur: you are signed in.
@@ -66,10 +65,7 @@ A docs app is drawn from the Markdown pages under its folder, with the same rend
 
 The page is served under the policy a deployed app gets, so what it would refuse, it refuses here: no inline script, nothing from another site, no remote font. A docs site is served under the docs policy, which also allows images from `https:`. See [What an app may load](../../reference/apps/content-policy). The browser's console reports each refusal, for example "Loading the stylesheet 'https://fonts.googleapis.com/css2?family=Inter' violates the following Content Security Policy directive".
 
-Two things differ from the instance:
-
-- The dev server's own scripts carry a nonce made for the run, and `ws://localhost:*` may be connected to, for reload. Vite puts the same nonce on every inline script in your `index.html`, so an inline script of yours runs in dev and is refused once deployed.
-- The browser logs "The source list for the Content Security Policy directive 'connect-src' contains an invalid source: 'ws://[::1]:*'. It will be ignored." This is the address for IPv6 reload and is harmless.
+One thing differs from the instance: the dev server's own scripts carry a nonce made for the run, and `ws://localhost:*` and `ws://127.0.0.1:*` may be connected to, for reload. The nonce goes only on the dev server's scripts, so an inline script of yours is refused in dev as it is once deployed.
 
 `--no-strict` turns the policy off and says so: "The page is served without the platform's content policy (--no-strict), so it may do what a deployed app cannot." Use it to find out whether a refusal is the policy's.
 

@@ -70,7 +70,7 @@ A program that is not a person uses a service account's key, so that it keeps wo
 4. Revoke it with `DELETE` on `…/service-accounts/<account id>/api-keys/<key id>`.
 :::
 
-A service account's key reaches only its own tenant. It is refused on the few routes that are for a person signed in as themselves, such as `GET /api/v1/api-keys`, with 403 "This is only for a person signed in, not for a service account's key." `GET /api/v1/me` and the batch of approvals accept it.
+A service account's key reaches only its own tenant. It is refused on the few routes that are for a person signed in as themselves, such as `GET /api/v1/api-keys`, with 403 "This is only for a person signed in, not for a service account's key." `GET /api/v1/me`, the batch of approvals and `GET /api/v1/tenants` (which lists its own tenant) accept it.
 
 ## The result
 

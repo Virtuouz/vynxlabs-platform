@@ -66,7 +66,7 @@ The target workspace's active version is the new one, with the number the comman
 ## If it does not work
 
 - **`Promoting this to <workspace> changes a name that something outside calls:`** followed by each change, then `Nothing was changed. Run it again with --confirm-breaking to promote.` The promotion was started without the flag. Read each line first.
-- **The instance refuses the promotion.** The usual cause is a connection or secret the bundle needs that the target workspace has not set up: every promotion refuses that, where a deploy to a dev workspace only warns (`bindings_missing`). Set each one up in the target workspace, then promote again. A binding that does not fit the connector the bundle gives it is refused too (`bindings_invalid`).
+- **`It cannot be promoted.`** The instance refuses the promotion. The command prints the instance's reason, then a line with a dash for each problem, and exits 1. The usual cause is a connection or secret the bundle needs that the target workspace has not set up: every promotion refuses that, where a deploy to a dev workspace only warns (`bindings_missing`). Set each one up in the target workspace, then promote again. A connection that does not fit the connector the bundle gives it is refused too (`bindings_invalid`).
 - **`This workspace is not linked to another one.`** See **Before you start**. The link is chosen when the dev workspace is made.
 - **A refusal naming `promotion:write`.** You lack it in the workspace you promote to. Ask a workspace admin of that workspace.
 

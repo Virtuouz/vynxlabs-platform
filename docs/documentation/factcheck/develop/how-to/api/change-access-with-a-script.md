@@ -27,4 +27,4 @@ Checked by: second agent, 2026-11-23.
 - Corrected: a waiting change whose access moved is marked **superseded** when another change applies, and approving it answers 409 `conflict` "This access change was superseded already."; `release_stale` could not be reached through the API (every route that changes access goes through a change that supersedes first). Kept on the page as the code states it (`kernel/tenant/releases.ts:1150-1162`).
 - Corrected: the 202 body (id, number, status, summary, detail) and the other shape from `POST bindings`/`service-accounts` (`release` object).
 - Added: rollback body, rollback `origin`, the CLI commands.
-- fault: api (a waiting access change answers 202 in two shapes) - the sentence on the page about `release` describes it.
+- fault fixed (fa): one 202 shape `{waiting, release:{id,number,status,summary}, detail}` for releases, rollback, bindings and service accounts (`routes/access-releases.ts`), confirmed in the code; the sentence now describes the one shape.

@@ -25,5 +25,5 @@ Checked by: second agent, 2026-11-23.
 
 - Run on the instance (`api-check2`/`agent-ws`, three service accounts: narrow `agent_runner` at one script, wide `workspace_admin` at the workspace, and `agent_runner` at the workspace): `tools` answer (`reachable` true/false), `initialize`, `tools/list`, a flow tool (`start_check__quick`, `start_check__open_ok`), a flow that fails (`isError`), `list_approvals`, `decide_approval` (reject without comment refused, approve, approve again refused), a step that names its approvers (hidden from the account; decide answers "Only the checkers group may decide this approval."), the 25-second wait (25.7 s, `status running` and a `note`), `POST …/tool-calls` (the console's Try), a tool hidden without `approval:write`.
 - Corrected/added: `list_approvals` fields, `decide_approval` fields and refusals, the named-approvers rule, the running `note`, the Try dialog and the `tool-calls` route.
-- fault: access (`agent_runner` at the workspace gives `reachable: false`, 403 "This needs the workspace:read permission.") - the page says to bind at one script or flow, or give `workspace:read`.
-- fault: api (the server names itself `platform:<slug>`).
+- fault fixed (fa): `agent_runner` for the whole workspace is enough to connect (`mayStartHere` in `routes/mcp.ts`), confirmed in the code; the page now says so and no longer sends the reader to one script or flow
+- not a fault on the current build: the server names itself `volvel:<slug>` (`routes/mcp.ts`), confirmed in the code; the page never quoted the old name

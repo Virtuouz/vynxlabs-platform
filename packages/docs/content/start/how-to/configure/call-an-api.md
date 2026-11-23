@@ -65,7 +65,7 @@ Deployed version 1 to try-it (dev): 3 created, 0 updated, 0 deleted, 0 unchanged
   created  connection stock-orders
   created  variable   stock/reorder-quantity
   created  script     stock/reorder
-  Note: the connection "stock-orders" is not bound in this workspace
+  Note: the connection "stock-orders" is not set up in this workspace
   Note: the secret "SUPPLIER_ACCOUNT" is not set in this workspace
 ```
 

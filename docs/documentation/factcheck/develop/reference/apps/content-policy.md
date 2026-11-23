@@ -16,7 +16,7 @@ Lines are current at commit `14f7d5b9` (branch phase-31-write-the-docs). Paths a
 
 ## Second check, 2026-11-23 (Checked by: second agent, 2026-11-23)
 
-- Policy directives: `packages/manifest/src/app-policy.ts:6-23`; docs-site policy (img `https:`, font `'self'`): `packages/docs-site/src/policy.ts:2-15`. Dev nonce and `ws://` sources: `packages/cli/src/dev.ts:122`; run (policy header seen on the page; remote stylesheet refused). fault: apps (dev inline script runs; `ws://[::1]:*` invalid source).
+- Policy directives: `packages/manifest/src/app-policy.ts:6-23`; docs-site policy (img `https:`, font `'self'`): `packages/docs-site/src/policy.ts:2-15`. Dev nonce and `ws://` sources: `packages/cli/src/dev.ts:122`; run (policy header seen on the page; remote stylesheet refused). fault fixed (fa): the dev nonce is for the dev server's scripts only and `ws://[::1]:*` is gone from the dev policy (`cli/dev.ts`), confirmed in the code; the dev paragraph now says so.
 - Headers `nosniff`, `same-origin`, caching rules and the hash test: `kernel/apps/front.ts:95-110,1019-1030,1075-1090`.
 - Fallback rule (HTML accepted, or no dot): `front.ts:1012-1020`.
 - Rate limits: `front.ts:179-181`, `kernel/http.ts:86-91`; the 429 answer read in code, not run.

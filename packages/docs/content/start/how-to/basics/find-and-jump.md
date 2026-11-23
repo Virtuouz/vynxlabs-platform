@@ -48,7 +48,7 @@ You can pin 12 things in each tenant. Pins follow you from browser to browser.
 
 :::steps
 1. Type `/`, then press :kbd[Enter] on **Run script…** or **Start flow…**. In a dev workspace there are also **New script** and **New flow**.
-2. Choose the script or flow. The picker lists the scripts that are deployed, and the flows that have a manual trigger. :kbd[Backspace] on an empty box closes the picker and goes back to the list you see with nothing typed.
+2. Choose the script or flow. The picker lists the scripts that are deployed, and the flows that are deployed and have a manual trigger. :kbd[Backspace] on an empty box closes the picker and goes back to the list you see with nothing typed.
 3. A dialog, **Run {path}** or **Start {path}**, asks for the input, in fields or **As JSON**. A script's dialog also asks when to start (**Now** or **Later**) and a **Priority**. Press **Run** or **Start flow**. The run opens.
 :::
 
@@ -67,4 +67,4 @@ The screen or object you chose is open. The palette remembers what you open: the
 | **Recent** is empty | Recent is kept only where you are a member, not under an operator's access grant. It keeps the last 20 things for each tenant. | Open something as a member. |
 | A thing you opened is not in **Recent** | Drafts that were never deployed are not remembered. | Find it by name. |
 | **Run script…** lists nothing | A script that is only a draft cannot be run from here. | Deploy it, or run it from its editor. |
-| "The flow {path} was not found." in the **Start** dialog | The flow is listed because it has a manual trigger, but it was never deployed. | Deploy it, then start it. |
+| **Start flow…** does not list a flow | A flow that was never deployed, or that has no manual trigger, is not offered. | Deploy it, or start it from its own page. |

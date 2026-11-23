@@ -18,10 +18,6 @@ The commands below were run as written from a shell with `CI`, `VOLVEL_URL` and 
 - A `package-lock.json` committed in the repository: `npm ci` refuses a folder without one, and `volvel init` does not write it. `npm install` makes it.
 - The repository's secrets `VOLVEL_URL` and `VOLVEL_TOKEN`: the address of the instance, and the key.
 
-:::alert[A service account's key is refused today]{type=warning}
-Every command that takes `--tenant` first lists the tenants of the person signed in, and the instance answers a service account's key with 403: `Could not list tenants. This is only for a person signed in, not for a service account's key.` `volvel whoami` and the API accept the key; `deploy`, `promote`, `rollback`, `run --remote` and `pull` do not. A key made under **Account** acts as you and works in a job, with everything you hold.
-:::
-
 ## The pipeline
 
 :::steps

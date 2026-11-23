@@ -25,4 +25,4 @@ Checked by: second agent, 2026-11-23.
 - Run on the instance (workspace `agent-ws` of `api-check2`, dev, triggers resumed): `respond: flow` (201 with the flow's header and `x-flow-run`; a flow that fails before answering gets 202 at once; a flow that answers after 27 seconds gets 202 at 25 s), a form body (`a=7`), a text body, `hmac-sha1` with base64, a missing timestamp header, a missing signature header, a stale timestamp, `workspace_paused`, 413 over 1 MiB (1,048,576 bytes pass, 1,049,000 refused), 120 a minute then 429 (117 + 3 accepted, 8 refused in a loop of 125).
 - Corrected/added: the 202 of a failing flow, `x-flow-run` only on the flow's answer, an example of a respond flow, 413.
 - 415: the webhook route takes any content type as text (`application/xml` answered 202), so 415 is not an answer of this route.
-- fault: api (a 401 `signature_invalid` echoes the request path, which holds the secret token, in `instance`) - visible in every refusal above.
+- fault fixed (fa): the token in `instance` is replaced by `:token` (`problem.ts` `publicPath`), confirmed in the code; the page never quoted the field

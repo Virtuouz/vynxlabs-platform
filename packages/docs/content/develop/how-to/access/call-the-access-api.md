@@ -53,7 +53,7 @@ console.log(made.status, made.body.number ?? made.body.detail);
 
 ### The result
 
-The route answers 201 with the access change's `number`, `status` and `summary`. The change is on the **Access changes** tab marked **Through the API**. With approval on, it answers 202 with `waiting: true`, and someone else approves with `POST /access/releases/<id>/decision` and `{ "decision": "approve" }`.
+The route answers 201 with the access change's `number`, `status` and `summary`. The change is on the **Access changes** tab marked **Through the API**. With approval on, it answers 202 with `waiting: true`, a `detail` and the change under `release` (`id`, `number`, `status`, `summary`), and someone else approves with `POST /access/releases/<id>/decision` and `{ "decision": "approve" }`.
 
 ### Things to know
 

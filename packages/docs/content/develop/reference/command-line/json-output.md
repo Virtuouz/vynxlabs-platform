@@ -16,7 +16,7 @@ With `--json`, a command prints one JSON document on standard output and nothing
 | `volvel deploy --preview --json` | `{"preview": true, "workspace", "summary"}`. |
 | `volvel promote --json` | `{"target", "version", "summary", "release", "message"}`. `target` is `{id, slug, name, type}`. `release` is the state of the Git release (`status`, `branch`, and `problem` when it failed) and is left out when the instance says nothing. |
 | `volvel promote --preview --json` | `{"preview": true, "target", "summary"}`, and `"refused": true` when the exit code is 4. |
-| `volvel rollback --json` | `{"workspace", "type", "version", "summary", "message"}`. |
+| `volvel rollback --json` | `{"workspace", "type", "version", "restoredFrom", "summary", "message"}`. `restoredFrom` is the version you asked for. |
 | `volvel runs --json` | `{"items": [...]}`: up to 20 runs, flow runs among them, newest first. A flow run's `script` field is `<flow> (flow)`. |
 | `volvel runs <run id> --json` | `{"run": {...}, "logs": [...]}`: the run, and up to 1,000 of its log lines. |
 
@@ -49,7 +49,7 @@ With `--json`, a command prints one JSON document on standard output and nothing
 | `created`, `updated`, `unchanged`, `deleted`, `renamed` | Counts of resources and tables. |
 | `changes` | One entry for each resource that changed: `change` (`created`, `updated`, `renamed`, `deleted`), `kind`, `path`, and `from` for a rename. |
 | `data` | One sentence for each change to a table's data, such as `Table cli-ideas created.` |
-| `warnings` | Each is `{path, message}`: something the workspace lacks, such as a connection that is not bound in a dev workspace. |
+| `warnings` | Each is `{path, message}`: something the workspace lacks, such as a connection that is not set up in a dev workspace. |
 | `breaking` | Each is `{path, message}`: a change that something outside Volvel calls. A promotion to production refuses these without `--confirm-breaking`. |
 | `aliasesRemoved` | Paths that no longer answer for a resource renamed away from them. |
 

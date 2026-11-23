@@ -73,7 +73,7 @@ When the tenant asks for a second person, a release waits and says "Nothing chan
 
 ### If it does not work
 
-- "The tenant's access cannot be read." and the lines under it name the file and the problem, such as `/body must NOT have additional properties (title)`: a role and a binding file have no `title`.
+- "The tenant's access cannot be read." and the lines under it name the file and the problem, such as `tenant role x (roles/x.tenant_role.yaml): …` followed by the schema line. A role and a binding file may carry a `title`, but it is set aside.
 - `own_release`, `release_stale`, `delete_not_allowed`: see [Access changes](../../../administer/reference/screens/access-changes).
 
 ## Related

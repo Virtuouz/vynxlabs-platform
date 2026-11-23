@@ -26,4 +26,4 @@ Checked by: second agent, 2026-11-23.
 - `busy` with `retry-after: 5` (statement timeout 57014) was read from `problem.ts:106`, not run: a data statement over its limit answers 422 `too_slow` and an aggregate over 5 s its own message, so the route that reaches 57014 was not found.
 - 415: not an answer of the webhook route; not found elsewhere.
 - Added: 413.
-- fault: api (`validation_failed`'s help text says the details are under `issues`; the body uses `errors`) - the page says `errors`.
+- fault fixed (fa): the help text says `errors` (`manifest/errors.ts`), confirmed in the code; the page already said `errors`.

@@ -14,7 +14,7 @@ POST /api/v1/tenants/<tenant-id>/workspaces/<workspace-id>/mcp
 
 Streamable HTTP, with no session: each request stands alone. Authenticate with `Authorization: Bearer <key>`. The service account's **Agent tools** tab shows the address and the settings (see [Service accounts](../../../administer/reference/screens/service-accounts)). A request with no key is refused with 401: "Send an API key to use this workspace's tools."
 
-To connect, the key needs `workspace:read` in the workspace, or a binding to a script or flow in it (what **Offer to an agent…** gives, with the role `agent_runner`). With a binding to single scripts or flows, the agent is offered those alone. `agent_runner` for the whole workspace, without `workspace:read`, is refused with 403 "This needs the workspace:read permission."
+To connect, the key needs `workspace:read` in the workspace, a binding to a script or flow in it (what **Offer to an agent…** gives, with the role `agent_runner`), or `run:write` or `flow_run:write` for the whole workspace, which `agent_runner` given there holds. With a binding to single scripts or flows, the agent is offered those alone. With `agent_runner` for the whole workspace, it is offered what it may start and reads nothing else of the workspace.
 
 ## Tools
 

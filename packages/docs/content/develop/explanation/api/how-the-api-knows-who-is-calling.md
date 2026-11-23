@@ -38,7 +38,7 @@ A member's session counts at the instance's own address and nowhere else. At an 
 
 ## Why a service account is turned away from some routes
 
-Some routes are about a person's own account: their tenants, their API keys, their sessions. A key of a service account is refused there with "This is only for a person signed in, not for a service account's key." A route that a program may call as well says so. Two do: `GET /api/v1/me` and the batch of approvals.
+Some routes are about a person's own account: their API keys and their sessions. A key of a service account is refused there with "This is only for a person signed in, not for a service account's key." A route that a program may call as well says so. Three do: `GET /api/v1/me`, the batch of approvals and `GET /api/v1/tenants`, which answers a key with its own tenant alone, so that a command can find it by its slug.
 
 End users and members who signed in to an app are also refused on those routes: "This is only for a member signed in to the workspace."
 

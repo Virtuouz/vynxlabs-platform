@@ -22,7 +22,7 @@ By the end a script has run in your terminal, with the connection, secret and va
    volvel run orders/count
    ```
 
-   The path is the one in `defineScript({ path: ... })`. With a path the repository does not have, the command lists the paths it has: `There is no script "nothing". This repository has: hello`. A script of the platform's own, under `core/`, is not listed.
+   The path is the one in `defineScript({ path: ... })`. With a path the repository does not have, the command lists the paths it has: `There is no script "nothing". This repository has: hello`. A script that comes with Volvel, under `core/`, is not listed.
 2. Give it input. `--input` takes JSON on the command line, or `@` and the name of a file of JSON:
 
    ```bash
@@ -80,6 +80,6 @@ To test a script without any of these, with fakes for tables and connections, se
 ## If it does not work
 
 - **`.platform/local.json is not valid JSON.`** The file has a syntax error. The message names the file.
-- **`The script did not declare the secret "X". Add it to the script's definition.`** The script asked for something its `defineScript` does not list under `connections`, `secrets` or `variables`. The platform holds a deployed script to the same list.
+- **`The script did not declare the secret "X". Add it to the script's definition.`** The script asked for something its `defineScript` does not list under `connections`, `secrets` or `variables`. A deployed script is held to the same list.
 - **`The build failed: ... must match pattern ...`.** A secret's name is letters, digits and `_`, and does not start with a digit.
 - **`Say which script to run: volvel run <script path>`.** The command was given no path.

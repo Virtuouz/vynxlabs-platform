@@ -40,7 +40,7 @@ You can keep 50 views for one list, each with a name of up to 80 characters that
 :::steps
 1. Check the box at the start of a row, or move to it with :kbd[j] and :kbd[k] and press :kbd[x] or :kbd[Space]. :kbd[⇧J] and :kbd[⇧K] check the rows as you move, and :kbd[⌘A] checks every row shown. The bar above the list says "{n} selected".
 2. Press an action in that bar. On Runs they are **Cancel** and **Run again**. A question names a few of the runs and asks you to confirm: **Cancel {n} runs?** or **Run {n} runs again?**.
-3. When every item was done, a notice says so. When some were not, the dialog **Canceling runs** says "{n} done, {m} not done" and lists those with the reason and the request ID of each. **Retry the {m} not done** (**Retry the one not done** for a single item) tries only those again. A run that had already ended, such as one that succeeded, is listed as not done with "The run already succeeded."
+3. When every item was done, a notice says so; after a cancel it also counts the runs that had already finished: "3 runs canceled, 2 left alone because they had finished." When some were not, the dialog **Canceling runs** says "{n} done, {m} not done" and lists those with the reason and the request ID of each. **Retry the {m} not done** (**Retry the one not done** for a single item) tries only those again. A cancel leaves a run that had already ended as it is: the dialog adds ", {k} left alone because they had finished" to its count and does not list that run among those not done.
 4. **Clear**, or :kbd[Esc], unchecks the rows.
 :::
 

@@ -19,5 +19,5 @@ Checked by: second agent, 2026-11-23. Source commit `87000022`.
 | Claim | Source | Checked by | Result |
 | --- | --- | --- | --- |
 | `volvel login --url <url> --token <api key>` and `volvel init [directory]`. | `packages/cli/src/commands.ts:44-71` | second agent, 2026-11-23 | holds |
-| The deploy notes "is not bound in this workspace" and "is not set in this workspace". | `kernel/execution/deploy.ts:115`, `triggers.ts`/`diagnose.ts` | second agent, 2026-11-23 | holds; quoted from the output, which carries the word "bound": fault: configure, the "bound" words remain |
-| Step 7 prints "from this build (preview…). Nothing was deployed." | `packages/cli/src/cli.ts:1170` | second agent, 2026-11-23 | holds; fault: configure, `volvel run --remote` runs the local build (the page says what the line says) |
+| The deploy notes "is not bound in this workspace" and "is not set in this workspace". | `kernel/execution/deploy.ts:115`, `triggers.ts`/`diagnose.ts` | second agent, 2026-11-23 | holds; quoted from the output, which carries the word "bound": fault fixed (fb item 10): `deploy.ts` says "is not set up in this workspace", confirmed in the code; the page quotes the new words |
+| Step 7 prints "from this build (preview…). Nothing was deployed." | `packages/cli/src/cli.ts:1170` | second agent, 2026-11-23 | holds; not a fault: `run --remote` is meant to run this build, nothing deployed (fa); the page says what the line says |

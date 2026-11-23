@@ -108,12 +108,19 @@ export function AppBuilder({
   const deployed = useLoad<{ body: InterfaceBody }>(`${root}/interfaces/${path}`);
   const { groups } = useGroupKeys(root);
   /** Someone who may not edit here reads the app as it is published; nothing is changed, saved or published. */
-  const { known, readOnly: mayNot, why } = useReadOnly(root);
+  const { known: summaryKnown, readOnly: mayNot, why } = useReadOnly(root);
+  // What the list says of it: waited for, since whether the repository manages it decides whether it can be changed.
+  const known = summaryKnown && (list.data !== undefined || list.error !== undefined);
+  const listedHere = list.data?.items.find((item) => item.path === path);
+  /** Whether the repository manages it, with no draft yet: it is looked at until the person takes it over (D35). */
+  const [tookOver, setTookOver] = useState(false);
+  const fromRepository = listedHere?.ownership === "code";
+  const repository = fromRepository && !listedHere?.draft && !tookOver;
   /** The draft removes this app: it is shown as it is published, and nothing is saved from here. */
   const [removal, setRemoval] = useState(false);
   /** Someone else saved the draft first: nothing is saved until their version is loaded. */
   const [clash, setClash] = useState(false);
-  const readOnly = mayNot || removal;
+  const readOnly = mayNot || removal || repository;
   /** The screen sizes whose hand-made layout the builder has agreed to write, until the page is left. */
   const agreed = useRef(new Set<string>());
   const [restoring, setRestoring] = useState(false);
@@ -537,6 +544,20 @@ export function AppBuilder({
           </Notice>
         ) : mayNot ? (
           <ReadOnlyLine what="Apps" why={why} />
+        ) : repository ? (
+          <Notice
+            tone="attention"
+            action={<Button onClick={() => setTookOver(true)}>Take over</Button>}
+          >
+            This app is managed in the repository, so it is shown as it is published and cannot be
+            changed here. Taking it over lets you change it here: the next publish then moves it out
+            of the repository, and changes made there no longer reach it.
+          </Notice>
+        ) : fromRepository ? (
+          <Notice tone="attention">
+            You are taking this app over from the repository. The next publish moves it out of the
+            repository, and changes made there no longer reach it.
+          </Notice>
         ) : null}
         {clash ? (
           <DraftClash

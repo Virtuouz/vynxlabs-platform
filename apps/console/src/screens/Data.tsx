@@ -2511,6 +2511,17 @@ function sourceBody({
   };
 }
 
+/** Whether a password kept for the source would reach somewhere else (the server's D10, as the form sees it). */
+function pointsElsewhere(was: SourceBinding["config"], now: Record<string, string | undefined>) {
+  if (!was) return false;
+  return (
+    was.host.toLowerCase() !== (now.host ?? "").toLowerCase() ||
+    (was.port ?? 5432) !== (now.port ? Number(now.port) : 5432) ||
+    was.user !== now.user ||
+    (was.ssl === true && now.ssl !== "yes")
+  );
+}
+
 /** Changes how a connected source is reached, from what it is now. The password stays unless one is typed. */
 function ChangeSource({
   root,
@@ -2548,8 +2559,14 @@ function ChangeSource({
           description: `How ${row.path} is reached. Leave the password empty to keep the stored one. It is dropped when the host, port or user changes or encryption is turned off: then type it again. Scripts that use it read the new details at once.`,
           fields: SOURCE_FIELDS,
           done: () => `${row.path} was changed.`,
-          submit: (values) =>
-            api.put(`${root}/data-source-bindings/${row.path}`, sourceBody(values)),
+          submit: (values) => {
+            // The stored password does not go to another address: it is asked for here, not lost in silence.
+            if (row.hasPassword && !values.password && pointsElsewhere(config, values))
+              throw new Error(
+                "The host, port, user or encryption changed, so the stored password will not be sent there. Type the password again.",
+              );
+            return api.put(`${root}/data-source-bindings/${row.path}`, sourceBody(values));
+          },
         }}
       />
     </>

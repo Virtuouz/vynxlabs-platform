@@ -5,6 +5,7 @@ import { ArrowLeft, ExternalLink, Link2, Search, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { notify } from "../ask.tsx";
 import { useBrand } from "../kit/brand.tsx";
+import { useLook } from "../theme.ts";
 import { loadFields, loadManifest, loadPage, searchHelp } from "./content.ts";
 import { PageLinkTo, useUnderlineTerms, useWorkspaceTerms } from "./glossary.tsx";
 import { closeHelp, openHelp, showPageHelp, useHelp } from "./store.ts";
@@ -67,6 +68,7 @@ export function HelpPanel({
   const [underline, setUnderline] = useUnderlineTerms();
   const manifest = useLoaded(loadManifest, "manifest");
   const [query, setQuery] = useState("");
+  const look = useLook();
   // What the kinds say of their fields, for a page that shows one with `::field`.
   const loadedFields = useLoaded(loadFields, "fields");
   const fields = loadedFields?.state === "ready" ? loadedFields.value : undefined;
@@ -114,9 +116,13 @@ export function HelpPanel({
         return `${INSIDE}${found.path}${found.anchor ? `#${found.anchor}` : ""}`;
       },
       field: (path: string) => (fields?.[path] ? { description: fields[path] as string } : null),
-      // A picture taken for this version, when one was: otherwise the page says what it shows.
-      screenshot: (name: string) =>
-        ready.screenshots?.includes(name) ? `/help/assets/screenshots/${name}.png` : null,
+      // A picture taken for this version, in the look the console has now, when there is one:
+      // otherwise the page says what it shows.
+      screenshot: (name: string) => {
+        const looks = ready.screenshotFiles?.[name];
+        const file = looks?.[look] ?? looks?.light;
+        return file ? `/help/assets/screenshots/${file}` : null;
+      },
       term: (props: Record<string, string>) => {
         const term = props.id ? ready.terms[props.id] : undefined;
         // On the page that explains it, "More about" would lead to where the reader is.
@@ -126,7 +132,7 @@ export function HelpPanel({
           : { short: term.short, href: `${INSIDE}${term.path}` };
       },
     };
-  }, [ready, shown, fields]);
+  }, [ready, shown, fields, look]);
 
   const title =
     page?.state === "ready"

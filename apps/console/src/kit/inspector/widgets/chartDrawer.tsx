@@ -29,12 +29,13 @@ import {
   ChartColumn,
   ChartLine,
   ChartPie,
+  ChartScatter,
   Grid2x2,
   List,
   Palette,
 } from "lucide-react";
 import type { ReactNode } from "react";
-import { BreakdownRow, MeasureRow } from "../measureControls.tsx";
+import { BreakdownRow, MeasureRow, MoreMeasures } from "../measureControls.tsx";
 import { heading } from "../model.ts";
 import {
   ChoiceRow,
@@ -64,6 +65,7 @@ const KINDS: { value: ChartKind; label: string; icon: typeof ChartColumn }[] = [
   { value: "line", label: "Line", icon: ChartLine },
   { value: "area", label: "Area", icon: ChartArea },
   { value: "heatmap", label: "Heatmap", icon: Grid2x2 },
+  { value: "scatter", label: "Scatter", icon: ChartScatter },
 ];
 
 /** What a type would need, in the words under its tile. */
@@ -321,6 +323,7 @@ export function ChartData({ env, data }: SectionProps) {
         note="Three questions in plain words. The chart type is suggested from the answers."
       >
         <MeasureRow env={env} input="rows" at={0} label="Measure" />
+        <MoreMeasures env={env} input="rows" label="Measure" />
         <BreakdownRow env={env} input="rows" at={0} label="For each" after={suggest} />
         {first ? (
           <BreakdownRow

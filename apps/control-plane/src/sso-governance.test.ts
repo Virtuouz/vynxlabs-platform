@@ -430,13 +430,7 @@ describe("what a person here turned off, a push does not turn on (GOV-05)", () =
     });
     const token = (await alice.post(`${provisioning(customers)}/tokens`, { name: "Dir" })).body
       .token;
-    const made = await push(
-      customers,
-      "POST",
-      "/Users",
-      pushedUser("kim@customer.example"),
-      token,
-    );
+    const made = await push(customers, "POST", "/Users", pushedUser("kim@customer.example"), token);
     expect(made.status, JSON.stringify(made.body)).toBe(201);
     const list = async () =>
       (await alice.get(`/tenants/${tenant}/end-users?limit=200`)).body.items.find(

@@ -28,7 +28,7 @@ A **Row of another table** column is found by the ID of the row it points to, or
 
 ## Alternatives with `|`
 
-`a | b` splits the box at each bar. When every part is a plain value, such as `open | done`, the filter is one test, "is one of", of up to 200 values. When a part is something else, such as `< 5 | > 100`, the filter is "any of these".
+`a | b` splits the box at each bar. When every part is a plain value that is compared whole, such as `open | done` on a **One of a list** column or `1 | 2` on a **Whole number** column, the filter is one test, "is one of", of up to 200 values. When a part is something else, such as `< 5 | > 100`, or the column is **Text** (where each part finds text that contains it) or **Several of a list**, the filter is "any of these".
 
 ## Several boxes: every or any
 

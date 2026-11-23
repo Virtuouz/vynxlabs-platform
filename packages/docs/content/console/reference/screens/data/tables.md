@@ -38,9 +38,9 @@ Two retired tables can have had one name. The list opens the one you chose by it
 | Field | What it takes |
 | --- | --- |
 | **Name** | Lowercase letters, digits and dashes. It is the table's address. |
-| **What it holds** | Optional. Plain words shown under the name, 500 characters at most. |
+| **What it holds** | Optional. Plain words shown under the name. Only the first 500 characters are kept. |
 | **First column** | The name of the first column. A table needs at least one. |
-| **It holds** | The first column's type: Text, Whole number, Number, Yes or no, Date and time, Date, JSON, ID, Row of another table, File, One of a list, Several of a list. |
+| **It holds** | The first column's type, one of the twelve in [Column types](../../column-types). |
 | **Which table** | For **Row of another table**: the table it points to. A retired table is not offered. |
 | **Values** | For **One of a list** and **Several of a list**: the values, separated by commas. |
 | **More columns** | **Add another column** adds a column with its own name, type, values or table, and **Remove**. |
@@ -62,9 +62,7 @@ The page's title is the table's name. Under it: its description, how many rows i
 
 The page fills the window. The rows are the one thing that scrolls, with the column headings pinned above them, and the page around them stays still. The **Rows** and **Definition** views both work this way, on a phone as on a desktop. The view is in the address (`?view=definition`).
 
-A table has three columns it fills in itself: `id`, `created_at` and `updated_at`. A definition cannot declare them.
-
-A retired table has no tabs. It shows a notice, "This table is retired. It left its definition, so nothing can read or write it, and its N rows are kept.", with **Bring back** (only for a table managed in the console) and **Delete for good**, and its definition below, read only. See Retired tables below.
+A retired table has no tabs. It shows a notice, "This table is retired. It left its definition, so nothing can read or write it, and its N rows are kept." (it goes on to say how the table comes back), with **Bring back** (only for a table managed in the console) and **Delete for good**, and its definition below, read only. See Retired tables below.
 
 ## Rows
 
@@ -81,36 +79,26 @@ From left to right:
 | **Columns** | A dialog to show or hide a column with its checkbox, put columns in order (drag the handle, or press the up and down arrows: **Move X up**, **Move X down**), **Lock the first column**, **Show every column** and **Done**. |
 | **Compact rows** / **Standard rows** | Switches the row height. |
 | **Rows must match** | **every filter** or **any filter**. It appears when two or more filter boxes are in use. |
-| **Saved views** | **Save this view…**, **Save over "X"**, **Rename "X"…**, **Delete "X"** and **Copy a link to this view**. A view keeps the filters, sort, columns and density. It is private to the member who saved it; its link works for anyone who may open the table. A view belongs to the table's ID, so renaming the table keeps its views. |
+| **Saved views** | **Save this view…**, **Save over “X”**, **Rename “X”…**, **Delete “X”** and **Copy a link to this view**. A view keeps the filters, sort, columns and density. It is private to the member who saved it; its link works for anyone who may open the table. A view belongs to the table's ID, so renaming the table keeps its views. |
 | **CSV** | Downloads the rows that match the filters, in the sort shown, as a file. It is disabled while a filter box cannot be read. |
 | **Add row** | Opens the **Add row** sheet. |
 
 **Lock the first column** keeps the first column in view when the grid is scrolled sideways. It is on until you turn it off.
 
-Everything that shapes the view is in the address: `sort`, `filter`, `page`, `cols`, `match`, `unlock`, `density` and `row`. A link opens the same view. A link to a row opens the row only if it is on the page shown or can be read by its ID.
+Everything that shapes the view is in the address: `sort`, `filter`, `page`, `back` (the pages before this one, for **Previous**), `cols`, `match`, `unlock`, `density` and `row`. A link opens the same view. A link to a row opens the row only if it is on the page shown or can be read by its ID.
 
 ### The grid
 
-- **Sorting.** Pressing a heading sorts by that column up, then down, then not at all. Shift with a press, or Shift with Enter, adds the column to the sort, then turns it, then takes it off; a number beside each arrow shows the order. A **JSON** column and a **Several of a list** column cannot be sorted. A **One of a list** column sorts by the spelling of its values, not by the order they are offered in.
-- **Filtering.** Each column except **JSON** has a box under its heading. What is typed is applied about 300 ms after you stop. The forms are in [Filter syntax](../../filter-syntax).
+- **Sorting.** Press a heading to sort up, then down, then not at all. Shift with a press, or Shift with Enter, adds the column to the sort; a number beside each arrow shows the order. A **One of a list** column sorts by the spelling of its values, not by the order they are offered in. [Column types](../../column-types) says which types sort.
+- **Filtering.** Each column except **JSON** has a box under its heading. The forms are in [Filter syntax](../../filter-syntax).
 - **Checking rows.** Each row has a checkbox, and the heading's box checks every row shown. A checked row belongs to the page, sort and filter it was checked on, so a delete cannot take rows that are not shown.
 - **Editing in place.** Double-click a cell, or press Enter or F2 on it. A choice cell is a select. A list, a row of another table, a date and a date and time open a small dialog with the same field the inspector has. A **Yes or no** cell toggles with Enter, F2 or a double-click; where it may be empty it goes yes, no, empty. Escape puts the cell back. `id`, `created_at`, `updated_at` and a **File** column are not edited in the grid.
 - **References.** A reference cell shows the row it points to by name, not by ID. The name is the column the table chooses under **What stands for a row**, or else a column called `name`, or `title`, or the first text column. Exports and the rows API's `expanded` use the same rule.
 - **Files.** A **File** cell shows a **Download** link.
-- **Times.** Dates and times are shown, and read when typed, in your own clock. Hovering gives the UTC moment.
+- **Times.** A **Date and time** value is shown, and read when typed, in your own clock. Hovering it gives the UTC moment. A **Date** has no time and is shown as it is stored.
 - **Column descriptions.** A column with a description shows it from an information control on its heading.
 
-Keys in the grid:
-
-| Key | Does |
-| --- | --- |
-| Arrow keys | Move between cells. |
-| Home, End | First and last cell of the row. |
-| Ctrl+Home, Ctrl+End | First and last cell of the grid. |
-| PageUp, PageDown | Move ten rows. |
-| Enter or F2 | Edits the cell. On a heading, sorts; with Shift, adds the column. On a cell that cannot be edited, opens the row. |
-| Space | Checks the row. |
-| Escape | Cancels an edit. |
+The **Keys** popover lists the main keys. Beyond them: Home and End go to the first and last cell of the row (with Ctrl, of the grid), PageUp and PageDown move ten rows, Space checks the row, and Enter on a cell that cannot be edited opens the row.
 
 ### Footer
 
@@ -126,8 +114,8 @@ Choosing a row opens the **Row** inspector beside the grid, with the row's ID ab
 
 Two fields have more to them:
 
-- **A row of another table** is filled by typing. The picker asks the server for rows whose name contains what you typed, so it finds a row however far down the table it is. It offers the first 50 and says "Type to find more". It waits 250 ms after you stop typing.
-- **A file** shows a **Download** link, or a dash when there is none, with **Replace** and, when there is a file, **Remove**. Each asks first. A replaced or removed file is not deleted at once: it stays in the row's history for as long as the audit log is kept, 400 days unless [retention](../../../../administer/reference/screens/retention) says otherwise, and is then removed. A file a worker script replaces is kept the same way. The console has no screen that shows a row's history or puts a file back.
+- **A row of another table** is filled by typing. The picker asks the server for rows whose name contains what you typed, so it finds a row however far down the table it is. It offers the first 50. When the table has more, the field's hint reads "A row of X. Type to find more." The picker waits 250 ms after you stop typing.
+- **A file** shows a **Download** link, or a dash when there is none, with **Replace** and, when there is a file, **Remove**. **Replace** is shown when the row has no file too, and then it adds one; the **Add row** sheet words the same button **Choose a file**. Each asks first. A replaced or removed file is not deleted at once: it stays in the row's history for as long as the audit log is kept, 400 days unless [retention](../../../../administer/reference/screens/retention) says otherwise, and is then removed. A file a worker script replaces is kept the same way. The console has no screen that shows a row's history or puts a file back.
 
 ### The Add row sheet
 
@@ -149,13 +137,13 @@ Two fields have more to them:
 
 The **Definition** view is where a table made in the console is changed. It is off for a table managed in the repository, which shows the notice quoted above, and for a person without `resource:write`, who sees a line that says what is needed. Everything else on the view is shown, read only.
 
-Every change saves as you make it, and takes effect at once. It is a change to the table's definition, so what a change would lose is refused, with the reason on the dialog.
+Every change saves as you make it, and takes effect at once, except **Rename table**, which is a draft. It is a change to the table's definition, so what a change would lose is refused, with the reason on the dialog.
 
 At the top of an editable definition:
 
 | Control | What it does |
 | --- | --- |
-| **Rename table** | Opens "Name and path of X" with the **Path** and **Title**. The table keeps its history, data and what is bound to it, and the old path keeps answering for 90 days. It is saved as a draft. |
+| **Rename table** | Opens "Name and path of X" with the **Path** and **Title**. The table keeps its history, data and what is bound to it, and the old path keeps answering for 90 days. Its button is **Save as a draft**: nothing changes until the draft is deployed. |
 | **Describe the table** (**Describe the table again** when it has a description) | Sets the description, 500 characters at most. Empty clears it. |
 | Undo, Redo | Take back or redo a change one at a time. Keys: Mod+Z, and Shift+Mod+Z or Ctrl+Y, outside a text field. They take back every change made since the page was opened, including a saved change to who sees rows. If someone else changed the table after you opened it, the page says so and undo starts again from what is saved. |
 
@@ -185,7 +173,7 @@ A table with retired columns shows **Retired columns** with **Column**, **Held**
 
 ### What stands for a row
 
-A select, **The column that stands for a row**, with **None: the row's ID** or any column except a **JSON**, **File** or **Several of a list** one. Where another table points to a row of this one, this column is shown in place of its ID.
+A select, **The column that stands for a row**, with **None: the row's ID** or any column except a **JSON**, **File** or **Several of a list** one. Where another table points to a row of this one, this column is shown in place of its ID. Without `resource:write` the view names the column, or says the row's ID.
 
 ### Indexes
 
@@ -221,7 +209,7 @@ A table or column that leaves its definition is retired, by **Retire**, or by a 
 
 | Action | What it does | Needs |
 | --- | --- | --- |
-| **Bring back** | Saves the table's definition again from what the catalog holds: columns, rules, defaults, references, values, who sees rows, what stands for a row and indexes. The table's description is not held and comes back empty; retired columns stay retired. A reference whose rows hold IDs no longer in the table is refused, with the column, the table and the number of rows. Only a table managed in the console; a repository table says "Deploying a definition with this name brings it back." | `resource:write` |
+| **Bring back** | Saves the table's definition again from what the catalog holds: columns, rules, defaults, references, values, who sees rows, what stands for a row and indexes. The descriptions of the table and of its columns are not held and come back empty; retired columns stay retired. A reference whose rows hold IDs no longer in the table is refused, with the column, the table and the number of rows. Only a table managed in the console; a repository table says "Deploying a definition with this name brings it back." | `resource:write` |
 | **Delete for good** | Asks you to type the table's name. It deletes the table and all its rows, and is audited as `table.purged`. It is refused while another table points to it. | `table:write` |
 
 A retired enum value stays on the rows that hold it, can still be filtered for, and is not offered.
@@ -242,7 +230,7 @@ The screen has no column masks, no computed columns, no validation rules for a r
 | **Delete for good** (a table or a column) | `table:write` |
 | Upload a file, delete a file | `file:write` (and `data_all:write` to delete) |
 
-See the [permissions reference](../../../../administer/reference/permissions) for what each permission is. A workspace admin holds all of these. A developer holds `resource:write`, `data:write` and `data_all:write`, but not `table:write`. A viewer reads, and cannot write. A button a person may not use is disabled with the reason as its tooltip, and the view says so in a line.
+See the [permissions reference](../../../../administer/reference/permissions) for what each permission is. A button a person may not use is disabled with the reason as its tooltip, and the view says so in a line.
 
 ## Related
 

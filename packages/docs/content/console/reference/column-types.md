@@ -70,7 +70,7 @@ In the grid, a cell is edited by double-clicking it, or by pressing Enter or F2.
 | **Row of another table** | A small dialog with the picker. | The picker: type to find a row. It offers the first 50. |
 | **One of a list** | A select of the column's values. | A select. |
 | **Several of a list** | A small dialog with a multi-select. | A multi-select. |
-| **File** | Not edited. The cell shows **Download**. | **Choose a file** when adding. In the inspector, **Replace** and **Remove**, each asking first. |
+| **File** | Not edited. The cell shows **Download**. | **Choose a file** when adding. In the inspector, **Replace** (shown when the row has no file too, where it adds one) and, when there is a file, **Remove**, each asking first. |
 
 `id`, `created_at` and `updated_at` are not edited anywhere.
 

@@ -40,6 +40,7 @@ import {
   type Viewport,
 } from "@xyflow/react";
 import { ago } from "../kit/format.ts";
+import { useGroupKeys } from "../kit/inspector/groupChoices.tsx";
 import { glide } from "../kit/motion.ts";
 import { listenChoices } from "../kit/platformEvents.ts";
 import "@xyflow/react/dist/style.css";
@@ -522,6 +523,8 @@ export function problemsAt(
   edges: GraphEdge[],
   /** The scripts that are nodes with a form of their own, by path. */
   specs: ReadonlyMap<string, PickableNode> = new Map(),
+  /** The keys of the tenant's groups of members, once read: an approval's group is checked against them. */
+  groups?: ReadonlySet<string>,
 ): Problem[] {
   const problems: Problem[] = [];
   const ids = Object.keys(nodes);
@@ -693,6 +696,17 @@ export function problemsAt(
     }
     // A field a step needs, left empty: the draft keeps it, and it is said here, and at deploy.
     const empty = (value: unknown) => typeof value !== "string" || value.trim() === "";
+    if (node.type === "approval" && groups) {
+      for (const group of (node.approvers as { groups?: string[] } | undefined)?.groups ?? []) {
+        if (!groups.has(group)) {
+          problems.push({
+            message: `${id} asks the group ${group}, which this tenant does not have. Choose another group, or ask a tenant admin to make it.`,
+            node: id,
+            field: "approvers",
+          });
+        }
+      }
+    }
     if (node.type === "approval" && empty(node.title))
       problems.push({ message: `${id} needs a title for the approval.`, node: id, field: "title" });
     if (node.type === "fail" && empty(node.message))
@@ -1019,12 +1033,22 @@ export function FlowEditor({
     [nodes],
   );
   const flowEdges = useMemo(() => edges.map(toFlowEdge), [edges]);
+  // What was typed as a manual start's schema and is not JSON yet, by step: kept when another step is chosen.
+  const unsavedSchemas = useRef(new Map<string, string>());
+  const keyed = useGroupKeys(root);
+  const memberGroups = useMemo(
+    () =>
+      keyed.loaded
+        ? new Set(keyed.groups.filter((one) => one.kind === "member").map((one) => one.key))
+        : undefined,
+    [keyed.loaded, keyed.groups],
+  );
   const found = useMemo(() => {
-    const own = problemsAt(flowNodes, flowEdges, specs);
+    const own = problemsAt(flowNodes, flowEdges, specs, memberGroups);
     // What a deploy refuses is told here too, in the same words, so the two lists agree.
     const refused = manifestProblems(flowNodes, flowEdges, own);
     return [...own, ...refused];
-  }, [flowNodes, flowEdges, specs]);
+  }, [flowNodes, flowEdges, specs, memberGroups]);
   const chosen = nodes.find((node) => node.id === selected);
 
   const add = (entry: { base: string; make: () => FlowNode }) => {
@@ -1848,6 +1872,13 @@ export function FlowEditor({
                       {(node.trigger as { type: string }).type === "manual" ? (
                         <InputSchemaField
                           value={(node.trigger as { input?: Record<string, unknown> }).input}
+                          kept={{
+                            get: () => unsavedSchemas.current.get(chosen.id),
+                            set: (text) =>
+                              text === undefined
+                                ? unsavedSchemas.current.delete(chosen.id)
+                                : unsavedSchemas.current.set(chosen.id, text),
+                          }}
                           onChange={(input) => {
                             const { input: _was, ...rest } = node.trigger as { input?: unknown };
                             update(chosen.id, {

@@ -6,7 +6,7 @@ import {
   SelectField,
   TextAreaField,
 } from "@volvel/ui";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLoad } from "../api.ts";
 
 /**
@@ -387,6 +387,18 @@ export function GrantsFields({
 const textOf = (schema: Record<string, unknown> | undefined) =>
   schema === undefined ? "" : JSON.stringify(schema, null, 2);
 
+/** What is wrong with text meant as a schema, or nothing when it is a JSON object. */
+function problemOf(text: string): string | undefined {
+  try {
+    const parsed: unknown = JSON.parse(text);
+    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed))
+      return 'A schema is a JSON object, such as { "type": "object" }.';
+    return undefined;
+  } catch (error) {
+    return `This is not JSON yet, so the schema is not saved: ${error instanceof Error ? error.message : "it does not parse"}.`;
+  }
+}
+
 /**
  * The JSON Schema the input of a manual start must match. It draws the Start form,
  * and the tool an agent is given. What is typed stays as typed; it is saved once it is
@@ -395,14 +407,29 @@ const textOf = (schema: Record<string, unknown> | undefined) =>
 export function InputSchemaField({
   value,
   onChange,
+  kept,
 }: {
   value: Record<string, unknown> | undefined;
   onChange: (schema: Record<string, unknown> | undefined) => void;
+  /**
+   * Where the text that is not a schema yet is kept while another step is open, by the host
+   * (this field is drawn again when its step is chosen again). Nothing is kept for text that is saved.
+   */
+  kept?: { get: () => string | undefined; set: (text: string | undefined) => void };
 }) {
-  const [text, setText] = useState(textOf(value));
-  const [problem, setProblem] = useState<string>();
-  // A schema changed from elsewhere (undo) is the one shown.
+  const [text, setText] = useState(kept?.get() ?? textOf(value));
+  const [problem, setProblem] = useState<string | undefined>(() => {
+    const unsaved = kept?.get();
+    return unsaved === undefined ? undefined : problemOf(unsaved);
+  });
+  // A schema changed from elsewhere (undo) is the one shown. Not when drawn: then what was kept is.
+  const drawn = useRef(false);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `kept` is the host's, and changes each draw
   useEffect(() => {
+    if (!drawn.current) {
+      drawn.current = true;
+      return;
+    }
     setText((now) => {
       try {
         const same =
@@ -414,29 +441,17 @@ export function InputSchemaField({
         // What is typed is not JSON yet, and the saved schema is the older one.
       }
       setProblem(undefined);
+      kept?.set(undefined);
       return textOf(value);
     });
   }, [value]);
   const read = (next: string) => {
     setText(next);
-    if (next.trim() === "") {
-      setProblem(undefined);
-      onChange(undefined);
-      return;
-    }
-    try {
-      const parsed: unknown = JSON.parse(next);
-      if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
-        setProblem('A schema is a JSON object, such as { "type": "object" }.');
-        return;
-      }
-      setProblem(undefined);
-      onChange(parsed as Record<string, unknown>);
-    } catch (error) {
-      setProblem(
-        `This is not JSON yet, so the schema is not saved: ${error instanceof Error ? error.message : "it does not parse"}.`,
-      );
-    }
+    const wrong = next.trim() === "" ? undefined : problemOf(next);
+    setProblem(wrong);
+    kept?.set(wrong === undefined ? undefined : next);
+    if (wrong !== undefined) return;
+    onChange(next.trim() === "" ? undefined : (JSON.parse(next) as Record<string, unknown>));
   };
   return (
     <TextAreaField

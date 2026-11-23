@@ -112,13 +112,34 @@ const bindingIdentity = (body: Record<string, unknown>): string => {
   const principal = body.principal as { type: string; key: string };
   return `${body.role}\n${principal.type}\n${principal.key}\n${body.workspace ?? ""}`;
 };
-const bindingKey = (body: Record<string, unknown>): string => {
+const bindingBase = (body: Record<string, unknown>): string => {
   const principal = body.principal as { type: string; key: string };
   return [principal.key, body.role as string, ...(body.workspace ? [body.workspace as string] : [])]
     .join("-")
-    .replaceAll("_", "-")
-    .slice(0, 63);
+    .replaceAll("_", "-");
 };
+
+/**
+ * Gives each binding a key nobody else has. A key is only a name for a file, and is read from
+ * what the binding gives to whom: where two would be the same name, or the name was cut short,
+ * a short hash of that content is added, so that the same binding has the same key every time.
+ */
+export function withUniqueBindingKeys(resources: readonly TenantResource[]): TenantResource[] {
+  const taken = new Map<string, number>();
+  for (const one of resources) {
+    if (one.kind !== "tenant_binding") continue;
+    const base = bindingBase(one.body).slice(0, 63);
+    taken.set(base, (taken.get(base) ?? 0) + 1);
+  }
+  return resources.map((one) => {
+    if (one.kind !== "tenant_binding") return one;
+    const full = bindingBase(one.body);
+    const base = full.slice(0, 63);
+    if (full.length <= 63 && taken.get(base) === 1) return { ...one, key: base };
+    const short = createHash("sha256").update(bindingIdentity(one.body)).digest("hex").slice(0, 8);
+    return { ...one, key: `${full.slice(0, 54)}-${short}` };
+  });
+}
 const identity = (resource: TenantResource): string =>
   resource.kind === "tenant_binding"
     ? `tenant_binding ${bindingIdentity(resource.body)}`
@@ -217,9 +238,9 @@ export async function currentAccess(db: Db | Trx, tenantId: string): Promise<Ten
       principal: { type: row.type, key: row.key },
       ...(row.workspace ? { workspace: row.workspace } : {}),
     };
-    resources.push({ kind: "tenant_binding", key: bindingKey(body), body });
+    resources.push({ kind: "tenant_binding", key: "", body });
   }
-  return resources.sort(tenantOrder);
+  return withUniqueBindingKeys(resources).sort(tenantOrder);
 }
 
 /** What has to change for the tenant's access to be what is asked for. */
@@ -1102,13 +1123,16 @@ export async function rollbackAsks(db: Db | Trx, tenantId: string, releaseId: st
     throw conflict("Only a release that applied can be gone back to.");
   }
   const current = await currentAccess(db, tenantId);
-  const kept = new Set(release.snapshot.map((one) => `${one.kind}/${one.key}`));
-  const removed = current.filter((one) => !kept.has(`${one.kind}/${one.key}`));
+  // A snapshot made before bindings had keys of their own may hold two under one name: it is read
+  // by what each binding gives, and given keys of today.
+  const snapshot = withUniqueBindingKeys(release.snapshot);
+  const kept = new Set(snapshot.map(identity));
+  const removed = current.filter((one) => !kept.has(identity(one)));
   return {
     /** What going back removes, each as a name a person reads. */
     removes: removed.map((one) => ({ kind: one.kind, key: one.key, label: labelOf(one) })),
     number: release.number,
-    asks: release.snapshot.map((resource): AccessAsk => ({ op: "put", resource })),
+    asks: snapshot.map((resource): AccessAsk => ({ op: "put", resource })),
     // Going back removes what was made since. That is what going back means, so each is allowed.
     allowDelete: removed.map((one) => `${one.kind}/${one.key}`),
   };

@@ -122,6 +122,41 @@ describe("a binding to anyone holds only what apps use (ACC-01)", () => {
   });
 });
 
+describe("bindings have keys of their own (ACC-05, ACC-06)", () => {
+  test("removing one binding does not remove another that would share its name, and a pull is whole", async () => {
+    const a = await tenantWith("keys2", ["kim"]);
+    const kim = a.clients.kim as Client;
+    const group = await kim.post(`/tenants/${a.id}/groups`, { name: "Tech" });
+    const account = await kim.post(`/tenants/${a.id}/service-accounts`, { name: "Tech" });
+    expect(group.status, JSON.stringify(group.body)).toBe(201);
+    expect(account.status, JSON.stringify(account.body)).toBe(201);
+    const give = async (principalType: string, principalId: string) =>
+      (
+        await kim.post(`/tenants/${a.id}/bindings`, {
+          principalType,
+          principalId,
+          roleId: roles.viewer,
+        })
+      ).body.id as string;
+    await give("group", group.body.id);
+    const accountBinding = await give("service_account", account.body.id);
+
+    // What a pull writes: every binding has a name of its own.
+    const resources = (await kim.get(`/tenants/${a.id}/access`)).body.resources as Any[];
+    const bindings = resources.filter((one) => one.kind === "tenant_binding");
+    expect(new Set(bindings.map((one) => one.key)).size).toBe(bindings.length);
+    // Planning the set exactly as pulled changes nothing.
+    const plan = await kim.post(`/tenants/${a.id}/access/plan`, { resources });
+    expect(plan.status, JSON.stringify(plan.body)).toBe(200);
+    expect(plan.body.summary).toMatchObject({ created: 0, updated: 0, deleted: 0 });
+
+    expect((await kim.delete(`/tenants/${a.id}/bindings/${accountBinding}`)).status).toBe(204);
+    const left = (await kim.get(`/tenants/${a.id}/access`)).body.resources as Any[];
+    const kept = left.filter((one) => one.kind === "tenant_binding");
+    expect(kept.map((one) => one.body.principal.type)).toEqual(["group"]);
+  });
+});
+
 describe("an operator's grant ends with being an operator (ACC-02, INS-03)", () => {
   test("removing the binding ends the open grant, and disabling the account does too", async () => {
     const a = await tenantWith("grants", ["ann"]);

@@ -2,7 +2,8 @@ import { type Kysely, newId, openExternalPostgres, sql } from "@volvel/db";
 import type { Db, Trx } from "../audit.js";
 import { checkHost, guardedLookup } from "../egress.js";
 import { badRequest, HttpError, notFound } from "../errors.js";
-import { decryptFor, encryptFor } from "../execution/bindings.js";
+import { addressChanged } from "../execution/bindings.js";
+import { openRow, sealRow } from "../execution/sealed.js";
 import type { Kernel } from "../kernel.js";
 import type { ColumnMeta, RowTarget } from "./rows.js";
 
@@ -33,9 +34,6 @@ export const sourceConfigSchema = {
   additionalProperties: false,
 };
 
-/** The name a data source's password is encrypted under. */
-export const credentialName = (path: string) => `data-source:${path}`;
-
 /** Open pools, one per binding as it currently stands. */
 const pools = new Map<string, { stamp: string; db: AnyDb }>();
 
@@ -48,35 +46,40 @@ export async function bindSource(
 ) {
   const existing = await trx
     .selectFrom("data_source_binding")
-    .select(["id", "credential"])
+    .select(["id", "credential", "config"])
     .where("workspace_id", "=", id.workspaceId)
     .where("path", "=", id.path)
     .executeTakeFirst();
+  const rowId = existing?.id ?? newId();
+  const row = { tenantId: id.tenantId, workspaceId: id.workspaceId, rowId, path: id.path };
+  // Another host or port keeps no password that was given for the old one.
+  const dropped =
+    password === undefined &&
+    existing?.credential != null &&
+    addressChanged(existing.config, config);
+  if (password === undefined && existing?.credential && !dropped) {
+    await openRow(kernel, trx, "data-source", row, existing.credential, "password");
+  }
   const credential =
     password === undefined
-      ? (existing?.credential ?? null)
+      ? dropped
+        ? null
+        : (existing?.credential ?? null)
       : password === null
         ? null
-        : await encryptFor(
-            kernel,
-            trx,
-            id.tenantId,
-            id.workspaceId,
-            credentialName(id.path),
-            password,
-          );
+        : await sealRow(kernel, trx, "data-source", row, password);
   if (existing) {
     await trx
       .updateTable("data_source_binding")
       .set({ config: JSON.stringify(config), credential, updated_at: new Date() })
       .where("id", "=", existing.id)
       .execute();
-    return { created: false };
+    return { created: false, credentialDropped: dropped };
   }
   await trx
     .insertInto("data_source_binding")
     .values({
-      id: newId(),
+      id: rowId,
       tenant_id: id.tenantId,
       workspace_id: id.workspaceId,
       path: id.path,
@@ -85,7 +88,19 @@ export async function bindSource(
       updated_at: new Date(),
     })
     .execute();
-  return { created: true };
+  return { created: true, credentialDropped: false };
+}
+
+/** The password a data source holds, opened. For copying it elsewhere. */
+export async function readSourcePassword(
+  kernel: Kernel,
+  db: Db | Trx,
+  id: { tenantId: string; workspaceId: string; path: string },
+  row: { id: string; credential: Buffer | null },
+) {
+  return row.credential
+    ? await openRow(kernel, db, "data-source", { ...id, rowId: row.id }, row.credential, "password")
+    : null;
 }
 
 /** A connection to a bound source. Pools are reused until the binding changes. */
@@ -110,7 +125,14 @@ export async function openSource(
   if (open?.stamp === stamp) return { db: open.db, schema: config.schema ?? "public" };
   if (open) void open.db.destroy();
   const password = binding.credential
-    ? await decryptFor(kernel, db, tenantId, workspaceId, credentialName(path), binding.credential)
+    ? await openRow(
+        kernel,
+        db,
+        "data-source",
+        { tenantId, workspaceId, rowId: binding.id, path },
+        binding.credential,
+        "password",
+      )
     : undefined;
   // A host written as an address is never looked up, so it is checked here too.
   await checkHost(config.host);

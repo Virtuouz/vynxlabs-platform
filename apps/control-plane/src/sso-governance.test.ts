@@ -258,3 +258,75 @@ describe("who a provider may make powerful (GOV-01, GOV-02, INS-05)", () => {
     expect((await sam.put(url, { items: [] })).status).toBe(200);
   });
 });
+
+describe("pushed groups (GOV-03)", () => {
+  test("a pushed group does not take over a group somebody made by hand", async () => {
+    const admins = (await alice.post(`/tenants/${tenant}/groups`, { name: "Administrators" })).body
+      .id;
+    expect(
+      (
+        await alice.post(`/tenants/${tenant}/bindings`, {
+          principalType: "group",
+          principalId: admins,
+          roleId: roles.tenant_admin,
+        })
+      ).status,
+    ).toBe(201);
+    const settings = await alice.put(provisioning(staff), {
+      subjectFrom: null,
+      groups: "scim",
+      createGroups: true,
+    });
+    expect(settings.status, JSON.stringify(settings.body)).toBe(200);
+    const dan = await push(staff, "POST", "/Users", pushedUser("dan@acme.example"));
+    expect(dan.status, JSON.stringify(dan.body)).toBe(201);
+    const pushed = await push(staff, "POST", "/Groups", {
+      schemas: [GROUP],
+      displayName: "Administrators",
+      members: [{ value: dan.body.id }],
+    });
+    expect(pushed.status, JSON.stringify(pushed.body)).toBe(201);
+
+    const inGroup = await t.db
+      .selectFrom("group_member")
+      .select("member_id")
+      .where("group_id", "=", admins)
+      .execute();
+    expect(inGroup).toEqual([]);
+    expect(
+      await t.db
+        .selectFrom("identity_group_map")
+        .select("id")
+        .where("provider_id", "=", staff)
+        .where("claim_value", "=", "Administrators")
+        .execute(),
+    ).toEqual([]);
+    const seen = (await alice.get(`${provisioning(staff)}/pushed`)).body.refusals;
+    expect(seen).toMatchObject([
+      { resource: "Groups", status: 409, reason: expect.stringContaining("made by hand") },
+    ]);
+
+    // A group the provider made itself is still its own to fill.
+    await push(staff, "POST", "/Groups", {
+      schemas: [GROUP],
+      displayName: "Engineers",
+      members: [{ value: dan.body.id }],
+    });
+    const engineers = await t.db
+      .selectFrom("principal_group")
+      .select(["id", "managed_by"])
+      .where("tenant_id", "=", tenant)
+      .where("name", "=", "Engineers")
+      .executeTakeFirstOrThrow();
+    expect(engineers.managed_by).toBe("provider");
+    expect(
+      (
+        await t.db
+          .selectFrom("group_member")
+          .select("member_id")
+          .where("group_id", "=", engineers.id)
+          .execute()
+      ).length,
+    ).toBe(1);
+  });
+});

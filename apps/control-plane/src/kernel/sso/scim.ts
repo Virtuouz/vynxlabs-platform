@@ -939,6 +939,30 @@ export const groupSlug = (name: string) =>
     .replace(/^[^a-z0-9]+|-+$/g, "")
     .slice(0, 63);
 
+async function refuseTakeover(trx: Trx, provider: Provider, displayName: string, name: string) {
+  const reason = `The group ${displayName} was not mapped: a group named ${name} was made by hand here, and a pushed group only fills groups the provider made. Map it in the console, or rename one of them.`;
+  const latest = await trx
+    .selectFrom("scim_refusal")
+    .select("reason")
+    .where("provider_id", "=", provider.id)
+    .orderBy("occurred_at", "desc")
+    .limit(1)
+    .executeTakeFirst();
+  if (latest?.reason === reason) return;
+  await trx
+    .insertInto("scim_refusal")
+    .values({
+      id: newId(),
+      provider_id: provider.id,
+      tenant_id: provider.tenantId,
+      method: "PUSH",
+      resource: "Groups",
+      status: 409,
+      reason,
+    })
+    .execute();
+}
+
 /**
  * Makes sure a pushed group has a group here to stand for, when the provider
  * says pushed groups make their own. A group somebody already mapped is left
@@ -967,10 +991,17 @@ async function ensureLocalGroup(
   const table = forMembers ? "principal_group" : "end_user_group";
   let group = await trx
     .selectFrom(table)
-    .select("id")
+    .select(["id", "managed_by"])
     .where("tenant_id", "=", tenantId)
     .where("name", "=", name)
     .executeTakeFirst();
+  // Only a group the provider made is the provider's to fill. One made by hand, or released
+  // with the tenant's access, may hold bindings: a pushed group of the same name must not
+  // put people in it. The push is kept and the refusal is shown with the others.
+  if (group && group.managed_by !== "provider") {
+    await refuseTakeover(trx, provider, displayName, name);
+    return false;
+  }
   if (!group) {
     group = { id: newId() };
     if (forMembers) {

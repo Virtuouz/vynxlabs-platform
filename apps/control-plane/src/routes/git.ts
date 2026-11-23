@@ -637,7 +637,8 @@ export function gitRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         return {
           items: rows.map((row) => ({
             id: row.id,
-            kind: row.kind,
+            // A commit to a release branch is a push in the table, and says which branch in its detail.
+            kind: typeof row.detail?.release === "string" ? "release" : row.kind,
             status: row.status,
             commit: row.commit_id,
             message: row.message,

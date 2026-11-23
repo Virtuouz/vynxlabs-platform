@@ -838,6 +838,81 @@ const changedHere =
       ? sides.said[path] !== link.synced_said[path]
       : sides.mine[path] !== link.synced_files[path];
 
+/**
+ * The files of the last sync as they are named under the folder in force now. When the
+ * repository's `volvel.yaml` moves the folder, a file that only moved with it is the same
+ * file, and is not changed on the branch.
+ */
+function rebased<
+  L extends {
+    synced_files: Record<string, string>;
+    synced_said: Record<string, string> | null;
+    synced_folder: string | null;
+  },
+>(link: L, folder: string, theirs: Record<string, string>): L {
+  const was = link.synced_folder;
+  if (!was || was === folder) return link;
+  // Only a file that is gone from the old folder and is in the new one has moved: a file the
+  // branch still keeps where it was is not one.
+  const moved = (path: string) =>
+    path.startsWith(`${was}/`) &&
+    theirs[path] === undefined &&
+    theirs[`${folder}/${path.slice(was.length + 1)}`] !== undefined;
+  const move = (files: Record<string, string>) =>
+    Object.fromEntries(
+      Object.entries(files).map(([path, value]) => [
+        moved(path) ? `${folder}/${path.slice(was.length + 1)}` : path,
+        value,
+      ]),
+    );
+  return {
+    ...link,
+    synced_files: move(link.synced_files),
+    synced_said: link.synced_said && move(link.synced_said),
+  };
+}
+
+/**
+ * Of a plain push, a file an earlier push with drafts put on the branch stays there while its
+ * draft is saved: it is not a change, and not the workspace removing it. What each such file
+ * is as the drafts say it, by path.
+ */
+async function draftedFiles(
+  kernel: Kernel,
+  db: Db,
+  workspace: WorkspaceRef,
+  repository: Repository,
+  sides: Sides,
+) {
+  const kept = new Map<string, { files: ResourceFile[]; said: string }>();
+  const pending = await db
+    .selectFrom("resource_draft")
+    .select("path")
+    .where("workspace_id", "=", workspace.id)
+    .limit(1)
+    .executeTakeFirst();
+  if (!pending) return kept;
+  const drafted = await sidesOf(await draftManifests(kernel, db, workspace), repository);
+  for (const [path, hash] of Object.entries(drafted.mine)) {
+    if (sides.theirs[path] === hash && sides.mine[path] !== hash) {
+      kept.set(path, {
+        files: drafted.mineFiles.filter((file) => file.path === path),
+        said: drafted.said[path] as string,
+      });
+    }
+  }
+  return kept;
+}
+
+/** The workspace's side with the files of saved drafts that are on the branch counted as its own. */
+function keepDrafted(sides: Sides, kept: Awaited<ReturnType<typeof draftedFiles>>) {
+  for (const [path, one] of kept) {
+    sides.mine[path] = sides.theirs[path] as string;
+    sides.mineFiles = [...sides.mineFiles, ...one.files];
+    sides.said[path] = one.said;
+  }
+}
+
 async function sidesOf(
   manifests: readonly BundleManifest[],
   repository: Repository,
@@ -963,28 +1038,9 @@ export async function push(
       const { theirs, mine: local } = sides;
       // A file an earlier push with drafts put on the branch stays there while its draft is
       // saved: a plain push leaves it as it is, and does not take the work off the branch.
-      if (!options.drafts) {
-        const pending = await db
-          .selectFrom("resource_draft")
-          .select("path")
-          .where("workspace_id", "=", workspace.id)
-          .limit(1)
-          .executeTakeFirst();
-        if (pending) {
-          const drafted = await sidesOf(await draftManifests(kernel, db, workspace), repository);
-          for (const [path, hash] of Object.entries(drafted.mine)) {
-            if (theirs[path] === hash && local[path] !== hash) {
-              local[path] = hash;
-              sides.mineFiles = [
-                ...sides.mineFiles,
-                ...drafted.mineFiles.filter((file) => file.path === path),
-              ];
-              sides.said[path] = drafted.said[path] as string;
-            }
-          }
-        }
-      }
-      const base = link.synced_files;
+      if (!options.drafts)
+        keepDrafted(sides, await draftedFiles(kernel, db, workspace, repository, sides));
+      const base = rebased(link, repository.folder, theirs).synced_files;
       const moved = [...new Set([...Object.keys(theirs), ...Object.keys(base)])]
         .filter((path) => theirs[path] !== base[path] && theirs[path] !== local[path])
         .sort();
@@ -1023,7 +1079,7 @@ export async function push(
       );
       const state = left.length > 0 ? ("behind" as const) : ("synced" as const);
       if (changes.length === 0 && tip.exists) {
-        await settle(db, workspace, tip.commit, local, sides.said);
+        await settle(db, workspace, tip.commit, local, sides.said, repository.folder);
         await record(db, workspace, actor, { kind: "push", status: "nothing", commit: tip.commit });
         return {
           status: "nothing" as const,
@@ -1075,7 +1131,7 @@ export async function push(
       } catch (error) {
         return failed(db, workspace, actor, "push", remoteProblem(error));
       }
-      await settle(db, workspace, commit, local, sides.said, state);
+      await settle(db, workspace, commit, local, sides.said, repository.folder, state);
       await record(db, workspace, actor, {
         kind: "push",
         status: "done",
@@ -1100,6 +1156,7 @@ async function settle(
   commit: string,
   files: Record<string, string>,
   said: Record<string, string>,
+  folder: string,
   state: "synced" | "behind" = "synced",
 ) {
   await db
@@ -1108,6 +1165,7 @@ async function settle(
       synced_commit: commit,
       synced_files: JSON.stringify(files),
       synced_said: JSON.stringify(said),
+      synced_folder: folder,
       state,
       last_error: null,
       updated_at: new Date(),
@@ -1214,7 +1272,8 @@ export async function pull(
       const wrong = configProblem(repository);
       if (wrong) return stopped(wrong);
       const { theirs, mine, remoteFiles, mineFiles, resourceOf } = sides;
-      const base = link.synced_files;
+      const synced = rebased(link, repository.folder, theirs);
+      const base = synced.synced_files;
 
       // Compare resource by resource: a script is its YAML and its source together, and a
       // resource renamed on one side is its old file and its new one.
@@ -1241,7 +1300,7 @@ export async function pull(
       for (const resource of [...groups.keys()].sort()) {
         if (!differs(theirs, mine, resource)) continue;
         const theyChanged = differs(theirs, base, resource);
-        const iChanged = (groups.get(resource) ?? []).some(changedHere(sides, link));
+        const iChanged = (groups.get(resource) ?? []).some(changedHere(sides, synced));
         if (theyChanged && !iChanged) take.push(resource);
         else if (theyChanged && iChanged) {
           const resolution = chosen(resource);
@@ -1335,18 +1394,24 @@ export async function pull(
       }
       // For a resource kept as "mine", the branch's version is now the base, so the next push replaces it.
       const after = await checksums(merged);
-      const ahead = Object.keys({ ...after, ...theirs }).some(
-        (path) => after[path] !== theirs[path],
+      // The files of saved drafts that an earlier push put on the branch are left there, as a push leaves them.
+      const drafted = await draftedFiles(kernel, db, workspace, repository, sides);
+      const apart = Object.keys({ ...after, ...theirs }).filter(
+        (path) => after[path] !== theirs[path] && !drafted.has(path),
       );
+      const ahead = apart.length > 0;
+      // What the workspace says now, read as the next comparison will read it. A file it still
+      // says differently from the branch reads as changed here, which a pull must not hide.
+      const said = (await sidesOf(await activeConsoleManaged(kernel, db, workspace.id), repository))
+        .said;
+      for (const path of apart) said[path] = "";
       await db
         .updateTable("workspace_git")
         .set({
           synced_commit: tip.commit,
           synced_files: JSON.stringify(theirs),
-          // What the workspace says now, read as the next comparison will read it.
-          synced_said: JSON.stringify(
-            (await sidesOf(await activeConsoleManaged(kernel, db, workspace.id), repository)).said,
-          ),
+          synced_said: JSON.stringify(said),
+          synced_folder: repository.folder,
           state: ahead ? "ahead" : "synced",
           last_error: null,
           updated_at: new Date(),
@@ -1525,14 +1590,18 @@ export async function compareWithBranch(
         : await activeConsoleManaged(kernel, db, workspace.id),
       repository,
     );
+    if (!options.drafts) {
+      keepDrafted(sides, await draftedFiles(kernel, db, workspace, repository, sides));
+    }
     const { theirs, mine, remoteFiles, mineFiles } = sides;
-    const base = link.synced_files;
+    const synced = rebased(link, repository.folder, theirs);
+    const base = synced.synced_files;
     const paths = [
       ...new Set([...Object.keys(theirs), ...Object.keys(mine), ...Object.keys(base)]),
     ].sort();
     // As a pull sees it: a resource changed on both sides is in conflict, whichever of its
     // files each side changed.
-    const here = changedHere(sides, link);
+    const here = changedHere(sides, synced);
     const resources = (which: (path: string) => boolean) =>
       new Set(paths.filter(which).map((path) => sides.resourceOf(path)));
     const [touchedHere, changedThere] = [

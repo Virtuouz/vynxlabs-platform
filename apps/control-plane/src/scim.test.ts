@@ -458,6 +458,11 @@ describe("a tenant's members, pushed as Entra pushes them", () => {
       },
     });
 
+    // The audit log names the provider as who acted, not an empty actor.
+    const shown = (await alice.get(`/tenants/${tenant}/audit?action=scim.user_pushed`)).body
+      .items[0];
+    expect(shown.actorLabel).toBe("SCIM: Acme Staff");
+
     // Found again by either name, whatever the case.
     expect(
       (await push(staff, "GET", `/Users?filter=userName eq "bob@ACME.example"`)).body.Resources[0]

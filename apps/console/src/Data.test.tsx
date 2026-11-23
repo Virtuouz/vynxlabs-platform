@@ -1315,3 +1315,41 @@ test("TAB-P4: a read stopped for taking too long links to the indexes of a table
   await screen.findByText(/took longer than 8 seconds/);
   expect(screen.queryByRole("link", { name: "Add an index" })).toBeNull();
 });
+
+test("TAB-P6: a retired table of the console is brought back from its own screen, with the definition it had", async () => {
+  const retired = { ...orders("ui"), status: "retired", display: "number" };
+  routes[`GET /api/v1${root}/tables/orders`] = () => [200, retired];
+  routes[`PUT /api/v1${root}/resources/orders`] = () => [200, { version: 1 }];
+  show(<TableView root={root} name="orders" link="/t/t1/workspaces/w1" />);
+  expect(await screen.findByText(/This table is retired/)).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Bring back" }));
+  await waitFor(() =>
+    expect(calls.find((call) => call.method === "PUT")?.body).toEqual({
+      kind: "table",
+      schemaVersion: 1,
+      ownership: "ui",
+      body: {
+        columns: {
+          number: { type: "text", required: true, unique: true },
+          total: { type: "number", default: 0 },
+          owner_id: { type: "uuid" },
+        },
+        policy: { type: "owner", column: "owner_id" },
+        display: "number",
+      },
+    }),
+  );
+  expect(await screen.findByText("The table orders is back, with its rows.")).toBeTruthy();
+});
+
+test("TAB-P6: a retired table of the repository says a deploy brings it back, and has no button", async () => {
+  routes[`GET /api/v1${root}/tables/orders`] = () => [
+    200,
+    { ...orders("code"), status: "retired" },
+  ];
+  show(<TableView root={root} name="orders" link="/t/t1/workspaces/w1" />);
+  expect(
+    await screen.findByText(/Deploying a definition with this name brings it back/),
+  ).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Bring back" })).toBeNull();
+});

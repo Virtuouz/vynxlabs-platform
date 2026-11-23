@@ -1460,17 +1460,24 @@ export function TableView({ root, name, link }: { root: string; name: string; li
         <Notice
           tone="attention"
           action={
-            <PurgeButton
-              root={root}
-              table={data.name}
-              {...(data.id ? { tableId: data.id } : {})}
-              onDone={() => navigate(`${link}/tables`)}
-            />
+            <span className="flex flex-wrap gap-2">
+              {data.managedIn === "ui" ? (
+                <BringBackButton root={root} table={data} onDone={table.reload} />
+              ) : null}
+              <PurgeButton
+                root={root}
+                table={data.name}
+                {...(data.id ? { tableId: data.id } : {})}
+                onDone={() => navigate(`${link}/tables`)}
+              />
+            </span>
           }
         >
           This table is retired. It left its definition, so nothing can read or write it, and its{" "}
-          {count(data.rowCount)} rows are kept. Deploying a definition with this name brings it
-          back.
+          {count(data.rowCount)} rows are kept.{" "}
+          {data.managedIn === "ui"
+            ? "Bring it back to use it again, with its columns, its rows and who sees them as they were."
+            : "Deploying a definition with this name brings it back."}
         </Notice>
       ) : view === "rows" ? null : (
         <div className="flex shrink-0 gap-1">
@@ -1518,6 +1525,76 @@ export function TableView({ root, name, link }: { root: string; name: string; li
         </div>
       )}
     </Page>
+  );
+}
+
+/**
+ * The definition a retired table comes back with: its active columns as the catalog holds them,
+ * and who sees its rows. What the definition said that the catalog does not (the columns' words)
+ * is not kept, and retired columns stay retired.
+ */
+export function bodyOfRetired(table: TableDetail): TableBody {
+  const columns: TableBody["columns"] = {};
+  for (const column of table.columns.filter((one) => one.status === "active")) {
+    columns[column.name] = {
+      type: column.type,
+      ...(column.required ? { required: true } : {}),
+      ...(column.unique ? { unique: true } : {}),
+      ...(column.default !== null && column.default !== undefined
+        ? { default: column.default }
+        : {}),
+      ...(column.references ? { references: column.references } : {}),
+      ...(column.references && column.onDelete && column.onDelete !== "restrict"
+        ? { onDelete: column.onDelete }
+        : {}),
+      ...(column.values ? { values: column.values } : {}),
+      ...(column.description ? { description: column.description } : {}),
+    };
+  }
+  return {
+    columns,
+    ...(table.description ? { description: table.description } : {}),
+    policy: table.policy as TableBody["policy"],
+    ...(table.display ? { display: table.display } : {}),
+    ...(table.indexes && table.indexes.length > 0 ? { indexes: table.indexes } : {}),
+  } as TableBody;
+}
+
+/** Makes a retired table of the console active again, by saving the definition it had. */
+function BringBackButton({
+  root,
+  table,
+  onDone,
+}: {
+  root: string;
+  table: TableDetail;
+  onDone: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  return (
+    <Button
+      size="small"
+      loading={busy}
+      onClick={async () => {
+        setBusy(true);
+        try {
+          await api.put(`${root}/resources/${table.name}`, {
+            kind: "table",
+            schemaVersion: 1,
+            ownership: "ui",
+            body: bodyOfRetired(table),
+          });
+          notify.success(`The table ${table.name} is back, with its rows.`);
+          onDone();
+        } catch (error) {
+          notify.error(error);
+        } finally {
+          setBusy(false);
+        }
+      }}
+    >
+      Bring back
+    </Button>
   );
 }
 

@@ -81,6 +81,7 @@ export function useHelpInAddress() {
   const [asked, setAsked] = useUrlParam("help");
   useEffect(() => {
     if (asked === undefined) return;
+    // docs:dynamic an address a reader or an older link gave: pageFor answers for what it does not know
     openHelp(asked === "" ? undefined : asked);
     setAsked(undefined);
   }, [asked, setAsked]);

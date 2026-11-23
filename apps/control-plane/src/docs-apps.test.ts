@@ -979,6 +979,57 @@ describe("someone who writes documentation in the console, and is not a develope
     expect([200, 303]).toContain(page.statusCode);
   });
 
+  test("a page renamed in the console and deployed leaves its old address leading to the new one for 90 days", async () => {
+    // The words of the console's rename dialog are held here: a draft move is no redirect until
+    // it is deployed, and then it is one at the app's own address.
+    const member = {
+      host: MAIN,
+      cookie: Object.entries(wren.headers)
+        .map(([, value]) => value)
+        .join("; "),
+    };
+    const at = (file: string) =>
+      t.app.inject({ url: `/apps/acme/dev/guide-site/${file}`, headers: member });
+    // A page nothing links to, so that moving it breaks no other.
+    expect(
+      (await save(wren, "guide/support/trade-ins", text("title: Trade-ins", "Words.\n"))).status,
+    ).toBe(200);
+    const first = await wren.post(`${devWs()}/changes/deploy`, {
+      paths: ["guide/support/trade-ins"],
+    });
+    expect(first.status, JSON.stringify(first.body)).toBe(201);
+    const opened = (await wren.get(`${devWs()}/docs/page/guide/support/trade-ins`)).body;
+    const moved = await wren.post(`${devWs()}/drafts/batch`, {
+      changes: [
+        {
+          path: "guide/support/trade-ins",
+          to: "guide/support/swaps",
+          source: opened.source,
+          ...(opened.revision ? { revision: opened.revision } : {}),
+        },
+      ],
+    });
+    expect(moved.status, JSON.stringify(moved.body)).toBe(200);
+    const deployed = await wren.post(`${devWs()}/changes/deploy`, {
+      paths: ["guide/support/swaps"],
+    });
+    expect(deployed.status, JSON.stringify(deployed.body)).toBe(201);
+    expect((await at("support/swaps")).statusCode).toBe(200);
+    const old = await at("support/trade-ins");
+    expect(old.statusCode).toBe(308);
+    expect(old.headers.location).toBe("/apps/acme/dev/guide-site/support/swaps");
+    const alias = await t.db
+      .selectFrom("resource_alias")
+      .select(["kind", "expires_at"])
+      .where("workspace_id", "=", dev)
+      .where("path", "=", "guide/support/trade-ins")
+      .executeTakeFirstOrThrow();
+    expect(alias.kind).toBe("doc");
+    const days = (alias.expires_at.getTime() - Date.now()) / 86_400_000;
+    expect(days).toBeGreaterThan(89);
+    expect(days).toBeLessThanOrEqual(90);
+  });
+
   test("a change is a draft over what is deployed, shown beside it, and found by the console's search", async () => {
     const opened = (await wren.get(`${devWs()}/docs/page/guide/index`)).body;
     expect(opened.revision).toBeNull();

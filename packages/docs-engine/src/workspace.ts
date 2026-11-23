@@ -1,6 +1,6 @@
 import { type DocEntry, type DocIssue, readPage } from "./page.js";
 import { ABOUT_KINDS, type AboutKind } from "./schema.js";
-import { type BuildOptions, buildDocSet, type DocSet } from "./set.js";
+import { type BuildOptions, buildDocSet, type DocSet, PRODUCT_PREFIX } from "./set.js";
 import { clashes } from "./stack.js";
 
 /**
@@ -174,6 +174,7 @@ export function buildApp(
   }
   const built = buildDocSet(entries, {
     resource: resourceChecker(resources),
+    reservedPrefix: PRODUCT_PREFIX,
     ...(options.product
       ? { reservedTerms: options.product.terms, reservedTopics: options.product.topics }
       : {}),

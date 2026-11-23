@@ -8,6 +8,7 @@
     "./manifest.json": "./dist/manifest.json",
     "./search.json": "./dist/search.json",
     "./fields.json": "./dist/fields.json",
+    "./redirects.json": "./dist/redirects.json",
     "./pages/*": "./dist/pages/*",
     "./content/*": "./content/*",
     "./assets/*": "./dist/assets/*",

@@ -66,6 +66,7 @@ export function useHelpTopic(topic: string | undefined) {
 
 /** Says a topic from inside JSX, for a dialog whose body is drawn only while it is open. */
 export function HelpTopic({ topic }: { topic: string }) {
+  // docs:dynamic the caller's own topic, which check.mjs reads at the JSX's call site
   useHelpTopic(topic);
   return null;
 }

@@ -131,30 +131,56 @@ export function shortAxisFormat(format: string | undefined, biggest: number): st
   return (format?.startsWith("$") ? "$" : "") + ".3~s";
 }
 
+/** The period a query cut a date into: what a chart steps by to find what it skipped. */
+export type Period = "day" | "week" | "month" | "quarter" | "year";
+
+const MONTHS: Record<Period, number> = { day: 0, week: 0, month: 1, quarter: 3, year: 12 };
+
+/** The first day of the period a day is in, as the query cuts it (weeks begin on Monday). */
+function periodStart(stamp: number, period: Period): number {
+  const at = new Date(stamp);
+  const [year, month] = [at.getUTCFullYear(), at.getUTCMonth()];
+  if (period === "day") return stamp;
+  if (period === "week") return stamp - ((at.getUTCDay() + 6) % 7) * DAY;
+  if (period === "month") return Date.UTC(year, month, 1);
+  if (period === "quarter") return Date.UTC(year, month - (month % 3), 1);
+  return Date.UTC(year, 0, 1);
+}
+
 /**
- * Periods the data skips, put back as zero: found from the dates it has (days, weeks,
- * months or quarters, by the smallest step between them), for each series alike.
+ * Periods the data skips, put back as zero, for each series alike. The step is the period the
+ * query cut the dates into, when it is known (`period`), and then the first and last day the page
+ * asks for (`span`) are the ends; without them it is guessed from the smallest step between the
+ * dates, which is wrong for data that skips every other period.
  */
 export function fillGapsIn(
   rows: Record<string, unknown>[],
   x: string,
   measured: readonly string[],
   series?: string,
+  how: { period?: Period | undefined; span?: { from: string; to: string } | undefined } = {},
 ): Record<string, unknown>[] {
   const stamps = rows.map((row) => Date.parse(String(row[x])));
-  if (rows.length < 2 || stamps.some((stamp) => Number.isNaN(stamp))) return rows;
+  if (rows.length < 1 || stamps.some((stamp) => Number.isNaN(stamp))) return rows;
   const distinct = [...new Set(stamps)].sort((a, b) => a - b);
-  if (distinct.length < 2) return rows;
-  const smallest = Math.min(
-    ...distinct.slice(1).map((stamp, at) => stamp - (distinct[at] as number)),
-  );
-  const months =
-    smallest >= 27 * DAY && smallest <= 32 * DAY
-      ? 1
-      : smallest >= 88 * DAY && smallest <= 93 * DAY
-        ? 3
-        : 0;
-  const days = smallest <= DAY ? 1 : smallest === 7 * DAY ? 7 : 0;
+  let months = 0;
+  let days = 0;
+  if (how.period) {
+    months = MONTHS[how.period];
+    days = how.period === "week" ? 7 : how.period === "day" ? 1 : 0;
+  } else {
+    if (rows.length < 2 || distinct.length < 2) return rows;
+    const smallest = Math.min(
+      ...distinct.slice(1).map((stamp, at) => stamp - (distinct[at] as number)),
+    );
+    months =
+      smallest >= 27 * DAY && smallest <= 32 * DAY
+        ? 1
+        : smallest >= 88 * DAY && smallest <= 93 * DAY
+          ? 3
+          : 0;
+    days = smallest <= DAY ? 1 : smallest === 7 * DAY ? 7 : 0;
+  }
   if (months === 0 && days === 0) return rows;
   const dateOnly = String(rows[0]?.[x]).length === 10;
   const write = (stamp: number) => {
@@ -166,14 +192,20 @@ export function fillGapsIn(
     const at = new Date(stamp);
     return Date.UTC(at.getUTCFullYear(), at.getUTCMonth() + months, at.getUTCDate());
   };
+  const spanFrom = how.span ? Date.parse(how.span.from) : Number.NaN;
+  const spanTo = how.span ? Date.parse(how.span.to) : Number.NaN;
+  const first =
+    how.period && !Number.isNaN(spanFrom)
+      ? Math.min(periodStart(spanFrom, how.period), distinct[0] as number)
+      : (distinct[0] as number);
+  const last = Math.max(distinct.at(-1) as number, Number.isNaN(spanTo) ? 0 : spanTo);
   const keys = series === undefined ? [undefined] : [...new Set(rows.map((row) => row[series]))];
   const have = new Set(
     rows.map((row, at) => `${series === undefined ? "" : String(row[series])}|${stamps[at]}`),
   );
-  const last = distinct.at(-1) as number;
   const out = [...rows];
   for (const key of keys) {
-    for (let stamp = distinct[0] as number; stamp <= last; stamp = next(stamp)) {
+    for (let stamp = first; stamp <= last; stamp = next(stamp)) {
       if (have.has(`${key === undefined ? "" : String(key)}|${stamp}`)) continue;
       const row: Record<string, unknown> = { [x]: write(stamp) };
       if (series !== undefined) row[series] = key;
@@ -273,7 +305,10 @@ export function chartFor(
     return field;
   };
   if (temporal && config.fillGaps && mark !== "scatter" && mark !== "heatmap") {
-    rows = fillGapsIn(rows, x, measured, several ? undefined : series);
+    rows = fillGapsIn(rows, x, measured, several ? undefined : series, {
+      period: data.buckets?.[x],
+      span: x === data.breakdowns[0] ? data.span : undefined,
+    });
   } else if (!temporal && config.order && (mark === "bar" || mark === "pie")) {
     rows = orderRows(rows, x, measured, config.order);
   }

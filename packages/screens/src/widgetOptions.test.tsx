@@ -168,6 +168,72 @@ describe("the chart draws each option", () => {
     );
   });
 
+  test("periods with nothing are found by the period the query cut, to the page's own ends (WID-16)", () => {
+    const sparse = (rows: Record<string, unknown>[], by: string, span?: SummaryData["span"]) =>
+      ({
+        ...dated,
+        rows,
+        buckets: { issued: by },
+        ...(span ? { span } : {}),
+      }) as SummaryData;
+    const days = (data: SummaryData) =>
+      chartFor({ mark: "line", fillGaps: true }, data).rows.map((row) => row.issued);
+    // Every second week is a week of its own, not two weeks a step.
+    expect(
+      days(
+        sparse(
+          [
+            { issued: "2026-11-02", total: 1 },
+            { issued: "2026-11-16", total: 1 },
+            { issued: "2026-11-30", total: 1 },
+          ],
+          "week",
+        ),
+      ),
+    ).toEqual(["2026-11-02", "2026-11-09", "2026-11-16", "2026-11-23", "2026-11-30"]);
+    // Daily data on one weekday only is days, not weeks.
+    expect(
+      days(
+        sparse(
+          [
+            { issued: "2026-11-02", total: 1 },
+            { issued: "2026-11-09", total: 1 },
+          ],
+          "day",
+        ),
+      ),
+    ).toHaveLength(8);
+    // Months January, March and July are seven months.
+    expect(
+      days(
+        sparse(
+          [
+            { issued: "2026-01-01", total: 1 },
+            { issued: "2026-03-01", total: 1 },
+            { issued: "2026-07-01", total: 1 },
+          ],
+          "month",
+        ),
+      ),
+    ).toHaveLength(7);
+    // The page's range gives the ends: periods before the first row and after the last.
+    expect(
+      days(
+        sparse(
+          [
+            { issued: "2026-11-09", total: 1 },
+            { issued: "2026-11-23", total: 1 },
+          ],
+          "week",
+          {
+            from: "2026-11-01",
+            to: "2026-11-30",
+          },
+        ),
+      ),
+    ).toEqual(["2026-10-26", "2026-11-02", "2026-11-09", "2026-11-16", "2026-11-23", "2026-11-30"]);
+  });
+
   test("a named palette colors the marks; the theme leaves it to the tokens", () => {
     expect(spec({ mark: "bar", colors: "warm" }, grouped).mark.color).toBe("#f59e0b");
     expect(spec({ mark: "bar", colors: "theme" }, grouped).mark.color).toBeUndefined();

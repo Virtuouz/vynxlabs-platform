@@ -79,6 +79,10 @@ export type WireData =
       rows: Record<string, unknown>[];
       /** The same values for the period before, when the widget compares. */
       previous?: Record<string, unknown>[];
+      /** The period each date breakdown is cut into, by the breakdown's name. */
+      buckets?: Record<string, "day" | "week" | "month" | "quarter" | "year">;
+      /** The days the page's date filter gives the first date breakdown, both ends. */
+      span?: { from: string; to: string };
       /** A figure's number over the time it covers, oldest first. */
       trend?: { at: string; value: number }[];
       followed?: { names: string; now: string };
@@ -880,6 +884,18 @@ export async function readWidget(
         rows,
       };
       if (asked.followed) wire.followed = asked.followed;
+      // The period of each date breakdown, and the days the page asks for it, so that a chart can
+      // put back the periods with nothing in them by the step the query took, to the page's ends.
+      if (visual) {
+        const cut = (visual.groupBy ?? []).filter((group) => group.bucket !== undefined);
+        if (cut.length > 0) {
+          wire.buckets = Object.fromEntries(cut.map((group) => [groupName(group), group.bucket]));
+          const first = cut[0];
+          const filter = (input.filters ?? []).find((one) => one.column === first?.column);
+          const range = filter ? rangeOf(request.values[filter.filter]) : undefined;
+          if (range?.from && range.to) wire.span = { from: range.from, to: range.to };
+        }
+      }
 
       // The same figures for the period before, when the widget compares and this input follows that range.
       const compared =

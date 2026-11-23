@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { sql } from "@volvel/db";
 import type { Bundle, BundleAsset } from "@volvel/manifest";
 import type { Db, Trx } from "../audit.js";
 import { badRequest, HttpError } from "../errors.js";
@@ -138,56 +139,71 @@ export function appFilesDue(tenantId: string) {
  * A file uploaded or named by an uploaded bundle within those days is kept too, since a build
  * uploads its files before its bundle. Returns how many files went.
  */
-export async function sweepAppFiles(kernel: Kernel, tenantId: string): Promise<number> {
+export async function sweepAppFiles(
+  kernel: Kernel,
+  tenantId: string,
+  /** For tests: runs inside the sweep's transaction once it has listed what is named. */
+  afterListing?: () => Promise<void>,
+): Promise<number> {
   const before = new Date(Date.now() - APP_FILE_GRACE_DAYS * 86_400_000);
-  const stale = await kernel.db
-    .selectFrom("bundle_asset")
-    .select(["sha256", "storage_key"])
-    .where("tenant_id", "=", tenantId)
-    .where("created_at", "<", before)
-    .orderBy("created_at")
-    .limit(SWEEP_BATCH)
-    .execute();
-  if (stale.length === 0) return 0;
-  const named = new Set<string>();
-  const bundles = await kernel.db
-    .selectFrom("bundle")
-    .select(["id", "storage_key"])
-    .where("tenant_id", "=", tenantId)
-    .where((eb) =>
-      eb.or([
-        eb("created_at", ">=", before),
-        eb(
-          "id",
-          "in",
-          eb
-            .selectFrom("workspace")
-            .select("active_bundle_id")
-            .where("tenant_id", "=", tenantId)
-            .where("active_bundle_id", "is not", null),
-        ),
-      ]),
-    )
-    .execute();
-  for (const bundle of bundles) {
-    for (const asset of (await loadBundle(kernel, bundle)).assets ?? []) named.add(asset.sha256);
-  }
-  let removed = 0;
-  for (const file of stale) {
-    if (named.has(file.sha256)) continue;
-    // Gone from the table first, and only then from storage: a row that names a missing object
-    // is worse than an object nothing names. A file touched since is no longer old.
-    const gone = await kernel.db
-      .deleteFrom("bundle_asset")
+  // Listing and deleting happen under the lock a bundle's store takes too, so that a bundle
+  // is either seen by the sweep or sees the file gone, and never names a file being deleted.
+  const keys = await kernel.db.transaction().execute(async (trx) => {
+    await lockAppFiles(trx, tenantId);
+    const stale = await trx
+      .selectFrom("bundle_asset")
+      .select(["sha256", "storage_key"])
       .where("tenant_id", "=", tenantId)
-      .where("sha256", "=", file.sha256)
       .where("created_at", "<", before)
-      .executeTakeFirst();
-    if (Number(gone.numDeletedRows) === 0) continue;
-    await kernel.storage.remove(file.storage_key).catch(() => {});
-    removed += 1;
-  }
-  return removed;
+      .orderBy("created_at")
+      .limit(SWEEP_BATCH)
+      .execute();
+    if (stale.length === 0) return [];
+    const named = new Set<string>();
+    const bundles = await trx
+      .selectFrom("bundle")
+      .select(["id", "storage_key"])
+      .where("tenant_id", "=", tenantId)
+      .where((eb) =>
+        eb.or([
+          eb("created_at", ">=", before),
+          eb(
+            "id",
+            "in",
+            eb
+              .selectFrom("workspace")
+              .select("active_bundle_id")
+              .where("tenant_id", "=", tenantId)
+              .where("active_bundle_id", "is not", null),
+          ),
+        ]),
+      )
+      .execute();
+    for (const bundle of bundles) {
+      for (const asset of (await loadBundle(kernel, bundle)).assets ?? []) named.add(asset.sha256);
+    }
+    await afterListing?.();
+    const gone: string[] = [];
+    for (const file of stale) {
+      if (named.has(file.sha256)) continue;
+      await trx
+        .deleteFrom("bundle_asset")
+        .where("tenant_id", "=", tenantId)
+        .where("sha256", "=", file.sha256)
+        .execute();
+      gone.push(file.storage_key);
+    }
+    return gone;
+  });
+  // Objects go only once the rows are gone for good: a row that names a missing object is
+  // worse than an object nothing names.
+  for (const key of keys) await kernel.storage.remove(key).catch(() => {});
+  return keys.length;
+}
+
+/** Serializes a tenant's sweep of app files with the storing of its bundles. */
+export async function lockAppFiles(trx: Trx, tenantId: string) {
+  await sql`select pg_advisory_xact_lock(hashtext(${`app-files:${tenantId}`}))`.execute(trx);
 }
 
 /** Looks at the tenants that deployed since the last time. One that fails is tried at its next deploy. */

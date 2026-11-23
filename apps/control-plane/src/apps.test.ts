@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { type Bundle, type BundleManifest, bundleDigest } from "@volvel/manifest";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { sweepDueAppFiles } from "./kernel/apps/assets.js";
+import { sweepAppFiles, sweepDueAppFiles } from "./kernel/apps/assets.js";
 import { DEFAULT_THEME } from "./kernel/apps/theme.js";
 import type { Message } from "./kernel/mail.js";
 import { type Client, startTestApp, type TestApp } from "./testing.js";
@@ -1993,6 +1993,56 @@ describe("files no app names any more (APP-17)", () => {
     expect(await held(third.sha)).toBe(true);
     // The files of other workspaces, which are also old, are named by theirs and stay.
     expect(await held(sha(files.script?.content as Buffer))).toBe(true);
+  });
+});
+
+describe("a bundle stored while the files are swept (APP-17)", () => {
+  test("never names a file that is then deleted", async () => {
+    const ws2 = (
+      await alice.post(`/tenants/${tenant}/workspaces`, {
+        slug: "race",
+        name: "Race",
+        type: "production",
+      })
+    ).body.id as string;
+    const place = ws(ws2);
+    const content = Buffer.from("<html><head></head><body>race</body></html>");
+    const sum = sha(content);
+    expect((await alice.put(`${place}/bundle-assets/${sum}`, content)).status).toBeLessThan(300);
+    await t.db
+      .updateTable("bundle_asset")
+      .set({ created_at: new Date(Date.now() - 9 * 86_400_000) })
+      .where("tenant_id", "=", tenant)
+      .where("sha256", "=", sum)
+      .execute();
+    const unsigned = {
+      formatVersion: 2 as const,
+      sdkVersion: "0.5.0",
+      core: { min: "0.0.0", below: "99.0.0" },
+      manifests: [manifest("app", "site", { title: "Site", entry: "index.html" })],
+      code: "export {};",
+      assets: [
+        {
+          app: "site",
+          path: "index.html",
+          sha256: sum,
+          size: content.length,
+          contentType: "text/html",
+        },
+      ],
+    };
+    let store: Promise<{ status: number; body: Any }> | undefined;
+    const swept = sweepAppFiles(t.kernel, tenant, async () => {
+      // The sweep has listed and holds its lock: a bundle naming the old file is stored now.
+      store = alice.post(`${place}/bundles`, { ...unsigned, digest: bundleDigest(unsigned) });
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    });
+    await swept;
+    const stored = await (store as Promise<{ status: number; body: Any }>);
+    const held = (await alice.get(`${place}/bundle-assets/${sum}`)).status === 200;
+    // Either the file is still there under the bundle, or the store saw it gone and said so.
+    if (stored.status === 201) expect(held).toBe(true);
+    else expect([stored.status, stored.body.code]).toEqual([409, "assets_missing"]);
   });
 });
 

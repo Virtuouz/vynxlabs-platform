@@ -428,3 +428,27 @@ test("a window that ends before it starts says so and asks for nothing (OPS-MP7)
   expect(await screen.findByText("The end is before the start.")).toBeTruthy();
   expect(lists()).toHaveLength(0);
 });
+
+test("a viewer is offered no Cancel, Cancel by age or Run again, and an operator is (OPS-35)", async () => {
+  const served = globalThis.fetch;
+  let allowed: string[] = [];
+  vi.stubGlobal("fetch", async (address: string, init?: RequestInit) => {
+    if (!address.split("?")[0]?.endsWith("/allowed")) return served(address, init);
+    asked.push(address);
+    return new Response(JSON.stringify({ allowed }), { status: 200 });
+  });
+  show(<RunsWorkbench root={root} link="/t/t1/workspaces/w1" />);
+  await screen.findByRole("link", { name: "reminders/send" });
+  await waitFor(() => expect(asked.some((one) => one.includes("/allowed?"))).toBe(true));
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  expect(screen.queryByRole("button", { name: "Cancel 2 queued" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: /^Actions for/ }));
+  await screen.findByRole("menuitem", { name: "Open" });
+  expect(screen.queryByRole("menuitem", { name: "Run again…" })).toBeNull();
+  cleanup();
+  allowed = ["run:write", "flow_run:write"];
+  show(<RunsWorkbench root={root} link="/t/t1/workspaces/w1" />);
+  expect(await screen.findByRole("button", { name: "Cancel 2 queued" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: /^Actions for/ }));
+  expect(await screen.findByRole("menuitem", { name: "Run again…" })).toBeTruthy();
+});

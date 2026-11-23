@@ -1824,7 +1824,12 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                   lastFiredAt: NullableTime,
                   url: NullableString,
                   paused: Type.Union([
-                    Type.Object({ at: Time, by: NullableId, reason: Type.String() }),
+                    Type.Object({
+                      at: Time,
+                      by: NullableId,
+                      byName: NullableString,
+                      reason: Type.String(),
+                    }),
                     Type.Null(),
                   ]),
                   pausedBy: Type.Union(
@@ -1913,6 +1918,18 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           .selectAll()
           .where("workspace_id", "=", params.w)
           .execute();
+        const pausers = pauses.flatMap((one) => (one.paused_by ? [one.paused_by] : []));
+        const pauserNames = new Map(
+          pausers.length === 0
+            ? []
+            : (
+                await db
+                  .selectFrom("member")
+                  .select(["id", "name", "email"])
+                  .where("id", "in", pausers)
+                  .execute()
+              ).map((one) => [one.id, one.name || one.email] as const),
+        );
         const instancePaused = await instanceTriggersPaused(kernel);
         const workspacePaused =
           (
@@ -2001,7 +2018,12 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               event: row.event_name,
               enabled: row.enabled,
               paused: pause
-                ? { at: iso(pause.paused_at), by: pause.paused_by, reason: pause.reason }
+                ? {
+                    at: iso(pause.paused_at),
+                    by: pause.paused_by,
+                    byName: pause.paused_by ? (pauserNames.get(pause.paused_by) ?? null) : null,
+                    reason: pause.reason,
+                  }
                 : null,
               pausedBy: instancePaused
                 ? ("instance" as const)
@@ -2222,6 +2244,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               c.columns(["workspace_id", "path", "node_id"]).doUpdateSet({
                 reason: body.reason ?? "",
                 paused_at: new Date(),
+                paused_by: ctx.principal.type === "member" ? ctx.principal.id : null,
               }),
             )
             .execute();
@@ -3677,11 +3700,20 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           if (!outcome) throw notFound("The webhook");
           if ("refused" in outcome) {
             if (outcome.refused === "paused") {
-              // A sender that retries will get through once the workspace is resumed.
+              // A sender that retries will get through once what holds it is resumed.
+              if (outcome.heldBy === "workspace") {
+                throw new HttpError(
+                  503,
+                  "workspace_paused",
+                  "This workspace's triggers are paused, so the webhook started nothing. Try again later.",
+                );
+              }
               throw new HttpError(
                 503,
-                "workspace_paused",
-                "This workspace's triggers are paused, so the webhook started nothing. Try again later.",
+                "trigger_paused",
+                outcome.heldBy === "instance"
+                  ? "Every trigger in this instance is paused, so the webhook started nothing. Try again later."
+                  : "This webhook is paused, so it started nothing. Try again later.",
               );
             }
             if (outcome.refused === "signature") {

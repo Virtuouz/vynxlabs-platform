@@ -65,3 +65,15 @@ Walked on the throwaway instance at `8f8fa3f7`. Rows of the same shape as the ot
 - A flow that refuses its input is shown as "does not match what the flow flows/wid-strict takes: /input must have required property 'why'." in two alerts: once, in words ("The flow needs why").
 - The rows behind a money pivot cell show cents (135,795) where the widget shows $1,357.95: the same column format.
 - Clearing an action's message and adding it again with Close on gives create, close, message: the message comes before the close.
+
+### WLK-12 From the access and SSO walk
+- `apps/console/src/screens/Members.tsx:255`: a member with no roles and no groups shows "Through groups only".
+- Releases of access at 390 (`AccessReleases.tsx`): By and When are off-screen, Approve and "Go back to this" are clipped, and its inset differs from the other tabs. Groups at 390 (`Groups.tsx:229-248`): Delete clipped; the tab strip is cut to "Re…".
+- After approving a release, focus drops to the page body.
+- Error toasts stay over the inspector's buttons (Remove, Attributes) at 1440: a toast never covers what it is about, or the inspector gives it room.
+- Disabling an end user has no confirmation, unlike suspending a member.
+- A saved issuer change says "The provider was saved." and not that its secret was dropped (`SingleSignOn.tsx:729`).
+- A refusal for a missing permission names the permission and nobody who can give it ("This needs the binding:write permission."): POLISH-009, in the shared piece that words refusals.
+- A refused name shows the raw pattern ("must match pattern ^[a-z]…"); a short export passphrase shows the browser's own bubble: the shared piece words a pattern refusal per field.
+- A domain hostname breaks mid-word; the role Summary says "Rows, Rows, past the row policy".
+- Disabling an operator who belongs to no tenant shows no notice that it was done. (The Operators list's Disabled state belongs to lane ins2.)

@@ -275,6 +275,7 @@ export function ConditionEditor({
               <BetweenInput
                 id={id}
                 kind={column.type === "date" ? "date" : "number"}
+                money={money?.(column.id)}
                 value={current.value}
                 onChange={(next) => {
                   const { value: _, ...rest } = current;
@@ -444,11 +445,14 @@ function BetweenInput({
   id,
   kind,
   value,
+  money,
   onChange,
 }: {
   id: string;
   kind: "date" | "number";
   value: unknown;
+  /** For a money column: both ends are typed as money, and kept the way the column holds it. */
+  money?: ConditionMoney | undefined;
   onChange: (next: [unknown, unknown] | undefined) => void;
 }) {
   const pair = Array.isArray(value) ? value : [];
@@ -457,50 +461,71 @@ function BetweenInput({
     next[at] = text === "" ? "" : kind === "number" ? Number(text) : text;
     onChange(next[0] === "" && next[1] === "" ? undefined : next);
   };
+  const setMoney = (at: 0 | 1, amount: number | undefined) => {
+    const next: [unknown, unknown] = [pair[0] ?? "", pair[1] ?? ""];
+    next[at] = amount ?? "";
+    onChange(next[0] === "" && next[1] === "" ? undefined : next);
+  };
+  const end = (at: 0 | 1, name: "from" | "to", label: string) =>
+    money && kind === "number" ? (
+      <MoneyField
+        name={`${id}-${name}`}
+        label={label}
+        required={false}
+        currency={money.currency}
+        minorUnits={money.minorUnits}
+        value={typeof pair[at] === "number" ? (pair[at] as number) : undefined}
+        onChange={(next, problem) => {
+          if (problem === undefined) setMoney(at, next);
+        }}
+      />
+    ) : null;
   return (
     <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
       <div>
         <label htmlFor={`${id}-from`} className="sr-only">
           From
         </label>
-        {kind === "date" ? (
-          <DateInput
-            id={`${id}-from`}
-            compact
-            value={pair[0] === undefined ? "" : String(pair[0])}
-            onChange={(text) => set(0, text)}
-          />
-        ) : (
-          <input
-            id={`${id}-from`}
-            type={kind}
-            value={pair[0] === undefined ? "" : String(pair[0])}
-            onChange={(event) => set(0, event.target.value)}
-            className={`${control} w-full`}
-          />
-        )}
+        {end(0, "from", "From") ??
+          (kind === "date" ? (
+            <DateInput
+              id={`${id}-from`}
+              compact
+              value={pair[0] === undefined ? "" : String(pair[0])}
+              onChange={(text) => set(0, text)}
+            />
+          ) : (
+            <input
+              id={`${id}-from`}
+              type={kind}
+              value={pair[0] === undefined ? "" : String(pair[0])}
+              onChange={(event) => set(0, event.target.value)}
+              className={`${control} w-full`}
+            />
+          ))}
       </div>
       <span className="text-body-sm text-ink-muted">and</span>
       <div>
         <label htmlFor={`${id}-to`} className="sr-only">
           To
         </label>
-        {kind === "date" ? (
-          <DateInput
-            id={`${id}-to`}
-            compact
-            value={pair[1] === undefined ? "" : String(pair[1])}
-            onChange={(text) => set(1, text)}
-          />
-        ) : (
-          <input
-            id={`${id}-to`}
-            type={kind}
-            value={pair[1] === undefined ? "" : String(pair[1])}
-            onChange={(event) => set(1, event.target.value)}
-            className={`${control} w-full`}
-          />
-        )}
+        {end(1, "to", "To") ??
+          (kind === "date" ? (
+            <DateInput
+              id={`${id}-to`}
+              compact
+              value={pair[1] === undefined ? "" : String(pair[1])}
+              onChange={(text) => set(1, text)}
+            />
+          ) : (
+            <input
+              id={`${id}-to`}
+              type={kind}
+              value={pair[1] === undefined ? "" : String(pair[1])}
+              onChange={(event) => set(1, event.target.value)}
+              className={`${control} w-full`}
+            />
+          ))}
       </div>
     </div>
   );

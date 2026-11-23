@@ -210,6 +210,46 @@ test("a money column's condition is typed in dollars and kept in cents (WID-26)"
   expect(last().filters).toEqual([{ column: "total", op: "gt", value: 1250 }]);
 });
 
+test('a money column\'s "is between" is typed in dollars and kept in cents (WID-26)', async () => {
+  const money: Catalog = {
+    ...catalog,
+    tables: [
+      {
+        name: "invoices",
+        columns: [
+          {
+            name: "total",
+            type: "integer",
+            references: null,
+            description: "What is owed, in cents.",
+          },
+        ],
+      },
+    ],
+  };
+  const start = listWidget();
+  render(
+    <Inspector
+      widget={start}
+      definition={list as never}
+      surface="app"
+      filters={[]}
+      catalog={money}
+      onChange={(next) => written.push(next)}
+      onDuplicate={() => {}}
+      onRemove={() => {}}
+      rowRules={() => "/rules"}
+    />,
+  );
+  fireEvent.click(panel().getByRole("button", { name: "Condition" }));
+  const editor = await dialog();
+  fireEvent.click(editor.getByRole("radio", { name: "is between" }));
+  fireEvent.change(editor.getByLabelText("From"), { target: { value: "12.50" } });
+  fireEvent.change(editor.getByLabelText("To"), { target: { value: "20" } });
+  fireEvent.click(editor.getByRole("button", { name: "Add" }));
+  expect(last().filters).toEqual([{ column: "total", op: "between", value: [1250, 2000] }]);
+});
+
 test("a condition is removed by its ×", async () => {
   const start = listWidget();
   start.data = {

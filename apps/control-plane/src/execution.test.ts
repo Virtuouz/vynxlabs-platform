@@ -846,7 +846,8 @@ describe("deploys and runs in progress", () => {
     );
     expect(second.body).toMatchObject({
       bundleVersion: 3,
-      summary: { created: 0, updated: 0, unchanged: 11, deleted: 1 },
+      // greet and slow carry the version in their code: a changed body is an update.
+      summary: { created: 0, updated: 2, unchanged: 9, deleted: 1 },
     });
     expect((await alice.get(`${ws()}/resources/sneaky`)).status).toBe(404);
 
@@ -866,13 +867,13 @@ describe("deploys and runs in progress", () => {
     const rolledBack = await alice.post(`${ws()}/deployments`, { bundleId: first.id });
     expect(rolledBack.body.summary).toMatchObject({
       created: 1,
-      updated: 0,
-      unchanged: 11,
+      updated: 2,
+      unchanged: 9,
       deleted: 0,
       // This bundle has no tables, so the deploy did nothing to the data.
       data: [],
     });
-    expect(rolledBack.body.summary.changes).toHaveLength(1);
+    expect(rolledBack.body.summary.changes).toHaveLength(3);
     expect(await finished(await start("slow", { ms: 10 }), 20)).toMatchObject({
       bundleVersion: 1,
       output: { version: 1 },

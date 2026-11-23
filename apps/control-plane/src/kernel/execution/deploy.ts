@@ -21,6 +21,7 @@ import type { Kernel } from "../kernel.js";
 import { renamePathState, swapPath } from "../rename.js";
 import { deleteResource, putResource } from "../resources.js";
 import { loadBundle } from "./bundles.js";
+import { exportChanged } from "./code-slices.js";
 import { unfitBindings } from "./connectors.js";
 
 interface ScriptBody {
@@ -322,6 +323,8 @@ export async function deployBundle(
   // the bundle before it carried. A console-managed resource that no bundle carried,
   // such as a table made in the console, is left alone by every deploy.
   const carried = new Set<string>();
+  // The code the workspace runs now, to tell a script whose own code changed.
+  let codeBefore: string | undefined;
   if (current.active_bundle_id) {
     const before = await trx
       .selectFrom("bundle")
@@ -329,7 +332,9 @@ export async function deployBundle(
       .where("id", "=", current.active_bundle_id)
       .executeTakeFirst();
     if (before) {
-      const was = (await loadBundle(kernel, before)).manifests;
+      const loadedBefore = await loadBundle(kernel, before);
+      codeBefore = loadedBefore.code;
+      const was = loadedBefore.manifests;
       for (const [manifest, row] of matchByKey(was, existing)) {
         if (manifest.ownership === "ui") carried.add(row.id);
       }
@@ -433,7 +438,18 @@ export async function deployBundle(
       same(stored.meta, meta) &&
       same(stored.body, manifest.body)
     ) {
-      summary.unchanged += 1;
+      // A script's code is in the bundle's module, not in its manifest: a changed body is an update.
+      const entry = (manifest.body as { entry?: unknown }).entry;
+      if (
+        codeBefore !== undefined &&
+        typeof entry === "string" &&
+        exportChanged(codeBefore, content.code, entry)
+      ) {
+        summary.updated += 1;
+        note("updated", manifest.kind, manifest.path);
+      } else {
+        summary.unchanged += 1;
+      }
       continue;
     }
     // The name of the tool an agent calls is public. A change that leaves the old name

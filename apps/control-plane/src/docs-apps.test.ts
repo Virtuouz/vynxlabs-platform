@@ -1367,6 +1367,12 @@ describe("someone who writes documentation in the console, and is not a develope
     const listed = (await wren.get(`${devWs()}/docs`)).body;
     expect(listed.apps.map((one: Any) => one.path)).not.toContain("solo-site");
     expect(listed.removedApps).toEqual(["solo-site"]);
+    // Deploying the removal alone stops the site being served.
+    const stopped = await wren.post(`${devWs()}/changes/deploy`, { paths: ["solo-site"] });
+    expect(stopped.status, JSON.stringify(stopped.body)).toBeLessThan(300);
+    const after = (await wren.get(`${devWs()}/docs`)).body;
+    expect(after.removedApps).toEqual([]);
+    expect(after.apps.map((one: Any) => one.path)).not.toContain("solo-site");
   });
 });
 

@@ -37,3 +37,10 @@
 - Siblings: the Release branch is read in `GitSync.tsx` `ReleaseBranch` (its empty state said "A release branch is set on the tenant's repository", which is now true); nothing else edits the repository.
 - Left: the stored user name is not shown because the repository response has no `username`; adding it is a contract change not asked for.
 - Polish: states: checking (loading button), ok, problem (danger notice); copy plain. Walk: Repository at 390 px (branches stack under 640 px), reload.
+
+## REL-MP4: Git operations history and branches overview
+- Test: `Git.test.tsx` "REL-MP4: Git sync lists the workspace's pushes and pulls and every branch of the tenant". Failed before.
+- Change: `apps/console/src/screens/GitSync.tsx`: `GitHistory` (GET `git/operations`, last 50) and `GitBranches` (GET `/tenants/:t/git-branches`), in both the dev view and the production `ReleaseBranch` view, shown once a repository is connected. Routes unchanged.
+- Siblings: `ReleaseBranch` reads the operations too for its own "last commit" line; two reads of one list (left, cheap).
+- Seen: under Git sync, a History list (kind, status, commit, message, when) and a Branches list (workspace, branch, follows or release, state, error).
+- Polish: states: loading text, empty ("Nothing has been pushed or pulled here yet."), error with retry. Walk: Git sync at 390 px (rows wrap), dev and production.

@@ -334,3 +334,72 @@ test("REL-MP3: the repository form has the user name, the release and access bra
   expect((await screen.findByText(/refused the access token/)).textContent).toBeTruthy();
   expect(sent("POST")).toHaveLength(1);
 });
+
+test("REL-MP4: Git sync lists the workspace's pushes and pulls and every branch of the tenant", async () => {
+  routes[`GET /api/v1${root}/git`] = () => [
+    200,
+    { repository, branch: "console/dev", state: "synced", syncedCommit: "abc1234def" },
+  ];
+  routes[`GET /api/v1${root}/git/compare`] = () => [200, compare(false)];
+  routes[`GET /api/v1${root}/git/operations`] = () => [
+    200,
+    {
+      items: [
+        {
+          id: "o3",
+          kind: "pull",
+          status: "failed",
+          commit: null,
+          message: "The branch was not reachable.",
+          detail: {},
+          createdByType: "user",
+          createdById: "u1",
+          createdAt: "2026-11-21T10:00:00.000Z",
+        },
+        {
+          id: "o2",
+          kind: "push",
+          status: "done",
+          commit: "9f8e7d6c5b",
+          message: "Deploy from the console",
+          detail: {},
+          createdByType: "user",
+          createdById: "u1",
+          createdAt: "2026-11-20T10:00:00.000Z",
+        },
+      ],
+    },
+  ];
+  routes["GET /api/v1/tenants/t1/git-branches"] = () => [
+    200,
+    {
+      items: [
+        {
+          workspaceId: "w1",
+          workspace: "Dev",
+          type: "dev",
+          branch: "console/dev",
+          mode: "follows",
+          state: "synced",
+          lastError: null,
+        },
+        {
+          workspaceId: "w2",
+          workspace: "Main",
+          type: "production",
+          branch: "release/main",
+          mode: "release",
+          state: null,
+          lastError: null,
+        },
+      ],
+    },
+  ];
+  show(<GitSync root={root} link="/t/t1/workspaces/w1" />);
+  const history = await screen.findByRole("region", { name: "History" });
+  await waitFor(() => expect(history.textContent).toContain("The branch was not reachable."));
+  expect(history.textContent).toContain("9f8e7d6");
+  const branches = await screen.findByRole("region", { name: "Branches" });
+  await waitFor(() => expect(branches.textContent).toContain("release/main"));
+  expect(branches.textContent).toContain("Dev");
+});

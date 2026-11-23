@@ -24,3 +24,17 @@ test("a dashboard offers narrowing and the rows behind only where the event give
   expect(stepKindsFor(ctx(false, true))).toEqual(["message", "rows"]);
   expect(stepKindsFor(ctx(false, false))).toEqual(["message"]);
 });
+
+test("the rows behind a figure are offered for a table, and not for a saved query or SQL", async () => {
+  const { actionContext } = await import("./actionControls.tsx");
+  const env = (source: object) =>
+    ({
+      surface: "dashboard",
+      catalog: { tables: [] },
+      definition: { events: { click: { gives: "group" } } },
+      widget: { type: "core/chart", data: { rows: { source } } },
+    }) as never;
+  expect(stepKindsFor(actionContext(env({ visual: { table: "invoices" } })))).toContain("rows");
+  expect(stepKindsFor(actionContext(env({ query: "reports/open" })))).not.toContain("rows");
+  expect(stepKindsFor(actionContext(env({ sql: "select 1" })))).not.toContain("rows");
+});

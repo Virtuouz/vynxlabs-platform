@@ -89,7 +89,10 @@ test("a renamed webhook step with a key keeps its address, and one without says 
   expect(kept.summary.breaking).toEqual([]);
   expect(await address(ws)).toBe(first);
   // The address still starts the flow, at the step's new name.
-  const delivered = await t.anonymous.post(new URL(first as string).pathname.replace("/api/v1", ""), {});
+  const delivered = await t.anonymous.post(
+    new URL(first as string).pathname.replace("/api/v1", ""),
+    {},
+  );
   expect(delivered.status).toBe(202);
 
   const lost = await deploy(ws, bundle("front_door"));

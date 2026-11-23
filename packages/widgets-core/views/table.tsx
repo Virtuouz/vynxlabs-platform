@@ -6,12 +6,12 @@ import {
   type ColumnSpec,
   cellOf,
   columnsToShow,
-  sortableColumn,
   headingOf,
   isNumeric,
   isRight,
   largest,
   rowId,
+  sortableColumn,
   sortedBy,
   totalOf,
 } from "./cells.tsx";

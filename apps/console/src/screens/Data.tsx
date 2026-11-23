@@ -1751,11 +1751,11 @@ export function bodyToRestore(state: TableBody, now: TableBody | undefined): Tab
     const wasValues = back.columns[name]?.values;
     if (!Array.isArray(column.values) || !Array.isArray(wasValues)) continue;
     type Entry = string | { value: string; renamedFrom?: string };
-    const valueOf = (one: Entry) => (typeof one === "string" ? one : one.value);
+    const worded = (one: Entry) => (typeof one === "string" ? one : one.value);
     for (const entry of column.values as Entry[]) {
       if (typeof entry === "string" || typeof entry.renamedFrom !== "string") continue;
-      const at = (wasValues as Entry[]).findIndex((one) => valueOf(one) === entry.renamedFrom);
-      if (at < 0 || (wasValues as Entry[]).some((one) => valueOf(one) === entry.value)) continue;
+      const at = (wasValues as Entry[]).findIndex((one) => worded(one) === entry.renamedFrom);
+      if (at < 0 || (wasValues as Entry[]).some((one) => worded(one) === entry.value)) continue;
       const old = wasValues[at] as Entry;
       wasValues[at] = {
         ...(typeof old === "string" ? { value: old } : old),

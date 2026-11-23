@@ -528,14 +528,21 @@ export async function storedTokens(
 ): Promise<string[]> {
   const row = await db
     .selectFrom("connection_binding")
-    .select("oauth_tokens")
+    .select(["id", "oauth_tokens"])
     .where("tenant_id", "=", id.tenantId)
     .where("workspace_id", "=", id.workspaceId)
     .where("path", "=", id.path)
     .executeTakeFirst();
   if (!row?.oauth_tokens) return [];
   const tokens = JSON.parse(
-    await decryptFor(kernel, db, id.tenantId, id.workspaceId, tokensName(id), row.oauth_tokens),
+    await openRow(
+      kernel,
+      db,
+      "connection-oauth",
+      { tenantId: id.tenantId, workspaceId: id.workspaceId, rowId: row.id, path: id.path },
+      row.oauth_tokens,
+      "connection",
+    ),
   ) as Tokens;
   return [tokens.accessToken, tokens.refreshToken].filter((t): t is string => !!t);
 }

@@ -66,10 +66,10 @@ test("nothing says Loading… in a paragraph of its own", () => {
 /**
  * Every screen's heading is `PageHeader` (08 §3.1), so a title, its state and
  * its actions sit in the same place everywhere and focus lands on it when the
- * screen opens. Sign-in and the approval link stand outside the console's shell.
+ * screen opens. Sign-in, the approval link and the password link stand outside the console's shell.
  */
 test("no screen writes its own h1", () => {
-  const outside = ["PageHeader.tsx", "SignIn.tsx", "ApproveLink.tsx"];
+  const outside = ["PageHeader.tsx", "SignIn.tsx", "ApproveLink.tsx", "ResetPassword.tsx"];
   const found: string[] = [];
   for (const path of [...files(join(here, "screens")), ...files(join(here, "kit"))]) {
     if (outside.some((name) => path.endsWith(name))) continue;

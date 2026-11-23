@@ -57,6 +57,11 @@ export interface BuildOptions {
   entry?: string;
   /** The folder of resources managed in the console. Default `platform`. */
   resources?: string;
+  /**
+   * Read the manifests and the pictures of docs apps, and build no app from source: for what
+   * is drawn locally from the files (`volvel dev`). The bundle's digest and assets are not a deploy's.
+   */
+  withoutAppSources?: boolean;
 }
 
 /**
@@ -292,7 +297,9 @@ export async function buildRepository(given: BuildOptions): Promise<Built> {
       path: definition.path,
       source: (definition as unknown as { source: string }).source,
     }));
-  const built = await buildApps(directory, apps);
+  const built: BuiltApps = given.withoutAppSources
+    ? { assets: [], files: new Map() }
+    : await buildApps(directory, apps);
   // A docs app's own files are the pictures kept beside its pages.
   const pictures = await docPictures(directory, docs, manifests);
   built.assets.push(...pictures.assets);
@@ -310,7 +317,7 @@ export async function buildRepository(given: BuildOptions): Promise<Built> {
   const unsigned = !manifests.some((manifest) => manifest.kind === "app")
     ? { formatVersion: formatFor(1, common.manifests), ...common }
     : { formatVersion: formatFor(2, common.manifests), ...common, assets: built.assets };
-  const assetProblems = checkBundleAssets(unsigned);
+  const assetProblems = given.withoutAppSources ? [] : checkBundleAssets(unsigned);
   if (assetProblems.length > 0) throw new BuildError(assetProblems);
   if (fromFiles.manifests.length === 0 && coreNodesFor(unsigned.manifests).length === 0) {
     return {

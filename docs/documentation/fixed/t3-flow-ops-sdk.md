@@ -24,3 +24,9 @@ No migration.
 - API: `GET flow-runs/:id` (and the other `FlowRun` responses) now carry `alert` (`routes/flows.ts` `FlowRun`, `toFlowRun`), as a script run's did.
 - Tests: `RunPage.test.tsx` "a flow run says that its failure handler failed to start...", and `apps/control-plane/src/flows.test.ts` "a failed step with no error path fails the flow..." (now reads `alert`).
 - Polish gate: states: no alert shows nothing; queued, posted, failed, handler failed all say so. Lifecycle: ends at the run page (the alert is written once). Keyboard: links only. Copy plain. Walk: a failed script run with a notify connection unbound; a failed flow run; 390 px.
+
+## OPS-MP7 Runs between two times
+- `apps/console/src/screens/Runs.tsx`: "Between…" under When; From and To date-time fields (`from`, `to` in the address, one instant each, shown in the reader's zone). `to` empty means until now. The list asks `activity?from&to` and "Cancel queued" sends both in `filters` and names the window in its text. Saved views keep it, because they keep the address (`ViewsMenu`, `viewQuery`). A window that ends before it starts says "The end is before the start." and asks for nothing. Choosing a relative window again clears both.
+- Tests: `apps/console/src/Runs.test.tsx` "runs between two times: ...", "a window that ends before it starts says so and asks for nothing". Seen failing before.
+- Siblings: the other lists with "Last 24 hours" windows: none besides Runs found. The API took `from` and `to` already.
+- Polish gate: states: loading, empty ("Nothing ran in this time"), refused window (notice). Keyboard: native fields. 390 px: the fields wrap in the header actions. Walk: Runs, Between, reload, a saved view.

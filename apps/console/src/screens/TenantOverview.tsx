@@ -5,6 +5,7 @@ import { actionWords } from "../audit-words.ts";
 import { ErrorState, Loading, Pending } from "../kit/LoadState.tsx";
 import { KeyValues, NextStep, PageHeader, Panel, SectionLabel } from "../kit/layout.tsx";
 import { EnvTag, Mono, StatePill } from "../kit/status.tsx";
+import { useInstanceStartsWorkers } from "../kit/useInstanceStartsWorkers.ts";
 import { when } from "../ListScreen.tsx";
 import { Link } from "../router.tsx";
 import type { TenantCounts, WorkspaceCounts } from "../Shell.tsx";
@@ -55,6 +56,7 @@ export function TenantOverview({ base, tenantId }: { base: string; tenantId: str
     managedWorkers?: boolean;
     mayRename?: boolean;
   }>(base);
+  const startsWorkers = useInstanceStartsWorkers(base, tenant.data?.managedWorkers);
   const counts = useLoad<TenantCounts>(`${base}/summary`);
   const instance = useLoad<{ mail?: boolean }>("/instance");
   const workspaces = useLoad<{ items: Workspace[] }>(`${base}/workspaces`);
@@ -129,7 +131,7 @@ export function TenantOverview({ base, tenantId }: { base: string; tenantId: str
     );
   }
   // Workers the instance starts on demand exit when idle: none online is then the normal state.
-  if (c?.workersOnline === 0 && tenant.data && tenant.data.managedWorkers !== true) {
+  if (c?.workersOnline === 0 && startsWorkers === false) {
     attention.push(
       <NextStep
         key="workers"
@@ -182,7 +184,7 @@ export function TenantOverview({ base, tenantId }: { base: string; tenantId: str
                     detail={
                       unseen
                         ? "Some counts here are not yours to read. Ask an administrator for read access if you need them."
-                        : tenant.data?.managedWorkers
+                        : startsWorkers
                           ? "No approvals or promotions waiting, every hostname works, and the instance starts workers when there is work."
                           : "No approvals or promotions waiting, every hostname works, and workers are online."
                     }

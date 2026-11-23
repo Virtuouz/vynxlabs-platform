@@ -205,7 +205,7 @@ test("a link that was emailed says so, and the search is sent to the server", as
   );
 });
 
-test("an end user is disabled and deleted through their own routes, and deleting asks first", async () => {
+test("an end user is disabled and deleted through their own routes, and both ask first", async () => {
   let users = [ada];
   routes[`GET /api/v1${base}/end-users`] = () => [200, { items: users, nextCursor: null }];
   routes[`PATCH /api/v1${base}/end-users/u1`] = (body) => {
@@ -220,6 +220,8 @@ test("an end user is disabled and deleted through their own routes, and deleting
   show(<EndUsers base={base} />);
   fireEvent.click(await screen.findByText(ada.email));
   fireEvent.click(await screen.findByRole("button", { name: "Disable" }));
+  // Disabling signs them out of every app, so it is asked first.
+  expect(await answer("Disable")).toContain(`Disable ${ada.email}?`);
   await screen.findAllByText("Disabled");
   expect(sent("PATCH")[0]?.url).toBe(`/api/v1${base}/end-users/u1`);
   expect(sent("PATCH")[0]?.body).toEqual({ disabled: true });

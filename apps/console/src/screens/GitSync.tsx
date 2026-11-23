@@ -188,7 +188,8 @@ export function GitSync({
               <Wire width={20} />
             </span>
             <Panel className="flex flex-col gap-2 p-4">
-              <span className="flex items-center gap-2 text-label text-ink-subtle uppercase">
+              {/* A branch is named as it is written: `main`, never MAIN. */}
+              <span className="flex items-center gap-2 text-label text-ink-subtle">
                 <GitBranch aria-hidden="true" size={14} /> {compare.data.branch}
               </span>
               <span className="text-title">

@@ -1,6 +1,6 @@
 # Writing a tenant repository: names, files and access
 
-Last updated: 2026-11-18. Covers what phase 17 added. The SDK's types document each option, and `schemas/` holds the machine-readable form of everything here.
+Last updated: 2026-11-22. The SDK's types document each option, and `schemas/` holds the machine-readable form of everything here.
 
 ## A resource has three names
 
@@ -35,7 +35,7 @@ A key is unique in the workspace and is never reused while its resource lives. S
 
 Pass the definition where you can: `tables: [items]`, `script: submit`. It carries the path, so a rename needs nothing more.
 
-A reference written as text is a path. If it is the key of a resource that has moved, the build uses the new path and prints a note, so old text keeps building while you tidy up.
+A reference written as text is a path. If it is the key of a resource that has moved, the build uses the new path, and `volvel deploy` prints a note (`volvel build` does not), so old text keeps building while you tidy up.
 
 ## The name of an agent's tool
 
@@ -88,7 +88,7 @@ ignore: [vendor]
 
 The console edits these files wherever you keep them. With git sync, a change made in the console is committed to the file it came from, on the workspace's branch; a rename moves the file, or changes its `path:` if it says one. A resource made in the console is written under `platform/`.
 
-- A file is rewritten only when the resource was changed in the console. It is then written in the console's form, so comments in it are lost.
+- A file is rewritten only when the resource was changed in the console. Then only what changed is rewritten, onto the file as you wrote it: your comments and your order stay, as above.
 - Without git sync, `volvel pull` writes the console's changes into the same files. It does not overwrite one you changed and never pulled unless you pass `--force`.
 - Code is different. A resource made by `define*` in TypeScript is not a file the console can write, and the console shows it read-only.
 

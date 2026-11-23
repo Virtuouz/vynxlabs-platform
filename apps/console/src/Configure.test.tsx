@@ -257,6 +257,13 @@ test("CFG-13: with a new target chosen and not saved, there is no button that pr
   expect(screen.getByText(/Save the new target/)).toBeTruthy();
 });
 
+test("clirel left: an unsaved link that was cleared says so, and offers no promotion to the old target", async () => {
+  routes[`GET ${base}/workspaces`] = () => [200, { items: [dev, main] }];
+  show(<Promotion base={base} workspace={dev} reload={() => {}} linked={null} onLink={() => {}} />);
+  expect(await screen.findByText(/promotes nowhere/)).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Review and promote" })).toBeNull();
+});
+
 test("CFG-11, CFG-12: the settings and the clone say what a clone with Safety off gets", async () => {
   routes[`POST ${base}/workspaces/w-main/clones`] = () => [
     202,
@@ -372,3 +379,32 @@ test("?setup= opens the form that makes what a refused promotion names: a variab
 /** What the fields of a form hold, the hidden one a chosen option fills included. */
 const valuesIn = (form: HTMLElement) =>
   [...form.querySelectorAll("input")].map((input) => (input as HTMLInputElement).value);
+
+test("WLK-17h: a Set up link for a variable shows the variable chosen, not a blank choice", async () => {
+  routes[`GET ${root}/variable-values`] = () => [
+    200,
+    { items: [{ path: "region", description: "", default: null, value: null, arrives: true }] },
+  ];
+  routes[`GET ${root}/references`] = () => [200, { items: [] }];
+  history.replaceState(null, "", `${link}/variables?setup=region`);
+  show(<Variables root={root} />);
+  const dialog = await screen.findByRole("dialog");
+  await waitFor(() =>
+    expect((within(dialog).getByRole("combobox") as HTMLInputElement).value).toBe("region"),
+  );
+});
+
+test("WLK-cfg2: a connection's page can unbind it, after saying what that does", async () => {
+  routes[`GET ${root}/connection-bindings/drive`] = () => [200, needsReconnect];
+  routes[`GET ${root}/connectors`] = () => [200, { items: [] }];
+  routes[`GET ${root}/references`] = () => [200, { items: [] }];
+  routes[`DELETE ${root}/connection-bindings/drive`] = () => [204, null];
+  show(<ConnectionPage root={root} link={link} path="drive" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Unbind" }));
+  const dialog = await screen.findByRole("dialog");
+  expect(within(dialog).getByText(/Scripts that use it will fail/)).toBeTruthy();
+  fireEvent.click(within(dialog).getByRole("button", { name: "Unbind" }));
+  await waitFor(() =>
+    expect(calls.some((one) => one.method === "DELETE" && one.url.endsWith("/drive"))).toBe(true),
+  );
+});

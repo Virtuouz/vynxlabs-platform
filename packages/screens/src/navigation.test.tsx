@@ -2,6 +2,7 @@
 
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { helpingPage } from "./AppView.tsx";
 import type { NavigateTo } from "./actions.tsx";
 import { addressOf, parseAddress, Stepper, steppingOf, useAddress } from "./navigation.tsx";
 
@@ -222,4 +223,26 @@ test("a modal opened from a sheet is over it: both are in the address, each with
   expect(
     parseAddress("/apps/a/w/perf/", "/apps/a/w/perf/money", "?modal=new&modalRecord=r3").modal,
   ).toEqual({ page: "new", record: "r3" });
+});
+
+describe("the Help topic of what is open (BLD-11)", () => {
+  const pages = [
+    { id: "invoices", title: "Invoices", widgets: [], help: "invoices" },
+    { id: "invoice", title: "Invoice", kind: "sheet" as const, widgets: [], help: "one-invoice" },
+    { id: "new_invoice", title: "New", kind: "modal" as const, widgets: [] },
+    { id: "note", title: "Note", kind: "modal" as const, widgets: [], help: "notes" },
+  ];
+  test("the open modal's topic, else the open side sheet's, else the page's", () => {
+    const on = { page: "invoices" };
+    expect(helpingPage(pages, on)?.help).toBe("invoices");
+    expect(helpingPage(pages, { ...on, sheet: { page: "invoice" } })?.help).toBe("one-invoice");
+    expect(helpingPage(pages, { ...on, modal: { page: "note" } })?.help).toBe("notes");
+    // A modal with no topic leaves the one under it.
+    expect(
+      helpingPage(pages, { ...on, sheet: { page: "invoice" }, modal: { page: "new_invoice" } })
+        ?.help,
+    ).toBe("one-invoice");
+    // No page in the address: the first of the menu.
+    expect(helpingPage(pages, {})?.help).toBe("invoices");
+  });
 });

@@ -18,7 +18,7 @@ export function HealthCell({ health }: { health: Health | null | undefined }) {
   if (!health) return <StatePill state="queued">Not tested</StatePill>;
   const age = `tested ${ago(health.checkedAt)}`;
   return (
-    <span className="flex max-w-[18rem] flex-col gap-0.5">
+    <span data-health="" className="flex min-w-[9rem] max-w-[18rem] flex-col gap-0.5">
       {health.ok ? (
         <StatePill
           state="ok"

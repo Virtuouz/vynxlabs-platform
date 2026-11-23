@@ -880,7 +880,7 @@ export async function reconcileReferences(trx: Trx, workspaceId: string, final: 
     if (!target) {
       if (final) {
         throw badRequest(
-          `The table "${reference.table_name}" refers to a table that does not exist.`,
+          `The table "${reference.table_name}" (column "${reference.name}") refers to "${reference.reference_table}", which this deploy does not hold. Keep "${reference.reference_table}", or change "${reference.table_name}" in the same deploy.`,
           [
             {
               path: `/body/columns/${reference.name}/references`,

@@ -61,6 +61,8 @@ export interface DocsTable {
 export interface DocsList {
   apps: DocsApp[];
   pages: DocPage[];
+  /** Pages that take a term or a topic the product's own help has, as the server found them. */
+  issues?: { app: string; path: string; code: string; message: string }[];
   /** The workspace's tables. To someone who may read only the documentation, the ones its apps name. */
   tables: DocsTable[];
 }

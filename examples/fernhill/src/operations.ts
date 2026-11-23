@@ -974,7 +974,7 @@ export const operations = defineInterface({
         },
         {
           id: "goal",
-          type: "labs/goal",
+          type: "core/goal",
           title: "This month",
           at: at(9, 4, 3, 4),
           data: {
@@ -1435,7 +1435,7 @@ export const operations = defineInterface({
         },
         {
           id: "shelf",
-          type: "labs/goal",
+          type: "core/goal",
           title: "On the shelves",
           subtitle: "Items on hand against the reorder levels, added up.",
           at: at(0, 2, 4, 4),

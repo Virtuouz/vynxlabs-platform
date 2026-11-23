@@ -5,6 +5,7 @@ import { workspaceSchema } from "../kernel/data/apply.js";
 import { badRequest, conflict, notFound } from "../kernel/errors.js";
 import { access } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
+import { listOf } from "../pagination.js";
 import { iso, NoContent, Time } from "./shared.js";
 
 const LocationName = Type.String({ pattern: "^[a-z0-9]+(-[a-z0-9]+)*$", maxLength: 63 });
@@ -43,7 +44,7 @@ export function locationRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           description:
             "Says whether each one can be reached now. The user name and password are never returned.",
           tags: ["instance"],
-          response: { 200: Type.Object({ items: Type.Array(Location) }) },
+          response: { 200: listOf(Location) },
         },
       },
       async () => {
@@ -104,9 +105,7 @@ export function locationRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             "For a list to choose from. It does not open any database, so it answers at once, whatever state they are in.",
           tags: ["instance"],
           response: {
-            200: Type.Object({
-              items: Type.Array(Type.Object({ name: Type.String(), description: Type.String() })),
-            }),
+            200: listOf(Type.Object({ name: Type.String(), description: Type.String() })),
           },
         },
       },

@@ -15,10 +15,11 @@ import {
 } from "../kit/layout.tsx";
 import { consoleLink } from "../kit/objects.tsx";
 import { SaveBar } from "../kit/SaveBar.tsx";
-import { Code, Mono, StatePill } from "../kit/status.tsx";
+import { Code, lookUp, Mono, StatePill, Tag } from "../kit/status.tsx";
 import { Time } from "../kit/Time.tsx";
 import { CreateDialog, Page, RemoveButton, when } from "../ListScreen.tsx";
 import { Link, navigate } from "../router.tsx";
+import { GiveAccess } from "./GiveAccess.tsx";
 
 export interface WorkspaceSummary {
   id: string;
@@ -289,6 +290,7 @@ export function WorkspaceSettings({
         }
       />
       <TimeZoneSetting zone={draft.timeZone} onZone={setZone} />
+      <WorkspaceAccess base={base} workspace={workspace} />
       <SaveBar
         dirty={dirty}
         saving={saving}
@@ -297,6 +299,87 @@ export function WorkspaceSettings({
         what={`the settings of ${workspace.name}`}
       />
     </Page>
+  );
+}
+
+interface HeldHere {
+  id: string;
+  principalLabel: string;
+  roleName: string;
+  resourceKind: string | null;
+  resourcePath: string | null;
+  managedByResource: boolean;
+}
+
+/**
+ * Who holds a role at this workspace, and giving it to someone here. For a workspace admin, who
+ * may give access at the workspace and nowhere else: the people and roles are read here too.
+ */
+export function WorkspaceAccess({
+  base,
+  workspace,
+}: {
+  base: string;
+  workspace: { id: string; name: string };
+}) {
+  const held = useLoad<{ items: HeldHere[] }>(`${base}/bindings?workspaceId=${workspace.id}`);
+  const [giving, setGiving] = useState(false);
+  return (
+    <section aria-labelledby="workspace-access" className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 id="workspace-access" className="m-0 text-title">
+          Access
+        </h2>
+        <Button size="small" onClick={() => setGiving(true)}>
+          Give access
+        </Button>
+      </div>
+      <Panel className="flex flex-col gap-2 p-4">
+        <p className="m-0 text-ink-muted">
+          Who holds a role in {workspace.name}. Access given to the whole tenant applies here too
+          and is changed under Members and access.
+        </p>
+        {held.error ? (
+          <Notice tone="danger">{failed(held.error)}</Notice>
+        ) : held.data === undefined ? (
+          <p className="m-0 text-ink-muted">Loading…</p>
+        ) : held.data.items.length === 0 ? (
+          <p className="m-0 text-ink-muted">Nobody holds a role here yet.</p>
+        ) : (
+          <ul className="m-0 flex list-none flex-col gap-2 p-0">
+            {held.data.items.map((one) => (
+              <li key={one.id} className="flex flex-wrap items-center justify-between gap-2">
+                <span className="flex min-w-0 flex-wrap items-center gap-2">
+                  <span className="font-medium">{one.principalLabel}</span>
+                  <Mono>{one.roleName}</Mono>
+                  {one.resourcePath ? (
+                    <span className="text-meta text-ink-muted">
+                      at {one.resourceKind} {one.resourcePath}
+                    </span>
+                  ) : null}
+                </span>
+                {one.managedByResource ? (
+                  <Tag tone="repository">From repository</Tag>
+                ) : (
+                  <RemoveButton
+                    confirm={`Remove the ${one.roleName} role from ${one.principalLabel} in ${workspace.name}?`}
+                    run={() => api.delete(`${base}/bindings/${one.id}`)}
+                    onDone={held.reload}
+                  />
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </Panel>
+      <GiveAccess
+        base={base}
+        open={giving}
+        inWorkspace={workspace}
+        onClose={() => setGiving(false)}
+        onGiven={held.reload}
+      />
+    </section>
   );
 }
 
@@ -594,7 +677,9 @@ export function Promotion({
         </div>
         {unsaved ? (
           <p className="m-0 max-w-measure text-ink-muted">
-            Save the new target to review a promotion to it.
+            {linked === null
+              ? "Saved, this workspace promotes nowhere. Save to stop, or choose a target again."
+              : "Save the new target to review a promotion to it."}
           </p>
         ) : target ? (
           // The one place that reviews, asks for and makes a promotion is the Release screen's promote step.
@@ -622,6 +707,7 @@ export function TenantExport({ base, slug }: { base: string; slug: string }) {
   const [state, setState] = useState<"idle" | "working" | "done">("idle");
   const [problem, setProblem] = useState<string>();
   const mismatch = again !== "" && again !== passphrase;
+  const tooShort = passphrase !== "" && passphrase.length < 12;
 
   return (
     <Page
@@ -632,7 +718,7 @@ export function TenantExport({ base, slug }: { base: string; slug: string }) {
         className="flex max-w-md flex-col gap-3"
         onSubmit={async (event) => {
           event.preventDefault();
-          if (mismatch || passphrase !== again) return;
+          if (mismatch || tooShort || passphrase !== again) return;
           setProblem(undefined);
           setState("working");
           try {
@@ -661,10 +747,10 @@ export function TenantExport({ base, slug }: { base: string; slug: string }) {
           name="passphrase"
           type="password"
           value={passphrase}
-          minLength={12}
           required
           autoComplete="new-password"
           onChange={setPassphrase}
+          error={tooShort ? "Use at least 12 characters." : undefined}
           hint="At least 12 characters. It protects every secret in the file, and the password of each member who belongs to this tenant alone. It is not stored: without it they cannot be read. Pass it on separately from the file."
         />
         <TextField
@@ -696,7 +782,11 @@ export function TenantExport({ base, slug }: { base: string; slug: string }) {
           </Notice>
         ) : null}
         <div>
-          <Button type="submit" variant="primary" disabled={state === "working" || mismatch}>
+          <Button
+            type="submit"
+            variant="primary"
+            disabled={state === "working" || mismatch || tooShort}
+          >
             {state === "working" ? "Exporting…" : "Export tenant"}
           </Button>
         </div>
@@ -973,11 +1063,22 @@ async function withPassphrase<T>(
   return body as T;
 }
 
-/** One line of what an inspection found, as a state and what it means. */
-function Check({ ok, children }: { ok: boolean | null; children: ReactNode }) {
+/**
+ * One line of what an inspection found, as a state and what it means. A long sentence wraps
+ * under its icon, as it must in a card at a phone's width. `ok` is "note" for what allows the
+ * import and still deserves a look: a warning, not a failure.
+ */
+function Check({ ok, children }: { ok: boolean | null | "note"; children: ReactNode }) {
+  const [, Icon, tone] = lookUp(
+    ok === null ? "unchecked" : ok === "note" ? "warning" : ok ? "ok" : "failed",
+  );
   return (
-    <li>
-      <StatePill state={ok === null ? "unchecked" : ok ? "ok" : "failed"}>{children}</StatePill>
+    <li
+      data-check={ok === "note" ? "note" : ok === null ? "unchecked" : ok ? "ok" : "failed"}
+      className="flex items-start gap-1.5"
+    >
+      <Icon aria-hidden="true" size={14} className={`mt-1 shrink-0 ${tone}`} />
+      <span className={`min-w-0 break-words ${tone}`}>{children}</span>
     </li>
   );
 }
@@ -1139,13 +1240,16 @@ export function TenantImport() {
                 : "the instance's own database."}
             </li>
             <li>
-              All {report.pausedWorkspaces} workspaces arrived with their triggers paused. Resume
-              each one when the instance it came from has stopped.
+              {report.pausedWorkspaces === 1
+                ? "The workspace arrived with its triggers paused. Resume it"
+                : `All ${report.pausedWorkspaces} workspaces arrived with their triggers paused. Resume each one`}{" "}
+              when the instance it came from has stopped.
             </li>
             {report.cancelled.runs + report.cancelled.flowRuns > 0 ? (
               <li>
-                {report.cancelled.runs} runs and {report.cancelled.flowRuns} flow runs were
-                unfinished in the export, and are recorded as cancelled.
+                {report.cancelled.runs} {report.cancelled.runs === 1 ? "run" : "runs"} and{" "}
+                {report.cancelled.flowRuns} flow {report.cancelled.flowRuns === 1 ? "run" : "runs"}{" "}
+                were unfinished in the export, and are recorded as canceled.
               </li>
             ) : null}
             {report.notCarried.map((line) => (
@@ -1229,7 +1333,11 @@ export function TenantImport() {
                       ? "The passphrase opens it"
                       : "The passphrase does not open it"}
                 </Check>
-                <Check ok={inspection.authenticated ?? null}>
+                <Check
+                  ok={
+                    inspection.authenticated === false ? "note" : (inspection.authenticated ?? null)
+                  }
+                >
                   {inspection.authenticated === true
                     ? "Its list of contents is signed with its key, and the signature is right"
                     : inspection.authenticated === false

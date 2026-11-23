@@ -209,6 +209,8 @@ describe("promotion", () => {
     const refused = await alice.post(`${ws(dev)}/promotions`);
     expect(refused.status).toBe(409);
     expect(refused.body.code).toBe("bindings_missing");
+    // WLK-17h: a promotion is promoted again, not deployed again.
+    expect(refused.body.detail).toContain("then promote again.");
     // A promotion took no body before it had anything to be told. One sent with none is
     // still a promotion, answered the same way.
     const bare = await t.app.inject({

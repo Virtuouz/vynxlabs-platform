@@ -16,7 +16,6 @@ import {
   makeDetail,
   manyOf,
   oneOf,
-  openButton,
   openRecord,
   type TableInfo,
   tableOf,

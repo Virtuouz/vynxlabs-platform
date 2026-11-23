@@ -15,7 +15,7 @@
  * contract growing, for every widget.
  */
 
-import { usableLocale } from "./locale.js";
+import { readerLocale, usableLocale } from "./locale.js";
 
 /** Where a widget is offered. A dashboard only reads. */
 export const SURFACES = ["app", "dashboard"] as const;
@@ -412,6 +412,14 @@ export interface SummaryData {
   rows: readonly Record<string, unknown>[];
   /** For a widget that compares: the same values for the period before. */
   previous?: readonly Record<string, unknown>[];
+  /** The function each value is, by the value's name, when the query is a visual one: what a total of it can be made of. */
+  measures?: Readonly<
+    Record<string, "count" | "sum" | "avg" | "min" | "max" | "count_distinct" | undefined>
+  >;
+  /** The period each date breakdown is cut into, by the breakdown's name: what "include periods with nothing" steps by. */
+  buckets?: Readonly<Record<string, "day" | "week" | "month" | "quarter" | "year">>;
+  /** The days the page's date filter gives the first date breakdown, both ends: where a filled chart begins and ends. */
+  span?: { from: string; to: string };
   /** For a figure with a trend: its first value over the time it covers, oldest first. `at` is a day. */
   trend?: readonly { at: string; value: number }[];
 }
@@ -662,6 +670,15 @@ export function numberOf(value: unknown): number | undefined {
     return Number.isFinite(parsed) ? parsed : undefined;
   }
   return undefined;
+}
+
+/** A count as the reader writes it: 1,204 in the US, 1.204 in Germany. */
+export function countText(count: number): string {
+  try {
+    return count.toLocaleString(readerLocale());
+  } catch {
+    return count.toLocaleString("en-US");
+  }
 }
 
 /**

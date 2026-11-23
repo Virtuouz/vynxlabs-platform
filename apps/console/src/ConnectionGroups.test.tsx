@@ -119,3 +119,17 @@ test("changing a member keeps how its credential is sent and its headers", async
   });
   expect(body.credential).toBeUndefined();
 });
+
+test("WLK-17b: a changed address says Save drops the stored credential, until it is typed again", async () => {
+  show(<ConnectionGroups root={root} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Change" }));
+  const sheet = await screen.findByRole("dialog");
+  expect(within(sheet).queryByText(/Save removes the stored credential/)).toBeNull();
+  fireEvent.change(within(sheet).getByLabelText("Address"), {
+    target: { value: "https://elsewhere.test" },
+  });
+  expect(within(sheet).getByText(/Save removes the stored credential/)).toBeTruthy();
+  fireEvent.click(within(sheet).getByRole("button", { name: "Replace the credential" }));
+  fireEvent.change(within(sheet).getByLabelText("New credential"), { target: { value: "k" } });
+  expect(within(sheet).queryByText(/Save removes the stored credential/)).toBeNull();
+});

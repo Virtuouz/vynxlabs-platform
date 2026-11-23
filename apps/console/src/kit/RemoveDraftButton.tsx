@@ -3,6 +3,7 @@ import { useState } from "react";
 import { ApiError, api } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
 import { putOnDraftNow } from "./draftApi.ts";
+import { keepPlace } from "./focus.ts";
 
 /** What was done: a draft thrown away, or a draft that removes the resource saved. */
 export type RemoveResult = "discarded" | "removed" | "kept";
@@ -82,7 +83,8 @@ export function RemoveDraftButton({
       variant={state === "removed" ? "secondary" : "danger"}
       {...(size ? { size } : {})}
       disabled={disabled || busy}
-      onClick={async () => {
+      onClick={async (event) => {
+        const settle = keepPlace(event.currentTarget);
         const sure = await ask.confirm({
           title: words.title,
           text: words.text,
@@ -112,6 +114,7 @@ export function RemoveDraftButton({
           notify.error(error);
         } finally {
           setBusy(false);
+          settle();
         }
       }}
     >

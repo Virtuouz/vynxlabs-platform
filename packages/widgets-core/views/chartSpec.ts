@@ -25,8 +25,14 @@ export interface ChartConfig {
   order?: "biggest" | "smallest" | "label";
   /** Periods with nothing in them are drawn as zero. */
   fillGaps?: boolean;
+  /** The column along the bottom. Left out: the first breakdown. */
   x?: string;
+  /** The column up the side. Left out: the first value. */
   y?: string;
+  /** The words of the title along the bottom, when axes are titled. Left out: the column's name. */
+  xTitle?: string;
+  /** The words of the title up the side, when axes are titled. Left out: the value's name. */
+  yTitle?: string;
 }
 
 /** The column that carries the period before, point for point, on a compared chart. */
@@ -277,7 +283,9 @@ export function chartFor(
   const palette = config.colors && config.colors !== "theme" ? PALETTES[config.colors] : undefined;
   const scale = palette ? { scale: { range: palette } } : {};
   const named = config.axisTitles === true;
-  const yTitle = axis?.note ? `${title(y)} (${axis.note})` : title(y);
+  const typed = (text: string | undefined) => (text?.trim() ? text.trim() : undefined);
+  const xTitle = typed(config.xTitle) ?? title(x);
+  const yTitle = typed(config.yTitle) ?? (axis?.note ? `${title(y)} (${axis.note})` : title(y));
   // The values up the side are written short ("$40k"), as the boards draw them.
   const biggest = Math.max(
     0,
@@ -339,7 +347,7 @@ export function chartFor(
           : temporal
             ? "temporal"
             : "nominal",
-    title: named ? title(x) : null,
+    title: named ? xTitle : null,
     ...(mark === "bar" && (few || !temporal)
       ? { scale: { paddingInner: spacing, paddingOuter: spacing / 2 } }
       : {}),
@@ -372,7 +380,7 @@ export function chartFor(
           x: {
             field: xField,
             type: "ordinal",
-            title: named ? title(x) : null,
+            title: named ? xTitle : null,
             sort: null,
             axis: { labelAngle: 0, grid: false },
           },

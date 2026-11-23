@@ -150,6 +150,24 @@ describe("the chart draws each option", () => {
     expect(bare.y.title).toBeNull();
   });
 
+  test("an axis is titled in the words typed, and a title is not a column (WID-08)", () => {
+    const own = spec(
+      { mark: "bar", axisTitles: true, xTitle: "By clinic", yTitle: "Takings" },
+      grouped,
+    ).encoding;
+    expect(own.x.title).toBe("By clinic");
+    expect(own.y.title).toBe("Takings");
+    // Only when titles are asked for; one left empty is named from the data.
+    expect(spec({ mark: "bar", xTitle: "By clinic" }, grouped).encoding.x.title).toBeNull();
+    expect(spec({ mark: "bar", axisTitles: true, xTitle: " " }, grouped).encoding.x.title).toBe(
+      "Clinic",
+    );
+    // `x` and `y` stay what they are: the columns drawn.
+    expect(spec({ mark: "bar", axisTitles: true, x: "total" }, grouped).encoding.x.title).toBe(
+      "Total",
+    );
+  });
+
   test("a named palette colors the marks; the theme leaves it to the tokens", () => {
     expect(spec({ mark: "bar", colors: "warm" }, grouped).mark.color).toBe("#f59e0b");
     expect(spec({ mark: "bar", colors: "theme" }, grouped).mark.color).toBeUndefined();

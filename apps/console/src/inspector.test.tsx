@@ -195,6 +195,24 @@ test("a dot marks a tab only when something in it needs fixing, never because so
   expect(within(screen.getByRole("tabpanel")).queryByText("Needs fixing")).toBeNull();
 });
 
+test("an axis title is written as a title, never as the column the axis draws (WID-08)", async () => {
+  show(
+    <Harness
+      start={{ ...chartWidget(), config: { mark: "bar", axisTitles: true } }}
+      definition={chart}
+    />,
+  );
+  fireEvent.click(tabByName("Display"));
+  fireEvent.click(screen.getByRole("button", { name: /^Along the bottom/ }));
+  const editor = await screen.findByRole("dialog");
+  fireEvent.change(within(editor).getByLabelText("Along the bottom"), {
+    target: { value: "By clinic" },
+  });
+  const config = (written.at(-1) as PageWidget).config;
+  expect(config?.xTitle).toBe("By clinic");
+  expect(config?.x).toBeUndefined();
+});
+
 test("settings are drawn in the group their hint names, in order, and a row opens its editor", async () => {
   show(<Harness start={chartWidget()} definition={plain(chart)} />);
   fireEvent.click(tabByName("Display"));

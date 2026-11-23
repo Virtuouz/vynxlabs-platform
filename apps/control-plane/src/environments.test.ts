@@ -1114,4 +1114,25 @@ describe("a direct write to a production workspace's resources", () => {
     expect((await alice.get(url)).status).toBe(200);
     expect((await alice.delete(url)).status).toBe(204);
   });
+
+  test("a code-managed resource there is changed by a deploy only, by anyone (REL-01)", async () => {
+    // Put there by a deploy, as a promotion does.
+    const code = bundle([manifest("variable", "from-code", { default: "1" })]);
+    expect((await deploy(alice, prod, code)).status).toBe(201);
+    const url = `${ws(prod)}/resources/from-code`;
+    expect((await alice.get(url)).body.ownership).toBe("code");
+    const refusals = [
+      await alice.put(url, { ...resourceBody, ownership: "code", body: { default: "2" } }),
+      await alice.put(url, resourceBody), // takes over a code path
+      await alice.put(`${ws(prod)}/resources/new-code`, { ...resourceBody, ownership: "code" }),
+      await alice.delete(url),
+    ];
+    for (const refused of refusals) {
+      expect(refused.status).toBe(409);
+      expect(refused.body.code).toBe("production_workspace");
+      expect(refused.body.detail).toContain("by a deploy");
+    }
+    expect((await alice.get(url)).body.ownership).toBe("code");
+    expect((await alice.get(`${ws(prod)}/resources/new-code`)).status).toBe(404);
+  });
 });

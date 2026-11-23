@@ -333,19 +333,6 @@ async function deploy(args: string[], io: Io) {
   const { bundle } = built;
   for (const line of describeBundle(bundle)) io.out(line);
   for (const note of built.notes) io.out(`Note: ${note}`);
-  await refuseToDropConsoleResources(
-    settings,
-    base,
-    bundle.manifests.map((manifest) => manifest.path),
-    values["allow-delete"] ?? [],
-  );
-  await uploadFiles(settings, base, built, io);
-
-  const uploaded = await request(settings.url, `${base}/bundles`, settings.token, {
-    method: "POST",
-    body: bundle,
-  });
-  if (uploaded.status >= 300) throw refusal(uploaded, "upload the bundle");
   // The drafts the last pull took into platform/ are deployed with it: the console can let them go.
   const directory = resolve(values.dir ?? ".");
   const pulled = await readPulled(directory);
@@ -353,6 +340,23 @@ async function deploy(args: string[], io: Io) {
     pulled?.workspace === workspace.id
       ? Object.entries(pulled.drafts ?? {}).map(([path, revision]) => ({ path, revision }))
       : [];
+  // A resource deleted in the console and pulled is meant to go: its file is gone on purpose.
+  // A bundle with no console file at all leaves the console's resources as they are.
+  if (bundle.manifests.some((manifest) => manifest.ownership === "ui")) {
+    await refuseToDropConsoleResources(
+      settings,
+      base,
+      bundle.manifests.map((manifest) => manifest.path),
+      [...(values["allow-delete"] ?? []), ...carried.map((one) => one.path)],
+    );
+  }
+  await uploadFiles(settings, base, built, io);
+
+  const uploaded = await request(settings.url, `${base}/bundles`, settings.token, {
+    method: "POST",
+    body: bundle,
+  });
+  if (uploaded.status >= 300) throw refusal(uploaded, "upload the bundle");
   const deployed = await request(settings.url, `${base}/deployments`, settings.token, {
     method: "POST",
     body: {

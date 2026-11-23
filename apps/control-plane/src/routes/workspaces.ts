@@ -615,12 +615,15 @@ export function workspaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       async ({ ctx, params, body }, reply) => {
         const workspace = ctx.workspace as WorkspaceRef;
         const path = resourcePath(params);
-        await refuseDirectProductionWrite(db, workspace, () =>
-          ctx.allowed("promotion:write", {
-            tenantId: workspace.tenantId,
-            workspaceId: workspace.id,
-          }),
-        );
+        await refuseDirectProductionWrite(db, workspace, {
+          mayDeploy: () =>
+            ctx.allowed("promotion:write", {
+              tenantId: workspace.tenantId,
+              workspaceId: workspace.id,
+            }),
+          paths: [path, ...(body.renameFrom ? [body.renameFrom] : [])],
+          ownership: body.ownership,
+        });
         const result = await ctx.mutate((trx, audit) =>
           putResource(kernel, trx, audit, workspace, { ...body, path }),
         );
@@ -743,12 +746,14 @@ export function workspaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       async ({ ctx, params }, reply) => {
         const workspace = ctx.workspace as WorkspaceRef;
         const path = resourcePath(params);
-        await refuseDirectProductionWrite(db, workspace, () =>
-          ctx.allowed("promotion:write", {
-            tenantId: workspace.tenantId,
-            workspaceId: workspace.id,
-          }),
-        );
+        await refuseDirectProductionWrite(db, workspace, {
+          mayDeploy: () =>
+            ctx.allowed("promotion:write", {
+              tenantId: workspace.tenantId,
+              workspaceId: workspace.id,
+            }),
+          paths: [path],
+        });
         await ctx.mutate((trx, audit) => deleteResource(trx, audit, workspace, path, kernel.hooks));
         return reply.code(204).send(null);
       },

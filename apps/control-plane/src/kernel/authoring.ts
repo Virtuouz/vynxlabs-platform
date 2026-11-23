@@ -85,21 +85,43 @@ async function devWorkspace(db: Db | Trx, workspace: WorkspaceRef) {
 /**
  * The guard for a direct write to a resource (`PUT` and `DELETE` on a path). A production
  * workspace changes by a deploy or a promotion, which write through the kernel and not through
- * this; a person may also write there directly when their role may promote to it
- * (`mayDeploy`, from `promotion:write`). The same rule as `devWorkspace`, so they answer alike.
+ * this. A code-managed resource is kept in the repository, so no one writes or deletes it
+ * directly, nor makes one. A console-managed one may be written directly by a person whose role
+ * may promote to the workspace (`mayDeploy`, from `promotion:write`). The same rule as
+ * `devWorkspace`, so they answer alike.
  */
 export async function refuseDirectProductionWrite(
   db: Db | Trx,
   workspace: WorkspaceRef,
-  mayDeploy: () => Promise<boolean>,
+  write: {
+    mayDeploy: () => Promise<boolean>;
+    /** The paths the write touches: where it puts the resource, and where it moves it from. */
+    paths: string[];
+    /** The ownership the write gives. None for a delete. */
+    ownership?: "code" | "ui" | undefined;
+  },
 ) {
   const row = await db
     .selectFrom("workspace")
     .select("type")
     .where("id", "=", workspace.id)
     .executeTakeFirstOrThrow();
-  if (row.type === "dev" || (await mayDeploy())) return;
-  throw new HttpError(409, "production_workspace", PRODUCTION_REFUSAL);
+  if (row.type === "dev") return;
+  const held = await db
+    .selectFrom("resource")
+    .select("ownership")
+    .where("workspace_id", "=", workspace.id)
+    .where("path", "in", write.paths)
+    .execute();
+  if (write.ownership === "code" || held.some((one) => one.ownership === "code")) {
+    throw new HttpError(
+      409,
+      "production_workspace",
+      "A code-managed resource is kept in the repository and changes in production by a deploy.",
+    );
+  }
+  if (!(await write.mayDeploy()))
+    throw new HttpError(409, "production_workspace", PRODUCTION_REFUSAL);
 }
 
 /** The bundle a workspace is running, or nothing for a workspace never deployed to. */

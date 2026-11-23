@@ -547,6 +547,31 @@ describe("seeing both sides, drafts and releases", () => {
     expect((await alice.post(`${ws()}/git/push`, {})).body.status).toBe("done");
   });
 
+  test("a plain push leaves on the branch the files of drafts that are still saved (REL-04)", async () => {
+    await alice.put(`${ws()}/drafts/orders/kept`, {
+      kind: "script",
+      schemaVersion: 1,
+      body: scriptBody("export default async () => ({ kept: true });\n"),
+    });
+    expect(
+      (await alice.post(`${ws()}/git/push`, { message: "Work in progress", drafts: true })).body
+        .status,
+    ).toBe("done");
+    const onBranch = () => sh(["ls-tree", "-r", "--name-only", "vx/dev"], bare());
+    expect(onBranch()).toContain("platform/orders/kept.script.ts");
+    // A plain push is of what is deployed: the draft is still saved, so its file stays.
+    const plain = await alice.post(`${ws()}/git/push`, {});
+    expect(plain.body, JSON.stringify(plain.body)).toMatchObject({
+      status: expect.stringMatching(/done|nothing/),
+    });
+    expect(onBranch()).toContain("platform/orders/kept.script.ts");
+    expect((await alice.get(`${ws()}/git`)).body.state).toBe("synced");
+    // Set aside, the next plain push takes it off.
+    await alice.delete(`${ws()}/drafts/orders/kept`);
+    expect((await alice.post(`${ws()}/git/push`, {})).body.status).toBe("done");
+    expect(onBranch()).not.toContain("platform/orders/kept.script.ts");
+  });
+
   test("a promotion commits what production now runs to its release branch", async () => {
     const promoted = await alice.post(`${ws()}/promotions`, {});
     expect(promoted.status, JSON.stringify(promoted.body)).toBe(201);

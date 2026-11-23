@@ -873,6 +873,33 @@ export async function push(
       const problem = configProblem(repository) ?? sides.problems[0];
       if (problem) return failed(db, workspace, actor, "push", problem);
       const { theirs, mine: local } = sides;
+      // A file an earlier push with drafts put on the branch stays there while its draft is
+      // saved: a plain push leaves it as it is, and does not take the work off the branch.
+      if (!options.drafts) {
+        const pending = await db
+          .selectFrom("resource_draft")
+          .select("path")
+          .where("workspace_id", "=", workspace.id)
+          .limit(1)
+          .executeTakeFirst();
+        if (pending) {
+          const drafted = await sidesOf(
+            await draftManifests(kernel, db, workspace),
+            repository,
+            remote.folder,
+          );
+          for (const [path, hash] of Object.entries(drafted.mine)) {
+            if (theirs[path] === hash && local[path] !== hash) {
+              local[path] = hash;
+              sides.mineFiles = [
+                ...sides.mineFiles,
+                ...drafted.mineFiles.filter((file) => file.path === path),
+              ];
+              sides.said[path] = drafted.said[path] as string;
+            }
+          }
+        }
+      }
       const base = link.synced_files;
       const moved = [...new Set([...Object.keys(theirs), ...Object.keys(base)])]
         .filter((path) => theirs[path] !== base[path] && theirs[path] !== local[path])

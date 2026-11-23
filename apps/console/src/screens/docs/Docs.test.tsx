@@ -433,6 +433,13 @@ describe("the Documentation screen", () => {
     });
   });
 
+  test("someone who holds doc:write alone, as a doc writer does, is offered the page menus", async () => {
+    routes[`GET /api/v1${root}/allowed`] = () => [200, { allowed: ["doc:write"] }];
+    docs();
+    expect(await screen.findByRole("button", { name: "More for Customer support" })).toBeTruthy();
+    expect(screen.queryByText(/not change it/)).toBeNull();
+  });
+
   test("a folder's menu makes pages and folders in it, and deletes it with everything in it", async () => {
     docs();
     fireEvent.click(await screen.findByRole("button", { name: "More for Customer support" }));

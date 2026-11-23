@@ -32,7 +32,8 @@ const PAGE = `screens/p27-${stamp}`;
 const SUGGEST = `screens/p27s-${stamp}`;
 const APP = `p27-${stamp}`;
 const PREFIX = `P27-${stamp.toUpperCase()}`;
-const today = new Date().toISOString().slice(0, 10);
+// The browser's "last 30 days" ends on its own local date, so a row issued "today" is dated there, not in UTC.
+const today = new Date().toLocaleDateString("en-CA");
 
 // biome-ignore lint/suspicious/noExplicitAny: answers are inspected freely
 type Answer = { status: number; body: any };

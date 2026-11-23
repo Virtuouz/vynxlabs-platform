@@ -1865,7 +1865,9 @@ describe("tables made in the console, isolation and guards", () => {
     ).toBe(200);
     expect(await names()).toEqual(["t", "j", "d", "a", "z", "b"]);
     const csv = await alice.get(`${ws()}/rows-export/tab30`);
-    expect(String(csv.body).split("\r\n")[0]).toMatch(/^(id,created_at,updated_at,)?t,j,d,a,z,b$|t,j,d,a,z,b/);
+    expect(String(csv.body).split("\r\n")[0]).toMatch(
+      /^(id,created_at,updated_at,)?t,j,d,a,z,b$|t,j,d,a,z,b/,
+    );
   });
 
   test("every change by a principal went through the write path", () => {

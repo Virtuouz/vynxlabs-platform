@@ -425,7 +425,8 @@ export function sourceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.workspace("data_source:write") },
         schema: {
           summary: "Insert rows into a table in a data source",
-          description: "Writes to the source system, if the binding lets it. Not written to the audit log: the rows are the source system's, not the platform's.",
+          description:
+            "Writes to the source system, if the binding lets it. Not written to the audit log: the rows are the source system's, not the platform's.",
           tags: ["data sources"],
           params: SourceRowsParams,
           body: AnyObject,
@@ -483,7 +484,8 @@ export function sourceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.workspace("data_source:write") },
         schema: {
           summary: "Change a row in a data source",
-          description: "Writes to the source system, if the binding lets it. Not written to the audit log: the rows are the source system's, not the platform's.",
+          description:
+            "Writes to the source system, if the binding lets it. Not written to the audit log: the rows are the source system's, not the platform's.",
           tags: ["data sources"],
           params: SourceRowParams,
           body: AnyObject,
@@ -515,7 +517,8 @@ export function sourceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.workspace("data_source:write") },
         schema: {
           summary: "Delete a row in a data source",
-          description: "Deletes in the source system, if the binding lets it. Not written to the audit log: the rows are the source system's, not the platform's.",
+          description:
+            "Deletes in the source system, if the binding lets it. Not written to the audit log: the rows are the source system's, not the platform's.",
           tags: ["data sources"],
           params: SourceRowParams,
           response: { 204: NoContent },

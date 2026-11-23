@@ -699,3 +699,45 @@ describe("a form whose submit asks to confirm", () => {
     expect((screen.getByLabelText(/Number/) as HTMLInputElement).value).toBe("INV-9");
   });
 });
+
+describe("an edit form whose record is read again", () => {
+  const record = { id: "r1", number: "A", notes: "First", total: 100 };
+  const config = {
+    mode: "edit",
+    fields: [{ column: "number" }, { column: "notes" }],
+    submitLabel: "Save",
+  };
+  const show = (row: Record<string, unknown>) => (
+    <FormView
+      config={config as never}
+      data={{ record: wire(row) } as never}
+      size={{ w: 6, h: 8, narrow: false }}
+      emit={() => undefined}
+      building={false}
+      act={async () => ({ ok: true })}
+    />
+  );
+
+  test("keeps what was typed when another column changed", async () => {
+    const view = render(show(record));
+    fireEvent.change(await screen.findByLabelText(/Number/), { target: { value: "Typed" } });
+    view.rerender(show({ ...record, total: 250 }));
+    expect((screen.getByLabelText(/Number/) as HTMLInputElement).value).toBe("Typed");
+  });
+
+  test("takes the new value of a field that was not touched, and says when a touched one changed", async () => {
+    const view = render(show(record));
+    fireEvent.change(await screen.findByLabelText(/Number/), { target: { value: "Typed" } });
+    view.rerender(show({ ...record, number: "B", notes: "Second" }));
+    expect((screen.getByLabelText(/Number/) as HTMLInputElement).value).toBe("Typed");
+    expect((screen.getByLabelText(/Notes/) as HTMLTextAreaElement).value).toBe("Second");
+    expect(screen.getByText(/Number was changed by someone else/)).toBeTruthy();
+  });
+
+  test("starts again for another record", async () => {
+    const view = render(show(record));
+    fireEvent.change(await screen.findByLabelText(/Number/), { target: { value: "Typed" } });
+    view.rerender(show({ ...record, id: "r2", number: "Z" }));
+    expect((screen.getByLabelText(/Number/) as HTMLInputElement).value).toBe("Z");
+  });
+});

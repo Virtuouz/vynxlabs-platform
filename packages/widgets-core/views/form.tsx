@@ -242,8 +242,9 @@ export function FormView(props: FormViewProps) {
   if (edit && !input.record && !building) {
     return <EmptyState title="No record is open">Open a record to change it.</EmptyState>;
   }
-  // A record read again, or another one, starts the fields again.
-  const key = `${edit ? "edit" : "create"}:${JSON.stringify(input.record ?? null)}`;
+  // Another record starts the fields again. The same record read again does not: what was typed
+  // stays, and only what was not touched takes the new value (see `FormBody`).
+  const key = `${edit ? "edit" : "create"}:${edit ? String((input.record as Values | null)?.id ?? "") : ""}`;
   return <FormBody key={key} {...props} record={input} />;
 }
 
@@ -287,6 +288,10 @@ function FormBody({
   );
 
   const [values, setValues] = useState<Values>(begin);
+  // The record as it was last read: a field still equal to it is untouched.
+  const seen = useRef<Values | null>(original);
+  const live = useRef(values);
+  live.current = values;
   const [typed, setTyped] = useState<Record<string, string>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
   // What is typed in a money field and is not an amount: it blocks sending, in words.
@@ -296,6 +301,39 @@ function FormBody({
   const [pending, setPending] = useState(false);
   const form = useRef<HTMLFormElement>(null);
   const off = building || pending;
+
+  // The record read again with another value for a column: a field nobody touched takes it, and
+  // one that was touched keeps what was typed, said so.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only a new read of the record matters here
+  useEffect(() => {
+    const before = seen.current;
+    seen.current = original;
+    if (!edit || !before || !original) return;
+    const changed = fields.filter((field) => !same(before[field.column], original[field.column]));
+    if (changed.length === 0) return;
+    const now = live.current;
+    const next = { ...now };
+    const kept: string[] = [];
+    for (const field of changed) {
+      const name = field.column;
+      if (same(now[name], before[name]) || (isEmpty(now[name]) && isEmpty(before[name]))) {
+        if (isEmpty(original[name])) delete next[name];
+        else next[name] = original[name];
+      } else if (!same(now[name], original[name])) {
+        kept.push(field.label?.trim() || byName.get(name)?.label || words(name));
+      }
+    }
+    setValues(next);
+    setTyped((held) => {
+      const rest = { ...held };
+      for (const field of changed) if (!kept.includes(field.column)) delete rest[field.column];
+      return rest;
+    });
+    if (kept.length > 0)
+      setNote(
+        `${kept.join(", ")} ${kept.length === 1 ? "was" : "were"} changed by someone else. What you typed is kept.`,
+      );
+  }, [original]);
 
   const info = (field: FieldConfig) => {
     const column = byName.get(field.column) as FormColumn;

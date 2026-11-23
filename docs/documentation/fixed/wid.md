@@ -32,3 +32,11 @@ Commits are named by the row in their subject: `git log --grep "(WID-01)"`.
 - **A person sees:** the press says what the flow refuses and nothing is saved; a start that fails later says "Saved. The flow ... could not be started." and the page shows the saved data.
 - **Walk:** button with create then a flow needing a field, pressed with and without it; publish check lists it. 1440/390, light/dark, keyboard, reload. Not run in a browser.
 - **Left out:** the check uses the input as the steps resolve it before the commit; a flow that changes between the check and the start is the "fails after" case. Reading `notStarted` is not in the SDK's client yet (only screens).
+
+## WID-05 An edit form started again, losing what was typed, when its record was read again
+- **Tests:** `packages/screens/src/form.test.tsx` > "an edit form whose record is read again" (3 tests; the first two failed before).
+- **Changed:** `packages/widgets-core/views/form.tsx`: `FormView`'s key is the mode and the record's id, not the whole record; `FormBody` has an effect on a new read: an untouched field takes the new value, a touched one keeps what was typed and the form says "<Field> was changed by someone else. What you typed is kept."
+- **Siblings looked at:** the create form (key was already stable for `{}`; unchanged, still resets after saving); the Detail's in-place editor is a separate component (not keyed by record JSON). The page's re-reads after an action and at 1, 3 and 8 s after a start go through this one view.
+- **A person sees:** typing in an edit form is no longer undone by another widget's action or a flow kick-off; a field changed elsewhere that they had typed in is named.
+- **Walk:** an edit form beside a button that starts a flow; type in a field, press the button, wait 8 s; 1440/390, light/dark, keyboard, reload. Not run in a browser.
+- **Left out:** the note shares the "Nothing has changed yet" line and clears on the next edit.

@@ -1043,8 +1043,8 @@ function validate(
       issues.push({
         path: `${prefix}/${name}`,
         message: target.managed
-          ? `"${name}" is set by the platform`
-          : `"${name}" has a type the platform only reads`,
+          ? `"${name}" is set by Volvel`
+          : `"${name}" has a type Volvel only reads`,
       });
     } else {
       try {

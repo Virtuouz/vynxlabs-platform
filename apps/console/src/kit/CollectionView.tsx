@@ -132,6 +132,7 @@ export function CollectionView<Row>({
       <MasterDetail inspector={inspector} side={side}>
         <DataTable
           {...table}
+          beside={inspector !== undefined && inspector !== null}
           label={label ?? title}
           columns={shown}
           rows={rows}

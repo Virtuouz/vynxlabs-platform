@@ -127,19 +127,19 @@ export const METRICS = declare({
     name: "volvel_db_pool",
     type: "gauge",
     labels: ["pool", "state"],
-    help: "Connections of this replica's pools to the platform database: open, idle, and requests waiting for one.",
+    help: "Connections of this replica's pools to Volvel's own database: open, idle, and requests waiting for one.",
   },
   databaseSize: {
     name: "volvel_database_size_bytes",
     type: "gauge",
     labels: [],
-    help: "The platform database's size on disk. Alert well before its volume is full.",
+    help: "Volvel's own database size on disk. Alert well before its volume is full.",
   },
   databaseReadOnly: {
     name: "volvel_database_read_only",
     type: "gauge",
     labels: [],
-    help: "1 while the platform database takes no writes, such as when its disk is full.",
+    help: "1 while Volvel's own database takes no writes, such as when its disk is full.",
   },
   memoryAvailable: {
     name: "volvel_memory_available_bytes",

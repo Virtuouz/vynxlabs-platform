@@ -344,6 +344,11 @@ export function ScriptEditor({
   const [testInput, setTestInput] = useState<unknown>({});
   const [testAll, setTestAll] = useState(false);
   const [testRun, setTestRun] = useState<string>();
+  // The test pane holds the input form above the result: a new run brings its result into view.
+  const resultTop = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (testRun) resultTop.current?.scrollIntoView?.({ block: "start", behavior: "smooth" });
+  }, [testRun]);
   // The test pane's tab, and the run's own tab, stay as chosen from one run to the next.
   const [paneTab, setPaneTab] = useKeptChoice("editor.pane", "result");
   const [runTab, setRunTab] = useKeptChoice("editor.run", "logs");
@@ -1084,59 +1089,61 @@ export function ScriptEditor({
               className="flex min-h-0 flex-1 flex-col gap-3 overflow-auto  p-4"
             >
               {trying}
-              <Tabs
-                label="What the test run gave"
-                value={paneTab}
-                onChange={setPaneTab}
-                tabs={[
-                  {
-                    id: "result",
-                    label: "Result",
-                    content: testRun ? (
-                      <div className="flex flex-col gap-4">
-                        <ScriptRunPanel
-                          key={testRun}
-                          root={root}
-                          link={link}
-                          runId={testRun}
-                          tab={runTab}
-                          onTab={setRunTab}
-                          onLocation={(at) =>
-                            setReveal({ line: at.line, column: at.column, at: Date.now() })
-                          }
+              <div ref={resultTop} className="scroll-mt-2">
+                <Tabs
+                  label="What the test run gave"
+                  value={paneTab}
+                  onChange={setPaneTab}
+                  tabs={[
+                    {
+                      id: "result",
+                      label: "Result",
+                      content: testRun ? (
+                        <div className="flex flex-col gap-4">
+                          <ScriptRunPanel
+                            key={testRun}
+                            root={root}
+                            link={link}
+                            runId={testRun}
+                            tab={runTab}
+                            onTab={setRunTab}
+                            onLocation={(at) =>
+                              setReveal({ line: at.line, column: at.column, at: Date.now() })
+                            }
+                          />
+                          <PublishedEvents root={root} runId={testRun} />
+                        </div>
+                      ) : (
+                        <p className="m-0 text-ink-muted">
+                          Run the draft to see what it returns, and its log, here.
+                        </p>
+                      ),
+                    },
+                    {
+                      id: "problems",
+                      label: problemCount > 0 ? `Problems (${problemCount})` : "Problems",
+                      content: (
+                        <ProblemList
+                          markers={markers}
+                          build={ownIssues}
+                          onShow={(line, column) => setReveal({ line, column, at: Date.now() })}
                         />
-                        <PublishedEvents root={root} runId={testRun} />
-                      </div>
-                    ) : (
-                      <p className="m-0 text-ink-muted">
-                        Run the draft to see what it returns, and its log, here.
-                      </p>
-                    ),
-                  },
-                  {
-                    id: "problems",
-                    label: problemCount > 0 ? `Problems (${problemCount})` : "Problems",
-                    content: (
-                      <ProblemList
-                        markers={markers}
-                        build={ownIssues}
-                        onShow={(line, column) => setReveal({ line, column, at: Date.now() })}
-                      />
-                    ),
-                  },
-                  {
-                    id: "runs",
-                    label: "Runs",
-                    content: opened ? (
-                      <RecentRuns root={root} link={link} path={opened} />
-                    ) : (
-                      <p className="m-0 text-ink-muted">
-                        A script that is saved lists its runs here.
-                      </p>
-                    ),
-                  },
-                ]}
-              />
+                      ),
+                    },
+                    {
+                      id: "runs",
+                      label: "Runs",
+                      content: opened ? (
+                        <RecentRuns root={root} link={link} path={opened} />
+                      ) : (
+                        <p className="m-0 text-ink-muted">
+                          A script that is saved lists its runs here.
+                        </p>
+                      ),
+                    },
+                  ]}
+                />
+              </div>
             </Panel>
           }
         />

@@ -147,7 +147,7 @@ export function ChoiceList<Value extends string>({
           return (
             <label
               key={one.value}
-              className={`flex h-9 cursor-pointer items-center gap-2 rounded-control border px-3 text-body-sm has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-focus ${
+              className={`flex min-h-9 cursor-pointer items-center gap-2 rounded-control border px-3 py-1 text-body-sm has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-focus ${
                 on ? "border-action bg-selected" : "border-transparent hover:bg-selected"
               }`}
             >
@@ -164,8 +164,8 @@ export function ChoiceList<Value extends string>({
                 className="sr-only"
               />
               {Icon ? <Icon size={14} aria-hidden className="shrink-0 text-ink-muted" /> : null}
-              {/* A long hint gives way before the name does: the name keeps two fifths of the row. */}
-              <span className="min-w-[40%] flex-1 truncate" title={one.label}>
+              {/* A long hint gives way before the name does, and a name wraps rather than being cut. */}
+              <span className="min-w-[40%] flex-1 [overflow-wrap:anywhere]" title={one.label}>
                 {one.label}
               </span>
               {one.hint ? (

@@ -32,6 +32,7 @@ export const keyColumns = [
   { header: "Name", cell: (row: KeyRow) => row.name },
   {
     header: "Key",
+    priority: 2 as const,
     cell: (row: KeyRow) => (
       <code
         className="font-mono text-code"
@@ -45,11 +46,13 @@ export const keyColumns = [
     // As every list says a time: how long ago, with the moment itself on hover. A time to the
     // second did not fit the column on a phone for a key used today.
     header: "Last used",
+    priority: 2 as const,
     cell: (row: KeyRow) => (row.lastUsedAt ? <Time value={row.lastUsedAt} mode="ago" /> : "Never"),
   },
   {
     // As "Last used": how far off, with the moment on hover. A key that does not expire says so.
     header: "Expires",
+    priority: 3 as const,
     cell: (row: KeyRow) => (row.expiresAt ? <Time value={row.expiresAt} mode="ago" /> : "Never"),
   },
   {

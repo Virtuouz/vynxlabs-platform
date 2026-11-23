@@ -130,7 +130,7 @@ export async function startSiteServer(options: SiteServerOptions) {
   if (app.kind === "interface" && !screens) {
     throw new BuildError([
       "The files that draw an interface are not in this install, and an interface app is drawn with them.",
-      "Reinstall @volvel/cli, or set SCREENS_DIR to the folder packages/screens/runtime/dist of a build of the platform.",
+      "Reinstall @volvel/cli, or set SCREENS_DIR to the folder packages/screens/runtime/dist of a build of Volvel.",
     ]);
   }
   const policy =

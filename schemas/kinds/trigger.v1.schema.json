@@ -171,7 +171,7 @@
       "properties": {
         "type": {
           "const": "form",
-          "description": "Starts when someone sends a form the platform serves."
+          "description": "Starts when someone sends a form Volvel serves."
         },
         "script": {
           "type": "string",

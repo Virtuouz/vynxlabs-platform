@@ -5,7 +5,7 @@ import type { DataLocation, PlatformSchema } from "./schema.js";
 
 /**
  * Database access for one tenant's platform records, and where its custom
- * tables live. Platform records are always in the platform database. Custom
+ * tables live. Platform records are always in Volvel's own database. Custom
  * tables are in the database `location` names, opened as a `DataStore`.
  */
 export interface TenantHandle {

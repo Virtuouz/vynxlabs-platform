@@ -390,6 +390,18 @@ test("Ready to publish: checks, what changes, Try as, and a blocking problem", a
   expect(await screen.findByRole("button", { name: "View as Billing" })).toBeTruthy();
 });
 
+test("round 4: the publish check lists every change: the list has no height of its own, the check scrolls", async () => {
+  withAside({});
+  await open();
+  fireEvent.click(screen.getAllByRole("button", { name: "Publish" })[0] as HTMLElement);
+  await screen.findByRole("heading", { name: "Ready to publish" });
+  const list = within(screen.getByRole("region", { name: "Changes" })).getByRole("list");
+  expect(list.className).not.toMatch(/max-h-|overflow-y-auto/);
+  const check = document.querySelector("[data-publish-check]") as HTMLElement;
+  expect(check.className).toContain("overflow-y-auto");
+  expect(check.className).toContain("max-h-");
+});
+
 test("a check that the control plane refuses says so, with a way to ask again (BLD-03)", async () => {
   withAside({});
   const before = globalThis.fetch;

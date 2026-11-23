@@ -243,7 +243,7 @@ const Deployment = Type.Object({
   message: Type.Optional(NullableString),
   createdBy: Type.Optional(
     Type.String({
-      description: "Who deployed it: an email, a service account's name, or the platform.",
+      description: "Who deployed it: an email, a service account's name, or Volvel.",
     }),
   ),
   digest: Type.Optional(Type.String()),
@@ -692,7 +692,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                 ? (members.get(row.created_by_id) ?? "A member")
                 : row.created_by_type === "service_account" && row.created_by_id
                   ? (accounts.get(row.created_by_id) ?? "A service account")
-                  : "The platform",
+                  : "Volvel",
             digest: row.digest,
             runningIn: running
               .filter((one) => one.digest === row.digest)
@@ -1742,7 +1742,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         schema: {
           summary: "Cancel a run that is waiting or in progress",
           description:
-            "A running script hears of it on its next heartbeat. A run that has already ended answers 409. The platform then publishes `platform/run-finished` with the status `cancelled`. Audited.",
+            "A running script hears of it on its next heartbeat. A run that has already ended answers 409. Volvel then publishes `platform/run-finished` with the status `cancelled`. Audited.",
           tags: ["runs"],
           params: Type.Object({ t: Id, w: Id, id: Id }),
           response: { 200: Run },
@@ -3166,8 +3166,8 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       {
         config: { access: access.workspace("run:read") },
         schema: {
-          summary: "A task a worker does for the platform",
-          description: "Work the platform handed to a worker besides a run, and how it went.",
+          summary: "A task a worker does for Volvel",
+          description: "Work Volvel handed to a worker besides a run, and how it went.",
           tags: ["runs"],
           params: Type.Object({ t: Id, w: Id, id: Id }),
           response: { 200: Task },

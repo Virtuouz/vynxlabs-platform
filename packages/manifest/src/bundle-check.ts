@@ -164,7 +164,7 @@ export function checkBundleManifests(manifests: BundleManifest[]): string[] {
       !(manifest.kind === "script" && manifest.ownership === "ui")
     ) {
       problems.push(
-        `${manifest.path} (${manifest.kind}): paths under ${CORE_PREFIX} are kept for the platform's own nodes.`,
+        `${manifest.path} (${manifest.kind}): paths under ${CORE_PREFIX} are kept for Volvel's own nodes.`,
       );
     }
     // `default` is what the queue of scripts that name no pool is shown as. A pool cannot be
@@ -549,7 +549,7 @@ export function checkBundleAssets(
     if (unnamed) problems.push(`${asset.app} (app): ${unnamed}`);
     if (asset.path.startsWith(RESERVED_ASSET_PREFIX) || asset.path === "_") {
       problems.push(
-        `${asset.app} (app): ${asset.path} is under "_", which the platform keeps for its own pages.`,
+        `${asset.app} (app): ${asset.path} is under "_", which Volvel keeps for its own pages.`,
       );
     }
   }

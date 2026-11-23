@@ -258,7 +258,7 @@ export class DataStores {
     this.#locations.delete(tenantId);
   }
 
-  /** The name of the dedicated location a tenant uses, or null for the platform database. */
+  /** The name of the dedicated location a tenant uses, or null for Volvel's own database. */
   async locationOf(tenantId: string, db: Db | Trx = this.#db): Promise<string | null> {
     const known = this.#locations.get(tenantId);
     if (known !== undefined && Date.now() - known.at < STALE_MS) return known.name;

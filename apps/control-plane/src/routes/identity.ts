@@ -816,7 +816,7 @@ export function identityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         schema: {
           summary: "Registered resource kinds",
           description:
-            "Every kind of resource this version of the platform knows, with the JSON Schema its body is checked against.",
+            "Every kind of resource this version of Volvel knows, with the JSON Schema its body is checked against.",
           tags: ["resources"],
           response: {
             200: Type.Object({
@@ -835,10 +835,10 @@ export function identityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       {
         config: { access: access.signedIn },
         schema: {
-          summary: "The core nodes: steps for flows that come with the platform",
+          summary: "The core nodes: steps for flows that come with Volvel",
           description:
             "Each is a script under `core/`. A flow uses one by naming it in a script step, and " +
-            "the platform adds it to the workspace's bundle when the bundle is composed. " +
+            "Volvel adds it to the workspace's bundle when the bundle is composed. " +
             "`takes` is what a step may hand it with `with`. In `input`, a field marked " +
             "`x-pick` names a connection, a table or an event of the workspace.",
           tags: ["flows"],

@@ -917,7 +917,7 @@ export interface DatabaseLocationTable {
   updated_at: Generated<Date>;
 }
 
-/** Tables shared by every tenant in the platform database. */
+/** Tables shared by every tenant in Volvel's own database. */
 export interface BundleAssetTable {
   tenant_id: string;
   sha256: string;

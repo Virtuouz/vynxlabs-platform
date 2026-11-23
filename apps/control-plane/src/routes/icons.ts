@@ -73,7 +73,7 @@ export const iconRoutes =
         schema: {
           summary: "The console's icon at one size",
           description:
-            "Made from the instance's logo. An instance with no logo answers with the platform's own icon.",
+            "Made from the instance's logo. An instance with no logo answers with Volvel's own icon.",
           tags: ["instance"],
           params: Type.Object({ size: SizeParam }),
           produces: ["image/png"],
@@ -92,7 +92,7 @@ export const iconRoutes =
         config: { access: access.instance("instance:write") },
         schema: {
           summary: "Remove the console's icons",
-          description: "The console goes back to the platform's own icon.",
+          description: "The console goes back to Volvel's own icon.",
           tags: ["instance"],
           response: { 204: NoContent },
         },

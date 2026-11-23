@@ -129,7 +129,7 @@ export async function describeRequests(kernel: Kernel, ctx: RequestContext, rows
         "A member")
       : type === "service_account"
         ? (accounts.find((one) => one.id === id)?.name ?? "A service account")
-        : "The platform";
+        : "Volvel";
   const decides = new Map<string, boolean>();
   for (const target of new Set(rows.map((row) => row.target_workspace_id))) {
     decides.set(

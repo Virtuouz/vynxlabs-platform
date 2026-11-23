@@ -19,6 +19,7 @@
  */
 import {
   type Action,
+  groupName,
   type InterfaceBody,
   missingGroups,
   type Page,
@@ -151,7 +152,7 @@ function columnsOf(visual: VisualQuery): { column: string; where: string }[] {
       // A sort may name a group or a measure by its name: only a plain column name is checked
       // against the table when it is not one of those.
       (visual.measures ?? []).some((measure) => measure.as === one.by) ||
-      (visual.groupBy ?? []).some((group) => group.column === one.by)
+      (visual.groupBy ?? []).some((group) => group.column === one.by || groupName(group) === one.by)
         ? []
         : [{ column: one.by, where: "Sorted by" }],
     ),

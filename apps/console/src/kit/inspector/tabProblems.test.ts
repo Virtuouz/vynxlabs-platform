@@ -141,3 +141,31 @@ test("an action that starts a flow or script without what it needs says so befor
     ),
   ).toBeUndefined();
 });
+
+test("w-builder 3: a chart sorted by a breakdown through a join (its name has an underscore) is not gone", () => {
+  const sorted: PageWidget = {
+    id: "c",
+    type: "core/chart",
+    at,
+    data: read({
+      table: "invoices",
+      groupBy: [{ column: "pet.species" }],
+      measures: [{ fn: "count", as: "count" }],
+      sort: [{ by: "pet_species", dir: "asc" }],
+    }),
+  };
+  expect(inTab(tabProblems({ widget: sorted, definition: chart, catalog }), "data")).toEqual([]);
+  // A column that is not any breakdown or value is still checked.
+  const gone: PageWidget = {
+    ...sorted,
+    data: read({
+      table: "invoices",
+      groupBy: [{ column: "pet.species" }],
+      measures: [{ fn: "count", as: "count" }],
+      sort: [{ by: "pet_breed", dir: "asc" }],
+    }),
+  };
+  expect(inTab(tabProblems({ widget: gone, definition: chart, catalog }), "data")).toEqual([
+    "Sorted by: pet_breed is not in invoices any more.",
+  ]);
+});

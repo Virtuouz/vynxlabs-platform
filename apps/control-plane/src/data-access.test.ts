@@ -350,6 +350,24 @@ describe("an external Postgres database as a data source", () => {
     expect((await bob.client.get(rows)).status).toBe(403);
   });
 
+  test("pages of a table with no key are in a fixed order, so none repeats or is skipped (DAT-29)", async () => {
+    const there = external.router.platform();
+    await sql`create table plain_log (message text, n integer, extra jsonb)`.execute(there);
+    await sql`insert into plain_log values ('c', 1, '{}'), ('a', 2, '{}'), ('b', 1, '{}'), ('a', 1, '[]'), ('c', 0, null)`.execute(
+      there,
+    );
+    const rows = `${ws()}/source-rows/plain_log/erp`;
+    const read = async (query: string) => (await alice.get(`${rows}?${query}`)).body;
+    const first = await read("limit=2");
+    const second = await read(`limit=2&cursor=${first.nextCursor}`);
+    const third = await read(`limit=2&cursor=${second.nextCursor}`);
+    const seen = [...first.items, ...second.items, ...third.items].map(
+      (row: Any) => `${row.message}${row.n}`,
+    );
+    // By every column in turn: the same rows in the same order, whatever order the database holds them.
+    expect(seen).toEqual(["a1", "a2", "b1", "c0", "c1"]);
+  });
+
   test("TAB-32 and TAB-16: whole numbers past 2^53 are not rounded, and `infinity` is shown as what it is", async () => {
     const there = external.router.platform();
     await sql`create table big (id bigint primary key, note text, seen timestamptz, price numeric)`.execute(

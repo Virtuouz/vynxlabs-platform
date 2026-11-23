@@ -12,3 +12,5 @@ Each item was in a lane's brief and was not built, or was found by a lane. The f
 - `tenant.console_code`: an audited switch for an operator and a tenant admin (D17; SCR-16, EXT-10, REL-18).
 - `volvel dev` for file apps, interfaces and docs (CLI missing part 7).
 - WLK-09, WLK-11, WLK-15, WLK-17 items that t2-walk-* lanes do not finish (see their fixed files).
+- The `DraftClash` in `ResourceEditor.tsx` has no "Copy what I wrote" (t2-walk-shell).
+- A binding older than the 200 newest uploads still reads as its old kind (cfg2 limit; needs a column) (t2-walk-shell).

@@ -1061,4 +1061,19 @@ describe("schemas read from code", () => {
     });
     await alice.delete(`${ws()}/drafts/greetings/renamer`);
   });
+
+  test("a schema is read in the pool of the script that has it", async () => {
+    const saved = await draft(
+      "orders/on-site",
+      scriptBody("export default async () => ({});\n", { worker: "plant-floor" }),
+    );
+    expect(saved.status, JSON.stringify(saved.body)).toBe(200);
+    const task = await t.db
+      .selectFrom("task")
+      .select("pool")
+      .where("id", "=", saved.body.schemaTaskId)
+      .executeTakeFirstOrThrow();
+    expect(task.pool).toBe("plant-floor");
+    await alice.delete(`${ws()}/drafts/orders/on-site`);
+  });
 });

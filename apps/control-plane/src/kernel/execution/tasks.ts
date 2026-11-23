@@ -55,6 +55,27 @@ export function onTaskEnded(kind: TaskKind, handler: Ended) {
   ended.set(kind, handler);
 }
 
+/**
+ * The pool of the first script that uses a connection and names a pool: a task about the
+ * connection (a test, an alert's delivery) goes where the script that uses it runs, since a worker of
+ * another pool may not reach what it names. Null, the default pool, when no script names one.
+ */
+export async function poolOfConnection(
+  db: Db | Trx,
+  workspaceId: string,
+  connection: string,
+): Promise<string | null> {
+  const found = await sql<{ pool: string }>`
+    select body->>'worker' as pool from resource
+    where workspace_id = ${workspaceId} and kind = 'script'
+      and body->>'worker' is not null
+      and body->'uses'->'connections' ? ${connection}
+    order by path
+    limit 1
+  `.execute(db);
+  return found.rows[0]?.pool ?? null;
+}
+
 /** Queues a task for the tenant's workers. */
 export async function queueTask(
   db: Db | Trx,

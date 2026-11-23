@@ -45,7 +45,7 @@ import {
   runState,
   runStateSql,
 } from "../kernel/execution/state.js";
-import { queueTask, type TaskRow, toTask } from "../kernel/execution/tasks.js";
+import { poolOfConnection, queueTask, type TaskRow, toTask } from "../kernel/execution/tasks.js";
 import {
   fireScheduleNow,
   fireWebhook,
@@ -2697,6 +2697,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           const queued = await queueTask(trx, {
             tenantId: params.t,
             workspaceId: params.w,
+            pool: await poolOfConnection(trx, params.w, path),
             kind: "test-connection",
             subject: path,
             request: {

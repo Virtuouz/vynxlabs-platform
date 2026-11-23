@@ -437,7 +437,7 @@ describe("a grid's headings", () => {
     await screen.findByText("Where it is in its life.");
     expect(onSort).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "status" }));
-    expect(onSort).toHaveBeenCalledWith("status");
+    expect(onSort).toHaveBeenCalledWith("status", false);
     // A value in a row is never looked at, whatever it says.
     expect(screen.getAllByRole("button")).toHaveLength(2);
   });

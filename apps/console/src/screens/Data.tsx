@@ -54,6 +54,7 @@ import {
   MoreColumnsField,
   typesFrom,
 } from "./ColumnControls.tsx";
+import { filterNode, toFilter } from "./gridFilter.ts";
 import { ResourceIdentity } from "./ResourceIdentity.tsx";
 import {
   type Policy,
@@ -155,20 +156,28 @@ interface RowsBrowserProps {
 
 type DataRow = Record<string, unknown>;
 
-/** What was typed in a filter box, as the filter the data API takes. */
-export function toFilter(type: string, text: string): object | null {
-  const trimmed = text.trim();
-  if (trimmed === "") return null;
-  if (/^(empty|null)$/i.test(trimmed)) return { op: "is_null", value: true };
-  if (type === "text") return { op: "contains", value: trimmed };
-  // An enum is found by a value spelled out, a list by one value it has.
-  if (type === "enum") return { op: "eq", value: trimmed };
-  if (type === "enum_list") return { op: "has", value: trimmed };
-  const compared = /^(>=|<=|>|<)\s*(.+)$/.exec(trimmed);
-  const op = compared
-    ? { ">=": "gte", "<=": "lte", ">": "gt", "<": "lt" }[compared[1] as ">"]
-    : "eq";
-  return { op, value: parseValue(type, compared ? (compared[2] as string) : trimmed) };
+export { toFilter };
+
+/**
+ * The sort after a heading is pressed, as the address and the API write it (`a,-b`). A press
+ * alone sorts by that column up, then down, then not at all. With Shift the column is added to
+ * the others, after them, and pressing it again turns it down and then takes it off.
+ */
+export function nextSort(sort: GridSort[], column: string, additive: boolean): string | undefined {
+  const here = sort.find((one) => one.column === column);
+  const write = (list: GridSort[]) =>
+    list.length > 0
+      ? list.map((one) => `${one.descending ? "-" : ""}${one.column}`).join(",")
+      : undefined;
+  if (!additive) {
+    // The column alone: another sort is let go of, and this one goes up, down, off.
+    if (!here || sort.length > 1) return write([{ column, descending: false }]);
+    return here.descending ? undefined : write([{ column, descending: true }]);
+  }
+  if (!here) return write([...sort, { column, descending: false }]);
+  if (!here.descending)
+    return write(sort.map((one) => (one.column === column ? { ...one, descending: true } : one)));
+  return write(sort.filter((one) => one.column !== column));
 }
 
 /** What the rows of a table show: in the address, so a link opens the same view. */
@@ -180,6 +189,8 @@ const ROWS_URL = {
   cols: { type: "list" },
   /** What links and saved views from before phase 18 say: the columns left out. Read, never written. */
   hide: { type: "list" },
+  /** "any" when a row needs to satisfy one filter box and not every one. */
+  match: { type: "string" },
   /** "1" when the first column scrolls away with the rest. It stays in view otherwise. */
   unlock: { type: "string" },
   density: { type: "string", default: "standard" },
@@ -197,9 +208,12 @@ function RowsBrowser(
 ) {
   const { columns, keyColumn, rowPath } = props;
   const [url, setUrl] = useUrlState(ROWS_URL);
-  const sort: GridSort | undefined = url.sort
-    ? { column: url.sort.replace(/^-/, ""), descending: url.sort.startsWith("-") }
-    : undefined;
+  const sort: GridSort[] = url.sort
+    ? url.sort
+        .split(",")
+        .filter(Boolean)
+        .map((entry) => ({ column: entry.replace(/^-/, ""), descending: entry.startsWith("-") }))
+    : [];
   const applied = (() => {
     try {
       return url.filter ? (JSON.parse(url.filter) as Record<string, string>) : {};
@@ -229,7 +243,7 @@ function RowsBrowser(
   const [adding, setAdding] = useState(false);
   // What is checked belongs to the page, order and filter it was checked on: on another, it is
   // not there to see, and a delete must not take it along.
-  const scope = `${url.page ?? ""}|${url.sort ?? ""}|${url.filter ?? ""}`;
+  const scope = `${url.page ?? ""}|${url.sort ?? ""}|${url.filter ?? ""}|${url.match ?? ""}`;
   const [picked, setPicked] = useState<{ scope: string; ids: Set<string> }>({
     scope,
     ids: new Set(),
@@ -254,7 +268,7 @@ function RowsBrowser(
   for (const column of columns) {
     try {
       const built = toFilter(column.type, applied[column.name] ?? "");
-      if (built) parts.push({ column: column.name, ...built });
+      if (built) parts.push(filterNode(column.name, built));
     } catch (error) {
       filterErrors[column.name] = (error as Error).message;
     }
@@ -262,7 +276,9 @@ function RowsBrowser(
   const filterBroken = Object.keys(filterErrors).length > 0;
   // While a box cannot be read nothing is asked for: showing every row as if it were filtered,
   // or exporting them, would say something the filter does not.
-  const filter: object | undefined = parts.length > 0 && !filterBroken ? { and: parts } : undefined;
+  const any = url.match === "any";
+  const filter: object | undefined =
+    parts.length > 0 && !filterBroken ? (any ? { or: parts } : { and: parts }) : undefined;
   const query = new URLSearchParams({ limit: String(PAGE) });
   if (filter) query.set("filter", JSON.stringify(filter));
   if (url.sort) query.set("sort", url.sort);
@@ -382,10 +398,31 @@ function RowsBrowser(
               }
             >
               <p className="m-0">
-                Arrow keys move between cells; Enter or F2 changes one, Escape puts it back. In a
-                filter, type text to look for, or a comparison such as &gt; 100. Type empty to find
-                rows with no value.
+                Arrow keys move between cells; Enter or F2 changes one, Escape puts it back. Shift
+                with Enter or a click on a heading adds a column to the sort.
               </p>
+              <p className="m-0 mt-2">In a filter, type:</p>
+              <ul className="m-0 mt-1 flex flex-col gap-0.5 pl-5">
+                <li>text to look for, or a value to match</li>
+                <li>
+                  <Code>{"> 100"}</Code>, <Code>{">= 100"}</Code>, <Code>{"< 100"}</Code> or{" "}
+                  <Code>{"<= 100"}</Code>
+                </li>
+                <li>
+                  <Code>{"10..20"}</Code> for a range, both ends included. <Code>{"10.."}</Code> and{" "}
+                  <Code>{"..20"}</Code> leave one end open
+                </li>
+                <li>
+                  <Code>{"!x"}</Code> for rows that are not exactly x
+                </li>
+                <li>
+                  <Code>{"a | b"}</Code> for rows that are a or b
+                </li>
+                <li>
+                  <Code>empty</Code> for rows with no value, <Code>{"!empty"}</Code> for rows with
+                  one
+                </li>
+              </ul>
             </Popover>
           )}
           <ColumnsMenu
@@ -416,6 +453,19 @@ function RowsBrowser(
           >
             {compact ? "Standard rows" : "Compact rows"}
           </Button>
+          {parts.length > 1 ? (
+            <SelectField
+              inline
+              name="match"
+              label="Rows must match"
+              value={any ? "any" : "all"}
+              options={[
+                { value: "all", label: "every filter" },
+                { value: "any", label: "any filter" },
+              ]}
+              onChange={(next) => setUrl({ match: next === "any" ? "any" : undefined, ...toFirst })}
+            />
+          ) : null}
           {viewsOf(props.rowsPath, props.tableId) ? (
             <ViewsMenu
               {...(viewsOf(props.rowsPath, props.tableId) as ViewsOf)}
@@ -495,11 +545,9 @@ function RowsBrowser(
             onSelect={(row) => void choose(keyOf(row))}
             {...(canBatch ? { checked, onCheck: setChecked } : {})}
             sort={sort}
-            onSort={(column) => {
-              const next =
-                sort?.column !== column ? column : sort.descending ? undefined : `-${column}`;
+            onSort={(column, additive) => {
               setBack([]);
-              setUrl({ sort: next, ...toFirst });
+              setUrl({ sort: nextSort(sort, column, additive), ...toFirst });
             }}
             filters={typed}
             filterErrors={filterErrors}

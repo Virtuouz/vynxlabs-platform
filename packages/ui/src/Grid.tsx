@@ -58,9 +58,13 @@ export interface GridProps<Row extends Record<string, unknown>> {
   columns: GridColumn[];
   rows: Row[];
   rowKey: (row: Row) => string;
-  sort?: GridSort | undefined;
-  /** Called with the column whose header was pressed. */
-  onSort?: (column: string) => void;
+  /** What the rows are sorted by: one column, or several, the first most important. */
+  sort?: GridSort | GridSort[] | undefined;
+  /**
+   * Called with the column whose header was pressed, and whether Shift was held: a press with
+   * Shift adds the column to the sort, or turns it the other way, and one without starts again.
+   */
+  onSort?: (column: string, additive: boolean) => void;
   /** What is typed in the filter row, by column. */
   filters?: Record<string, string>;
   onFilter?: (column: string, text: string) => void;
@@ -103,6 +107,10 @@ export interface GridProps<Row extends Record<string, unknown>> {
 }
 
 const NUMERIC = new Set(["integer", "number"]);
+
+/** The sort as a list, whether it was given as one column or several. */
+const sortsOf = (sort: GridSort | GridSort[] | undefined): GridSort[] =>
+  sort === undefined ? [] : Array.isArray(sort) ? sort : [sort];
 
 /**
  * Whether a key typed into a field of the grid stays there. The grid's own keys do;
@@ -413,7 +421,8 @@ function EditableCell<Row extends Record<string, unknown>>({
  * | Space | Check or uncheck the row |
  */
 function NavigableGrid<Row extends Record<string, unknown>>(props: GridProps<Row>) {
-  const { columns, rows, sort, filters, onFilter, onEdit, checked, onCheck } = props;
+  const { columns, rows, filters, onFilter, onEdit, checked, onCheck } = props;
+  const sorts = sortsOf(props.sort);
   const checking = checked !== undefined && onCheck !== undefined;
   const filterable = onFilter !== undefined && columns.some((column) => column.filterable);
   const offset = checking ? 1 : 0;
@@ -488,7 +497,7 @@ function NavigableGrid<Row extends Record<string, unknown>>(props: GridProps<Row
     if (event.key !== "Enter" && event.key !== "F2") return;
     event.preventDefault();
     if (r === 0) {
-      if (column?.sortable) props.onSort?.(column.name);
+      if (column?.sortable) props.onSort?.(column.name, event.shiftKey);
       else if (c === 0 && checking) onCheck(everyChecked ? new Set() : new Set(all));
       return;
     }
@@ -540,7 +549,8 @@ function NavigableGrid<Row extends Record<string, unknown>>(props: GridProps<Row
               </th>
             ) : null}
             {columns.map((column, index) => {
-              const sorted = sort?.column === column.name ? sort : undefined;
+              const place = sorts.findIndex((one) => one.column === column.name);
+              const sorted = place >= 0 ? sorts[place] : undefined;
               const pinned =
                 lockFirst && index === 0 ? `sticky ${checking ? "left-8" : "left-0"}` : "";
               return (
@@ -551,7 +561,9 @@ function NavigableGrid<Row extends Record<string, unknown>>(props: GridProps<Row
                   className={`${head} ${pad} whitespace-nowrap ${pinned} ${
                     NUMERIC.has(column.type) ? "text-right" : ""
                   } ${column.sortable && props.onSort ? "cursor-pointer hover:text-ink" : ""}`}
-                  onClick={() => column.sortable && props.onSort?.(column.name)}
+                  onClick={(event) =>
+                    column.sortable && props.onSort?.(column.name, event.shiftKey)
+                  }
                   {...cellProps(0, index + offset)}
                 >
                   <TermText>{column.label ?? column.name}</TermText>
@@ -559,6 +571,7 @@ function NavigableGrid<Row extends Record<string, unknown>>(props: GridProps<Row
                   {sorted ? (
                     <span aria-hidden="true" className="ml-1 inline-flex align-middle text-action">
                       {sorted.descending ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
+                      {sorts.length > 1 ? <span className="text-meta">{place + 1}</span> : null}
                     </span>
                   ) : null}
                 </th>
@@ -699,7 +712,9 @@ export function Grid<Row extends Record<string, unknown>>(props: GridProps<Row>)
 
 /** The grid tenant apps have had: each value to change is a button of its own. */
 function PlainGrid<Row extends Record<string, unknown>>(props: GridProps<Row>) {
-  const { columns, rows, sort, filters, onFilter, onEdit } = props;
+  const { columns, rows, filters, onFilter, onEdit } = props;
+  // This grid sorts by one column: of several, the first.
+  const sort = sortsOf(props.sort)[0];
   const filterable = onFilter !== undefined && columns.some((column) => column.filterable);
   const choosing = props.onSelect !== undefined;
   const group = useId();
@@ -726,7 +741,7 @@ function PlainGrid<Row extends Record<string, unknown>>(props: GridProps<Row>) {
                     <button
                       type="button"
                       className="inline-flex items-center gap-1 font-medium text-inherit hover:text-ink"
-                      onClick={() => props.onSort?.(column.name)}
+                      onClick={(event) => props.onSort?.(column.name, event.shiftKey)}
                     >
                       {column.label ?? column.name}
                       <span

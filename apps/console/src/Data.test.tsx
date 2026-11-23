@@ -6,6 +6,7 @@ import { navigate } from "./router.tsx";
 import {
   bodyToRestore,
   moveColumn,
+  nextSort,
   pickerFilter,
   Sources,
   SourceView,
@@ -1478,4 +1479,107 @@ test("TAB-P5: Create table says which column is wrong, and sends nothing, when t
   fireEvent.submit(dialog.querySelector("form") as HTMLFormElement);
   expect(await within(dialog).findByText(/Choose the table that "other" points to/)).toBeTruthy();
   expect(calls.some((call) => call.method === "PUT")).toBe(false);
+});
+
+test("TAB-P8: a filter box says not, any of, not empty and a range, and the boxes may be any-of or all-of", async () => {
+  expect(toFilter("number", "!empty")).toEqual({ op: "is_null", value: false });
+  expect(toFilter("text", "!ada")).toEqual({ op: "ne", value: "ada" });
+  expect(toFilter("integer", "10..20")).toEqual({
+    and: [
+      { op: "gte", value: 10 },
+      { op: "lte", value: 20 },
+    ],
+  });
+  expect(toFilter("integer", "..20")).toEqual({ op: "lte", value: 20 });
+  expect(toFilter("date", "2026-01-01..")).toEqual({ op: "gte", value: "2026-01-01" });
+  expect(toFilter("enum", "new | paid")).toEqual({ op: "in", value: ["new", "paid"] });
+  expect(toFilter("text", "ada | bob")).toEqual({
+    or: [
+      { op: "contains", value: "ada" },
+      { op: "contains", value: "bob" },
+    ],
+  });
+  expect(() => toFilter("enum_list", "!a")).toThrow(/cannot be searched with not/);
+
+  show(<TableView root={root} name="orders" link="/t/t1/workspaces/w1" />);
+  await screen.findByText("A-1");
+  fireEvent.change(screen.getByLabelText("Filter by total"), { target: { value: "5..300" } });
+  await waitFor(() =>
+    expect(JSON.parse(lastRows().get("filter") ?? "null")).toEqual({
+      and: [
+        {
+          and: [
+            { column: "total", op: "gte", value: 5 },
+            { column: "total", op: "lte", value: 300 },
+          ],
+        },
+      ],
+    }),
+  );
+  // Two boxes: rows may match either, when that is asked for, and it is in the address.
+  fireEvent.change(screen.getByLabelText("Filter by number"), { target: { value: "A-1 | A-2" } });
+  const match = await screen.findByLabelText("Rows must match");
+  fireEvent.change(match, { target: { value: "any" } });
+  await waitFor(() =>
+    expect(JSON.parse(lastRows().get("filter") ?? "null")).toEqual({
+      or: [
+        {
+          or: [
+            { column: "number", op: "contains", value: "A-1" },
+            { column: "number", op: "contains", value: "A-2" },
+          ],
+        },
+        {
+          and: [
+            { column: "total", op: "gte", value: 5 },
+            { column: "total", op: "lte", value: 300 },
+          ],
+        },
+      ],
+    }),
+  );
+  expect(new URLSearchParams(location.search).get("match")).toBe("any");
+  navigate("/t/t1/workspaces/w1/tables/orders");
+});
+
+test("TAB-P9: Shift on a heading sorts by several columns, in the address and in the request", async () => {
+  expect(nextSort([], "total", false)).toBe("total");
+  expect(nextSort([{ column: "total", descending: false }], "total", false)).toBe("-total");
+  expect(nextSort([{ column: "total", descending: true }], "total", false)).toBeUndefined();
+  expect(nextSort([{ column: "total", descending: false }], "number", true)).toBe("total,number");
+  expect(
+    nextSort(
+      [
+        { column: "total", descending: false },
+        { column: "number", descending: false },
+      ],
+      "number",
+      true,
+    ),
+  ).toBe("total,-number");
+  expect(
+    nextSort(
+      [
+        { column: "total", descending: false },
+        { column: "number", descending: true },
+      ],
+      "number",
+      true,
+    ),
+  ).toBe("total");
+  navigate("/t/t1/workspaces/w1/tables/orders");
+  show(<TableView root={root} name="orders" link="/t/t1/workspaces/w1" />);
+  await screen.findByText("A-1");
+  fireEvent.click(screen.getByRole("columnheader", { name: /^total/ }));
+  await waitFor(() => expect(lastRows().get("sort")).toBe("total"));
+  fireEvent.click(screen.getByRole("columnheader", { name: /^number/ }), { shiftKey: true });
+  await waitFor(() => expect(lastRows().get("sort")).toBe("total,number"));
+  expect(new URLSearchParams(location.search).get("sort")).toBe("total,number");
+  expect(screen.getByRole("columnheader", { name: /^number/ }).getAttribute("aria-sort")).toBe(
+    "ascending",
+  );
+  // CSV is asked for with the same order.
+  expect(screen.getByRole("link", { name: /CSV/ }).getAttribute("href")).toContain(
+    "sort=total%2Cnumber",
+  );
 });

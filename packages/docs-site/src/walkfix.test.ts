@@ -175,3 +175,14 @@ describe("a site of typed pages", () => {
     expect(DOCS_CSS).toMatch(/\.related li a \{[^}]*text-decoration: underline/);
   });
 });
+
+describe("the home page asks whether it helped, as every page does (P31 fe)", () => {
+  test("a site that keeps feedback shows the question on its home page, and the answer once given", () => {
+    const asking = homePage({ ...at, feedback: { said: () => false, recording: true } });
+    expect(asking).toContain("Was this page helpful?");
+    expect(asking).toContain('name="page" value="index"');
+    const said = homePage({ ...at, feedback: { said: () => true, recording: true } });
+    expect(said).toContain("Thank you for saying.");
+    expect(homePage(at)).not.toContain("Was this page helpful?");
+  });
+});

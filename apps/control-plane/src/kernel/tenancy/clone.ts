@@ -85,10 +85,10 @@ async function copyBindings(
 
   const connections = await trx
     .selectFrom("connection_binding")
-    .select("path")
+    .select(["path", "connector"])
     .where("workspace_id", "=", source.id)
     .execute();
-  for (const { path } of connections) {
+  for (const { path, connector } of connections) {
     const at = { tenantId: source.tenantId, workspaceId: source.id, path };
     const bound = await readConnection(kernel, trx, at);
     if (!bound) continue;
@@ -98,6 +98,7 @@ async function copyBindings(
       { ...at, workspaceId: target.id },
       bound.config as Record<string, unknown>,
       bound.credential ?? null,
+      connector,
     );
   }
   report.connections = connections.length;

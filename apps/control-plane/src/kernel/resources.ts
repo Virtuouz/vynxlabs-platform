@@ -293,6 +293,7 @@ export async function deleteResource(
     workspaceId: existing.workspace_id,
     path: existing.path,
     body: existing.body,
+    ownership: existing.ownership,
   });
   // Roles and bindings projected from this resource go with it.
   await trx.deleteFrom("resource").where("id", "=", existing.id).execute();

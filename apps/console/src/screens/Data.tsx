@@ -1534,9 +1534,7 @@ export function Tables({ root, link }: { root: string; link: string }) {
         {
           header: "Managed in",
           priority: 3,
-          // A retired table has left its definition, and what it was managed in is not kept.
-          cell: (row) =>
-            row.status === "retired" ? "" : row.managedIn === "code" ? "Repository" : "Console",
+          cell: (row) => (row.managedIn === "code" ? "Repository" : "Console"),
         },
         { header: "Who sees rows", priority: 3, cell: (row) => policyText(row.policy) },
         { header: "Columns", priority: 2, cell: (row) => row.columnCount, align: "end" },
@@ -1724,7 +1722,7 @@ export function TableView({ root, name, link }: { root: string; name: string; li
       fill
       helpKey="table"
       title={data.name}
-      description={`${data.description ? `${data.description.replace(/\.?\s*$/, ".")} ` : ""}${count(data.rowCount)} ${data.rowCount === 1 ? "row" : "rows"}. ${policyText(data.policy)}.${retired ? "" : ` Managed in the ${data.managedIn === "code" ? "repository" : "console"}.`}`}
+      description={`${data.description ? `${data.description.replace(/\.?\s*$/, ".")} ` : ""}${count(data.rowCount)} ${data.rowCount === 1 ? "row" : "rows"}. ${policyText(data.policy)}.${retired ? ` Was managed in the ${data.managedIn === "code" ? "repository" : "console"}.` : ` Managed in the ${data.managedIn === "code" ? "repository" : "console"}.`}`}
     >
       <AttachedPages {...workspaceOf(root)} kind="table" path={data.name} />
       {retired ? (

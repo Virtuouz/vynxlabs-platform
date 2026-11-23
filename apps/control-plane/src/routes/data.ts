@@ -442,7 +442,7 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             description:
               (resource?.body as { description?: string } | undefined)?.description ?? "",
             status: table.status,
-            managedIn: resource?.ownership ?? "code",
+            managedIn: resource?.ownership ?? table.managedIn ?? "code",
             columnCount: table.columns.filter((column) => column.status === "active").length,
             rowCount: Number(count.rows[0]?.n ?? 0),
             policy: table.policy as Record<string, unknown>,
@@ -538,7 +538,7 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           name,
           ...(defined.description ? { description: defined.description } : {}),
           status: table.status,
-          managedIn: resource?.ownership ?? "code",
+          managedIn: (table.status === "active" ? resource?.ownership : table.managedIn) ?? "code",
           policy: table.policy as Record<string, unknown>,
           display: table.display ?? null,
           ...(defined.indexes && defined.indexes.length > 0 ? { indexes: defined.indexes } : {}),

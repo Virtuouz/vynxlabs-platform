@@ -62,6 +62,7 @@ export async function loadCatalog(db: Db | Trx, workspaceId: string): Promise<Ca
     status: table.status,
     policy: table.policy,
     previousNames: table.previous_names,
+    managedIn: table.managed_in,
     columns: columns
       .filter((column) => column.table_id === table.id)
       .map((column) => ({
@@ -1120,7 +1121,7 @@ export async function refuseMissingTargets(
 /** Retires a table whose resource is being removed. Its data stays where it is. */
 export async function retireTable(
   trx: Trx,
-  resource: { id: string; workspaceId: string; path: string },
+  resource: { id: string; workspaceId: string; path: string; ownership?: string },
 ) {
   // Its rows are kept, but they are no longer part of the tables that remain: a row they refer
   // to may be deleted without them, and is not held by them. The keys come back with the table.
@@ -1147,7 +1148,12 @@ export async function retireTable(
   }
   await trx
     .updateTable("data_table")
-    .set({ status: "retired", retired_at: new Date(), resource_id: null })
+    .set({
+      status: "retired",
+      retired_at: new Date(),
+      resource_id: null,
+      managed_in: resource.ownership ?? "code",
+    })
     .where("workspace_id", "=", resource.workspaceId)
     .where("name", "=", resource.path)
     .where("status", "=", "active")

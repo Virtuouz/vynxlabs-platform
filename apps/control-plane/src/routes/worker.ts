@@ -1,8 +1,11 @@
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import { HEARTBEAT_SECONDS } from "@volvel/db";
 import { Type } from "typebox";
+import type { Principal } from "../kernel/audit.js";
 import {
+  callerOf,
   deleteRowKeepingFiles,
+  type FileCaller,
   insertRowsKeepingFiles,
   MAX_FILE_BYTES,
   readFile,
@@ -881,6 +884,8 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           group?: string[];
           measure?: string[];
         };
+        // Acting for a person, a file a row is given must be one that person may have.
+        let actingFor: FileCaller | undefined;
         const perform = async (
           data: Parameters<typeof findRows>[0],
           target: RowTarget,
@@ -907,6 +912,7 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                     target,
                     rows,
                     scope,
+                    actingFor,
                   )
                 : insertRows(data, target, rows, scope);
             }
@@ -922,6 +928,7 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                     target,
                     String(args.id),
                     args.patch,
+                    actingFor,
                   )
                 : updateRow(data, target, String(args.id), args.patch);
             case "delete":
@@ -978,6 +985,13 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           body.as && person
             ? await scopeFor(kernel, run.tenant_id, { type: person, id: body.as }, false)
             : { principalId: null, all: true };
+        if (body.as && person) {
+          actingFor = callerOf(kernel, {
+            type: person,
+            id: body.as,
+            tenantId: run.tenant_id,
+          } as Principal);
+        }
         const result = await withData(kernel, run.tenant_id, scope, (data) =>
           perform(data, target, scope, true),
         );

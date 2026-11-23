@@ -776,6 +776,32 @@ describe("files follow the rows that name them (D22)", () => {
     expect((await carol.get(`${ws()}/files/${given}/content`)).status).toBe(200);
   });
 
+  test("a row is given only a file the caller could already read, as an unknown file is refused", async () => {
+    const hers = await upload(alice, "kept-from-carol.txt");
+    await alice.post(`${ws()}/rows/tasks`, { title: "Alice's", attachment: hers });
+    const mine = await upload(carol, "carols.txt");
+    const row = (await carol.post(`${ws()}/rows/tasks`, { title: "Carol's" })).body.items[0];
+    const at = `${ws()}/row/${row.id}/tasks`;
+
+    const refused = await carol.patch(at, { attachment: hers });
+    const unknown = await carol.patch(at, { attachment: newId() });
+    expect(refused.status).toBe(400);
+    expect(refused.body.detail).toBe(unknown.body.detail);
+    expect((await carol.post(`${ws()}/rows/tasks`, { title: "X", attachment: hers })).status).toBe(
+      400,
+    );
+    expect(
+      (await carol.post(`${ws()}/rows/tasks`, { rows: [{ title: "Y", attachment: hers }] })).status,
+    ).toBe(400);
+    // Her own upload is hers to name, and naming it again changes nothing, so is not asked again.
+    expect((await carol.patch(at, { attachment: mine })).status).toBe(200);
+    expect((await carol.patch(at, { attachment: mine, title: "Again" })).status).toBe(200);
+    // Whoever may read every row may name any file.
+    expect((await alice.post(`${ws()}/rows/tasks`, { title: "Z", attachment: mine })).status).toBe(
+      201,
+    );
+  });
+
   test("DAT-10: a file a row names is not deleted, and the answer says so", async () => {
     const id = await upload(alice, "named.txt");
     const row = (await alice.post(`${ws()}/rows/tasks`, { title: "Names", attachment: id })).body

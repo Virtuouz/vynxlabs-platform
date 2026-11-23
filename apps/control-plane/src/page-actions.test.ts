@@ -123,6 +123,10 @@ const recordWidgets = [
     runBy: { groups: ["sales", "managers", "admins"] },
     steps: [{ do: "update", record: "this", set: { note: { value: "other" } } }],
   }),
+  button("attach", 11, {
+    confirm: { title: "Attach", ask: [{ name: "file", label: "File", type: "text" }] },
+    steps: [{ do: "update", record: "this", set: { doc: { asked: "file" } } }],
+  }),
   button("stamp", 7, {
     steps: [{ do: "update", record: "this", set: { paid_on: { now: true } } }],
   }),
@@ -271,6 +275,7 @@ function bundle(): Bundle {
           paid_on: { type: "timestamp" },
           paid_by: { type: "text" },
           note: { type: "text" },
+          doc: { type: "file" },
         },
         // The end users only read, and only their own group's rows.
         policy: {
@@ -585,6 +590,33 @@ describe("a button's action, run for someone who may only open the app", () => {
     expect((await press(ivy, "nope", id)).status).toBe(404);
     expect((await act(ivy, { widget: "pay", at: "on/click", page: "gone" })).status).toBe(404);
     expect((await rowOf(id)).status).toBe("open");
+  });
+});
+
+describe("a file an action names (D22)", () => {
+  const upload = async (name: string) =>
+    (await alice.upload(`${ws()}/files?name=${name}`, name, "text/plain")).body.id as string;
+
+  test("is refused unless the caller could already read it, with the answer of a file that is not there", async () => {
+    const hidden = await upload("hidden.txt");
+    await invoice({ team: "sales", doc: hidden });
+    const shown = await upload("shown.txt");
+    await invoice({ team: "finance", doc: shown });
+    const mine = await invoice();
+
+    const refused = await press(ivy, "attach", mine, { inputs: { file: hidden } });
+    expect(refused.status, JSON.stringify(refused.body)).toBe(400);
+    const unknown = await press(ivy, "attach", mine, {
+      inputs: { file: "01a205e4-4930-7604-8ec5-330c38946545" },
+    });
+    expect(unknown.status).toBe(400);
+    expect(refused.body.detail).toBe(unknown.body.detail);
+    expect((await rowOf(mine)).doc ?? null).toBeNull();
+
+    // A file a row she may read names is hers to name.
+    const allowed = await press(ivy, "attach", mine, { inputs: { file: shown } });
+    expect(allowed.status, JSON.stringify(allowed.body)).toBe(200);
+    expect((await rowOf(mine)).doc).toBe(shown);
   });
 });
 

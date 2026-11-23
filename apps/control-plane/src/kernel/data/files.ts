@@ -1,5 +1,6 @@
 import { newId, sql } from "@volvel/db";
 import type { Db, Principal, Trx } from "../audit.js";
+import { check } from "../authorize.js";
 import { badRequest, HttpError, notFound } from "../errors.js";
 import type { Kernel } from "../kernel.js";
 import { workspaceSchema } from "./apply.js";
@@ -147,12 +148,21 @@ export async function namedFiles(
  * row that names it. Any other file of the workspace is none of theirs, and is said not to
  * exist.
  */
+export interface FileCaller {
+  principal: Principal;
+  allowed(permission: string, target: Record<string, string | undefined>): Promise<boolean>;
+}
+
+/** A person as the permission check sees them, for a script acting for that person. */
+export const callerOf = (kernel: Kernel, principal: Principal): FileCaller => ({
+  principal,
+  allowed: async (permission, target) =>
+    (await check(kernel.db, principal, permission, target)).allowed,
+});
+
 export async function mayReadFile(
   kernel: Kernel,
-  ctx: {
-    principal: Principal;
-    allowed(permission: string, target: Record<string, string | undefined>): Promise<boolean>;
-  },
+  ctx: FileCaller,
   workspace: { tenantId: string; id: string },
   file: { id: string; createdBy: { type: string; id: string | null } },
 ): Promise<boolean> {
@@ -193,6 +203,8 @@ async function assertFilesHere(
   workspace: { tenantId: string; id: string },
   target: RowTarget,
   inputs: unknown[],
+  caller?: FileCaller,
+  current: ReadonlySet<string> = new Set(),
 ): Promise<void> {
   const columns = target.columns.filter((column) => column.type === "file");
   if (columns.length === 0) return;
@@ -215,12 +227,26 @@ async function assertFilesHere(
     .where("tenant_id", "=", workspace.tenantId)
     .execute();
   const have = new Set(there.map((row) => row.id));
-  for (const [id, name] of wanted) {
-    if (!have.has(id)) {
-      throw badRequest("A file given to a row is not a file of this workspace.", [
-        { path: `/${name}`, message: "upload the file to this workspace first, then name it" },
-      ]);
-    }
+  // The same answer for a file that is not there and one the caller may not have, so nothing is
+  // learned from the difference. A value the row already holds is not asked again.
+  const refuse = (name: string) =>
+    badRequest("A file given to a row is not a file of this workspace.", [
+      { path: `/${name}`, message: "upload the file to this workspace first, then name it" },
+    ]);
+  for (const [id, name] of wanted) if (!have.has(id)) throw refuse(name);
+  if (!caller) return;
+  const files = await kernel.db
+    .selectFrom("file")
+    .select(["id", "created_by_type", "created_by_id"])
+    .where("id", "in", [...wanted.keys()])
+    .execute();
+  for (const file of files) {
+    if (current.has(file.id)) continue;
+    const may = await mayReadFile(kernel, caller, workspace, {
+      id: file.id,
+      createdBy: { type: file.created_by_type, id: file.created_by_id },
+    });
+    if (!may) throw refuse(wanted.get(file.id) ?? "");
   }
 }
 
@@ -256,8 +282,9 @@ export async function insertRowsKeepingFiles(
   target: RowTarget,
   inputs: unknown[],
   scope: Parameters<typeof insertRows>[3],
+  caller?: FileCaller,
 ): Promise<Row[]> {
-  await assertFilesHere(kernel, workspace, target, inputs);
+  await assertFilesHere(kernel, workspace, target, inputs, caller);
   const rows = await insertRows(data, target, inputs, scope);
   await clearNotes(kernel, workspace, fileIdsIn(target, rows));
   return rows;
@@ -366,14 +393,25 @@ export async function updateRowKeepingFiles(
   target: RowTarget,
   id: string,
   patch: unknown,
+  caller?: FileCaller,
 ): Promise<Row> {
   const named =
     patch !== null && typeof patch === "object"
       ? target.columns.filter((column) => column.type === "file" && column.name in patch)
       : [];
-  await assertFilesHere(kernel, workspace, target, [patch]);
-  if (named.length === 0) return updateRow(data, target, id, patch);
+  if (named.length === 0) {
+    await assertFilesHere(kernel, workspace, target, [patch], caller);
+    return updateRow(data, target, id, patch);
+  }
   const before = await getRow(data, target, id);
+  await assertFilesHere(
+    kernel,
+    workspace,
+    target,
+    [patch],
+    caller,
+    new Set(fileIdsIn(target, [before])),
+  );
   const after = await updateRow(data, target, id, patch);
   for (const column of named) {
     const was = before[column.name];

@@ -783,6 +783,7 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             target,
             rows,
             scope,
+            ctx,
           ),
         );
         // Rows are business data, not configuration: they are not written to the audit log one by one.
@@ -846,6 +847,7 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             target,
             params.id,
             body,
+            ctx,
           ),
         );
         ctx.mutated = true;

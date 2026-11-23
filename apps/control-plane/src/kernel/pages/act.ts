@@ -531,6 +531,7 @@ export async function runAction(
                 table,
                 [set],
                 grant,
+                ctx,
               );
               if (row) {
                 made = { table: table.name, id: String(row.id) };
@@ -556,6 +557,7 @@ export async function runAction(
                 table,
                 id,
                 set,
+                ctx,
               );
             } catch (error) {
               remap(step.set, error);

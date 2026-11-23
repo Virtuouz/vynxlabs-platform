@@ -881,6 +881,13 @@ describe("a table stacks on a narrow container (p31-site 3)", () => {
     expect(html).not.toMatch(/<th[^>]*data-label/);
   });
 
+  test("a cell of several pieces is one value, so that a stacked row does not break it into columns", () => {
+    const mixed = renderHtml(parse("| Name |\n| --- |\n| a `b` c |\n"));
+    expect(mixed).toContain(
+      '<td data-label="Name"><span class="vd-cell">a <code>b</code> c</span></td>',
+    );
+  });
+
   test("a container query stacks the rows as label and value pairs, and stripes them", () => {
     expect(DOC_CSS).toMatch(/\.vd-table\s*\{[^}]*container-type: inline-size/);
     expect(DOC_CSS).toMatch(/@container \(max-width: [\d.]+rem\)/);

@@ -301,7 +301,12 @@ function usual(node: Node, ctx: Context): Drawn[] {
           // A class, not a style: a page is served under a policy that takes no inline styles.
           if (align) attrs.class = `vd-align-${align}`;
           if (!row.header && labels[index]) attrs["data-label"] = labels[index];
-          return el(row.header ? "th" : "td", attrs, drawAll(cell.children, ctx));
+          const drawn = drawAll(cell.children, ctx);
+          // As table-saw does: a body cell of several pieces (words and code, say) is wrapped in one, so
+          // that stacked as a grid it is a value and not a column for each piece.
+          const value =
+            !row.header && drawn.length > 1 ? [el("span", { class: "vd-cell" }, drawn)] : drawn;
+          return el(row.header ? "th" : "td", attrs, value);
         });
       const head = node.children.filter((row) => row.header);
       const body = node.children.filter((row) => !row.header);

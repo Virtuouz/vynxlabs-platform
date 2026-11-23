@@ -79,6 +79,8 @@ export type WireData =
       rows: Record<string, unknown>[];
       /** The same values for the period before, when the widget compares. */
       previous?: Record<string, unknown>[];
+      /** The function each value is, by the value's name: what a total of it can be made of. */
+      measures?: Record<string, string>;
       /** The period each date breakdown is cut into, by the breakdown's name. */
       buckets?: Record<string, "day" | "week" | "month" | "quarter" | "year">;
       /** The days the page's date filter gives the first date breakdown, both ends. */
@@ -887,6 +889,11 @@ export async function readWidget(
       // The period of each date breakdown, and the days the page asks for it, so that a chart can
       // put back the periods with nothing in them by the step the query took, to the page's ends.
       if (visual) {
+        if ((visual.measures ?? []).length > 0) {
+          wire.measures = Object.fromEntries(
+            (visual.measures ?? []).map((measure) => [measure.as, measure.fn]),
+          );
+        }
         const cut = (visual.groupBy ?? []).filter((group) => group.bucket !== undefined);
         if (cut.length > 0) {
           wire.buckets = Object.fromEntries(

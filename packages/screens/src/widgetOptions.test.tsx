@@ -435,12 +435,12 @@ const pivotData: SummaryData = {
   ],
 };
 
-function drawPivot(config: object) {
+function drawPivot(config: object, summary: SummaryData = pivotData) {
   render(
     <PivotView
       {...({
         config,
-        data: { rows: pivotData },
+        data: { rows: summary },
         size: { w: 6, h: 6, narrow: false },
         emit: vi.fn(),
         building: false,
@@ -456,6 +456,33 @@ describe("the pivot", () => {
     cleanup();
     drawPivot({ totals: false });
     expect(screen.queryByText("Total")).toBeNull();
+  });
+
+  test("a total is made only of what can be totalled: sums add, the smallest and biggest are found, averages are not totalled (WID-20)", () => {
+    const by = (fn: "sum" | "count" | "min" | "max" | "avg" | "count_distinct") => ({
+      ...pivotData,
+      measures: { n: fn },
+    });
+    drawPivot({}, by("sum"));
+    expect(screen.getByText("20")).toBeTruthy();
+    cleanup();
+    drawPivot({}, by("max"));
+    // The biggest of 1 and 9 is 9, and of everything 9: never the sum, 10 or 20.
+    expect(screen.getAllByText("9").length).toBeGreaterThan(1);
+    expect(screen.queryByText("20")).toBeNull();
+    expect(screen.queryByText("10")).toBeNull();
+    cleanup();
+    drawPivot({}, by("min"));
+    expect(screen.queryByText("20")).toBeNull();
+    expect(screen.getAllByText("1").length).toBeGreaterThan(1);
+    cleanup();
+    for (const fn of ["avg", "count_distinct"] as const) {
+      drawPivot({}, by(fn));
+      expect(screen.queryByText("Total")).toBeNull();
+      expect(screen.queryByText("20")).toBeNull();
+      expect(screen.getByText(/Totals are left out/)).toBeTruthy();
+      cleanup();
+    }
   });
 
   test("rowTotals and columnTotals each stand alone, and win over the older one", () => {

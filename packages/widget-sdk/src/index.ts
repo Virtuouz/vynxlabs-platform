@@ -406,6 +406,10 @@ export interface SummaryData {
   rows: readonly Record<string, unknown>[];
   /** For a widget that compares: the same values for the period before. */
   previous?: readonly Record<string, unknown>[];
+  /** The function each value is, by the value's name, when the query is a visual one: what a total of it can be made of. */
+  measures?: Readonly<
+    Record<string, "count" | "sum" | "avg" | "min" | "max" | "count_distinct" | undefined>
+  >;
   /** The period each date breakdown is cut into, by the breakdown's name: what "include periods with nothing" steps by. */
   buckets?: Readonly<Record<string, "day" | "week" | "month" | "quarter" | "year">>;
   /** The days the page's date filter gives the first date breakdown, both ends: where a filled chart begins and ends. */

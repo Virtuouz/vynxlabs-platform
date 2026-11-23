@@ -776,6 +776,8 @@ describe("a summary says the period it was cut into, and the days asked for (WID
     };
     const ranged = await read({ when: { from: "2026-01-01", to: "2026-12-31" } });
     expect(ranged.buckets).toEqual({ created_at_month: "month" });
+    // And what each value is, so that a pivot totals only what can be totalled (WID-20).
+    expect(ranged.measures).toEqual({ n: "count" });
     expect(ranged.span).toEqual({ from: "2026-01-01", to: "2026-12-31" });
     // No range asked for: the period is known and there are no ends to give.
     const open = await read({ when: null });

@@ -51,6 +51,7 @@ export async function loadCatalog(db: Db | Trx, workspaceId: string): Promise<Ca
       "in",
       tables.map((table) => table.id),
     )
+    .orderBy(sql`coalesce(position, 0)`)
     .orderBy("created_at")
     .orderBy("name")
     .execute();
@@ -589,6 +590,12 @@ async function applyStep(
 }
 
 async function insertColumn(trx: Trx, tableId: string, column: NewColumn) {
+  // After the table's other columns, in the order the definition gave them.
+  const last = await trx
+    .selectFrom("data_column")
+    .select(sql<number | null>`max(coalesce(position, 0))`.as("last"))
+    .where("table_id", "=", tableId)
+    .executeTakeFirst();
   await trx
     .insertInto("data_column")
     .values({
@@ -607,6 +614,7 @@ async function insertColumn(trx: Trx, tableId: string, column: NewColumn) {
       on_delete: column.onDelete,
       options: column.values ? JSON.stringify({ values: column.values, retired: [] }) : null,
       status: "active",
+      position: last?.last === null || last?.last === undefined ? 0 : Number(last.last) + 1,
     })
     .execute();
 }

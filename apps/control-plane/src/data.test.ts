@@ -1826,6 +1826,48 @@ describe("tables made in the console, isolation and guards", () => {
     ).toContain("`{ rows: [row] }`");
   });
 
+  test("TAB-30: columns come as the definition gives them, and one added later comes last", async () => {
+    const put = (columns: Record<string, object>) =>
+      alice.put(`${ws()}/resources/tab30`, {
+        kind: "table",
+        schemaVersion: 1,
+        ownership: "ui",
+        body: { columns },
+      });
+    const text = { type: "text" };
+    expect((await put({ t: text, j: { type: "json" }, d: { type: "date" }, a: text })).status).toBe(
+      201,
+    );
+    const names = async () =>
+      (await alice.get(`${ws()}/tables/tab30`)).body.columns
+        .filter((column: Any) => column.status === "active")
+        .map((column: Any) => column.name);
+    expect(await names()).toEqual(["t", "j", "d", "a"]);
+    const row = (await alice.post(`${ws()}/rows/tab30`, { t: "x" })).body.items[0];
+    expect(Object.keys(row).filter((key) => ["t", "j", "d", "a"].includes(key))).toEqual([
+      "t",
+      "j",
+      "d",
+      "a",
+    ]);
+    // Two columns added in one save come in the order they were given, after the others.
+    expect(
+      (
+        await put({
+          z: text,
+          t: text,
+          j: { type: "json" },
+          d: { type: "date" },
+          a: text,
+          b: text,
+        })
+      ).status,
+    ).toBe(200);
+    expect(await names()).toEqual(["t", "j", "d", "a", "z", "b"]);
+    const csv = await alice.get(`${ws()}/rows-export/tab30`);
+    expect(String(csv.body).split("\r\n")[0]).toMatch(/^(id,created_at,updated_at,)?t,j,d,a,z,b$|t,j,d,a,z,b/);
+  });
+
   test("every change by a principal went through the write path", () => {
     expect(
       // Rows are the tenant's data, written without an audit entry each, one at a time or many.

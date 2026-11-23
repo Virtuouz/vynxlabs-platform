@@ -87,6 +87,7 @@ export async function describeTable(
     .selectAll()
     .where("table_id", "=", table.id)
     .where("status", "=", "active")
+    .orderBy(sql`coalesce(position, 0)`)
     .orderBy("created_at")
     .orderBy("name")
     .execute();

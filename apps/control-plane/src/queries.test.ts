@@ -835,10 +835,10 @@ describe("queries built from menus", () => {
       { device_title: "Camera", fees: 30, loans: 1 },
       { device_title: "Laptop", fees: 10, loans: 1 },
     ]);
-    // Erin may read devices and not loans.
+    // Erin may read devices and not loans: a table she may not read is answered as one that is not there.
     const erins = await visual(erin.client, feesByDevice);
-    expect(erins.status).toBe(403);
-    expect(erins.body.detail).toContain('"lending/loans"');
+    expect(erins.status).toBe(400);
+    expect(JSON.stringify(erins.body.errors)).toContain('there is no table \\"lending/loans\\"');
     expect((await visual(erin.client, { table: "devices", columns: ["title"] })).status).toBe(200);
   });
 

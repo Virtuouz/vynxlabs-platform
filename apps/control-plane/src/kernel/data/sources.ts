@@ -39,6 +39,20 @@ export const credentialName = (path: string) => `data-source:${path}`;
 /** Open pools, one per binding as it currently stands. */
 const pools = new Map<string, { stamp: string; db: AnyDb }>();
 
+/**
+ * Whether a stored password would reach somewhere other than where it was given: another host,
+ * port or user, or a connection that is no longer encrypted (decision D10). It is then typed
+ * again, not kept.
+ */
+export function pointsElsewhere(was: SourceConfig, now: SourceConfig): boolean {
+  return (
+    was.host.toLowerCase() !== now.host.toLowerCase() ||
+    (was.port ?? 5432) !== (now.port ?? 5432) ||
+    was.user !== now.user ||
+    (was.ssl === true && now.ssl !== true)
+  );
+}
+
 export async function bindSource(
   kernel: Kernel,
   trx: Trx,
@@ -48,10 +62,23 @@ export async function bindSource(
 ) {
   const existing = await trx
     .selectFrom("data_source_binding")
-    .select(["id", "credential"])
+    .select(["id", "credential", "config"])
     .where("workspace_id", "=", id.workspaceId)
     .where("path", "=", id.path)
     .executeTakeFirst();
+  if (
+    existing?.credential &&
+    password === undefined &&
+    pointsElsewhere(existing.config as unknown as SourceConfig, config)
+  ) {
+    throw badRequest("The stored password is kept only for the same host, port and user.", [
+      {
+        path: "/password",
+        message:
+          "type the password again: the host, port or user changed, or encryption was turned off",
+      },
+    ]);
+  }
   const credential =
     password === undefined
       ? (existing?.credential ?? null)

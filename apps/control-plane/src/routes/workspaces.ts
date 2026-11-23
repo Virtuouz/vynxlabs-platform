@@ -6,6 +6,7 @@ import { check } from "../kernel/authorize.js";
 import { badRequest, conflict, notFound } from "../kernel/errors.js";
 import { access, type WorkspaceRef } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
+import { requireStanding } from "../kernel/pages/standing.js";
 import { resolveResource } from "../kernel/resolve.js";
 import { deleteResource, putResource } from "../kernel/resources.js";
 import { setSecret } from "../kernel/secrets.js";
@@ -614,6 +615,7 @@ export function workspaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       async ({ ctx, params, body }, reply) => {
         const workspace = ctx.workspace as WorkspaceRef;
         const path = resourcePath(params);
+        await requireStanding(kernel, ctx, workspace, [{ kind: body.kind, path, body: body.body }]);
         const result = await ctx.mutate((trx, audit) =>
           putResource(kernel, trx, audit, workspace, { ...body, path }),
         );

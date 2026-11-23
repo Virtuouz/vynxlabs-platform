@@ -2,10 +2,11 @@ import { createHash } from "node:crypto";
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import { dashboardKind, enumColor, type QueryBody, type VisualQuery } from "@volvel/manifest";
 import { Type } from "typebox";
+import { check } from "../kernel/authorize.js";
 import { loadCatalog } from "../kernel/data/apply.js";
 import { ALLOWED_FUNCTIONS } from "../kernel/data/query/allowed.js";
 import { checkFor, QUERY_ROWS, runQuery } from "../kernel/data/query/run.js";
-import { visualCatalog, writeVisual } from "../kernel/data/query/widget.js";
+import { workspaceCatalog, writeVisual } from "../kernel/data/query/widget.js";
 import { scopeFor } from "../kernel/data/rows.js";
 import { badRequest, HttpError, notFound } from "../kernel/errors.js";
 import { access, findWorkspace, type RequestContext } from "../kernel/http.js";
@@ -80,6 +81,15 @@ export const queryRoutes =
             path: issue.path.replace("/body/widgets/0/data/rows/source/visual", "/query"),
             message: issue.message,
           }));
+    };
+    /**
+     * Whoever has no standing in the tenant is told nothing, whatever they ask: the same 404 as for
+     * a tenant that is not there, before anything of the workspace is read.
+     */
+    const standing = async (ctx: RequestContext, params: { t: string; w: string }) => {
+      const at = { tenantId: params.t, workspaceId: params.w };
+      const decision = await check(db, ctx.principal, "data:read", at);
+      if (!decision.allowed && !decision.related) throw notFound("The tenant");
     };
     /** Refuses a table the caller may not read, naming it. */
     const reader =
@@ -226,6 +236,7 @@ export const queryRoutes =
         },
       },
       async ({ ctx, params }) => {
+        await standing(ctx, params);
         await findWorkspace(kernel, params.t, params.w);
         const data = (await kernel.data.forTenant(params.t)).owner;
         const catalog = (await loadCatalog(data, params.w)).filter(
@@ -314,6 +325,7 @@ export const queryRoutes =
         },
       },
       async ({ ctx, params, query: asked }) => {
+        await standing(ctx, params);
         await findWorkspace(kernel, params.t, params.w);
         const at = { tenantId: params.t, workspaceId: params.w };
         let visual: unknown;
@@ -324,10 +336,16 @@ export const queryRoutes =
         }
         const valid = validateVisual(visual);
         if (valid.length > 0) throw badRequest("The query is not valid.", valid);
-        const written = writeVisual(
-          visual as VisualQuery,
-          await visualCatalog(kernel, params.t, params.w),
-        );
+        // Only the tables the caller may read are there to be named: a table they may not read is
+        // answered as one that does not exist, and the names of the others cannot be probed.
+        const known = await workspaceCatalog(kernel, params.t, params.w);
+        for (const [name, table] of known.tables) {
+          if (
+            !(await ctx.allowed("data:read", { ...at, resourceId: table.resourceId ?? undefined }))
+          )
+            known.visual.delete(name);
+        }
+        const written = writeVisual(visual as VisualQuery, known.visual);
         const scope = await scopeFor(
           kernel,
           params.t,
@@ -463,6 +481,7 @@ export const queryRoutes =
         },
       },
       async ({ ctx, params, query: asked }) => {
+        await standing(ctx, params);
         let named: unknown = {};
         if (asked.params !== undefined) {
           try {
@@ -485,6 +504,17 @@ export const queryRoutes =
           throw notFound(`The query ${wildPath(params)}`);
         }
         const query = saved.body as unknown as QueryBody;
+        // The caller's standing on what it reads comes before anything is said of its parameters.
+        // A query that reads no table still runs on the workspace's database, so it needs standing
+        // here. One that reads tables is held to each of them.
+        const read = await checkFor(kernel, params.t, params.w, query.sql).catch(() => undefined);
+        if (!read || read.tables.length === 0) await ctx.authorize("data:read", at);
+        else {
+          const mayRead = reader(ctx, params);
+          for (const name of read.tables) {
+            await mayRead({ name, resourceId: read.resources.get(name)?.resourceId ?? null });
+          }
+        }
         const given = body.params ?? {};
         const declared = query.parameters ?? [];
         const unknown = Object.keys(given).filter(
@@ -513,10 +543,6 @@ export const queryRoutes =
           }
           return value;
         });
-        // A query that reads no table still runs on the workspace's database, so it needs
-        // standing here. One that reads tables is held to each of them when it runs.
-        const read = await checkFor(kernel, params.t, params.w, query.sql).catch(() => undefined);
-        if (!read || read.tables.length === 0) await ctx.authorize("data:read", at);
         const scope = await scopeFor(
           kernel,
           params.t,

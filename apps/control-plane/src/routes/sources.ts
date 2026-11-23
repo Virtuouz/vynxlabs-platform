@@ -211,7 +211,8 @@ export function sourceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.workspace("data_source:write") },
         schema: {
           summary: "Bind an external Postgres database in this workspace",
-          description: "Leave `password` out to keep the stored one. Send null to remove it.",
+          description:
+            "Leave `password` out to keep the stored one, when the host, port and user are the same and encryption is not turned off; otherwise it is refused (400 on `/password`) and the password is typed again. Send null to remove it.",
           tags: ["data sources"],
           params: WildParams,
           body: Type.Object({

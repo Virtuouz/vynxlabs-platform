@@ -323,6 +323,8 @@ export function accessReleaseRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               summary: Summary,
             }),
             202: Type.Object({
+              waiting: Type.Literal(true),
+              detail: Type.String(),
               id: Id,
               number: Type.Integer(),
               status: Type.String(),
@@ -341,14 +343,24 @@ export function accessReleaseRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             allowDelete: body.allowDelete,
           }),
         );
-        return reply.code(released.status === "applied" ? 201 : 202).send(released);
+        return released.status === "applied"
+          ? reply.code(201).send(released)
+          : reply.code(202).send({
+              ...released,
+              waiting: true as const,
+              detail: `Release ${released.number} waits for a second person. Nothing changed yet: someone else who may release access has to approve it.`,
+            });
       },
     );
 
     app.get(
       "/tenants/:t/access/releases",
       {
-        config: { access: access.tenant("access:read") },
+        config: {
+          access: access.custom(
+            "Needs access:read. Without it, a person reads the releases they asked for themselves.",
+          ),
+        },
         schema: {
           summary: "The releases of the tenant's access, newest first",
           description:
@@ -358,8 +370,17 @@ export function accessReleaseRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           response: { 200: listOf(Release) },
         },
       },
-      async ({ params }) => {
-        const rows = await load(params.t);
+      async ({ ctx, params }) => {
+        const all = await ctx.allowed("access:read", { tenantId: params.t });
+        // Whoever may not read access reads what they asked for, and nothing else.
+        const rows = (await load(params.t)).filter(
+          (row) =>
+            all ||
+            (row.created_by_type === ctx.principal.type &&
+              row.created_by_id === ctx.principal.id) ||
+            row.asked_through === ctx.principal.id,
+        );
+        if (!all && rows.length === 0) await ctx.authorize("access:read", { tenantId: params.t });
         const who = await names(rows.flatMap((row) => [row.created_by_id, row.decided_by_id]));
         return { items: rows.map((row) => show(row, who)) };
       },
@@ -368,13 +389,18 @@ export function accessReleaseRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.post(
       "/tenants/:t/access/releases/:id/decision",
       {
-        config: { access: access.tenant("access:write") },
+        config: {
+          access: access.custom(
+            "Whoever asked withdraws their own release with no permission. Approving or declining needs access:write.",
+          ),
+        },
         schema: {
           summary: "Approve, decline or withdraw a release that waits",
           description:
             "Approving applies it, and is done by someone other than whoever asked. If the " +
             "tenant's access changed since it was asked for, so that it would do something else, " +
-            "it is refused with `release_stale`. Whoever asked can withdraw it.",
+            "it is refused with `release_stale`. Whoever asked can withdraw it, with no other " +
+            "permission than being the one who asked. Answering needs `access:write`.",
           tags: ["access"],
           params: Type.Object({ t: Id, id: Id }),
           body: Type.Object({
@@ -390,8 +416,23 @@ export function accessReleaseRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           },
         },
       },
-      async ({ ctx, params, body }) =>
-        ctx.mutate((trx, audit) =>
+      async ({ ctx, params, body }) => {
+        const asked =
+          body.decision === "withdraw"
+            ? await db
+                .selectFrom("tenant_release")
+                .select(["created_by_type", "created_by_id", "asked_through"])
+                .where("tenant_id", "=", params.t)
+                .where("id", "=", params.id)
+                .executeTakeFirst()
+            : undefined;
+        const theirs =
+          asked !== undefined &&
+          ((asked.created_by_type === ctx.principal.type &&
+            asked.created_by_id === ctx.principal.id) ||
+            (ctx.principal.type === "member" && asked.asked_through === ctx.principal.id));
+        if (!theirs) await ctx.authorize("access:write", { tenantId: params.t });
+        return ctx.mutate((trx, audit) =>
           decideRelease(
             trx,
             audit,
@@ -401,7 +442,8 @@ export function accessReleaseRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             body.decision,
             body.comment,
           ),
-        ),
+        );
+      },
     );
 
     app.get(
@@ -420,6 +462,9 @@ export function accessReleaseRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               number: Type.Integer(),
               asks: Type.Array(Type.Any()),
               allowDelete: Type.Array(Type.String()),
+              warnings: Type.Array(Type.String(), {
+                description: "What going back leaves out because it no longer exists.",
+              }),
               removes: Type.Array(
                 Type.Object({ kind: Type.String(), key: Type.String(), label: Type.String() }),
               ),
@@ -449,6 +494,8 @@ export function accessReleaseRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               summary: Summary,
             }),
             202: Type.Object({
+              waiting: Type.Literal(true),
+              detail: Type.String(),
               id: Id,
               number: Type.Integer(),
               status: Type.String(),
@@ -466,9 +513,16 @@ export function accessReleaseRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             allowDelete: back.allowDelete,
             message: `Back to release ${back.number}`,
             origin: "rollback",
+            notes: back.warnings,
           });
         });
-        return reply.code(released.status === "applied" ? 201 : 202).send(released);
+        return released.status === "applied"
+          ? reply.code(201).send(released)
+          : reply.code(202).send({
+              ...released,
+              waiting: true as const,
+              detail: `Release ${released.number} waits for a second person. Nothing changed yet: someone else who may release access has to approve it.`,
+            });
       },
     );
   };

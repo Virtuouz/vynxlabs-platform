@@ -249,6 +249,12 @@ export function withText(
 export const visualOf = (input: DataInput | undefined): VisualQuery | undefined =>
   input && "visual" in input.source ? input.source.visual : undefined;
 
+/** Whether a widget's data comes from a table, which is all that has rows behind a figure. */
+export function readsTable(data: Record<string, DataInput> | undefined): boolean {
+  const inputs = Object.values(data ?? {});
+  return inputs.length === 0 || inputs.some((input) => visualOf(input) !== undefined);
+}
+
 /**
  * The table an input reads, whichever way it is wired: a table from menus, the record the page
  * opens on (the page's record table), the row selected in a table or list of the page (that

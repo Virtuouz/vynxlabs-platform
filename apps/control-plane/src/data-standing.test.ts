@@ -337,3 +337,15 @@ describe("a dashboard saved twice with one revision", () => {
     expect((await reader.get(url)).body.revision).toBe(2);
   });
 });
+
+describe("the dry run of a deploy says what the deploy would refuse", () => {
+  test("SQL in a draft of someone who may not write it", async () => {
+    expect((await draft(author, "boards/dry", "dashboard", board(withSql))).status).toBe(200);
+    const refused = await reader.get(`${ws()}/changes/preview?paths=boards/dry`);
+    expect(refused.status, JSON.stringify(refused.body)).toBe(200);
+    expect(refused.body.possible).toBe(false);
+    expect(refused.body.refusal.detail).toContain("sql:read");
+    const allowed = await author.get(`${ws()}/changes/preview?paths=boards/dry`);
+    expect(allowed.body.possible).toBe(true);
+  });
+});

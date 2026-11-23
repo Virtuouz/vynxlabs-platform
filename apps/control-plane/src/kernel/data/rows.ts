@@ -225,9 +225,11 @@ export async function withData<T>(
   const work = () =>
     store.rows.transaction().execute(async (trx) => {
       // No one statement holds a connection for long: past the limit it is stopped.
+      // Days and months are UTC's, whatever zone the database was set up with.
       await sql`select
         set_config('app.claim', ${claimFor(scope)}, true),
-        set_config('statement_timeout', ${String(timeoutMs)}, true)`.execute(trx);
+        set_config('statement_timeout', ${String(timeoutMs)}, true),
+        set_config('TimeZone', 'UTC', true)`.execute(trx);
       // For a page's action (phase 26): it reads as the caller, then writes as its own grant.
       const actAs = async (who: DataScope) => {
         await sql`select set_config('app.claim', ${claimFor(who)}, true)`.execute(trx);

@@ -8,6 +8,7 @@ import {
   type VisualQuery,
 } from "@volvel/manifest";
 import { dayAfter, lastRange } from "./filters.js";
+import { viewName } from "./view-name.js";
 
 /**
  * Writes the SQL of a query built from menus. What it writes is one SELECT
@@ -368,10 +369,10 @@ export function compileVisual(
   }
 
   const from = [
-    `${quoted(query.table)} as t`,
+    `${quoted(viewName(query.table))} as t`,
     ...[...joins.entries()].map(
       ([via, target]) =>
-        `left join ${quoted(target.table)} as ${joined(via)} on ${joined(via)}.id = t.${quoted(via)}`,
+        `left join ${quoted(viewName(target.table))} as ${joined(via)} on ${joined(via)}.id = t.${quoted(via)}`,
     ),
   ].join(" ");
   const sql = [

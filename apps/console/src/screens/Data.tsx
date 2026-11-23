@@ -105,6 +105,8 @@ interface RowsBrowserProps {
   /** The address of one row, or null when rows cannot be changed. */
   rowPath: ((key: string) => string) | null;
   keyColumn: string | null;
+  /** Whether a row can be added, when that is not what changing one takes (a source's table with no key). */
+  canAdd?: boolean;
   columns: RowColumn[];
   /** Where files are uploaded to, when the table can hold them. */
   filesPath?: string;
@@ -223,6 +225,8 @@ function RowsBrowser(
     expanded?: Record<string, Record<string, unknown>>;
   }>(`${props.rowsPath}?${query}`);
   const canChange = rowPath !== null && keyColumn !== null;
+  /** A row may be added to a table with no key: only changing and deleting need one. */
+  const canAdd = props.canAdd ?? canChange;
   const keyOf = (row: DataRow) => String(row[keyColumn ?? ""] ?? JSON.stringify(row));
   // Rows saved in place since this page was loaded. They are shown as saved without loading again.
   const [saved, setSaved] = useState<{ of: unknown; rows: Record<string, DataRow> }>();
@@ -367,7 +371,7 @@ function RowsBrowser(
               <Download aria-hidden="true" size={14} /> CSV
             </Button>
           ) : null}
-          {canChange ? (
+          {canAdd ? (
             <Button variant="primary" onClick={() => setAdding(true)}>
               Add row
             </Button>
@@ -2471,9 +2475,13 @@ const SOURCE_FIELDS = [
   {
     name: "ssl",
     label: "Encrypt the connection",
+    // A new source starts encrypted. The server's certificate is checked, so a database with a
+    // private certificate authority needs No until that is arranged (D41).
+    initial: "yes",
+    hint: "The server's certificate is checked. Choose No for a database whose certificate a public authority did not sign.",
     options: [
-      { value: "no", label: "No" },
       { value: "yes", label: "Yes" },
+      { value: "no", label: "No" },
     ],
   },
 ] satisfies CreateConfig["fields"];
@@ -2736,19 +2744,21 @@ export function SourceView({ root, path, link }: { root: string; path: string; l
               fill
               key={table.name}
               label={`Rows of ${table.name}`}
-              rowsPath={`${root}/source-rows/${table.name}/${path}`}
+              rowsPath={`${root}/source-rows/${encodeURIComponent(table.name)}/${path}`}
               rowPath={
                 table.key
-                  ? (key) => `${root}/source-row/${table.name}/${encodeURIComponent(key)}/${path}`
+                  ? (key) =>
+                      `${root}/source-row/${encodeURIComponent(table.name)}/${encodeURIComponent(key)}/${path}`
                   : null
               }
               keyColumn={table.key}
+              canAdd
               columns={table.columns}
               {...(table.key
                 ? {}
                 : {
                     readOnlyNote:
-                      "This table has no primary key, so rows can be read and added but not changed or deleted.",
+                      "This table has no primary key, so rows can be added but not changed or deleted.",
                   })}
             />
           </div>

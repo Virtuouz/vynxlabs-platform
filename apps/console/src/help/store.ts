@@ -89,6 +89,9 @@ export function showPageHelp() {
   set({ target: undefined });
 }
 
+/** The topic the screen has now, for a test or a caller outside a component. */
+export const getHelpTopic = () => state.topic;
+
 export function useHelp(): HelpState {
   return useSyncExternalStore(
     (listener) => {

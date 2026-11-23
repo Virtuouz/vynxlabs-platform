@@ -1,4 +1,5 @@
-import { Button, type GridColumn, Notice, TextField } from "@volvel/ui";
+import { parameterMisfit } from "@volvel/manifest";
+import { Button, type GridColumn, Notice, SelectField, TextField } from "@volvel/ui";
 import { Play, Save } from "lucide-react";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { type ApiError, api, useLoad, useLoadOf } from "../api.ts";
@@ -12,6 +13,7 @@ import { ErrorState, Loading, LoadState } from "../kit/LoadState.tsx";
 import { SectionLabel } from "../kit/layout.tsx";
 import { ReadTable } from "../kit/ReadTable.tsx";
 import { RemoveDraftButton } from "../kit/RemoveDraftButton.tsx";
+import { parametersIn } from "../kit/sqlParameters.ts";
 import { Code, StatePill, Tag } from "../kit/status.tsx";
 import { Page } from "../ListScreen.tsx";
 import { useUrlParam } from "../router.tsx";
@@ -25,6 +27,8 @@ const CodeEditor = lazy(() =>
 interface Schema {
   tables: {
     name: string;
+    /** False for a table whose path is too long for SQL to name: it can only be put on a page. */
+    inSql?: boolean;
     display: string | null;
     columns: {
       name: string;
@@ -69,19 +73,25 @@ function placeOf(error: ApiError): { line: number; column: number } | undefined 
   return at ? { line: Number(at[1]), column: Number(at[2]) } : undefined;
 }
 
-/** What was typed for a parameter, as the value the query is given. */
-function typedValue(type: string, text: string): unknown {
+/**
+ * What was typed for a parameter, as the value the query is given: a value, or what is wrong with
+ * the text in the words the server would use. Nothing is guessed: a word that is not a number is
+ * not sent as nothing.
+ */
+export function readTyped(
+  type: string,
+  text: string,
+): { value: unknown; problem?: undefined } | { problem: string } {
   const trimmed = text.trim();
-  if (trimmed === "") return null;
-  if (type === "integer" || type === "number") return Number(trimmed);
-  if (type === "boolean") return /^(true|yes|y|1)$/i.test(trimmed);
-  return type === "text" ? text : trimmed;
-}
-
-/** The highest `$n` a query's text uses, outside quotes. */
-export function parametersIn(text: string): number {
-  const bare = text.replace(/'(?:[^']|'')*'/g, "''").replace(/--[^\n]*/g, "");
-  return Math.max(0, ...[...bare.matchAll(/\$(\d+)/g)].map((match) => Number(match[1])));
+  if (trimmed === "") return { value: null };
+  let value: unknown = type === "text" ? text : trimmed;
+  if (type === "integer" || type === "number") {
+    value = /^[-+]?(\d+\.?\d*|\.\d+)(e[-+]?\d+)?$/i.test(trimmed) ? Number(trimmed) : trimmed;
+  } else if (type === "boolean") {
+    value = /^(true|yes)$/i.test(trimmed) ? true : /^(false|no)$/i.test(trimmed) ? false : trimmed;
+  }
+  const problem = parameterMisfit(type, value);
+  return problem ? { problem: `Must be ${problem}.` } : { value };
 }
 
 /** The parameters a query's text uses: what a saved query says of them, or a text one. */
@@ -107,6 +117,8 @@ export function Queries({ root, link }: { root: string; link: string }) {
   const [result, setResult] = useState<Result>();
   const [refusal, setRefusal] = useState<{ message: string; line?: number; column?: number }>();
   const [busy, setBusy] = useState(false);
+  /** Run was pressed with a value that does not fit: the fields then say so, as they are typed. */
+  const [attempted, setAttempted] = useState(false);
   const [took, setTook] = useState<number>();
   const [reveal, setReveal] = useState<{ line: number; column?: number; at: number }>();
 
@@ -255,13 +267,33 @@ export function Queries({ root, link }: { root: string; link: string }) {
   useEffect(() => {
     if (!schema.data) return;
     const known = schema.data;
-    void import("../editor/monaco.ts").then(({ setSqlSchema }) => setSqlSchema(known));
+    void import("../editor/monaco.ts").then(({ setSqlSchema }) =>
+      setSqlSchema({ ...known, tables: known.tables.filter((table) => table.inSql !== false) }),
+    );
   }, [schema.data]);
 
   const parameters = useMemo<Parameter[]>(() => parametersFor(text, current), [text, current]);
 
+  /** What each parameter is given, or what is wrong with what was typed for it. */
+  const readings = parameters.map((one) =>
+    readTyped(one.type, typed[one.name] ?? String(one.default ?? "")),
+  );
+  const problems = Object.fromEntries(
+    parameters.flatMap((one, at) => {
+      const reading = readings[at];
+      return reading?.problem ? [[one.name, reading.problem]] : [];
+    }),
+  );
+
   const run = async () => {
     if (text.trim() === "" || busy) return;
+    // A value that does not fit is said on its field, and nothing is asked of the server.
+    if (Object.keys(problems).length > 0) {
+      setRefusal(undefined);
+      setResult(undefined);
+      setAttempted(true);
+      return;
+    }
     setBusy(true);
     setRefusal(undefined);
     const started = performance.now();
@@ -270,9 +302,7 @@ export function Queries({ root, link }: { root: string; link: string }) {
         sql: text,
         ...(parameters.length > 0
           ? {
-              params: parameters.map((one) =>
-                typedValue(one.type, typed[one.name] ?? String(one.default ?? "")),
-              ),
+              params: readings.map((reading) => ("value" in reading ? reading.value : null)),
             }
           : {}),
       });
@@ -320,6 +350,8 @@ export function Queries({ root, link }: { root: string; link: string }) {
 
   if (schema.error) return <ErrorState error={schema.error} onRetry={schema.reload} />;
   if (!schema.data) return <Loading />;
+  // A table whose path is too long for SQL to name is for pages, so it is not listed here.
+  const sqlTables = schema.data.tables.filter((table) => table.inSql !== false);
 
   const grid: GridColumn[] = (result?.columns ?? []).map((column) => ({
     name: column.name,
@@ -453,14 +485,32 @@ export function Queries({ root, link }: { root: string; link: string }) {
             <div className="flex flex-wrap gap-3">
               {parameters.map((one) => (
                 <div key={one.name} className="w-48">
-                  <TextField
-                    name={one.name}
-                    label={one.label ?? one.name}
-                    required={false}
-                    {...(one.type === "text" ? {} : { hint: one.type })}
-                    value={typed[one.name] ?? String(one.default ?? "")}
-                    onChange={(value) => setTyped((now) => ({ ...now, [one.name]: value }))}
-                  />
+                  {one.type === "boolean" ? (
+                    <SelectField
+                      name={one.name}
+                      label={one.label ?? one.name}
+                      options={[
+                        { value: "", label: "Not set" },
+                        { value: "true", label: "Yes" },
+                        { value: "false", label: "No" },
+                      ]}
+                      value={typed[one.name] ?? String(one.default ?? "")}
+                      onChange={(value) => setTyped((now) => ({ ...now, [one.name]: value }))}
+                    />
+                  ) : (
+                    <TextField
+                      name={one.name}
+                      label={one.label ?? one.name}
+                      required={false}
+                      {...(one.type === "date" ? { type: "date" as const } : {})}
+                      {...(one.type === "text" || one.type === "date" ? {} : { hint: one.type })}
+                      {...(problems[one.name] && (attempted || typed[one.name] !== undefined)
+                        ? { error: problems[one.name] }
+                        : {})}
+                      value={typed[one.name] ?? String(one.default ?? "")}
+                      onChange={(value) => setTyped((now) => ({ ...now, [one.name]: value }))}
+                    />
+                  )}
                 </div>
               ))}
             </div>
@@ -552,12 +602,12 @@ export function Queries({ root, link }: { root: string; link: string }) {
           </section>
           <section className="flex flex-col gap-2">
             <SectionLabel>Tables</SectionLabel>
-            {schema.data.tables.length === 0 ? (
+            {sqlTables.length === 0 ? (
               <p className="m-0 text-body-sm text-ink-muted">
                 This workspace has no tables you may read.
               </p>
             ) : (
-              schema.data.tables.map((table) => (
+              sqlTables.map((table) => (
                 <details key={table.name} className="rounded-control border border-line px-2 py-1">
                   <summary className="cursor-pointer font-mono text-code">{table.name}</summary>
                   <ul className="mt-1 mb-1 flex list-none flex-col gap-0.5 p-0">

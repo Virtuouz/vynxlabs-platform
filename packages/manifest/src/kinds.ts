@@ -921,6 +921,33 @@ export const QUERY_PARAMETER_TYPES = [
 export type QueryParameterType = (typeof QUERY_PARAMETER_TYPES)[number];
 
 /**
+ * Why a value does not fit a parameter of this type, in words that follow "must be", or
+ * undefined when it does. The server and the console say the same thing.
+ */
+export function parameterMisfit(type: string, value: unknown): string | undefined {
+  switch (type) {
+    case "text":
+      return typeof value === "string" ? undefined : "text";
+    case "integer":
+      return Number.isSafeInteger(value) ? undefined : "a whole number";
+    case "number":
+      return typeof value === "number" && Number.isFinite(value) ? undefined : "a number";
+    case "boolean":
+      return typeof value === "boolean" ? undefined : "true or false";
+    case "date":
+      return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)
+        ? undefined
+        : "a date, such as 2026-01-31";
+    case "timestamp":
+      return typeof value === "string" && !Number.isNaN(Date.parse(value))
+        ? undefined
+        : "a date and time, such as 2026-01-31T09:30:00Z";
+    default:
+      return "something this parameter can hold";
+  }
+}
+
+/**
  * A query kept by name: one SELECT over the workspace's tables, with the
  * parameters it takes. It is run by whoever may read it and the tables it
  * names, as themselves: each table's row policy applies to them.

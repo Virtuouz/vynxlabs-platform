@@ -86,7 +86,7 @@ export const COMMANDS = [
     "run",
     REPOSITORY,
     "run <script|flow> --remote --tenant <slug> --workspace <slug> [--input <json>|@file]",
-    "Run it on the instance, from this build, in a dev workspace, and follow it. Nothing is deployed.",
+    "Run it on the instance from this build, as a preview and not the deployed version, in a dev workspace, and follow it. Nothing is deployed.",
   ),
   entry(
     "pull",

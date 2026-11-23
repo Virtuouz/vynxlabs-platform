@@ -14,6 +14,7 @@ import {
   releaseAccess,
   rollbackAsks,
 } from "../kernel/tenant/releases.js";
+import { listOf } from "../pagination.js";
 import { Id, NullableId, NullableString, Time } from "./shared.js";
 
 const Resource = Type.Object({
@@ -350,9 +351,11 @@ export function accessReleaseRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.tenant("access:read") },
         schema: {
           summary: "The releases of the tenant's access, newest first",
+          description:
+            "Each release of the tenant's access as a set: who asked, what it changed and how it ended.",
           tags: ["access"],
           params: Type.Object({ t: Id }),
-          response: { 200: Type.Object({ items: Type.Array(Release) }) },
+          response: { 200: listOf(Release) },
         },
       },
       async ({ params }) => {

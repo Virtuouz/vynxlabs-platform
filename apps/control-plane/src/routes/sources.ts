@@ -29,6 +29,7 @@ import { badRequest, conflict, notFound } from "../kernel/errors.js";
 import { arrivingManifests } from "../kernel/execution/arriving.js";
 import { access, type RequestContext, type WorkspaceRef } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
+import { listOf } from "../pagination.js";
 import { parseRowsQuery, RowsPage, RowsQuery, toRowsPage, WildParams, wildPath } from "./data.js";
 import {
   AnyObject,
@@ -285,6 +286,7 @@ export function sourceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.workspace("data_source:write") },
         schema: {
           summary: "Remove a data source's binding",
+          description: "The data source is no longer bound in this workspace. Audited.",
           tags: ["data sources"],
           params: WildParams,
           response: { 204: NoContent },
@@ -323,6 +325,7 @@ export function sourceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.workspace("data_source:read") },
         schema: {
           summary: "The tables of a bound data source",
+          description: "The tables the data source lists, read from the source itself.",
           tags: ["data sources"],
           params: WildParams,
           response: {
@@ -374,6 +377,7 @@ export function sourceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.workspace("data_source:read") },
         schema: {
           summary: "Rows of a table in a data source",
+          description: "Rows read from the source system, a page at a time.",
           tags: ["data sources"],
           params: SourceRowsParams,
           querystring: RowsQuery,
@@ -401,6 +405,7 @@ export function sourceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.workspace("data_source:write") },
         schema: {
           summary: "Insert rows into a table in a data source",
+          description: "Writes to the source system, if the binding lets it. Audited.",
           tags: ["data sources"],
           params: SourceRowsParams,
           body: AnyObject,
@@ -434,6 +439,7 @@ export function sourceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.workspace("data_source:read") },
         schema: {
           summary: "One row of a table in a data source",
+          description: "The row with the given key, read from the source system.",
           tags: ["data sources"],
           params: SourceRowParams,
           response: { 200: AnyObject },
@@ -457,6 +463,7 @@ export function sourceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.workspace("data_source:write") },
         schema: {
           summary: "Change a row in a data source",
+          description: "Writes to the source system, if the binding lets it. Audited.",
           tags: ["data sources"],
           params: SourceRowParams,
           body: AnyObject,
@@ -488,6 +495,7 @@ export function sourceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.workspace("data_source:write") },
         schema: {
           summary: "Delete a row in a data source",
+          description: "Deletes in the source system, if the binding lets it. Audited.",
           tags: ["data sources"],
           params: SourceRowParams,
           response: { 204: NoContent },
@@ -519,7 +527,7 @@ export function sourceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             "Every file of the workspace, so it also needs `data_all:read`. A person who only has `file:read` gets a file by its ID, through a row they may read or because they uploaded it.",
           tags: ["files"],
           params: WorkspaceParams,
-          response: { 200: Type.Object({ items: Type.Array(StoredFile) }) },
+          response: { 200: listOf(StoredFile, 200) },
         },
       },
       async ({ ctx, params }) => {

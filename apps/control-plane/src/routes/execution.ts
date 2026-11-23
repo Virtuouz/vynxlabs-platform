@@ -37,7 +37,14 @@ import { instanceTriggersPaused } from "../kernel/execution/control.js";
 import { deployBundle } from "../kernel/execution/deploy.js";
 import { previewPromotion, promote, promotionOf } from "../kernel/execution/promote.js";
 import { redact, redactError, redactText } from "../kernel/execution/redact.js";
-import { cancelRun, readPayload, type ScriptBody, startRun } from "../kernel/execution/runs.js";
+import {
+  announceCanceled,
+  cancelRun,
+  readPayload,
+  type ScriptBody,
+  startRun,
+  takeCanceled,
+} from "../kernel/execution/runs.js";
 import { servedValues } from "../kernel/execution/served.js";
 import {
   flowStateSql,
@@ -61,7 +68,7 @@ import { pushRelease } from "../kernel/git.js";
 import { access, findWorkspace, guestLimit, type WorkspaceRef } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
 import { labelText } from "../kernel/metrics.js";
-import { PageQuery, pageOf } from "../pagination.js";
+import { listOf, PageQuery, pageOf } from "../pagination.js";
 import { describeRequests, PromotionRequest, visibleRequests } from "./promotion-requests.js";
 import {
   AnyObject,
@@ -481,9 +488,11 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.workspace("bundle:read") },
         schema: {
           summary: "Bundles uploaded to a workspace, newest first",
+          description:
+            "A bundle is a set of manifests and code. Each is listed with who uploaded it and when.",
           tags: ["deploys"],
           params: WorkspaceParams,
-          response: { 200: Type.Object({ items: Type.Array(Bundle) }) },
+          response: { 200: listOf(Bundle, 100) },
         },
       },
       async ({ params }) => {
@@ -563,9 +572,11 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.workspace("deployment:read") },
         schema: {
           summary: "Deployments to a workspace, newest first",
+          description:
+            "Each time a bundle was made the workspace's active one: by whom, and which bundle.",
           tags: ["deploys"],
           params: WorkspaceParams,
-          response: { 200: Type.Object({ items: Type.Array(Deployment) }) },
+          response: { 200: listOf(Deployment, 100) },
         },
       },
       async ({ params }) => {
@@ -1131,6 +1142,8 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.workspace("run:read") },
         schema: {
           summary: "Runs in a workspace, newest first",
+          description:
+            "Each run with its script, its status and how it started. Page through it with `cursor`.",
           tags: ["runs"],
           params: WorkspaceParams,
           querystring: Type.Object({
@@ -1184,7 +1197,12 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.post(
       `${base}/runs`,
       {
-        config: { access: access.custom, rateLimit: guestLimit },
+        config: {
+          access: access.custom(
+            "Needs `run:write` at the workspace or at the script itself, which is how an app's users are let start one script and no other.",
+          ),
+          rateLimit: guestLimit,
+        },
         schema: {
           summary: "Start a run of a script",
           description:
@@ -1249,7 +1267,9 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.post(
       `${base}/runs/:id/rerun`,
       {
-        config: { access: access.custom },
+        config: {
+          access: access.custom("Needs `run:write` at the workspace or at the script itself."),
+        },
         schema: {
           summary: "Run a script run again, with the same input or another",
           description:
@@ -1432,7 +1452,12 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       `${base}/runs/:id`,
       {
-        config: { access: access.custom, rateLimit: guestLimit },
+        config: {
+          access: access.custom(
+            "Needs `run:read` in the workspace. Whoever started a run may always read it.",
+          ),
+          rateLimit: guestLimit,
+        },
         schema: {
           summary: "One run, with its input and output",
           description:
@@ -1573,14 +1598,18 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.workspace("run:write") },
         schema: {
           summary: "Cancel a run that is waiting or in progress",
+          description:
+            "A running script hears of it on its next heartbeat. A run that has already ended answers 409. The platform then publishes `platform/run-finished` with the status `cancelled`. Audited.",
           tags: ["runs"],
           params: Type.Object({ t: Id, w: Id, id: Id }),
           response: { 200: Run },
         },
       },
       async ({ ctx, params }) => {
+        let ended: ReturnType<typeof takeCanceled> = [];
         const run = await ctx.mutate(async (trx, audit) => {
           const cancelled = await cancelRun(kernel, trx, params.w, params.id);
+          ended = takeCanceled(trx);
           await audit({
             action: "run.cancelled",
             targetType: "run",
@@ -1591,6 +1620,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           });
           return cancelled;
         });
+        await announceCanceled(kernel, ended);
         return toRun(run, (await findRun(params.w, params.id)).bundle_version);
       },
     );
@@ -2131,6 +2161,8 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.workspace("trigger:write") },
         schema: {
           summary: "Resume one trigger",
+          description:
+            "Takes away the pause put on this trigger alone. A pause on the workspace or the instance stays.",
           tags: ["runs"],
           params: PauseParams,
           querystring: PauseQuery,
@@ -2389,7 +2421,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           description: "A credential is never returned, only whether one is set.",
           tags: ["bindings"],
           params: WorkspaceParams,
-          response: { 200: Type.Object({ items: Type.Array(ConnectionBinding) }) },
+          response: { 200: listOf(ConnectionBinding) },
         },
       },
       async ({ params }) => {
@@ -2773,6 +2805,8 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.workspace("connection:write") },
         schema: {
           summary: "Remove a connection's binding",
+          description:
+            "The connection no longer has the settings the binding gave it in this workspace. Audited.",
           tags: ["bindings"],
           params: WildParams,
           response: { 204: NoContent },
@@ -2908,7 +2942,12 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       "/oauth/connections/callback",
       {
         // Anyone may arrive here; who they are is read, to check they began it.
-        config: { access: access.custom, rateLimit: { max: 60, timeWindow: "1 minute" } },
+        config: {
+          access: access.custom(
+            "Needs the sign-in of the member who began the connection, and the one-time `state` they were given. The answer is taken once.",
+          ),
+          rateLimit: { max: 60, timeWindow: "1 minute" },
+        },
         schema: {
           summary: "Where an OAuth provider sends a member back",
           description:
@@ -2956,6 +2995,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.workspace("run:read") },
         schema: {
           summary: "A task a worker does for the platform",
+          description: "Work the platform handed to a worker besides a run, and how it went.",
           tags: ["runs"],
           params: Type.Object({ t: Id, w: Id, id: Id }),
           response: { 200: Task },
@@ -3044,6 +3084,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.workspace("variable:read") },
         schema: {
           summary: "Variables in a workspace and their values",
+          description: "Each variable the workspace declares, with the value set here.",
           tags: ["bindings"],
           params: WorkspaceParams,
           response: {
@@ -3094,6 +3135,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.workspace("variable:read") },
         schema: {
           summary: "One variable and its value",
+          description: "The variable and the value set in this workspace.",
           tags: ["bindings"],
           params: WildParams,
           response: {
@@ -3121,6 +3163,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.workspace("variable:write") },
         schema: {
           summary: "Set a variable's value in this workspace",
+          description: "The value is checked against the variable's declared type. Audited.",
           tags: ["bindings"],
           params: WildParams,
           body: Type.Object({ value: Type.String({ maxLength: 65536 }) }),
@@ -3165,6 +3208,8 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.workspace("variable:write") },
         schema: {
           summary: "Clear a variable's value, so its default applies",
+          description:
+            "Takes away the value set in this workspace, so the variable's default applies. Audited.",
           tags: ["bindings"],
           params: WildParams,
           response: { 204: NoContent },
@@ -3200,9 +3245,11 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.tenant("worker:read") },
         schema: {
           summary: "Credentials for standalone workers",
+          description:
+            "The credentials made for workers that run outside the instance. A credential's value is shown once, when it is made, and is not in this list.",
           tags: ["workers"],
           params: TenantParams,
-          response: { 200: Type.Object({ items: Type.Array(WorkerCredential) }) },
+          response: { 200: listOf(WorkerCredential) },
         },
       },
       async ({ params }) => {
@@ -3294,6 +3341,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.tenant("worker:write") },
         schema: {
           summary: "Revoke a worker credential",
+          description: "A worker that holds it is refused from then on. Audited.",
           tags: ["workers"],
           params: Type.Object({ t: Id, id: Id }),
           response: { 204: NoContent },
@@ -3327,6 +3375,8 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.tenant("worker:read") },
         schema: {
           summary: "Workers heard from recently",
+          description:
+            "The workers that asked for work or reported lately, with when each was last heard from.",
           tags: ["workers"],
           params: TenantParams,
           response: {
@@ -3494,7 +3544,9 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         "/hooks/:token",
         {
           config: {
-            access: access.public,
+            access: access.publicWith(
+              "Needs the webhook's token, which is in the address. Whoever holds the token may call it.",
+            ),
             rateLimit: { max: 120, timeWindow: "1 minute" },
           },
           schema: {
@@ -3766,7 +3818,12 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       {
         // Read by a member who holds `instance:read`, or by a scraper that presents the
         // instance's metrics token: the handler checks which.
-        config: { access: access.public, traced: false },
+        config: {
+          access: access.publicWith(
+            "Needs `instance:read` for a member or key, or the instance's metrics token as a bearer token for a scraper.",
+          ),
+          traced: false,
+        },
         schema: {
           summary: "Instance metrics in Prometheus text format",
           description:

@@ -33,6 +33,7 @@ import { access, findWorkspace, type RequestContext, type WorkspaceRef } from ".
 import type { Kernel } from "../kernel/kernel.js";
 import { requireStanding } from "../kernel/pages/standing.js";
 import { dashboardProblems, interfaceProblems } from "../kernel/pages.js";
+import { listOf } from "../pagination.js";
 import { AnyObject, Id, iso, NullableId, Time, WorkspaceParams } from "./shared.js";
 
 const PathParams = Type.Object({ t: Id, w: Id, "*": Type.String() });
@@ -296,7 +297,11 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       `${base}/drafts`,
       {
-        config: { access: access.custom },
+        config: {
+          access: access.custom(
+            "Needs `resource:read` in the workspace, or `interface:read` or `doc:read` alone, which shows only drafts of those kinds.",
+          ),
+        },
         schema: {
           summary: "The drafts of a workspace",
           description:
@@ -304,7 +309,7 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             "that runs until it is deployed.",
           tags: ["authoring"],
           params: WorkspaceParams,
-          response: { 200: Type.Object({ items: Type.Array(DraftSummary) }) },
+          response: { 200: listOf(DraftSummary) },
         },
       },
       async ({ ctx, params }) => {
@@ -357,7 +362,11 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       `${base}/resource-files`,
       {
-        config: { access: access.custom },
+        config: {
+          access: access.custom(
+            "Needs `resource:read` in the workspace, or `interface:read` or `doc:read` alone, which shows only drafts of those kinds.",
+          ),
+        },
         schema: {
           summary: "The workspace's console resources as repository files",
           description:
@@ -461,9 +470,15 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       `${base}/drafts/*`,
       {
-        config: { access: access.custom },
+        config: {
+          access: access.custom(
+            "Needs `resource:read` in the workspace, or `interface:read` or `doc:read` alone, which shows only drafts of those kinds.",
+          ),
+        },
         schema: {
           summary: "One draft, with its body",
+          description:
+            "The draft of the resource at the path, as it was last saved in the console, with the revision to send back when saving over it.",
           tags: ["authoring"],
           params: PathParams,
           response: { 200: Draft },
@@ -501,7 +516,11 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       `${base}/rename-effects/*`,
       {
-        config: { access: access.custom },
+        config: {
+          access: access.custom(
+            "Needs `resource:read` in the workspace, or `interface:read` or `doc:read` alone, which shows only drafts of those kinds.",
+          ),
+        },
         schema: {
           summary: "What renaming a query would change",
           description:
@@ -546,7 +565,11 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.put(
       `${base}/drafts/*`,
       {
-        config: { access: access.custom },
+        config: {
+          access: access.custom(
+            "Needs `resource:write` in the workspace, or `interface:write` or `doc:write` alone, which allows only drafts of those kinds.",
+          ),
+        },
         schema: {
           summary: "Save a draft of the resource at a path",
           description:
@@ -655,7 +678,11 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.post(
       `${base}/drafts/batch`,
       {
-        config: { access: access.custom },
+        config: {
+          access: access.custom(
+            "Needs `resource:write` in the workspace, or `doc:write` alone, which allows only pages of documentation.",
+          ),
+        },
         schema: {
           summary: "Save, move and remove several pages of documentation at once",
           description:
@@ -790,7 +817,11 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       `${base}/draft-history/*`,
       {
-        config: { access: access.custom },
+        config: {
+          access: access.custom(
+            "Needs `resource:read` in the workspace, or `interface:read` or `doc:read` alone, which shows only drafts of those kinds.",
+          ),
+        },
         schema: {
           summary: "Earlier versions of a draft, newest first",
           description:
@@ -847,7 +878,11 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       `${base}/group-keys`,
       {
-        config: { access: access.custom },
+        config: {
+          access: access.custom(
+            "Needs `resource:read` in the workspace, or `interface:read` alone, as for the drafts a builder sees.",
+          ),
+        },
         schema: {
           summary: "The keys of the tenant's groups, members' and end users'",
           description:
@@ -857,15 +892,13 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           tags: ["authoring"],
           params: WorkspaceParams,
           response: {
-            200: Type.Object({
-              items: Type.Array(
-                Type.Object({
-                  key: Type.String(),
-                  name: Type.String(),
-                  kind: Type.String({ description: "`member` or `end_user`." }),
-                }),
-              ),
-            }),
+            200: listOf(
+              Type.Object({
+                key: Type.String(),
+                name: Type.String(),
+                kind: Type.String({ description: "`member` or `end_user`." }),
+              }),
+            ),
           },
         },
       },
@@ -897,7 +930,11 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.post(
       `${base}/draft-history/:id/restore`,
       {
-        config: { access: access.custom },
+        config: {
+          access: access.custom(
+            "Needs `resource:write` in the workspace, or `interface:write` or `doc:write` alone, which allows only drafts of those kinds.",
+          ),
+        },
         schema: {
           summary: "Make an earlier version the draft again",
           description:
@@ -941,7 +978,11 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.delete(
       `${base}/drafts/*`,
       {
-        config: { access: access.custom },
+        config: {
+          access: access.custom(
+            "Needs `resource:write` in the workspace, or `interface:write` or `doc:write` alone, which allows only drafts of those kinds.",
+          ),
+        },
         schema: {
           summary: "Discard a draft",
           description: "The resource stays as it was last deployed.",
@@ -963,7 +1004,11 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       `${base}/changes/preview`,
       {
-        config: { access: access.custom },
+        config: {
+          access: access.custom(
+            "Needs `deployment:read`, or `interface:write` for the interfaces and apps named in `paths`.",
+          ),
+        },
         schema: {
           summary: "What deploying the drafts would do",
           description:
@@ -1051,7 +1096,11 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.post(
       `${base}/changes/deploy`,
       {
-        config: { access: access.custom },
+        config: {
+          access: access.custom(
+            "Needs `deployment:write` in the workspace, or `interface:write` or `doc:write` alone, which deploys only drafts of those kinds.",
+          ),
+        },
         schema: {
           summary: "Deploy the drafts",
           description:

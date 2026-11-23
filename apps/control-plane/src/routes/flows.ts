@@ -14,7 +14,7 @@ import {
   redact,
   redactText,
 } from "../kernel/execution/redact.js";
-import { readPayload } from "../kernel/execution/runs.js";
+import { announceCanceled, readPayload, takeCanceled } from "../kernel/execution/runs.js";
 import {
   flowStateSql,
   type RunState,
@@ -47,7 +47,7 @@ import { flowKnown } from "../kernel/flows/known.js";
 import { access, findWorkspace, guestLimit } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
 import { resolveResource } from "../kernel/resolve.js";
-import { PageQuery, pageOf } from "../pagination.js";
+import { listOf, PageQuery, pageOf } from "../pagination.js";
 import {
   AnyObject,
   Id,
@@ -452,6 +452,7 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.workspace("flow:read") },
         schema: {
           summary: "Flows deployed to a workspace, each with its latest run",
+          description: "Every flow of the workspace's active bundle, with how its latest run went.",
           tags: ["flows"],
           params: WorkspaceParams,
           response: {
@@ -839,7 +840,12 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.post(
       `${base}/flow-runs`,
       {
-        config: { access: access.custom, rateLimit: guestLimit },
+        config: {
+          access: access.custom(
+            "Needs `flow_run:write` at the workspace or at the flow itself, which is how an app's users are let start one flow and no other.",
+          ),
+          rateLimit: guestLimit,
+        },
         schema: {
           summary: "Start a flow from its manual trigger",
           description:
@@ -1238,7 +1244,12 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       `${base}/flow-runs/:id`,
       {
-        config: { access: access.custom, rateLimit: guestLimit },
+        config: {
+          access: access.custom(
+            "Needs `flow_run:read` in the workspace. Whoever started a flow run may always read how it ended, without its steps.",
+          ),
+          rateLimit: guestLimit,
+        },
         schema: {
           summary: "One flow run, with every step",
           description:
@@ -1420,14 +1431,18 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.workspace("flow_run:write") },
         schema: {
           summary: "Cancel a flow run and the steps it has in progress",
+          description:
+            "The steps that are going are cancelled with it. A flow run that has already ended answers 409. Audited.",
           tags: ["flows"],
           params: Type.Object({ t: Id, w: Id, id: Id }),
           response: { 200: FlowRun },
         },
       },
       async ({ ctx, params }) => {
+        let ended: ReturnType<typeof takeCanceled> = [];
         const cancelled = await ctx.mutate(async (trx, audit) => {
           const flowRun = await cancelFlowRun(kernel, trx, params.w, params.id);
+          ended = takeCanceled(trx);
           await audit({
             action: "flow_run.cancelled",
             targetType: "flow_run",
@@ -1440,6 +1455,7 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         });
         // A canceled sub-flow lets the flow that started it move on.
         if (cancelled.parent_flow_run_id) kickFlow(kernel, cancelled.parent_flow_run_id);
+        await announceCanceled(kernel, ended);
         return toFlowRun(
           await flowRuns(params.w).where("flow_run.id", "=", params.id).executeTakeFirstOrThrow(),
         );
@@ -1600,7 +1616,11 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       "/tenants/:t/approvals/decided",
       {
-        config: { access: access.custom },
+        config: {
+          access: access.custom(
+            "Lists the decided approvals in the workspaces where the caller holds `approval:read`. A caller who holds it nowhere needs it in the tenant to be answered.",
+          ),
+        },
         schema: {
           summary: "Approvals surfaced to the tenant and decided, newest first",
           description:
@@ -1608,7 +1628,7 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             "caller may read approvals. A workspace lists every one of its own.",
           tags: ["flows"],
           params: TenantParams,
-          response: { 200: Type.Object({ items: Type.Array(DecidedApproval) }) },
+          response: { 200: listOf(DecidedApproval) },
         },
       },
       async ({ ctx, params }) => {
@@ -1645,7 +1665,7 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           tags: ["flows"],
           params: WorkspaceParams,
           querystring: Type.Object({ mine: Type.Optional(Type.Boolean()) }),
-          response: { 200: Type.Object({ items: Type.Array(Approval) }) },
+          response: { 200: listOf(Approval) },
         },
       },
       async ({ ctx, params, query }) => {
@@ -1674,7 +1694,7 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           description: "The last hundred.",
           tags: ["flows"],
           params: WorkspaceParams,
-          response: { 200: Type.Object({ items: Type.Array(DecidedApproval) }) },
+          response: { 200: listOf(DecidedApproval) },
         },
       },
       async ({ params }) => {
@@ -1688,7 +1708,11 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       "/tenants/:t/approvals",
       {
-        config: { access: access.custom },
+        config: {
+          access: access.custom(
+            "Lists the approvals the caller may decide. A caller with none needs `approval:read` in the tenant to be answered.",
+          ),
+        },
         schema: {
           summary: "Approvals surfaced to the tenant that the caller may decide",
           description:
@@ -1698,7 +1722,7 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           tags: ["flows"],
           params: TenantParams,
           querystring: Type.Object({ all: Type.Optional(Type.Boolean()) }),
-          response: { 200: Type.Object({ items: Type.Array(Approval) }) },
+          response: { 200: listOf(Approval) },
         },
       },
       async ({ ctx, params, query }) => {
@@ -1843,6 +1867,8 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.workspace("event:read") },
         schema: {
           summary: "Events published in a workspace, newest first",
+          description:
+            "Each stored event with its name and payload. An event that nothing subscribes to is not stored.",
           tags: ["events"],
           params: WorkspaceParams,
           querystring: Type.Object({

@@ -1,0 +1,39 @@
+schemaVersion: 1
+body:
+  description: Every animal on the books, with its owner's client code.
+  columns:
+    name:
+      type: text
+      required: true
+    species:
+      type: text
+      required: true
+    breed:
+      type: text
+    born:
+      type: date
+    weight_lb:
+      type: number
+    client_code:
+      type: text
+      required: true
+    clinic:
+      type: text
+      required: true
+    alert:
+      type: text
+  policy:
+    type: rules
+    rules:
+      - allow: all
+        when:
+          column: clinic
+          in: groups
+      - allow: read
+        when:
+          column: client_code
+          equals:
+            attribute: client_id
+  indexes:
+    - - client_code
+    - - clinic

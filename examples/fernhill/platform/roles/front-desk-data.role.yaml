@@ -1,0 +1,7 @@
+schemaVersion: 1
+body:
+  name: front_desk_data
+  description: Reads and changes rows where the tables' rules allow.
+  permissions:
+    - data:read
+    - data:write

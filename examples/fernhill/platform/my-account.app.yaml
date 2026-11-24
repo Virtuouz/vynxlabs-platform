@@ -1,0 +1,5 @@
+schemaVersion: 1
+body:
+  title: My Fernhill account
+  description: Your pets, your invoices, and asking for a visit.
+  interface: screens/my-account

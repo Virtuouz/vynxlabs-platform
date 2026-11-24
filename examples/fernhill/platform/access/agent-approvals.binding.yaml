@@ -1,0 +1,6 @@
+schemaVersion: 1
+body:
+  role: decides_approvals
+  principal:
+    type: service_account
+    key: phone-assistant

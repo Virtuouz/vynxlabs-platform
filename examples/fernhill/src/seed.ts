@@ -1,15 +1,5 @@
-import { defineScript, z } from "@volvel/sdk";
+import { defineScript, type Insert, z } from "@volvel/sdk";
 import { type Reason, TIME_ZONE, VISIT_MINUTES } from "./constants.ts";
-import {
-  appointments,
-  clients,
-  clinics,
-  inventory,
-  invoices,
-  pets,
-  purchaseOrders,
-  registrations,
-} from "./model.ts";
 import { hoursOn, instantAt, wallClock } from "./time.ts";
 
 /** The same numbers every time, so two workspaces seeded alike look alike. */
@@ -340,19 +330,19 @@ export const seedDemo = defineScript({
   }),
   output: z.object({ counts: z.record(z.string(), z.number()) }),
   tables: [
-    clinics,
-    clients,
-    pets,
-    appointments,
-    invoices,
-    inventory,
-    purchaseOrders,
-    registrations,
+    "clinics",
+    "clients",
+    "pets",
+    "appointments",
+    "invoices",
+    "inventory",
+    "purchase_orders",
+    "registrations",
   ],
   timeoutSeconds: 600,
   concurrency: 1,
   async run(input, ctx) {
-    if ((await ctx.table(clinics).find({ limit: 1 })).length > 0) {
+    if ((await ctx.table("clinics").find({ limit: 1 })).length > 0) {
       throw new Error("This workspace already has clinics. Seed only an empty workspace.");
     }
     const rnd = random(20261114);
@@ -370,7 +360,7 @@ export const seedDemo = defineScript({
       for (let at = 0; at < rows.length; at += 500) await write(rows.slice(at, at + 500));
     };
 
-    await ctx.table(clinics).insertMany(CLINIC_ROWS);
+    await ctx.table("clinics").insertMany(CLINIC_ROWS);
 
     // Owners, numbered across the group, each registered at one clinic.
     const owners: { code: string; name: string; phone: string; clinic: string }[] = [];
@@ -387,7 +377,7 @@ export const seedDemo = defineScript({
         number += 1;
       }
     }
-    await ctx.table(clients).insertMany(
+    await ctx.table("clients").insertMany(
       owners.map((owner, index) => ({
         code: owner.code,
         name: owner.name,
@@ -399,7 +389,7 @@ export const seedDemo = defineScript({
     );
 
     // One to three animals each.
-    const petRows: NonNullable<typeof pets.__insert>[] = [];
+    const petRows: Insert<"pets">[] = [];
     for (const owner of owners) {
       const count = rnd() < 0.55 ? 1 : rnd() < 0.75 ? 2 : 3;
       for (let i = 0; i < count; i += 1) {
@@ -431,13 +421,13 @@ export const seedDemo = defineScript({
       clinic: string;
     }[] = [];
     await inChunks(petRows, async (chunk) => {
-      storedPets.push(...((await ctx.table(pets).insertMany(chunk)) as typeof storedPets));
+      storedPets.push(...((await ctx.table("pets").insertMany(chunk)) as typeof storedPets));
     });
     const petsAt = (clinic: string) => storedPets.filter((pet) => pet.clinic === clinic);
 
     // Visits: the past weeks, today, and ten days ahead, by each clinic's own clock.
     const now = Date.now();
-    const visitRows: NonNullable<typeof appointments.__insert>[] = [];
+    const visitRows: Insert<"appointments">[] = [];
     let visitNumber = 4000;
     for (let day = -input.pastDays; day <= 10; day += 1) {
       const local = wallClock(new Date(now + day * 86_400_000), TIME_ZONE);
@@ -501,7 +491,7 @@ export const seedDemo = defineScript({
     }[] = [];
     await inChunks(visitRows, async (chunk) => {
       storedVisits.push(
-        ...((await ctx.table(appointments).insertMany(chunk)) as typeof storedVisits),
+        ...((await ctx.table("appointments").insertMany(chunk)) as typeof storedVisits),
       );
     });
 
@@ -533,7 +523,7 @@ export const seedDemo = defineScript({
           lines,
         };
       });
-    await inChunks(invoiceRows, (chunk) => ctx.table(invoices).insertMany(chunk));
+    await inChunks(invoiceRows, (chunk) => ctx.table("invoices").insertMany(chunk));
 
     // Stock: each clinic holds every line. A few are low already.
     const stockRows = CLINIC_ROWS.flatMap((clinic) =>
@@ -554,7 +544,7 @@ export const seedDemo = defineScript({
         };
       }),
     );
-    await ctx.table(inventory).insertMany(stockRows);
+    await ctx.table("inventory").insertMany(stockRows);
 
     // Orders the group placed before.
     const poRows = Array.from({ length: 14 }, (_, index) => {
@@ -571,9 +561,9 @@ export const seedDemo = defineScript({
         supplier_ref: index === 3 ? null : `VSD-${880000 + index * 37}`,
       };
     });
-    await ctx.table(purchaseOrders).insertMany(poRows);
+    await ctx.table("purchase_orders").insertMany(poRows);
 
-    await ctx.table(registrations).insertMany([
+    await ctx.table("registrations").insertMany([
       {
         name: "Daniel Price",
         phone: "(503) 555-0181",

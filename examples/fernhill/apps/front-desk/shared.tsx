@@ -1,4 +1,6 @@
 import { RunError, runScript, table } from "@volvel/app";
+// Types only: none of the repository's server code reaches the browser. The tables are typed by name, by .platform/volvel-env.d.ts.
+import type { Row, TableOf } from "@volvel/sdk";
 import { Badge, type BadgeTone, Skeleton } from "@volvel/ui";
 import { useEffect, useState } from "react";
 // These two files import nothing, so they are safe in the browser.
@@ -9,16 +11,6 @@ import {
   STATUS_WORDS,
   TIME_ZONE,
 } from "../../src/constants.ts";
-// Types only: none of the repository's server code reaches the browser.
-import type {
-  appointments,
-  clients,
-  clinics,
-  inventory,
-  invoices,
-  pets,
-  registrations,
-} from "../../src/model.ts";
 import { clockText, instantAt, wallClock } from "../../src/time.ts";
 
 export { CLINICS, REASONS, VISIT_MINUTES } from "../../src/constants.ts";
@@ -56,22 +48,22 @@ export function StatusBadge({ status }: { status: string }) {
   return <Badge tone={TONES[known] ?? "neutral"}>{STATUS_WORDS[known] ?? status}</Badge>;
 }
 
-// ----- Tables, typed by their definitions -----
+// ----- Tables, typed by their paths -----
 
-export const Appointments = () => table<typeof appointments>("appointments");
-export const Pets = () => table<typeof pets>("pets");
-export const Clients = () => table<typeof clients>("clients");
-export const Clinics = () => table<typeof clinics>("clinics");
-export const Inventory = () => table<typeof inventory>("inventory");
-export const Invoices = () => table<typeof invoices>("invoices");
-export const Registrations = () => table<typeof registrations>("registrations");
+export const Appointments = () => table<TableOf<"appointments">>("appointments");
+export const Pets = () => table<TableOf<"pets">>("pets");
+export const Clients = () => table<TableOf<"clients">>("clients");
+export const Clinics = () => table<TableOf<"clinics">>("clinics");
+export const Inventory = () => table<TableOf<"inventory">>("inventory");
+export const Invoices = () => table<TableOf<"invoices">>("invoices");
+export const Registrations = () => table<TableOf<"registrations">>("registrations");
 
-export type Appointment = NonNullable<typeof appointments.__row>;
-export type Pet = NonNullable<typeof pets.__row>;
-export type Client = NonNullable<typeof clients.__row>;
-export type Clinic = NonNullable<typeof clinics.__row>;
-export type StockLine = NonNullable<typeof inventory.__row>;
-export type Registration = NonNullable<typeof registrations.__row>;
+export type Appointment = Row<"appointments">;
+export type Pet = Row<"pets">;
+export type Client = Row<"clients">;
+export type Clinic = Row<"clinics">;
+export type StockLine = Row<"inventory">;
+export type Registration = Row<"registrations">;
 
 // ----- Formatting. Every clinic keeps Pacific time, and money is kept in cents. -----
 

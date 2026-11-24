@@ -1,0 +1,6 @@
+schemaVersion: 1
+body:
+  name: opens_app
+  description: Opens an app.
+  permissions:
+    - app:read

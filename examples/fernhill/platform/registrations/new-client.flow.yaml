@@ -1,0 +1,69 @@
+schemaVersion: 1
+body:
+  description: Takes a new client's details from the public form, for the front desk to call back.
+  nodes:
+    form:
+      type: trigger
+      trigger:
+        type: form
+        title: Register with Fernhill Vets
+        description: Tell us about you and your pet. Your nearest clinic will call you back within a day.
+        fields:
+          - name: name
+            label: Your name
+            type: text
+            required: true
+          - name: phone
+            label: Phone
+            type: text
+            required: true
+          - name: email
+            label: Email
+            type: email
+          - name: pet_name
+            label: Your pet's name
+            type: text
+            required: true
+          - name: species
+            label: Species
+            type: select
+            required: true
+            options:
+              - Dog
+              - Cat
+              - Rabbit
+              - Bird
+              - Other
+          - name: clinic
+            label: Nearest clinic
+            type: select
+            required: true
+            options:
+              - northside
+              - riverside
+              - hilltop
+        submitLabel: Register
+        success: Thank you. Your clinic will call you within one working day.
+    keep:
+      type: script
+      script: core/table-write
+      inputs:
+        table: "'registrations'"
+        values: "{'name': trigger.name, 'phone': trigger.phone, 'pet_name': trigger.pet_name, 'species': trigger.species, 'clinic': trigger.clinic, 'email': has(trigger.email) ? trigger.email : null}"
+      with:
+        tables:
+          - registrations
+    tell:
+      type: script
+      script: core/publish-event
+      inputs:
+        event: "'registrations/received'"
+        payload: "{'id': steps.keep.output.row.id}"
+      with:
+        events:
+          - registrations/received
+  edges:
+    - from: form
+      to: keep
+    - from: keep
+      to: tell

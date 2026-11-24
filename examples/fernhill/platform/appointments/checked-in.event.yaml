@@ -1,0 +1,17 @@
+schemaVersion: 1
+body:
+  description: A patient arrived at the front desk.
+  payload:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    properties:
+      appointment:
+        type: string
+      clinic:
+        type: string
+      pet:
+        type: string
+    required:
+      - appointment
+      - clinic
+      - pet

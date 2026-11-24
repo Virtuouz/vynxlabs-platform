@@ -1,0 +1,4 @@
+schemaVersion: 1
+body:
+  connector: http
+  description: "VetSupply Direct: prices and orders for stock."

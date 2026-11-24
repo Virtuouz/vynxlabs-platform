@@ -1,0 +1,65 @@
+schemaVersion: 1
+body:
+  description: Every visit, booked or past, and where it stands.
+  columns:
+    number:
+      type: text
+      required: true
+      unique: true
+    pet:
+      type: reference
+      required: true
+      references: pets
+    pet_name:
+      type: text
+      required: true
+    species:
+      type: text
+    client_code:
+      type: text
+      required: true
+    clinic:
+      type: text
+      required: true
+    vet:
+      type: text
+    starts_at:
+      type: timestamp
+      required: true
+    minutes:
+      type: integer
+      description: How long the visit is booked for. A recheck is 10, a first visit 30.
+      required: true
+      default: 20
+    reason:
+      type: text
+      description: Why the pet is coming in, in the owner's words.
+      required: true
+    status:
+      type: text
+      description: "Where the visit stands: booked, checked in, with the vet, finished, or canceled."
+      required: true
+      default: booked
+    checked_in_at:
+      type: timestamp
+    reminded_at:
+      type: timestamp
+    notes:
+      type: text
+  policy:
+    type: rules
+    rules:
+      - allow: all
+        when:
+          column: clinic
+          in: groups
+      - allow: read
+        when:
+          column: client_code
+          equals:
+            attribute: client_id
+  indexes:
+    - - clinic
+      - starts_at
+    - - client_code
+    - - status

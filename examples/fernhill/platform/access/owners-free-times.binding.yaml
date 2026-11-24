@@ -1,0 +1,6 @@
+schemaVersion: 1
+body:
+  role: runs_script
+  principal:
+    type: end_users
+  resource: appointments/free-times

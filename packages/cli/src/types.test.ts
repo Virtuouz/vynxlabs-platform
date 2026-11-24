@@ -177,6 +177,30 @@ export async function f(ctx: ScriptContext) {
     expect(diagnose(dir, ["src/phantom.ts", ENV_TYPES_FILE])).toEqual([]);
   });
 
+  test("Row, Insert and TableOf name a table's types by its path, where typeof a definition was used", async () => {
+    const dir = await fixture({
+      "src/named.ts": `import type { Insert, Row, TableOf } from "@volvel/sdk";
+type Same<A, B> = (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
+export type Clinic = Row<"clinics">;
+export const given: Insert<"clinics"> = { name: "North", status: "open" };
+export const status: "open" | "closed" = ({} as Clinic).status;
+// What an app's table<Definition>(path) reads from its argument: the row and insert types.
+type RowOf<T> = T extends { readonly __row?: infer R } ? NonNullable<R> : never;
+type InsertOf<T> = T extends { readonly __insert?: infer I } ? NonNullable<I> : never;
+export const same: Same<RowOf<TableOf<"clinics">>, Clinic> = true;
+export const sameInsert: Same<InsertOf<TableOf<"clinics">>, Insert<"clinics">> = true;
+`,
+      "src/named-wrong.ts": `import type { Insert, Row } from "@volvel/sdk";
+export const a: Insert<"clinics"> = { name: 4, status: "open" };
+export const b: Row<"not-a-table"> = {};
+`,
+    });
+    const built = await buildRepository({ directory: dir, withoutAppSources: true });
+    await writeEnvTypes(dir, built.bundle.manifests);
+    expect(diagnose(dir, ["src/named.ts", ENV_TYPES_FILE])).toEqual([]);
+    expect(diagnose(dir, ["src/named-wrong.ts", ENV_TYPES_FILE]).length).toBeGreaterThanOrEqual(2);
+  });
+
   test("a row is typed as the SDK types a defineTable row, for the same columns", async () => {
     const dir = await fixture({
       "src/parity.ts": `import { column, defineTable } from "@volvel/sdk";

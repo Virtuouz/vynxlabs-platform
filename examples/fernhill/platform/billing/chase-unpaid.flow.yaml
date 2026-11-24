@@ -1,0 +1,47 @@
+schemaVersion: 1
+body:
+  description: Texts owners about invoices unpaid for more than two weeks.
+  nodes:
+    weekly:
+      type: trigger
+      trigger:
+        type: schedule
+        cron: 0 9 * * 1
+        timezone: America/Los_Angeles
+    by_hand:
+      type: trigger
+      trigger:
+        type: manual
+    find:
+      type: script
+      script: core/table-read
+      inputs:
+        table: "'invoices'"
+        filter: "{'and': [{'column': 'status', 'value': 'unpaid'}, {'column': 'chased_at', 'op': 'is_null'}, {'column': 'issued_on', 'op': 'lte', 'value': string(now - duration('336h')).substring(0, 10)}]}"
+        sort: "'issued_on'"
+        limit: "100"
+      with:
+        tables:
+          - invoices
+    chase:
+      type: foreach
+      items: steps.find.output.rows
+      script: billing/chase-one
+      input: "{'invoice': item.id}"
+      concurrency: 4
+      continueOnError: true
+    count:
+      type: set
+      values:
+        looked_at: size(steps.find.output.rows)
+        texted: size(steps.chase.output.filter(x, has(x.texted) && x.texted))
+        failed: size(steps.chase.output.filter(x, has(x.error)))
+  edges:
+    - from: weekly
+      to: find
+    - from: by_hand
+      to: find
+    - from: find
+      to: chase
+    - from: chase
+      to: count

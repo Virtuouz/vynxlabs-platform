@@ -1,0 +1,4 @@
+schemaVersion: 1
+body:
+  description: How long before a visit its reminder is sent.
+  default: "24"

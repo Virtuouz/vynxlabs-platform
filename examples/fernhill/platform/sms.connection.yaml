@@ -1,0 +1,4 @@
+schemaVersion: 1
+body:
+  connector: http
+  description: "TextLine, the SMS gateway: reminders and thank-you messages."

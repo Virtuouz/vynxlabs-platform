@@ -1,0 +1,6 @@
+schemaVersion: 1
+body:
+  name: reads_data
+  description: Reads rows where the tables' rules allow.
+  permissions:
+    - data:read

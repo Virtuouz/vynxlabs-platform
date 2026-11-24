@@ -38,6 +38,24 @@ export interface RunInfo {
  */
 // biome-ignore lint/suspicious/noEmptyInterface: filled by declaration merging from the generated file.
 export interface VolvelTables {}
+/** A row of a table, by its path, as the generated file knows it: `Row<"visits">`. */
+export type Row<Name extends keyof VolvelTables> = VolvelTables[Name] extends { row: infer R }
+  ? R
+  : never;
+/** What is given to insert a row of a table, by its path: `Insert<"visits">`. */
+export type Insert<Name extends keyof VolvelTables> = VolvelTables[Name] extends {
+  insert: infer I;
+}
+  ? I
+  : never;
+/**
+ * A table's types by its path, in the form an app's `table<...>("path")` takes where it
+ * took `typeof definition`: `table<TableOf<"visits">>("visits")`.
+ */
+export interface TableOf<Name extends keyof VolvelTables> {
+  readonly __row?: Row<Name>;
+  readonly __insert?: Insert<Name>;
+}
 /** The events of the workspace, by path, each with its payload. Filled by the generated file. */
 // biome-ignore lint/suspicious/noEmptyInterface: filled by declaration merging from the generated file.
 export interface VolvelEvents {}

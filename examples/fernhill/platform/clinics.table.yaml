@@ -1,0 +1,33 @@
+schemaVersion: 1
+body:
+  description: "The group's clinics: where they are and when they open, in Pacific time."
+  columns:
+    code:
+      type: text
+      required: true
+      unique: true
+    name:
+      type: text
+      required: true
+    phone:
+      type: text
+      required: true
+    address:
+      type: text
+      required: true
+    opens:
+      type: text
+      required: true
+      default: 08:00
+    closes:
+      type: text
+      required: true
+      default: 18:00
+    saturday_closes:
+      type: text
+  policy:
+    type: rules
+    rules:
+      - allow: read
+        when:
+          everyone: true

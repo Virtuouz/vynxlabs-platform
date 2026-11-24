@@ -1,0 +1,7 @@
+schemaVersion: 1
+body:
+  name: runs_script
+  description: Starts a script and reads its runs.
+  permissions:
+    - run:write
+    - run:read

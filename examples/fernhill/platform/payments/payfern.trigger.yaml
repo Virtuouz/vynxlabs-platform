@@ -1,0 +1,9 @@
+schemaVersion: 1
+body:
+  type: webhook
+  script: billing/record-payment
+  verify:
+    scheme: hmac-sha256
+    header: x-payfern-signature
+    secret: PAYFERN_SIGNING_SECRET
+    prefix: sha256=

@@ -1,0 +1,5 @@
+schemaVersion: 1
+body:
+  title: Invoices
+  description: Invoices, as each person may see them.
+  interface: screens/invoices

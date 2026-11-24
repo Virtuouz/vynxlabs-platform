@@ -1,0 +1,5 @@
+schemaVersion: 1
+body:
+  script: inventory/check
+  cron: "*/30 * * * *"
+  timezone: America/Los_Angeles

@@ -1,0 +1,23 @@
+schemaVersion: 1
+body:
+  description: A visit ended and should be invoiced.
+  payload:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    properties:
+      appointment:
+        type: string
+      clinic:
+        type: string
+      client:
+        type: string
+      pet:
+        type: string
+      reason:
+        type: string
+    required:
+      - appointment
+      - clinic
+      - client
+      - pet
+      - reason

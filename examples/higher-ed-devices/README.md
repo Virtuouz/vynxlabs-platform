@@ -18,6 +18,16 @@ It is split the way that works best. **What has code is TypeScript**: tables, sc
 
 Keep to that split and the console never has to take anything over. A resource has one owner: the code that defines it, or a file. The console cannot edit TypeScript, so saving a draft of something the code defines makes a file of it, and from then on a deploy of this repository and a deploy from the console each put it back their own way until the definition is removed from one of them. A script the code defines cannot be converted at all, since it leans on the rest of the code: the console can only replace it with one written there.
 
+## Why this example is in code
+
+Most repositories should be YAML first, as `volvel init`, [Fernhill](../fernhill) and [acme](../acme) are. This one keeps its tables, flow, roles and bindings as `define*` calls on purpose, to show what code is for:
+
+- **Composition.** The tables, the scripts and the review flow are built from one model and its helpers (`KINDS`, `Kind`, `AUTO_APPROVED`). The flow's rule for what is approved at once is built from the same list the script checks, so the two cannot drift.
+- **Shared values.** The bindings share the `AGENT` and `STUDENTS` principals, and the review flow builds its test from a template. YAML has no variables: the same bindings as files would repeat each principal in every file.
+- **Definitions that name each other.** Code names a table or an event by the exported value (`ctx.table(devices)`), so a rename or a typo is a compile error.
+
+The tables here are typed by `typeof devices.__row`, from their definitions. A repository that only wants a table in a file gets the same types from the build without writing them (`ctx.table("devices")`).
+
 Run `volvel schemas` once and VS Code completes and checks the files as you type.
 
 Students are end users with a `student_id` attribute. The tables' rules show them their own record, requests and loans, and every device.

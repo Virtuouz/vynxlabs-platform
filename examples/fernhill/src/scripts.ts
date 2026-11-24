@@ -1,4 +1,4 @@
-import { defineScript, type ScriptContext, z } from "@volvel/sdk";
+import { defineScript, type Row, type ScriptContext, z } from "@volvel/sdk";
 import {
   type AppointmentStatus,
   CLINICS,
@@ -9,27 +9,7 @@ import {
   TIME_ZONE,
   VISIT_MINUTES,
 } from "./constants.ts";
-import {
-  AppointmentState,
-  appointments,
-  approvalThreshold,
-  Clinic,
-  checkedIn,
-  clients,
-  clinics,
-  examFee,
-  inventory,
-  invoicePaid,
-  invoices,
-  pets,
-  purchaseOrders,
-  REASONS,
-  reminderLeadHours,
-  sms,
-  stockLow,
-  supplier,
-  visitDone,
-} from "./model.ts";
+import { AppointmentState, Clinic, REASONS } from "./model.ts";
 import { clockText, hhmmOf, hoursOn, instantAt, wallClock } from "./time.ts";
 
 /** What each reason for a visit adds to the exam fee, in cents. */
@@ -60,14 +40,14 @@ const shortNumber = (prefix: string) =>
 
 // ----- Booking -----
 
-type Visit = NonNullable<typeof appointments.__row>;
-type ClinicRow = NonNullable<typeof clinics.__row>;
+type Visit = Row<"appointments">;
+type ClinicRow = Row<"clinics">;
 const ACTIVE = ["booked", "checked_in", "in_exam"];
 
 /** The clinic's row, or a refusal that says which clinics there are. */
 async function clinicCalled(ctx: ScriptContext, code: string): Promise<ClinicRow> {
   const [clinic] = await ctx
-    .table(clinics)
+    .table("clinics")
     .find({ filter: { column: "code", value: code }, limit: 1 });
   if (!clinic) throw new Error(`There is no clinic called ${code}. Choose ${CLINICS.join(", ")}.`);
   return clinic;
@@ -77,7 +57,7 @@ async function clinicCalled(ctx: ScriptContext, code: string): Promise<ClinicRow
 async function visitsOn(ctx: ScriptContext, clinic: string, date: string): Promise<Visit[]> {
   const from = instantAt(date, 0, TIME_ZONE);
   const to = instantAt(date, 24 * 60, TIME_ZONE);
-  return ctx.table(appointments).find({
+  return ctx.table("appointments").find({
     filter: {
       and: [
         { column: "clinic", value: clinic },
@@ -134,7 +114,7 @@ export const freeTimes = defineScript({
     closed: z.boolean(),
     times: z.array(z.object({ starts_at: z.string(), local: z.string() })),
   }),
-  tables: [clinics, appointments],
+  tables: ["clinics", "appointments"],
   async run(input, ctx) {
     const clinic = await clinicCalled(ctx, input.clinic);
     const booked = await visitsOn(ctx, input.clinic, input.date);
@@ -181,12 +161,12 @@ export const bookAppointment = defineScript({
     starts_at: z.string(),
     local: z.string(),
   }),
-  tables: [pets, clinics, appointments],
+  tables: ["pets", "clinics", "appointments"],
   async run(input, ctx) {
     const who = ctx.run.startedBy;
     // An owner sees only their own pets: ask the table as them.
     const petTable =
-      who.type === "end_user" && who.id ? ctx.table(pets).as(who.id) : ctx.table(pets);
+      who.type === "end_user" && who.id ? ctx.table("pets").as(who.id) : ctx.table("pets");
     const pet = await petTable.get(input.pet);
     if (!pet) throw new Error("There is no such pet, or it is not yours to book for.");
 
@@ -213,7 +193,7 @@ export const bookAppointment = defineScript({
     const why = refusal(clinic, booked, start, minutes, input.vet);
     if (why) throw new Error(why);
 
-    const row = await ctx.table(appointments).insert({
+    const row = await ctx.table("appointments").insert({
       number: shortNumber("A"),
       pet: pet.id,
       pet_name: pet.name,
@@ -247,15 +227,15 @@ export const setStatus = defineScript({
     notes: z.string().max(500).optional(),
   }),
   output: z.object({ id: z.string(), status: z.string() }),
-  tables: [appointments],
-  events: [checkedIn, visitDone],
+  tables: ["appointments"],
+  events: ["appointments/checked-in", "appointments/completed"],
   async run(input, ctx) {
     const who = ctx.run.startedBy;
     // Front-desk staff change only their own clinic's visits: the table's rules decide.
     const table =
       who.type === "end_user" && who.id
-        ? ctx.table(appointments).as(who.id)
-        : ctx.table(appointments);
+        ? ctx.table("appointments").as(who.id)
+        : ctx.table("appointments");
     const visit = await table.get(input.appointment);
     if (!visit) throw new Error("There is no such visit, or it is another clinic's.");
     if (!NEXT_STATUS[visit.status as AppointmentStatus]?.includes(input.status)) {
@@ -294,7 +274,7 @@ export const sendSms = defineScript({
   description: "Sends one text message through TextLine.",
   input: z.object({ to: z.string().min(5), text: z.string().min(1).max(480) }),
   output: z.object({ id: z.string() }),
-  connections: [sms],
+  connections: ["sms"],
   retries: { limit: 2, delaySeconds: 10 },
   async run(input, ctx) {
     const gateway = await ctx.connection("sms");
@@ -310,9 +290,9 @@ export const sendReminders = defineScript({
   description: "Texts every owner whose pet has a visit in the next day, once.",
   input: z.object({}),
   output: z.object({ sent: z.number(), failed: z.number() }),
-  tables: [appointments, clients],
-  connections: [sms],
-  variables: [reminderLeadHours],
+  tables: ["appointments", "clients"],
+  connections: ["sms"],
+  variables: ["reminders/lead-hours"],
   timeoutSeconds: 300,
   concurrency: 1,
   onFailure: { script: "alerts/run-failed" },
@@ -320,7 +300,7 @@ export const sendReminders = defineScript({
     const hours = Number(await ctx.variable("reminders/lead-hours"));
     const now = new Date();
     const until = new Date(now.getTime() + hours * 3_600_000);
-    const due = await ctx.table(appointments).find({
+    const due = await ctx.table("appointments").find({
       filter: {
         and: [
           { column: "status", value: "booked" },
@@ -337,7 +317,7 @@ export const sendReminders = defineScript({
     for (const visit of due) {
       if (ctx.signal.aborted) break;
       const [owner] = await ctx
-        .table(clients)
+        .table("clients")
         .find({ filter: { column: "code", value: visit.client_code }, limit: 1 });
       if (!owner) continue;
       const when = new Intl.DateTimeFormat("en-US", {
@@ -370,7 +350,7 @@ export const sendReminders = defineScript({
         });
         continue;
       }
-      await ctx.table(appointments).update(visit.id, { reminded_at: new Date().toISOString() });
+      await ctx.table("appointments").update(visit.id, { reminded_at: new Date().toISOString() });
       sent += 1;
     }
     ctx.log.info("Reminders done", { due: due.length, sent, failed });
@@ -395,16 +375,16 @@ export const createInvoice = defineScript({
     phone: z.string(),
     pet: z.string(),
   }),
-  tables: [appointments, invoices, clients],
-  variables: [examFee],
+  tables: ["appointments", "invoices", "clients"],
+  variables: ["billing/exam-fee"],
   async run(input, ctx) {
-    const visit = await ctx.table(appointments).get(input.appointment);
+    const visit = await ctx.table("appointments").get(input.appointment);
     if (!visit) throw new Error("There is no such visit.");
     const [existing] = await ctx
-      .table(invoices)
+      .table("invoices")
       .find({ filter: { column: "appointment", value: visit.id }, limit: 1 });
     const [owner] = await ctx
-      .table(clients)
+      .table("clients")
       .find({ filter: { column: "code", value: visit.client_code }, limit: 1 });
     if (!owner) throw new Error(`No client has the code ${visit.client_code}.`);
     if (existing) {
@@ -420,7 +400,7 @@ export const createInvoice = defineScript({
     const fee = Number(await ctx.variable("billing/exam-fee"));
     const lines = [{ label: "Exam", amount: fee }, ...(EXTRAS[visit.reason] ?? [])];
     const total = lines.reduce((sum, line) => sum + line.amount, 0);
-    const row = await ctx.table(invoices).insert({
+    const row = await ctx.table("invoices").insert({
       number: shortNumber("INV"),
       appointment: visit.id,
       client_code: visit.client_code,
@@ -455,11 +435,11 @@ export const recordPayment = defineScript({
   description: "Marks an invoice paid when PayFern says the money arrived.",
   input: Payment,
   output: z.object({ invoice: z.string(), status: z.string() }),
-  tables: [invoices],
-  events: [invoicePaid],
+  tables: ["invoices"],
+  events: ["invoices/paid"],
   async run(input, ctx) {
     const [invoice] = await ctx
-      .table(invoices)
+      .table("invoices")
       .find({ filter: { column: "number", value: input.invoice }, limit: 1 });
     if (!invoice) throw new Error(`PayFern paid ${input.invoice}, which is not one of ours.`);
     if (invoice.status === "paid") return { invoice: invoice.number, status: "paid" };
@@ -468,7 +448,7 @@ export const recordPayment = defineScript({
         `PayFern paid ${input.amount} for ${invoice.number}, which is for ${invoice.total}. Look into it before marking it paid.`,
       );
     }
-    await ctx.table(invoices).update(invoice.id, {
+    await ctx.table("invoices").update(invoice.id, {
       status: "paid",
       paid_at: new Date().toISOString(),
       payment_ref: input.reference,
@@ -483,17 +463,17 @@ export const chaseOne = defineScript({
   description: "Texts the owner about one unpaid invoice, when it is more than two weeks old.",
   input: z.object({ invoice: z.uuid() }),
   output: z.object({ invoice: z.string(), texted: z.boolean() }),
-  tables: [invoices, clients],
-  connections: [sms],
+  tables: ["invoices", "clients"],
+  connections: ["sms"],
   async run(input, ctx) {
-    const invoice = await ctx.table(invoices).get(input.invoice);
+    const invoice = await ctx.table("invoices").get(input.invoice);
     if (!invoice) throw new Error("There is no such invoice.");
     const age = Date.now() - new Date(`${invoice.issued_on}T00:00:00Z`).getTime();
     if (invoice.status !== "unpaid" || invoice.chased_at || age < 14 * 86_400_000) {
       return { invoice: invoice.number, texted: false };
     }
     const [owner] = await ctx
-      .table(clients)
+      .table("clients")
       .find({ filter: { column: "code", value: invoice.client_code }, limit: 1 });
     if (!owner) throw new Error(`No client has the code ${invoice.client_code}.`);
     const gateway = await ctx.connection("sms");
@@ -514,7 +494,7 @@ export const chaseOne = defineScript({
       return { invoice: invoice.number, texted: false };
     }
     if (!sent.ok) throw new Error(`TextLine answered ${sent.status}.`);
-    await ctx.table(invoices).update(invoice.id, { chased_at: new Date().toISOString() });
+    await ctx.table("invoices").update(invoice.id, { chased_at: new Date().toISOString() });
     return { invoice: invoice.number, texted: true };
   },
 });
@@ -526,17 +506,17 @@ export const checkStock = defineScript({
   description: "Finds every line at or under its reorder level and says so, once per line.",
   input: z.object({}),
   output: z.object({ low: z.number() }),
-  tables: [inventory],
-  events: [stockLow],
+  tables: ["inventory"],
+  events: ["inventory/low"],
   concurrency: 1,
   async run(_input, ctx) {
-    const lines = await ctx.table(inventory).find({
+    const lines = await ctx.table("inventory").find({
       filter: { column: "reorder_pending", value: false },
       limit: 1000,
     });
     const low = lines.filter((line) => line.on_hand <= line.reorder_at);
     for (const line of low) {
-      await ctx.table(inventory).update(line.id, { reorder_pending: true });
+      await ctx.table("inventory").update(line.id, { reorder_pending: true });
       await ctx.events.publish("inventory/low", {
         line: line.id,
         clinic: line.clinic,
@@ -565,8 +545,8 @@ export const quoteOrder = defineScript({
     needs_approval: z.boolean(),
     lead_days: z.number(),
   }),
-  connections: [supplier],
-  variables: [approvalThreshold],
+  connections: ["supplier"],
+  variables: ["inventory/approval-threshold"],
   async run(input, ctx) {
     const api = await ctx.connection("supplier");
     const quote = (
@@ -595,11 +575,11 @@ export const placeOrder = defineScript({
     total: z.number().int().nonnegative(),
   }),
   output: z.object({ number: z.string(), supplier_ref: z.string() }),
-  tables: [inventory, purchaseOrders],
-  connections: [supplier],
+  tables: ["inventory", "purchase_orders"],
+  connections: ["supplier"],
   retries: { limit: 2, delaySeconds: 15 },
   async run(input, ctx) {
-    const line = await ctx.table(inventory).get(input.line);
+    const line = await ctx.table("inventory").get(input.line);
     if (!line) throw new Error("That stock line no longer exists.");
     const number = shortNumber("PO");
     const api = await ctx.connection("supplier");
@@ -614,7 +594,7 @@ export const placeOrder = defineScript({
         { headers: { "idempotency-key": `${ctx.run.idempotencyKey}` } },
       )
     ).json() as { reference: string };
-    await ctx.table(purchaseOrders).insert({
+    await ctx.table("purchase_orders").insert({
       number,
       clinic: line.clinic,
       sku: line.sku,
@@ -634,12 +614,12 @@ export const recordRefusedOrder = defineScript({
   description: "Records an order a manager turned down, and lets the line be checked again.",
   input: z.object({ line: z.uuid(), quantity: z.number().int(), total: z.number().int() }),
   output: z.object({ number: z.string() }),
-  tables: [inventory, purchaseOrders],
+  tables: ["inventory", "purchase_orders"],
   async run(input, ctx) {
-    const line = await ctx.table(inventory).get(input.line);
+    const line = await ctx.table("inventory").get(input.line);
     if (!line) throw new Error("That stock line no longer exists.");
     const number = shortNumber("PO");
-    await ctx.table(purchaseOrders).insert({
+    await ctx.table("purchase_orders").insert({
       number,
       clinic: line.clinic,
       sku: line.sku,
@@ -648,7 +628,7 @@ export const recordRefusedOrder = defineScript({
       total: input.total,
       status: "refused",
     });
-    await ctx.table(inventory).update(line.id, { reorder_pending: false });
+    await ctx.table("inventory").update(line.id, { reorder_pending: false });
     return { number };
   },
 });
@@ -658,11 +638,13 @@ export const useStock = defineScript({
   description: "Takes items out of a clinic's stock, as the person using them.",
   input: z.object({ line: z.uuid(), quantity: z.number().int().min(1).max(100) }),
   output: z.object({ on_hand: z.number() }),
-  tables: [inventory],
+  tables: ["inventory"],
   async run(input, ctx) {
     const who = ctx.run.startedBy;
     const table =
-      who.type === "end_user" && who.id ? ctx.table(inventory).as(who.id) : ctx.table(inventory);
+      who.type === "end_user" && who.id
+        ? ctx.table("inventory").as(who.id)
+        : ctx.table("inventory");
     const line = await table.get(input.line);
     if (!line) throw new Error("There is no such stock line, or it is another clinic's.");
     if (line.on_hand < input.quantity) {
@@ -712,11 +694,11 @@ export const findClient = defineScript({
       }),
     ),
   }),
-  tables: [clients, pets, appointments, invoices],
+  tables: ["clients", "pets", "appointments", "invoices"],
   async run(input, ctx) {
     const q = input.query.trim();
     const digits = q.replace(/\D/g, "");
-    const byOwner = await ctx.table(clients).find({
+    const byOwner = await ctx.table("clients").find({
       filter: {
         or: [
           { column: "name", op: "contains", value: q },
@@ -729,7 +711,7 @@ export const findClient = defineScript({
       },
       limit: 10,
     });
-    const byPet = await ctx.table(pets).find({
+    const byPet = await ctx.table("pets").find({
       filter: { column: "name", op: "contains", value: q },
       limit: 10,
     });
@@ -740,12 +722,12 @@ export const findClient = defineScript({
     for (const code of codes) {
       const [owner] = byOwner.filter((one) => one.code === code).length
         ? byOwner.filter((one) => one.code === code)
-        : await ctx.table(clients).find({ filter: { column: "code", value: code }, limit: 1 });
+        : await ctx.table("clients").find({ filter: { column: "code", value: code }, limit: 1 });
       if (!owner) continue;
       const theirPets = await ctx
-        .table(pets)
+        .table("pets")
         .find({ filter: { column: "client_code", value: code } });
-      const [next] = await ctx.table(appointments).find({
+      const [next] = await ctx.table("appointments").find({
         filter: {
           and: [
             { column: "client_code", value: code },
@@ -756,7 +738,7 @@ export const findClient = defineScript({
         sort: ["starts_at"],
         limit: 1,
       });
-      const unpaid = await ctx.table(invoices).aggregate({
+      const unpaid = await ctx.table("invoices").aggregate({
         measures: ["sum:total"],
         filter: {
           and: [
@@ -809,10 +791,10 @@ export const clinicDay = defineScript({
     /** In cents. */
     paid: z.number(),
   }),
-  tables: [appointments, invoices],
+  tables: ["appointments", "invoices"],
   async run(input, ctx) {
     const date = input.date ?? wallClock(new Date(), TIME_ZONE).date;
-    const visits = await ctx.table(appointments).find({
+    const visits = await ctx.table("appointments").find({
       filter: {
         and: [
           { column: "clinic", value: input.clinic },
@@ -832,7 +814,7 @@ export const clinicDay = defineScript({
     const late = visits.filter(
       (visit) => visit.status === "booked" && new Date(visit.starts_at).getTime() < Date.now(),
     );
-    const money = await ctx.table(invoices).aggregate({
+    const money = await ctx.table("invoices").aggregate({
       group: ["status"],
       measures: ["sum:total"],
       filter: {
@@ -879,9 +861,9 @@ export const lowStock = defineScript({
       }),
     ),
   }),
-  tables: [inventory],
+  tables: ["inventory"],
   async run(input, ctx) {
-    const lines = await ctx.table(inventory).find({
+    const lines = await ctx.table("inventory").find({
       ...(input.clinic ? { filter: { column: "clinic", value: input.clinic } } : {}),
       limit: 1000,
     });

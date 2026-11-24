@@ -1,0 +1,36 @@
+schemaVersion: 1
+body:
+  description: Pet owners. `code` is what their portal account's client_id attribute holds.
+  columns:
+    code:
+      type: text
+      required: true
+      unique: true
+    name:
+      type: text
+      required: true
+    email:
+      type: text
+    phone:
+      type: text
+      required: true
+    home_clinic:
+      type: text
+      required: true
+    notes:
+      type: text
+  policy:
+    type: rules
+    rules:
+      - allow: all
+        when:
+          column: home_clinic
+          in: groups
+      - allow: read
+        when:
+          column: code
+          equals:
+            attribute: client_id
+  indexes:
+    - - home_clinic
+    - - phone

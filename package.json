@@ -8,7 +8,7 @@
   },
   "scripts": {
     "build": "tsc -b && pnpm --filter @volvel/docs build && pnpm --filter @volvel/console build && pnpm --filter @volvel/screens build",
-    "typecheck": "tsc -b && tsc -p packages/ui && tsc -p packages/app && tsc -p packages/screens && tsc -p packages/widgets-core/views && tsc -p packages/widgets-labs/views && tsc -p apps/console && tsc -p examples/acme && tsc -p examples/higher-ed-devices && tsc -p examples/fernhill",
+    "typecheck": "tsc -b && node packages/cli/dist/bin.js types --dir examples/acme && node packages/cli/dist/bin.js types --dir examples/fernhill && tsc -p packages/ui && tsc -p packages/app && tsc -p packages/screens && tsc -p packages/widgets-core/views && tsc -p packages/widgets-labs/views && tsc -p apps/console && tsc -p examples/acme && tsc -p examples/higher-ed-devices && tsc -p examples/fernhill",
     "lint": "biome check .",
     "format": "biome check --write .",
     "test": "pnpm build && vitest run",

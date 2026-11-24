@@ -1,0 +1,41 @@
+schemaVersion: 1
+body:
+  description: What each clinic holds, and when to order more.
+  columns:
+    clinic:
+      type: text
+      required: true
+    sku:
+      type: text
+      required: true
+    item:
+      type: text
+      required: true
+    category:
+      type: text
+      required: true
+    on_hand:
+      type: integer
+      required: true
+    reorder_at:
+      type: integer
+      required: true
+    reorder_qty:
+      type: integer
+      required: true
+    unit_cost:
+      type: integer
+      required: true
+    reorder_pending:
+      type: boolean
+      default: false
+  policy:
+    type: rules
+    rules:
+      - allow: all
+        when:
+          column: clinic
+          in: groups
+  indexes:
+    - - clinic
+      - sku

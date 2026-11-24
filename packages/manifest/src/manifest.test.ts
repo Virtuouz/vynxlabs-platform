@@ -1,6 +1,6 @@
 import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
-import { staleSchemas } from "./emit.js";
+import { staleKindTypes, staleSchemas } from "./emit.js";
 import { PATH_PATTERN } from "./envelope.js";
 import { KindRegistry } from "./registry.js";
 import { displayGuess } from "./table.js";
@@ -147,6 +147,11 @@ describe("emitted schemas", () => {
   test("schemas/ matches the code", async () => {
     const dir = fileURLToPath(new URL("../../../schemas", import.meta.url));
     expect(await staleSchemas(dir)).toEqual([]);
+  });
+
+  test("the SDK's generated types match the kinds", async () => {
+    const dir = fileURLToPath(new URL("../../sdk/src/generated", import.meta.url));
+    expect(await staleKindTypes(dir)).toBe(false);
   });
 });
 

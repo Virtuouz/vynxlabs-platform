@@ -29,6 +29,7 @@ import { mutate } from "./audit.js";
 import { activeConsoleManaged, deployConsoleManaged } from "./authoring.js";
 import { guardedFetch } from "./egress.js";
 import { conflict, HttpError, notFound } from "./errors.js";
+import { setBasis } from "./execution/basis.js";
 import { decryptFor, encryptFor } from "./execution/bindings.js";
 import type { WorkspaceRef } from "./http.js";
 import type { Kernel } from "./kernel.js";
@@ -1080,6 +1081,7 @@ export async function push(
       const state = left.length > 0 ? ("behind" as const) : ("synced" as const);
       if (changes.length === 0 && tip.exists) {
         await settle(db, workspace, tip.commit, local, sides.said, repository.folder);
+        if (!options.drafts) await setBasis(db, workspace.id);
         await record(db, workspace, actor, { kind: "push", status: "nothing", commit: tip.commit });
         return {
           status: "nothing" as const,
@@ -1132,6 +1134,8 @@ export async function push(
         return failed(db, workspace, actor, "push", remoteProblem(error));
       }
       await settle(db, workspace, commit, local, sides.said, repository.folder, state);
+      // What the branch now holds is what the workspace has deployed, saved drafts aside.
+      if (!options.drafts) await setBasis(db, workspace.id);
       await record(db, workspace, actor, {
         kind: "push",
         status: "done",
@@ -1402,9 +1406,23 @@ export async function pull(
       const ahead = apart.length > 0;
       // What the workspace says now, read as the next comparison will read it. A file it still
       // says differently from the branch reads as changed here, which a pull must not hide.
-      const said = (await sidesOf(await activeConsoleManaged(kernel, db, workspace.id), repository))
-        .said;
+      const stillActive = await activeConsoleManaged(kernel, db, workspace.id);
+      const said = (await sidesOf(stillActive, repository)).said;
       for (const path of apart) said[path] = "";
+      // Each resource whose files are the branch's is in step with the repository now.
+      const apartFiles = new Set(apart);
+      await setBasis(db, workspace.id, {
+        except: new Set(
+          stillActive
+            .filter((manifest) =>
+              renderRepositoryFiles([manifest], platformKinds, {
+                folder: repository.folder,
+                roots: repository.config.roots,
+              }).some((file) => apartFiles.has(file.path)),
+            )
+            .map(keyOf),
+        ),
+      });
       await db
         .updateTable("workspace_git")
         .set({

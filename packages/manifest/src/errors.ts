@@ -139,6 +139,11 @@ export const ERROR_CODES = {
     "This deploy looks like a rename, written as a delete and a create",
     "It would delete something that holds history or data and make something of the same kind. Give the new one the old one's `key` to keep them, or deploy again confirming the deletion.",
   ),
+  console_changed: code(
+    409,
+    "The console changed what this deploy would overwrite",
+    "A resource owned as files was changed in the console since the repository last had it, or was made there, and this deploy would replace or remove it. The response lists each path. Run `volvel pull`, review, commit, and deploy again, or deploy with `--force` to overwrite it on purpose, which is audited.",
+  ),
   incompatible_bundle: code(
     409,
     "The bundle was built for another version",

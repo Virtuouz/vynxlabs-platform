@@ -379,4 +379,49 @@ describe("pulling the console's resources", () => {
     const allowed = await cli(["deploy", ...target, "--dir", repo, "--allow-delete", "notes/keep"]);
     expect(allowed.code, allowed.err).toBe(0);
   }, 120_000);
+
+  test("a deploy after a change in the console is refused with the path until it is pulled, or forced and audited", async () => {
+    const editInConsole = async (said: string) => {
+      await putSeen(alice, `${base}/drafts/notes/stay`, {
+        kind: "flow",
+        schemaVersion: 1,
+        body: {
+          nodes: {
+            start: { type: "trigger", trigger: { type: "manual" } },
+            note: { type: "set", values: { said } },
+          },
+          edges: [{ from: "start", to: "note" }],
+        },
+      });
+      const done = await alice.post(`${base}/changes/deploy`, { paths: ["notes/stay"] });
+      expect(done.status, JSON.stringify(done.body)).toBe(201);
+    };
+    await editInConsole("'one'");
+
+    const refused = await cli(["deploy", ...target, "--dir", repo]);
+    expect(refused.code).toBe(1);
+    expect(refused.err).toContain("notes/stay: changed in the console");
+    expect(refused.err).toContain("Run `volvel pull`, review, commit, and deploy again.");
+    expect(refused.err).toContain("--force");
+    const preview = await cli(["deploy", ...target, "--dir", repo, "--preview"]);
+    expect(preview.code).toBe(1);
+    expect(preview.err).toContain("notes/stay: changed in the console");
+
+    // Pulled, reviewed, and deployed again.
+    expect((await cli(["pull", ...target, "--dir", repo])).code).toBe(0);
+    expect(await read("notes/stay.flow.yaml")).toContain("'one'");
+    const passed = await cli(["deploy", ...target, "--dir", repo]);
+    expect(passed.code, passed.err).toBe(0);
+
+    // Not pulled, and overwritten on purpose.
+    await editInConsole("'two'");
+    const forced = await cli(["deploy", ...target, "--dir", repo, "--force"]);
+    expect(forced.code, forced.err).toBe(0);
+    expect(JSON.stringify((await alice.get(`${base}/resources/notes/stay`)).body.body)).toContain(
+      "'one'",
+    );
+    const audit = (await alice.get(`/tenants/${base.split("/")[2]}/audit?limit=100`)).body
+      .items as { action: string }[];
+    expect(audit.some((entry) => entry.action === "deployment.forced")).toBe(true);
+  }, 120_000);
 });

@@ -69,9 +69,17 @@ export async function storeBundle(
   if (bundleDigest(bundle) !== bundle.digest) {
     throw badRequest("The bundle's digest does not match its contents. Build it again.");
   }
+  // The roles a binding may name: the tenant's own, built-in ones included.
+  const tenantRoles = (
+    await trx
+      .selectFrom("role")
+      .select("name")
+      .where((eb) => eb.or([eb("tenant_id", "=", workspace.tenantId), eb("builtin", "=", true)]))
+      .execute()
+  ).map((role) => role.name);
   // The build runs these same checks. The control plane does not take its word for it.
   const problems = [
-    ...checkBundleManifests(bundle.manifests),
+    ...checkBundleManifests(bundle.manifests, { tenantRoles }),
     ...checkBundleAssets(bundle),
     // Pages are checked together: a link is only right or wrong beside what it leads to.
     ...checkWorkspaceDocs(bundle.manifests, {

@@ -121,6 +121,7 @@ describe("the console's resources, as files", () => {
       files: [],
       elsewhere: [],
       bundleVersion: null,
+      basis: [],
       drafts: [],
     });
     for (const [path, value] of [

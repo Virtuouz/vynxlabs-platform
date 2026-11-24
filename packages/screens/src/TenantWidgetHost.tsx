@@ -51,11 +51,14 @@ export function workspaceViews(
   for (const widget of deployed) {
     if (entries.has(widget.type)) throw new Error(`${widget.type} is in two packs`);
     const versions = new Map(widget.versions.map((one) => [one.version, one.definition]));
-    const current = versions.get(widget.current);
-    if (!current) throw new Error(`${widget.type} has no deployed version ${widget.current}`);
+    // A removed widget has no current version; pages that still pin an older one draw it.
+    const latest = widget.current ?? widget.versions.at(-1)?.version;
+    const current = latest === undefined ? undefined : versions.get(latest);
+    if (latest === undefined || !current)
+      throw new Error(`${widget.type} has no deployed version ${widget.current}`);
     // biome-ignore lint/correctness/noComponentHookFactories: made once per workspace registry, so a page keeps its widgets' state
     const View: ComponentType<WidgetViewProps & { version?: string }> = (props) => {
-      const version = props.version && versions.has(props.version) ? props.version : widget.current;
+      const version = props.version && versions.has(props.version) ? props.version : latest;
       return (
         <TenantWidgetHost
           {...props}

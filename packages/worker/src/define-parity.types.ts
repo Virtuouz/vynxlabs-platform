@@ -28,6 +28,7 @@ import type {
   TriggerSourceOptions,
   VariableOptions,
   WebhookOptions,
+  WidgetOptions,
   z,
 } from "@volvel/sdk";
 
@@ -101,6 +102,7 @@ export type Parity = [
   >,
   Expect<Missing<K.TriggerSourceBody, TriggerSourceOptions, "uses" | `uses.${string}`>>,
   Expect<Missing<K.VariableBody, VariableOptions>>,
+  Expect<Missing<K.WidgetBody, WidgetOptions>>,
 ];
 
 export type { Columns };

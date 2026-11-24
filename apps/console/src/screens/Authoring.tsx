@@ -14,6 +14,7 @@ import { useEffect, useRef, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { failureText, takenText } from "../ask.tsx";
 import { CodeEditor, type Marker } from "../editor/CodeEditor.tsx";
+import { plainEditorOnly } from "../editor/plain.ts";
 import { InputForm, withoutMasked } from "../InputDialog.tsx";
 import { DataTable } from "../kit/DataTable.tsx";
 import { DeployMenu } from "../kit/DeployMenu.tsx";
@@ -383,6 +384,20 @@ export function ScriptEditor({
   const clearedStep = useRef<ScriptBody["node"]>(undefined);
   // Where the code lives in the editor, fixed for the editor's life, so a first save keeps its undo history.
   const [modelPath] = useState(() => `${about.list}/${kind}/${opened ?? "new"}.ts`);
+  // The workspace's own names for the editor, so `ctx.table("orders")` completes and is checked.
+  // The editor works without them, so a failure to read them is not shown.
+  const [declarations, setDeclarations] = useState<string>();
+  useEffect(() => {
+    if (plainEditorOnly()) return;
+    let live = true;
+    api.text(`${root}/types.d.ts`).then(
+      (text) => live && setDeclarations(text),
+      () => undefined,
+    );
+    return () => {
+      live = false;
+    };
+  }, [root]);
 
   useEffect(() => {
     let current = true;
@@ -829,6 +844,7 @@ export function ScriptEditor({
         label={`Source of ${path || `the new ${about.noun}`}`}
         path={modelPath}
         language="typescript"
+        declarations={declarations}
         value={body.source?.code ?? ""}
         readOnly={readOnly}
         height={height}

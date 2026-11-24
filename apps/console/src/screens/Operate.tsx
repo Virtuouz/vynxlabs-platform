@@ -920,7 +920,7 @@ export function EventsWorkbench({
       }}
       empty={{
         title: applied ? `No ${applied} events yet` : "No events yet",
-        text: "Declare an event with defineEvent, and publish it from a script with ctx.events.publish.",
+        text: "Declare an event in a <path>.event.yaml file in your repository's resources folder, or with defineEvent in code, and publish it from a script with ctx.events.publish.",
       }}
       inspector={
         chosen && !open && !lookup.loading && (lookup.error || lookup.data) ? (

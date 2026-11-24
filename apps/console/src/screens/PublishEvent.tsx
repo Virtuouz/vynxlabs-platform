@@ -4,6 +4,7 @@ import { ApiError, api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
 import { InputForm } from "../InputDialog.tsx";
 import { ErrorState, Loading } from "../kit/LoadState.tsx";
+import { Code } from "../kit/status.tsx";
 
 interface DeclaredEvent {
   path: string;
@@ -90,7 +91,8 @@ export function PublishEventDialog({
           {declared.data && !event ? (
             declared.data.items.length === 0 ? (
               <Notice tone="plain">
-                No event is declared in this workspace yet. Declare one with defineEvent, or under
+                No event is declared in this workspace yet. Declare one in an{" "}
+                <Code>{"<path>.event.yaml"}</Code> file (or with defineEvent in code), or under
                 Resources, and it can be published here.
               </Notice>
             ) : (

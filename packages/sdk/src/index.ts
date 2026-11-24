@@ -20,9 +20,12 @@ export type {
 import type { DashboardBody, InterfaceBody } from "@volvel/widgets/page";
 
 export type {
+  Insert,
   Logger,
+  Row,
   RunInfo,
   ScriptContext,
+  TableOf,
   VolvelConnections,
   VolvelEvents,
   VolvelFlows,

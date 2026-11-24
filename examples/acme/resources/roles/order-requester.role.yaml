@@ -1,0 +1,6 @@
+schemaVersion: 1
+body:
+  name: order_requester
+  description: May start a script it is bound at.
+  permissions:
+    - run:write

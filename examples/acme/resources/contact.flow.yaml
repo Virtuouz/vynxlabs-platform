@@ -1,0 +1,55 @@
+schemaVersion: 1
+body:
+  description: Takes a message from the contact form, keeps it, and says that it arrived.
+  nodes:
+    form:
+      type: trigger
+      trigger:
+        type: form
+        title: Get in touch
+        description: We answer within two working days.
+        fields:
+          - name: name
+            label: Your name
+            type: text
+            required: true
+          - name: email
+            label: Email
+            type: email
+            help: If you would like an answer.
+          - name: about
+            label: What is it about?
+            type: select
+            options:
+              - An order
+              - An invoice
+              - Something else
+          - name: message
+            label: Your message
+            type: textarea
+            required: true
+        submitLabel: Send
+        success: Thank you. Your message has reached us.
+    keep:
+      type: script
+      script: core/table-write
+      inputs:
+        table: "'messages'"
+        values: "{'name': trigger.name, 'message': trigger.message, 'email': has(trigger.email) ? trigger.email : null, 'about': has(trigger.about) ? trigger.about : null}"
+      with:
+        tables:
+          - messages
+    tell:
+      type: script
+      script: core/publish-event
+      inputs:
+        event: "'messages/received'"
+        payload: "{'id': steps.keep.output.row.id}"
+      with:
+        events:
+          - messages/received
+  edges:
+    - from: form
+      to: keep
+    - from: keep
+      to: tell

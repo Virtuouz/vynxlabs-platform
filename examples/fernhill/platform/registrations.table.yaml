@@ -1,0 +1,32 @@
+schemaVersion: 1
+body:
+  description: People who asked to register through the public form, until the front desk calls back.
+  columns:
+    name:
+      type: text
+      required: true
+    email:
+      type: text
+    phone:
+      type: text
+      required: true
+    pet_name:
+      type: text
+      required: true
+    species:
+      type: text
+      required: true
+    clinic:
+      type: text
+      required: true
+    status:
+      type: text
+      required: true
+      default: new
+  policy:
+    type: rules
+    rules:
+      - allow: all
+        when:
+          column: clinic
+          in: groups

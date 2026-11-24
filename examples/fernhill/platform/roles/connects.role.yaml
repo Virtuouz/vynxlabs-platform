@@ -1,0 +1,6 @@
+schemaVersion: 1
+body:
+  name: connects
+  description: "Sees the workspace: what an agent needs to connect over MCP."
+  permissions:
+    - workspace:read

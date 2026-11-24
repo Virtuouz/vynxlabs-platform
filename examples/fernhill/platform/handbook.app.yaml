@@ -1,0 +1,5 @@
+schemaVersion: 1
+body:
+  title: Fernhill handbook
+  description: How the front desk books, checks in and bills.
+  docs: handbook

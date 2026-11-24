@@ -1,0 +1,26 @@
+schemaVersion: 1
+body:
+  description: A clinic's stock of one item fell to its reorder level.
+  payload:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    properties:
+      line:
+        type: string
+      clinic:
+        type: string
+      sku:
+        type: string
+      item:
+        type: string
+      on_hand:
+        type: number
+      quantity:
+        type: number
+    required:
+      - line
+      - clinic
+      - sku
+      - item
+      - on_hand
+      - quantity

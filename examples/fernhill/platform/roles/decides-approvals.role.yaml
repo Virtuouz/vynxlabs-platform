@@ -1,0 +1,7 @@
+schemaVersion: 1
+body:
+  name: decides_approvals
+  description: Sees approvals and decides those its holder is an approver of.
+  permissions:
+    - approval:read
+    - approval:write

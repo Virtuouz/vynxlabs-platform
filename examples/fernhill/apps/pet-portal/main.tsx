@@ -10,6 +10,8 @@ import {
   useQuery,
   useSession,
 } from "@volvel/app";
+// Types only: none of the repository's server code reaches the browser.
+import type { Row, TableOf } from "@volvel/sdk";
 import {
   Avatar,
   Badge,
@@ -52,16 +54,14 @@ import {
   TIME_ZONE,
   VISIT_MINUTES,
 } from "../../src/constants.ts";
-// Types only: none of the repository's server code reaches the browser.
-import type { appointments, clients, clinics, invoices, pets } from "../../src/model.ts";
 import { clockText, wallClock } from "../../src/time.ts";
 import "./styles.css";
 
-type Pet = NonNullable<typeof pets.__row>;
-type Visit = NonNullable<typeof appointments.__row>;
-type Invoice = NonNullable<typeof invoices.__row>;
-type Clinic = NonNullable<typeof clinics.__row>;
-type Client = NonNullable<typeof clients.__row>;
+type Pet = Row<"pets">;
+type Visit = Row<"appointments">;
+type Invoice = Row<"invoices">;
+type Clinic = Row<"clinics">;
+type Client = Row<"clients">;
 
 const UPCOMING = new Set(["booked", "checked_in", "in_exam"]);
 const TONES: Record<AppointmentStatus, BadgeTone> = {
@@ -170,15 +170,15 @@ function useMine(clientId: string | undefined) {
     // The tables' rules give an owner their own rows and nobody else's.
     const [me, petRows, visitRows, invoiceRows, clinicRows] = await Promise.all([
       clientId
-        ? table<typeof clients>("clients").find({
+        ? table<TableOf<"clients">>("clients").find({
             filter: { column: "code", value: clientId },
             limit: 1,
           })
         : Promise.resolve([]),
-      table<typeof pets>("pets").find({ sort: ["name"], limit: 100 }),
-      table<typeof appointments>("appointments").find({ sort: ["-starts_at"], limit: 500 }),
-      table<typeof invoices>("invoices").find({ sort: ["-issued_on"], limit: 500 }),
-      table<typeof clinics>("clinics").find({ sort: ["name"] }),
+      table<TableOf<"pets">>("pets").find({ sort: ["name"], limit: 100 }),
+      table<TableOf<"appointments">>("appointments").find({ sort: ["-starts_at"], limit: 500 }),
+      table<TableOf<"invoices">>("invoices").find({ sort: ["-issued_on"], limit: 500 }),
+      table<TableOf<"clinics">>("clinics").find({ sort: ["name"] }),
     ]);
     return {
       me: me[0],

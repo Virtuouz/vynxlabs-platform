@@ -1,0 +1,29 @@
+schemaVersion: 1
+body:
+  description: Invoices, seen by the finance group and by each customer for their own company.
+  columns:
+    number:
+      type: text
+      required: true
+      unique: true
+    total:
+      type: number
+      required: true
+    customer_id:
+      type: text
+      required: true
+    visible_to:
+      type: text
+      default: finance
+  policy:
+    type: rules
+    rules:
+      - allow: all
+        when:
+          column: visible_to
+          in: groups
+      - allow: read
+        when:
+          column: customer_id
+          equals:
+            attribute: customer_id

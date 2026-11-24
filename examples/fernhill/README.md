@@ -10,12 +10,26 @@ Fernhill runs three clinics in Portland, Oregon: Northside, Riverside and Hillto
 | **Pet portal**: pets, visits, booking and invoices. A custom React app | `apps/pet-portal` | Pet owners: end users with a `client_id` attribute |
 | **Clinic performance**: money, visits and stock. Built from widgets, with no code | `src/apps.ts` (`screens/performance`) | Practice managers: members of the tenant |
 | **Clinic operations**: the day, visits, money, pets and owners, stock, callbacks. Built from widgets, and uses every widget, page kind and feature of the app builder (see below) | `src/operations.ts` (`screens/operations`, query `reports/vet-workload`) | Practice managers: members of the tenant |
-| **Integrations**: TextLine (SMS), VetSupply (stock orders), PayFern (signed payment webhook) | `src/model.ts`, `src/flows.ts`, `stand-ins/` | Scripts and flows |
+| **Integrations**: TextLine (SMS), VetSupply (stock orders), PayFern (signed payment webhook) | `platform/*.connection.yaml`, `platform/payments/`, `stand-ins/` | Scripts and flows |
 | **Shared code for scripts and apps**: lists, visit lengths, status words, dollars, and Pacific clock time | `src/constants.ts`, `src/time.ts` (no imports, so apps can use them) | Both |
-| **Flows**: invoice and thank-you text after a visit; reorder with a manager's approval; weekly chasing of unpaid invoices; public registration form | `src/flows.ts` | Event, schedule, webhook and form triggers |
-| **Phone assistant**: an AI agent connected over MCP with a service account's key | `src/apps.ts` (bindings), `setup/agent.mjs` | The `phone-assistant` service account |
+| **Flows**: invoice and thank-you text after a visit; reorder with a manager's approval; weekly chasing of unpaid invoices; public registration form | `platform/**/*.flow.yaml`, `*.schedule.yaml`, `*.trigger.yaml`; their scripts in `src/scripts.ts` | Event, schedule, webhook and form triggers |
+| **Phone assistant**: an AI agent connected over MCP with a service account's key | `platform/access/agent-*.binding.yaml`, `setup/agent.mjs` | The `phone-assistant` service account |
 
 Who sees what is decided by the tables' rules, not by the apps. Front-desk staff see their own clinic's rows. Owners see their own. Managers, as tenant members, see everything. The same tables serve all three apps.
+
+## What is YAML, and what is code
+
+Fernhill is YAML first. Of its 93 resources, 63 are files under `platform/` (tables, events, variables, connections, roles, bindings, schedules, triggers, flows, a query, the theme, the console's apps) and 23 are `define*` calls in `src/`. The tables are typed in scripts by name: `ctx.table("appointments")` is typed by `.platform/volvel-env.d.ts`, which `volvel build` writes, and a code app types its tables with `table<TableOf<"pets">>("pets")` from `@volvel/sdk`.
+
+What stays code, and why:
+
+- **Scripts** (17, `src/scripts.ts`, `src/seed.ts`): they run.
+- **Code apps** `front-desk` and `pet-portal` (`src/apps.ts`): an app made of files has its source in the repository, and its definition says where.
+- **Interfaces** `screens/performance`, `screens/operations` and `screens/my-account` (`src/apps.ts`, `src/operations.ts`): built from helper functions that make families of widgets (`invoiceValue`, `at`, `visitsBy`, a spread of shared fields). Written out they would be thousands of repeated lines, and the helpers are the point of the example: composition is what YAML cannot do.
+
+Where YAML could not share a value, it is written out where it is used: the `front-desk` group and `phone-assistant` account in the bindings, and the clinic codes in the reorder flow, which `src/constants.ts` shares with the scripts and apps.
+
+The suppliers tables, the query and dashboard, and the docs sites that `setup/setup.mjs` makes in the sandbox are the console's own, as before. A deploy of this repository to that workspace leaves them alone.
 
 ## Run it
 
@@ -70,7 +84,7 @@ node setup/agent.mjs call run_agent__clinic_day '{"clinic":"northside"}'
 node setup/agent.mjs call list_approvals '{}'
 ```
 
-The agent is offered exactly the scripts and the flow it is bound to (`src/apps.ts`), and the run and approval tools.
+The agent is offered exactly the scripts and the flow it is bound to (`platform/access/agent-*.binding.yaml`), and the run and approval tools.
 
 ## A walk through it, to vet the UI
 

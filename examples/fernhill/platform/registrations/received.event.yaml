@@ -1,0 +1,11 @@
+schemaVersion: 1
+body:
+  description: Someone asked to register through the public form.
+  payload:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    properties:
+      id:
+        type: string
+    required:
+      - id

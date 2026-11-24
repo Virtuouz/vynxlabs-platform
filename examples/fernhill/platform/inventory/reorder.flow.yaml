@@ -1,0 +1,92 @@
+schemaVersion: 1
+body:
+  description: Prices and places an order for low stock. Orders over the threshold wait for a practice manager.
+  nodes:
+    low:
+      type: trigger
+      trigger:
+        type: event
+        event: inventory/low
+    by_hand:
+      type: trigger
+      trigger:
+        type: manual
+        input:
+          $schema: https://json-schema.org/draft/2020-12/schema
+          type: object
+          properties:
+            line:
+              type: string
+              format: uuid
+              pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+              description: The stock line's row ID, from agent/low-stock.
+            clinic:
+              type: string
+              enum:
+                - northside
+                - riverside
+                - hilltop
+            sku:
+              type: string
+              description: The supplier's product code, such as VAC-DHPP.
+            item:
+              type: string
+            on_hand:
+              type: integer
+              minimum: -9007199254740991
+              maximum: 9007199254740991
+            quantity:
+              type: integer
+              exclusiveMinimum: 0
+              maximum: 9007199254740991
+              description: How many to order.
+          required:
+            - line
+            - clinic
+            - sku
+            - item
+            - on_hand
+            - quantity
+    quote:
+      type: script
+      script: inventory/quote
+      input: "{'sku': trigger.sku, 'quantity': trigger.quantity}"
+    route:
+      type: branch
+      cases:
+        - name: large
+          when: steps.quote.output.needs_approval
+    approve:
+      type: approval
+      title: Approve a stock order
+      detail: "{'clinic': trigger.clinic, 'item': trigger.item, 'quantity': trigger.quantity, 'total': steps.quote.output.amount, 'on_hand': trigger.on_hand}"
+      timeoutSeconds: 259200
+      approvers:
+        groups:
+          - practice-managers
+    place:
+      type: script
+      script: inventory/place-order
+      input: "{'line': trigger.line, 'quantity': trigger.quantity, 'total': steps.quote.output.total}"
+    refused:
+      type: script
+      script: inventory/record-refused
+      input: "{'line': trigger.line, 'quantity': trigger.quantity, 'total': steps.quote.output.total}"
+  edges:
+    - from: low
+      to: quote
+    - from: by_hand
+      to: quote
+    - from: quote
+      to: route
+    - from: route
+      to: approve
+      output: large
+    - from: route
+      to: place
+      output: otherwise
+    - from: approve
+      to: place
+    - from: approve
+      to: refused
+      error: true

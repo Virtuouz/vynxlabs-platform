@@ -9,5 +9,5 @@
     "lib": ["es2024", "dom", "dom.iterable"],
     "jsx": "react-jsx"
   },
-  "include": ["src", "apps"]
+  "include": ["src", "apps", ".platform/*.d.ts"]
 }

@@ -1,0 +1,38 @@
+schemaVersion: 1
+body:
+  description: Invoices a finished visit and texts the owner a thank-you with the amount.
+  nodes:
+    finished:
+      type: trigger
+      trigger:
+        type: event
+        event: appointments/completed
+    by_hand:
+      type: trigger
+      trigger:
+        type: manual
+    invoice:
+      type: script
+      script: billing/create-invoice
+      input: "{'appointment': trigger.appointment}"
+    thank:
+      type: script
+      script: messaging/send-sms
+      inputs:
+        to: steps.invoice.output.phone
+        text: "'Fernhill Vets: thank you for bringing ' + steps.invoice.output.pet + ' in today. Your invoice ' + steps.invoice.output.number + ' is ' + steps.invoice.output.amount + '. Pay online in the pet portal.'"
+    unsent:
+      type: set
+      values:
+        invoice: steps.invoice.output.number
+        problem: "'The thank-you text was not sent: ' + steps.thank.error.message"
+  edges:
+    - from: finished
+      to: invoice
+    - from: by_hand
+      to: invoice
+    - from: invoice
+      to: thank
+    - from: thank
+      to: unsent
+      error: true

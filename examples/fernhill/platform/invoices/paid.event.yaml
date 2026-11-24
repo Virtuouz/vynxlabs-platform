@@ -1,0 +1,14 @@
+schemaVersion: 1
+body:
+  description: The payment provider confirmed a payment.
+  payload:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    properties:
+      invoice:
+        type: string
+      amount:
+        type: number
+    required:
+      - invoice
+      - amount

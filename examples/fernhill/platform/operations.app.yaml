@@ -1,0 +1,5 @@
+schemaVersion: 1
+body:
+  title: Clinic operations
+  description: The day at the three clinics, money, pets and owners, stock and callbacks.
+  interface: screens/operations

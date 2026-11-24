@@ -2370,7 +2370,7 @@ test("a table in code is taken over in the console, after saying what that means
   fireEvent.click(screen.getByRole("button", { name: "Take over in the console" }));
   const dialog = await screen.findByRole("dialog");
   expect(dialog.textContent).toContain("manages this table as files");
-  expect(dialog.textContent).toContain("still defines it takes it back");
+  expect(dialog.textContent).toContain("as defined twice");
   expect(dialog.textContent).toContain("volvel pull");
   expect(dialog.textContent).toContain('ctx.table("orders")');
   // Nothing is saved until it is confirmed.

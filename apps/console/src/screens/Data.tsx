@@ -2918,7 +2918,7 @@ function Definition({
           <Code>{"defineTable"}</Code> there and deploy
           {production
             ? ". A production workspace changes by a deploy only."
-            : ", or take it over here: it is then managed as files, and a deploy that still defines it takes it back."}
+            : ", or take it over here: it is then managed as files, and you remove its definition from the code after a volvel pull."}
         </Notice>
       ) : null}
       {table.managedIn === "ui" || table.status === "active" ? mayDefine.line : null}

@@ -430,6 +430,21 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                   "What each deployed resource is, as a hash. A pull sends back the ones it took " +
                   "(`resource-basis`), so a deploy of the repository knows the console has not changed them since.",
               }),
+              inCode: Type.Optional(
+                Type.Array(
+                  Type.Object({
+                    path: Type.String(),
+                    kind: Type.String(),
+                    file: Type.Optional(Type.String()),
+                  }),
+                  {
+                    description:
+                      "Resources taken over from code in the console and not yet handed over by " +
+                      "a deploy: the repository's TypeScript may still define them, and a deploy " +
+                      "is refused as defined twice while it does. `file` is where, when known.",
+                  },
+                ),
+              ),
               drafts: Type.Array(
                 Type.Object({
                   path: Type.String(),
@@ -491,7 +506,22 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           .where("path", "not like", "core/%")
           .orderBy("path")
           .execute();
+        // Taken over from code and not handed over: the repository's TypeScript may still define it.
+        const inCode = await db
+          .selectFrom("resource")
+          .select(["path", "kind", "meta"])
+          .where("workspace_id", "=", workspace.id)
+          .where("ownership", "=", "ui")
+          .orderBy("path")
+          .execute();
         return {
+          inCode: inCode
+            .filter((row) => row.meta.inCode !== undefined)
+            .map((row) => ({
+              path: row.path,
+              kind: row.kind,
+              ...(row.meta.inCode?.file ? { file: row.meta.inCode.file } : {}),
+            })),
           files: files.map((file) => ({ path: file.path, content: file.content })),
           elsewhere,
           bundleVersion: active?.version ?? null,

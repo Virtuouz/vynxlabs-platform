@@ -23,15 +23,16 @@ export const ownershipMeaning = (ownership: string): string =>
 
 /**
  * What taking a resource over from code says, in one place, so that the places that offer it
- * say the same things: the console manages it as Files from then on, and a deploy of the
- * repository that still defines it takes it back (and is refused first if the console changed it
- * since, until `volvel pull`, or `--force`).
+ * say the same things: the console manages it as Files from then on. Its definition stays in the
+ * code until it is removed there: `volvel pull` writes its file and names where, and a deploy
+ * that still has both is refused as defined twice; one that has only the code, after the console
+ * changed it, is refused too, until the pull or `--force`.
  */
 export const takeOverConsequence = (noun: string): string =>
-  `From then on the console manages this ${noun} as files, and you can change it here. A deploy of the repository that still defines it takes it back, and is refused first if you changed it here since, until you run volvel pull, or deploy with --force. To keep it here, remove its definition from the code.`;
+  `From then on the console manages this ${noun} as files, and you can change it here. Its definition stays in the code until you remove it there: volvel pull writes its file and says where it is defined, and a deploy that has both is refused as defined twice. A deploy of the code alone is refused too if you changed it here, until you pull, or deploy with --force, which takes it back.`;
 
 const takesItBack =
-  "A deploy of the repository that still defines it takes it back, and is refused first if the console changed it since, until volvel pull or --force. To keep it here, remove its definition from the code.";
+  "Its definition stays in the code until you remove it there: volvel pull writes its file and says where, and a deploy that has both is refused as defined twice. A deploy of the code alone is refused if the console changed it, until volvel pull or --force, which takes it back.";
 
 /**
  * The notice on a resource that is defined in code and can be taken over. `draft`: saving a

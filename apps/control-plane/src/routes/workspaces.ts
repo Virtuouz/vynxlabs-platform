@@ -804,7 +804,7 @@ export function workspaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             path,
             ...(version !== undefined ? { expectedVersion: version } : {}),
             ...(takeOver && body.kind === "table" && body.ownership === "ui"
-              ? { switchOwnership: true }
+              ? { switchOwnership: true, takenOver: true }
               : {}),
           });
           // What a table taken over from code was when it left is in step with the repository

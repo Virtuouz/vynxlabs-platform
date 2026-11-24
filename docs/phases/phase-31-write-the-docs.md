@@ -73,3 +73,7 @@ The owner asked for documentation of every screen and feature, the console and l
    - A worker counts as outdated only when it is older than both 0.6.0 and the control plane's own version.
 2. **The old Fly app** `vynxlabs-platform-test` and its database are stopped, not deleted. Delete them?
 3. **The Self-host tutorial** was done on the build before the last fault lanes. Run it again on the final build in a Compose stack of its own?
+
+## Next, by the owner's choice (2026-11-23)
+
+The first thing after this phase's review: make the browser suite faster without dropping it. Measured causes: one worker (`e2e/playwright.config.ts`), two slow specs (`polish-measures`, one 6-minute test; `polish-layout`, 6.7 minutes in order), and 116 sign-ins through the form under the instance's limit of three per ten seconds. To do: sign in once per person into saved sessions, run 4 to 6 workers with the files that change shared data kept in order, split the slow specs per screen, and run only the specs a change touches while developing; the full run stays at a phase's end and in CI.

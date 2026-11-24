@@ -40,7 +40,7 @@ import { useHistory } from "../kit/history.ts";
 import { useShortcut } from "../kit/keys.ts";
 import { ErrorState, Loading, Pending } from "../kit/LoadState.tsx";
 import { Inspector, useWide } from "../kit/layout.tsx";
-import { ownershipSentence, ownershipWord } from "../kit/ownership.ts";
+import { ownershipSentence, ownershipWord, takeOverConsequence } from "../kit/ownership.ts";
 import { UsedBy, useReferences } from "../kit/references.tsx";
 import { Code, StatePill, Tag } from "../kit/status.tsx";
 import { UndoRedo } from "../kit/UndoRedo.tsx";
@@ -2622,6 +2622,9 @@ function Definition({
     what: "this table's definition",
   });
   const editable = table.managedIn === "ui" && table.status === "active" && mayDefine.can;
+  // A production workspace changes by a deploy only: a table in code is not taken over there.
+  const production = useLoad<{ type?: string }>(root).data?.type === "production";
+  const [takingOver, setTakingOver] = useState(false);
   // `/tenants/<id>`, the part of the workspace's address the tenant's people are listed under.
   const tenantBase = root.split("/workspaces/")[0];
   const [adding, setAdding] = useState(false);
@@ -2761,6 +2764,46 @@ function Definition({
   };
   const quietly = (run: Promise<unknown>) => run.catch(() => undefined);
 
+  /** Takes a table defined in code over: saves its definition as files, which the console edits. */
+  const takeOver = async () => {
+    const sure = await ask.confirm({
+      title: `Take over ${table.name} in the console?`,
+      text: (
+        <>
+          {takeOverConsequence("table")} Scripts typed against its <Code>{"defineTable"}</Code>{" "}
+          export should use <Code>{`ctx.table("${table.name}")`}</Code>, which is typed from the
+          generated types.
+        </>
+      ),
+      action: "Take over",
+    });
+    if (!sure) return;
+    setTakingOver(true);
+    setFailure(undefined);
+    try {
+      const resource = await api.get<{ body: TableBody; version?: number }>(
+        `${root}/resources/${table.name}`,
+      );
+      const saved = await api.put<{ version?: number }>(`${root}/resources/${table.name}`, {
+        kind: "table",
+        schemaVersion: 1,
+        ownership: "ui",
+        takeOver: true,
+        body: resource.body,
+        ...(resource.version !== undefined ? { version: resource.version } : {}),
+      });
+      held.current = saved.version;
+      stored.current = resource.body;
+      notify.success(`${table.name} is managed in the console now.`);
+      reload();
+    } catch (error) {
+      const caught = error as ApiError;
+      setFailure(withCode(caught.message, caught));
+    } finally {
+      setTakingOver(false);
+    }
+  };
+
   /** What can be done to a column, as buttons where there is room and as one menu on a phone. */
   const columnActions = (row: TableColumn): ColumnAction[] => [
     ...(row.values || row.references
@@ -2861,12 +2904,24 @@ function Definition({
   return (
     <div className="flex flex-col gap-5">
       {table.status === "active" && table.managedIn !== "ui" ? (
-        <Notice tone="attention">
-          This table is defined in the tenant's repository. To change it, change{" "}
-          <Code>{"defineTable"}</Code> there and deploy.
+        <Notice
+          tone="attention"
+          action={
+            production || !mayDefine.can ? undefined : (
+              <Button size="small" loading={takingOver} onClick={() => void takeOver()}>
+                Take over in the console
+              </Button>
+            )
+          }
+        >
+          This table is defined in code, in the tenant's repository. To change it, change{" "}
+          <Code>{"defineTable"}</Code> there and deploy
+          {production
+            ? ". A production workspace changes by a deploy only."
+            : ", or take it over here: it is then managed as files, and a deploy that still defines it takes it back."}
         </Notice>
       ) : null}
-      {table.managedIn === "ui" ? mayDefine.line : null}
+      {table.managedIn === "ui" || table.status === "active" ? mayDefine.line : null}
       {failure ? <Notice tone="danger">{failure}</Notice> : null}
       {editable ? (
         <section className="flex flex-wrap items-center gap-2" aria-label="About this table">

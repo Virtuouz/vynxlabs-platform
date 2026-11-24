@@ -2192,6 +2192,15 @@ test("POLISH-008: a drag on the phone preview asks once, and writes only the pho
   await expect(sure).toContainText("made from the desktop one");
   await sure.getByRole("button", { name: "Change the phone layout" }).click();
   await expect(sure).toHaveCount(0);
+  // The builder says when it has saved, as a person sees it: once "Saving…" is gone the draft
+  // holds the move (on a loaded machine the save can land well after the drop), and a save that
+  // failed says why here rather than as a draft that never changes.
+  const saving = owner
+    .getByRole("status")
+    .filter({ hasText: /Saving…|Saved|Not saved/ })
+    .first();
+  await expect(saving).not.toHaveText(/Saving…/, { timeout: 60_000 });
+  await expect(saving).not.toHaveText(/Not saved/);
   const gamma = (await settle("phone", "blank", "gamma", (one) =>
     one.layout?.phone?.at ? one : undefined,
   )) as Wid;

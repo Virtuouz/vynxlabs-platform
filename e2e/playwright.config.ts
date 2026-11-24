@@ -84,7 +84,9 @@ export default defineConfig({
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
   },
-  outputDir: "results",
+  // A second go running at the same time (e2e/run.mjs) writes elsewhere: Playwright empties its
+  // output folder when it starts.
+  outputDir: process.env.E2E_OUTPUT ?? "results",
   projects: projects(),
 });
 

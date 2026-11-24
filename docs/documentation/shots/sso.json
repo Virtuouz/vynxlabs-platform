@@ -6,10 +6,7 @@
     "setup": "a tenant with an OIDC provider for members named Acme Keycloak, off, with one passed try (ada, finance group)",
     "viewport": "desktop",
     "ready": "the Facts of the last try (Subject, Email, Groups) are shown",
-    "mask": [
-      "Subject value",
-      "provider ID in the addresses"
-    ],
+    "mask": ["Subject value", "provider ID in the addresses"],
     "steps": [
       "open Tenant, then Single sign-on, then the provider",
       "press Try signing in, sign in at the provider, close the tab, press Show the result"
@@ -23,9 +20,7 @@
     "setup": "a tenant with ink-muted set to #cccccc in light and action set to notacolor",
     "viewport": "desktop",
     "ready": "the preview shows a list of pairs that are hard to read and a list of pairs that could not be checked",
-    "mask": [
-      "Portal address"
-    ],
+    "mask": ["Portal address"],
     "steps": [
       "open Tenant, then Branding",
       "type #cccccc in ink-muted (light) and notacolor in action (light)"
@@ -39,12 +34,8 @@
     "setup": "a tenant with the hostname portal.example.com serving the portal of a workspace, off and not verified",
     "viewport": "desktop",
     "ready": "the TXT record name and value are shown",
-    "mask": [
-      "Record value"
-    ],
-    "steps": [
-      "open Tenant, then Domains, then Details of the hostname"
-    ],
+    "mask": ["Record value"],
+    "steps": ["open Tenant, then Domains, then Details of the hostname"],
     "alt": "A hostname's details sheet: what it serves, the three steps, the TXT record name and value to publish, and the Remove, Enable and Check now buttons."
   },
   {
@@ -54,13 +45,8 @@
     "setup": "a tenant with a pool named warehouse and one standalone worker online for it",
     "viewport": "desktop",
     "ready": "the pool row shows 1 online",
-    "mask": [
-      "Created column",
-      "Credential prefix"
-    ],
-    "steps": [
-      "open Tenant, then Workers"
-    ],
+    "mask": ["Created column", "Credential prefix"],
+    "steps": ["open Tenant, then Workers"],
     "alt": "The Workers screen: an empty queue, the table of pools with one pool that has a worker online, the line about workers the instance starts, and the credentials table."
   },
   {
@@ -70,10 +56,7 @@
     "setup": "a tenant whose log has entries of a provider that was connected, tried and turned on",
     "viewport": "desktop",
     "ready": "the entry details are open and More filters shows Who, Action and Done to",
-    "mask": [
-      "When column",
-      "Request value"
-    ],
+    "mask": ["When column", "Request value"],
     "steps": [
       "open Tenant, then Audit log",
       "type the provider's name in Search",

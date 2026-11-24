@@ -39,9 +39,7 @@
     "setup": "A dashboard tut Visit mix (the workspace's own, made by Maya) with a Search and filter (Search, Starts at, Clinic), a Stat, a Chart by Clinic and a Table of Appointments; read mode.",
     "viewport": "1440x900",
     "ready": "heading 'tut Visit mix'",
-    "mask": [
-      "Last refreshed"
-    ],
+    "mask": ["Last refreshed"],
     "steps": [],
     "alt": "The finished dashboard: a Starts menu and a Clinic box above a figure, a bar chart by clinic and a table of appointments"
   },

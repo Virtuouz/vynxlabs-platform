@@ -22,10 +22,7 @@
     "viewport": "1440x900",
     "ready": "tab 'Page details' open and the field 'Add a subject' visible",
     "mask": [],
-    "steps": [
-      "Open the page editor",
-      "Press the tab Page details"
-    ],
+    "steps": ["Open the page editor", "Press the tab Page details"],
     "alt": "Page details with Type set to How-to guide, two subjects shown as chips, and buttons to add subjects other pages of the site use."
   }
 ]

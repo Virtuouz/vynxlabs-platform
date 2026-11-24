@@ -1,4 +1,24 @@
 [
-  {"name": "console/flows-list", "address": "flows", "who": "Maya Brooks (tenant admin)", "setup": "handbook", "viewport": "1440x900", "ready": "the table of flows is drawn", "mask": [], "steps": ["choose the first flow so the inspector is open"], "alt": "The Flows screen: a search box, four filter chips, and a table of flows with what starts each, its steps, its last run and its version."},
-  {"name": "console/flow-editor", "address": "flows/edit/<a flow with a Branch and an Approval>", "who": "Maya Brooks (tenant admin)", "setup": "a dev flow with a start, a Branch, two Set values steps and an Approval, saved as a draft", "viewport": "1440x900", "ready": "the canvas shows every step", "mask": [], "steps": ["choose the Approval step so the inspector shows its fields"], "alt": "The flow editor: the header with its save state and Deploy menu, the canvas with connected steps, and the inspector open on one step."}
+  {
+    "name": "console/flows-list",
+    "address": "flows",
+    "who": "Maya Brooks (tenant admin)",
+    "setup": "handbook",
+    "viewport": "1440x900",
+    "ready": "the table of flows is drawn",
+    "mask": [],
+    "steps": ["choose the first flow so the inspector is open"],
+    "alt": "The Flows screen: a search box, four filter chips, and a table of flows with what starts each, its steps, its last run and its version."
+  },
+  {
+    "name": "console/flow-editor",
+    "address": "flows/edit/<a flow with a Branch and an Approval>",
+    "who": "Maya Brooks (tenant admin)",
+    "setup": "a dev flow with a start, a Branch, two Set values steps and an Approval, saved as a draft",
+    "viewport": "1440x900",
+    "ready": "the canvas shows every step",
+    "mask": [],
+    "steps": ["choose the Approval step so the inspector shows its fields"],
+    "alt": "The flow editor: the header with its save state and Deploy menu, the canvas with connected steps, and the inspector open on one step."
+  }
 ]

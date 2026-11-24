@@ -61,6 +61,8 @@ jobs:
       - name: Configure the stack
         run: |
           {
+            # The bundled database and object store are in profiles, as .env.example has them.
+            echo "COMPOSE_PROFILES=postgres,objectstore"
             echo "POSTGRES_PASSWORD=$(openssl rand -hex 24)"
             echo "OBJECTSTORE_SECRET=$(openssl rand -hex 24)"
             echo "AUTH_SECRET=$(openssl rand -hex 32)"

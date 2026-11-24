@@ -1,5 +1,39 @@
 [
-  {"name": "console/widgets-table-data", "address": "screens/screens/wdg-visits (the App Builder, workspace Sandbox)", "who": "maya.brooks@fernhill.example (tenant admin)", "setup": "an app with one page and one Table: Source Appointments, Only include Species is Dog, Sorted by Starts at newest first at most 25, Group rows by Status; the Table chosen with its Data tab open", "viewport": "1440x900", "ready": "the table shows rows and the Data tab shows Sorted by", "mask": [], "steps": ["open the app in the App Builder", "choose the Table in the outline", "open the Data tab"], "alt": "The App Builder with a Table of appointments selected: the Data tab shows Source Appointments, the condition Species is Dog and Sorted by Starts at, newest first, at most 25."},
-  {"name": "console/widgets-chart-scatter", "address": "screens/screens/wdg-visits", "who": "maya.brooks@fernhill.example", "setup": "the same app with a Chart: Source Appointments, Measure Count of rows, For each Minutes, chart type Scatter", "viewport": "1440x900", "ready": "the chart draws points", "mask": [], "steps": ["choose the Chart in the outline", "open the Display tab"], "alt": "The App Builder with a Chart selected. Chart type shows Scatter chosen and Line, Area and Heatmap grayed with their reasons; the chart shows three points."},
-  {"name": "console/widgets-phone-page", "address": "apps/fernhill/sandbox/wdg-visits/ (the published app)", "who": "maya.brooks@fernhill.example", "setup": "the app published with the Chart at priority 5 and the column Pet breed set to Hide on phones", "viewport": "390x844", "ready": "the chart and the first rows of the table are drawn", "mask": [], "steps": ["open the published app"], "alt": "A published app at phone width: the Chart first, then the Table drawn as a list with a title line and a line of values for each row."}
+  {
+    "name": "console/widgets-table-data",
+    "address": "screens/screens/wdg-visits (the App Builder, workspace Sandbox)",
+    "who": "maya.brooks@fernhill.example (tenant admin)",
+    "setup": "an app with one page and one Table: Source Appointments, Only include Species is Dog, Sorted by Starts at newest first at most 25, Group rows by Status; the Table chosen with its Data tab open",
+    "viewport": "1440x900",
+    "ready": "the table shows rows and the Data tab shows Sorted by",
+    "mask": [],
+    "steps": [
+      "open the app in the App Builder",
+      "choose the Table in the outline",
+      "open the Data tab"
+    ],
+    "alt": "The App Builder with a Table of appointments selected: the Data tab shows Source Appointments, the condition Species is Dog and Sorted by Starts at, newest first, at most 25."
+  },
+  {
+    "name": "console/widgets-chart-scatter",
+    "address": "screens/screens/wdg-visits",
+    "who": "maya.brooks@fernhill.example",
+    "setup": "the same app with a Chart: Source Appointments, Measure Count of rows, For each Minutes, chart type Scatter",
+    "viewport": "1440x900",
+    "ready": "the chart draws points",
+    "mask": [],
+    "steps": ["choose the Chart in the outline", "open the Display tab"],
+    "alt": "The App Builder with a Chart selected. Chart type shows Scatter chosen and Line, Area and Heatmap grayed with their reasons; the chart shows three points."
+  },
+  {
+    "name": "console/widgets-phone-page",
+    "address": "apps/fernhill/sandbox/wdg-visits/ (the published app)",
+    "who": "maya.brooks@fernhill.example",
+    "setup": "the app published with the Chart at priority 5 and the column Pet breed set to Hide on phones",
+    "viewport": "390x844",
+    "ready": "the chart and the first rows of the table are drawn",
+    "mask": [],
+    "steps": ["open the published app"],
+    "alt": "A published app at phone width: the Chart first, then the Table drawn as a list with a title line and a line of values for each row."
+  }
 ]

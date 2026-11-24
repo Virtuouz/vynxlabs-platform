@@ -9,7 +9,11 @@ const here = import.meta.dirname;
 const content = join(here, "../../../packages/docs/content/self-host");
 const pages = (dir: string): string[] =>
   readdirSync(dir, { withFileTypes: true }).flatMap((entry) =>
-    entry.isDirectory() ? pages(join(dir, entry.name)) : entry.name.endsWith(".md") ? [join(dir, entry.name)] : [],
+    entry.isDirectory()
+      ? pages(join(dir, entry.name))
+      : entry.name.endsWith(".md")
+        ? [join(dir, entry.name)]
+        : [],
   );
 // The metrics reference is generated from the same typed list, into `generated/`.
 const generated = join(here, "../../../packages/docs/generated/self-host");
@@ -38,7 +42,9 @@ test("the guide does not say what the code does not do (INS-29)", () => {
   expect(guide).not.toMatch(/export it and import it into the location you want/);
   expect(guide).toMatch(/`\/api\/v1\/readyz` stays 200/);
   // The screen is called Console branding in the navigation.
-  expect(readFileSync(join(content, "reference/console/branding.md"), "utf8")).toContain("**Console branding**");
+  expect(readFileSync(join(content, "reference/console/branding.md"), "utf8")).toContain(
+    "**Console branding**",
+  );
 });
 
 test("the documentation says how to restore, upgrade Postgres, change AUTH_SECRET, install with no internet, and what the object store must allow (HOST-28)", () => {

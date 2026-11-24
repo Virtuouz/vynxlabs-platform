@@ -107,13 +107,23 @@ function projects() {
     // it starts at once rather than after every parallel spec has been taken.
     // One worker for each copy of Fernhill (E2E_FERNHILL_COPIES, three by default): the copies are
     // made by `fernhill-copies`, which runs only when this project has tests to run.
-    { name: "fernhill-copies", testMatch: "fernhill-copies.setup.ts", dependencies: ["setup"] },
-    {
-      name: "fernhill",
-      ...only([...fernhill, ...feedback]),
-      dependencies: ["setup", "fernhill-copies"],
-      workers: Number(process.env.E2E_FERNHILL_COPIES ?? 3),
-    },
+    // Left out when no Fernhill spec runs (CI's groups a and b, which seed no Fernhill): the
+    // copies' project is a project of its own, and would run, and fail, with nothing to copy.
+    ...(fernhill.length + feedback.length > 0
+      ? [
+          {
+            name: "fernhill-copies",
+            testMatch: "fernhill-copies.setup.ts",
+            dependencies: ["setup"],
+          },
+          {
+            name: "fernhill",
+            ...only([...fernhill, ...feedback]),
+            dependencies: ["setup", "fernhill-copies"],
+            workers: Number(process.env.E2E_FERNHILL_COPIES ?? 3),
+          },
+        ]
+      : []),
     { name: "parallel", ...only(parallel), dependencies: ["setup"] },
   ];
   // One worker, the files one after the other.

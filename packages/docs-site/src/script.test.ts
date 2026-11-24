@@ -437,7 +437,11 @@ describe("the theme control (phase 33)", () => {
       '{"base":"/","themeKey":"vx-pref:theme"}';
     const sent: { url: string; method: string; body?: string }[] = [];
     vi.stubGlobal("fetch", async (url: string, init: RequestInit = {}) => {
-      sent.push({ url, method: init.method ?? "GET", ...(init.body ? { body: String(init.body) } : {}) });
+      sent.push({
+        url,
+        method: init.method ?? "GET",
+        ...(init.body ? { body: String(init.body) } : {}),
+      });
       return answer({});
     });
     control();

@@ -6,9 +6,7 @@
     "setup": "handbook",
     "viewport": "desktop",
     "ready": "the Tenants table lists Fernhill Veterinary Group",
-    "mask": [
-      "Created column"
-    ],
+    "mask": ["Created column"],
     "steps": [
       "open Tenants in the rail (the root address reopens the last place, so click Tenants)"
     ],
@@ -21,14 +19,8 @@
     "setup": "handbook, plus a few runs, one failed, and two drafts not deployed",
     "viewport": "desktop",
     "ready": "the heading Needs attention is shown",
-    "mask": [
-      "time elements",
-      "Median time",
-      "chart tooltip"
-    ],
-    "steps": [
-      "open Overview in the rail"
-    ],
+    "mask": ["time elements", "Median time", "chart tooltip"],
+    "steps": ["open Overview in the rail"],
     "alt": "A workspace overview with Needs attention rows, the Runs card for the last 24 hours, the Deploy path and What starts work here."
   },
   {
@@ -38,9 +30,7 @@
     "setup": "handbook",
     "viewport": "desktop",
     "ready": "the heading Sign in is shown with the Email field",
-    "mask": [
-      "the host line under the card"
-    ],
+    "mask": ["the host line under the card"],
     "steps": [],
     "alt": "The sign-in card at its first step, with the steps Email and How you sign in, an Email field and a Continue button."
   },
@@ -51,14 +41,8 @@
     "setup": "handbook",
     "viewport": "desktop",
     "ready": "the Runs table is listed",
-    "mask": [
-      "time elements",
-      "Started column",
-      "Run ID column"
-    ],
-    "steps": [
-      "open Operate, then Runs"
-    ],
+    "mask": ["time elements", "Started column", "Run ID column"],
+    "steps": ["open Operate, then Runs"],
     "alt": "A workspace's Runs screen with the narrow rail on the left, the section panel, the header with the workspace switcher and the Search or jump to button, and the Deploy path at the foot of the panel."
   }
 ]

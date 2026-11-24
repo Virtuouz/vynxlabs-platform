@@ -190,7 +190,7 @@ jobs:
 
       # The website is another repository. It is told when there is a version to build
       # its documentation from, once it exists to be told: set DOCS_SITE_REPOSITORY to it. The
-# dispatch names the run and the artifact (`docs-site`, the export) to fetch the site from.
+      # dispatch names the run and the artifact (`docs-site`, the export) to fetch the site from.
       - name: Tell the website
         if: vars.RELEASE_ENABLED == 'true' && vars.DOCS_SITE_REPOSITORY != ''
         env:

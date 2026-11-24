@@ -40,7 +40,12 @@
     "viewport": "desktop",
     "ready": "the Result tab shows Succeeded and one log line",
     "mask": ["time", "the run's wait and run times"],
-    "steps": ["open the script's editor", "type Rowan in Name", "press Run the draft", "wait for Succeeded"],
+    "steps": [
+      "open the script's editor",
+      "type Rowan in Name",
+      "press Run the draft",
+      "wait for Succeeded"
+    ],
     "alt": "The script editor with the code on the left and the test pane on the right showing a Succeeded run, its one log line and the Result, Problems and Runs tabs."
   },
   {

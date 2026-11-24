@@ -6,13 +6,8 @@
     "setup": "handbook, plus a connection group clinics with one member northside, and both connections tested so that one shows Reached and one Failed (the supplier's address answers 404)",
     "viewport": "desktop",
     "ready": "the Connections table is listed and the Connection groups section is below it",
-    "mask": [
-      "the tested-ago text in the Health column",
-      "time"
-    ],
-    "steps": [
-      "open Configure, then Connections"
-    ],
+    "mask": ["the tested-ago text in the Health column", "time"],
+    "steps": ["open Configure, then Connections"],
     "alt": "The Connections screen: a table of connections with their health, what uses them, their kind and where they point, and the Connection groups section below it."
   },
   {
@@ -22,10 +17,7 @@
     "setup": "handbook; in Sandbox, an HTTP connection stock-prices at the stand-in's address with a token, saved and tested",
     "viewport": "desktop",
     "ready": "the sheet shows Saved and Reached",
-    "mask": [
-      "the time Reached took",
-      "time"
-    ],
+    "mask": ["the time Reached took", "time"],
     "steps": [
       "press New connection",
       "type the name stock-prices, the address and the token, choose Authorization: Bearer",
@@ -40,12 +32,8 @@
     "setup": "handbook, with one variable set to a value, one set to an empty value and one on its default",
     "viewport": "desktop",
     "ready": "the Variables table is listed",
-    "mask": [
-      "time"
-    ],
-    "steps": [
-      "open Configure, then Variables"
-    ],
+    "mask": ["time"],
+    "steps": ["open Configure, then Variables"],
     "alt": "The Variables screen: a table of variables with what reads each, what it is for, and its value here, which is a set value, Empty, or Default followed by the default."
   },
   {
@@ -55,12 +43,8 @@
     "setup": "handbook, plus two secrets (the seeded PAYFERN_SIGNING_SECRET and SUPPLIER_ACCOUNT)",
     "viewport": "desktop",
     "ready": "the Secrets table is listed",
-    "mask": [
-      "the Last set column"
-    ],
-    "steps": [
-      "open Configure, then Secrets"
-    ],
+    "mask": ["the Last set column"],
+    "steps": ["open Configure, then Secrets"],
     "alt": "The Secrets screen: a table with each secret's name, what uses it, and when and by whom it was last set, with a Delete button in each row."
   },
   {
@@ -70,12 +54,8 @@
     "setup": "handbook, with the default alert posting to an HTTP connection and one failed run that was alerted",
     "viewport": "desktop",
     "ready": "the Recent alerts list is shown",
-    "mask": [
-      "time"
-    ],
-    "steps": [
-      "open Configure, then Alerts"
-    ],
+    "mask": ["time"],
+    "steps": ["open Configure, then Alerts"],
     "alt": "The Alerts screen: the workspace's default, with a script to start and a connection to post to, then the list of recent alerts."
   }
 ]

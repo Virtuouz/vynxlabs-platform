@@ -6,14 +6,8 @@
     "setup": "handbook (Fernhill seeded on the throwaway instance), signed in as the operator; open the Instance area, then All tenants (the root opens the last place, so use the navigation entry)",
     "viewport": "desktop",
     "ready": "the tenants table is listed",
-    "mask": [
-      "Created column",
-      "Created field of the inspector",
-      "ID field"
-    ],
-    "steps": [
-      "choose the Fernhill row so the inspector opens"
-    ],
+    "mask": ["Created column", "Created field of the inspector", "ID field"],
+    "steps": ["choose the Fernhill row so the inspector opens"],
     "alt": "The All tenants screen with a tenant chosen: the list of tenants on the left and, on the right, the inspector with the tenant's slug, workspaces, your access, where its tables are kept, the workers panel and the history panel, and the buttons Open and Delete."
   },
   {
@@ -23,9 +17,7 @@
     "setup": "handbook (Fernhill seeded on the throwaway instance), signed in as the operator",
     "viewport": "desktop",
     "ready": "the members table is listed",
-    "mask": [
-      "Created column"
-    ],
+    "mask": ["Created column"],
     "steps": [],
     "alt": "The All members screen: a search box, the Create member button and a list of members with their email, tenants, state and, in the last column, Make a password reset link and Disable."
   },
@@ -36,9 +28,7 @@
     "setup": "handbook (Fernhill seeded on the throwaway instance), signed in as the operator; one more operator added so the list has a Remove button beside Remove yourself",
     "viewport": "desktop",
     "ready": "the operators table is listed",
-    "mask": [
-      "Since column"
-    ],
+    "mask": ["Since column"],
     "steps": [],
     "alt": "The Operators screen with a list of operators: member email, role operator_admin, since when, and a Remove or Remove yourself button on each row."
   },
@@ -50,9 +40,7 @@
     "viewport": "desktop",
     "ready": "the location row shows Reached",
     "mask": [],
-    "steps": [
-      "choose the location row so the inspector opens"
-    ],
+    "steps": ["choose the location row so the inspector opens"],
     "alt": "The Database locations screen with one location chosen: its name, what it is for, the database and host, how many tenants keep tables there and Reached, and the inspector listing the tenants there."
   },
   {
@@ -73,10 +61,7 @@
     "setup": "handbook (Fernhill seeded on the throwaway instance), signed in as the operator; no second master key set",
     "viewport": "desktop",
     "ready": "Ready is shown and the settings section is listed",
-    "mask": [
-      "Checked time in the Health section",
-      "Database latency"
-    ],
+    "mask": ["Checked time in the Health section", "Database latency"],
     "steps": [],
     "alt": "The Health screen: Ready with the database and object store answering, the version and migration level, then the master key fingerprints, this replica's settings and the metrics section."
   },
@@ -87,10 +72,7 @@
     "setup": "an export file of a small tenant uploaded and checked on the throwaway instance, the tenant already deleted, its passphrase typed so every Can it come in line passes",
     "viewport": "desktop",
     "ready": "the Can it come in list shows the passphrase and signature lines passing",
-    "mask": [
-      "Exported time",
-      "kept until time"
-    ],
+    "mask": ["Exported time", "kept until time"],
     "steps": [
       "upload the file with Upload and check",
       "type the passphrase and wait for the check to run again"
@@ -104,14 +86,8 @@
     "setup": "handbook (Fernhill seeded on the throwaway instance), signed in as the operator; the log has entries of members created, a tenant deleted and an import staged",
     "viewport": "desktop",
     "ready": "the entries table is listed",
-    "mask": [
-      "When column",
-      "Who column",
-      "Request ID, From and ID fields of the inspector"
-    ],
-    "steps": [
-      "open the first entry so Entry details shows"
-    ],
+    "mask": ["When column", "Who column", "Request ID, From and ID fields of the inspector"],
+    "steps": ["open the first entry so Entry details shows"],
     "alt": "The Instance audit log: search, Area and Since filters, the More filters button, CSV and Columns, and a table of entries with When, Who, What was done and To, with the entry inspector open beside it."
   },
   {

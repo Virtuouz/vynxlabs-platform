@@ -110,7 +110,9 @@ test("round 6: the builder bar's save words keep one width, so the bar does not 
   await open();
   await waitFor(() =>
     expect(
-      screen.getAllByRole("status").some((one) => one.className.includes("min-w-[min(100%,12rem)]")),
+      screen
+        .getAllByRole("status")
+        .some((one) => one.className.includes("min-w-[min(100%,12rem)]")),
     ).toBe(true),
   );
 });

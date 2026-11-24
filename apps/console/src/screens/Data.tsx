@@ -3677,7 +3677,7 @@ export function Sources({ root, link }: { root: string; link: string }) {
         },
       ]}
       rowActions={(row, reload) => (
-        <span className="inline-flex flex-wrap items-center justify-end gap-2 max-sm:flex-col max-sm:items-end">
+        <span className="inline-flex flex-wrap items-center gap-2">
           {row.defined ? (
             declare.can ? (
               <Link
@@ -3699,13 +3699,8 @@ export function Sources({ root, link }: { root: string; link: string }) {
             )
           ) : null}
           {row.bound ? (
-            // On a phone the buttons wrap under each other instead of widening the page.
-            <SourceActions
-              root={root}
-              row={row}
-              onDone={reload}
-              className="justify-end max-sm:flex-col max-sm:items-end"
-            />
+            // The list's column of actions says where they sit and wraps them (kit/rowActions.tsx).
+            <SourceActions root={root} row={row} onDone={reload} />
           ) : (
             <ConnectSource root={root} row={row} onDone={reload} />
           )}

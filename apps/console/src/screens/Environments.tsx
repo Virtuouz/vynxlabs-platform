@@ -970,17 +970,19 @@ export function DatabaseLocations() {
       rowKey={(row) => row.name}
       columns={[
         { header: "Name", cell: (row) => <Code>{row.name}</Code> },
+        // Where it is comes before what it is for: it is what a person picks a location by, and it
+        // is the column a tablet should still have.
         {
           header: "For",
-          priority: 2,
+          priority: 3,
           cell: (row) => <span className="text-ink-muted">{row.description}</span>,
         },
         {
           header: "Database",
-          priority: 3,
+          priority: 2,
           cell: (row) => (row.host ? `${row.database} on ${row.host}` : ""),
         },
-        { header: "Tenants", priority: 2, cell: (row) => row.tenants, align: "end" },
+        { header: "Tenants", priority: 3, cell: (row) => row.tenants, align: "end" },
         {
           header: "Status",
           cell: (row) =>

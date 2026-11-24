@@ -23,6 +23,7 @@ import { Loading } from "./kit/LoadState.tsx";
 import { PageHeader } from "./kit/layout.tsx";
 import { usePagedList } from "./kit/paged.tsx";
 import { READ_ONLY_WORDS, useReadOnly } from "./kit/ReadOnly.tsx";
+import { useRowActionColumns } from "./kit/rowActions.tsx";
 import { useQueryValue } from "./router.tsx";
 export interface FormField {
   name: string;
@@ -424,20 +425,11 @@ export function ListScreen<Row>(props: ListScreenProps<Row>) {
   }, [setup, create, setupField, setSetup]);
 
   const { can, line, reason } = useNeeds(props.needs);
-  const columns: DataColumn<Row>[] = props.rowActions
-    ? [
-        ...props.columns,
-        {
-          header: "",
-          align: "end",
-          cell: (row) => (
-            <fieldset disabled={!can} className="contents">
-              {props.rowActions?.(row, list.reload)}
-            </fieldset>
-          ),
-        },
-      ]
-    : props.columns;
+  // The column of actions, as every list draws it (kit/rowActions.tsx).
+  const columns = useRowActionColumns<Row>(props.columns, props.rowActions, {
+    can,
+    reload: list.reload,
+  });
   const createButton = create ? (
     <span className="inline-flex flex-wrap items-center gap-2">
       {props.action}

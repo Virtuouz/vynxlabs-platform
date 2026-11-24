@@ -101,3 +101,15 @@ test("p31 fc: the Register database dialog says Volvel, never the platform", asy
   expect(dialog.textContent).toContain("Volvel connects first");
   expect(dialog.textContent).not.toMatch(/platform/i);
 });
+
+test("round 5: a tablet keeps the Database column, which is where a location is; what it is for and its tenants wait for a wide screen", async () => {
+  show(<DatabaseLocations />);
+  const header = (name: string) =>
+    screen.findByRole("columnheader", { name, hidden: true }).then((one) => one.className);
+  // The second tier shows from a tablet up, the third on a wide screen.
+  expect(await header("Database")).toContain("sm:table-cell");
+  expect(await header("For")).toContain("lg:table-cell");
+  expect(await header("Tenants")).toContain("lg:table-cell");
+  // Its actions are never the column that is dropped.
+  expect(await header("Actions")).not.toMatch(/hidden|table-cell/);
+});

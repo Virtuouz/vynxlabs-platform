@@ -920,7 +920,7 @@ export function Connections({ root, production = false }: { root: string; produc
         rowActions={(row, reloadList) => {
           const done = () => reloadList();
           return (
-            <span className="flex flex-wrap justify-end gap-2">
+            <span className="contents">
               {row.bound && (!row.oauth || row.oauth.status === "connected") && may("run:read") ? (
                 <TestConnection root={root} path={row.path} onDone={done} />
               ) : null}
@@ -1073,7 +1073,7 @@ export function Variables({ root }: { root: string }) {
               : `Set ${path} in this workspace.`,
         }}
         rowActions={(row, reload) => (
-          <span className="flex flex-wrap justify-end gap-2">
+          <span className="contents">
             {row.draft === "new" || row.draft === "removed" ? null : (
               <Button size="small" onClick={() => setEditing({ row, reload })}>
                 {row.value !== null ? "Change" : "Set"}

@@ -266,6 +266,19 @@ test("a trigger's state reads the same wherever it is drawn", async () => {
   ).toBeTruthy();
 });
 
+test("round 5: a trigger's name on the overview keeps room of its own and its state wraps under it", async () => {
+  routes[`GET ${root}/summary`] = () => [200, summary(0)];
+  routes[`GET ${root}/triggers`] = () => [200, { items: [trigger("inventory/half-hourly")] }];
+  show(<Overview root={root} link={link} workspace={{ ...workspace, triggersPaused: true }} />);
+  const row = await screen.findByRole("link", { name: /inventory\/half-hourly/ });
+  // The row wraps, and the name block asks for a minimum, so the state beside it cannot take it all.
+  expect(row.className).toContain("flex-wrap");
+  const name = row.querySelector("[data-trigger-name]") as HTMLElement;
+  expect(name.className).toMatch(/min-w-\[min\(100%,\d+rem\)\]/);
+  // The state is not a box that refuses to shrink: it gives way before the name does.
+  expect(row.lastElementChild?.className).not.toContain("shrink-0");
+});
+
 test("on a script or flow page, drafting is offered in dev and not in production", async () => {
   routes[`GET ${root}/triggers`] = () => [200, { items: [] }];
   show(<TriggersOf root={root} link={link} kind="script" path="reminders/send" />);

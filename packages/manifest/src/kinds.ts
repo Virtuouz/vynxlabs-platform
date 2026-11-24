@@ -1802,22 +1802,32 @@ export const appKind: KindDefinition = {
 /** Where a widget's view is, in the repository: a path that stays inside it. */
 export const WIDGET_ENTRY_PATTERN = "^(?!.*\\.\\.)[A-Za-z0-9_@.-]+(/[A-Za-z0-9_@.-]+)*$";
 
-const cellSize = {
+const cellSize = (what: string) => ({
   type: "object",
+  description: what,
   properties: {
-    w: { type: "integer", minimum: 1, maximum: 12 },
-    h: { type: "integer", minimum: 1, maximum: 40 },
+    w: {
+      type: "integer",
+      minimum: 1,
+      maximum: 12,
+      description: "Columns wide, of the page's twelve.",
+    },
+    h: { type: "integer", minimum: 1, maximum: 40, description: "Rows high, of 40 pixels each." },
   },
   required: ["w", "h"],
   additionalProperties: false,
-};
+});
 
-const rangeOf = {
+const rangeOf = (what: string) => ({
   type: "object",
-  properties: { min: { type: "integer", minimum: 0 }, max: { type: "integer", minimum: 0 } },
+  description: what,
+  properties: {
+    min: { type: "integer", minimum: 0, description: "The fewest." },
+    max: { type: "integer", minimum: 0, description: "The most." },
+  },
   required: ["min", "max"],
   additionalProperties: false,
-};
+});
 
 /**
  * A widget a tenant wrote: what the page builder draws its inspector and "Add to page" from
@@ -1841,20 +1851,29 @@ export const widgetKind: KindDefinition = {
         pattern: "^\\d+\\.\\d+\\.\\d+$",
         description: "Semver. A page names the type; a deploy pins the version it was built with.",
       },
-      title: { type: "string", minLength: 1, maxLength: 100 },
+      title: { type: "string", minLength: 1, maxLength: 100, description: "What it is called." },
       description: {
         type: "string",
         minLength: 1,
         maxLength: 200,
         description: 'One line, said in "Add to page".',
       },
-      category: { enum: [...WIDGET_CATEGORIES] },
-      icon: { type: "string", minLength: 1, maxLength: 40 },
+      category: {
+        enum: [...WIDGET_CATEGORIES],
+        description: 'The group "Add to page" lists it under.',
+      },
+      icon: {
+        type: "string",
+        minLength: 1,
+        maxLength: 40,
+        description:
+          "The name of an icon from the kit's set. Any other name is drawn as a puzzle piece.",
+      },
       surfaces: {
         type: "array",
         minItems: 1,
         uniqueItems: true,
-        items: { enum: [...WIDGET_SURFACES] },
+        items: { enum: [...WIDGET_SURFACES], description: "`app` or `dashboard`." },
         description: "Where it may be put: an app's page, a dashboard.",
       },
       data: {
@@ -1864,12 +1883,27 @@ export const widgetKind: KindDefinition = {
         additionalProperties: {
           type: "object",
           properties: {
-            shape: { enum: [...WIDGET_DATA_SHAPES] },
-            label: { type: "string", maxLength: 100 },
-            required: { type: "boolean" },
-            sources: { type: "array", items: { enum: [...WIDGET_SOURCE_KINDS] } },
-            values: rangeOf,
-            breakdowns: rangeOf,
+            shape: {
+              enum: [...WIDGET_DATA_SHAPES],
+              description: "What it is given: `rows`, `summary`, `record` or `approvals`.",
+            },
+            label: {
+              type: "string",
+              maxLength: 100,
+              description:
+                'What the inspector calls it when there is more than one. Left out: "Source".',
+            },
+            required: {
+              type: "boolean",
+              description: "Whether the widget cannot be drawn without it. Default true.",
+            },
+            sources: {
+              type: "array",
+              items: { enum: [...WIDGET_SOURCE_KINDS], description: "Where it may come from." },
+              description: "Where it may come from: a table, a query, SQL or approvals.",
+            },
+            values: rangeOf("For a summary: how many values it may work out."),
+            breakdowns: rangeOf("For a summary: how many ways it may be broken down."),
           },
           required: ["shape"],
           additionalProperties: false,
@@ -1878,26 +1912,52 @@ export const widgetKind: KindDefinition = {
       dataHints: {
         type: "array",
         maxItems: 20,
-        items: { type: "object" },
+        items: {
+          type: "object",
+          description: "One data input's controls, by `of` and `controls`.",
+        },
         description: "The Data tab's controls for each input.",
       },
       config: {
         ...jsonSchema,
         description:
           "A JSON Schema (draft 2020-12) for the widget's settings, an object with `properties`, each with an `x-volvel` hint saying how the inspector draws it from the fixed set of controls.",
-        properties: { type: { const: "object" }, properties: { type: "object" } },
+        properties: {
+          type: { const: "object", description: "Always `object`." },
+          properties: {
+            type: "object",
+            description: "Each setting by name: its JSON Schema with an `x-volvel` hint.",
+          },
+        },
         required: ["type", "properties"],
       },
-      words: { type: "object", additionalProperties: { type: "string" } },
-      defaults: { type: "object" },
+      words: {
+        type: "object",
+        description:
+          "What each setting is, by its path in `config`, where the schema does not say.",
+        additionalProperties: { type: "string", description: "What the setting is." },
+      },
+      defaults: {
+        type: "object",
+        description: "What the widget is when it is added, before anyone changes it.",
+      },
       events: {
         type: "object",
         description: "What can happen to the widget that an action may be attached to, by name.",
         additionalProperties: {
           type: "object",
           properties: {
-            gives: { enum: [...WIDGET_EVENT_GIVES] },
-            label: { type: "string", minLength: 1, maxLength: 100 },
+            gives: {
+              enum: [...WIDGET_EVENT_GIVES],
+              description:
+                "What it gives the action attached to it: a `record`, a `group` or `nothing`.",
+            },
+            label: {
+              type: "string",
+              minLength: 1,
+              maxLength: 100,
+              description: 'Said in the Actions tab: "When a row is clicked".',
+            },
             payload: {
               ...jsonSchema,
               description:
@@ -1910,12 +1970,20 @@ export const widgetKind: KindDefinition = {
       },
       layout: {
         type: "object",
+        description: "Its size in the page's grid, and what it does on a phone.",
         properties: {
-          min: cellSize,
-          default: cellSize,
-          max: cellSize,
-          phone: { enum: ["stack", "list", "hide"] },
-          frame: { enum: ["card", "none"] },
+          min: cellSize("The smallest it may be made."),
+          default: cellSize("The size it is added with."),
+          max: cellSize("The largest it may be made."),
+          phone: {
+            enum: ["stack", "list", "hide"],
+            description: "On a narrow screen: full width, drawn as a list, or not shown.",
+          },
+          frame: {
+            enum: ["card", "none"],
+            description:
+              "Whether the page draws it on a card with its title (the default) or as it is.",
+          },
         },
         required: ["min", "default"],
         additionalProperties: false,

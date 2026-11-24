@@ -67,6 +67,7 @@ test("every export of @volvel/sdk and @volvel/widgets says what it is in a comme
     "@volvel/sdk/testing",
     "@volvel/widgets",
     "@volvel/widgets/action",
+    "@volvel/widgets/frame",
     "@volvel/widgets/page",
   ]);
   const gaps: string[] = [];

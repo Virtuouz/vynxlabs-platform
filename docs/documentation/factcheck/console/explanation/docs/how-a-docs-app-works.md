@@ -42,3 +42,15 @@ Lines are current at commit `661a2ceb`. Paths are under `packages/` unless state
 | On `/docs` a signed-in member's choice is kept with their settings; nobody signed in has it in the browser only. | docs-site/src/script.ts:207-215; apps/control-plane/src/routes/preferences.ts | writer, run on 8097: Maya chose Dark on `/docs`, `GET /api/v1/me/preferences` held `theme: dark`, System removed it; the not-signed-in case is code only | holds as written |
 | The page takes the theme before it is first drawn. | docs-site/src/theme-script.ts:9-27 | code only (walked by the lane in `docs/documentation/fixed/p33-d1.md`) | holds as written |
 | A page is an entry in a `changelog` folder or with the subject `changelog`; `::changelog` lists, `changelog.xml` serves. | docs-engine/src/changelog.ts:52-59; docs-site/src/feed.ts | writer, run on 8097 | holds as written |
+
+## Phase 33, second check, 2026-11-24
+
+Checked by: second agent, 2026-11-24. Read against `docs-site/src/{render,css,script}.ts` and run on 8097 (a served site at 1440 and 390, light and dark).
+
+| Claim | Source or run | Checked by | Result |
+| --- | --- | --- | --- |
+| **On this page** lists `##`, `###` (and `#`); not `####`; column from 1280 px, bar below. | render.ts:357-364,543-556; css.ts:95-99,193-196 | second agent, 2026-11-24 | holds |
+| A `#` link on every heading, on hover or Tab, always shown without a pointer; copies, "Link copied". | render.ts:379-390; css.ts:209-214; script.ts:147-166 | second agent, 2026-11-24 | page corrected: only `##` and below get the link (the regex is `h[2-6]`), so "every heading from `##` down"; fault: heading levels, a `#` is listed in the contents but has no link (other lane) |
+| Text 16 px on a phone growing to 20 px. | css.ts:11 (`clamp`), 169 | second agent, 2026-11-24 | holds (16.2 px at 390, 20 px at 1440) |
+| **Color theme**: three buttons wide, one cycling button on a phone, at the foot of the navigation or drawer; kept in the browser; at `/docs` it is the console's own setting, sent with the member's settings. | render.ts:370-376; script.ts:174-229; render.ts:272 | second agent, 2026-11-24 | holds |
+| A page of a site changelog: folder `changelog` or the subject; `::changelog`; feed `changelog.xml`. | changelog.ts:52-59; feed.ts; run | second agent, 2026-11-24 | holds |

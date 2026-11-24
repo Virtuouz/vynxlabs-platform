@@ -15,3 +15,23 @@ Lines are current at commit `661a2ceb` (branch phase-33-docs-reading). Paths are
 | The older-instance advice: "A page uses a key that this instance may not know: the instance may be older than this CLI. Upgrade the instance, or take type, subjects and moved_from out of the pages' top." | cli/src/cli.ts:132-151 | code only; not run (the instance is current) | not run |
 | `volvel dev` draws the entries and links the feed, but `/changelog.xml` is 404 locally. | run: `volvel dev handbook`, curl on its port | writer, run | holds as written (a gap, reported) |
 | The folder `changelog/` is no page: "There is no page here". | docs-site/src/render.ts:767 | writer, run (404) | holds as written |
+
+## Second check (phase 33, M5)
+
+Checked by: second agent, 2026-11-24. Claims read against the code and the how-to done from nothing with the CLI of this checkout (`node packages/cli/dist/bin.js`, `HOME` set to a scratch folder so the real sign-in is untouched): `volvel init`, `volvel.yaml` with `docs: [docs]`, `src/docs.ts`, the entries, `volvel build`, `volvel deploy --tenant fernhill --workspace chk33-repo` (a dev workspace of my own), pages read at 1440 and 390, light and dark, no overflow.
+
+| Claim | Source or run | Checked by | Result |
+| --- | --- | --- | --- |
+| An entry is a page with a `changelog` folder in its path or the subject; a folder's `index.md` never. | changelog.ts:52-59 | second agent, 2026-11-24 | holds |
+| Day at the start or end of a name dates it; `date:` wins; a day in the middle does not. | changelog.ts:35-75 | code (the regexes anchor at the start and the end); run for start, end and `date:` | holds |
+| `volvel build` refuses `2026-02-30` ("The date is not a day on the calendar: "2026-02-30". Write it as YYYY-MM-DD.") and `30 October` ("date is not written as it should be: "30 October"."). | page.ts:175-181; run | second agent, 2026-11-24 | holds; the page now quotes the second message |
+| `volvel build` lists `doc handbook/changelog/…`. A page with the subject `changelog` (and `booking`) draws two warnings, the subject is on no other page. | run | second agent, 2026-11-24 | page corrected: the warnings are now said |
+| `::changelog{limit folder subject}`, 1 to 50, 10 left out; `folder=changelog/rota` and `subject=booking` list only their entries (run with an entry in `changelog/rota`). | registry.ts:277-298; run | second agent, 2026-11-24 | holds |
+| The result of the deploy: newest two first, "1 older entry, from Reminder wording". | run | second agent, 2026-11-24 | page corrected: the entries of the steps are 24 Nov, 18 Nov (the booking rule), 10 Nov, 30 Oct, so the page shows New intake form and A new booking rule with "2 older entries, from Rota swaps" |
+| The `folder` and `subject` lines in the page are examples only (the steps make no `changelog/rota`). | run | second agent, 2026-11-24 | page corrected: it says so |
+| The snippet repeated the description as the first line of the page. | run (the site draws the description under the title) | second agent, 2026-11-24 | page corrected: the line is gone |
+| Feed: 200 `application/rss+xml` with no sign-in (the binding is anonymous), newest first, title, link, pubDate, description; the head links it. | feed.ts; front.ts:1125-1143; run | second agent, 2026-11-24 | holds |
+| A deploy that would delete pages stops before it uploads and names them; `--allow-delete <path>` lets each one go. | run | second agent, 2026-11-24 | page corrected: said in "Before you start" |
+| Older-instance message: the page quoted "...take `date:` out of the pages' top". | cli/src/cli.ts:133,151 | code | page corrected: the real message ends "take type, subjects and moved_from out of the pages' top"; fault: it does not name `date` though its test does (OLDER_INSTANCE) |
+| `volvel dev` draws the entries and links `/changelog.xml`, which is 404 locally. | run (port 5733) | second agent, 2026-11-24 | holds as written; fault: `volvel dev` does not serve `changelog.xml` (other lane) |
+| `changelog/` is "There is no page here" (404). | run | second agent, 2026-11-24 | holds as written; fault: the changelog folder's own address (other lane) |

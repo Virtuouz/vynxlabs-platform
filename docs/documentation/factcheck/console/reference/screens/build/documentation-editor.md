@@ -51,3 +51,13 @@ Lines are current at commit `661a2ceb`. Paths are under `packages/` unless state
 | Page details **Date**: a date field, optional, written as `date: YYYY-MM-DD`; meaning of the three sources. | apps/console/src/screens/docs/PageDetails.tsx:164-170; packages/docs-engine/src/schema.ts:165-168 | writer, run on 8097 | holds as written |
 | The preview draws `::changelog` once the page's folder is a site; none otherwise; no date for an entry with neither date nor name day. | apps/console/src/screens/docs/model.ts:372-393 | writer, run on 8097 (none before publishing, three after) | holds as written |
 | `::changelog` is not in the **Insert** list. | the list on 8097 | writer, run on 8097 | holds as written (a product gap, reported) |
+
+## Phase 33, second check, 2026-11-24
+
+Checked by: second agent, 2026-11-24. Run on 8097 and read against `model.ts`, `PageDetails.tsx`, `schema.ts`.
+
+| Claim | Source or run | Checked by | Result |
+| --- | --- | --- | --- |
+| A `::changelog` line draws the page's own site's entries newest first, none outside a site; an entry with no date shows none in the preview. | model.ts:373-393; run | second agent, 2026-11-24 | holds |
+| The **Insert** list lacks `::changelog`: type it. | run (list read) | second agent, 2026-11-24 | holds as the product is today; fault: the Insert list should offer it (other lane) |
+| **Date**: a day from the browser's date field, optional, written `date: YYYY-MM-DD`; the order of precedence in the hint. | PageDetails.tsx:164-170; schema.ts:165-171; run | second agent, 2026-11-24 | holds |

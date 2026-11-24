@@ -32,3 +32,7 @@ Lines are current at commit `661a2ceb`. Paths are under `packages/` unless state
 | Claim | Source (file:line) | Checked by | Result |
 | --- | --- | --- | --- |
 | The theme chosen on `/docs` while signed in is kept with the member's settings. | docs-site/src/script.ts:207-215 | writer, run on 8097: `theme` appeared in the member's preferences | holds as written |
+
+## Phase 33, second check, 2026-11-24
+
+Checked by: second agent, 2026-11-24. The theme chosen on `/docs` is kept with the member's settings only on the product's own site: `docs-site/src/render.ts:272` sets the key for the `product` profile, `script.ts:207-215` sends the PUT or DELETE. Nobody signed in: the request is refused and the browser's copy stands. No correction.

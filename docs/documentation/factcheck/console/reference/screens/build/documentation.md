@@ -58,3 +58,14 @@ Lines are current at commit `661a2ceb`. Paths are under `packages/` unless state
 | The hint of **Changelog entry**; the date at the start of **File name**; a typed name used as typed; the page made in the `changelog/` folder of the top-level folder, or in the `changelog` folder the chosen folder is inside. | Docs.tsx:1190-1214,1283; packages/docs-engine/src/ops.ts:147-167 | writer, run on 8097 (chosen folder was the site's folder; the inside-a-changelog case is code only) | holds as written |
 | "There is already an entry named <name>. Change its title or its name." | packages/docs-engine/src/ops.ts:163 | code only; not provoked | not run |
 | The page beside the tree draws `::changelog` with the page's own site's entries. | Docs.tsx:1755; model.ts:377-393 | writer, run on 8097 (read view showed the entries) | holds as written |
+
+## Phase 33, second check, 2026-11-24
+
+Checked by: second agent, 2026-11-24. Run on 8097 (Sandbox, 1440 light and 390 dark) and read against `Docs.tsx`, `ops.ts`.
+
+| Claim | Source or run | Checked by | Result |
+| --- | --- | --- | --- |
+| **Type** ends with **Changelog entry**; hint text; date at the start of **File name**, a typed name used as typed; no `type:` written; outline of a sentence, What is new, What to do. | Docs.tsx:1279-1288; ops.ts:137-167; run | second agent, 2026-11-24 | holds |
+| The page goes in the `changelog/` folder of the top-level folder, or in the `changelog` folder the chosen folder is inside. | ops.ts:147-153; run for both | second agent, 2026-11-24 | holds |
+| "There is already an entry named <name>. Change its title or its name." | ops.ts:163; run | second agent, 2026-11-24 | holds |
+| The page beside the tree draws `::changelog` with the page's own site's entries. | Docs.tsx:1755; model.ts:377-393 | second agent, 2026-11-24 | holds |

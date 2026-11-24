@@ -11,7 +11,7 @@ By the end the repository holds a changelog as files, a page lists its newest en
 ## Before you start
 
 - A repository with a docs app, as in [Keep documentation in the repository](keep-documentation-in-the-repository). The steps use the app `handbook` over `docs/handbook`, and Fernhill's workspace `sandbox`. See [Set up the Fernhill example](../../../start/how-to/example/set-up-the-fernhill-example).
-- A login that may deploy to a dev workspace: see [the volvel command](../../reference/cli).
+- A login that may deploy to a dev workspace: see [the volvel command](../../reference/cli). A deploy makes the workspace what the repository holds, and it stops before it deletes a page the repository no longer has: deploy to a dev workspace of your own, and name a page that should go with `--allow-delete`.
 
 ## Write the entries
 
@@ -56,7 +56,7 @@ By the end the repository holds a changelog as files, a page lists its newest en
    ```
 :::
 
-An entry's day is the first of these that applies: `date:`, a day at the start or end of its file name, and the day it last changed. `volvel build` refuses a `date` that is not a day on the calendar ("The date is not a day on the calendar: "2026-02-30". Write it as YYYY-MM-DD.") and one that is not written `YYYY-MM-DD`.
+An entry's day is the first of these that applies: `date:`, a day at the start or end of its file name, and the day it last changed. `volvel build` refuses a `date` that is not a day on the calendar ("The date is not a day on the calendar: "2026-02-30". Write it as YYYY-MM-DD.") and one that is not written `YYYY-MM-DD` (`date: 30 October` stops with "date is not written as it should be").
 
 ## List the entries on a page
 
@@ -69,8 +69,6 @@ An entry's day is the first of these that applies: `date:`, a day at the start o
    description: The newest changes to the intake form and the apps.
    ---
 
-   The newest changes to the intake form and the apps.
-
    ::changelog{limit=2}
    ```
 
@@ -82,15 +80,17 @@ An entry's day is the first of these that applies: `date:`, a day at the start o
    ::changelog{subject=booking}
    ```
 
+   These two are examples: the steps here make no `changelog/rota` folder, and `subject=booking` lists the entry of step 4.
+
    `folder` takes the entries under a folder, `subject` the entries that name it. Both together take the entries that match both.
 :::
 
 ## Deploy
 
 :::steps
-1. Check it: `volvel build`. The entries are listed as `doc handbook/changelog/…`.
+1. Check it: `volvel build`. The entries are listed as `doc handbook/changelog/…`. The page of step 4 draws two warnings, that the subjects `changelog` and `booking` are on no other page; they do not stop the build or the deploy.
 2. Deploy: `volvel deploy --tenant fernhill --workspace sandbox`.
-3. Open the site. For `/apps/fernhill/sandbox/handbook/whats-new/` the newest two entries come first, each with its date, and "1 older entry, from Reminder wording" below.
+3. Open the site. For `/apps/fernhill/sandbox/handbook/whats-new/` the newest two entries come first, New intake form (24 November 2026) and A new booking rule (18 November 2026), each with its date, and "2 older entries, from Rota swaps" below.
 :::
 
 ## The result
@@ -102,7 +102,7 @@ Every page of the deployed site has a link to the feed in its head, and the feed
 - **`volvel build` stops at a `date` line.** Write the day as `YYYY-MM-DD`, in plain text, and make sure it is a day on the calendar.
 - **An entry is dated the day it last changed.** Nothing else dated it: it has no `date:` and no day at the start or end of its name. A day in the middle of a name does not count.
 - **An entry comes first, with no date.** The page has no `date:`, no day in its name, and no last update; it counts as not released.
-- **The deploy says "A page uses a key that this instance may not know: the instance may be older than this CLI."** The instance does not know `date` yet. Upgrade the instance, or take `date:` out of the pages' top.
+- **The deploy says "A page uses a key that this instance may not know: the instance may be older than this CLI."** The instance does not know `date` yet. Upgrade the instance, or take `date:` out of the pages' top. (The message itself ends "take type, subjects and moved_from out of the pages' top": it does not name `date`.)
 - **`volvel dev` shows the entries but `changelog.xml` is not found.** The local site draws the changelog and links the feed. It does not serve `changelog.xml`: read it on the deployed site.
 - **A page you did not mean to list appears.** It names the subject `changelog`, or sits in a folder named `changelog`.
 - **The address of the `changelog/` folder says "There is no page here".** Only its entries are pages. Link to the page that holds `::changelog`.

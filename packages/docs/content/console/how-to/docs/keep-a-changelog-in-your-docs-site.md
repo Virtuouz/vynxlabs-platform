@@ -10,7 +10,7 @@ By the end your site lists its newest changes, each with its date, on a page of 
 
 ## Before you start
 
-- A dev workspace with a folder published as a site. See [Publish a folder as a site](publish-a-folder-as-a-site). The steps use a site in the folder `m5-news` of Fernhill's Sandbox, signed in as Maya Brooks. See [Set up the Fernhill example](../../../start/how-to/example/set-up-the-fernhill-example).
+- A dev workspace with a folder published as a site. See [Publish a folder as a site](publish-a-folder-as-a-site). The steps use a site in the folder `m5-news` of Fernhill's Sandbox, published at the address `m5-news`, signed in as Maya Brooks. See [Set up the Fernhill example](../../../start/how-to/example/set-up-the-fernhill-example).
 - `resource:write`, or `doc:write` alone, which a doc writer has. Pages are changed in a dev workspace only.
 
 ## Write the entries
@@ -20,8 +20,8 @@ By the end your site lists its newest changes, each with its date, on a page of 
 2. Type the title in **Page title**, for example `New intake form`. Under **Type** choose **Changelog entry**. Its hint reads "Goes in the site's changelog folder, named with today's date. A ::changelog on any page lists it."
 3. Look at **File name**. It starts with today's date, as in `2026-11-24-new-intake-form`. Press **Save**. The page is made under the site's `changelog/` folder (`m5-news/changelog/`), and the editor opens with a short outline: a sentence, **What is new** and **What to do**.
 4. Write what changed, and delete a heading you do not need. Press **Save draft**.
-5. To make an entry about a different day, open the tab **Page details** and fill **Date** with that day. It is written to the top of the page as `date: 2026-11-13`.
-6. Make a second entry the same way. To name the day in the file name instead, type the name yourself in the row, ending with the day: `reminder-wording-2026-10-30`.
+5. Make a second entry the same way, titled `Swaps in the rota app`. To date it by another day than today, open the tab **Page details** and fill **Date** with that day, `2026-11-13`. It is written to the top of the page as `date: 2026-11-13`, and the file name keeps today's date. Press **Save draft**.
+6. Make a third entry, titled `Reminder wording`. To name the day in the file name instead, type the name yourself in **File name**, ending with the day: `reminder-wording-2026-10-30`. Press **Save draft**.
 :::
 
 An entry's date is the first of these that applies: **Date**, a day that begins or ends the file name (`2026-11-24-…`, `…-2026-10-30`), and the day the page last changed.
@@ -44,7 +44,7 @@ An entry's date is the first of these that applies: **Date**, a day that begins 
 
 :::steps
 1. Press **Deploy N changes**, then **Deploy**. The notice says "The documentation is deployed."
-2. Open the site's page, `/apps/fernhill/sandbox/m5-news/what-s-new/`. The newest entry is first, with its date beside its title.
+2. Open the site's page, `/apps/fernhill/sandbox/m5-news/what-s-new/`, signed in as a member of the workspace (anyone else needs a binding: see [Publish a folder as a site](publish-a-folder-as-a-site)). The newest entry is first, with its date beside its title.
 :::
 
 ## The result

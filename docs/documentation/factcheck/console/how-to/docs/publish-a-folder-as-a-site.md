@@ -32,3 +32,7 @@ Lines are current at commit `661a2ceb`. Paths are under `packages/` unless state
 | Claim | Source (file:line) | Checked by | Result |
 | --- | --- | --- | --- |
 | Each page has **On this page**, **Previous**, **Next**. | docs-site/src/render.ts:543-556 | writer, run on 8097 | holds as written |
+
+## Phase 33, second check, 2026-11-24
+
+Checked by: second agent, 2026-11-24. The line "Each page has **On this page**, **Previous** and **Next**" read against `docs-site/src/render.ts:543-556` (the contents are drawn only when the page has a `##`/`###` heading; a page without one has none) and seen on a served site (the entries page has none). The publish steps were run again: the Address starts as `<folder>-site`, **Publish** says the folder will be a site once deployed, a site with no binding sends a request with no sign-in to the sign-in page. No correction.

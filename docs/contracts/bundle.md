@@ -21,6 +21,10 @@ A bundle is the unit of deploy: one workspace's manifests and its code, immutabl
 
 A file's `path` inside an app is made of parts separated by `/`. A part is letters, digits and `. _ @ ~ -`, and starts with a letter, a digit, or one `_` or `.` followed by one of those (so `_chunk.js` and `.well-known/assetlinks.json` are allowed; `.`, `..` and spaces are not). The path never starts with `_/`, which the platform keeps. A server that is not upgraded refuses a part that starts with `_` or `.`.
 
+## The files of a widget
+
+A `widget` manifest (a developer's widget, type `x/<name>`) lists its files in `assets` with `app` set to the widget's path, which is its type. A widget has exactly two files: `frame.html`, and one script named `view-<first eight characters of its SHA-256>.js` that the page loads, built from the widget's `entry` with React and `@volvel/widget-frame` inside it, no `import()` and nothing loaded from the network, at most 512 KB. A bundle with a widget is format 2 or later. The control plane stores each deployed version by type and version, keeps its files for as long as the version is kept, refuses to deploy a version again with other files, and serves them at `/_widgets/<tenant slug>/<type>@<version>/<file>` under `default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src data: blob:`. A page's widget of this kind records the `version` it was placed with, and a deploy is refused when a page's version is not deployed.
+
 ## The core range
 
 Every bundle says which cores run it, as `core: { min, below }`: the lowest core version it runs on, and the first it does not. A core older than `min` refuses it (the instance is behind). A core inside the range runs it. A core at or past `below` still runs it when `min` is no older than the oldest range that core supports (`bundleCompatibility` in `packages/manifest/src/bundle.ts`), which is what lets an instance be upgraded before every tenant rebuilds; for an older bundle it says the bundle is too old and must be built again.

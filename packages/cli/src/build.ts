@@ -33,6 +33,7 @@ import {
 import { build as esbuild } from "esbuild";
 import { type AppSource, type BuiltApps, buildApps, contentTypeOf } from "./apps.js";
 import { BuildError } from "./errors.js";
+import { buildWidgets, WidgetBuildFailure } from "./widget-build.js";
 
 export { BuildError };
 
@@ -319,6 +320,17 @@ export async function buildRepository(given: BuildOptions): Promise<Built> {
   const built: BuiltApps = given.withoutAppSources
     ? { assets: [], files: new Map() }
     : await buildApps(directory, apps);
+  // A widget's view is built into one script, and carried with its frame page like an app's files.
+  if (!given.withoutAppSources) {
+    try {
+      const views = await buildWidgets(directory, fromCode);
+      built.assets.push(...views.assets);
+      for (const [sha256, content] of views.files) built.files.set(sha256, content);
+    } catch (error) {
+      if (error instanceof WidgetBuildFailure) throw new BuildError(error.problems);
+      throw error;
+    }
+  }
   // A docs app's own files are the pictures kept beside its pages.
   const pictures = await docPictures(directory, docs, manifests);
   built.assets.push(...pictures.assets);
@@ -333,7 +345,9 @@ export async function buildRepository(given: BuildOptions): Promise<Built> {
   };
   // A repository without apps is still written as format 1, so that it keeps deploying
   // to an instance that has not been upgraded yet.
-  const unsigned = !manifests.some((manifest) => manifest.kind === "app")
+  const unsigned = !manifests.some(
+    (manifest) => manifest.kind === "app" || manifest.kind === "widget",
+  )
     ? { formatVersion: formatFor(1, common.manifests), ...common }
     : { formatVersion: formatFor(2, common.manifests), ...common, assets: built.assets };
   const assetProblems = given.withoutAppSources ? [] : checkBundleAssets(unsigned);

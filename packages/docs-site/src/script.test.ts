@@ -49,6 +49,7 @@ beforeEach(() => {
     removeEventListener() {},
   }));
   localStorage.clear();
+  delete document.documentElement.dataset.theme;
 });
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -296,5 +297,127 @@ describe("a site served as files", () => {
     expect(DOCS_SCRIPT).toContain('import(data.platform + "diagrams.js")');
     // And a site with a server keeps asking for it where it always did.
     expect(DOCS_SCRIPT).toContain('import("/_platform/diagrams.js")');
+  });
+});
+
+describe("a heading's anchor (phase 33)", () => {
+  const withHeading = () => {
+    document
+      .querySelector("main")
+      ?.insertAdjacentHTML(
+        "beforeend",
+        '<article class="vd-doc"><h2 id="refunds">Refunds<a class="anchor" href="#refunds" data-copy="#refunds" aria-label="Link to this section">#</a></h2></article>',
+      );
+  };
+  const clipboard = (writeText: (text: string) => Promise<void>) =>
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+
+  test("copies the heading's address and says so, and the link is not held back from going there", async () => {
+    vi.useFakeTimers();
+    const copied: string[] = [];
+    clipboard(async (text) => {
+      copied.push(text);
+    });
+    withHeading();
+    run();
+    const anchor = document.querySelector("a.anchor") as HTMLAnchorElement;
+    // Not hidden by the script: it is a link that works without it.
+    expect(anchor.hidden).toBe(false);
+    const click = new MouseEvent("click", { bubbles: true, cancelable: true });
+    anchor.dispatchEvent(click);
+    expect(click.defaultPrevented).toBe(false);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(copied).toHaveLength(1);
+    expect(copied[0]).toMatch(/#refunds$/);
+    expect(document.querySelector(".toast")?.textContent).toBe("Link copied");
+    expect(document.querySelector(".toast")?.getAttribute("role")).toBe("status");
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(document.querySelector(".toast")?.textContent).toBe("");
+  });
+
+  test("says when it could not copy", async () => {
+    vi.useFakeTimers();
+    clipboard(async () => {
+      throw new Error("denied");
+    });
+    withHeading();
+    run();
+    (document.querySelector("a.anchor") as HTMLElement).click();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(document.querySelector(".toast")?.textContent).toBe("Could not copy");
+  });
+});
+
+describe("the theme control (phase 33)", () => {
+  const control = () =>
+    document
+      .querySelector("main")
+      ?.insertAdjacentHTML(
+        "beforeend",
+        '<div class="themes" data-themes hidden><button type="button" data-theme-choice="system" aria-pressed="false">System</button><button type="button" data-theme-choice="light" aria-pressed="false">Light</button><button type="button" data-theme-choice="dark" aria-pressed="false">Dark</button></div>',
+      );
+  const pressed = () =>
+    [...document.querySelectorAll("[data-theme-choice]")]
+      .filter((one) => one.getAttribute("aria-pressed") === "true")
+      .map((one) => one.getAttribute("data-theme-choice"));
+  const press = (choice: string) =>
+    (document.querySelector(`[data-theme-choice="${choice}"]`) as HTMLElement).click();
+
+  test("is shown by the script, and begins on the system's", () => {
+    control();
+    expect(document.querySelector("[data-themes]")?.hasAttribute("hidden")).toBe(true);
+    run();
+    expect(document.querySelector("[data-themes]")?.hasAttribute("hidden")).toBe(false);
+    expect(pressed()).toEqual(["system"]);
+    expect(document.documentElement.dataset.theme).toBeUndefined();
+  });
+
+  test("a choice is put on the page and kept; the system's is the absence of one", () => {
+    control();
+    run();
+    press("dark");
+    expect(document.documentElement.dataset.theme).toBe("dark");
+    expect(localStorage.getItem("vd-theme")).toBe("dark");
+    expect(pressed()).toEqual(["dark"]);
+    press("light");
+    expect(document.documentElement.dataset.theme).toBe("light");
+    expect(pressed()).toEqual(["light"]);
+    press("system");
+    expect(document.documentElement.dataset.theme).toBeUndefined();
+    expect(localStorage.getItem("vd-theme")).toBeNull();
+    expect(pressed()).toEqual(["system"]);
+  });
+
+  test("a kept choice is shown as pressed after a reload", () => {
+    localStorage.setItem("vd-theme", "dark");
+    control();
+    run();
+    expect(pressed()).toEqual(["dark"]);
+    expect(document.documentElement.dataset.theme).toBe("dark");
+  });
+
+  test("on the product's pages it reads and writes the console's key, so the two stay in step", () => {
+    (document.getElementById("docs-data") as HTMLElement).textContent =
+      '{"base":"/","themeKey":"vx-pref:theme"}';
+    localStorage.setItem("vx-pref:theme", JSON.stringify("light"));
+    control();
+    run();
+    expect(pressed()).toEqual(["light"]);
+    press("dark");
+    expect(localStorage.getItem("vx-pref:theme")).toBe('"dark"');
+    expect(localStorage.getItem("vd-theme")).toBeNull();
+    press("system");
+    expect(localStorage.getItem("vx-pref:theme")).toBeNull();
+  });
+
+  test("a storage that refuses still changes this page", () => {
+    control();
+    run();
+    const spy = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new Error("denied");
+    });
+    press("dark");
+    spy.mockRestore();
+    expect(document.documentElement.dataset.theme).toBe("dark");
   });
 });

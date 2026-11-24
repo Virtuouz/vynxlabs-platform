@@ -22,9 +22,6 @@ import { access } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
 import { DEFAULT_PRODUCT_NAME } from "./branding.js";
 
-/** The reader's own choice of light or dark, as the console kept it, put on the page before it is drawn. */
-const THEME_SCRIPT = `try{var v=JSON.parse(localStorage.getItem("vx-pref:theme"));if(v==="light"||v==="dark")document.documentElement.dataset.theme=v}catch(e){}
-`;
 const RENDERED_KEPT = 300;
 const BASE = "/docs/";
 
@@ -135,7 +132,7 @@ export function productDocsRoutes(app: FastifyInstance, kernel: Kernel): void {
     const row = await branding();
     const name = row?.product_name ?? DEFAULT_PRODUCT_NAME;
     const revision = `${row?.updated_at?.toISOString() ?? ""}|${name}|${row?.logo_key ? "logo" : ""}`;
-    const renderer = `${docsAssetHref("", "css")}${docsAssetHref("", "js")}`;
+    const renderer = `${docsAssetHref("", "css")}${docsAssetHref("", "js")}${docsAssetHref("", "theme")}`;
     const tag = (...extra: string[]) =>
       tagOf([here.build, kernel.version, revision, renderer, sub, url.search, ...extra]);
 
@@ -160,13 +157,6 @@ export function productDocsRoutes(app: FastifyInstance, kernel: Kernel): void {
       return reply.send(file.body);
     }
 
-    if (sub === "_theme.js") {
-      const etag = tagOf(["theme-script", THEME_SCRIPT]);
-      if (matches(request, etag))
-        return headers(reply, "text/javascript; charset=utf-8", etag).code(304).send();
-      return headers(reply, "text/javascript; charset=utf-8", etag).send(THEME_SCRIPT);
-    }
-
     if (sub === "_theme.css") {
       const etag = tag();
       const type = "text/css; charset=utf-8";
@@ -187,7 +177,6 @@ export function productDocsRoutes(app: FastifyInstance, kernel: Kernel): void {
       base: BASE,
       look: {
         themeHref: `${BASE}_theme.css`,
-        scriptHref: `${BASE}_theme.js`,
         ...(row?.logo_key ? { logoHref: "/api/v1/instance/branding/logo" } : {}),
         iconsHref: "/api/v1/instance/branding/icons",
       },

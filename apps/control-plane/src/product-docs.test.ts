@@ -219,7 +219,6 @@ describe("the product's documentation at /docs", () => {
     // The values it did not set are the defaults, so the page needs no other stylesheet.
     expect(css.body).toContain("--vx-ink:");
     expect(css.body).toContain('data-theme="dark"');
-    expect((await get(t, "/docs/_theme.js")).body).toContain("vx-pref:theme");
   });
 
   test("search answers as a page and as JSON, and a word deep in a page finds it", async () => {
@@ -248,9 +247,21 @@ describe("the product's documentation at /docs", () => {
 
   test("a reader's own choice of look decides which shot a page shows, over the system's", async () => {
     // The console's choice is put on the page; the stylesheet shows the shot of that look.
-    const script = (await get(t, "/docs/_theme.js")).body;
-    expect(script).toContain("vx-pref:theme");
-    expect(script).toContain("dataset.theme");
+    // The platform's own before-paint script, the same file a tenant's site reads, and no script of /docs' own.
+    const page = (await get(t, "/docs/start/first")).body;
+    const href = /<script src="(\/_platform\/docs-theme\.[0-9a-f]{10}\.js)"><\/script>/.exec(
+      page,
+    )?.[1];
+    expect(href).toBeTruthy();
+    expect(page).not.toContain("_theme.js");
+    expect((await get(t, "/docs/_theme.js")).statusCode).toBe(404);
+    expect(page).toContain('"themeKey":"vx-pref:theme"');
+    expect(page.indexOf(href as string)).toBeLessThan(page.indexOf('rel="stylesheet"'));
+    const script = await get(t, href as string);
+    expect(script.statusCode).toBe(200);
+    expect(script.headers["cache-control"]).toContain("immutable");
+    expect(script.body).toContain("vx-pref:theme");
+    expect(script.body).toContain("dataset.theme");
   });
 
   test("the pictures and the screenshots are served from the build, and a screenshot never changes", async () => {

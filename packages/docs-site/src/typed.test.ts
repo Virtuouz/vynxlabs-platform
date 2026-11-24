@@ -53,7 +53,7 @@ const at: SiteView = {
   set: built.set,
 };
 const normal = (html: string) =>
-  html.replace(/\/_platform\/docs(\.[0-9a-f]{8,})?\.(css|js)/g, "/_platform/docs.$2");
+  html.replace(/\/_platform\/docs(-theme)?(\.[0-9a-f]{8,})?\.(css|js)/g, "/_platform/docs$1.$3");
 
 const cases: Record<string, () => string> = {
   "typed-collection-landing": () => docPage(at, "orders/index"),

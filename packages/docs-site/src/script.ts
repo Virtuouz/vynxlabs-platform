@@ -133,25 +133,83 @@ export const DOCS_SCRIPT = `${ENHANCE_SCRIPT}
   }
   if (location.hash === "#nav") history.replaceState(null, "", location.pathname + location.search);
 
-  // Copy as Markdown, and the page's address.
+  // A short word that says what happened, said for everyone: a note on the screen that a reader of it hears too.
+  let toast = null;
+  let toastTimer = 0;
+  const announce = (text) => {
+    if (!toast) { toast = make("p", { class: "toast", role: "status" }); document.body.append(toast); }
+    toast.textContent = text;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { toast.textContent = ""; }, 1800);
+  };
+
+  // Copy as Markdown, the page's address, and a heading's own address.
   for (const button of document.querySelectorAll("[data-copy]")) {
-    button.hidden = false;
+    const what = button.getAttribute("data-copy");
+    const anchor = what.charAt(0) === "#";
+    if (!anchor) button.hidden = false;
     const label = button.querySelector("span");
     const said = label ? label.textContent : "";
+    const tell = (words) => {
+      if (anchor) { announce(words); return; }
+      if (label) { label.textContent = words; setTimeout(() => { label.textContent = said; }, 1600); }
+    };
     button.addEventListener("click", async () => {
       try {
-        const what = button.getAttribute("data-copy");
-        const text = what === "link"
-          ? location.href.split("#")[0]
-          : await (await fetch(what, { credentials: "same-origin" })).text();
+        // The link itself goes to the heading; what is copied is the address it goes to.
+        const text = anchor
+          ? new URL(what, location.href).href
+          : what === "link"
+            ? location.href.split("#")[0]
+            : await (await fetch(what, { credentials: "same-origin" })).text();
         await navigator.clipboard.writeText(text);
-        if (label) { label.textContent = "Copied"; setTimeout(() => { label.textContent = said; }, 1600); }
+        tell(anchor ? "Link copied" : "Copied");
       } catch (_) {
         // The clipboard was refused, or the page could not be fetched: say so, for as long as "Copied" would show.
-        if (label) { label.textContent = "Could not copy"; setTimeout(() => { label.textContent = said; }, 1600); }
+        tell("Could not copy");
       }
     });
   }
+
+  // Light, dark or the system's: the choice is kept in this browser, where the page's first script reads it.
+  const themeKey = data.themeKey || "vd-theme";
+  const readChoice = () => {
+    try {
+      const raw = localStorage.getItem(themeKey);
+      const value = themeKey === "vd-theme" ? raw : JSON.parse(raw);
+      return value === "light" || value === "dark" ? value : "system";
+    } catch (_) { return "system"; }
+  };
+  const showChoice = () => {
+    const choice = readChoice();
+    if (choice === "system") delete document.documentElement.dataset.theme;
+    else document.documentElement.dataset.theme = choice;
+    for (const button of document.querySelectorAll("[data-theme-choice]")) {
+      button.setAttribute("aria-pressed", String(button.getAttribute("data-theme-choice") === choice));
+    }
+  };
+  for (const group of document.querySelectorAll("[data-themes]")) {
+    group.hidden = false;
+    for (const button of group.querySelectorAll("[data-theme-choice]")) {
+      button.addEventListener("click", () => {
+        const choice = button.getAttribute("data-theme-choice");
+        try {
+          if (choice === "system") localStorage.removeItem(themeKey);
+          else localStorage.setItem(themeKey, themeKey === "vd-theme" ? choice : JSON.stringify(choice));
+        } catch (_) {
+          // Storage is refused: the choice holds for this page only.
+        }
+        if (choice === "system") delete document.documentElement.dataset.theme;
+        else document.documentElement.dataset.theme = choice;
+        for (const other of document.querySelectorAll("[data-theme-choice]")) {
+          other.setAttribute("aria-pressed", String(other.getAttribute("data-theme-choice") === choice));
+        }
+      });
+    }
+  }
+  showChoice();
+  // Another tab of the site (or the console) changed it.
+  addEventListener("storage", (event) => { if (event.key === themeKey) showChoice(); });
 
   // What is on the page: the heading being read is marked, beside the page and over it.
   const tocLinks = [...document.querySelectorAll(".toc li a[href^='#'], .tocbar li a[href^='#']")];
@@ -166,7 +224,7 @@ export const DOCS_SCRIPT = `${ENHANCE_SCRIPT}
       const on = current && link.getAttribute("href") === "#" + current.id;
       if (on) link.setAttribute("aria-current", "true"); else link.removeAttribute("aria-current");
     }
-    if (now && current) now.textContent = current.textContent;
+    if (now && current) now.textContent = [...current.childNodes].filter((node) => !(node.classList && node.classList.contains("anchor"))).map((node) => node.textContent).join("");
     if (ring) {
       const max = document.documentElement.scrollHeight - innerHeight;
       ring.style.setProperty("--read", (max > 0 ? Math.min(100, Math.round((scrollY / max) * 100)) : 100) + "%");

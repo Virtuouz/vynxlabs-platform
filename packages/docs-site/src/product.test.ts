@@ -19,15 +19,14 @@ describe("what a host may add", () => {
     expect(page).not.toMatch(/<script src="\/docs\/_theme\.js"/);
   });
 
-  test("a version, and a script of the host's own, are drawn when given", () => {
-    const page = docPage(
-      { ...view, version: "1.2.3", look: { ...view.look, scriptHref: "/docs/_theme.js" } },
-      "index",
-    );
+  test("a version is drawn when given, and the choice of look is the platform's own script, read before the stylesheets", () => {
+    const page = docPage({ ...view, profile: "product", version: "1.2.3" }, "index");
     // The home page has no navigation: its foot says it.
     expect(page).toContain("Docs · Version 1.2.3");
-    expect(page).toContain('<script src="/docs/_theme.js"></script>');
-    expect(page.indexOf("_theme.js")).toBeLessThan(page.indexOf("/_platform/docs."));
+    expect(page).toMatch(/<script src="\/_platform\/docs-theme\.[0-9a-f]{10}\.js"><\/script>/);
+    expect(page.indexOf("docs-theme.")).toBeLessThan(page.indexOf('rel="stylesheet"'));
+    // The product's pages keep the choice where the console does.
+    expect(page).toContain('"themeKey":"vx-pref:theme"');
   });
 
   test("the product's policy takes https pictures and framing away from a docs app's", () => {

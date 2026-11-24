@@ -33,10 +33,13 @@ export const DOC_CSS = `
   letter-spacing: -0.01em;
   scroll-margin-top: var(--vd-scroll-margin, 5rem);
 }
-.vd-doc h1 { font-size: 1.75em; }
-.vd-doc h2 { font-size: 1.4em; }
-.vd-doc h3 { font-size: 1.15em; }
-.vd-doc h4, .vd-doc h5, .vd-doc h6 { font-size: 1em; }
+/* Each level is its own size, weight and spacing, in em of the page's body text: a site that grows its body grows its headings, and a small panel keeps the same steps. */
+.vd-doc h1 { font-size: 2.25em; }
+.vd-doc h2 { margin-top: 2em; padding-bottom: 0.3em; border-bottom: 1px solid var(--vd-line, #dcdcdc); font-size: 2em; font-weight: 700; letter-spacing: -0.02em; }
+.vd-doc h3 { margin-top: 1.8em; font-size: 1.6em; font-weight: 650; }
+.vd-doc h4 { margin-top: 1.6em; font-size: 1.3em; font-weight: 600; }
+.vd-doc h5 { margin-top: 1.5em; font-size: 1.1em; font-weight: 600; }
+.vd-doc h6 { margin-top: 1.5em; font-size: 1em; font-weight: 600; font-variant-caps: all-small-caps; letter-spacing: 0.06em; }
 .vd-doc p, .vd-doc ul, .vd-doc ol, .vd-doc blockquote, .vd-doc pre, .vd-doc figure { margin: 0 0 1em; }
 .vd-doc ul, .vd-doc ol { padding-left: 1.5em; }
 .vd-doc ul { list-style: disc; }

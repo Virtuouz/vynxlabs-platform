@@ -156,7 +156,7 @@ export async function* exportSite(options: ExportOptions): AsyncGenerator<Export
   const client = await searchClient();
   const clientName = `search.${digest(client)}.js`;
   const themeName = `theme.${digest(options.theme)}.css`;
-  for (const kind of ["css", "js"] as const) {
+  for (const kind of ["css", "js", "theme"] as const) {
     const name = docsAssetHref("", kind);
     const found = docsAsset(name);
     if (found) yield file(`_platform/${name}`, found.body);

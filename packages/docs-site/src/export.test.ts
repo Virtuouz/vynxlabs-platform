@@ -296,7 +296,15 @@ describe.each(BASES)("the export served from %s", (base) => {
   test("the platform's files are named by what is in them", () => {
     const css = docsAssetHref("", "css");
     expect(readFileSync(join(root, "_platform", css), "utf8")).toBe(docsAsset(css)?.body);
-    expect(written.filter((name) => name.startsWith("_platform/"))).toHaveLength(4);
+    // The theme script is a file of the export, named by its hash, and the page reads it from the same folder as its stylesheet.
+    const themeScript = docsAssetHref("", "theme");
+    expect(readFileSync(join(root, "_platform", themeScript), "utf8")).toBe(
+      docsAsset(themeScript)?.body,
+    );
+    const intro = readFileSync(join(root, "start/intro/index.html"), "utf8");
+    expect(intro).toContain(`<script src="${base}_platform/${themeScript}"></script>`);
+    expect(intro.indexOf(themeScript)).toBeLessThan(intro.indexOf('rel="stylesheet"'));
+    expect(written.filter((name) => name.startsWith("_platform/"))).toHaveLength(5);
     expect(written.some((name) => /^_platform\/theme\.[0-9a-f]{10}\.css$/.test(name))).toBe(true);
   });
 

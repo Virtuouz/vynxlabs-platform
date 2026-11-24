@@ -269,9 +269,11 @@ describe("a folder of pages served as a docs app", () => {
     expect(home.body).toContain("<title>Handbook · Shop handbook</title>");
     // A link is written from where its file is, and drawn as the app's own address.
     expect(home.body).toContain(`<a href="${HELP}support/refunds">refunds</a>`);
-    // The one script is the platform's own, served as a file. Nothing is written into the page
-    // but what the script reads, as data that is never run.
-    expect(home.body.match(/<script/g)).toHaveLength(2);
+    // The scripts are the platform's own, served as files: the one that sets light or dark before
+    // the page is painted, and the site's. Nothing is written into the page but what the script
+    // reads, as data that is never run.
+    expect(home.body.match(/<script/g)).toHaveLength(3);
+    expect(home.body).toMatch(/<script src="\/_platform\/docs-theme\.[0-9a-f]{10}\.js"><\/script>/);
     expect(home.body).toMatch(/<script src="\/_platform\/docs\.[0-9a-f]{10}\.js" defer><\/script>/);
     expect(home.body).toMatch(/<script type="application\/json" id="docs-data">\{"base":/);
     // The home page lists the collections, each with its first pages.
@@ -323,7 +325,9 @@ describe("a folder of pages served as a docs app", () => {
     expect(refunds).toContain("<title>Refund an order · Customer support · Shop handbook</title>");
     expect(refunds).toContain("<p>Full and partial refunds.</p>");
     // The page's own title is its first heading. What its author wrote as # comes under it.
-    expect(refunds).toContain('<h2 id="before-you-start">Before you start</h2>');
+    expect(refunds).toContain(
+      '<h2 id="before-you-start">Before you start<a class="anchor" href="#before-you-start" data-copy="#before-you-start" aria-label="Link to this section">#</a></h2>',
+    );
     // A term defined on this page says what it means. One defined elsewhere leads there too.
     expect(refunds).toMatch(
       /<button type="button" class="vd-term-word"[^>]*>RMA<\/button><span class="vd-term-tip"[^>]*>A return authorisation\.<\/span>/,

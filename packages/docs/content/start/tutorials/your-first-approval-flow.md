@@ -10,7 +10,7 @@ You will have a flow that waits for a person when an amount is over 100, a test 
 
 - You can sign in to the console as Maya Brooks, `maya.brooks@fernhill.example`, a tenant admin of Fernhill. Writing a flow needs `flow:write`, and testing it needs `flow_run:write`. A tenant admin has both. The seeded password is `fernhill-demo-2026`.
 - You can sign in as Rowan Ellis, `rowan.ellis@fernhill.example`, a member of the group Practice managers. Deciding an approval needs `approval:write`. You use a second browser window, or sign out and in again.
-- Fernhill is set up, and its Sandbox is a :term[dev workspace]{id=dev-workspace}. A test run does not need triggers resumed.
+- Fernhill is set up, and its Sandbox is a :term[dev workspace]{id=dev-workspace}. A test run does not need triggers resumed. See [Set up the Fernhill example](../../start/how-to/example/set-up-the-fernhill-example).
 - A browser at least as wide as a laptop screen.
 
 :::steps

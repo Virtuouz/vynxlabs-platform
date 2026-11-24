@@ -10,7 +10,7 @@ You will have a published app that lists Fernhill's invoices, opens one in a sid
 
 - You can sign in to the console as Maya Brooks, `maya.brooks@fernhill.example`, a tenant admin of Fernhill. The seeded password is `fernhill-demo-2026`, for everyone below too. Making and publishing an app needs `resource:write` and `deployment:write`.
 - You can sign in as Rowan Ellis, `rowan.ellis@fernhill.example`, who is in both Practice managers and Billing. A second browser window is the easiest way.
-- Fernhill is set up, and its Sandbox is a :term[dev workspace]{id=dev-workspace}, with its table `invoices` and the groups Practice managers and Billing. Maya is in Practice managers and not in Billing.
+- Fernhill is set up, and its Sandbox is a :term[dev workspace]{id=dev-workspace}, with its table `invoices` and the groups Practice managers and Billing. Maya is in Practice managers and not in Billing. See [Set up the Fernhill example](../../start/how-to/example/set-up-the-fernhill-example).
 - A browser at least as wide as a laptop screen. If you have not made an app before, do [your first app](../../start/tutorials/your-first-app) first.
 
 :::steps

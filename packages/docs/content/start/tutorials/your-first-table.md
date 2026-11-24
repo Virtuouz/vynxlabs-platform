@@ -9,7 +9,7 @@ You will have a table of visit notes in Fernhill's Sandbox workspace, with five 
 ## Before you start
 
 - You can sign in to the console as Maya Brooks, `maya.brooks@fernhill.example`, the tenant admin of Fernhill. The password on the seeded example is `fernhill-demo-2026`. Making and changing a table needs `resource:write`, which a tenant admin has. See [how tables work](../../console/explanation/how-tables-work) for the rest.
-- Fernhill is set up, with its Sandbox :term[workspace]{id=workspace}. The Sandbox is a :term[dev workspace]{id=dev-workspace}, so you can change it freely.
+- Fernhill is set up, with its Sandbox :term[workspace]{id=workspace}. The Sandbox is a :term[dev workspace]{id=dev-workspace}, so you can change it freely. See [Set up the Fernhill example](../../start/how-to/example/set-up-the-fernhill-example).
 - A browser at least as wide as a laptop screen. The steps name the controls as they are on a wide screen.
 
 :::steps

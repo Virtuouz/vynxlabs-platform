@@ -11,6 +11,7 @@ You will have a dev workspace and a production workspace linked to it, a script 
 - You can sign in to the console as an operator admin of the instance, who may make a tenant. The tenant's own admin, which you become by leaving **Make me a member, as tenant admin** checked, holds `deployment:write` and `promotion:write`. See [your first script](../../start/tutorials/your-first-script) for making a tenant.
 - The instance has a worker, as in that tutorial.
 - A browser at least as wide as a laptop screen, and a second browser window.
+- Fernhill is set up: see [Set up the Fernhill example](../../start/how-to/example/set-up-the-fernhill-example).
 
 :::steps
 1. **Make the tenant and the two workspaces.** On **Instance**, press **Create tenant**. Name it `Tut Ship` with the slug `tut-ship`, leave **Make me a member, as tenant admin** checked, and press **Create tenant**. In the tenant press **Create one** beside "No workspaces yet". Make a workspace with **Name** `Live`, **Slug** `live` and **Type** **Production**. Then press **Create workspace** again and make one with **Name** `Dev`, **Slug** `dev`, **Type** **Dev** and **Promotes to** **Live (production)**. The list reads `Dev`, **DEV**, **Live**, and `Live`, **PRODUCTION**.

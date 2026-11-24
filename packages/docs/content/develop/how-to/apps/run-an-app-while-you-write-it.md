@@ -14,6 +14,7 @@ By the end you will have each kind of app of a repository open in your browser o
 - A workspace to read and write: `--tenant` and `--workspace` name it. A dev workspace is the safe one. The command also works against a production workspace, and then the app changes its real data.
 - The repository's dependencies installed. An app of files is built with the repository's own Vite.
 - For an interface or a docs app, the tables and pages it names. For an interface, the tables have to be deployed to the workspace: the page reads their columns from the instance. [Write an app as code](write-an-app) deploys them.
+- Fernhill is set up: see [Set up the Fernhill example](../../../start/how-to/example/set-up-the-fernhill-example).
 
 ## Steps
 

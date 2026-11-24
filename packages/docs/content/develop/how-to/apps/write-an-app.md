@@ -14,6 +14,7 @@ By the end you will have an app in a tenant's repository that reads a table and 
 - A dev workspace to deploy to, and `bundle:write` there. A deploy stops before it uploads anything if it would delete console resources the repository has no file for, so use a workspace you can spare while you try this. A deploy also deletes what an earlier deploy of a repository made and this repository no longer defines, and it does not ask first: the output lists each as `deleted`, so deploy to a workspace whose other repository you do not need.
 - Node.js, and these in the repository's `package.json`: `@volvel/sdk`, `@volvel/app`, `@volvel/ui`, `react` and `react-dom` as dependencies, and `vite`, `@vitejs/plugin-react`, `@tailwindcss/vite` and `tailwindcss` as development dependencies. Without Vite the build stops and says to install it.
 - The table and the script the app uses. This page uses a table `visits` and a script `check-in`, which are in the first step.
+- Fernhill is set up: see [Set up the Fernhill example](../../../start/how-to/example/set-up-the-fernhill-example).
 
 ## Steps
 

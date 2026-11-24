@@ -13,6 +13,7 @@ By the end the apps a workspace serves will use your colors, your corner radii o
 - A tenant repository with a workspace, and the CLI signed in to the instance. Fernhill's repository (`examples/fernhill/src/apps.ts`) has a theme you can copy.
 - A theme changes how the workspace's apps look. It does not change the console, which has its own branding that an operator sets once for the instance. A tenant's own colors, logo and name are set under **Branding** on the tenant's page.
 - A workspace has one theme. A second is refused when the bundle is checked: "a workspace can have one theme, and "<path>" is already one."
+- Fernhill is set up: see [Set up the Fernhill example](../../../start/how-to/example/set-up-the-fernhill-example).
 
 ## Set the tokens
 

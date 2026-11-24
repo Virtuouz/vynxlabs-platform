@@ -5,6 +5,7 @@ type: how-to
 pages:
   - basics
   - configure
+  - example
 ---
 
 Doing one thing, from start to result.

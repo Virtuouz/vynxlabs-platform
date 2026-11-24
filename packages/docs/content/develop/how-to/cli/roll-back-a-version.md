@@ -12,6 +12,7 @@ By the end the workspace runs an earlier version of its code. A rollback is a de
 
 - You hold `deployment:write` and `bundle:read` in the workspace. The built-in `deployer` role holds both. See the [permissions reference](../../../administer/reference/permissions).
 - You know the number of the version to go back to. The console lists the versions of a workspace as **Versions** in a production workspace; `volvel runs <run id>` prints `bundle version N` for a run. A wrong number is answered with the numbers there are.
+- Fernhill is set up: see [Set up the Fernhill example](../../../start/how-to/example/set-up-the-fernhill-example).
 
 ## Roll back
 

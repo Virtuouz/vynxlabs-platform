@@ -13,6 +13,7 @@ By the end you will have given each clinic's group the rows of its own clinic, l
 - The table was made in the console and you hold `resource:write`, as in [Change a table's columns](table-definition). The **Who sees rows** section is on the table's **Definition** tab.
 - The rows say whose they are in a column. Here, a text column `clinic` holds the key of a clinic's end-user group (`northside`, `riverside`, `hilltop`) and a text column `client_code` holds a client's code. A group is named in a uuid column by its ID, or in a text column by its key.
 - To check the result you need `data_all:read` on the table, `end_user:read` to pick an end user, `end_user_group:read` to list groups of end users and `group:read` to list groups of members. A tenant admin has them. See the [permissions reference](../../../administer/reference/permissions).
+- Fernhill is set up: see [Set up the Fernhill example](../../../start/how-to/example/set-up-the-fernhill-example).
 
 The people in the example are Fernhill's: Jess Morgan is in the group `northside`, and George Lewis is a client whose attribute `client_id` is `C-1001`. A table of notes with `clinic` and `client_code` columns, as in this page, is made by the steps in [Change a table's columns](table-definition) and [Work with a table's rows](table-rows).
 

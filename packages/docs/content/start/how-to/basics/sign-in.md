@@ -13,6 +13,7 @@ By the end you are in the console, and you know how to leave it and what to do w
 - A member account on the instance. Nobody makes their own: an administrator adds you, and the instance has no sign-up. Without one, ask the administrator of your tenant, or an operator of the instance.
 - The instance's main address. Signing in works only there. An app has its own sign-in at its own address, which this page does not cover.
 - To try it on the seeded Fernhill example, use `maya.brooks@fernhill.example` and the password `fernhill-demo-2026`.
+- Fernhill is set up: see [Set up the Fernhill example](../../../start/how-to/example/set-up-the-fernhill-example).
 
 ## Sign in
 

@@ -10,7 +10,7 @@ You will have a page in Fernhill's rota guide that ends with "Was this page help
 
 - You can sign in to the console as Sam Reyes, `sam.reyes@fernhill.example`, a doc writer in Fernhill's Sandbox. The seeded password is `fernhill-demo-2026`. A doc writer writes documentation and deploys it, and only that.
 - You can sign in as Maya Brooks, `maya.brooks@fernhill.example`, in a second window, to read the answers: a tenant admin may read the table.
-- Fernhill is set up, with the sites **Fernhill rota guide** and **Fernhill supplies guide** in the Sandbox, both with page feedback off.
+- Fernhill is set up, with the sites **Fernhill rota guide** and **Fernhill supplies guide** in the Sandbox, both with page feedback off. See [Set up the Fernhill example](../../start/how-to/example/set-up-the-fernhill-example).
 - A browser at least as wide as a laptop screen.
 
 :::steps

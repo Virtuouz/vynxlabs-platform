@@ -13,6 +13,7 @@ You decide who sees which rows of a table from the groups people are in, or from
 - You need `resource:write` to change a table's rules, and `end_user:write` or `group:write` for the people.
 - The table has a column to match: for a group, a text column that holds the group's key; for an attribute, a column that holds the same value as the person's attribute.
 - Groups are read on every request, so putting someone in a group or taking them out takes effect at once.
+- Fernhill is set up: see [Set up the Fernhill example](../../../start/how-to/example/set-up-the-fernhill-example).
 
 :::steps
 1. Make the people: a group (see [Manage groups](manage-groups) or the **Groups** tab of **End users**), and for an attribute, give each end user the attribute (see [Invite end users](invite-end-users)), for example `client_id` with their code.

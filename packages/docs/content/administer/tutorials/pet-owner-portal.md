@@ -9,7 +9,7 @@ You will have a pet owner who signed in to Fernhill's portal on a phone-sized sc
 ## Before you start
 
 - You can sign in to the console as Maya Brooks, `maya.brooks@fernhill.example`, a tenant admin of Fernhill. The seeded password is `fernhill-demo-2026`. Inviting an end user and giving one attributes are tenant admin acts.
-- Fernhill is set up. Its app **My Fernhill account** is published in the Sandbox and in Clinics, and open to every end user, and the tables it reads, including `invoices`, have rules that match an end user's `client_id`. See the [rules a table keeps](../../console/explanation/how-tables-work) for what a rule is.
+- Fernhill is set up. Its app **My Fernhill account** is published in the Sandbox and in Clinics, and open to every end user, and the tables it reads, including `invoices`, have rules that match an end user's `client_id`. See the [rules a table keeps](../../console/explanation/how-tables-work) for what a rule is. See [Set up the Fernhill example](../../start/how-to/example/set-up-the-fernhill-example).
 - A browser, and a second window. The steps use a narrow window, 390 pixels wide, as a phone is. The console needs no mail server for this: the invitation link is shown on screen.
 
 :::steps

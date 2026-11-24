@@ -13,6 +13,7 @@ By the end you will have a connection that points at a system, holds its credent
 - You are signed in to the console and a dev workspace is open, such as Fernhill's **Sandbox**. Declaring a new connection needs `connection:write` and `resource:write`. A Developer and a Workspace admin have both. See [Who can change what in Configure](../../../administer/reference/configure/who-can-change-what).
 - You know the system's address and its credential. This page uses Fernhill's stand-in for its supplier: the address `http://127.0.0.1:4020`, the token `vs_demo_51be22`. Start it from `examples/fernhill` with `pnpm stand-ins`.
 - The workspace has a worker to run the test. An instance can start one for a workspace; if none starts, the test waits and then fails, see below.
+- Fernhill is set up: see [Set up the Fernhill example](../../../start/how-to/example/set-up-the-fernhill-example).
 
 A connection set up in a production workspace is different: a new one cannot be declared there. See "In a production workspace" below.
 

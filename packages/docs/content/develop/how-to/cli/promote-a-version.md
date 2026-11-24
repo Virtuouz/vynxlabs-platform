@@ -13,6 +13,7 @@ By the end the bundle that runs in a dev workspace is the active one in the work
 - The dev workspace is linked to the workspace it promotes to. The link is the **Promotes to** setting of the dev workspace, chosen when it was made. A workspace with no link answers `Could not promote cli-start-live. This workspace is not linked to another one. Link it to the workspace it promotes to first.`
 - You hold `promotion:write` in the workspace you promote **to**, and `deployment:read` in the one you promote from. The built-in `deployer` role holds both. See the [permissions reference](../../../administer/reference/permissions).
 - A version is active in the dev workspace: [deploy first](deploy-a-repository). `promote` acts on that active bundle, not on the files in your folder.
+- Fernhill is set up: see [Set up the Fernhill example](../../../start/how-to/example/set-up-the-fernhill-example).
 
 ## Promote
 

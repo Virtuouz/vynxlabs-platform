@@ -13,6 +13,7 @@ By the end the repository's resources are in a dev workspace as a new version, a
 - You are signed in and the repository builds: `volvel build` lists what it holds.
 - You hold `bundle:write` and `deployment:write` in the workspace, and `bundle:read`, `deployment:read` and `resource:read` to read what is there. The built-in `deployer` role holds `*:read`, `bundle:*` and `deployment:*`, which is all of that. See the [permissions reference](../../../administer/reference/permissions).
 - Deploying to a production workspace goes through the same command, with the stricter refusals under **If it does not work**. To move a version from dev to production, [promote it](promote-a-version).
+- Fernhill is set up: see [Set up the Fernhill example](../../../start/how-to/example/set-up-the-fernhill-example).
 
 ## Deploy
 

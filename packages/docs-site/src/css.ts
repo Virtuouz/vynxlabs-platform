@@ -7,8 +7,8 @@ import { DOC_CSS, DOC_DARK_CSS } from "@volvel/markup";
  */
 export const DOCS_CSS = `
 *, *::before, *::after { box-sizing: border-box; }
-/* Body text is 16px on a phone and grows with the window to 20px from about 1440px wide; the page's title, lead, contents and headings are steps of it. */
-html { scroll-behavior: smooth; --top: 0px; --body: clamp(1rem, 0.9rem + 0.45vw, 1.25rem); }
+/* Body text is 16px on a phone and grows with the window to 20px from about 1440px wide, whatever root size a tenant theme sets (the bounds are px, not rem); the page's title, lead, contents and headings are steps of it. */
+html { scroll-behavior: smooth; --top: 0px; --body: clamp(16px, 14.4px + 0.45vw, 20px); }
 body {
   margin: 0; background: var(--vx-canvas); color: var(--vx-ink); font-family: var(--vx-font);
   font-size: 16px; line-height: 1.5; -webkit-font-smoothing: antialiased;
@@ -65,9 +65,9 @@ kbd.key {
 }
 .iconbutton:hover { background: var(--vx-sunken); }
 /* The page and what is on it are one block, in the middle of the room beside the navigation. */
-.page { display: grid; grid-template-columns: minmax(0, 56rem); justify-content: center; align-content: start; }
+.page { display: grid; grid-template-columns: minmax(0, 896px); justify-content: center; align-content: start; }
 main { min-width: 0; padding: 20px 18px 64px; }
-.column { width: 100%; max-width: 56rem; margin: 0 auto; }
+.column { width: 100%; max-width: 896px; margin: 0 auto; }
 .toc { display: none; }
 
 /* On a phone, the navigation is a sheet that slides in from the right, where its button is, over the page: by its address without script, by a class with it. */
@@ -93,7 +93,7 @@ main { min-width: 0; padding: 20px 18px 64px; }
   main { padding: 48px 40px 96px; }
 }
 @media (min-width: 1280px) {
-  .page { grid-template-columns: minmax(0, 56rem) 220px; gap: 48px; padding: 0 32px; }
+  .page { grid-template-columns: minmax(0, 896px) 220px; gap: 48px; padding: 0 32px; }
   main { padding-left: 0; padding-right: 0; }
   .toc { display: block; position: sticky; top: 0; align-self: start; max-height: 100vh; overflow-y: auto; padding: 56px 0 24px; font-size: calc(var(--body) * 0.8125); }
   .tocbar { display: none; }
@@ -262,7 +262,7 @@ main { min-width: 0; padding: 20px 18px 64px; }
 .homebar .find { width: auto; margin-left: auto; }
 .homebar .find .grow { display: none; }
 @media (min-width: 820px) { .homebar nav { display: flex; } .homebar .find { width: 240px; } .homebar .find .grow { display: inline; } }
-.home { max-width: 56rem; margin: 0 auto; padding: 56px 18px 96px; }
+.home { max-width: 896px; margin: 0 auto; padding: 56px 18px 96px; }
 .pill { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border: 1px solid var(--vx-line); border-radius: 999px; font-size: 12px; color: var(--vx-ink-muted); }
 .pill::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--vx-action); }
 .home h1 { margin: 20px 0 12px; font-size: clamp(34px, 6vw, 48px); line-height: 1.05; letter-spacing: -0.03em; }
@@ -300,7 +300,7 @@ main { min-width: 0; padding: 20px 18px 64px; }
 .recent .what b { font-weight: 600; font-size: 15px; }
 .recent .what small, .recent .where, .recent time { color: var(--vx-ink-muted); font-size: 13px; }
 .sitefoot { border-top: 1px solid var(--vx-line); }
-.sitefoot p { max-width: 56rem; margin: 0 auto; padding: 24px 18px; font-size: 13px; color: var(--vx-ink-muted); }
+.sitefoot p { max-width: 896px; margin: 0 auto; padding: 24px 18px; font-size: 13px; color: var(--vx-ink-muted); }
 
 /* The search dialog, made by the script. */
 .finder { width: min(640px, calc(100vw - 24px)); max-height: min(560px, calc(100vh - 48px)); margin: 10vh auto auto; padding: 0; border: 1px solid var(--vx-line); border-radius: 14px; background: var(--vx-raised, var(--vx-surface)); color: var(--vx-ink); box-shadow: 0 24px 64px rgb(0 0 0 / 0.35); overflow: hidden; }

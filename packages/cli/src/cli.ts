@@ -148,7 +148,7 @@ export function refusal(reply: ApiReply, doing: string): CliError {
   );
   if (older || OLDER_INSTANCE.test(String(detail))) {
     lines.push(
-      "A page uses a key that this instance may not know: the instance may be older than this CLI. Upgrade the instance, or take type, subjects and moved_from out of the pages' top.",
+      "A page uses a key that this instance may not know: the instance may be older than this CLI. Upgrade the instance, or take type, subjects, moved_from and date out of the pages' top.",
     );
   }
   return new CliError(lines.join("\n"));

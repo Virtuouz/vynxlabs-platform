@@ -1,7 +1,7 @@
 import { buildDocSet, readPage } from "@volvel/docs-engine";
 import { DOC_CSS, parse, renderHtml } from "@volvel/markup";
 import { describe, expect, test } from "vitest";
-import { DOCS_CSS, docPage, type SiteView, THEME_SCRIPT } from "./index.js";
+import { DOCS_CSS, docPage, pageAt, type SiteView, THEME_SCRIPT } from "./index.js";
 
 /** Type that grows with the window, a heading for each level, anchors, a deeper contents list, and the theme script (phase 33). */
 
@@ -32,7 +32,8 @@ const view: SiteView = { title: "Docs", set, base: "/", look: { themeHref: "/the
 describe("body type and the heading scale", () => {
   test("body text is 16px on a phone and 20px from about 1440px wide, and reads at 1.65", () => {
     const clamp = /--body: clamp\(([^)]*)\)/.exec(DOCS_CSS)?.[1] ?? "";
-    expect(clamp).toBe("1rem, 0.9rem + 0.45vw, 1.25rem");
+    // In px: a tenant's theme may set the root size, and the body must not follow it.
+    expect(clamp).toBe("16px, 14.4px + 0.45vw, 20px");
     // The preferred value in px at a width: 16px is the floor, 20px the ceiling.
     const at = (width: number) => Math.min(20, Math.max(16, 0.9 * 16 + 0.0045 * width));
     expect(at(390)).toBeLessThan(16.2);
@@ -117,6 +118,23 @@ describe("On this page", () => {
     expect(page).not.toContain('class="deep"');
   });
 
+  test("a page that starts at ## or deeper is drawn from h2 and lists three levels from its top one", () => {
+    const text = "## Top\n\n### Mid\n\n#### Low\n\n##### Deeper\n";
+    const { set: deep } = buildDocSet([
+      readPage("index", "---\ntitle: Home\n---\n\nHello.\n").entry,
+      readPage("d", `---\ntitle: D\n---\n\n${text}`).entry,
+    ]);
+    const page = docPage({ ...view, set: deep }, "d");
+    expect(page).toContain('<h2 id="top">');
+    expect(page).toContain('<h3 id="mid">');
+    expect(page).toContain('<h4 id="low">');
+    expect(page).toContain('<h5 id="deeper">');
+    const ids = [...page.matchAll(/<li data-level="(\d)"><a href="#([a-z]+)">/g)].map(
+      (one) => `${one[1]}${one[2]}`,
+    );
+    expect(ids).toEqual(["1top", "2mid", "3low", "1top", "2mid", "3low"]);
+  });
+
   test("each level is indented a step more, in both lists", () => {
     expect(DOCS_CSS).toMatch(
       /\.toc li\[data-level="2"\] a, \.tocbar li\[data-level="2"\] a \{ padding-left: 26px; \}/,
@@ -181,5 +199,28 @@ describe("the theme script, run before the page paints", () => {
         expect(html).toContain(`data-theme-choice="${choice}" aria-pressed="false"`);
       }
     }
+  });
+});
+
+describe("a changelog folder with no page of its own", () => {
+  const { set: news } = buildDocSet([
+    readPage("index", "---\ntitle: Home\n---\n\nHello.\n").entry,
+    readPage("ref/changelog/2026-01-01-one", "---\ntitle: First\n---\n\nOne.\n").entry,
+    readPage("ref/changelog/2026-02-01-two", "---\ntitle: Second\n---\n\nTwo.\n").entry,
+  ]);
+  const own: SiteView = { ...view, set: news };
+
+  test("is answered with its entries, newest first, as ::changelog lists them", () => {
+    const path = pageAt(news, "ref/changelog");
+    expect(path).toBe("ref/changelog/index");
+    const page = docPage(own, path as string);
+    expect(page).toContain("<h1>Changelog</h1>");
+    expect(page.indexOf("Second")).toBeLessThan(page.indexOf("First"));
+    expect(page).not.toContain("There is no page here");
+  });
+
+  test("a folder of another name, or with no entries, is still not a page", () => {
+    expect(pageAt(news, "ref")).toBeUndefined();
+    expect(pageAt(news, "nothing/changelog")).toBeUndefined();
   });
 });

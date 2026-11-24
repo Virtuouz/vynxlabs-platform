@@ -14,13 +14,13 @@ export default function MarkdownBody({
   const tree = useMemo(() => parse(text), [text]);
   // What the host around it knows: a term's meaning, a field's description.
   const { term, field } = useMarkdownKnowledge();
-  // A page's text sits under its widget's title, so its level 2 is drawn as a level 3.
-  // A result sits inside a page that has its own headings: its own start two levels down.
+  // The text sits under its widget's title, or inside a page that has headings of its own: the
+  // highest heading it uses is drawn as a level 3.
   return (
     <Doc
       tree={tree}
       profile={profile}
-      headingShift={profile === "page" ? 1 : 2}
+      headingTop={3}
       {...(term ? { term } : {})}
       {...(field ? { field } : {})}
     />

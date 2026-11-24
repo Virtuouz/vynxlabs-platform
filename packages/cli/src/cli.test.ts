@@ -467,6 +467,8 @@ test("an instance from before page types refuses the key by name, and the CLI sa
     "deploy",
   );
   expect(dated.message).toContain("the instance may be older than this CLI");
+  // The advice names the key the instance refused.
+  expect(dated.message).toMatch(/take type, subjects, moved_from and date out/);
   const other = refusal(
     {
       status: 422,

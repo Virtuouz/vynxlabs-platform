@@ -43,6 +43,24 @@ test("::changelog in the editor's preview lists the entries of the page's own si
   expect(
     changelogFor(list, { path: "handbook/index" }, { folder: "changelog/archive" }, (to) => to),
   ).toEqual([]);
-  // A page of no site has none.
-  expect(changelogFor(list, { path: "stray/page" }, {}, (to) => to)).toEqual([]);
+  // A page of no site yet has its own folder's entries: the folder is the site it will be.
+  const unnamed = {
+    ...list,
+    pages: [
+      page("stray/index", "title: Stray"),
+      page("stray/changelog/2026-11-25-a", "title: A"),
+      page("handbook/changelog/old", "title: Old"),
+    ],
+  } as unknown as DocsList;
+  expect(
+    changelogFor(unnamed, { path: "unnamed/index" }, {}, (to) => to).map((one) => one.title),
+  ).toEqual([]);
+  expect(
+    changelogFor({ ...unnamed, apps: [] }, { path: "stray/index" }, {}, (to) => to).map((one) => [
+      one.title,
+      one.href,
+    ]),
+  ).toEqual([["A", "stray/changelog/2026-11-25-a"]]);
+  // A page at the top, in no folder, has none.
+  expect(changelogFor(list, { path: "page" }, {}, (to) => to)).toEqual([]);
 });

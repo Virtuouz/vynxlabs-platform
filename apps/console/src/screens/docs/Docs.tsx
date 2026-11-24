@@ -1747,7 +1747,7 @@ function Reader({
           <Doc
             tree={asDirectory(inApp(app, page.path), read.entry.tree)}
             profile="docs"
-            headingShift={2}
+            headingTop={2}
             productName={brand.productName}
             asServed
             folder={() => folderItems(rows, page, link)}

@@ -391,6 +391,16 @@ test("headings can be pushed down to sit under a page's own, and never past the 
   );
 });
 
+test("the highest heading a page uses is drawn at the level asked, the next one below it, none skipped", () => {
+  const top = (text: string, headingTop = 2) => renderHtml(parse(text), { headingTop });
+  expect(top("## A\n\n### B\n")).toBe('<h2 id="a">A</h2><h3 id="b">B</h3>');
+  expect(top("# A\n\n## B\n")).toBe('<h2 id="a">A</h2><h3 id="b">B</h3>');
+  // The generated reference starts at the fourth level and is drawn from the second.
+  expect(top("#### A\n\n##### B\n")).toBe('<h2 id="a">A</h2><h3 id="b">B</h3>');
+  expect(top("### A\n\n##### B\n")).toBe('<h2 id="a">A</h2><h4 id="b">B</h4>');
+  expect(top("## A\n", 3)).toBe('<h3 id="a">A</h3>');
+});
+
 test("the stylesheet styles only what is inside a page of documentation", () => {
   const selectors = DOC_CSS.replace(/\/\*[\s\S]*?\*\//g, "")
     .replace(/\{[^{}]*\}/g, "{}")

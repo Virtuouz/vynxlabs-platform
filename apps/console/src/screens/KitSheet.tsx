@@ -547,7 +547,7 @@ export function KitSheet() {
       <section className="flex flex-col gap-3">
         <SectionLabel>A page of documentation</SectionLabel>
         <Panel className="p-4">
-          <Doc tree={KIT_DOC} headingShift={2} />
+          <Doc tree={KIT_DOC} headingTop={3} />
         </Panel>
       </section>
 

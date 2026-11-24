@@ -12,11 +12,13 @@
 
 import {
   asDirectory,
+  CHANGELOG_NAME,
   type Collection,
   changelogOf,
   DOC_TYPE_LABELS,
   DOC_TYPE_PLURALS,
   DOC_TYPES,
+  type DocEntry,
   type DocSet,
   type DocType,
   type Folder,
@@ -28,11 +30,13 @@ import {
   type PageHit,
   type PageRef,
   pagesInOrder,
+  readPage,
   relatedTo,
   resolveAsset,
   resolveLink,
   type SearchHit,
   splitFrontmatter,
+  titleOf,
   trailOf,
   typeCardsOf,
   urlOf,
@@ -56,7 +60,24 @@ import { icon } from "./icons.js";
 /** The page an address under the app names: `support/refunds`, a folder for its index, or nothing for the home page. */
 export function pageAt(set: DocSet, address: string): string | undefined {
   const clean = address.replace(/\/+$/, "");
-  return [clean, clean === "" ? "index" : `${clean}/index`].find((path) => set.pages.has(path));
+  const found = [clean, clean === "" ? "index" : `${clean}/index`].find((path) =>
+    set.pages.has(path),
+  );
+  return found ?? (changelogIndexOf(set, `${clean}/index`) ? `${clean}/index` : undefined);
+}
+
+/**
+ * The page of a changelog folder that has no page of its own: the entries it holds, as `::changelog`
+ * lists them. It is drawn when asked for and is not a page of the set, so nothing is written or deployed.
+ */
+function changelogIndexOf(set: DocSet, path: string): DocEntry | undefined {
+  const folder = path.replace(/\/index$/, "");
+  if (folder === path || folder.split("/").at(-1) !== CHANGELOG_NAME) return undefined;
+  if (changelogOf(set, { folder }).length === 0) return undefined;
+  const title = titleOf(CHANGELOG_NAME);
+  return readPage(path, `---\ntitle: ${title}\n---\n\n::changelog{folder="${folder}" limit=50}\n`, {
+    profile: "docs",
+  }).entry;
 }
 
 /** The Markdown of a page, without what its top says of it, for "Copy as Markdown". */
@@ -353,14 +374,19 @@ ${data(at, { collection: options.collection?.id ?? "", ...(options.data ?? {}) }
 `;
 }
 
-/** The headings a page's contents list: those the author wrote as `#` to `###`, drawn as h2 to h4. `level` is 1 to 3. */
+/**
+ * The headings a page's contents list: the highest level the author used and the two below it, drawn
+ * as h2 to h4 (see `headingTop`). `level` is 1 to 3.
+ */
 function headingsOf(tree: Root): { id: string; text: string; level: number }[] {
-  const out: { id: string; text: string; level: number }[] = [];
+  const all: { id: string; text: string; depth: number }[] = [];
   for (const { node } of walk(tree)) {
-    if (node.type === "heading" && node.depth <= 3)
-      out.push({ id: node.id, text: plain(node), level: node.depth });
+    if (node.type === "heading") all.push({ id: node.id, text: plain(node), depth: node.depth });
   }
-  return out;
+  const top = Math.min(...all.map((one) => one.depth));
+  return all
+    .filter((one) => one.depth < top + 3)
+    .map((one) => ({ id: one.id, text: one.text, level: one.depth - top + 1 }));
 }
 
 /**
@@ -429,8 +455,8 @@ function draw(at: SiteView, path: string, tree: Root): string {
     ...(at.resolve?.screenshotDark ? { screenshotDark: at.resolve.screenshotDark } : {}),
     // Classes only, drawn here: no script and no policy to change.
     highlight: highlightCode,
-    // The page's title is its first heading. What the author wrote as `#` comes under it.
-    headingShift: 1,
+    // The page's title is the h1 drawn above it. The highest heading the author used is an h2.
+    headingTop: 2,
     folder,
     glossary,
     changelog,
@@ -520,7 +546,7 @@ function relatedBlock(at: SiteView, path: string): string {
 /** One page of the app, drawn. The home page is drawn as a home page. */
 export function docPage(at: SiteView, path: string): string {
   const { set } = at;
-  const entry = set.pages.get(path);
+  const entry = set.pages.get(path) ?? changelogIndexOf(set, path);
   if (!entry) return notFoundPage(at);
   if (path === "index") return homePage(at);
   const collection = collectionOf(set, path);

@@ -1,4 +1,5 @@
 import { imageKind, linkKind, type Node, TERM_RESOURCES, topicOf, walk } from "@volvel/markup";
+import { CHANGELOG_NAME, changelogDate, newestFirst } from "./changelog.js";
 import {
   DOC_TYPE_PLURALS,
   DOC_TYPE_SUMMARIES,
@@ -377,7 +378,24 @@ export function buildDocSet(
         }
       }
     }
-    return ordered(items, listed);
+    const sorted = ordered(items, listed);
+    // A changelog folder's pages that its index does not place run newest first, as `::changelog` lists them.
+    if (folder.split("/").at(-1) === CHANGELOG_NAME) {
+      const day = (item: PageRef | Folder) => {
+        const page = item.type === "page" ? pages.get(item.path) : undefined;
+        return page ? changelogDate(item.path, page)?.date : undefined;
+      };
+      const place = (item: PageRef | Folder) => (listed ?? []).indexOf(nameOf(item));
+      return sorted.sort((a, b) => {
+        const one = place(a) < 0 ? Number.POSITIVE_INFINITY : place(a);
+        const two = place(b) < 0 ? Number.POSITIVE_INFINITY : place(b);
+        if (one !== two) return one - two;
+        if ((a.type === "page") !== (b.type === "page")) return a.type === "page" ? -1 : 1;
+        if (a.type !== "page" || b.type !== "page") return 0;
+        return newestFirst({ path: a.path, date: day(a) }, { path: b.path, date: day(b) });
+      });
+    }
+    return sorted;
   };
   const folderAt = (path: string): Folder => {
     const name = path.split("/").at(-1) as string;

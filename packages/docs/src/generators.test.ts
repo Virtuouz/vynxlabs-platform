@@ -357,7 +357,9 @@ test("the changelog is one entry for each release and one for everything unrelea
   expect(unreleased).toContain("Second words with a file and [a site](https://example.com).");
   const release = files.get("changelog/0-5-0.md") ?? "";
   expect(release).toContain('title: "0.5.0"');
-  expect(release).toContain("which is not released yet");
+  // A version with no date is not said to be unreleased: only the Unreleased entry is.
+  expect(release).toContain('description: "What changed in 0.5.0."');
+  expect(release).not.toContain("not released");
   expect(release).toContain("\n## For operators");
   expect(files.get("changelog/0-1-0.md")).toContain('description: "What changed in 0.1.0."');
   // None of them says a date: CHANGELOG.md has none, and none is made up.

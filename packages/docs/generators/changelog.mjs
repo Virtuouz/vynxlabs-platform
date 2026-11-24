@@ -65,17 +65,15 @@ export function changelogFiles(source = readFileSync(CHANGELOG_FILE, "utf8")) {
       unreleased.push(`## ${capital(phase[1])}\n\n${unlinked(section.body)}`);
       continue;
     }
-    // "0.5.0, not yet released": the version is the title, and the words say what it is.
+    // "0.5.0, not yet released": the version is the title. Only the Unreleased entry says it is
+    // not released: a version with no known date shows its number and no date.
     const version = section.title.replace(/,.*$/, "").trim();
-    const unpublished = /not yet released/i.test(section.title);
     files.set(
       `${CHANGELOG_FOLDER}/${nameOf(version)}.md`,
       page(
         {
           title: version,
-          description: unpublished
-            ? `What changed in ${version}, which is not released yet.`
-            : `What changed in ${version}.`,
+          description: `What changed in ${version}.`,
         },
         raised(unlinked(section.body)),
       ),

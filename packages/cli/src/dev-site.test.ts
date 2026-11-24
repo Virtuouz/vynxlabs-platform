@@ -168,6 +168,42 @@ describe("volvel dev draws an interface and a docs app from their files", () => 
     }
   }, 60_000);
 
+  test("a docs app with a changelog answers the feed its pages link", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "tenant-"));
+    scratch.push(dir);
+    await mkdir(join(dir, "src"));
+    await mkdir(join(dir, "platform", "docs", "help", "changelog"), { recursive: true });
+    await mkdir(join(dir, "node_modules", "@volvel"), { recursive: true });
+    await symlink(
+      join(example("acme"), "node_modules", "@volvel", "sdk"),
+      join(dir, "node_modules", "@volvel", "sdk"),
+    );
+    await writeFile(join(dir, "package.json"), '{"type":"module"}');
+    await writeFile(
+      join(dir, "src", "index.ts"),
+      'import { defineApp } from "@volvel/sdk";\nexport const help = defineApp({ path: "help", title: "Help", docs: "help" });\n',
+    );
+    await writeFile(
+      join(dir, "platform", "docs", "help", "index.md"),
+      "---\ntitle: Help\n---\n\nWords.\n",
+    );
+    await writeFile(
+      join(dir, "platform", "docs", "help", "changelog", "2026-11-24-opened.md"),
+      "---\ntitle: We opened\n---\n\nSaturdays now.\n",
+    );
+    const dev = await startDevServer(options(dir, undefined));
+    try {
+      const page = await (await fetch(dev.url)).text();
+      expect(page).toContain('href="/changelog.xml"');
+      const feed = await fetch(`${dev.url}changelog.xml`);
+      expect(feed.status).toBe(200);
+      expect(feed.headers.get("content-type")).toContain("application/rss+xml");
+      expect(await feed.text()).toContain("<title>We opened</title>");
+    } finally {
+      await dev.close();
+    }
+  }, 60_000);
+
   test("an unknown app is refused with the apps there are, and no name with several asks for one", async () => {
     const unknown = await startDevServer(options(example("fernhill"), "nope")).catch((e) => e);
     expect(unknown).toBeInstanceOf(BuildError);

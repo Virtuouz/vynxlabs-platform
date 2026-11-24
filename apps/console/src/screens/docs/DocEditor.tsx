@@ -566,7 +566,7 @@ export function DocEditor({
                 <Doc
                   tree={asDirectory(inApp(app, where), checked.entry.tree)}
                   profile="docs"
-                  headingShift={1}
+                  headingTop={2}
                   productName={brand.productName}
                   asServed
                   lines

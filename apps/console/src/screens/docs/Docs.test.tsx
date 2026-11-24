@@ -1414,6 +1414,20 @@ describe("DOC-03 types and subjects in the docs editor", () => {
     await waitFor(() => expect(box.value).not.toContain("date:"));
   });
 
+  test("Page details lays the Date out as its neighbours are, and says what the place note is about", async () => {
+    typed();
+    editor("handbook/support/refunds");
+    await source();
+    const form = details();
+    const date = form.getByLabelText(/^Date/);
+    // As wide as its column, like Topic and Icon: no box of its own that is narrower.
+    expect(date.closest('[class*="max-w-"]')).toBeNull();
+    // The note about its place is labelled, and is not a bare line between two fields.
+    const note = form.getByText(/^Place among the others\./);
+    expect(note.parentElement?.tagName).toBe("P");
+    expect(form.queryByText(/^Its place among the others/)).toBeNull();
+  });
+
   test("a new page with no type chosen is only its title", async () => {
     docs();
     fireEvent.click(await screen.findByRole("button", { name: "More for Customer support" }));

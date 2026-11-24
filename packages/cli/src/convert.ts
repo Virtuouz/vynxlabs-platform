@@ -611,13 +611,16 @@ function dropSpecifiers(
         const [first = bare, last = first] = bare.split(/\s+as\s+/);
         return (kind === "import" ? last : first).trim();
       };
+      // A use is the name read as a value: not a member (`x.name`) or the key of an object (`{ name: 1 }`).
       const used = (name: string) =>
-        tokens.some(
-          (token) =>
-            token.type === "id" &&
-            token.text === name &&
-            (token.end <= link.start || token.start >= link.end),
-        );
+        tokens.some((token, at) => {
+          if (token.type !== "id" || token.text !== name) return false;
+          if (token.end > link.start && token.start < link.end) return false;
+          const before = tokens[at - 1]?.text;
+          const after = tokens[at + 1]?.text;
+          if (before === "." || before === "?.") return false;
+          return !(after === ":" && (before === "{" || before === ","));
+        });
       const kept = parts.filter(
         (part) => !names.has(local(part)) || (kind === "import" && !force && used(local(part))),
       );

@@ -122,7 +122,7 @@ export function Tenants({ me }: { me: Me }) {
                         label: "Your access",
                         value: member(row)
                           ? "A member"
-                          : "Not a member. Inside it you work through an operator access grant, which needs a reason",
+                          : "Not a member. Inside it you work through an operator access grant, which needs a reason.",
                       },
                       {
                         label: "Tables kept in",

@@ -237,7 +237,10 @@ test("tenants are found by name, and one opens in the inspector", async () => {
   await waitFor(() => expect(within(table).queryByText("Acme Corp")).toBeNull());
   fireEvent.click(await within(table).findByText("eu"));
   const inspector = await screen.findByRole("dialog");
-  expect(within(inspector).getByText(/operator access grant/)).toBeTruthy();
+  // A sentence ends with its full stop (round 5).
+  expect(within(inspector).getByText(/operator access grant/).textContent).toMatch(
+    /needs a reason\.$/,
+  );
   expect(within(inspector).getByRole("button", { name: "Delete" })).toBeTruthy();
 });
 

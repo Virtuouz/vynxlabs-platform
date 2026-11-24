@@ -32,6 +32,8 @@ export function keepPlace(opener: EventTarget | null): () => void {
     // What the action changed is drawn within the next frames: look again until the place is kept.
     let tries = 0;
     const again = () => {
+      // The page has gone (a tab closed, a test finished) before the action ended: nothing to keep.
+      if (typeof document === "undefined") return;
       tries += 1;
       if (settle() && tries > 1) return;
       if (tries < 6) setTimeout(again, 40);

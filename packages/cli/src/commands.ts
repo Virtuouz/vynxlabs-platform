@@ -70,6 +70,12 @@ export const COMMANDS = [
 
   entry("init", REPOSITORY, "init [directory]", "Write a starter repository."),
   entry(
+    "widget",
+    REPOSITORY,
+    "widget new <name>",
+    "Add a widget of your own to the repository: its definition (x/<name>), a view drawn with @volvel/widget-frame and a fixture of sample data, exported from the entry file.",
+  ),
+  entry(
     "build",
     REPOSITORY,
     "build [--entry <file>] [--resources <folder>]",

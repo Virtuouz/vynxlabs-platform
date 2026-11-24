@@ -181,3 +181,13 @@ export function validateJson(schema: object, value: unknown, prefix = ""): Manif
   }
   return validate(value) ? [] : toIssues(validate.errors, prefix);
 }
+
+/** Why a value is not a JSON Schema (draft 2020-12), in Ajv's words; nothing when it is one. */
+export function jsonSchemaProblem(schema: unknown): string | undefined {
+  try {
+    schemaValidator.compile(schema as object);
+    return undefined;
+  } catch (error) {
+    return (error as Error).message.replace(/^schema is invalid: /, "");
+  }
+}

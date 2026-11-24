@@ -5,6 +5,9 @@ import type * as Kinds from "./generated/kinds.js";
 import type { ColumnSpec, InsertOf, RowOf } from "./tables.js";
 
 export * from "@volvel/widgets";
+
+import { tenantDefinitionProblems, type WidgetDefinition } from "@volvel/widgets";
+
 export type {
   DashboardBody,
   DataInput,
@@ -102,6 +105,7 @@ export interface AuthoredManifest {
 }
 
 const RESOURCE = "__volvelResource";
+const WIDGET_ENTRY = /^[A-Za-z0-9_@.-]+(\/[A-Za-z0-9_@.-]+)*$/;
 
 /** Something a tenant repository exports for the build to pick up. */
 export interface ResourceDefinition {
@@ -1239,6 +1243,62 @@ export interface DashboardOptions extends Omit<ResourceNames, "title">, Dashboar
  */
 export function defineDashboard(options: DashboardOptions): ResourceDefinition {
   return resource("dashboard", named(options), () => compact(bodyOf(options, { title: true })), 3);
+}
+
+/** What `defineWidget` takes: the widget's declaration (what "Add to page" and the inspector are drawn from) and the file of its view. */
+export type WidgetOptions = WidgetDefinition & {
+  /** The file in the repository that is the view, for example `widgets/goal/view.tsx`: a module that draws with `@volvel/widget-frame`. Relative to the repository root. */
+  entry: string;
+  /** Keep the widget's identity when its type changes. Leave it out. */
+  key?: string;
+};
+
+/** A widget made with `defineWidget`. */
+export interface WidgetResource<D extends WidgetOptions = WidgetOptions>
+  extends ResourceDefinition {
+  readonly kind: "widget";
+  /** What was declared. */
+  readonly definition: D;
+}
+
+/**
+ * Declares a widget of your own, for pages and dashboards: its type (`x/<name>`), the data it
+ * reads, its settings (a JSON Schema with an `x-volvel` hint on each, from which the inspector
+ * is drawn), the events it raises, and the file of its view. The view runs in a sandboxed frame
+ * with no network and is given only what the platform read for it under the viewer's permissions.
+ * Throws when the declaration is wrong, so `volvel build` says so before anything is deployed.
+ * Scaffold one with `volvel widget new <name>`.
+ */
+export function defineWidget<const D extends WidgetOptions>(options: D): WidgetResource<D> {
+  const { entry: _entry, key: _key, ...declared } = options;
+  const problems = tenantDefinitionProblems(declared as WidgetDefinition);
+  if (!WIDGET_ENTRY.test(options.entry) || /(^|\/)\.\.(\/|$)/.test(options.entry)) {
+    problems.push(`${options.type}: entry "${options.entry}" is not a file inside the repository`);
+  }
+  if (problems.length > 0) throw new Error(problems.join("\n"));
+  const made = resource(
+    "widget",
+    { path: options.type, ...(options.key !== undefined ? { key: options.key } : {}) },
+    () =>
+      compact({
+        type: declared.type,
+        version: declared.version,
+        title: declared.title,
+        description: declared.description,
+        category: declared.category,
+        icon: declared.icon,
+        surfaces: declared.surfaces,
+        data: declared.data,
+        dataHints: declared.dataHints,
+        config: declared.config,
+        words: declared.words,
+        defaults: declared.defaults,
+        events: declared.events,
+        layout: declared.layout,
+        entry: options.entry,
+      }),
+  );
+  return { ...made, kind: "widget", definition: options };
 }
 
 /** What `defineRole` takes: the role's path, the name bindings refer to and the permissions it holds. */

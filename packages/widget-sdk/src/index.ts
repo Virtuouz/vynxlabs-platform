@@ -86,6 +86,11 @@ export interface EventDeclaration {
   gives: EventGives;
   /** Said in the Actions tab: "When a row is clicked". */
   label: string;
+  /**
+   * For a developer's widget: a JSON Schema for what its frame sends with the event. The host
+   * checks the payload against it and drops what does not fit. Left out: the shape `gives` names.
+   */
+  payload?: Readonly<Record<string, unknown>>;
 }
 
 /** Sizes in the page's grid: twelve columns, rows of 40 pixels. */
@@ -324,6 +329,24 @@ export function definitionProblems(definition: WidgetDefinition): string[] {
   for (const hints of definition.dataHints ?? []) {
     if (!(hints.of in definition.data))
       say(`data hints for "${hints.of}", which it doesn't declare`);
+  }
+  return problems;
+}
+
+/** The pack every developer's widget is in, in the tenant's own namespace: `x/<name>`. `core` and `labs` are Volvel's. */
+export const TENANT_PACK = "x";
+
+/**
+ * What is wrong with a definition of a developer's widget: everything `definitionProblems`
+ * finds, and a type outside the tenant's namespace. A tenant cannot make a widget of the
+ * platform's packs, nor of any other name that could be taken for one.
+ */
+export function tenantDefinitionProblems(definition: WidgetDefinition): string[] {
+  const problems = definitionProblems(definition);
+  if (WidgetRegistry.packOf(definition.type) !== TENANT_PACK) {
+    problems.unshift(
+      `${definition.type}: a widget of your own is "${TENANT_PACK}/<name>". The other packs are Volvel's.`,
+    );
   }
   return problems;
 }

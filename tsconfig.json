@@ -8,6 +8,9 @@
       "path": "packages/widget-sdk"
     },
     {
+      "path": "packages/widget-frame"
+    },
+    {
       "path": "packages/widgets-core"
     },
     {

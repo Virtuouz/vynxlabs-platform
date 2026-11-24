@@ -25,7 +25,7 @@ By the end the instance holds a tenant called Fernhill Veterinary Group, with it
    pnpm stand-ins
    ```
 
-   It prints "Fernhill's outside systems on http://127.0.0.1:4020/". These are stand-ins for the SMS service TextLine, the supplier VetSupply and the payment service PayFern. Leave it running: some of the tutorials send a text and read it there. The script looks for them at `http://127.0.0.1:4020`. If port 4020 is taken, choose another with `PORT`, for example `PORT=4021 pnpm stand-ins`, and set `STAND_INS=http://127.0.0.1:4021` in the next step. If the stand-ins of an earlier run already answer on 4020, you can use those.
+   It prints "Fernhill's outside systems on http://127.0.0.1:4020/". These are stand-ins for the SMS service TextLine, the supplier VetSupply and the payment service PayFern. Leave it running: some of the tutorials send a text and read it there. The script looks for them at `http://127.0.0.1:4020`. If port 4020 is taken, the command stops with `Error: listen EADDRINUSE: address already in use 127.0.0.1:4020`. Choose another with `PORT`, for example `PORT=4021 pnpm stand-ins`, and set `STAND_INS=http://127.0.0.1:4021` in the next step. If the stand-ins of an earlier run already answer on 4020, you can use those.
 
 2. **Run the script.** In a second terminal, from `examples/fernhill`, run:
 
@@ -38,7 +38,7 @@ By the end the instance holds a tenant called Fernhill Veterinary Group, with it
 
    `VOLVEL_URL` is your instance's address. Without it the script uses `http://localhost:8080`. It prints a line beginning with ▸ for each part and ends with "Done. Sign-ins and addresses are in" and the path of `.platform/demo.json`.
 
-3. **Sign in to the console as Maya Brooks.** Open the instance's address. Type `maya.brooks@fernhill.example`, press **Continue**, type the password `fernhill-demo-2026` and press **Sign in**. The console opens on **Tenants**, which lists **Fernhill Veterinary Group**, slug `fernhill`, with 2 workspaces. Open it, then **Workspaces** in the menu beside it: the list shows **Clinics**, a production workspace, and **Sandbox**, a dev workspace that promotes to Clinics. The tenant's **Members & access** shows 65.
+3. **Sign in to the console as Maya Brooks.** Open the instance's address. Type `maya.brooks@fernhill.example`, press **Continue**, type the password `fernhill-demo-2026` and press **Sign in**. The console opens on **Tenants**, which lists **Fernhill Veterinary Group**, slug `fernhill`, with 2 workspaces. Open it, then **Workspaces** in the menu beside it (on a phone, press **Open the menu** first): the list shows **Clinics**, a production workspace, and **Sandbox**, a dev workspace that promotes to Clinics. The tenant's **Members & access** shows 65.
 
 4. **See an app and the portal.** Open `/portal/fernhill/` on the instance's address. The portal says **Apps** and lists the apps that Maya may open: **Fernhill handbook**, **My Fernhill account**, **Clinic operations** and **Clinic performance**. Open **Clinic performance**: it shows money, visits and stock for the three clinics. The front desk and pet portal apps are for end users: sign in as Jess Morgan or George Lewis to see them.
 :::

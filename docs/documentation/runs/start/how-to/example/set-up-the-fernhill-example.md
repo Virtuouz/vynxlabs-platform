@@ -33,3 +33,10 @@
 - A Compose instance; the real default `http://localhost:8080`.
 - The instance as a user that may switch workers' users.
 - A second agent's check of the fact-check record.
+
+## Second agent's run (2026-11-24)
+- Fresh database, instance on port 8096 (`MANAGED_WORKER_USER=same`), the owner's demo.json backed up and restored. Port 4020 was taken: `pnpm stand-ins` stopped with `EADDRINUSE` (the page now says so); `PORT=4021 pnpm stand-ins` and `STAND_INS=http://127.0.0.1:4021` worked. The script printed 16 ▸ parts and the Done line in 39.6 s.
+- Browser (headless Chromium, 1440 and 390, light and dark, reload): two-step sign-in, Tenants lists Fernhill (slug fernhill, 2 workspaces); the tenant's Workspaces lists Clinics (production) and Sandbox (dev, promotes to Clinics); 65 members; the portal lists the four apps; Clinic performance shows Money, Visits, Stock and $191,482.00 invoiced. At 390 the menu is behind **Open the menu**: added to the page.
+- What's new: served at /docs/start/reference/whats-new shows Unreleased, 0.5.0, 0.4.0 and "3 older entries". The feed is at /docs/changelog.xml, not beside the page (404 at .../reference/changelog.xml): page corrected.
+- Not run: 768 px, keyboard-only.
+

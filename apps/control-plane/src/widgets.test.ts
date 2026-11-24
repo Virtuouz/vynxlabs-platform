@@ -114,8 +114,8 @@ const widgets = async () => (await alice.get(`${ws()}/widgets`)).body.items as A
 const get = (host: string, url: string, headers: Record<string, string> = {}) =>
   t.app.inject({ method: "GET", url, headers: { host, ...headers } });
 
-beforeAll(async () => {
-  t = await startTestApp({ config: { appsUrl: `http://${APPS}` } });
+async function start(config: Parameters<typeof startTestApp>[0] = {}) {
+  t = await startTestApp(config);
   const roles = Object.fromEntries(
     (
       await t.db.selectFrom("role").select(["id", "name"]).where("builtin", "=", true).execute()
@@ -145,7 +145,9 @@ beforeAll(async () => {
       type: "production",
     })
   ).body.id;
-});
+}
+
+beforeAll(() => start({ config: { appsUrl: `http://${APPS}` } }));
 
 afterAll(async () => {
   await t?.stop();
@@ -354,7 +356,7 @@ describe("the files of a widget, served for its frame", () => {
       expect(response.rawPayload.equals(content)).toBe(true);
       expect(String(response.headers["content-type"])).toContain(type);
       expect(response.headers["content-security-policy"]).toBe(
-        "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src data: blob:",
+        "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src data: blob:; sandbox allow-scripts",
       );
       expect(response.headers["content-security-policy"]).toBe(WIDGET_POLICY);
       expect(response.headers["cache-control"]).toBe("public, max-age=31536000, immutable");
@@ -408,6 +410,23 @@ describe("the files of a widget, served for its frame", () => {
     const response = await get(APPS, "/_widgets/acme/x/goal@3.0.0/frame.html");
     expect(response.statusCode).toBe(200);
     expect(response.rawPayload.equals(framePage)).toBe(true);
+  });
+});
+
+describe("an instance with no address for apps", () => {
+  beforeAll(async () => {
+    await t.stop();
+    await start({ config: { appsOnConsoleAddress: false } });
+  });
+
+  test("serves a widget's frame at the console's own, which runs it with no origin", async () => {
+    expect((await deploy({ version: "1.0.0" })).status).toBe(201);
+    const response = await get(MAIN, "/_widgets/acme/x/goal@1.0.0/frame.html");
+    expect(response.statusCode).toBe(200);
+    // Opened on its own, the page is still sandboxed: it never has this address's cookies.
+    expect(response.headers["content-security-policy"]).toBe(WIDGET_POLICY);
+    expect(String(response.headers["content-security-policy"])).toContain("sandbox allow-scripts");
+    expect(response.headers["set-cookie"]).toBeUndefined();
   });
 });
 

@@ -1589,11 +1589,10 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
     // frame loads. Nothing here reads or sets a cookie, and nothing depends on who asks.
     if (path.startsWith("/_widgets/")) {
       if (!isPage) return plain(reply, 405, "Method not allowed.");
-      if (!kernel.hosts.runsCodeApps(place)) {
-        if (place.kind === "main" && kernel.hosts.hasAppsAddress) {
-          return redirect(reply, `${kernel.hosts.appsOrigin}${path}${url.search}`, 307);
-        }
-        return plain(reply, 404, "Not found.");
+      // With a second address the frames come from it, as apps do. Without one they come from the
+      // console's: the policy sandboxes the page, so it holds no cookie wherever it is opened.
+      if (place.kind === "main" && kernel.hosts.hasAppsAddress) {
+        return redirect(reply, `${kernel.hosts.appsOrigin}${path}${url.search}`, 307);
       }
       return serveWidgetFile(request, reply, place, path);
     }

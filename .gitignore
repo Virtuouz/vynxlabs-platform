@@ -157,7 +157,7 @@ dist/
 
 # Browser test output
 e2e/results
-e2e/results-alone
+e2e-results/
 packages/docs/generated/
 packages/docs/assets/screenshots/
 deploy/worker/worker-token

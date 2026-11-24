@@ -166,6 +166,7 @@ jobs:
             -e AUTH_SECRET="$(openssl rand -hex 32)" -e MASTER_KEY="$(openssl rand -base64 32)" \
             -e BOOTSTRAP_ADMIN_EMAIL=admin@example.com -e BOOTSTRAP_ADMIN_PASSWORD=change-me-please \
             -e MANAGED_WORKERS=process -e MANAGED_WORKER_USER=same \
+            -e RUN_MEMORY_FLOOR_MB=512 \
             -e EGRESS_ALLOW=127.0.0.0/8,::1,localhost \
             -e MAIL_CAPTURE_DIR=/mail -v /tmp/vx-mail:/mail \
             volvel/volvel:e2e

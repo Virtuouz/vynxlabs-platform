@@ -27,10 +27,14 @@ const go = (phase, env = {}) =>
   });
 
 const second = process.env.E2E_ALONE_URL;
+// Side by side, each go writes outside the folder Playwright searches for specs: a go empties its
+// output folder when it starts, and the other go, still listing its specs, would find a folder
+// gone from under it.
+const mainEnv = second ? { E2E_OUTPUT: "../e2e-results/main" } : {};
 const aloneEnv = second
   ? {
       E2E_URL: second,
-      E2E_OUTPUT: "results-alone",
+      E2E_OUTPUT: "../e2e-results/alone",
       ...(process.env.E2E_ALONE_SOURCE_URL
         ? { E2E_SOURCE_URL: process.env.E2E_ALONE_SOURCE_URL }
         : {}),
@@ -40,7 +44,7 @@ const aloneEnv = second
 let main;
 let alone;
 if (second && !listing) {
-  [main, alone] = await Promise.all([go("main"), go("alone", aloneEnv)]);
+  [main, alone] = await Promise.all([go("main", mainEnv), go("alone", aloneEnv)]);
 } else {
   main = await go("main");
   alone = listing ? 0 : await go("alone", aloneEnv);

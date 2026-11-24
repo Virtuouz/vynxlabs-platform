@@ -214,3 +214,21 @@ describe("the write path", () => {
     expect(t.unaudited).toEqual([]);
   });
 });
+
+describe("a binding in an uploaded bundle", () => {
+  const binding = (role: string): BundleManifest => ({
+    kind: "binding",
+    schemaVersion: 1,
+    path: "bindings/who",
+    ownership: "ui",
+    body: { principal: { type: "group", key: "tech-desk" }, role },
+  });
+  test("is refused when it names a role the tenant does not have, and passes for a built-in one", async () => {
+    const id = await workspace();
+    const unknown = await alice.post(`${ws(id)}/bundles`, bundleOf([binding("no_such_role")]));
+    expect(unknown.status, JSON.stringify(unknown.body)).toBe(400);
+    expect(JSON.stringify(unknown.body)).toContain("no_such_role");
+    const known = await alice.post(`${ws(id)}/bundles`, bundleOf([binding("viewer")]));
+    expect(known.status, JSON.stringify(known.body)).toBeLessThan(300);
+  });
+});

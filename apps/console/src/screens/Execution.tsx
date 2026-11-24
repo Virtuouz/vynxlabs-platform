@@ -22,6 +22,7 @@ import { ErrorState, Loading } from "../kit/LoadState.tsx";
 import { FilterChips, Inspector, KeyValues } from "../kit/layout.tsx";
 import { OneTimeSecret } from "../kit/OneTimeSecret.tsx";
 import { consoleLink, ObjectLink } from "../kit/objects.tsx";
+import { ownershipWord } from "../kit/ownership.ts";
 import { UsedBy, useReferences, usersOf } from "../kit/references.tsx";
 import { mayPass, retryAfter } from "../kit/retry.ts";
 import { STARTED_BY } from "../kit/starts.ts";
@@ -375,7 +376,7 @@ export function Scripts({
                   { label: "Retries", value: String(open.retries), mono: true },
                   {
                     label: "Managed in",
-                    value: open.ownership === "ui" ? "The console" : "The repository",
+                    value: ownershipWord(open.ownership),
                   },
                 ]}
               />

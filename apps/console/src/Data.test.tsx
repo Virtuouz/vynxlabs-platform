@@ -125,9 +125,7 @@ test("a table's rows are browsed with sorting, filters and paging", async () => 
   show(<TableView root={root} name="orders" link="/t/t1/workspaces/w1" />);
   await screen.findByText("A-1");
   expect(
-    screen.getByText(
-      /2 rows\. Each person sees their own rows \(owner_id\)\. Managed in the repository\./,
-    ),
+    screen.getByText(/2 rows\. Each person sees their own rows \(owner_id\)\. Managed as code\./),
   ).toBeTruthy();
   expect(screen.getByText(/^2 rows on this page/)).toBeTruthy();
 
@@ -1294,8 +1292,8 @@ test("WLK-09b: a retired table keeps its pill whole and says where it was manage
   const pill = (await screen.findAllByText("Retired"))[0] as HTMLElement;
   expect(pill.closest("span.shrink-0")).toBeTruthy();
   // Each says where it is managed, or where it was.
-  expect(screen.getAllByText("Repository")).toHaveLength(2);
-  expect(screen.getAllByText("Console")).toHaveLength(1);
+  expect(screen.getAllByText("Code")).toHaveLength(2);
+  expect(screen.getAllByText("Files")).toHaveLength(1);
   cleanup();
   history.replaceState(null, "", "/?id=id-2");
   routes[`GET /api/v1${root}/tables/orders`] = () => [
@@ -1304,7 +1302,7 @@ test("WLK-09b: a retired table keeps its pill whole and says where it was manage
   ];
   show(<TableView root={root} name="orders" link="/t/t1/workspaces/w1" />);
   await screen.findByText(/This table is retired/);
-  expect(screen.queryByText(/Managed in the/)).toBeNull();
+  expect(screen.queryByText(/\sManaged as/)).toBeNull();
   // A retired table that was made in the console can be brought back; one from the repository cannot.
   expect(screen.queryByRole("button", { name: /Bring back/ })).toBeNull();
   // Opened with its ID, the page asks for that table.

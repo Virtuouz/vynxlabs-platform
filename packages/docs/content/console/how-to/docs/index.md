@@ -10,6 +10,7 @@ pages:
   - ask-readers-whether-a-page-helped
   - search-a-docs-site
   - fix-a-name-the-product-keeps
+  - keep-a-changelog-in-your-docs-site
 ---
 
 Guides for the **Documentation** screen of a dev workspace: keeping pages in order, publishing a folder as a site, giving pages a type, asking readers whether a page helped, and what to do when two people save the same page.

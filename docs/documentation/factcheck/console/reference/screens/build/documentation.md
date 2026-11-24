@@ -47,3 +47,14 @@ Checked by: second agent, 2026-11-23. Every label, quoted message and limit in t
 | Remove the site's app… then Deploy N changes. | run: the app's removal is not counted: with no other change the button is not there, the folder shows no Site badge and offers Publish as a site… again, and the site still answers 200 after a deploy of a page change | fault fixed (fa): the removal is a counted change and the deploy stops the site (`removedApps`), confirmed in the code and tests | corrected: the page now says Deploy counts the removal |
 | Feedback dialog, deploy question with the table, Turn off page feedback and its deploy. | run on a console site | second agent, 2026-11-23 | holds as written |
 | A page with a problem notice "This page has N problem(s) and would not deploy as it is." | Docs.tsx:1703-1706 | second agent, 2026-11-23 | holds; the notice appears only when a problem is an error, and N counts all problems, warnings too (not described in the page) |
+
+## Phase 33, M5 (writer, instance 8097, 2026-11-24)
+
+Lines are current at commit `661a2ceb`. Paths are under `packages/` unless stated.
+
+| Claim | Source (file:line) | Checked by | Result |
+| --- | --- | --- | --- |
+| **Type** lists None, Tutorial, How-to guide, Reference, Explanation and **Changelog entry**. | apps/console/src/screens/docs/Docs.tsx:1279 | writer, run on 8097 (select options read) | holds as written |
+| The hint of **Changelog entry**; the date at the start of **File name**; a typed name used as typed; the page made in the `changelog/` folder of the top-level folder, or in the `changelog` folder the chosen folder is inside. | Docs.tsx:1190-1214,1283; packages/docs-engine/src/ops.ts:147-167 | writer, run on 8097 (chosen folder was the site's folder; the inside-a-changelog case is code only) | holds as written |
+| "There is already an entry named <name>. Change its title or its name." | packages/docs-engine/src/ops.ts:163 | code only; not provoked | not run |
+| The page beside the tree draws `::changelog` with the page's own site's entries. | Docs.tsx:1755; model.ts:377-393 | writer, run on 8097 (read view showed the entries) | holds as written |

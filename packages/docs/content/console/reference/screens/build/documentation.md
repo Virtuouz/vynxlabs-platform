@@ -65,7 +65,7 @@ A page that is to be removed has a **Keep** button in place of the pencil and th
 
 ### New page and new folder
 
-A new row has a title field (**Page title** or **Folder title**), a field **File name** that ends in `.md` or `/` and is made from the title until you type in it, **Save** and **Cancel**. :kbd[Enter] saves and :kbd[Escape] cancels. A new page also has **Type**, a list: **None** (or **Folder: <type>** when the folder's own page already says one), **Tutorial**, **How-to guide**, **Reference** and **Explanation**. A page made with a type starts from that type's outline, and `type:` is written on the page only when the folder does not already say it. A page made with no type has only its title.
+A new row has a title field (**Page title** or **Folder title**), a field **File name** that ends in `.md` or `/` and is made from the title until you type in it, **Save** and **Cancel**. :kbd[Enter] saves and :kbd[Escape] cancels. A new page also has **Type**, a list: **None** (or **Folder: <type>** when the folder's own page already says one), **Tutorial**, **How-to guide**, **Reference**, **Explanation** and **Changelog entry**. A page made with a type starts from that type's outline, and `type:` is written on the page only when the folder does not already say it. A page made with no type has only its title.
 
 | Limit or rule | What is said |
 | --- | --- |
@@ -74,6 +74,8 @@ A new row has a title field (**Page title** or **Folder title**), a field **File
 | Empty title or file name. | "A title is needed." / "A file name is needed." |
 | A page named `index`. | "Naming a page index makes it the folder's own page. A folder can have one." |
 | Renaming a page. | "Renaming the file moves its address. The old address leads to the new one for 90 days." |
+
+**Changelog entry** is not a type of page. Its hint reads "Goes in the site's changelog folder, named with today's date. A ::changelog on any page lists it." Choosing it puts today's date at the start of **File name** (`2026-11-24-new-intake-form`, made from the title until you type in the box; a name you type is used as typed). The page is made in the `changelog/` folder of the top-level folder that holds the chosen folder, or in the `changelog` folder the chosen folder is inside. The page has the title and an outline: a sentence, **What is new** and **What to do**. It writes no `type:`. A name already taken says "There is already an entry named <name>. Change its title or its name." See [Keep a changelog in your docs site](../../../how-to/docs/keep-a-changelog-in-your-docs-site).
 
 A new page opens in [the page editor](documentation-editor) once it is saved. A new folder says "Made the folder <title>." and a new page "Made <title>."
 
@@ -119,7 +121,7 @@ Each of these says what it did ("<site> will stop being served when you deploy."
 
 ## The page beside the tree
 
-Choosing a page draws it as its readers see it, with the same code: the product's terms, the workspace's terms, `::pages`, `::glossary`, diagrams, the page's type shown over its title, and the pages related to it below. At the top:
+Choosing a page draws it as its readers see it, with the same code: the product's terms, the workspace's terms, `::pages`, `::glossary`, `::changelog` (the entries of the page's own site), diagrams, the page's type shown over its title, and the pages related to it below. At the top:
 
 - the folders the page is in, with ` › ` between them;
 - the title, and a pill with the page's state when it is not deployed;
@@ -167,4 +169,5 @@ A **doc writer** holds `doc:*`, `app:read`, `table:read` and `workspace:read`. I
 - [Resolve a draft conflict](../../../how-to/docs/resolve-a-draft-conflict)
 - [Move, rename or delete a page](../../../how-to/docs/move-rename-or-delete-a-page)
 - [Publish a folder as a site](../../../how-to/docs/publish-a-folder-as-a-site)
+- [Keep a changelog in your docs site](../../../how-to/docs/keep-a-changelog-in-your-docs-site)
 - [Writing documentation](../../../../develop/reference/docs/index): the top of a page, and components

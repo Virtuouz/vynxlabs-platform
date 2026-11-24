@@ -7,7 +7,7 @@ moved_from:
 subjects: [documentation, drafts, page-types, pages]
 ---
 
-The page editor is where one page of documentation is written. The page's Markdown is on one side and the page as its readers will see it is on the other. The preview is drawn by the same code that serves the page, so it shows the type over the title, the cards of a collection's own page, the related pages below, the product's terms and the workspace's terms. It follows the cursor: the part of the page you are writing in is marked and kept in view.
+The page editor is where one page of documentation is written. The page's Markdown is on one side and the page as its readers will see it is on the other. The preview is drawn by the same code that serves the page, so it shows the type over the title, the cards of a collection's own page, the related pages below, the product's terms and the workspace's terms. It follows the cursor: the part of the page you are writing in is marked and kept in view. A `::changelog` line draws the entries of the page's own site, newest first, once the page's folder is published as a site; a page not in a site shows none. An entry with no `date` and no day in its name shows no date here, where the served site shows the day it last changed.
 
 The editor opens from **Edit** on the [Documentation screen](documentation), from a new page's row, and from the **Edit** link of a page listed on a resource's screen. F1 (**Help for this page**) opens the help topic `build-docs-editor`. It is changed in a :term[dev workspace]{id=dev-workspace} only: in a production workspace the address shows "This is a production workspace. Pages are changed in a dev workspace and reach production by promotion."
 
@@ -44,7 +44,7 @@ The lines between the two `---` at the top are folded in the source, and a line 
 
 ### Insert
 
-A search box **Find a component** filters the list, which has **Blocks** and **Inline**. It offers the components the `docs` profile has and that can go where the cursor is: **Callout**, **Tabs**, **Tab**, **Steps**, **Details**, **Code tabs**, **File tree**, **Pages in this folder**, **Glossary**, **Field**, **Term** and **Key**. Inside **Tabs** only **Tab** is offered, inside **Code tabs** nothing, and **Tab** only inside **Tabs**. A search that finds nothing says "Nothing is called that." A footer says "Inserts at the cursor", and "inside" the container it is in. :kbd[↑], :kbd[↓] and :kbd[Enter] choose, and :kbd[Escape] closes the list and returns to the source. Inside a component the new one is written one level deeper. The product's own `product` and `screenshot` components are not offered: no tenant page may use them. What each takes is in [Writing documentation](../../../../develop/reference/docs/components).
+A search box **Find a component** filters the list, which has **Blocks** and **Inline**. It offers the components the `docs` profile has and that can go where the cursor is: **Callout**, **Tabs**, **Tab**, **Steps**, **Details**, **Code tabs**, **File tree**, **Pages in this folder**, **Glossary**, **Field**, **Term** and **Key**. Inside **Tabs** only **Tab** is offered, inside **Code tabs** nothing, and **Tab** only inside **Tabs**. A search that finds nothing says "Nothing is called that." A footer says "Inserts at the cursor", and "inside" the container it is in. :kbd[↑], :kbd[↓] and :kbd[Enter] choose, and :kbd[Escape] closes the list and returns to the source. Inside a component the new one is written one level deeper. The product's own `product` and `screenshot` components are not offered: no tenant page may use them. `::changelog` is not in the list either: type it. What each takes is in [Writing documentation](../../../../develop/reference/docs/components).
 
 ## Page details
 
@@ -55,6 +55,7 @@ The tab **Page details** is a form for the top of the page. It writes the page's
 | **Title** | Required, at most 120 characters. |
 | **Topic** | At most 80 characters; lowercase letters, digits, `-` and `_`. A name that stays when the page moves. |
 | **Description** | At most 500 characters. |
+| **Date** | A day, chosen from the browser's date field, optional. For a changelog entry: the day it is about, written as `date: YYYY-MM-DD`. Without it the entry takes a day that begins or ends its file name, else the day the page last changed. |
 | **Icon** | Only on a folder's own page (`index`), or where one is already written. At most 40 characters. |
 | **Type** | A list: **None** (on a folder's own page, "None: the pages under it say their own"; on another, **Use the folder's (<type>)** when the folder says one), **Tutorial**, **How-to guide**, **Reference**, **Explanation**. A written type that is none of them is kept and shown as "<value> (not a type)". |
 | **Add a subject** | A short name, at most 80 characters, written lowercase with a `-` for a space. :kbd[Enter] or **Subject** adds it. At most five count: the field is disabled with "Five is the most a page uses. Remove one to add another." A sixth written in the source is struck through and the form says "Only the first 5 are used." Each chosen subject has a button **Remove <subject>**. Subjects other pages of the site use are offered as buttons **Add <subject>** under "On other pages of this site:". |
@@ -107,6 +108,7 @@ Deploying is done from the [Documentation screen](documentation), never from the
 ## Related
 
 - [The Documentation screen](documentation)
+- [Keep a changelog in your docs site](../../../how-to/docs/keep-a-changelog-in-your-docs-site)
 - [Resolve a draft conflict](../../../how-to/docs/resolve-a-draft-conflict)
 - [Give a page a type and subjects](../../../how-to/docs/give-a-page-a-type-and-subjects)
 - [Writing documentation](../../../../develop/reference/docs/index)

@@ -27,3 +27,18 @@ Checked by: second agent, 2026-11-23. Every label, quoted message and limit in t
 | --- | --- | --- | --- |
 | A site keeps no folder inside another, only top-level folders are offered; production is read only; a page of the repository is shown as repository; the deploy carries only documentation and the feedback table; stop/publish again are carried by a deploy. | run; workspace.ts:216-228 | second agent, 2026-11-23 | holds as written |
 | Contents list, Previous and Next, Last updated, Copy as Markdown, "New in version X", search with and without script. | packages/docs-site/src/render.ts:486-549 | second agent, 2026-11-23 | holds as written |
+
+## Phase 33, M5 (writer, instance 8097, 2026-11-24)
+
+Lines are current at commit `661a2ceb`. Paths are under `packages/` unless stated.
+
+| Claim | Source (file:line) | Checked by | Result |
+| --- | --- | --- | --- |
+| **On this page** lists `##` and `###` (and a `#`); `####` is not listed; indented by level (26 and 38 px). | docs-site/src/render.ts:357-364,543-549; css.ts:192-195 | writer, run on 8097 at 1440 and 390 px: Opening, Lights, Closing, Alarm listed; Back room not | holds as written |
+| A column beside the page from 1280 px; a bar at the top below that. | docs-site/src/css.ts:95-99 | writer, run on 8097: column at 1440, bar at 390 | holds as written |
+| A `#` link on every heading, shown on pointing or Tab, always shown with no pointer; pressing copies the address, says "Link copied", the page goes there. | docs-site/src/render.ts:387; css.ts:209-214; script.ts:147-166 | writer, run on 8097: hover, Tab 13 then Enter, URL got `#opening`, clipboard held the address, toast "Link copied" | holds as written |
+| Text 16 px on a phone growing to 20 px; headings larger, each level its own size. | docs-site/src/css.ts:11,169 | writer, run on 8097: 16.2 px at 390, 20 px at 1440 | holds as written |
+| **Color theme**: System, Light, Dark; three buttons wide, one cycling button at the foot of the drawer on a phone; kept in the browser across pages and a reload. | docs-site/src/render.ts:250,370-376; css.ts:222-234; script.ts:174-229 | writer, run on 8097: three buttons at 1440, one at 390 ("Color theme: System. Change it to Light"), Dark held on the next page | holds as written |
+| On `/docs` a signed-in member's choice is kept with their settings; nobody signed in has it in the browser only. | docs-site/src/script.ts:207-215; apps/control-plane/src/routes/preferences.ts | writer, run on 8097: Maya chose Dark on `/docs`, `GET /api/v1/me/preferences` held `theme: dark`, System removed it; the not-signed-in case is code only | holds as written |
+| The page takes the theme before it is first drawn. | docs-site/src/theme-script.ts:9-27 | code only (walked by the lane in `docs/documentation/fixed/p33-d1.md`) | holds as written |
+| A page is an entry in a `changelog` folder or with the subject `changelog`; `::changelog` lists, `changelog.xml` serves. | docs-engine/src/changelog.ts:52-59; docs-site/src/feed.ts | writer, run on 8097 | holds as written |

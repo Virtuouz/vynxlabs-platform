@@ -44,7 +44,7 @@ Each says what it did, with an **Undo**.
 
 ## The result
 
-The site's home page lists its collections and the pages updated most recently. Each page has a contents list, **Previous** and **Next**, "Copy as Markdown", "Last updated" and a search of the site. A page that is not under the site's folder is not served.
+The site's home page lists its collections and the pages updated most recently. Each page has **On this page**, **Previous** and **Next**, "Copy as Markdown", "Last updated" and a search of the site. A page that is not under the site's folder is not served.
 
 ## If it does not work
 

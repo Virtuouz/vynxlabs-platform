@@ -41,3 +41,13 @@ Checked by: second agent, 2026-11-23. Every label, quoted message and limit in t
 | A mermaid block is drawn in the preview, and "This diagram does not read: Parse error on line 2:" with the source when it is wrong. | apps/console/src/diagrams/draw.ts; run | second agent, 2026-11-23 | holds |
 | Page details limits (Title 120, Topic 80, Description 500, Icon 40, subject 80, five subjects, terms 50, also written 10, about 50, extends 20). | apps/console/src/screens/docs/PageDetails.tsx; packages/docs-engine/src/schema.ts:48-161 | second agent, 2026-11-23 | holds as written |
 | Layout at 768 and 390 px, light and dark; no horizontal scroll; Source and Preview only at 390. | run, screenshots read | second agent, 2026-11-23 | holds |
+
+## Phase 33, M5 (writer, instance 8097, 2026-11-24)
+
+Lines are current at commit `661a2ceb`. Paths are under `packages/` unless stated.
+
+| Claim | Source (file:line) | Checked by | Result |
+| --- | --- | --- | --- |
+| Page details **Date**: a date field, optional, written as `date: YYYY-MM-DD`; meaning of the three sources. | apps/console/src/screens/docs/PageDetails.tsx:164-170; packages/docs-engine/src/schema.ts:165-168 | writer, run on 8097 | holds as written |
+| The preview draws `::changelog` once the page's folder is a site; none otherwise; no date for an entry with neither date nor name day. | apps/console/src/screens/docs/model.ts:372-393 | writer, run on 8097 (none before publishing, three after) | holds as written |
+| `::changelog` is not in the **Insert** list. | the list on 8097 | writer, run on 8097 | holds as written (a product gap, reported) |

@@ -40,7 +40,7 @@ A short notice in a corner confirms what just happened. It leaves by itself afte
 
 ## What is kept for you, and what is not
 
-Some things belong to you and follow you from browser to browser: the theme, whether the navigation is open, the single-key shortcuts, row density, panel sizes, palette pins, whether your team's terms are underlined and saved views. They have no screen, are kept without asking and leave no entry in the audit log. An API key or a service account has none of them.
+Some things belong to you and follow you from browser to browser: the theme (also when you choose it on the documentation at `/docs`, while you are signed in), whether the navigation is open, the single-key shortcuts, row density, panel sizes, palette pins, whether your team's terms are underlined and saved views. They have no screen, are kept without asking and leave no entry in the audit log. An API key or a service account has none of them.
 
 Where you were last in a tenant, and what the palette shows as **Recent**, are kept only where you are a member of the tenant, not under an operator's access grant.
 

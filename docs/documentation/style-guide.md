@@ -85,6 +85,7 @@ moved_from:
 - `type`: on the folder index only. A page may say its own (it then needs the folder to say a type too, or `type_folder` fires).
 - `subjects`: up to five short ids, the same words on every page about the thing. Use a subject on at least two pages, of different types, or the lint `subject_once` fires. Subjects are how Related blocks are built, so choose the ones a reader would look for. Do not use more than five (`subjects_many`).
 - `topic`: only when the console opens the page (the `help` button, F1) or other pages link by topic. It never changes when the page moves. A topic that a released version had is never taken away. New ones start `volvel-`.
+- `date`: only on a changelog entry (a page in a folder named `changelog`): the day it is about, as `YYYY-MM-DD` and a day on the calendar. Without it the entry takes a day that begins or ends its file name, else the day it last changed. Volvel's own entries are generated from `CHANGELOG.md` and are not written by hand.
 - `since`: for the product's own pages, the version that brought what the page describes, as `0.5` or `0.5.1`. Leave it off before the first publish date is set (D62) unless you know.
 - `moved_from`: when you move or rename a page, list its old path. `paths.lock` makes every released path resolve or redirect.
 - `pages:` and `icon:` only on a folder index.
@@ -178,6 +179,7 @@ A product page may use the components of the `product` profile. Write them as th
 | `:kbd[...]` | Keys: `:kbd[⌘↵]`. | |
 | `:::code-tabs` | The same code in several languages. | |
 | `:::file-tree` | A repository's layout. | |
+| `::changelog{limit folder subject}` | A page that lists the newest entries of the site's changelog, each with its date and body: `limit` 1 to 50 (10 when left out), `folder` and `subject` narrow it. In the product's pages only `start/reference/whats-new` uses it. | `::changelog{limit=3 folder=start/reference/changelog}` |
 | `::pages` | A folder index with nothing to say beyond its list. | |
 | `::glossary` | The glossary page only. | |
 
@@ -186,7 +188,7 @@ Rules:
 - A **screenshot** names a shot in `packages/docs/screenshots.mjs`. Adding one means adding it to that manifest first, with the scene, who is signed in and what is masked; `pnpm docs:check` fails a name the manifest does not list. At most 60 shots in all, so use one only where the words need the picture. The `alt` says what the picture shows. Never rely on a picture for a fact: the words say it.
 - **Code fences** say a language from the list: `ts`/`typescript`, `tsx`, `js`/`javascript`, `jsx`, `json`, `yaml`, `bash` (also `sh`), `sql`, `html`/`xml`, `css`, `diff`, `markdown`. A command the reader types is in a `bash` fence, with `$` left off. A file has `title=`. Output is a `text` fence. A change to a file is a `diff-ts` fence (added and removed lines drawn in TypeScript). To draw attention to a line, mark it: `ts/3-5`. Mark only the lines the text talks about.
 - **Links** are relative and go to pages by path, without `.md`: `[Flows](../how-to/build/connect-a-table)`. To point at a page that may move, link by topic: `[Approvals](topic:volvel-approvals)`. Link a term's first use, not every use. External links go only to what is not ours; never to a page that needs a sign-in. A link text says where it goes ("the permissions reference"), never "here".
-- **Headings:** `#` is the page's title and is not written (the title is in frontmatter); sections start at `##`. Do not skip a level. Sentence case.
+- **Headings:** `#` is the page's title and is not written (the title is in frontmatter); sections start at `##`. Do not skip a level. Sentence case. Every heading gets a `#` anchor link to itself, drawn by the site (shown on hover or focus, copies the address), and "On this page" lists the `##` and `###` headings: do not write an anchor link or a heading id by hand, and link to a heading with `[words](page#heading-text)` as the check resolves it. A heading deeper than `###` is not in "On this page", so a page that needs to be found by it should not rely on `####`.
 - **Lists:** a list of three or more parallel things is a list. A comparison of a property across things is a table. Do not use a table for one column.
 
 ## 5. Examples and data
@@ -232,3 +234,8 @@ A claim is a label, a limit, a default, a permission, a state, a command or flag
 - **Tutorial template, where the check differs:** `type_steps_missing` accepts a numbered list or a `:::steps` block; this guide asks for `:::steps`. No change needed, but the check cannot tell them apart.
 - **`check.mjs`:** it enforces neither American spelling, nor the avoided words (workflow, Activate, "access release", "Published apps", cancelled) in `packages/docs/content`, nor the existence of a fact-check record or a run log for a page. The terminology table is held by review until a lint is added (`enforce.test.ts` holds spelling only for console strings).
 - **`screenshot` is in the `product` profile only**, so a tenant's docs site cannot use it. That is intended, and this guide is for the product's pages.
+
+## Changelog pages (phase 33)
+
+- A page in any folder named `changelog`, or with the subject `changelog`, is an entry of the site's changelog, listed by `::changelog` and in the feed `changelog.xml`. Never give a product page the subject `changelog` unless it is an entry: it would appear in Volvel's own "What's new" and its feed.
+- A how-to that describes a tenant's changelog uses the subjects `documentation` and `sites`.

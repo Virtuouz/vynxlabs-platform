@@ -85,5 +85,6 @@ Warnings about page types and subjects are printed and do not stop the build or 
 ## Related
 
 - [Run a docs app locally](run-a-docs-app-locally)
+- [Keep a changelog in the repository](keep-a-changelog-in-the-repository)
 - [The Documentation screen](../../../console/reference/screens/build/documentation)
 - [Writing documentation](../../reference/docs/index)

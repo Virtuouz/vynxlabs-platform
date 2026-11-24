@@ -24,3 +24,11 @@ Lines are current at commit `5ebf1c80` (branch phase-31-write-the-docs). Paths a
 ## Second check
 
 Checked by: second agent, 2026-11-23. Strings found in the code: "Draft saved {time}", "Could not save. Trying again…", "Could not save.", "Not saved: someone else saved this flow" (`screens/FlowEditor.tsx:1695-1704`), "Not saved: {why}" (`screens/builder/EditorShell.tsx:28`), the **Unsaved changes** bar and "It cannot be saved now: the instance takes no changes." (`kit/SaveBar.tsx:74-84`), "Leave without saving?" with **Leave**/**Stay** (`ask.tsx:25-31`), **What does this mean?** (`ask.tsx:90`), the script editor's 3-second autosave (`screens/Authoring.tsx:492`), removing a step never asks (`screens/FlowEditor.tsx:1236`), notices 5 s / 3 at once (`Toast.tsx`), session 7 days. Run: Leave-without-saving on Branding (the writer's run) and the sign-out refusal and **Your session ended** dialog (see the sign-in record): both as the page says. The 10-second notice and the list of settings were checked against `routes/preferences.ts:15-17`. No correction.
+
+## Phase 33, M5 (writer, instance 8097, 2026-11-24)
+
+Lines are current at commit `661a2ceb`. Paths are under `packages/` unless stated.
+
+| Claim | Source (file:line) | Checked by | Result |
+| --- | --- | --- | --- |
+| The theme chosen on `/docs` while signed in is kept with the member's settings. | docs-site/src/script.ts:207-215 | writer, run on 8097: `theme` appeared in the member's preferences | holds as written |

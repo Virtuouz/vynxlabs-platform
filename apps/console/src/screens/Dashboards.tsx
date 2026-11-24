@@ -30,6 +30,7 @@ import { useEvery } from "../kit/every.ts";
 import { useHistory } from "../kit/history.ts";
 import { useShortcut } from "../kit/keys.ts";
 import { ErrorState, Loading } from "../kit/LoadState.tsx";
+import { takeOverNotice } from "../kit/ownership.ts";
 import { RemoveDraftButton } from "../kit/RemoveDraftButton.tsx";
 import { StatePill, Tag } from "../kit/status.tsx";
 import { Time } from "../kit/Time.tsx";
@@ -850,12 +851,7 @@ export function DashboardView({
         </Notice>
       ) : null}
       {resource && editable && stand === "repository" ? (
-        <Notice tone="attention">
-          This dashboard is defined by the code in the tenant's repository. Changing it here saves a
-          draft that takes it over: once deployed it is a file the console and the repository both
-          edit. Then remove its definition from the code, or the next deploy from the repository
-          takes it back.
-        </Notice>
+        <Notice tone="attention">{takeOverNotice("dashboard", "draft")}</Notice>
       ) : null}
       {clashNotice}
       {stand === "removed" ? (

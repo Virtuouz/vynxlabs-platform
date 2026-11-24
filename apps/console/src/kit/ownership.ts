@@ -29,3 +29,22 @@ export const ownershipMeaning = (ownership: string): string =>
  */
 export const takeOverConsequence = (noun: string): string =>
   `From then on the console manages this ${noun} as files, and you can change it here. A deploy of the repository that still defines it takes it back, and is refused first if you changed it here since, until you run volvel pull, or deploy with --force. To keep it here, remove its definition from the code.`;
+
+const takesItBack =
+  "A deploy of the repository that still defines it takes it back, and is refused first if the console changed it since, until volvel pull or --force. To keep it here, remove its definition from the code.";
+
+/**
+ * The notice on a resource that is defined in code and can be taken over. `draft`: saving a
+ * draft takes it over when the draft is deployed. `publish`: the person takes it over, and the
+ * next publish does it. Every editor that offers a take-over says this, and only this.
+ */
+export const takeOverNotice = (noun: string, how: "draft" | "publish"): string =>
+  `This ${noun} is defined in code, in the tenant's repository. ${
+    how === "draft"
+      ? "Saving a draft of it takes it over"
+      : "Taking it over lets you change it here"
+  }: it is then managed as files, which the console and the repository both edit. ${takesItBack}`;
+
+/** The notice once the person has taken it over, before it is published. */
+export const takingOverNotice = (noun: string): string =>
+  `You are taking this ${noun} over from the repository. The next publish makes it managed as files, which the console and the repository both edit. ${takesItBack}`;

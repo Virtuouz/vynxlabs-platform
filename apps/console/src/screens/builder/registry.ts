@@ -87,7 +87,7 @@ export function useWorkspaceWidgets(root: string): boolean {
     if (state.root !== undefined) resetWorkspaceWidgets();
     api.get<WorkspaceWidgets>(`${root}/widgets`).then(
       (found) => {
-        if (live) setWorkspaceWidgets(root, found.widgets);
+        if (live) setWorkspaceWidgets(root, found.items);
       },
       () => {
         if (live) setWorkspaceWidgets(root, []);

@@ -1,5 +1,5 @@
 export * from "./action.js";
-export { APP_POLICY, appPolicy } from "./app-policy.js";
+export { APP_POLICY, appPolicy, WIDGET_POLICY } from "./app-policy.js";
 export {
   AUDIT_ACTIONS,
   AUDIT_AREAS,
@@ -41,6 +41,7 @@ export {
   type PlatformEventDefinition,
   type PlatformEventField,
   type PlatformEventName,
+  WIDGET_FRAME_FILE,
 } from "./bundle-check.js";
 export {
   columnValueType,

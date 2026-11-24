@@ -18,6 +18,12 @@ async function repository() {
     join(example, "node_modules", "@volvel", "sdk"),
     join(dir, "node_modules", "@volvel", "sdk"),
   );
+  // What a repository installs for a widget's view: React, and the frame package.
+  const frame = fileURLToPath(new URL("../../widget-frame", import.meta.url));
+  await symlink(frame, join(dir, "node_modules", "@volvel", "widget-frame"));
+  for (const name of ["react", "react-dom"]) {
+    await symlink(join(frame, "node_modules", name), join(dir, "node_modules", name));
+  }
   await writeFile(join(dir, "package.json"), '{"type":"module"}');
   return dir;
 }

@@ -204,7 +204,7 @@ export function dashboardRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           checkDashboard(
             result.value.body as unknown as DashboardBody,
             (path) => tables.get(path),
-            await workspaceWidgets(kernel, (ctx.workspace as WorkspaceRef).id),
+            await workspaceWidgets(kernel.db, (ctx.workspace as WorkspaceRef).id),
             { incomplete: true },
           )
         : result.issues;

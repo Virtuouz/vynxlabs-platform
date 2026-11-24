@@ -139,6 +139,11 @@ export const ERROR_CODES = {
     "This deploy looks like a rename, written as a delete and a create",
     "It would delete something that holds history or data and make something of the same kind. Give the new one the old one's `key` to keep them, or deploy again confirming the deletion.",
   ),
+  console_changed: code(
+    409,
+    "The console changed what this deploy would overwrite",
+    "A resource owned as files was changed in the console since the repository last had it, or was made there, and this deploy would replace or remove it. The response lists each path. Run `volvel pull`, review, commit, and deploy again, or deploy with `--force` to overwrite it on purpose, which is audited.",
+  ),
   incompatible_bundle: code(
     409,
     "The bundle was built for another version",
@@ -308,6 +313,23 @@ export const ERROR_CODES = {
     504,
     "The data source took too long",
     "The outside database did not answer in time. Try again, or ask it for less.",
+  ),
+
+  // Widgets of your own.
+  widget_version_changed: code(
+    409,
+    "A deployed version of a widget has other files",
+    "A version's files never change, because pages are placed with it. Raise the widget's version, then deploy.",
+  ),
+  widget_version_missing: code(
+    409,
+    "A page places a version of a widget that is not deployed",
+    "Deploy the widget with that version, or place the page with a version that is deployed.",
+  ),
+  widget_in_use: code(
+    409,
+    "A page still places this widget",
+    "The response names each page. Move each to another version or take the widget off it, then remove it.",
   ),
 
   // Moving a tenant.

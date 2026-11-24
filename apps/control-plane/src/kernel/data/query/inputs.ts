@@ -419,7 +419,7 @@ export async function readWidget(
 ): Promise<Record<string, WireData>> {
   const { tenantId, workspaceId, ctx, widget } = request;
   const at = { tenantId, workspaceId };
-  const widgets = await workspaceWidgets(kernel, workspaceId);
+  const widgets = await workspaceWidgets(kernel.db, workspaceId);
   const definition = widgets.get(widget.type, widget.version);
   if (!definition) {
     throw badRequest(

@@ -207,6 +207,11 @@ export interface ResourceTable {
   /** What a bundle says about it beside its body: `mcp`, `source`. */
   meta: ColumnType<ResourceMeta, string | undefined, string>;
   ownership: Ownership;
+  /**
+   * The content a resource owned as files last had in step with the repository (a hash of
+   * `contentHash`'s input). Null when it never was.
+   */
+  basis_hash: ColumnType<string | null, string | null | undefined, string | null>;
   version: number;
   body: Json<Record<string, unknown>>;
   created_at: Generated<Date>;
@@ -926,6 +931,19 @@ export interface BundleAssetTable {
   created_at: Generated<Date>;
 }
 
+/** One version of a developer's widget that a workspace deployed; its files are in `bundle_asset`. */
+export interface WidgetVersionTable {
+  workspace_id: string;
+  tenant_id: string;
+  type: string;
+  version: string;
+  definition: Json<Record<string, unknown>>;
+  files: Json<{ path: string; sha256: string; size: number; contentType: string }[]>;
+  files_digest: string;
+  bundle_id: string;
+  created_at: Generated<Date>;
+}
+
 export interface EndUserTable {
   id: string;
   tenant_id: string;
@@ -1378,6 +1396,7 @@ export interface PlatformSchema {
   database_location: DatabaseLocationTable;
   workspace_clone: WorkspaceCloneTable;
   bundle_asset: BundleAssetTable;
+  widget_version: WidgetVersionTable;
   end_user: EndUserTable;
   end_user_group: EndUserGroupTable;
   end_user_group_member: EndUserGroupMemberTable;

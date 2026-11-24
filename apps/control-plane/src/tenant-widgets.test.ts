@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -66,12 +67,25 @@ const placed = (version: string | undefined, type = "x/gauge") => ({
   },
 });
 
+const sha = (content: Buffer) => createHash("sha256").update(content).digest("hex");
+/** The two files a build makes of the widget, as its bundle lists them. */
+const view = Buffer.from('console.log("gauge");');
+const scriptName = `view-${sha(view).slice(0, 8)}.js`;
+const FILES = [
+  { path: scriptName, type: "text/javascript; charset=utf-8", content: view },
+  {
+    path: "frame.html",
+    type: "text/html; charset=utf-8",
+    content: Buffer.from(`<!doctype html><script src="./${scriptName}"></script>`),
+  },
+];
+
 function bundle(
   page: object,
   widgets: BundleManifest[] = [manifest("widget", "x/gauge", gauge("1.0.0"))],
 ) {
   const unsigned = {
-    formatVersion: 3 as const,
+    formatVersion: 4 as const,
     sdkVersion: "0.5.0",
     core: { min: "0.0.0", below: "99.0.0" },
     manifests: [
@@ -100,7 +114,15 @@ function bundle(
       }),
     ],
     code: "export {};",
-    assets: [],
+    assets: widgets.some((one) => one.kind === "widget")
+      ? FILES.map((file) => ({
+          app: "x/gauge",
+          path: file.path,
+          sha256: sha(file.content),
+          size: file.content.length,
+          contentType: file.type,
+        }))
+      : [],
   };
   return { ...unsigned, digest: bundleDigest(unsigned) } as Bundle;
 }
@@ -165,6 +187,9 @@ let ivy: Awaited<ReturnType<typeof endUser>>;
 let jon: Awaited<ReturnType<typeof endUser>>;
 
 const deploy = async (made: Bundle) => {
+  for (const file of FILES) {
+    await alice.put(`${ws()}/bundle-assets/${sha(file.content)}`, file.content);
+  }
   const uploaded = await alice.post(`${ws()}/bundles`, made);
   if (uploaded.status !== 201) return uploaded;
   return alice.post(`${ws()}/deployments`, { bundleId: uploaded.body.id });
@@ -241,7 +266,7 @@ describe("a tenant widget's data goes through the same route as a core widget's"
       ...placed("1.0.0"),
       data: { rows: placed("1.0.0").data.rows, other: placed("1.0.0").data.rows },
     };
-    const refused = await alice.post(`${ws()}/bundles`, bundle(stray));
+    const refused = await deploy(bundle(stray));
     expect(refused.status).toBe(400);
     expect(JSON.stringify(refused.body)).toContain('Gauge takes no data called \\"other\\"');
   });
@@ -251,27 +276,22 @@ describe("the workspace's widgets", () => {
   test("are listed with their versions, newest as current", async () => {
     const listed = await alice.get(`${ws()}/widgets`);
     expect(listed.status, JSON.stringify(listed.body)).toBe(200);
-    expect(listed.body.widgets).toHaveLength(1);
-    expect(listed.body.widgets[0]).toMatchObject({ type: "x/gauge", current: "1.0.0" });
-    expect(listed.body.widgets[0].versions.map((one: Any) => one.version)).toEqual(["1.0.0"]);
-    expect(listed.body.widgets[0].versions[0].definition.title).toBe("Gauge");
+    expect(listed.body.items).toHaveLength(1);
+    expect(listed.body.items[0]).toMatchObject({ type: "x/gauge", current: "1.0.0" });
+    expect(listed.body.items[0].versions.map((one: Any) => one.version)).toEqual(["1.0.0"]);
+    expect(listed.body.items[0].versions[0].definition.title).toBe("Gauge");
   });
 
   test("a page that names one the workspace has not deployed, or a version it has not, is refused", async () => {
-    const none = await alice.post(`${ws()}/bundles`, bundle(placed("1.0.0", "x/missing")));
-    expect(none.status).toBe(400);
-    expect(JSON.stringify(none.body)).toContain('there is no widget called \\"x/missing\\"');
-    const other = await alice.post(`${ws()}/bundles`, bundle(placed("2.0.0")));
-    expect(other.status).toBe(400);
+    const none = await deploy(bundle(placed("1.0.0", "x/missing")));
+    expect(none.status).toBe(409);
+    const other = await deploy(bundle(placed("2.0.0")));
+    expect(other.status).toBe(409);
     expect(JSON.stringify(other.body)).toContain("version 2.0.0");
   });
 
   test("a stored page whose widget is no longer deployed is not read, and says why", async () => {
-    await t.db
-      .deleteFrom("resource")
-      .where("workspace_id", "=", dev)
-      .where("kind", "=", "widget")
-      .execute();
+    await t.db.deleteFrom("widget_version").where("workspace_id", "=", dev).execute();
     const answer = await read(alice, "needle");
     expect(answer.status).toBe(400);
     expect(answer.body.detail).toContain('There is no widget called "x/gauge"');

@@ -363,6 +363,8 @@ export class WidgetRegistry {
   readonly #byType = new Map<string, WidgetDefinition>();
   /** Every deployed version of a tenant's widget, oldest first. */
   readonly #versions = new Map<string, DeployedWidgetVersion[]>();
+  /** Tenant widgets the repository no longer defines: drawn where placed, never offered. */
+  readonly #retired = new Set<string>();
 
   constructor(definitions: Iterable<WidgetDefinition> = []) {
     for (const definition of definitions) this.add(definition);
@@ -383,19 +385,21 @@ export class WidgetRegistry {
    * shared, a workspace's is its own. A tenant widget answers by its current version.
    */
   withDeployed(deployed: Iterable<DeployedWidget>): WidgetRegistry {
-    const next = new WidgetRegistry(this.list());
+    const next = new WidgetRegistry(this.#byType.values());
     for (const [type, versions] of this.#versions) next.#versions.set(type, versions);
+    for (const type of this.#retired) next.#retired.add(type);
     for (const widget of deployed) {
       if (WidgetRegistry.packOf(widget.type) !== TENANT_PACK) {
         throw new Error(`${widget.type} is not a tenant widget: those are "${TENANT_PACK}/<name>"`);
       }
       const versions = [...widget.versions].sort((a, b) => compareVersions(a.version, b.version));
-      const current = versions.find((one) => one.version === widget.current);
-      if (!current) {
-        throw new Error(`${widget.type} has no deployed version ${widget.current}`);
-      }
+      // A widget the repository dropped keeps its versions for the pages that place them, and is no longer offered.
+      const current =
+        versions.find((one) => one.version === widget.current) ?? versions[versions.length - 1];
+      if (!current) throw new Error(`${widget.type} has no deployed version`);
       next.add(current.definition);
       next.#versions.set(widget.type, versions);
+      if (widget.current === null) next.#retired.add(widget.type);
     }
     return next;
   }
@@ -416,7 +420,7 @@ export class WidgetRegistry {
 
   /** In the order they were added; offered on `surface` when one is given. */
   list(surface?: Surface): WidgetDefinition[] {
-    const all = [...this.#byType.values()];
+    const all = [...this.#byType.values()].filter((one) => !this.#retired.has(one.type));
     return surface ? all.filter((definition) => definition.surfaces.includes(surface)) : all;
   }
 
@@ -426,10 +430,15 @@ export class WidgetRegistry {
   }
 }
 
-/** One deployed version of a tenant's widget. */
+/** One deployed version of a tenant's widget, as `GET .../widgets` lists it. */
 export interface DeployedWidgetVersion {
   version: string;
   definition: WidgetDefinition;
+  /** Whether it is the version the repository defines now. */
+  current?: boolean;
+  deployedAt?: string;
+  /** How many widgets on pages place this version. */
+  placements?: number;
 }
 
 /**
@@ -439,15 +448,15 @@ export interface DeployedWidgetVersion {
 export interface DeployedWidget {
   /** `x/<name>`. */
   type: string;
-  /** The newest deployed version: what "Add to page" places and "Update" moves to. */
-  current: string;
+  /** The version the repository defines now: what "Add to page" places and "Update" moves to. Null once the widget is removed, while pages still place a version of it. */
+  current: string | null;
   /** Every deployed version, with the definition each had. */
   versions: DeployedWidgetVersion[];
 }
 
 /** The answer of `GET /tenants/:t/workspaces/:w/widgets`. */
 export interface WorkspaceWidgets {
-  widgets: DeployedWidget[];
+  items: DeployedWidget[];
 }
 
 /** Orders two `major.minor.patch` versions as numbers (a build or prerelease suffix is ignored). */

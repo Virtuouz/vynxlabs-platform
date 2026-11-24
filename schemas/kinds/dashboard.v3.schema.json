@@ -44,7 +44,7 @@
           "version": {
             "type": "string",
             "pattern": "^\\d+\\.\\d+\\.\\d+$",
-            "description": "For a widget of your own (x/...): the version of it this page was made with. The page is drawn and checked with that version until you update it. A platform widget has none."
+            "description": "For a widget of your own (`x/<name>`): the version it was placed with. The page keeps drawing that version when a newer one is deployed, until someone updates it. The platform's own widgets have none."
           },
           "title": {
             "type": "string",

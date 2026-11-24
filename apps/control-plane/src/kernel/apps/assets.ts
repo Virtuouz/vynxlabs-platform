@@ -182,6 +182,13 @@ export async function sweepAppFiles(
     for (const bundle of bundles) {
       for (const asset of (await loadBundle(kernel, bundle)).assets ?? []) named.add(asset.sha256);
     }
+    // A version of a widget a page was placed with is kept, whichever bundle first carried it.
+    const versions = await trx
+      .selectFrom("widget_version")
+      .select("files")
+      .where("tenant_id", "=", tenantId)
+      .execute();
+    for (const version of versions) for (const file of version.files) named.add(file.sha256);
     await afterListing?.();
     const gone: string[] = [];
     for (const file of stale) {

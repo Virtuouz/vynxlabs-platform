@@ -261,7 +261,7 @@ export async function runAction(
           },
         ],
       }
-    : findAction(widget, request.at, await workspaceWidgets(kernel, located.at.workspaceId));
+    : findAction(widget, request.at, await workspaceWidgets(kernel.db, located.at.workspaceId));
   if (!action) throw notFound("The action");
   // ---- Who can run it: checked before anything is read or run.
   await checkRunBy(kernel, ctx, located.at.tenantId, action);

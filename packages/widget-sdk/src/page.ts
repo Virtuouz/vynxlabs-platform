@@ -224,10 +224,7 @@ export interface PageWidget {
   id: string;
   /** `pack/name`, from a registered pack. */
   type: string;
-  /**
-   * For a tenant's widget (`x/...`): the version it was added at, and is drawn and checked
-   * with until someone updates it. A platform widget has none.
-   */
+  /** For a widget of the tenant's own (`x/<name>`): the version it was placed with. */
   version?: string;
   title?: string;
   /** A line under the title: what the numbers are, or what to notice. */

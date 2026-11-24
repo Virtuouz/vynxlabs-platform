@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import type { BundleManifest } from "./bundle.js";
-import { checkBundleManifests } from "./bundle-check.js";
+import { checkBundleAssets, checkBundleManifests } from "./bundle-check.js";
 import { platformKinds } from "./kinds.js";
 
 const body = () => ({
@@ -138,21 +138,53 @@ describe("a page that uses a widget of the repository", () => {
     },
   });
 
-  test("is checked against the widget the bundle holds, at the version it holds", () => {
-    expect(
-      checkBundleManifests([widget(), page("1.0.0")]).filter((p) => p.startsWith("dash")),
-    ).toEqual([]);
-    expect(checkBundleManifests([widget(), page("0.9.0")])).toEqual([
-      expect.stringContaining('version 0.9.0 of "x/goal" is not deployed (deployed: 1.0.0)'),
+  test("is checked against the widgets the bundle holds, at any version: the workspace checks versions", () => {
+    const only = (problems: string[]) => problems.filter((one) => one.startsWith("dash"));
+    expect(only(checkBundleManifests([widget(), page("1.0.0")]))).toEqual([]);
+    expect(only(checkBundleManifests([widget(), page("0.9.0")]))).toEqual([]);
+    expect(only(checkBundleManifests([widget(), page()]))).toEqual([]);
+  });
+
+  test("naming a widget the bundle does not carry is left to the workspace, which may still have it", () => {
+    expect(checkBundleManifests([page("1.0.0")])).toEqual([]);
+  });
+});
+
+describe("the files of a widget in a bundle", () => {
+  const file = (path: string) => ({
+    app: "x/goal",
+    path,
+    sha256: "a".repeat(64),
+    size: 1,
+    contentType: "text/html",
+  });
+  const bundle = (paths: string[], owner = "x/goal") => ({
+    formatVersion: 4 as const,
+    manifests: [widget()],
+    assets: paths.map((path) => ({ ...file(path), app: owner })),
+  });
+
+  test("are its frame page and one script", () => {
+    expect(checkBundleAssets(bundle(["frame.html", "view-1a2b3c4d.js"]))).toEqual([]);
+  });
+
+  test("are refused when the page, the script or both are missing, or others come with them", () => {
+    expect(checkBundleAssets(bundle(["view-1a2b3c4d.js"]))).toEqual([
+      expect.stringContaining("its frame page frame.html is not among its files"),
+      expect.stringContaining("a widget is its frame page and one script, and has 1 files"),
     ]);
-    expect(checkBundleManifests([widget(), page()])).toEqual([
-      expect.stringContaining("say the version it was made with"),
+    expect(checkBundleAssets(bundle(["frame.html"]))).toEqual([
+      expect.stringContaining("its script is not among its files"),
+      expect.stringContaining("has 1 files"),
+    ]);
+    expect(checkBundleAssets(bundle(["frame.html", "view-1a2b3c4d.js", "extra.js"]))).toEqual([
+      expect.stringContaining("has 3 files"),
     ]);
   });
 
-  test("is refused when the bundle has no such widget", () => {
-    expect(checkBundleManifests([page("1.0.0")])).toEqual([
-      expect.stringContaining('there is no widget called "x/goal"'),
-    ]);
+  test("are refused for a widget the bundle does not have", () => {
+    expect(checkBundleAssets(bundle(["frame.html", "view-1a2b3c4d.js"], "x/other"))).toEqual(
+      expect.arrayContaining([expect.stringContaining("not an app or a widget")]),
+    );
   });
 });

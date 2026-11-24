@@ -40,6 +40,7 @@ import { useHistory } from "../kit/history.ts";
 import { useShortcut } from "../kit/keys.ts";
 import { ErrorState, Loading, Pending } from "../kit/LoadState.tsx";
 import { Inspector, useWide } from "../kit/layout.tsx";
+import { ownershipSentence, ownershipWord } from "../kit/ownership.ts";
 import { UsedBy, useReferences } from "../kit/references.tsx";
 import { Code, StatePill, Tag } from "../kit/status.tsx";
 import { UndoRedo } from "../kit/UndoRedo.tsx";
@@ -1674,7 +1675,7 @@ export function Tables({ root, link }: { root: string; link: string }) {
         {
           header: "Managed in",
           priority: 3,
-          cell: (row) => (row.managedIn === "code" ? "Repository" : "Console"),
+          cell: (row) => ownershipWord(row.managedIn),
         },
         { header: "Who sees rows", priority: 3, cell: (row) => policyText(row.policy) },
         { header: "Columns", priority: 2, cell: (row) => row.columnCount, align: "end" },
@@ -1687,7 +1688,7 @@ export function Tables({ root, link }: { root: string; link: string }) {
       create={{
         action: "Create table",
         description:
-          "A table made here is managed in the console. Every table also gets an ID and the times each row was created and changed.",
+          "A table made here is managed as files, which the console and the repository both edit. Every table also gets an ID and the times each row was created and changed.",
         fields: [
           {
             name: "name",
@@ -1863,7 +1864,7 @@ export function TableView({ root, name, link }: { root: string; name: string; li
       fill
       helpKey="table"
       title={data.name}
-      description={`${data.description ? `${data.description.replace(/\.?\s*$/, ".")} ` : ""}${counted(data.rowCount, "row")}. ${policyText(data.policy)}.${retired ? ` Was managed in the ${data.managedIn === "code" ? "repository" : "console"}.` : ` Managed in the ${data.managedIn === "code" ? "repository" : "console"}.`}`}
+      description={`${data.description ? `${data.description.replace(/\.?\s*$/, ".")} ` : ""}${counted(data.rowCount, "row")}. ${policyText(data.policy)}. ${ownershipSentence(data.managedIn, retired)}`}
     >
       <AttachedPages {...workspaceOf(root)} kind="table" path={data.name} />
       {retired ? (

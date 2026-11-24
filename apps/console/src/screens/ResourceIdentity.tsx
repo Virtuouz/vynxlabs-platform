@@ -5,6 +5,7 @@ import { failureText, notify } from "../ask.tsx";
 import { putDraft } from "../kit/draftApi.ts";
 import { keepPlace } from "../kit/focus.ts";
 import { Loading } from "../kit/LoadState.tsx";
+import { ownershipWord } from "../kit/ownership.ts";
 import { navigate } from "../router.tsx";
 
 export interface NamedResource {
@@ -19,8 +20,8 @@ export interface NamedResource {
 
 /** Where a resource is defined, in the words a list has room for. */
 export function definedWhere(row: NamedResource): string {
-  if (row.definedIn) return `Repository, ${row.definedIn}`;
-  return row.ownership === "code" ? "Repository" : "Console";
+  if (row.definedIn) return `${ownershipWord(row.ownership)}, ${row.definedIn}`;
+  return ownershipWord(row.ownership);
 }
 
 /** Why the console cannot rename a resource, or nothing when it can. */

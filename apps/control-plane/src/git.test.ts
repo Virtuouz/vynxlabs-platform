@@ -5,6 +5,7 @@ import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { contentHash } from "./kernel/execution/basis.js";
 import { type Client, startTestApp, type TestApp } from "./testing.js";
 
 const PASSWORD = "a-good-long-password";
@@ -44,6 +45,15 @@ async function deployDraft(path: string, code: string, message?: string) {
   const deployed = await alice.post(`${ws()}/changes/deploy`, message ? { message } : {});
   expect(deployed.status, JSON.stringify(deployed.body)).toBe(201);
 }
+const basis = async (path: string) =>
+  (
+    await t.db
+      .selectFrom("resource")
+      .select(["basis_hash", "path", "key", "title", "body"])
+      .where("workspace_id", "=", dev)
+      .where("path", "=", path)
+      .executeTakeFirstOrThrow()
+  ).basis_hash;
 const state = async () => (await alice.get(`${ws()}/git`)).body.state as string;
 const sourceOf = async (path: string) =>
   ((await alice.get(`${ws()}/resources/${path}`)).body.body.source as { code: string }).code;
@@ -299,6 +309,10 @@ describe("pushing", () => {
     expect((await alice.get(`${ws()}/git`)).body.syncedCommit).toBe(pushed.body.commit);
   });
 
+  test("a push says the resources it wrote are what the repository has: a deploy of them is not held back", async () => {
+    expect(await basis("orders/hello")).toMatch(/^[0-9a-f]{64}$/);
+  });
+
   test("pushing with nothing new says so and writes nothing", async () => {
     const before = sh(["rev-parse", "vx/dev"], bare());
     expect((await alice.post(`${ws()}/git/push`, {})).body).toMatchObject({ status: "nothing" });
@@ -345,6 +359,15 @@ describe("pulling", () => {
     });
     expect(await sourceOf("orders/hello")).toContain("from the editor");
     expect(await sourceOf("orders/other")).toContain("other: true");
+    // What was taken from the branch is in step with it; what is only here is not.
+    const taken = await t.db
+      .selectFrom("resource")
+      .select(["basis_hash", "path", "key", "title", "body"])
+      .where("workspace_id", "=", dev)
+      .where("path", "=", "orders/hello")
+      .executeTakeFirstOrThrow();
+    expect(taken.basis_hash).toBe(contentHash(taken));
+    expect(await basis("orders/other")).toBeNull();
     const deployment = await t.db
       .selectFrom("deployment")
       .select("message")

@@ -732,6 +732,12 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                   "Paths the deploy may delete although it looks like a rename, separated by commas.",
               }),
             ),
+            force: Type.Optional(
+              Type.Boolean({
+                description:
+                  "As a deploy's `force`: what the console changed or made is not a refusal.",
+              }),
+            ),
           }),
           response: {
             200: Type.Object({
@@ -756,6 +762,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           ctx.workspace as WorkspaceRef,
           query.bundleId,
           query.allowDelete?.split(",").filter(Boolean),
+          query.force === true,
         ),
     );
 
@@ -782,6 +789,14 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                   "Paths this may delete although it also creates something of the same kind. " +
                   "Without it, deleting what holds runs, rows or access given by hand is refused " +
                   "with `rename_suspected`: it is usually a rename.",
+              }),
+            ),
+            force: Type.Optional(
+              Type.Boolean({
+                description:
+                  "Deploy although the console changed, or made, resources that this would " +
+                  "overwrite or remove. Without it that is refused with `console_changed`. " +
+                  "A forced deploy is written to the audit log.",
               }),
             ),
             settleDrafts: Type.Optional(
@@ -824,6 +839,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               ...(body.message ? { message: body.message } : {}),
               ...(body.settleDrafts ? { settle: body.settleDrafts } : {}),
               ...(body.allowDelete ? { allowDelete: body.allowDelete } : {}),
+              repository: { force: body.force === true },
             },
           ),
         );

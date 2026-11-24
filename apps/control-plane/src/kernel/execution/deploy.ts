@@ -20,6 +20,13 @@ import type { WorkspaceRef } from "../http.js";
 import type { Kernel } from "../kernel.js";
 import { renamePathState, swapPath } from "../rename.js";
 import { deleteResource, putResource } from "../resources.js";
+import {
+  type ConsoleChange,
+  consoleChangeMessage,
+  contentHash,
+  hasBasis,
+  setBasis,
+} from "./basis.js";
 import { loadBundle } from "./bundles.js";
 import { exportChanged } from "./code-slices.js";
 import { unfitBindings } from "./connectors.js";
@@ -252,6 +259,13 @@ export async function deployBundle(
      * remove the name of a tool an agent calls.
      */
     confirmBreaking?: boolean;
+    /**
+     * A deploy of repository files, from the CLI or CI. It is refused if it would replace a
+     * resource owned as files that was changed in the console since the repository last had it,
+     * or remove one made there since, unless `force` says it may: that is audited. What it
+     * deploys is the repository's from then on.
+     */
+    repository?: { force?: boolean };
   } = {},
 ) {
   // What the apps no longer name is swept soon after: a deploy is what stops naming it.
@@ -292,7 +306,18 @@ export async function deployBundle(
   const content = await loadBundle(kernel, bundle);
   const existing = await trx
     .selectFrom("resource")
-    .select(["id", "key", "path", "title", "meta", "kind", "schema_version", "body", "ownership"])
+    .select([
+      "id",
+      "key",
+      "path",
+      "title",
+      "meta",
+      "kind",
+      "schema_version",
+      "body",
+      "ownership",
+      "basis_hash",
+    ])
     .where("workspace_id", "=", workspace.id)
     .execute();
   const byPath = new Map(existing.map((row) => [row.path, row]));
@@ -358,6 +383,43 @@ export async function deployBundle(
     // Bindings and triggers before the roles and scripts they refer to.
     .sort((a, b) => order(b.kind) - order(a.kind));
   const leaving = new Set(removed.map((row) => row.id));
+  // What the console did since the repository last had it is not overwritten by surprise.
+  const overridden: ConsoleChange[] = [];
+  if (options.repository && (await hasBasis(trx, workspace.id))) {
+    const found: ConsoleChange[] = [];
+    for (const [manifest, row] of matched) {
+      if (row.ownership !== "ui" || row.basis_hash === null) continue;
+      const inBody = (manifest.body as { title?: unknown }).title;
+      const title = manifest.title ?? (typeof inBody === "string" && inBody ? inBody : null);
+      const replaced =
+        row.path !== manifest.path || row.title !== title || !same(row.body, manifest.body);
+      if (replaced && contentHash(row) !== row.basis_hash) {
+        found.push({ path: row.path, change: "changed" });
+      }
+    }
+    // A removal asked for by name, or by a pull that took the resource's deletion, is not a surprise.
+    const asked = new Set(options.settle?.map((one) => one.path));
+    for (const row of removed) {
+      if (row.ownership !== "ui") continue;
+      if (options.allowDelete === "all" || options.allowDelete?.includes(row.path)) continue;
+      if (asked.has(row.path)) continue;
+      if (row.basis_hash === null) found.push({ path: row.path, change: "made" });
+      else if (contentHash(row) !== row.basis_hash)
+        found.push({ path: row.path, change: "changed" });
+    }
+    if (found.length > 0 && !options.repository.force) {
+      throw new HttpError(
+        409,
+        "console_changed",
+        "The console changed or made resources that this deploy would overwrite or remove. " +
+          "Run `volvel pull`, review, commit, and deploy again.",
+        found
+          .sort((a, b) => (a.path < b.path ? -1 : 1))
+          .map((one) => ({ path: one.path, message: consoleChangeMessage(one.change) })),
+      );
+    }
+    overridden.push(...found);
+  }
   if (options.allowDelete !== "all") {
     const suspected = await suspectedRenames(
       trx,
@@ -687,6 +749,22 @@ export async function deployBundle(
   await reconcileReferences(data, workspace.id, true);
   summary.data = describeChanges(dataBefore, await loadCatalog(data, workspace.id));
 
+  // What a repository deployed is in step with the repository, the console's changes it forced included.
+  if (options.repository) {
+    await setBasis(trx, workspace.id, {
+      keys: content.manifests.filter((manifest) => manifest.ownership === "ui").map(keyOf),
+    });
+    if (overridden.length > 0) {
+      await audit({
+        action: "deployment.forced",
+        targetType: "workspace",
+        targetId: workspace.id,
+        tenantId: workspace.tenantId,
+        workspaceId: workspace.id,
+        details: { bundleId: bundle.id, paths: overridden },
+      });
+    }
+  }
   const id = newId();
   await trx
     .updateTable("workspace")

@@ -17,6 +17,11 @@ export const PUBLISHED = [
     name: "@volvel/widgets",
     holds: ["dist/index.js", "dist/page.d.ts", "dist/action.d.ts"],
   },
+  {
+    folder: "packages/widget-frame",
+    name: "@volvel/widget-frame",
+    holds: ["dist/index.js", "dist/react.js"],
+  },
   { folder: "packages/markup", name: "@volvel/markup", holds: ["dist/index.js", "dist/react.js"] },
   {
     folder: "packages/docs-engine",

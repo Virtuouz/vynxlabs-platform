@@ -13,6 +13,7 @@ import { fileURLToPath } from "node:url";
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PUBLISHED = [
   "widget-sdk",
+  "widget-frame",
   "markup",
   "docs-engine",
   "docs-site",

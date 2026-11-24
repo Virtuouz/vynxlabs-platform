@@ -25,6 +25,8 @@ COPY packages/worker/package.json packages/worker/
 COPY examples/acme/package.json examples/acme/
 RUN pnpm install --frozen-lockfile
 COPY tsconfig.json tsconfig.base.json ./
+# The documentation's "What's new" is made from it (packages/docs/generators/changelog.mjs).
+COPY CHANGELOG.md ./
 COPY apps apps
 COPY packages packages
 # Compiles the services and builds the console's static files, and the app that draws interfaces.

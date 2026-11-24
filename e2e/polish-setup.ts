@@ -1,11 +1,12 @@
 import { signInWithPassword } from "./sign-in.ts";
-import { type Browser, expect, type Page, test } from "./test.ts";
+import { type Browser, test as base, expect, type Page } from "./test.ts";
 
 /**
  * What the polish specs (`polish-*.spec.ts`) share: one tenant seen through operator access,
  * as an operator would, with a long script path, a long error and a flow run waiting for
- * approval among its runs. Each spec file sets up a tenant of its own, so the files can run
- * on different shards, and tears it down.
+ * approval among its runs. Each worker builds one tenant of its own (the worker-scoped `polish`
+ * fixture of `test`, below), so the specs' tests can run in parallel on different workers, and
+ * tears it down when the worker ends.
  */
 
 const ADMIN = {
@@ -14,6 +15,8 @@ const ADMIN = {
 };
 const TENANT_ADMIN = "00000000-0000-7000-8000-000000000002";
 const stamp = Date.now().toString(36);
+/** How long setup waits for a run to finish, on a machine that other work is loading too. */
+const RUNS_WAIT = 200_000;
 const LONG = "billing/record-payment-and-reconcile-ledger-entries";
 
 // biome-ignore lint/suspicious/noExplicitAny: answers are inspected freely
@@ -79,10 +82,8 @@ export type Polish = {
   board: string;
 };
 
-/** Signs in and seeds a tenant; `part` names the spec file, so each file has a tenant of its own. */
+/** Signs in and seeds a tenant; `part` names the worker, so each worker has a tenant of its own. */
 export async function setUpPolishTenant(browser: Browser, part: string): Promise<Polish> {
-  test.setTimeout(240_000);
-  test.setTimeout(240_000);
   const page = await (
     await browser.newContext({ viewport: { width: 1440, height: 900 } })
   ).newPage();
@@ -312,29 +313,39 @@ export async function setUpPolishTenant(browser: Browser, part: string): Promise
   });
   await call(page, "POST", `${W}/changes/deploy`, {});
   const failedRun = (await call(page, "POST", `${W}/runs`, { script: LONG, input: {} })).id;
-  await call(page, "POST", `${W}/runs`, { script: "stock/check", input: {} });
+  const okRun = (await call(page, "POST", `${W}/runs`, { script: "stock/check", input: {} })).id;
   const waitingRun = (
     await call(page, "POST", `${W}/flow-runs`, { flow: "refunds/approve", input: {} })
   ).id;
+  // Both runs are done before anything is measured: a run still waiting draws the queue on
+  // the workers screen, and a loaded machine takes a minute to start the tenant's worker.
   await expect
     .poll(async () => (await call(page, "GET", `${W}/runs/${failedRun}`)).status, {
-      timeout: 90_000,
+      timeout: RUNS_WAIT,
     })
     .toBe("failed");
+  await expect
+    .poll(async () => (await call(page, "GET", `${W}/runs/${okRun}`)).status, {
+      timeout: RUNS_WAIT,
+    })
+    .not.toMatch(/^(queued|running)$/);
   await expect
     .poll(
       async () =>
         (await call(page, "GET", `${W}/approvals`)).items.some(
           (one: { flowRunId: string }) => one.flowRunId === waitingRun,
         ),
-      { timeout: 90_000 },
+      { timeout: RUNS_WAIT },
     )
     .toBe(true);
   return { page, tenant, ws, W, prodWs, failedRun, waitingRun, sourceBound, board: board.id };
 }
 
+/**
+ * Deletes the tenant. The operator's own preferences are left alone: the one the specs change
+ * (`operator.strip`) names the hidden grant, and a grant is the tenant's own, so it goes with it.
+ */
 export async function tearDownPolishTenant({ page, tenant }: Polish) {
-  await call(page, "DELETE", "/me/preferences/operator.strip").catch(() => {});
   await call(page, "POST", `/tenants/${tenant.id}/deletion`, { confirm: tenant.slug }).catch(
     () => {},
   );
@@ -444,3 +455,52 @@ export async function open(page: Page, path: string) {
 }
 
 export const WIDTHS = [390, 768, 1280, 1440];
+
+/**
+ * `test` with a worker-scoped `polish`: one tenant for each worker, built on its first use and
+ * deleted when the worker ends. The tests of a worker run one after another on its page.
+ */
+export const test = base.extend<object, { polish: Polish }>({
+  polish: [
+    async ({ browser }, use, workerInfo) => {
+      const polish = await setUpPolishTenant(browser, `w${workerInfo.workerIndex}`);
+      await use(polish);
+      await tearDownPolishTenant(polish);
+      await polish.page.context().close();
+    },
+    { scope: "worker", timeout: 480_000 },
+  ],
+});
+
+/** How many screens one test measures: about 15 page opens, 20 to 40 seconds. */
+const GROUP_SIZE = 15;
+
+/**
+ * The screens' names, known before any tenant exists, so a test can be declared for each group.
+ * Addresses are worked out from the worker's tenant by `screensOf`.
+ */
+const NAMES_CTX = {
+  ws: "/ws",
+  prodWs: "/prod",
+  W: "/w",
+  tenant: { id: "t", slug: "t" },
+  board: "b",
+  waitingRun: "r",
+  failedRun: "f",
+  sourceBound: Boolean(process.env.E2E_SOURCE_URL),
+} as Polish;
+const NAMES = screens(NAMES_CTX).map(([name]) => name as string);
+export const WORKBENCH_NAMES = workbenches(NAMES_CTX).map(([name]) => name as string);
+export const SCREEN_GROUPS: string[][] = Array.from(
+  { length: Math.ceil(NAMES.length / GROUP_SIZE) },
+  (_, index) => NAMES.slice(index * GROUP_SIZE, (index + 1) * GROUP_SIZE),
+);
+/** The addresses of a group's screens in this worker's tenant. */
+export const screensOf = (ctx: Polish, names: string[]) =>
+  screens(ctx).filter(([name]) => names.includes(name as string)) as [string, string][];
+/** The workbenches of a group, in this worker's tenant. */
+export const workbenchesOf = (ctx: Polish, names: string[]) =>
+  workbenches(ctx).filter(([name]) => names.includes(name as string)) as [string, string][];
+/** The test-title label of a group of screens. */
+export const groupLabel = (index: number) =>
+  `screens ${index * GROUP_SIZE + 1} to ${Math.min(NAMES.length, (index + 1) * GROUP_SIZE)}`;

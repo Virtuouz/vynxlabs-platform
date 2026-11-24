@@ -5,6 +5,7 @@ export { described, escapeHtml, iconLinks } from "./html.js";
 export { DOCS_ICON_NAMES, icon } from "./icons.js";
 export { DOCS_POLICY, PRODUCT_DOCS_POLICY } from "./policy.js";
 export {
+  changelogIndexPaths,
   crumbOf,
   docPage,
   homePage,

@@ -70,6 +70,20 @@ export function pageAt(set: DocSet, address: string): string | undefined {
  * The page of a changelog folder that has no page of its own: the entries it holds, as `::changelog`
  * lists them. It is drawn when asked for and is not a page of the set, so nothing is written or deployed.
  */
+/** The addresses (as page paths) of the changelog folders that have no page of their own and are drawn as a list. */
+export function changelogIndexPaths(set: DocSet): string[] {
+  const out = new Set<string>();
+  for (const entry of changelogOf(set)) {
+    const parts = entry.path.split("/").slice(0, -1);
+    for (let at = 1; at <= parts.length; at++) {
+      if (parts[at - 1] !== CHANGELOG_NAME) continue;
+      const path = `${parts.slice(0, at).join("/")}/index`;
+      if (!set.pages.has(path)) out.add(path);
+    }
+  }
+  return [...out].sort();
+}
+
 function changelogIndexOf(set: DocSet, path: string): DocEntry | undefined {
   const folder = path.replace(/\/index$/, "");
   if (folder === path || folder.split("/").at(-1) !== CHANGELOG_NAME) return undefined;
@@ -616,7 +630,7 @@ export function docPage(at: SiteView, path: string): string {
     data: { page: { title, url: urlOf(path), crumb: crumbOf(set, path) } },
     main: `${tocbar}<header class="lead">${crumbs}${eyebrow}<h1>${escapeHtml(title)}</h1>${
       description ? `<p>${described(description)}</p>` : ""
-    }${since ? `<p class="since">New in version ${escapeHtml(since)}</p>` : ""}<div class="actions"><button class="button" type="button" data-copy="${href(at, `${urlOf(path) || "index"}.md`)}" hidden>${icon("copy", 14)}<span>Copy as Markdown</span></button><button class="button" type="button" data-copy="link" hidden>${icon("link", 14)}<span>Copy link</span></button></div></header>
+    }${since ? `<p class="since">New in version ${escapeHtml(since)}</p>` : ""}<div class="actions">${set.pages.has(path) ? `<button class="button" type="button" data-copy="${href(at, `${urlOf(path) || "index"}.md`)}" hidden>${icon("copy", 14)}<span>Copy as Markdown</span></button>` : ""}<button class="button" type="button" data-copy="link" hidden>${icon("link", 14)}<span>Copy link</span></button></div></header>
 <article class="vd-doc">${body}</article>${typeCards(at, path)}${relatedBlock(at, path)}
 <footer class="foot">${feedbackOf(at, path)}${
       updated && !Number.isNaN(updated.getTime())

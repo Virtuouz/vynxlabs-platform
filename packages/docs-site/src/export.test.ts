@@ -246,9 +246,20 @@ describe.each(BASES)("the export served from %s", (base) => {
   });
 
   test("every link, picture, script and stylesheet of every page is a file under the base, and none leaves it", async () => {
-    const seeds = ["", "404.html", "_search/", "start/old/", "build/intro/", "tenant/"];
+    // "changelog/" is a folder with no page of its own, drawn as its entries.
+    const seeds = [
+      "",
+      "404.html",
+      "_search/",
+      "start/old/",
+      "build/intro/",
+      "tenant/",
+      "changelog/",
+    ];
     const found = await crawl(origin, base, seeds);
     expect(found.problems).toEqual([]);
+    expect(found.visited).toContain(`${origin}${base}changelog/`);
+    expect(written).toContain("changelog/index.html");
     for (const page of ["", "start/intro/", "develop/cli/", "start/", "develop/"]) {
       expect(found.visited, page).toContain(`${origin}${base}${page}`);
     }

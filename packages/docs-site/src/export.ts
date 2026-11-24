@@ -14,6 +14,7 @@ import { docsAsset, docsAssetHref } from "./assets.js";
 import { changelogFeed } from "./feed.js";
 import { escapeHtml } from "./html.js";
 import {
+  changelogIndexPaths,
   crumbOf,
   docPage,
   notFoundPage,
@@ -232,6 +233,10 @@ export async function* exportSite(options: ExportOptions): AsyncGenerator<Export
     yield file(url === "" ? "index.html" : `${url}/index.html`, docPage(view, path));
     const text = pageMarkdown(set, `${url === "" ? "index" : url}.md`, markdown);
     if (text !== undefined) yield file(`${url === "" ? "index" : url}.md`, text);
+  }
+  // A changelog folder with no page of its own is drawn as its entries: no link to it breaks.
+  for (const path of changelogIndexPaths(set)) {
+    yield file(`${urlOf(path)}/index.html`, docPage(view, path));
   }
   yield file("404.html", notFoundPage(view));
   yield file("_search/index.html", searchPage(view, "", []));

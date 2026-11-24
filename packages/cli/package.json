@@ -15,6 +15,7 @@
   },
   "files": [
     "dist/volvel.mjs",
+    "dist/widget-host.js",
     "dist/screens"
   ],
   "scripts": {

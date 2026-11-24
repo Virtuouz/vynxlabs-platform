@@ -38,4 +38,17 @@ if (!existsSync(join(screens, "index.html"))) {
 }
 rmSync(join(here, "dist/screens"), { recursive: true, force: true });
 cpSync(screens, join(here, "dist/screens"), { recursive: true });
+// The page `volvel dev` draws a widget in, which is the platform's host of a widget without React.
+await build({
+  entryPoints: [join(here, "../screens/runtime/dev-widget-host.ts")],
+  outfile: join(here, "dist/widget-host.js"),
+  bundle: true,
+  platform: "browser",
+  format: "iife",
+  target: "es2022",
+  minify: true,
+  define: { "process.env.NODE_ENV": '"production"', "import.meta.env": "{}" },
+  legalComments: "none",
+  logLevel: "warning",
+});
 console.log("Wrote packages/cli/dist/volvel.mjs.");

@@ -6,7 +6,7 @@ import { dirname, join, resolve } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { parseArgs } from "node:util";
-import { resourceOfFile } from "@volvel/manifest";
+import { ENV_TYPES_FILE, resourceOfFile } from "@volvel/manifest";
 import { ACCESS_ACTIONS, tenantAccess } from "./access.js";
 import { BuildError, type Built, buildRepository, describeBundle } from "./build.js";
 import { type CommandName, usage } from "./commands.js";
@@ -17,6 +17,7 @@ import { inputOf } from "./input.js";
 import { init, runLocally } from "./local.js";
 import { pull, pulledFile, readPulled } from "./pull.js";
 import { SCHEMA_FOLDER, writeEditorSchemas } from "./schemas.js";
+import { writeEnvTypes } from "./types.js";
 import { widgetCommand } from "./widget.js";
 
 export { CliError };
@@ -269,8 +270,21 @@ async function build(args: string[], io: Io) {
   const file = join(directory, ".platform", "bundle.json");
   await mkdir(dirname(file), { recursive: true });
   await writeFile(file, JSON.stringify(bundle));
+  await writeEnvTypes(directory, bundle.manifests);
   for (const line of describeBundle(bundle)) io.out(line);
   io.out(`Written to ${file}`);
+}
+
+async function types(args: string[], io: Io) {
+  const { values } = parseArgs({ args, options: placesOption });
+  const directory = resolve(values.dir ?? ".");
+  const built = await buildRepository({ ...buildOptionsOf(values), withoutAppSources: true });
+  for (const warning of built.warnings) io.err(`Warning: ${warning}`);
+  await writeEnvTypes(directory, built.bundle.manifests);
+  io.out(`Wrote the types of your tables, events, variables and connections to ${ENV_TYPES_FILE}.`);
+  io.out(
+    'Scripts are typed by them when tsconfig.json includes ".platform/*.d.ts". Run this again, or `volvel build`, after a definition changes.',
+  );
 }
 
 async function schemas(args: string[], io: Io) {
@@ -606,6 +620,10 @@ async function dev(args: string[], io: Io) {
   const settings = await loadSettings(io.env);
   const { workspace, tenant } = await locate(settings, values.tenant, values.workspace);
   const me = await whoami(settings);
+  // The editor's types follow the definitions from the first start, as they do on each rebuild.
+  await buildRepository({ ...buildOptionsOf(values), withoutAppSources: true })
+    .then((built) => writeEnvTypes(resolve(values.dir ?? "."), built.bundle.manifests))
+    .catch(() => undefined);
   const server = await startDevServer({
     ...buildOptionsOf(values),
     app: positionals[0],
@@ -1335,6 +1353,10 @@ const HANDLERS: Record<CommandName, (rest: string[], io: Io) => Promise<number>>
   },
   schemas: async (rest, io) => {
     await schemas(rest, io);
+    return 0;
+  },
+  types: async (rest, io) => {
+    await types(rest, io);
     return 0;
   },
   run: async (rest, io) => {

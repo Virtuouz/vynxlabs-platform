@@ -32,6 +32,24 @@ export interface PermissionKind {
   explicit?: true;
 }
 
+/**
+ * The roles every instance has, by the names a binding gives them. The migrations make them; a
+ * test of the control plane holds this list to what the database has.
+ */
+export const BUILTIN_ROLE_NAMES: readonly string[] = [
+  "agent_runner",
+  "app_maintainer",
+  "deployer",
+  "developer",
+  "doc_writer",
+  "operator_admin",
+  "portal_reader",
+  "portal_user",
+  "tenant_admin",
+  "viewer",
+  "workspace_admin",
+];
+
 export const PERMISSION_KINDS: readonly PermissionKind[] = [
   {
     kind: "instance",

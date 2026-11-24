@@ -258,7 +258,7 @@ export function buildContext({
       },
     },
     events: {
-      publish: async (event, payload) => {
+      publish: async (event: string, payload: Record<string, unknown>) => {
         await call("POST", `${runPath}/events`, { attempt: job.attempt, event, payload });
       },
     },

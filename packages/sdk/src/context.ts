@@ -32,10 +32,38 @@ export interface RunInfo {
   tag(...tags: string[]): Promise<void>;
 }
 
+/**
+ * The tables of the workspace, by path, as `volvel build` and `volvel types` write them into
+ * `.platform/volvel-env.d.ts`, which adds to this interface. Empty until that file is in the project.
+ */
+// biome-ignore lint/suspicious/noEmptyInterface: filled by declaration merging from the generated file.
+export interface VolvelTables {}
+/** The events of the workspace, by path, each with its payload. Filled by the generated file. */
+// biome-ignore lint/suspicious/noEmptyInterface: filled by declaration merging from the generated file.
+export interface VolvelEvents {}
+/** The variables of the workspace, by path. Filled by the generated file. */
+// biome-ignore lint/suspicious/noEmptyInterface: filled by declaration merging from the generated file.
+export interface VolvelVariables {}
+/** The connections of the workspace, by path. Filled by the generated file. */
+// biome-ignore lint/suspicious/noEmptyInterface: filled by declaration merging from the generated file.
+export interface VolvelConnections {}
+/** The flows of the workspace, by path, each with what a manual start is given. Filled by the generated file. */
+// biome-ignore lint/suspicious/noEmptyInterface: filled by declaration merging from the generated file.
+export interface VolvelFlows {}
+/** The scripts of the workspace, by path, each with its input and output where it has them. Filled by the generated file. */
+// biome-ignore lint/suspicious/noEmptyInterface: filled by declaration merging from the generated file.
+export interface VolvelScripts {}
+
+/** A name the generated file knows, offered as a completion, or any other text. */
+// A name the generated file does not know is not an error: a table or event made in the console later, or declared elsewhere.
+type KnownOr<Known> = Known | (string & {});
+
 /** What a script receives when it runs. */
 export interface ScriptContext {
   /** A client for a connection the script declared. */
-  connection<Client = import("./http.js").HttpClient>(path: string): Promise<Client>;
+  connection<Client = import("./http.js").HttpClient>(
+    path: KnownOr<keyof VolvelConnections>,
+  ): Promise<Client>;
   /**
    * A connection group the script declared. Its members are added per
    * workspace in the console, so which one to use is decided by data:
@@ -52,8 +80,17 @@ export interface ScriptContext {
   /** The value of a secret the script declared. */
   secret(name: string): Promise<string>;
   /** The value of a variable the script declared. */
-  variable(path: string): Promise<string>;
-  /** The rows of a table the script declared. Typed when given the table's definition. */
+  variable(path: KnownOr<keyof VolvelVariables>): Promise<string>;
+  /**
+   * The rows of a table the script declared. Typed by the table's path when the generated
+   * file knows it, and when given the table's definition.
+   */
+  table<Name extends keyof VolvelTables>(
+    table: Name,
+  ): import("./tables.js").TableClient<
+    VolvelTables[Name] extends { row: infer Row } ? Row : never,
+    VolvelTables[Name] extends { insert: infer Insert } ? Insert : never
+  >;
   table<Row = Record<string, unknown>, Insert = Partial<Row>>(
     table: string | { path: string; __row?: Row; __insert?: Insert },
   ): import("./tables.js").TableClient<Row, Insert>;
@@ -68,7 +105,14 @@ export interface ScriptContext {
   };
   events: {
     /** Publishes an event the script declared. Its subscribers are started before this returns. */
-    publish(event: string, payload: Record<string, unknown>): Promise<void>;
+    publish<Name extends keyof VolvelEvents>(
+      event: Name,
+      payload: VolvelEvents[Name],
+    ): Promise<void>;
+    publish<Name extends string>(
+      event: Name extends keyof VolvelEvents ? never : Name,
+      payload: Record<string, unknown>,
+    ): Promise<void>;
   };
   log: Logger;
   run: RunInfo;

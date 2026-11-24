@@ -379,7 +379,7 @@ describe("resources managed in the console, as files in the repository", () => {
       path: "orders/check",
       input: z.object({}),
       output: z.object({}),
-      execute: async () => ({}),
+      run: async () => ({}),
     });
   `;
   const yaml =

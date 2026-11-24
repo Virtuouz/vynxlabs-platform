@@ -87,6 +87,12 @@ export const COMMANDS = [
     "schemas",
     "Write each kind's file schema into .platform/schemas, and tell VS Code which files each checks, so that <name>.<kind>.yaml completes and is checked as typed.",
   ),
+  entry(
+    "types",
+    REPOSITORY,
+    "types",
+    "Write .platform/volvel-env.d.ts, which gives your tables, events, variables and connections to @volvel/sdk, so that scripts are typed by their names. `build` and `dev` write it too.",
+  ),
   entry("run", REPOSITORY, "run <script> [--input <json>]", "Run one script on this machine."),
   entry(
     "run",

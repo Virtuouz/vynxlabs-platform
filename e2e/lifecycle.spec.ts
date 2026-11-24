@@ -131,6 +131,8 @@ test("a script, a flow, a query and a docs site are removed, taken back, removed
   await expect(page.getByRole("button", { name: "Keep this query" })).toBeVisible();
   await page.getByRole("button", { name: "Keep this query" }).click();
   await say(page, "Keep");
+  // Kept once the screen says so, as for the flow above: only then is the draft gone.
+  await expect(page.getByRole("button", { name: "Remove", exact: true })).toBeVisible();
   expect(await draftOf(page, W, "life/query")).toBe("none");
   await page.getByRole("button", { name: "Remove", exact: true }).click();
   await say(page, "Remove");

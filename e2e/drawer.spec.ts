@@ -117,10 +117,14 @@ test("the runs list scrolls in one place, and its header stays @polish", async (
   await expect.poll(async () => (await table.getByRole("row").count()) > 30).toBe(true);
   expect(await scrollers("main")).toEqual(["runs"]);
   // Scrolled to the end, the header is still at the top of the list.
+  // Measured against the list's own top: the page above it may change while runs still arrive
+  // (the list is asked again every 5 s), and that is not the header moving.
   const header = table.locator("thead");
-  const before = (await header.boundingBox())?.y;
+  const offset = async () =>
+    ((await header.boundingBox())?.y ?? 0) - ((await table.boundingBox())?.y ?? 0);
+  const before = await offset();
   await table.evaluate((node) => node.scrollTo({ top: node.scrollHeight }));
-  expect((await header.boundingBox())?.y).toBe(before);
+  expect(await offset()).toBe(before);
   await table.evaluate((node) => node.scrollTo({ top: 0 }));
 });
 

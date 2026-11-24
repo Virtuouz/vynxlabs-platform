@@ -98,13 +98,9 @@ function projects() {
   const main = [
     { name: "setup", testMatch: "auth.setup.ts" },
     { name: "parallel", ...only(parallel), dependencies: ["setup"] },
-    { name: "fernhill", ...only(fernhill), dependencies: ["setup"] },
-    // Fernhill's feedback specs, one after the other, beside the rest of Fernhill's.
-    ...feedback.map((file, at) => ({
-      name: `fernhill-${nameOf(file)}`,
-      testMatch: file,
-      dependencies: at === 0 ? ["setup"] : [`fernhill-${nameOf(feedback[at - 1] as string)}`],
-    })),
+    // Fernhill's specs share its Sandbox (its apps, rows and feedback table): one worker, the
+    // files one after the other, beside the specs that make tenants of their own.
+    { name: "fernhill", ...only([...fernhill, ...feedback]), dependencies: ["setup"], workers: 1 },
   ];
   // One worker, the files one after the other.
   const lone = { name: "alone", ...only(alone), workers: 1 };

@@ -210,7 +210,7 @@ test("a screen has help beside it on F1, with the team's own notes, and nothing 
   // Help, from the keyboard.
   await page.keyboard.press("F1");
   const help = page.getByRole("complementary", { name: "Help" });
-  await expect(help.getByRole("heading", { name: "Tables" })).toBeVisible();
+  await expect(help.getByRole("heading", { name: "Tables", exact: true })).toBeVisible();
   await expect(help).toHaveAttribute("data-help-panel", "docked");
   await expect(help.getByText(/A table holds rows the workspace owns/)).toBeVisible();
   const team = help.getByRole("region", { name: "From your team" });
@@ -228,15 +228,15 @@ test("a screen has help beside it on F1, with the team's own notes, and nothing 
     .click();
   await expect(help.getByRole("heading", { name: /Approvals/ })).toBeVisible();
   await help.getByRole("button", { name: "Back to the help for this page" }).click();
-  await expect(help.getByRole("heading", { name: "Tables" })).toBeVisible();
+  await expect(help.getByRole("heading", { name: "Tables", exact: true })).toBeVisible();
 
   // It follows to another screen, and Escape closes it from inside.
   await page.goto(`/t/${made.tenant}/workspaces/${made.dev}/runs`);
   await expect(page.getByRole("button", { name: "Help for this page" })).toBeVisible();
   await page.locator("#main").focus();
   await page.keyboard.press("F1");
-  await expect(help.getByRole("heading", { name: "Runs" })).toBeVisible();
-  await help.getByRole("heading", { name: "Runs" }).press("Escape");
+  await expect(help.getByRole("heading", { name: "Runs", exact: true })).toBeVisible();
+  await help.getByRole("heading", { name: "Runs", exact: true }).press("Escape");
   await expect(help).toHaveCount(0);
 
   // Narrower, it lies over the edge. On a phone it takes the screen.
@@ -246,7 +246,7 @@ test("a screen has help beside it on F1, with the team's own notes, and nothing 
   await shot(page, "03-help-over");
   await page.setViewportSize({ width: 390, height: 780 });
   await expect(help).toHaveAttribute("data-help-panel", "full");
-  await expect(help.getByRole("heading", { name: "Runs" })).toBeVisible();
+  await expect(help.getByRole("heading", { name: "Runs", exact: true })).toBeVisible();
   await shot(page, "04-help-phone");
   await help.getByRole("button", { name: "Close help" }).click();
 

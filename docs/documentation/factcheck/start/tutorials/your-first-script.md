@@ -1,0 +1,19 @@
+# Fact-check record: start/tutorials/your-first-script
+
+Code as of commit `5ebf1c80`, 2026-11-23. Written by the page's writer; each row was also run (see the run log). "Checked by" is left for the second agent.
+
+| Claim | Source (file:line) | Checked by | Result |
+| --- | --- | --- | --- |
+| **Create tenant** has Name, Slug and "Make me a member, as tenant admin", on by default | `apps/console/src/screens/Tenants.tsx:193` | writer, run 2026-11-23 | holds |
+| A workspace is made from **Create workspace** with Name, Slug, Type, Promotes to; the type cannot be changed | `apps/console/src/screens/Tenant.tsx:409` and the dialog, run | writer, run | holds |
+| A new workspace shows First steps with four steps | `e2e/first-run.spec.ts:70-78` | writer, run | holds |
+| The starter "Total some numbers" and its text | `apps/console/src/screens/starters.ts:38` | writer, run | holds |
+| Ctrl+Enter saves the draft and runs it in the **Test pane**; the button reads "Save and run" for an unsaved draft | `apps/console/src/screens/Authoring.tsx:787,1076` | writer, run | holds |
+| Deploy shows Review draft and Deploy to dev, field **What changed**, button "Deploy N change(s)" | `apps/console/src/screens/Release.tsx:154,490`; `docs/Docs.tsx:606` | writer, run | holds |
+| The script list shows Uses "Nothing outside" and Source CONSOLE | `apps/console/src/screens/Execution.tsx` (list), run | writer, run | holds |
+| A run by hand shows "By hand" and the version | run page, run | writer, run | holds |
+| First steps disappears when all four are done | `Overview.tsx`, run | writer, run | holds |
+
+## Second check (2026-11-23)
+
+Checked by: second agent, 2026-11-23. Walked on http://localhost:8091 as operator admin on a new tenant, steps 1 to 13, one pass, current code. Corrected: the first screen is Instance only for an operator in no tenant (here the console opens in Fernhill: choose Instance in the rail); the Test pane is beside the code (under it at 390) and its result is below the fold, scroll the panel; after Deploy it is the step Review draft that reads 0 changes, with toast 'Deployed as version 2: tut-totals.' and v2; run page says 'version 2'. Fault fixed (fb): code area height at 390 (editor 462 px high) and Ctrl+Enter input (ran with the draft's example list). Fault fixed (ff): the result is scrolled into view after a run; step 7 says so.

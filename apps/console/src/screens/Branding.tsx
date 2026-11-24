@@ -5,11 +5,13 @@ import {
   CONTRAST_NEEDED,
   contrastRatio,
   Notice,
+  parseColor,
   TextField,
 } from "@volvel/ui";
 import { type CSSProperties, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
+import { Can } from "../kit/Can.tsx";
 import { sendIcons } from "../kit/icons.ts";
 import { ErrorState, Loading } from "../kit/LoadState.tsx";
 import { SaveBar } from "../kit/SaveBar.tsx";
@@ -164,7 +166,7 @@ export function TokenRows({
     <fieldset className="m-0 flex min-w-0 flex-col gap-2 border-0 p-0">
       <legend className="mb-2 p-0 font-medium">{mode === "tokens" ? "Light" : "Dark"}</legend>
       {THEME_TOKENS.map((token) => {
-        const problem = error?.fields.find((field) =>
+        const problem = error?.fields?.find((field) =>
           field.path.endsWith(`/${mode}/${token}`),
         )?.message;
         const value = values[token] ?? "";
@@ -266,33 +268,60 @@ const PAIRS: [ink: string, ground: string, needs: "text" | "edge"][] = [
  * contrast and what it needs. It warns; saving is still allowed.
  */
 export function ContrastCheck({ values }: { values: Tokens }) {
-  const failing = PAIRS.flatMap(([ink, ground, needs]) => {
+  const failing: { ink: string; ground: string; ratio: number; needs: number }[] = [];
+  const unread: { ink: string; ground: string; why: string }[] = [];
+  for (const [ink, ground, needs] of PAIRS) {
     const one = values[ink];
     const two = values[ground];
-    if (!one || !two) return [];
-    const ratio = contrastRatio(one, two);
-    return ratio !== undefined && ratio < CONTRAST_NEEDED[needs]
-      ? [{ ink, ground, ratio, needs: CONTRAST_NEEDED[needs] }]
-      : [];
-  });
-  if (failing.length === 0) {
+    // A token left empty keeps the kit's own value, which is the kit's to get right.
+    if (!one || !two) continue;
+    // What a faint color is drawn on, in the end, is the canvas.
+    const ratio = contrastRatio(one, two, values.canvas || "#ffffff");
+    if (ratio === undefined) {
+      const bad = parseColor(one) === undefined ? ink : ground;
+      unread.push({ ink, ground, why: `${bad} is “${values[bad]}”` });
+    } else if (ratio < CONTRAST_NEEDED[needs]) {
+      failing.push({ ink, ground, ratio, needs: CONTRAST_NEEDED[needs] });
+    }
+  }
+  if (failing.length === 0 && unread.length === 0) {
     return <p className="m-0 text-meta text-ink-muted">Every pair checked is easy to read.</p>;
   }
   return (
-    <Notice tone="attention">
-      <p className="m-0 font-medium">
-        {failing.length === 1 ? "One pair is" : `${failing.length} pairs are`} hard to read:
-      </p>
-      <ul className="m-0 mt-1 pl-4">
-        {failing.map((one) => (
-          <li key={`${one.ink}-${one.ground}`}>
-            <code className="font-mono">{one.ink}</code> on{" "}
-            <code className="font-mono">{one.ground}</code>: {one.ratio.toFixed(2)}, needs{" "}
-            {one.needs}
-          </li>
-        ))}
-      </ul>
-    </Notice>
+    <>
+      {failing.length > 0 ? (
+        <Notice tone="attention">
+          <p className="m-0 font-medium">
+            {failing.length === 1 ? "One pair is" : `${failing.length} pairs are`} hard to read:
+          </p>
+          <ul className="m-0 mt-1 pl-4">
+            {failing.map((one) => (
+              <li key={`${one.ink}-${one.ground}`}>
+                <code className="font-mono">{one.ink}</code> on{" "}
+                <code className="font-mono">{one.ground}</code>: {one.ratio.toFixed(2)}, needs{" "}
+                {one.needs}
+              </li>
+            ))}
+          </ul>
+        </Notice>
+      ) : null}
+      {unread.length > 0 ? (
+        <Notice tone="plain">
+          <p className="m-0 font-medium">
+            {unread.length === 1 ? "One pair" : `${unread.length} pairs`} could not be checked. Use
+            a color written as a name, #hex, rgb() or hsl() to have them checked:
+          </p>
+          <ul className="m-0 mt-1 pl-4">
+            {unread.map((one) => (
+              <li key={`${one.ink}-${one.ground}`}>
+                <code className="font-mono">{one.ink}</code> on{" "}
+                <code className="font-mono">{one.ground}</code>: {one.why}
+              </li>
+            ))}
+          </ul>
+        </Notice>
+      ) : null}
+    </>
   );
 }
 
@@ -504,42 +533,50 @@ function BrandingForm({ base, data, reload }: { base: string; data: Portal; relo
       title="Branding"
       description="How this tenant's portal and apps look to its end users, and whether people may create their own account there. Changes are saved together, from the bar that appears below."
     >
-      <section className={panel}>
-        <h2 className="m-0 text-title font-semibold">Portal</h2>
-        <p className="m-0 max-w-measure">
-          <a
-            href={data.portalUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="break-all text-action"
-          >
-            {data.portalUrl}
-          </a>
-        </p>
-        <p className="m-0 max-w-measure text-ink-muted">
-          The portal is where this tenant's end users sign in, choose or reset their password, and
-          find the apps that are open to them.{" "}
-          {data.mail
-            ? "This instance sends mail, so invitations and password reset links are emailed to them."
-            : "This instance sends no mail, so invitation and password reset links have to be passed on by hand. They are shown under End users when they are made."}
-        </p>
-        <CheckboxField
-          label="People may create their own account"
-          name="signUp"
-          checked={signUp}
-          hint="When this is off, only people invited under End users have an account."
-          onChange={setSignUp}
+      <Can base={base} permission="portal:write" what="this tenant's branding">
+        <section className={panel}>
+          <h2 className="m-0 text-title font-semibold">Portal</h2>
+          <p className="m-0 max-w-measure">
+            <a
+              href={data.portalUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="break-all text-action"
+            >
+              {data.portalUrl}
+            </a>
+          </p>
+          <p className="m-0 max-w-measure text-ink-muted">
+            The portal is where this tenant's end users sign in, choose or reset their password, and
+            find the apps that are open to them.{" "}
+            {data.mail
+              ? "This instance sends mail, so invitations and password reset links are emailed to them."
+              : "This instance sends no mail, so invitation and password reset links have to be passed on by hand. They are shown under End users when they are made."}
+          </p>
+          <CheckboxField
+            label="People may create their own account"
+            name="signUp"
+            checked={signUp}
+            hint="When this is off, only people invited under End users have an account."
+            onChange={setSignUp}
+          />
+        </section>
+        <ThemeEditor
+          light={light}
+          dark={dark}
+          setLight={setLight}
+          setDark={setDark}
+          error={error}
         />
-      </section>
-      <ThemeEditor light={light} dark={dark} setLight={setLight} setDark={setDark} error={error} />
-      <Logo base={base} has={data.logo} reload={reload} />
-      <SaveBar
-        dirty={dirty}
-        saving={saving}
-        onSave={() => void save()}
-        onDiscard={discard}
-        what="this tenant's branding"
-      />
+        <Logo base={base} has={data.logo} reload={reload} />
+        <SaveBar
+          dirty={dirty}
+          saving={saving}
+          onSave={() => void save()}
+          onDiscard={discard}
+          what="this tenant's branding"
+        />
+      </Can>
     </Page>
   );
 }

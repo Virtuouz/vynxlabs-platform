@@ -1,19 +1,23 @@
+import { Readable } from "node:stream";
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import { newId, sql } from "@volvel/db";
 import { PERMISSION_KINDS } from "@volvel/manifest";
 import { CORE_NODES } from "@volvel/nodes";
 import { Type } from "typebox";
 import { MIN_PASSWORD_LENGTH } from "../config.js";
+import { endOperatorGrantsIfNoLonger, keepingAnOperator } from "../kernel/administer.js";
 import type { Trx } from "../kernel/audit.js";
-import { badRequest, conflict, forbidden, forbiddenBecause, notFound } from "../kernel/errors.js";
+import { badRequest, forbiddenBecause, notFound } from "../kernel/errors.js";
 import { access } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
 import { INSTANCE_ONLY_ROLE } from "../kernel/kinds.js";
-import { createMember } from "../kernel/members.js";
+import { createMember, setMemberDisabled } from "../kernel/members.js";
 import { generateApiKey } from "../kernel/principal.js";
 import { effectivePolicy } from "../kernel/retention.js";
+import { nameOwnedBy } from "../kernel/sso/people.js";
 import { makeRecoveryCodes, ownsATenant } from "../kernel/sso/recovery.js";
-import { likeTerm, PageQuery, pageOf, SearchPageQuery } from "../pagination.js";
+import { likeTerm, listOf, PageQuery, pageOf, SearchPageQuery } from "../pagination.js";
+import { csvCell } from "./data.js";
 import {
   AnyObject,
   Id,
@@ -44,6 +48,18 @@ export const Member = Type.Object({
       description: "In the instance's list: whether the account can sign in nowhere.",
     }),
   ),
+  directRoles: Type.Optional(
+    Type.Integer({
+      minimum: 0,
+      description: "In a tenant's list: how many roles the member is given directly there.",
+    }),
+  ),
+  groups: Type.Optional(
+    Type.Integer({
+      minimum: 0,
+      description: "In a tenant's list: how many groups of the tenant the member is in.",
+    }),
+  ),
 });
 export const toMember = (row: {
   id: string;
@@ -52,11 +68,15 @@ export const toMember = (row: {
   created_at: Date;
   suspended_at?: Date | null;
   disabled_at?: Date | null;
+  direct_roles?: number | string;
+  group_count?: number | string;
 }) => ({
   id: row.id,
   name: row.name,
   email: row.email,
   createdAt: iso(row.created_at),
+  ...(row.direct_roles !== undefined ? { directRoles: Number(row.direct_roles) } : {}),
+  ...(row.group_count !== undefined ? { groups: Number(row.group_count) } : {}),
   ...(row.suspended_at !== undefined ? { suspended: row.suspended_at !== null } : {}),
   ...(row.disabled_at !== undefined ? { disabled: row.disabled_at !== null } : {}),
 });
@@ -119,6 +139,7 @@ export async function insertApiKey(
   trx: Trx,
   owner: { type: "member" | "service_account"; id: string },
   input: { name: string; expiresAt?: string | undefined },
+  madeBy?: string | null,
 ) {
   const expiresAt = input.expiresAt ? new Date(input.expiresAt) : null;
   if (expiresAt && expiresAt <= new Date()) throw badRequest("expiresAt must be in the future.");
@@ -136,6 +157,7 @@ export async function insertApiKey(
       expires_at: expiresAt,
       last_used_at: null,
       revoked_at: null,
+      created_by: madeBy ?? null,
     })
     .returningAll()
     .executeTakeFirstOrThrow();
@@ -194,13 +216,31 @@ export const AuditQuery = Type.Object({
     Type.String({
       minLength: 1,
       maxLength: 200,
-      description: "Entries whose action, target or kind of target holds this text.",
+      description:
+        "Entries whose action, target, kind of target, or the name now given to the target or actor (an email, a hostname) holds this text.",
     }),
   ),
   from: Type.Optional(
     Type.String({ format: "date-time", description: "Nothing older than this." }),
   ),
   to: Type.Optional(Type.String({ format: "date-time", description: "Nothing newer than this." })),
+});
+
+const { limit: _limit, cursor: _cursor, ...filterProperties } = AuditQuery.properties;
+/** The filters of a log without paging: what facets and exports take. */
+export const AuditFilterQuery = Type.Object(filterProperties);
+const Count = Type.Integer({ minimum: 0 });
+export const AuditFacets = Type.Object({
+  actions: Type.Array(Type.Object({ value: Type.String(), count: Count })),
+  actors: Type.Array(
+    Type.Object({
+      type: Type.String(),
+      id: Type.Union([Type.String(), Type.Null()]),
+      label: Type.Union([Type.String(), Type.Null()]),
+      count: Count,
+    }),
+  ),
+  targetTypes: Type.Array(Type.Object({ value: Type.String(), count: Count })),
 });
 
 export interface AuditFilters {
@@ -221,9 +261,23 @@ export interface AuditFilters {
  */
 async function auditSelect(kernel: Kernel, tenantId: string | null, query: AuditFilters) {
   let select = kernel.db.selectFrom("audit_entry");
+  // The instance's log is its own entries and those of tenants that are gone: a deleted tenant
+  // has no log to read, and what was done in it is read here (D47).
   select =
     tenantId === null
-      ? select.where("tenant_id", "is", null)
+      ? select.where((eb) =>
+          eb.or([
+            eb("tenant_id", "is", null),
+            eb.not(
+              eb.exists(
+                eb
+                  .selectFrom("tenant")
+                  .select(sql<number>`1`.as("one"))
+                  .whereRef("tenant.id", "=", "audit_entry.tenant_id"),
+              ),
+            ),
+          ]),
+        )
       : select.where("tenant_id", "=", tenantId);
   if (query.action) select = select.where("action", "=", query.action);
   // The pattern on `area` allows no wildcard character, so it is safe inside `like`.
@@ -239,6 +293,15 @@ async function auditSelect(kernel: Kernel, tenantId: string | null, query: Audit
         eb("action", "ilike", like),
         eb("target_id", "ilike", like),
         eb("target_type", "ilike", like),
+        // What a target or an actor is called now: an email, a hostname, a name (GOV-32).
+        // Entries hold IDs, so the text is resolved to the IDs of what is so called.
+        ...Object.entries(TARGET_NAMES).flatMap(([type, { table, column }]) => {
+          const called = sql<string>`(select id::text from ${sql.table(table)} where ${sql.ref(column)}::text ilike ${like})`;
+          return [
+            eb.and([eb("target_type", "=", type), sql<boolean>`target_id in ${called}`]),
+            eb.and([eb("actor_type", "=", type), sql<boolean>`actor_id::text in ${called}`]),
+          ];
+        }),
       ]),
     );
   }
@@ -329,13 +392,23 @@ const toAuditEntry = (
   workspaceId: row.workspace_id,
   actorType: row.actor_type,
   actorId: row.actor_id,
-  actorLabel: nameOf(row.actor_type, row.actor_id),
+  actorLabel:
+    nameOf(row.actor_type, row.actor_id) ??
+    (typeof (row.details as { actorName?: unknown } | null)?.actorName === "string"
+      ? (row.details as { actorName: string }).actorName
+      : null),
   apiKeyId: row.api_key_id,
   accessGrantId: row.access_grant_id,
   action: row.action,
   targetType: row.target_type,
   targetId: row.target_id,
-  targetLabel: nameOf(row.target_type, row.target_id),
+  // A tenant that is gone is not in its table: its creation and its deletion kept its name.
+  targetLabel:
+    nameOf(row.target_type, row.target_id) ??
+    (row.target_type === "tenant" &&
+    typeof (row.details as { name?: unknown } | null)?.name === "string"
+      ? (row.details as { name: string }).name
+      : null),
   details: row.details as Record<string, unknown>,
   ipAddress: row.ip_address,
   userAgent: row.user_agent,
@@ -365,7 +438,7 @@ export async function auditPage(
 }
 
 /** One entry, for a link to it. Undefined when there is none, or it is older than the log keeps. */
-export async function auditEntry(kernel: Kernel, tenantId: string, id: string) {
+export async function auditEntry(kernel: Kernel, tenantId: string | null, id: string) {
   const row = await (await auditSelect(kernel, tenantId, {}))
     .selectAll()
     .where("id", "=", id)
@@ -375,7 +448,7 @@ export async function auditEntry(kernel: Kernel, tenantId: string, id: string) {
 }
 
 /** What a log holds in a range, to narrow it by: its actions, its actors and kinds of target. */
-export async function auditFacets(kernel: Kernel, tenantId: string, query: AuditFilters) {
+export async function auditFacets(kernel: Kernel, tenantId: string | null, query: AuditFilters) {
   const base = await auditSelect(kernel, tenantId, query);
   const [actions, actors, targets] = await Promise.all([
     base
@@ -416,7 +489,7 @@ export async function auditFacets(kernel: Kernel, tenantId: string, query: Audit
 /** Every entry for `filters`, newest first, a thousand at a time, for an export. */
 export async function* auditEntries(
   kernel: Kernel,
-  tenantId: string,
+  tenantId: string | null,
   query: AuditFilters,
   cap: number,
 ) {
@@ -438,12 +511,50 @@ export async function* auditEntries(
   }
 }
 
+/** How many entries one audit export holds at most. */
+export const AUDIT_CSV_CAP = 100_000;
+const AUDIT_CSV_COLUMNS = [
+  "occurredAt",
+  "action",
+  "actorType",
+  "actorLabel",
+  "actorId",
+  "targetType",
+  "targetLabel",
+  "targetId",
+  "workspaceId",
+  "accessGrantId",
+  "requestId",
+  "ipAddress",
+  "details",
+] as const;
+
+/** A log's entries as CSV lines: the one file a tenant's log and the instance's both give. */
+export function auditCsv(kernel: Kernel, tenantId: string | null, query: AuditFilters) {
+  async function* lines() {
+    yield `${AUDIT_CSV_COLUMNS.join(",")}\r\n`;
+    for await (const entry of auditEntries(kernel, tenantId, query, AUDIT_CSV_CAP)) {
+      yield `${AUDIT_CSV_COLUMNS.map((column) => csvCell(entry[column])).join(",")}\r\n`;
+    }
+  }
+  return Readable.from(lines());
+}
+
+const DisabledMember = Type.Object({
+  ...Member.properties,
+  tenantsWithoutAdmin: Type.Array(Type.Object({ id: Id, name: Type.String() }), {
+    description: "Tenants this account was the last admin of. An operator can open access to each.",
+  }),
+});
+
 const InstanceBinding = Type.Object({
   id: Id,
   memberId: Id,
   memberEmail: Type.String(),
   roleId: Id,
   roleName: Type.String(),
+  /** An operator whose account is disabled cannot sign in, and does not count as one. */
+  memberDisabled: Type.Boolean(),
   createdAt: Time,
 });
 
@@ -455,6 +566,7 @@ export function identityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.signedIn },
         schema: {
           summary: "How many of the caller's recovery codes are left",
+          description: "A count only. The codes themselves are shown once, when they are made.",
           tags: ["identity"],
           response: {
             200: Type.Object({
@@ -625,9 +737,11 @@ export function identityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       "/me",
       {
-        config: { access: access.signedIn },
+        config: { access: access.signedInOrKey },
         schema: {
           summary: "The calling principal",
+          description:
+            "Who the instance takes the caller to be: a member, a service account or an end user. The console draws its first screen from this answer.",
           tags: ["identity"],
           response: {
             200: Type.Object({
@@ -636,6 +750,12 @@ export function identityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                 id: Id,
                 name: NullableString,
                 email: NullableString,
+                nameFrom: Type.Optional(
+                  Type.Union([Type.String(), Type.Null()], {
+                    description:
+                      "The identity provider whose directory sets this member's name, when one does.",
+                  }),
+                ),
               }),
               instancePermissions: Type.Array(Type.String(), {
                 description: "Permissions held at instance scope.",
@@ -679,6 +799,9 @@ export function identityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             id,
             name: principal.name ?? null,
             email: principal.email ?? null,
+            ...(principal.type === "member"
+              ? { nameFrom: (await nameOwnedBy(kernel.db, id)) ?? null }
+              : {}),
           },
           instancePermissions: [...new Set(roles.flatMap((role) => role.permissions))].sort(),
           tenants: await tenants.execute(),
@@ -692,6 +815,8 @@ export function identityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.signedIn },
         schema: {
           summary: "Registered resource kinds",
+          description:
+            "Every kind of resource this version of Volvel knows, with the JSON Schema its body is checked against.",
           tags: ["resources"],
           response: {
             200: Type.Object({
@@ -710,10 +835,10 @@ export function identityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       {
         config: { access: access.signedIn },
         schema: {
-          summary: "The core nodes: steps for flows that come with the platform",
+          summary: "The core nodes: steps for flows that come with Volvel",
           description:
             "Each is a script under `core/`. A flow uses one by naming it in a script step, and " +
-            "the platform adds it to the workspace's bundle when the bundle is composed. " +
+            "Volvel adds it to the workspace's bundle when the bundle is composed. " +
             "`takes` is what a step may hand it with `with`. In `input`, a field marked " +
             "`x-pick` names a connection, a table or an event of the workspace.",
           tags: ["flows"],
@@ -814,8 +939,10 @@ export function identityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.signedIn },
         schema: {
           summary: "The calling member's API keys",
+          description:
+            "The keys the member made for themselves. A key's full value is shown once, when it is made, and is not in this list.",
           tags: ["identity"],
-          response: { 200: Type.Object({ items: Type.Array(ApiKey) }) },
+          response: { 200: listOf(ApiKey) },
         },
       },
       async ({ ctx }) => {
@@ -836,6 +963,8 @@ export function identityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.signedIn },
         schema: {
           summary: "Create an API key that acts as the calling member",
+          description:
+            "The key acts as the member. Its value is in the answer and is never shown again. Audited.",
           tags: ["identity"],
           body: NewApiKeyBody,
           response: { 201: NewApiKey },
@@ -863,6 +992,7 @@ export function identityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.signedIn },
         schema: {
           summary: "Revoke one of the calling member's API keys",
+          description: "The key stops working. Audited.",
           tags: ["identity"],
           params: Type.Object({ id: Id }),
           response: { 204: NoContent },
@@ -960,35 +1090,40 @@ export function identityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             "A disabled member can sign in nowhere, by password, single sign-on or API key, and " +
             "every session they have ends. The account and what it holds are kept. The " +
             "instance's identity provider does this when it says someone has left. Nobody " +
-            "disables their own account.",
+            "disables their own account, and the instance keeps an operator who can sign in. " +
+            "The answer lists the tenants left with nobody who can administer them: an " +
+            "operator can open access to each.",
           tags: ["identity"],
           params: Type.Object({ id: Id }),
           body: Type.Object({ disabled: Type.Boolean() }),
-          response: { 200: Member },
+          response: { 200: DisabledMember },
         },
       },
       async ({ ctx, params, body }) => {
         if (body.disabled && ctx.principal.id === params.id) {
           throw badRequest("You cannot disable your own account.");
         }
+        // Already as asked: nothing changes, so nothing is written and nothing is audited.
+        const now = await kernel.db
+          .selectFrom("member")
+          .select(["id", "name", "email", "created_at", "disabled_at"])
+          .where("id", "=", params.id)
+          .executeTakeFirst();
+        if (!now) throw notFound("The member");
+        if ((now.disabled_at !== null) === body.disabled) {
+          ctx.mutated = true;
+          return { ...toMember(now), tenantsWithoutAdmin: [] };
+        }
         return ctx.mutate(async (trx, audit) => {
-          const member = await trx
-            .updateTable("member")
-            .set({ disabled_at: body.disabled ? new Date() : null })
-            .where("id", "=", params.id)
-            .returning(["id", "name", "email", "created_at", "disabled_at"])
-            .executeTakeFirst();
-          if (!member) throw notFound("The member");
-          if (body.disabled) {
-            await trx.deleteFrom("member_session").where("member_id", "=", member.id).execute();
-          }
-          await audit({
-            action: body.disabled ? "member.disabled" : "member.enabled",
-            targetType: "member",
-            targetId: member.id,
-            details: { email: member.email },
-          });
-          return toMember(member);
+          const done = await setMemberDisabled(
+            trx,
+            audit,
+            params.id,
+            body.disabled,
+            ctx.principal.id,
+            "hand",
+          );
+          return { ...toMember(done.member), tenantsWithoutAdmin: done.tenantsWithoutAdmin };
         });
       },
     );
@@ -999,6 +1134,8 @@ export function identityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.instance("member:write") },
         schema: {
           summary: "Create a member identity",
+          description:
+            "Makes a person who can sign in to the instance. Giving them access to a tenant is a binding, made separately. Audited.",
           tags: ["identity"],
           body: NewMemberBody,
           response: { 201: Member },
@@ -1016,8 +1153,9 @@ export function identityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.instance("binding:read") },
         schema: {
           summary: "Instance-scope bindings",
+          description: "The roles given at the instance, and to whom.",
           tags: ["permissions"],
-          response: { 200: Type.Object({ items: Type.Array(InstanceBinding) }) },
+          response: { 200: listOf(InstanceBinding) },
         },
       },
       async () => {
@@ -1029,6 +1167,7 @@ export function identityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             "binding.id",
             "binding.principal_id",
             "member.email",
+            "member.disabled_at",
             "binding.role_id",
             "role.name",
             "binding.created_at",
@@ -1043,6 +1182,7 @@ export function identityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             memberEmail: row.email,
             roleId: row.role_id,
             roleName: row.name,
+            memberDisabled: row.disabled_at !== null,
             createdAt: iso(row.created_at),
           })),
         };
@@ -1055,6 +1195,8 @@ export function identityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.instance("binding:write") },
         schema: {
           summary: "Bind a built-in role to a member at instance scope",
+          description:
+            "Only the built-in `operator_admin` role can be given at the instance. Audited.",
           tags: ["permissions"],
           body: Type.Object({ memberId: Id, roleId: Id }),
           response: { 201: Type.Object({ id: Id }) },
@@ -1066,10 +1208,20 @@ export function identityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           .select(["id", "name", "builtin"])
           .where("id", "=", body.roleId)
           .executeTakeFirst();
-        if (!role?.builtin)
-          throw badRequest("Only a built-in role can be bound at instance scope.");
+        if (role?.name !== INSTANCE_ONLY_ROLE) {
+          throw badRequest("Only the operator admin role can be bound at instance scope.");
+        }
         const id = newId();
         await ctx.mutate(async (trx, audit) => {
+          const member = await trx
+            .selectFrom("member")
+            .select(["id", "disabled_at"])
+            .where("id", "=", body.memberId)
+            .executeTakeFirst();
+          if (!member) throw badRequest("There is no member with that ID on this instance.");
+          if (member.disabled_at) {
+            throw badRequest("That account is disabled. Enable it before making it an operator.");
+          }
           await trx
             .insertInto("binding")
             .values({
@@ -1101,39 +1253,40 @@ export function identityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.instance("binding:write") },
         schema: {
           summary: "Remove an instance-scope binding",
+          description:
+            "The member loses the role at the instance. Refused when it would leave the instance without an operator. Audited.",
           tags: ["permissions"],
           params: Type.Object({ id: Id }),
           response: { 204: NoContent },
         },
       },
       async ({ ctx, params }, reply) => {
-        await ctx.mutate(async (trx, audit) => {
-          const binding = await trx
-            .selectFrom("binding")
-            .innerJoin("role", "role.id", "binding.role_id")
-            .select(["binding.id", "binding.principal_id", "role.name"])
-            .where("binding.id", "=", params.id)
-            .where("binding.scope_type", "=", "instance")
-            .executeTakeFirst();
-          if (!binding) throw notFound("The binding");
-          if (binding.name === INSTANCE_ONLY_ROLE) {
-            const others = await trx
+        await ctx.mutate((trx, audit) =>
+          keepingAnOperator(trx, async () => {
+            const binding = await trx
               .selectFrom("binding")
               .innerJoin("role", "role.id", "binding.role_id")
-              .select("binding.id")
-              .where("role.name", "=", INSTANCE_ONLY_ROLE)
-              .where("binding.id", "!=", params.id)
+              .select(["binding.id", "binding.principal_id", "role.name"])
+              .where("binding.id", "=", params.id)
+              .where("binding.scope_type", "=", "instance")
               .executeTakeFirst();
-            if (!others) throw conflict("The instance must keep at least one operator admin.");
-          }
-          await trx.deleteFrom("binding").where("id", "=", params.id).execute();
-          await audit({
-            action: "binding.deleted",
-            targetType: "binding",
-            targetId: params.id,
-            details: { scope: "instance", memberId: binding.principal_id, role: binding.name },
-          });
-        });
+            if (!binding) throw notFound("The binding");
+            await trx.deleteFrom("binding").where("id", "=", params.id).execute();
+            await audit({
+              action: "binding.deleted",
+              targetType: "binding",
+              targetId: params.id,
+              details: { scope: "instance", memberId: binding.principal_id, role: binding.name },
+            });
+            // What they opened as an operator ends when they stop being one.
+            await endOperatorGrantsIfNoLonger(
+              trx,
+              audit,
+              binding.principal_id as string,
+              ctx.principal.id,
+            );
+          }),
+        );
         return reply.code(204).send(null);
       },
     );
@@ -1144,13 +1297,71 @@ export function identityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.instance("audit:read") },
         schema: {
           summary: "Instance-level audit entries, newest first",
-          description: "Entries that belong to no tenant. A tenant's entries are under the tenant.",
+          description:
+            "Entries that belong to no tenant, and the entries of tenants that were deleted: a deleted tenant has no log of its own, and its `tenantId` says whose they were. A tenant's entries are under the tenant.",
           tags: ["audit"],
           querystring: AuditQuery,
           response: { 200: pageOf(AuditEntry) },
         },
       },
       async ({ query }) => auditPage(kernel, null, query),
+    );
+
+    app.get(
+      "/audit-facets",
+      {
+        config: { access: access.instance("audit:read") },
+        schema: {
+          summary: "What the instance's log holds, to narrow it by",
+          description:
+            "The actions, actors and kinds of target among the instance-level entries the filters " +
+            "keep, each with how many entries it has, most first. At most 100 of each.",
+          tags: ["audit"],
+          querystring: AuditFilterQuery,
+          response: { 200: AuditFacets },
+        },
+      },
+      async ({ query }) => auditFacets(kernel, null, query),
+    );
+
+    app.get(
+      "/audit/:id",
+      {
+        config: { access: access.instance("audit:read") },
+        schema: {
+          summary: "One instance-level audit entry",
+          description: "For a link to an entry. 404 once the log no longer keeps it.",
+          tags: ["audit"],
+          params: Type.Object({ id: Id }),
+          response: { 200: AuditEntry },
+        },
+      },
+      async ({ params }) => {
+        const entry = await auditEntry(kernel, null, params.id);
+        if (!entry) throw notFound("The audit entry");
+        return entry;
+      },
+    );
+
+    app.get(
+      "/audit-export",
+      {
+        config: { access: access.instance("audit:read") },
+        schema: {
+          summary: "The instance's audit entries, as CSV",
+          description: `The instance-level entries the filters keep, newest first, at most ${AUDIT_CSV_CAP.toLocaleString("en-US")}.`,
+          tags: ["audit"],
+          querystring: AuditFilterQuery,
+          produces: ["text/csv"],
+          response: { 200: Type.Unknown({ description: "The entries, as CSV." }) },
+        },
+      },
+      async ({ query }, reply) => {
+        reply
+          .header("content-type", "text/csv; charset=utf-8")
+          .header("content-disposition", `attachment; filename="audit-log.csv"`);
+        return reply.send(auditCsv(kernel, null, query));
+      },
     );
   };
 }

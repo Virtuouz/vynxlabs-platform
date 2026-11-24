@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { newId, sql } from "@volvel/db";
+import { newId, POLICY_NAMES, sql } from "@volvel/db";
 import {
   type ColumnType,
   conditionColumn,
@@ -51,6 +51,7 @@ export async function loadCatalog(db: Db | Trx, workspaceId: string): Promise<Ca
       "in",
       tables.map((table) => table.id),
     )
+    .orderBy(sql`coalesce(position, 0)`)
     .orderBy("created_at")
     .orderBy("name")
     .execute();
@@ -62,6 +63,7 @@ export async function loadCatalog(db: Db | Trx, workspaceId: string): Promise<Ca
     status: table.status,
     policy: table.policy,
     previousNames: table.previous_names,
+    managedIn: table.managed_in,
     columns: columns
       .filter((column) => column.table_id === table.id)
       .map((column) => ({
@@ -173,7 +175,30 @@ export async function applyTable(
   await sql`create schema if not exists ${sql.id(schema)}`.execute(trx);
   await sql`grant usage on schema ${sql.id(schema)} to ${sql.id(role)}`.execute(trx);
 
+  // A policy names its column, and Postgres will not change the type of a column a policy
+  // names. Policies are lifted for a widen and put back after, unless the save sets another.
+  const widening = plan.steps.some((step) => step.op === "widen_column");
+  const before = widening
+    ? await trx
+        .selectFrom("data_table")
+        .select(["id", "physical_name", "policy"])
+        .where("resource_id", "=", resource.id)
+        .where("status", "=", "active")
+        .executeTakeFirst()
+    : undefined;
+  if (before) {
+    for (const name of POLICY_NAMES) {
+      await sql`drop policy if exists ${sql.id(name)} on ${sql.id(schema, before.physical_name)}`.execute(
+        trx,
+      );
+    }
+  }
+
   for (const step of plan.steps) await applyStep(trx, role, resource, schema, step);
+
+  if (before && !plan.steps.some((step) => step.op === "set_policy")) {
+    await setPolicy(trx, role, schema, before, before.policy as TablePolicy);
+  }
 
   // The catalog row always points at the resource that declares the table.
   await trx
@@ -302,6 +327,16 @@ async function applyStep(
         );
       }
     }
+    if (column.unique && column.default !== null && column.default !== undefined) {
+      const several = await sql`select 1 from ${target} offset 1 limit 1`.execute(trx);
+      if (several.rows.length > 0) {
+        throw refuse(
+          step.table,
+          column.name,
+          "is unique and has a default, so every row the table already has would get the same value. Add the column with no default, or fill it row by row first.",
+        );
+      }
+    }
     await sql`alter table ${target} add column ${columnDefinition(column)}`.execute(trx);
     await insertColumn(trx, table.id, column);
     if (column.unique) await setUnique(trx, schema, table.physical_name, column.physicalName, true);
@@ -336,6 +371,11 @@ async function applyStep(
         .execute();
       break;
     case "restore_column":
+      if (column.default_value !== null && column.default_value !== undefined) {
+        await sql`alter table ${target} alter column ${physical} set default ${literal(column.type as ColumnType, column.default_value)}`.execute(
+          trx,
+        );
+      }
       await trx
         .updateTable("data_column")
         .set({ status: "active", retired_at: null })
@@ -349,6 +389,8 @@ async function applyStep(
       await sql`alter table ${target} drop constraint if exists ${sql.id(constraintName("fk", table.physical_name, column.physical_name))}`.execute(
         trx,
       );
+      // Rows written from now on get no value for it. The catalog keeps the default, to put back.
+      await sql`alter table ${target} alter column ${physical} drop default`.execute(trx);
       await trx
         .updateTable("data_column")
         .set({ status: "retired", retired_at: new Date(), required: false, is_unique: false })
@@ -443,14 +485,21 @@ async function applyStep(
       break;
     case "set_unique":
       if (step.unique) {
-        const repeated = await sql`
-          select 1 from ${target} where ${physical} is not null group by ${physical} having count(*) > 1 limit 1
+        const repeated = await sql<{ value: string; n: string }>`
+          select ${physical}::text as value, count(*) as n from ${target}
+          where ${physical} is not null group by ${physical} having count(*) > 1
+          order by count(*) desc, ${physical}::text limit 4
         `.execute(trx);
         if (repeated.rows.length > 0) {
+          // Name the values, so the person knows which rows to change.
+          const shown = repeated.rows.slice(0, 3).map((row) => {
+            const text = row.value.length > 40 ? `${row.value.slice(0, 40)}...` : row.value;
+            return `"${text}" is in ${row.n} rows`;
+          });
           throw refuse(
             step.table,
             step.name,
-            "is now unique, and some rows share a value. Make the values distinct first.",
+            `is now unique, and some rows share a value: ${shown.join(", ")}${repeated.rows.length > 3 ? " and more" : ""}. Make the values distinct first.`,
           );
         }
       }
@@ -541,6 +590,12 @@ async function applyStep(
 }
 
 async function insertColumn(trx: Trx, tableId: string, column: NewColumn) {
+  // After the table's other columns, in the order the definition gave them.
+  const last = await trx
+    .selectFrom("data_column")
+    .select(sql<number | null>`max(coalesce(position, 0))`.as("last"))
+    .where("table_id", "=", tableId)
+    .executeTakeFirst();
   await trx
     .insertInto("data_column")
     .values({
@@ -559,6 +614,7 @@ async function insertColumn(trx: Trx, tableId: string, column: NewColumn) {
       on_delete: column.onDelete,
       options: column.values ? JSON.stringify({ values: column.values, retired: [] }) : null,
       status: "active",
+      position: last?.last === null || last?.last === undefined ? 0 : Number(last.last) + 1,
     })
     .execute();
 }
@@ -573,9 +629,6 @@ async function setUnique(trx: Trx, schema: string, table: string, column: string
   }
 }
 
-/** The names a table's row policies may have had. All are dropped before the wanted ones are made. */
-const POLICY_NAMES = ["rows", "rows_read", "rows_insert", "rows_update", "rows_delete"];
-
 /**
  * Who is asking, from the claim `withData` signs for the transaction. Written
  * as a subquery so that it is checked and read once for a statement, not once
@@ -583,6 +636,10 @@ const POLICY_NAMES = ["rows", "rows_read", "rows_insert", "rows_update", "rows_d
  */
 const CLAIM = sql`(select vx.claim())`;
 const PRINCIPAL = sql`(${CLAIM} ->> 'principal')`;
+/** Who is asking, when someone is: no one is nobody's, so a request from no person owns no row. */
+const SOMEONE = sql`coalesce(${PRINCIPAL}, '') <> ''`;
+/** What the database writes for `SOMEONE` in a stored policy, to find the policies compiled before it. */
+const SOMEONE_STORED = "->> 'principal'::text), ''::text) <> ''::text";
 const GROUPS = sql`(select jsonb_array_elements_text(coalesce(${CLAIM} -> 'groups', '[]'::jsonb)))`;
 const attribute = (name: string) => sql`(${CLAIM} -> 'attrs' ->> ${sql.lit(name)})`;
 
@@ -616,7 +673,7 @@ async function setPolicy(
     // A caller sees and writes a row when it is theirs, or when they may see every row.
     const allowed = sql`
       ${everything}
-      or ${await physical(policy.column)}::text = ${PRINCIPAL}
+      or (${SOMEONE} and ${await physical(policy.column)}::text = ${PRINCIPAL})
     `;
     await sql`
       create policy rows on ${target} for all to ${sql.id(role)}
@@ -629,10 +686,12 @@ async function setPolicy(
       const column = await physical(when.column);
       if ("is" in when) {
         // No one is nobody's: a request from no person matches no row.
-        return sql`(${PRINCIPAL} <> '' and ${column}::text = ${PRINCIPAL})`;
+        return sql`(${SOMEONE} and ${column}::text = ${PRINCIPAL})`;
       }
       if ("in" in when) return sql`${column}::text in ${GROUPS}`;
-      return sql`${column}::text = ${attribute(when.equals.attribute)}`;
+      // An attribute no one has is empty, and equals no row's empty text.
+      const wanted = attribute(when.equals.attribute);
+      return sql`(coalesce(${wanted}, '') <> '' and ${column}::text = ${wanted})`;
     };
     const any = async (rules: RowRule[]) =>
       rules.length === 0 ? sql`false` : sql.join(await Promise.all(rules.map(clause)), sql` or `);
@@ -665,21 +724,43 @@ async function setPolicy(
 }
 
 /**
- * Compiles again every row policy that still reads who is asking from the
- * plain settings an earlier version used. Run once for a database when it is
- * opened: after it, a policy trusts only the signed claim.
+ * Compiles again every row policy that is not as it should be for this role. Two things
+ * are wrong: a policy that still reads who is asking from the plain settings an earlier
+ * version used, and an active table that has no policy for the role at all, as a table has
+ * after `pg_dump` is restored where the role did not exist. Run once for a database when
+ * it is opened: after it, a policy trusts only the signed claim, and every table has one.
  */
 export async function upgradePolicies(owner: Db, role: string): Promise<number> {
-  const old = await sql<{ schema: string; table: string }>`
-    select distinct schemaname as schema, tablename as "table" from pg_policies
+  // Also those compiled before a request from no person was kept from owning a row: they
+  // read who is asking, and lack the check that someone is.
+  const old = await sql<{ schema: string; table: string; legacy: boolean; missing: boolean }>`
+    select schema, "table", bool_or(legacy) as legacy, bool_and(missing) as missing from (
+    select schemaname as schema, tablename as "table",
+      bool_or(coalesce(qual, '') like '%current_setting(''app.%'
+        or coalesce(with_check, '') like '%current_setting(''app.%') as legacy,
+      false as missing
+    from pg_policies
     where schemaname ~ '^ws_[0-9a-f]{32}$'
-      and (coalesce(qual, '') like '%current_setting(''app.%'
+    group by schemaname, tablename
+    having bool_or(coalesce(qual, '') like '%current_setting(''app.%'
         or coalesce(with_check, '') like '%current_setting(''app.%')
+      or (bool_or(coalesce(qual, '') like '%vx.claim%')
+        and not bool_or(coalesce(qual, '') like ${`%${SOMEONE_STORED}%`}))
+    union all
+    select t.schemaname, t.tablename, false, true from pg_tables t
+    join data_table d on d.physical_name = t.tablename
+      and t.schemaname = 'ws_' || replace(d.workspace_id::text, '-', '')
+    where d.status = 'active'
+      and not exists (
+        select 1 from pg_policies p
+        where p.schemaname = t.schemaname and p.tablename = t.tablename and ${role} = any (p.roles)
+      )
+    ) found group by schema, "table"
   `.execute(owner);
   if (old.rows.length === 0) return 0;
   let done = 0;
   await owner.transaction().execute(async (trx) => {
-    for (const { schema, table } of old.rows) {
+    for (const { schema, table, legacy, missing } of old.rows) {
       const hex = schema.slice(3);
       const workspaceId = `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
       const row = await trx
@@ -689,6 +770,12 @@ export async function upgradePolicies(owner: Db, role: string): Promise<number> 
         .where("physical_name", "=", table)
         .executeTakeFirst();
       if (!row) continue;
+      const kept = row.policy as TablePolicy;
+      const asksWho =
+        kept.type === "owner" ||
+        (kept.type === "rules" &&
+          kept.rules.some((rule) => "is" in rule.when || "equals" in rule.when));
+      if (!legacy && !missing && !asksWho) continue;
       // A retired table is read by nobody, and its policy may name a column that is gone.
       // It is then left with none, which lets nothing through, and is given its policy
       // again when the table comes back.
@@ -707,7 +794,13 @@ export async function upgradePolicies(owner: Db, role: string): Promise<number> 
         .execute();
       const whole = named.every((name) => there.some((column) => column.name === name));
       if (whole) {
+        if (missing) {
+          await sql`alter table ${sql.id(schema, table)} enable row level security`.execute(trx);
+        }
         await setPolicy(trx, role, schema, row, policy);
+      } else if (missing) {
+        // Nothing to drop, and no policy that could be made: it is left as it is.
+        continue;
       } else {
         const target = sql.id(schema, table);
         for (const name of POLICY_NAMES) {
@@ -803,7 +896,7 @@ export async function reconcileReferences(trx: Trx, workspaceId: string, final: 
     if (!target) {
       if (final) {
         throw badRequest(
-          `The table "${reference.table_name}" refers to a table that does not exist.`,
+          `The table "${reference.table_name}" (column "${reference.name}") refers to "${reference.reference_table}", which this deploy does not hold. Keep "${reference.reference_table}", or change "${reference.table_name}" in the same deploy.`,
           [
             {
               path: `/body/columns/${reference.name}/references`,
@@ -831,10 +924,38 @@ export async function reconcileReferences(trx: Trx, workspaceId: string, final: 
       // It points at another table, or does something else on a delete: made again as asked.
       await sql`alter table ${own} drop constraint ${sql.id(name)}`.execute(trx);
     }
+    // Rows that came back with a table may name a row that is gone. They are left as they are,
+    // and every row written from now on is held to the key. A key pointed at another table is
+    // still refused while a row would point nowhere.
+    if (there && there.target !== target.physical_name) {
+      // Pointed at another table while rows hold IDs: said by column and count, not as a refusal of the key.
+      const stray = await sql<{ n: string }>`
+        select count(*) as n from ${own} as r
+        where r.${sql.id(reference.physical_name)} is not null and not exists (
+          select 1 from ${sql.id(schema, target.physical_name)} as t where t.id = r.${sql.id(reference.physical_name)}
+        )
+      `.execute(trx);
+      const count = Number(stray.rows[0]?.n ?? 0);
+      if (count > 0) {
+        throw conflict(
+          `The column "${reference.name}" of "${reference.table_name}" cannot refer to "${reference.reference_table}": ` +
+            `${count} ${count === 1 ? "row holds" : "rows hold"} an ID that is not a row of it. Empty those values, or change them, first.`,
+        );
+      }
+    }
+    const dangling = there
+      ? { rows: [] }
+      : await sql`
+      select 1 from ${own} as r
+      where r.${sql.id(reference.physical_name)} is not null and not exists (
+        select 1 from ${sql.id(schema, target.physical_name)} as t where t.id = r.${sql.id(reference.physical_name)}
+      ) limit 1
+    `.execute(trx);
     await sql`
       alter table ${own}
       add constraint ${sql.id(name)} foreign key (${sql.id(reference.physical_name)})
       references ${sql.id(schema, target.physical_name)} (id) ${sql.raw(ON_DELETE[rule].sql)}
+      ${sql.raw(dangling.rows.length > 0 ? "not valid" : "")}
     `.execute(trx);
     // Finding the rows that point at one, for a join or for the delete's own check, without reading them all.
     await sql`
@@ -865,7 +986,8 @@ export async function restoreStructure(trx: Trx, role: string, workspaceId: stri
         type: column.type as ColumnType,
         required: false,
         unique: false,
-        default: column.default,
+        // A retired column fills with nothing; the catalog keeps its default for its return.
+        default: column.status === "retired" ? null : column.default,
         referenceTable: null,
         onDelete: null,
         values: null,
@@ -949,19 +1071,107 @@ export async function restoreRules(
   await reconcileReferences(trx, workspaceId, true);
 }
 
+/**
+ * Refuses to retire a table that active tables refer to, naming each column that does (D27):
+ * no deploy to the workspace could succeed until they were changed. A table that refers to
+ * itself does not hold itself.
+ */
+export async function refuseRetiringReferred(trx: Trx, workspaceId: string, name: string) {
+  const referrers = await trx
+    .selectFrom("data_column")
+    .innerJoin("data_table", "data_table.id", "data_column.table_id")
+    .select(["data_table.name as table", "data_column.name as column"])
+    .where("data_table.workspace_id", "=", workspaceId)
+    .where("data_table.status", "=", "active")
+    .where("data_table.name", "!=", name)
+    .where("data_column.status", "=", "active")
+    .where("data_column.reference_table", "=", name)
+    .orderBy("data_table.name")
+    .orderBy("data_column.name")
+    .execute();
+  if (referrers.length === 0) return;
+  const named = referrers.map((one) => `"${one.table}" (column "${one.column}")`);
+  throw conflict(
+    `The table "${name}" cannot be deleted: ${named.join(", ")} ${referrers.length === 1 ? "refers" : "refer"} to it. ` +
+      "Delete or change those references first.",
+  );
+}
+
+/** Refuses a table whose reference columns name a table the workspace does not have. */
+export async function refuseMissingTargets(
+  trx: Trx,
+  workspaceId: string,
+  name: string,
+  columns: Record<string, { type?: string; references?: string }>,
+) {
+  const issues: { path: string; message: string }[] = [];
+  for (const [column, definition] of Object.entries(columns)) {
+    const target = definition.references;
+    if (definition.type !== "reference" || !target || target === name) continue;
+    const found = await trx
+      .selectFrom("data_table")
+      .select("id")
+      .where("workspace_id", "=", workspaceId)
+      .where("name", "=", target)
+      .where("status", "=", "active")
+      .executeTakeFirst();
+    if (!found) {
+      issues.push({
+        path: `/body/columns/${column}/references`,
+        message: `there is no table "${target}" in this workspace`,
+      });
+    }
+  }
+  if (issues.length > 0)
+    throw badRequest(`The table "${name}" refers to a table that does not exist.`, issues);
+}
+
 /** Retires a table whose resource is being removed. Its data stays where it is. */
 export async function retireTable(
   trx: Trx,
-  resource: { id: string; workspaceId: string; path: string },
+  resource: { id: string; workspaceId: string; path: string; ownership?: string },
 ) {
+  // Its rows are kept, but they are no longer part of the tables that remain: a row they refer
+  // to may be deleted without them, and is not held by them. The keys come back with the table.
+  const leaving = await trx
+    .selectFrom("data_table")
+    .select(["id", "physical_name"])
+    .where("workspace_id", "=", resource.workspaceId)
+    .where("name", "=", resource.path)
+    .where("status", "=", "active")
+    .executeTakeFirst();
+  if (leaving) {
+    const references = await trx
+      .selectFrom("data_column")
+      .select("physical_name")
+      .where("table_id", "=", leaving.id)
+      .where("reference_table", "is not", null)
+      .execute();
+    for (const column of references) {
+      await sql`alter table ${sql.id(workspaceSchema(resource.workspaceId), leaving.physical_name)}
+        drop constraint if exists ${sql.id(constraintName("fk", leaving.physical_name, column.physical_name))}`.execute(
+        trx,
+      );
+    }
+  }
   await trx
     .updateTable("data_table")
-    .set({ status: "retired", retired_at: new Date(), resource_id: null })
+    .set({
+      status: "retired",
+      retired_at: new Date(),
+      resource_id: null,
+      managed_in: resource.ownership ?? "code",
+    })
     .where("workspace_id", "=", resource.workspaceId)
     .where("name", "=", resource.path)
     .where("status", "=", "active")
     .execute();
 }
+
+const ambiguous = (what: string, name: string, table: string) =>
+  conflict(
+    `More than one retired ${what} has the name "${name}"${what === "column" ? ` in "${table}"` : ""}. Say which one, by its ID.`,
+  );
 
 /**
  * Drops retired data for good: one retired column, or a whole retired table.
@@ -970,11 +1180,17 @@ export async function retireTable(
 export async function purgeRetired(
   trx: Trx,
   workspaceId: string,
-  request: { table: string; column?: string | undefined },
+  request: {
+    table: string;
+    column?: string | undefined;
+    /** Which retired column or table, when more than one has the name. */
+    columnId?: string | undefined;
+    tableId?: string | undefined;
+  },
 ) {
   const schema = workspaceSchema(workspaceId);
-  if (request.column !== undefined) {
-    const column = await trx
+  if (request.column !== undefined || request.columnId !== undefined) {
+    let found = trx
       .selectFrom("data_column")
       .innerJoin("data_table", "data_table.id", "data_column.table_id")
       .select([
@@ -984,24 +1200,32 @@ export async function purgeRetired(
       ])
       .where("data_table.workspace_id", "=", workspaceId)
       .where("data_table.name", "=", request.table)
-      .where("data_column.name", "=", request.column)
-      .where("data_column.status", "=", "retired")
-      .executeTakeFirst();
+      .where("data_column.status", "=", "retired");
+    if (request.column !== undefined) found = found.where("data_column.name", "=", request.column);
+    if (request.columnId !== undefined)
+      found = found.where("data_column.id", "=", request.columnId);
+    // Two retired columns may have had one name: a name alone drops neither, and says which.
+    const matches = await found.limit(2).execute();
+    const column = matches[0];
     if (!column) throw notFound(`A retired column "${request.column}" in "${request.table}"`);
+    if (matches.length > 1) throw ambiguous("column", request.column ?? "", request.table);
     await sql`alter table ${sql.id(schema, column.table_physical)} drop column ${sql.id(column.physical_name)}`.execute(
       trx,
     );
     await trx.deleteFrom("data_column").where("id", "=", column.id).execute();
     return { dropped: "column" as const };
   }
-  const table = await trx
+  let wanted = trx
     .selectFrom("data_table")
     .select(["id", "physical_name"])
     .where("workspace_id", "=", workspaceId)
     .where("name", "=", request.table)
-    .where("status", "=", "retired")
-    .executeTakeFirst();
+    .where("status", "=", "retired");
+  if (request.tableId !== undefined) wanted = wanted.where("id", "=", request.tableId);
+  const tables = await wanted.limit(2).execute();
+  const table = tables[0];
   if (!table) throw notFound(`A retired table "${request.table}"`);
+  if (tables.length > 1) throw ambiguous("table", request.table, request.table);
   await sql`drop table ${sql.id(schema, table.physical_name)}`.execute(trx).catch((error) => {
     if ((error as { code?: string }).code === "2BP01") {
       throw conflict(

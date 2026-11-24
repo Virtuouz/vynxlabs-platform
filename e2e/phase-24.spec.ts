@@ -1,4 +1,5 @@
-import { signInWithPassword } from "./sign-in.ts";
+import { signInAs } from "./as.ts";
+import { fernhillTenant } from "./fernhill.ts";
 import { type Browser, expect, type Page, test } from "./test.ts";
 
 /**
@@ -29,7 +30,7 @@ import { type Browser, expect, type Page, test } from "./test.ts";
  */
 
 const PASSWORD = process.env.E2E_FERNHILL_PASSWORD ?? "fernhill-demo-2026";
-const TENANT = process.env.E2E_FERNHILL_TENANT ?? "fernhill";
+const TENANT = fernhillTenant();
 const SANDBOX = process.env.E2E_FERNHILL_SANDBOX ?? "sandbox";
 const OWNER = "maya.brooks@fernhill.example";
 const stamp = Date.now().toString(36);
@@ -41,6 +42,18 @@ type Answer = { status: number; body: any };
 const call = (page: Page, method: string, path: string, body?: unknown): Promise<Answer> =>
   page.evaluate(
     async ([method, path, body]) => {
+      // A draft save names the draft it saw: its revision now, or none when there is none.
+      if (
+        method === "PUT" &&
+        String(path).includes("/drafts/") &&
+        body &&
+        typeof body === "object" &&
+        !("revision" in body) &&
+        !("create" in body)
+      ) {
+        const seen = await fetch(`/api/v1${path}`);
+        if (seen.ok) body = { ...body, revision: (await seen.json()).revision };
+      }
       const response = await fetch(`/api/v1${path}`, {
         method: method as string,
         headers: body ? { "content-type": "application/json" } : {},
@@ -63,7 +76,7 @@ async function signedIn(browser: Browser, email: string, password = PASSWORD): P
   const page = await (
     await browser.newContext({ viewport: { width: 1440, height: 900 } })
   ).newPage();
-  await signInWithPassword(page, email, password);
+  await signInAs(page, email, password);
   return page;
 }
 
@@ -108,7 +121,7 @@ const draftPaths = async (page: Page) =>
 test.beforeAll(async ({ browser }) => {
   test.setTimeout(180_000);
   owner = await signedIn(browser, OWNER);
-  const tenants = await ok(owner, "GET", "/tenants?limit=200");
+  const tenants = await ok(owner, "GET", `/tenants?search=${TENANT}&limit=200`);
   const tenant = tenants.items.find((one: { slug: string }) => one.slug === TENANT);
   test.skip(!tenant, `No tenant ${TENANT}: set up the Fernhill example first.`);
   const workspaces = (await ok(owner, "GET", `/tenants/${tenant.id}/workspaces`)).items;
@@ -130,7 +143,7 @@ test.afterAll(async () => {
   await owner.context().close();
 });
 
-test("POLISH-002: two sites turn page feedback on, and the workspace has one table for both", async () => {
+test("POLISH-002: two sites turn page feedback on, and the workspace has one table for both @fernhill @docs", async () => {
   test.setTimeout(180_000);
   const had = (await call(owner, "GET", `${W}/resources/${TABLE}`)).status === 200;
   // The first says what it makes, or that the table is there already.
@@ -163,7 +176,7 @@ test("POLISH-002: two sites turn page feedback on, and the workspace has one tab
   expect((await call(owner, "GET", `${W}/resources/${TABLE}`)).status).toBe(200);
 });
 
-test("POLISH-003: a doc writer turns page feedback on for a site by themselves", async ({
+test("POLISH-003: a doc writer turns page feedback on for a site by themselves @fernhill @docs", async ({
   browser,
 }) => {
   test.setTimeout(180_000);
@@ -242,7 +255,7 @@ const scrolling = (page: Page) =>
     };
   });
 
-test("POLISH-003: a query used by a console dashboard is renamed, and the dashboard is drafted and still runs", async () => {
+test("POLISH-003: a query used by a console dashboard is renamed, and the dashboard is drafted and still runs @fernhill @docs", async () => {
   test.setTimeout(180_000);
   const query = `${ROOT}/count`;
   const renamed = `${ROOT}/tally`;
@@ -341,7 +354,7 @@ test("POLISH-003: a query used by a console dashboard is renamed, and the dashbo
   expect(Date.parse(alias?.expiresAt ?? "")).toBeGreaterThan(Date.now());
 });
 
-test("POLISH-004: a data source's page is one scroller at desktop and phone widths", async ({
+test("POLISH-004: a data source's page is one scroller at desktop and phone widths @fernhill @docs", async ({
   browser,
 }) => {
   test.setTimeout(180_000);
@@ -372,7 +385,7 @@ test("POLISH-004: a data source's page is one scroller at desktop and phone widt
       await browser.newContext({ viewport: { width, height: width > 600 ? 900 : 844 } })
     ).newPage();
     try {
-      await signInWithPassword(page, OWNER, PASSWORD);
+      await signInAs(page, OWNER);
       await page.goto(`${L}/sources/${name}`);
       await expect(page.locator("main")).toBeVisible();
       await page.waitForLoadState("networkidle");
@@ -387,7 +400,7 @@ test("POLISH-004: a data source's page is one scroller at desktop and phone widt
   }
 });
 
-test("POLISH-002: a reference to a table with no display column is shown by name in the grid", async () => {
+test("POLISH-002: a reference to a table with no display column is shown by name in the grid @fernhill @docs", async () => {
   test.setTimeout(120_000);
   const PEOPLE = `people_${stamp}`;
   const VISITS = `visits_${stamp}`;

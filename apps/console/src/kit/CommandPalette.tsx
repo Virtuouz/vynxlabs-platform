@@ -6,8 +6,11 @@ import {
   Braces,
   CircleHelp,
   CornerDownLeft,
+  Database,
   FileCode2,
+  FileSearch,
   Keyboard,
+  KeyRound,
   type LucideIcon,
   Pin,
   PinOff,
@@ -32,10 +35,10 @@ import { type Pinnable, useCurrent } from "./current.ts";
 import {
   formatCombo,
   isMac,
-  isSingle,
   OPEN_PALETTE,
   OPEN_SHORTCUTS,
   openShortcuts,
+  turnsOff,
   useShortcut,
   useSingleKeys,
 } from "./keys.ts";
@@ -54,7 +57,7 @@ export interface Destination {
 }
 
 /** Something the search found, as `GET /tenants/:t/search` gives it. */
-interface Found {
+export interface Found {
   kind: string;
   id: string;
   ref: string;
@@ -90,6 +93,10 @@ const KIND_ICON: Record<string, LucideIcon> = {
   connection: Plug,
   event: Radio,
   doc: BookOpen,
+  variable: Braces,
+  secret: KeyRound,
+  query: FileSearch,
+  data_source: Database,
   run: Play,
   flow_run: Play,
   member: User,
@@ -106,6 +113,10 @@ const KIND_LABEL: Record<string, string> = {
   connection: "Connection",
   event: "Event",
   doc: "Page",
+  variable: "Variable",
+  secret: "Secret",
+  query: "Query",
+  data_source: "Data source",
   run: "Run",
   flow_run: "Flow run",
   member: "Member",
@@ -157,7 +168,7 @@ export function useCommandKey(open: () => void) {
 }
 
 /** Where a found thing's page is. */
-function pageOf(tenantId: string, found: Found): string {
+export function pageOf(tenantId: string, found: Found): string {
   if (found.kind === "member") return `/t/${tenantId}/members/${found.id}`;
   if (found.kind === "end_user") return `/t/${tenantId}/end-users?user=${found.id}`;
   const ws = `/t/${tenantId}/workspaces/${found.workspaceId}`;
@@ -166,7 +177,8 @@ function pageOf(tenantId: string, found: Found): string {
     case "script":
       return `${ws}/scripts/${found.ref}`;
     case "app":
-      return `${ws}/apps?app=${found.id}`;
+      // By path, which a recent item has and the page matches (an ID is matched too).
+      return `${ws}/apps?app=${encodeURIComponent(found.ref)}`;
     case "doc":
       return `${ws}/docs/${found.ref}`;
     case "flow":
@@ -177,6 +189,8 @@ function pageOf(tenantId: string, found: Found): string {
     case "connection":
     case "variable":
     case "secret":
+    case "query":
+    case "data_source":
     case "event":
       return objectHref(ws, found.kind, found.ref);
     default:
@@ -395,11 +409,12 @@ export function CommandPalette({
           }));
       }
       if (picking === "flow") {
-        const flows = await api.get<{ items: { path: string; triggers: string[] }[] }>(
-          `${ws}/flows`,
-        );
+        const flows = await api.get<{
+          items: { path: string; triggers: string[]; version?: number | null }[];
+        }>(`${ws}/flows`);
+        // Only what runs here can be started: a flow that is only a draft cannot yet.
         return flows.items
-          .filter((one) => one.triggers.includes("manual"))
+          .filter((one) => one.triggers.includes("manual") && one.version !== null)
           .map((one) => ({
             key: `pick-${one.path}`,
             label: one.path,
@@ -644,38 +659,39 @@ export function CommandPalette({
         },
       }));
 
-    if (text === "") {
-      // What the page on screen shows comes first: with a run open, Run again is one press away.
-      const here: Item[] =
-        mode === "all" && current
-          ? [
-              ...current.commands.map((command) => ({
-                key: `c-${command.key}`,
-                label: command.label,
-                icon: command.icon,
-                danger: command.danger,
-                section: current.heading,
-                open: () => {
-                  close();
-                  void command.run();
-                },
-              })),
-              ...(current.pin
-                ? [
-                    {
-                      key: "c-pin",
-                      label: pinned(current.pin) ? "Unpin from the palette" : "Pin to the palette",
-                      icon: pinned(current.pin) ? PinOff : Pin,
-                      section: current.heading,
-                      open: () => {
-                        togglePin(current.pin as Pinnable);
-                        close();
-                      },
+    // What the page on screen shows comes first: with a run open, Run again is one press away.
+    // Typed words find them too, so "Fire it now" is reached by typing it.
+    const here: Item[] =
+      mode === "all" && current
+        ? [
+            ...current.commands.map((command) => ({
+              key: `c-${command.key}`,
+              label: command.label,
+              icon: command.icon,
+              danger: command.danger,
+              section: current.heading,
+              open: () => {
+                close();
+                void command.run();
+              },
+            })),
+            ...(current.pin
+              ? [
+                  {
+                    key: "c-pin",
+                    label: pinned(current.pin) ? "Unpin from the palette" : "Pin to the palette",
+                    icon: pinned(current.pin) ? PinOff : Pin,
+                    section: current.heading,
+                    open: () => {
+                      togglePin(current.pin as Pinnable);
+                      close();
                     },
-                  ]
-                : []),
-            ]
-          : [];
+                  },
+                ]
+              : []),
+          ]
+        : [];
+    if (text === "") {
       const pinnedItems = pins.map((one) =>
         entity({ ...one, workspaceSlug: one.workspaceSlug ?? null, hint: null }, "Pinned"),
       );
@@ -700,7 +716,12 @@ export function CommandPalette({
             : "Other workspaces";
     const results = found.map((one) => entity(one, sectionOf(one)));
     if (mode !== "all") return results;
-    return [...results, ...screens.slice(0, 20), ...actions.filter((one) => matches(one.label))];
+    return [
+      ...here.filter((one) => matches(one.label)),
+      ...results,
+      ...screens.slice(0, 20),
+      ...actions.filter((one) => matches(one.label)),
+    ];
   }, [
     text,
     mode,
@@ -906,11 +927,16 @@ export function CommandPalette({
             title={`${starting.kind === "script" ? "Run" : "Start"} ${starting.path}`}
             action={starting.kind === "script" ? "Run" : "Start flow"}
             schema={starting.schema}
-            onSubmit={async (input) => {
+            timing={starting.kind === "script"}
+            onSubmit={async (input, timing) => {
               const root = `/tenants/${tenantId}/workspaces/${starting.workspaceId}`;
               const made =
                 starting.kind === "script"
-                  ? await api.post<{ id: string }>(`${root}/runs`, { script: starting.path, input })
+                  ? await api.post<{ id: string }>(`${root}/runs`, {
+                      script: starting.path,
+                      input,
+                      ...timing,
+                    })
                   : await api.post<{ id: string }>(`${root}/flow-runs`, {
                       flow: starting.path,
                       input,
@@ -964,7 +990,8 @@ export function ShortcutSheet() {
                 <dl className="m-0 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5">
                   {here.map((id) => {
                     const shortcut = SHORTCUTS[id];
-                    const off = !singles && shortcut.keys.every(isSingle);
+                    // Only a shortcut every key of which the toggle turns off is off; a key that still works is not struck.
+                    const off = !singles && shortcut.keys.every(turnsOff);
                     return (
                       <div key={id} className={`contents ${off ? "text-ink-subtle" : ""}`}>
                         <dt className="flex flex-wrap gap-1">
@@ -974,7 +1001,11 @@ export function ShortcutSheet() {
                         </dt>
                         <dd className={`m-0 ${off ? "" : "text-ink-muted"}`}>
                           {shortcut.label}
-                          {off ? " (off)" : ""}
+                          {off
+                            ? " (off)"
+                            : !singles && shortcut.keys.some(turnsOff)
+                              ? " (single keys off)"
+                              : ""}
                         </dd>
                       </div>
                     );

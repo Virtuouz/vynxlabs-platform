@@ -2,10 +2,11 @@ import { createHmac } from "node:crypto";
 import type { AddressInfo } from "node:net";
 import { createServer as createTcpServer, type Server as TcpServer } from "node:net";
 import { setTimeout as sleep } from "node:timers/promises";
+import { sql } from "@volvel/db";
 import { type Bundle, type BundleManifest, bundleDigest } from "@volvel/manifest";
 import { Worker } from "@volvel/worker";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { type Client, startTestApp, type TestApp } from "./testing.js";
+import { type Client, putSeen, startTestApp, type TestApp } from "./testing.js";
 
 // biome-ignore lint/suspicious/noExplicitAny: test responses are inspected freely
 type Any = any;
@@ -315,7 +316,8 @@ describe("a connector of the tenant's own", () => {
     expect(done.status, JSON.stringify(done.error)).toBe("succeeded");
     expect(done.output).toEqual({
       text: "GOOD DAY, ADA",
-      key: "s3cret-key",
+      // What the connector was given, which a run never shows (SCR-01).
+      key: "[redacted]",
       cancellable: "boolean",
     });
   });
@@ -351,7 +353,7 @@ describe("a connector of the tenant's own", () => {
 
   test("a connector written in the console is compiled, deployed and used like one from the repository", async () => {
     const draft = (path: string, kind: string, body: object) =>
-      alice.put(`${ws(dev)}/drafts/${path}`, { kind, schemaVersion: 1, body });
+      putSeen(alice, `${ws(dev)}/drafts/${path}`, { kind, schemaVersion: 1, body });
     const connector = await draft("connectors/shout", "connector", {
       description: "Says things loudly.",
       configSchema: {
@@ -444,6 +446,20 @@ describe("a trigger source", () => {
         resource("trigger_source", "sources/inbox", { entry: "inbox", mode: "poll" }),
         script("on-payment", "onPayment", {}),
         script("on-letter", "onLetter", {}),
+        script("on-watch", "onLetter", {}),
+        // Listening to the platform's own events is what makes it keep them to be read.
+        resource("trigger", "watch/ended", {
+          type: "event",
+          script: "on-watch",
+          event: "platform/run-succeeded",
+          filter: "event.payload.script == 'sources/inbox'",
+        }),
+        resource("trigger", "watch/failed", {
+          type: "event",
+          script: "on-watch",
+          event: "platform/run-failed",
+          filter: "event.payload.script == 'sources/inbox'",
+        }),
         resource("trigger", "hooks/payments", {
           type: "webhook",
           script: "on-payment",
@@ -470,6 +486,9 @@ export const payments = { execute: async (request, ctx) => {
   return { inputs: request.body.events.map((event) => ({ id: event.id, amount: event.amount })) };
 } };
 export const inbox = { execute: async (tick) => {
+  if (tick.cursor === "flood") return { items: Array.from({ length: 150 }, (_, i) => ({ letter: i })), cursor: "after-flood" };
+  if (tick.cursor === "mixed") return { items: [{ letter: 1 }, "not an object", { letter: 3 }], cursor: "after-mixed" };
+  if (tick.cursor === "scalar") return { items: "nope", cursor: "after-scalar" };
   const from = tick.cursor ?? 0;
   const letters = [from + 1, from + 2].map((number) => ({ letter: number }));
   return { items: letters, cursor: from + 2 };
@@ -503,6 +522,13 @@ export const onLetter = { execute: async (input) => ({ read: input.letter }) };
     expect(JSON.stringify(refused.body.errors)).toContain(
       "which is a source for a webhook, not for a schedule",
     );
+  });
+
+  test("a source that names a secret nobody bound is refused at deploy, not at its first request", async () => {
+    const refused = await deploy(sourced(), prod, ["greet", "send"]);
+    expect(refused.status, JSON.stringify(refused.body)).toBe(409);
+    expect(refused.body.code).toBe("bindings_missing");
+    expect(JSON.stringify(refused.body)).toContain("PAYMENTS_SIGNING");
   });
 
   test("a webhook's request goes to its source, which decides what starts", async () => {
@@ -557,6 +583,13 @@ export const onLetter = { execute: async (input) => ({ read: input.letter }) };
     expect(everything).not.toContain("whsec_test_1");
   });
 
+  test("a webhook whose source started runs says it fired (OPS-19)", async () => {
+    const shown = ((await alice.get(`${ws()}/triggers`)).body.items as Any[]).find(
+      (item) => item.path === "hooks/payments",
+    );
+    expect(shown.lastFiredAt).toEqual(expect.any(String));
+  });
+
   test("nobody starts a trigger source by hand", async () => {
     const byHand = await alice.post(`${ws()}/runs`, { script: "sources/payments", input: {} });
     expect(byHand.status).toBe(404);
@@ -582,11 +615,287 @@ export const onLetter = { execute: async (input) => ({ read: input.letter }) };
       .executeTakeFirstOrThrow();
     expect(state.cursor).toBe(4);
   });
+
+  describe("what it gives that cannot be started", () => {
+    const { fireDueSchedules, relaySource } = {
+      fireDueSchedules: (
+        ...given: Parameters<typeof import("./kernel/execution/triggers.js").fireDueSchedules>
+      ) => import("./kernel/execution/triggers.js").then((m) => m.fireDueSchedules(...given)),
+      relaySource: (
+        ...given: Parameters<typeof import("./kernel/execution/triggers.js").relaySource>
+      ) => import("./kernel/execution/triggers.js").then((m) => m.relaySource(...given)),
+    };
+    let minutes = 10;
+    const tick = async (cursor: unknown) => {
+      await t.db
+        .updateTable("trigger_state")
+        .set({ cursor: JSON.stringify(cursor) })
+        .where("type", "=", "schedule")
+        .execute();
+      const before = (
+        await t.db
+          .selectFrom("run")
+          .select("id")
+          .where("script_path", "=", "sources/inbox")
+          .execute()
+      ).length;
+      minutes += 2;
+      expect(await fireDueSchedules(t.kernel, new Date(Date.now() + minutes * 60_000))).toBe(1);
+      const runs = await runsOf("sources/inbox", before + 1);
+      const mine = runs.at(-1) as Any;
+      // The source's answer is passed on after its run ends: wait until it has been.
+      for (let i = 0; i < 100; i++) {
+        const refused = await refusal();
+        const state = await cursorNow();
+        if (refused || state !== cursor) break;
+        await sleep(50);
+      }
+      await sleep(200);
+      return mine;
+    };
+    const cursorNow = async () =>
+      (
+        await t.db
+          .selectFrom("trigger_state")
+          .select("cursor")
+          .where("type", "=", "schedule")
+          .executeTakeFirstOrThrow()
+      ).cursor;
+    const refusal = async () =>
+      (
+        (await alice.get(`${ws()}/triggers`)).body.items.find(
+          (item: Any) => item.path === "every-minute",
+        ) as Any
+      ).lastRefusal;
+    const letters = async () => (await runsOf("on-letter", 0)).length;
+
+    test("a source that gives more than a hundred fails its tick, and keeps its cursor", async () => {
+      const before = await letters();
+      const source = await tick("flood");
+      const shown = (await alice.get(`${ws()}/runs/${source.id}`)).body;
+      expect(shown.status).toBe("failed");
+      expect(shown.error.message).toContain("150 items");
+      expect(shown.error.message).toContain("at most 100");
+      expect(await letters()).toBe(before);
+      expect(await cursorNow()).toBe("flood");
+      expect(await refusal()).toMatchObject({ reason: "error" });
+      // The next tick is handed the place it had, not the one the source named.
+      const again = await tick("flood");
+      expect((await alice.get(`${ws()}/runs/${again.id}`)).body.input.cursor).toBe("flood");
+    });
+
+    test("items that are no list fail the tick and keep the cursor", async () => {
+      const source = await tick("scalar");
+      expect((await alice.get(`${ws()}/runs/${source.id}`)).body.status).toBe("failed");
+      expect(await cursorNow()).toBe("scalar");
+    });
+
+    test("a source's run that fails when its answer is passed on is counted and traced as failed, never as succeeded (OPS-22)", async () => {
+      const ended = async (state: string) => {
+        const body = (await t.admin.get("/metrics")).body as string;
+        return body
+          .split("\n")
+          .filter((line) => line.startsWith("volvel_runs_finished_total{"))
+          .filter((line) => line.includes(`state="${state}"`))
+          .reduce((sum, line) => sum + Number(line.split(" ").at(-1)), 0);
+      };
+      const bad = await ended("failed");
+      const source = await tick("scalar");
+      expect((await alice.get(`${ws()}/runs/${source.id}`)).body.status).toBe("failed");
+      expect(await ended("failed")).toBe(bad + 1);
+    });
+
+    test("one item that does not fit leaves the others started, the refusal visible, and nothing twice", async () => {
+      const before = await letters();
+      const source = await tick("mixed");
+      expect(await letters()).toBe(before + 2);
+      const shown = (await alice.get(`${ws()}/runs/${source.id}`)).body;
+      expect(shown.status).toBe("succeeded");
+      expect(shown.output.refused).toEqual([expect.objectContaining({ index: 1 })]);
+      expect(await refusal()).toMatchObject({ reason: "input" });
+      expect(await cursorNow()).toBe("after-mixed");
+      // Passing on the same answer again, as after a crash between the two, starts nothing again.
+      const row = await t.db
+        .selectFrom("run")
+        .selectAll()
+        .where("id", "=", source.id)
+        .executeTakeFirstOrThrow();
+      await relaySource(t.kernel, row as never, {
+        items: [{ letter: 1 }, "x", { letter: 3 }],
+        cursor: "after-mixed",
+      });
+      expect(await letters()).toBe(before + 2);
+    });
+
+    test("an item refused for good is told through the workspace's failure alert, once for the pass (EXT-03)", async () => {
+      // The alert posts to an HTTP connection of the workspace: one is bound for it here.
+      expect(
+        (
+          await alice.put(`${ws()}/connection-bindings/chat`, {
+            config: { baseUrl: "http://127.0.0.1:9" },
+          })
+        ).status,
+      ).toBeLessThan(300);
+      expect((await alice.patch(ws(), { failureAlert: { notify: "chat" } })).status).toBeLessThan(
+        300,
+      );
+      try {
+        const source = await tick("mixed");
+        const stored = await t.db
+          .selectFrom("run")
+          .select("alert")
+          .where("id", "=", source.id)
+          .executeTakeFirstOrThrow();
+        expect(stored.alert).toMatchObject({ alertedAt: expect.any(String) });
+        const said = (await refusal()) as Any;
+        expect(said.reason).toBe("input");
+        // Where the refused item is kept.
+        expect(said.problem).toContain(source.id);
+        expect(said.problem).toContain("refused");
+        const shown = (await alice.get(`${ws()}/runs/${source.id}`)).body;
+        expect(shown.output.refused).toEqual([expect.objectContaining({ index: 1 })]);
+      } finally {
+        await alice.patch(ws(), { failureAlert: {} });
+      }
+    });
+
+    test("a source run that fails after its answer was passed on is announced as failed, not as succeeded (Found)", async () => {
+      const source = await tick("flood");
+      const eventsOf = () =>
+        t.db.selectFrom("event").select("name").where("source_id", "=", source.id).execute();
+      let events = await eventsOf();
+      for (let i = 0; i < 40 && events.length === 0; i++) {
+        await sleep(50);
+        events = await eventsOf();
+      }
+      expect(events.map((event) => event.name)).toEqual(["platform/run-failed"]);
+    });
+
+    test("Fire now on a schedule with a source starts the source, which then starts what it finds (OPS-18)", async () => {
+      await t.db
+        .updateTable("trigger_state")
+        .set({ cursor: JSON.stringify(10) })
+        .where("type", "=", "schedule")
+        .execute();
+      const before = await letters();
+      const fired = await alice.post(`${ws()}/schedule-firings`, { path: "every-minute" });
+      expect(fired.status, JSON.stringify(fired.body)).toBe(201);
+      const run = (await alice.get(`${ws()}/runs/${fired.body.id}`)).body;
+      expect(run.script).toBe("sources/inbox");
+      expect(run.trigger).toMatchObject({
+        type: "schedule",
+        trigger: "every-minute",
+        manual: true,
+      });
+      for (let i = 0; i < 100 && (await letters()) === before; i++) await sleep(50);
+      expect(await letters()).toBeGreaterThan(before);
+    });
+
+    test("an answer that comes after the trigger was paused is refused where refusals are shown", async () => {
+      const source = (await t.db
+        .selectFrom("run")
+        .selectAll()
+        .where("script_path", "=", "sources/inbox")
+        .orderBy("created_at", "desc")
+        .executeTakeFirstOrThrow()) as Any;
+      expect((await alice.put(`${ws()}/trigger-pauses/every-minute`, {})).status).toBe(204);
+      const before = await letters();
+      await relaySource(t.kernel, source, { items: [{ letter: 9 }], cursor: 9 });
+      expect(await refusal()).toMatchObject({ reason: "paused" });
+      expect(await letters()).toBe(before);
+      expect((await alice.delete(`${ws()}/trigger-pauses/every-minute`)).status).toBe(204);
+    });
+
+    test("a tick passed over because the source is still looking says so", async () => {
+      const last = (
+        await t.db
+          .selectFrom("run")
+          .select("id")
+          .where("script_path", "=", "sources/inbox")
+          .orderBy("created_at", "desc")
+          .executeTakeFirstOrThrow()
+      ).id;
+      await t.db.updateTable("run").set({ status: "running" }).where("id", "=", last).execute();
+      try {
+        minutes += 2;
+        await fireDueSchedules(t.kernel, new Date(Date.now() + minutes * 60_000));
+        expect(await refusal()).toMatchObject({ reason: "busy" });
+        const shown = (await alice.get(`${ws()}/triggers`)).body.items.find(
+          (item: Any) => item.path === "every-minute",
+        ) as Any;
+        expect(shown.lastRefusal.reason).toBe("busy");
+      } finally {
+        await t.db.updateTable("run").set({ status: "succeeded" }).where("id", "=", last).execute();
+      }
+    });
+
+    test("a schedule that skips while its last run goes does so when the run is one its source started (OPS-38)", async () => {
+      const inboxRuns = async () =>
+        (
+          await t.db
+            .selectFrom("run")
+            .select("id")
+            .where("script_path", "=", "sources/inbox")
+            .execute()
+        ).length;
+      const going = (
+        await t.db
+          .selectFrom("run")
+          .select("id")
+          .where("script_path", "=", "on-letter")
+          .orderBy("created_at", "desc")
+          .executeTakeFirstOrThrow()
+      ).id;
+      await t.db
+        .updateTable("trigger_state")
+        .set({ config: sql`config || '{"overlap":"skip"}'::jsonb` })
+        .where("type", "=", "schedule")
+        .execute();
+      await t.db.updateTable("run").set({ status: "running" }).where("id", "=", going).execute();
+      try {
+        const before = await inboxRuns();
+        minutes += 2;
+        await fireDueSchedules(t.kernel, new Date(Date.now() + minutes * 60_000));
+        // Its source was not asked, because what it started last time is still going.
+        expect(await inboxRuns()).toBe(before);
+        const shown = (await alice.get(`${ws()}/triggers`)).body.items.find(
+          (item: Any) => item.path === "every-minute",
+        ) as Any;
+        expect(shown.lastSkipReason).toBe("overlap");
+      } finally {
+        await t.db
+          .updateTable("run")
+          .set({ status: "succeeded" })
+          .where("id", "=", going)
+          .execute();
+        await t.db
+          .updateTable("trigger_state")
+          .set({ config: sql`config || '{"overlap":"allow"}'::jsonb` })
+          .where("type", "=", "schedule")
+          .execute();
+      }
+    });
+
+    test("a run of a source says so, and cannot be run again by hand (OPS-22)", async () => {
+      const source = (await runsOf("sources/inbox", 1)).at(-1) as Any;
+      const shown = (await alice.get(`${ws()}/runs/${source.id}`)).body;
+      expect(shown.trigger.relay).toMatchObject({ mode: "poll" });
+      const listed = (await alice.get(`${ws()}/activity?q=${source.id}`)).body.items[0];
+      expect(listed).toMatchObject({ id: source.id, source: true });
+      const letter = (await runsOf("on-letter", 1)).at(-1) as Any;
+      expect(
+        ((await alice.get(`${ws()}/activity?q=${letter.id}`)).body.items[0] as Any).source,
+      ).toBe(false);
+      const again = await alice.post(`${ws()}/runs/${source.id}/rerun`, {});
+      expect(again.status, JSON.stringify(again.body)).toBe(409);
+      expect(again.body.detail).toContain("trigger source");
+    });
+  });
 });
 
 describe("the core nodes, and nodes of a tenant's own", () => {
   const draft = (path: string, kind: string, body: object) =>
-    alice.put(`${ws(dev)}/drafts/${path}`, { kind, schemaVersion: 1, body });
+    putSeen(alice, `${ws(dev)}/drafts/${path}`, { kind, schemaVersion: 1, body });
   const manual = { type: "trigger", trigger: { type: "manual" } };
   const core = (name: string, inputs: Record<string, string>, grants?: object) => ({
     type: "script",
@@ -622,13 +931,13 @@ describe("the core nodes, and nodes of a tenant's own", () => {
     // Nothing of a tenant's may sit where the platform's nodes do.
     const taken = await draft("core/mine", "variable", { type: "string" });
     expect(taken.status).toBe(400);
-    expect(JSON.stringify(taken.body)).toContain("kept for the platform's own nodes");
+    expect(JSON.stringify(taken.body)).toContain("kept for Volvel's own nodes");
     const uploaded = await alice.post(
       `${ws()}/bundles`,
       bundle((m) => [...m, script("core/http-request", "greet", {})]),
     );
     expect(uploaded.status).toBe(400);
-    expect(JSON.stringify(uploaded.body)).toContain("kept for the platform's own nodes");
+    expect(JSON.stringify(uploaded.body)).toContain("kept for Volvel's own nodes");
   });
 
   test("a flow drawn from core nodes reads and writes a table, calls out, sends mail and publishes", async () => {
@@ -844,7 +1153,7 @@ describe("the core nodes, and nodes of a tenant's own", () => {
 
 describe("a flow that answers the request that started it", () => {
   const draft = (path: string, body: object) =>
-    alice.put(`${ws(dev)}/drafts/${path}`, { kind: "flow", schemaVersion: 1, body });
+    putSeen(alice, `${ws(dev)}/drafts/${path}`, { kind: "flow", schemaVersion: 1, body });
   const hooked = { type: "trigger", trigger: { type: "webhook", respond: "flow" } };
   const address = async (flow: string) => {
     const listed = (await alice.get(`${ws(dev)}/triggers`)).body.items.find(
@@ -1202,7 +1511,11 @@ describe("a trigger that is a form", () => {
         },
       ],
     ] as const) {
-      const saved = await alice.put(`${ws(dev)}/drafts/${path}`, { kind, schemaVersion: 1, body });
+      const saved = await putSeen(alice, `${ws(dev)}/drafts/${path}`, {
+        kind,
+        schemaVersion: 1,
+        body,
+      });
       expect(saved.status, JSON.stringify(saved.body)).toBe(200);
     }
     const deployed = await alice.post(`${ws(dev)}/changes/deploy`, {
@@ -1271,7 +1584,7 @@ describe("a trigger that is a form", () => {
 
   test("a form's fields are checked when it is built", async () => {
     const tried = async (extra: object[]) => {
-      await alice.put(`${ws(dev)}/drafts/badly`, {
+      await putSeen(alice, `${ws(dev)}/drafts/badly`, {
         kind: "flow",
         schemaVersion: 1,
         body: feedback({ title: "x", fields: [...fields.slice(0, 3), ...extra] }),

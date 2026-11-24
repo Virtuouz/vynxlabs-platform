@@ -1,5 +1,67 @@
 import { keepPreviousData, QueryClient, QueryClientContext, useQuery } from "@tanstack/react-query";
+import { grants, isErrorCode } from "@volvel/manifest";
 import { useCallback, useContext } from "react";
+import { sessionIsOpen, whenRenewed } from "./session.ts";
+
+/** Whom to ask when a refusal names a permission and nobody who can give it. */
+const ASK_FOR_ACCESS =
+  "Ask a member who can give access in this tenant (an owner or administrator) to give you a role with it.";
+
+/** The same, for the screens of the instance, where the ones to ask are its operators. */
+const ASK_AN_OPERATOR = "Ask an operator of this instance to give you access.";
+
+/** Whom to ask for access, by the screen the person is on. */
+export const askForAccess = () =>
+  location.pathname.startsWith("/instance/") ? ASK_AN_OPERATOR : ASK_FOR_ACCESS;
+
+/**
+ * A pattern refusal as the field would say it: the characters that are allowed, not the
+ * expression. Anything else the server said is kept as it was.
+ */
+export function fieldWords(message: string): string {
+  const length = /^must NOT have (fewer|more) than (\d+) characters?$/.exec(message);
+  if (length) {
+    const n = Number(length[2]);
+    return `Use ${length[1] === "fewer" ? "at least" : "at most"} ${n} ${n === 1 ? "character" : "characters"}.`;
+  }
+  const found = /^must match pattern (.+)$/.exec(message);
+  if (!found) return message;
+  const pattern = found[1] as string;
+  const allowed = [
+    pattern.includes("a-z") ? "lowercase letters" : "",
+    pattern.includes("A-Z") ? "capital letters" : "",
+    pattern.includes("0-9") ? "digits" : "",
+    /[-](?!z|9)|-\]|-/.test(pattern.replace(/[a-zA-Z0-9]-[a-zA-Z0-9]/g, "")) ? "hyphens" : "",
+    pattern.includes("_") ? "underscores" : "",
+    pattern.includes("\\.") ? "dots" : "",
+  ].filter(Boolean);
+  if (allowed.length === 0) return "Use the form that is allowed here: check the characters in it.";
+  const list =
+    allowed.length === 1
+      ? (allowed[0] as string)
+      : `${allowed.slice(0, -1).join(", ")} and ${allowed.at(-1)}`;
+  return `Use only ${list}.`;
+}
+
+/**
+ * The code of each refusal whose words were just made, so a notice of those words, wherever a
+ * screen shows them, can lead to what the code means. Every `ApiError` records its own message;
+ * a screen that joins more words to it records those with `withCode`. A short list: only what was
+ * just shown can be asked about.
+ */
+const wordsOfCode = new Map<string, string>();
+
+/** Says `words` for `error`, and remembers the error's code against them. Returns `words`. */
+export function withCode(words: string, error: unknown): string {
+  if (error instanceof ApiError && isErrorCode(error.code)) wordsOfCode.set(words, error.code);
+  if (wordsOfCode.size > 60) wordsOfCode.delete(wordsOfCode.keys().next().value as string);
+  return words;
+}
+
+/** The code the API gave for a refusal that was said in these words, if any. */
+export function codeOfWords(words: string): string | undefined {
+  return wordsOfCode.get(words);
+}
 
 /** A failed API call, carrying the problem document the server sent. */
 export class ApiError extends Error {
@@ -20,11 +82,26 @@ export class ApiError extends Error {
     },
     requestId?: string | null,
   ) {
-    super(problem.detail ?? problem.title ?? `The request failed (${status}).`);
+    // An address that names something that cannot exist (a slug where an ID goes) is a place
+    // that was not found, not a request whose "params" are not valid.
+    const placeOnly =
+      status === 400 &&
+      problem.code === "validation_failed" &&
+      (problem.errors ?? []).length > 0 &&
+      (problem.errors ?? []).every((one) => one.path.startsWith("/params"));
+    const said = placeOnly
+      ? "That place was not found. Check the address, or go back."
+      : (problem.detail ?? problem.title ?? `The request failed (${status}).`);
+    // A refusal that names a permission is owed whom to ask, wherever it is shown.
+    super(status === 403 && /permissions?\.$/.test(said) ? `${said} ${askForAccess()}` : said);
     this.status = status;
     this.code = problem.code ?? "error";
-    this.fields = problem.errors ?? [];
+    this.fields = (problem.errors ?? []).map((one) => ({
+      ...one,
+      message: fieldWords(one.message),
+    }));
     this.requestId = problem.requestId ?? requestId ?? undefined;
+    withCode(this.message, this);
   }
 }
 
@@ -80,7 +157,8 @@ async function read<T>(response: Response): Promise<T> {
 /**
  * Reads asked for before the screen that needs them was drawn: `index.html` starts the ones that
  * follow from the address alone while the scripts are still arriving (`window.__vxEarly`, by path).
- * A screen's own read of the same path takes the answer once; a read that failed is asked again.
+ * A screen's own read of the same path takes the answer once; a read that failed, or that
+ * answered 401 before anyone had signed in, is asked again.
  */
 declare global {
   interface Window {
@@ -94,14 +172,30 @@ function takeEarly(path: string): Promise<Response> | undefined {
   return kept;
 }
 
+/**
+ * Sends a request to the API. A 401 on a signed-in page means the session ended:
+ * the request waits for the person to sign in again (see `session.ts`) and is sent
+ * once more, so the page and what it holds are not lost. Sign-in itself, and a
+ * page nobody signed in to, get the plain answer.
+ */
+export async function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
+  const send = () => fetch(`/api/v1${path}`, { credentials: "same-origin", ...init });
+  const response = await send();
+  if (response.status !== 401 || !sessionIsOpen() || path.startsWith("/auth/")) return response;
+  await whenRenewed();
+  return send();
+}
+
 async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
   const early = method === "GET" ? takeEarly(path) : undefined;
-  const response = await (early?.catch(() => undefined) ?? Promise.resolve(undefined)).then(
+  const response = await (
+    early?.then((kept) => (kept.status === 401 ? undefined : kept)).catch(() => undefined) ??
+    Promise.resolve(undefined)
+  ).then(
     (kept) =>
       kept ??
-      fetch(`/api/v1${path}`, {
+      apiFetch(path, {
         method,
-        credentials: "same-origin",
         ...(body === undefined
           ? {}
           : { headers: { "content-type": "application/json" }, body: JSON.stringify(body) }),
@@ -143,6 +237,12 @@ function fallbackClient(): QueryClient {
     });
   }
   return fallback;
+}
+
+/** Forgets every read the page holds, so what one person read is never shown to the next. */
+export function clearReads() {
+  active?.clear();
+  fallback?.clear();
 }
 
 export function setActiveClient(client: QueryClient) {
@@ -187,9 +287,8 @@ export const api = {
   delete: <T>(path: string) => call<T>("DELETE", path),
   /** Sends a file's bytes as they are. */
   upload: async <T>(path: string, file: File, method: "POST" | "PUT" = "POST"): Promise<T> => {
-    const response = await fetch(`/api/v1${path}`, {
+    const response = await apiFetch(path, {
       method,
-      credentials: "same-origin",
       headers: { "content-type": file.type || "application/octet-stream" },
       body: file,
     });
@@ -276,9 +375,20 @@ export function useCacheEdit() {
 }
 
 export interface Me {
-  principal: { type: string; id: string; name: string | null; email: string | null };
+  principal: {
+    type: string;
+    id: string;
+    name: string | null;
+    email: string | null;
+    /** The identity provider whose directory sets this person's name, when one does. */
+    nameFrom?: string | null;
+  };
   instancePermissions: string[];
   tenants: { id: string; slug: string; name: string }[];
 }
 
-export const isOperator = (me: Me) => me.instancePermissions.includes("tenant:*");
+/**
+ * Whether this person runs the instance: what an operator is given at the instance, however the
+ * role says it (`tenant:*` or everything). The Instance area and the tenant list both ask this.
+ */
+export const isOperator = (me: Me) => grants(me.instancePermissions, "tenant:write");

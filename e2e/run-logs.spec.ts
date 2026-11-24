@@ -1,4 +1,4 @@
-import { signInWithPassword } from "./sign-in.ts";
+import { signInAs } from "./as.ts";
 import { expect, type Page, test } from "./test.ts";
 import { expectNoAxeViolations } from "./visual.ts";
 
@@ -8,10 +8,6 @@ import { expectNoAxeViolations } from "./visual.ts";
  * is connected, and a run link opens from the runs list after a reload.
  */
 
-const ADMIN = {
-  email: process.env.E2E_ADMIN_EMAIL ?? "admin@example.com",
-  password: process.env.E2E_ADMIN_PASSWORD ?? "change-me-please",
-};
 const TENANT_ADMIN = "00000000-0000-7000-8000-000000000002";
 const stamp = Date.now().toString(36);
 
@@ -19,6 +15,18 @@ const stamp = Date.now().toString(36);
 const call = (page: Page, method: string, path: string, body?: unknown): Promise<any> =>
   page.evaluate(
     async ([method, path, body]) => {
+      // A draft save names the draft it saw: its revision now, or none when there is none.
+      if (
+        method === "PUT" &&
+        String(path).includes("/drafts/") &&
+        body &&
+        typeof body === "object" &&
+        !("revision" in body) &&
+        !("create" in body)
+      ) {
+        const seen = await fetch(`/api/v1${path}`);
+        if (seen.ok) body = { ...body, revision: (await seen.json()).revision };
+      }
       const response = await fetch(`/api/v1${path}`, {
         method: method as string,
         headers: body ? { "content-type": "application/json" } : {},
@@ -39,13 +47,13 @@ export default async function (_given: unknown, ctx: ScriptContext) {
 }
 `;
 
-test("a run that logs 1,200 lines shows them all, and opens from a link to the list", async ({
+test("a run that logs 1,200 lines shows them all, and opens from a link to the list @operate", async ({
   browser,
 }) => {
   const page = await (await browser.newContext()).newPage();
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(String(error).slice(0, 300)));
-  await signInWithPassword(page, ADMIN.email, ADMIN.password);
+  await signInAs(page, "operator");
 
   const tenant = await call(page, "POST", "/tenants", { slug: `rl-${stamp}`, name: "Run logs" });
   await call(page, "POST", `/tenants/${tenant.id}/access-grants`, {

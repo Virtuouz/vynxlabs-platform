@@ -4,8 +4,8 @@ import type { AddressInfo } from "node:net";
 import { setTimeout as sleep } from "node:timers/promises";
 import { Worker } from "@volvel/worker";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { decryptFor, encryptFor } from "./kernel/execution/bindings.js";
 import { accessToken } from "./kernel/execution/oauth.js";
+import { openRow, sealRow } from "./kernel/execution/sealed.js";
 import { endTask, queueTask } from "./kernel/execution/tasks.js";
 import { type Client, startTestApp, type TestApp } from "./testing.js";
 
@@ -104,29 +104,21 @@ const location = (response: { headers: Record<string, unknown> }) =>
 async function expireIn(ms: number) {
   const row = await t.db
     .selectFrom("connection_binding")
-    .select(["oauth_tokens"])
+    .select(["id", "oauth_tokens"])
     .where("workspace_id", "=", workspace)
     .where("path", "=", "google")
     .executeTakeFirstOrThrow();
-  const name = "connection-oauth:google";
+  const at = { tenantId: tenant, workspaceId: workspace, rowId: row.id, path: "google" };
   const tokens = JSON.parse(
-    await decryptFor(t.kernel, t.db, tenant, workspace, name, row.oauth_tokens as Buffer),
+    await openRow(t.kernel, t.db, "connection-oauth", at, row.oauth_tokens as Buffer),
   );
   tokens.expiresAt = Date.now() + ms;
   await t.db
     .updateTable("connection_binding")
     .set({
-      oauth_tokens: await encryptFor(
-        t.kernel,
-        t.db,
-        tenant,
-        workspace,
-        name,
-        JSON.stringify(tokens),
-      ),
+      oauth_tokens: await sealRow(t.kernel, t.db, "connection-oauth", at, JSON.stringify(tokens)),
     })
-    .where("workspace_id", "=", workspace)
-    .where("path", "=", "google")
+    .where("id", "=", row.id)
     .execute();
 }
 
@@ -239,6 +231,26 @@ afterAll(async () => {
   await working;
   await t?.stop();
   outside?.close();
+});
+
+describe("a mail connection that is not deployed yet", () => {
+  test("is tried as a mail connection, and no raw error reaches the screen", async () => {
+    const made = await alice.put(`${ws()}/drafts/mailer`, {
+      kind: "connection",
+      schemaVersion: 1,
+      body: { connector: "smtp" },
+    });
+    expect(made.status, JSON.stringify(made.body)).toBeLessThan(300);
+    const bound = await alice.put(`${ws()}/connection-bindings/mailer`, {
+      config: { host: "127.0.0.1", port: 1, from: "a@b.example" },
+    });
+    expect(bound.status, JSON.stringify(bound.body)).toBe(204);
+    const task = await tried("mailer");
+    expect(task.result.ok).toBe(false);
+    expect(task.result.message).not.toMatch(/Cannot read properties|endsWith|undefined/);
+    await alice.delete(`${ws()}/connection-bindings/mailer`);
+    await alice.delete(`${ws()}/drafts/mailer`);
+  });
 });
 
 describe("a connection's health is what its last Test found", () => {
@@ -450,6 +462,33 @@ describe("an OAuth connection", () => {
     ).toBe(400);
     // Still connected: a refusal does not undo what was authorized.
     expect((await listed("google")).oauth.status).toBe("connected");
+  });
+
+  test("a connection removed while the member was at the provider ends in a word, not JSON (CFG-19)", async () => {
+    const started = await alice.post(`${ws()}/connection-oauth`, {
+      path: "google",
+      returnTo: "/t/acme/workspaces/main/connections",
+    });
+    const state = new URL(started.body.url).searchParams.get("state");
+    const kept = await t.db
+      .selectFrom("connection_binding")
+      .selectAll()
+      .where("path", "=", "google")
+      .executeTakeFirstOrThrow();
+    await alice.delete(`${ws()}/connection-bindings/google`);
+    const back = await alice.get(`/oauth/connections/callback?state=${state}&code=code-9`);
+    expect(back.status).toBe(302);
+    expect(location(back).pathname).toBe("/t/acme/workspaces/main/connections");
+    expect(location(back).searchParams.get("oauth_error")).toMatch(/was removed/);
+    // Put back as it was, for what follows.
+    await t.db
+      .insertInto("connection_binding")
+      .values({
+        ...kept,
+        config: JSON.stringify(kept.config),
+        oauth: kept.oauth ? JSON.stringify(kept.oauth) : null,
+      } as never)
+      .execute();
   });
 
   test("a Test reaches the API with the access token, and passes", async () => {

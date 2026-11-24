@@ -201,7 +201,7 @@ describe("promotion", () => {
         errors: [
           {
             path: "/connections/api",
-            message: 'the connection "api" is not bound in this workspace',
+            message: 'the connection "api" is not set up in this workspace',
           },
         ],
       },
@@ -209,6 +209,8 @@ describe("promotion", () => {
     const refused = await alice.post(`${ws(dev)}/promotions`);
     expect(refused.status).toBe(409);
     expect(refused.body.code).toBe("bindings_missing");
+    // WLK-17h: a promotion is promoted again, not deployed again.
+    expect(refused.body.detail).toContain("then promote again.");
     // A promotion took no body before it had anything to be told. One sent with none is
     // still a promotion, answered the same way.
     const bare = await t.app.inject({
@@ -760,12 +762,63 @@ describe("deleting a tenant", () => {
     expect((await gina.get("/me")).body.tenants).toEqual([]);
     const record = (await t.admin.get("/audit?action=tenant.deleted")).body.items[0];
     expect(record.details).toMatchObject({ slug: "globex", workspaces: 1, tables: 1, files: 1 });
+    // The tenant is gone from its table, and its entry still says what it was called.
+    expect(record.targetLabel).toBe("globex");
     // The other tenant is as it was.
     expect((await alice.get(`${ws(shop)}/rows/docs`)).body.items).toHaveLength(2);
     // A new tenant can take the name.
     expect((await t.admin.post("/tenants", { slug: "globex", name: "Globex again" })).status).toBe(
       201,
     );
+  });
+});
+
+describe("the log of a tenant that was deleted", () => {
+  test("is read at the instance, with the tenant it was of (INS-28)", async () => {
+    const made = await t.admin.post("/tenants", { slug: "vanishing", name: "Vanishing" });
+    const id = made.body.id as string;
+    const admin = (
+      await t.db
+        .selectFrom("role")
+        .select("id")
+        .where("name", "=", "tenant_admin")
+        .where("builtin", "=", true)
+        .executeTakeFirstOrThrow()
+    ).id;
+    await t.admin.post(`/tenants/${id}/access-grants`, {
+      reason: "set up a ledger",
+      roleId: admin,
+    });
+    expect(
+      (
+        await t.admin.post(`/tenants/${id}/workspaces`, {
+          slug: "main",
+          name: "Ledger",
+          type: "production",
+        })
+      ).status,
+    ).toBe(201);
+    const before = (await t.admin.get(`/tenants/${id}/audit`)).body.items as Any[];
+    expect(before.length).toBeGreaterThan(0);
+    const mine = new Set(before.map((entry) => entry.id as string));
+    expect((await t.admin.post(`/tenants/${id}/deletion`, { confirm: "vanishing" })).status).toBe(
+      204,
+    );
+    expect((await t.admin.get(`/tenants/${id}/audit`)).status).toBe(404);
+    const atInstance = (await t.admin.get("/audit?limit=200")).body.items as Any[];
+    const kept = atInstance.filter((entry) => mine.has(entry.id));
+    expect(kept.length).toBe(mine.size);
+    expect(kept.every((entry) => entry.tenantId === id)).toBe(true);
+    // A tenant that is still here keeps its entries in its own log only.
+    expect(atInstance.some((entry) => entry.tenantId === tenant)).toBe(false);
+    // The instance's log opens one entry by its id, and is a file too.
+    expect((await t.admin.get(`/audit/${kept[0].id}`)).body.id).toBe(kept[0].id);
+    expect((await t.admin.get(`/audit/${kept[0].id}`)).body.tenantId).toBe(id);
+    const file = await t.admin.get("/audit-export");
+    expect(file.headers["content-type"]).toContain("text/csv");
+    expect(String(file.body).split("\r\n")[0]).toMatch(/^occurredAt,action,/);
+    expect(String(file.body)).toContain("tenant.deleted");
+    expect((await alice.get("/audit-export")).status).toBe(403);
   });
 });
 
@@ -835,6 +888,76 @@ describe("worker pools", () => {
     expect(listed.find((item: Any) => item.name === "on the plant floor").pool).toBe("plant-floor");
   });
 
+  test("what an operator turned off, a tenant admin cannot turn on (D16)", async () => {
+    // The tenant admin's own switch goes both ways.
+    expect((await alice.patch(`/tenants/${tenant}`, { managedWorkers: true })).status).toBe(200);
+    // The operator's off is the machine's: the tenant admin is refused, in words.
+    const off = await t.admin.patch(`/tenants/${tenant}`, { managedWorkers: false });
+    expect(off.body.managedWorkers).toBe(false);
+    const refused = await alice.patch(`/tenants/${tenant}`, { managedWorkers: true });
+    expect(refused.status, JSON.stringify(refused.body)).toBe(403);
+    expect(refused.body.detail).toMatch(/An operator of this instance turned this off/);
+    expect((await alice.get(`/tenants/${tenant}`)).body).toMatchObject({
+      managedWorkers: false,
+      managedWorkersLocked: true,
+    });
+    // Switching it off again, or renaming, is not refused.
+    expect((await alice.patch(`/tenants/${tenant}`, { managedWorkers: false })).status).toBe(200);
+    expect((await alice.get(`/tenants/${tenant}`)).body.managedWorkersLocked).toBe(true);
+    // Only an operator turns it on, and then it is the tenant's again.
+    expect((await t.admin.patch(`/tenants/${tenant}`, { managedWorkers: true })).status).toBe(200);
+    expect((await alice.get(`/tenants/${tenant}`)).body.managedWorkersLocked).toBe(false);
+    expect((await alice.patch(`/tenants/${tenant}`, { managedWorkers: false })).status).toBe(200);
+    expect((await alice.patch(`/tenants/${tenant}`, { managedWorkers: true })).status).toBe(200);
+  });
+
+  test("a test of a connection, and a test alert, go to the pool of the script that uses it", async () => {
+    const pooled = (
+      await alice.post(`/tenants/${tenant}/workspaces`, {
+        slug: "pooled",
+        name: "Pooled",
+        type: "production",
+      })
+    ).body.id;
+    const bound = await alice.put(`${ws(pooled)}/connection-bindings/hook`, {
+      config: { baseUrl: "https://hook.example.com" },
+    });
+    expect(bound.status, JSON.stringify(bound.body)).toBeLessThan(300);
+    const local = script("read-the-line", { connections: ["hook"] });
+    (local.body as Any).worker = "plant-floor";
+    const deployed = await deploy(
+      alice,
+      pooled,
+      bundle([local, manifest("connection", "hook", { connector: "http" })]),
+    );
+    expect(deployed.status, JSON.stringify(deployed.body)).toBe(201);
+    const tested = await alice.post(`${ws(pooled)}/connection-tests`, { path: "hook" });
+    const alerted = await alice.post(`${ws(pooled)}/alert-tests`, { connection: "hook" });
+    expect(tested.status, JSON.stringify(tested.body)).toBe(202);
+    expect(alerted.status, JSON.stringify(alerted.body)).toBe(202);
+    const claim = async (token: string) =>
+      (
+        await t.app.inject({
+          method: "POST",
+          url: "/api/v1/worker/claim",
+          headers: { authorization: `Bearer ${token}` },
+          payload: {
+            workerId: "018f0000-0000-7000-8000-0000000000d1",
+            waitSeconds: 0,
+            kinds: ["test-connection", "deliver"],
+          },
+        })
+      ).json().job as Any;
+    // A worker of the default pool has nothing to take; one of the script's pool takes both.
+    const general = (await credential({ name: "pooled general" })).body;
+    expect(await claim(general.token)).toBe(null);
+    const floor = (await credential({ name: "pooled floor", pool: "plant-floor" })).body;
+    const claimed = [await claim(floor.token), await claim(floor.token)];
+    expect(claimed.map((job) => job?.taskId).sort()).toEqual(
+      [tested.body.id, alerted.body.id].sort(),
+    );
+  });
+
   test("a pool's name is checked when the bundle is uploaded", async () => {
     const bad = script("bad");
     (bad.body as Any).worker = "Plant Floor";
@@ -874,6 +997,179 @@ describe("worker pools", () => {
 });
 
 describe("database locations", () => {
+  test("a tenant whose own database is gone is deleted after a second confirmation, and then its location can go (INS-17, D47)", async () => {
+    const gone = await createTestDatabase();
+    await t.admin.put("/instance/database-locations/gone-db", {
+      connectionString: gone.connectionString,
+    });
+    const made = await t.admin.post("/tenants", {
+      slug: "lost",
+      name: "Lost",
+      dataLocation: "gone-db",
+      addCreator: true,
+    });
+    expect(made.status, JSON.stringify(made.body)).toBe(201);
+    const workspace = await t.admin.post(`/tenants/${made.body.id}/workspaces`, {
+      slug: "main",
+      name: "Main",
+      type: "production",
+    });
+    expect(workspace.status, JSON.stringify(workspace.body)).toBe(201);
+    // Its database is dropped from under it, and nothing in this process holds it open.
+    await t.kernel.data.forget("gone-db");
+    await gone.drop();
+    const refused = await t.admin.post(`/tenants/${made.body.id}/deletion`, { confirm: "lost" });
+    expect(refused.status, JSON.stringify(refused.body)).toBe(503);
+    expect(refused.body.code).toBe("data_location_unavailable");
+    expect((await t.admin.delete("/instance/database-locations/gone-db")).status).toBe(409);
+    // The second confirmation says the tables cannot be dropped, and leaves them where they are.
+    const done = await t.admin.post(`/tenants/${made.body.id}/deletion`, {
+      confirm: "lost",
+      tablesLeftBehind: true,
+    });
+    expect(done.status, JSON.stringify(done.body)).toBe(204);
+    const entry = (await t.admin.get("/audit?action=tenant.deleted")).body.items[0];
+    expect(JSON.stringify(entry.details)).toContain("gone-db");
+    expect((await t.admin.delete("/instance/database-locations/gone-db")).status).toBe(204);
+  });
+
+  test("one address that cannot be opened is said on its own row, and the names alone are a light list (INS-14)", async () => {
+    const extra = await createTestDatabase();
+    try {
+      await t.admin.put("/instance/database-locations/good", {
+        connectionString: extra.connectionString,
+      });
+      await t.db
+        .insertInto("database_location")
+        .values({
+          name: "sealed-by-another-key",
+          description: "",
+          connection_encrypted: Buffer.from("not something this instance sealed at all, no"),
+        })
+        .execute();
+      await t.db
+        .insertInto("database_location")
+        .values({
+          name: "gone",
+          description: "",
+          connection_encrypted: t.kernel.data.seal(
+            "gone",
+            "postgres://nobody:nothing@127.0.0.1:1/none",
+          ),
+        })
+        .execute();
+      const listed = await t.admin.get("/instance/database-locations");
+      expect(listed.status, JSON.stringify(listed.body)).toBe(200);
+      const byName = new Map(listed.body.items.map((one: Any) => [one.name, one]));
+      expect(byName.get("good")).toMatchObject({ reachable: true, problem: null });
+      expect(byName.get("gone")).toMatchObject({ reachable: false });
+      expect(byName.get("sealed-by-another-key")).toMatchObject({
+        reachable: false,
+        host: "",
+        problem: "Its address cannot be opened with this instance's master key.",
+      });
+      const names = await t.admin.get("/instance/database-locations/names");
+      expect(names.status, JSON.stringify(names.body)).toBe(200);
+      expect(names.body.items.map((one: Any) => one.name)).toEqual([
+        "gone",
+        "good",
+        "sealed-by-another-key",
+      ]);
+      await t.db
+        .deleteFrom("database_location")
+        .where("name", "in", ["gone", "sealed-by-another-key"])
+        .execute();
+      await t.admin.delete("/instance/database-locations/good");
+    } finally {
+      await extra.drop();
+    }
+  });
+
+  test("the platform's own database is not a dedicated location, nor is one database under two names (INS-15)", async () => {
+    const own = (await sql<{ name: string }>`select current_database() as name`.execute(t.db))
+      .rows[0]?.name;
+    const extra = await createTestDatabase();
+    try {
+      const platformUrl = new URL(extra.connectionString);
+      platformUrl.pathname = `/${own}`;
+      const itself = await t.admin.put("/instance/database-locations/itself", {
+        connectionString: platformUrl.toString(),
+      });
+      expect(itself.status, JSON.stringify(itself.body)).toBe(400);
+      expect(itself.body.detail).toMatch(/this instance's own database/i);
+      expect(itself.body.detail).not.toMatch(/platform/i);
+      expect(
+        (await t.admin.get("/instance/database-locations/names")).body.items,
+      ).not.toContainEqual(expect.objectContaining({ name: "itself" }));
+
+      expect(
+        (
+          await t.admin.put("/instance/database-locations/first-name", {
+            connectionString: extra.connectionString,
+          })
+        ).status,
+      ).toBe(204);
+      // The same address again under its own name is a change of address, and is allowed.
+      expect(
+        (
+          await t.admin.put("/instance/database-locations/first-name", {
+            connectionString: extra.connectionString,
+          })
+        ).status,
+      ).toBe(204);
+      const twice = await t.admin.put("/instance/database-locations/second-name", {
+        connectionString: extra.connectionString,
+      });
+      expect(twice.status, JSON.stringify(twice.body)).toBe(400);
+      expect(twice.body.detail).toMatch(/first-name/);
+      await t.admin.delete("/instance/database-locations/first-name");
+    } finally {
+      await extra.drop();
+    }
+  });
+
+  test("a location's description changes without its address, and tenants are listed by location (INS-MP9, INS-MP12)", async () => {
+    const extra = await createTestDatabase();
+    try {
+      await t.admin.put("/instance/database-locations/described", {
+        connectionString: extra.connectionString,
+        description: "for the first client",
+      });
+      const placed = await t.admin.post("/tenants", {
+        slug: "placed-here",
+        name: "Placed here",
+        dataLocation: "described",
+      });
+      expect(placed.status, JSON.stringify(placed.body)).toBe(201);
+      // Only the words: no address is sent, and it still answers afterwards.
+      const edited = await t.admin.put("/instance/database-locations/described", {
+        description: "for the second client",
+      });
+      expect(edited.status, JSON.stringify(edited.body)).toBe(204);
+      const row = (await t.admin.get("/instance/database-locations")).body.items.find(
+        (one: Any) => one.name === "described",
+      );
+      expect(row).toMatchObject({
+        description: "for the second client",
+        reachable: true,
+        tenants: 1,
+      });
+      // A name nobody registered needs an address.
+      const unknown = await t.admin.put("/instance/database-locations/never-made", {
+        description: "x",
+      });
+      expect(unknown.status).toBe(400);
+      expect(unknown.body.detail).toMatch(/connection string/i);
+      const there = await t.admin.get("/tenants?dataLocation=described");
+      expect(there.body.items.map((one: Any) => one.slug)).toEqual(["placed-here"]);
+      expect((await t.admin.get("/tenants?dataLocation=nowhere")).body.items).toEqual([]);
+      await t.admin.post(`/tenants/${placed.body.id}/deletion`, { confirm: "placed-here" });
+      await t.admin.delete("/instance/database-locations/described");
+    } finally {
+      await extra.drop();
+    }
+  });
+
   test("an operator registers one, sees whether it answers, and removes it", async () => {
     const extra = await createTestDatabase();
     try {
@@ -1071,5 +1367,68 @@ describe("deleting a production workspace", () => {
       .where("target_id", "=", gone)
       .executeTakeFirstOrThrow();
     expect(entry.details).toMatchObject({ slug: "retired-prod", type: "production" });
+  });
+});
+
+describe("a direct write to a production workspace's resources", () => {
+  const resourceBody = {
+    kind: "variable",
+    schemaVersion: 1,
+    ownership: "ui",
+    body: { default: "1" },
+  };
+
+  test("is refused for a member who may not promote, and allowed for one who may (REL-01)", async () => {
+    const roles = Object.fromEntries(
+      (
+        await t.db.selectFrom("role").select(["id", "name"]).where("builtin", "=", true).execute()
+      ).map((role) => [role.name, role.id]),
+    );
+    const dev1 = await alice.post(`/tenants/${tenant}/members`, {
+      email: "rel01@acme.example",
+      name: "Rel",
+      password: PASSWORD,
+    });
+    await alice.post(`/tenants/${tenant}/bindings`, {
+      workspaceId: prod,
+      principalType: "member",
+      principalId: dev1.body.id,
+      roleId: roles.developer,
+    });
+    const developer = await t.signIn("rel01@acme.example", PASSWORD);
+    const url = `${ws(prod)}/resources/direct-write`;
+
+    // The developer may write resources in production by role, yet production is not theirs.
+    const refused = await developer.put(url, resourceBody);
+    expect(refused.status).toBe(409);
+    expect(refused.body.code).toBe("production_workspace");
+    expect((await alice.get(url)).status).toBe(404);
+
+    // Someone who may promote there may still write, and delete, directly.
+    expect((await alice.put(url, resourceBody)).status).toBe(201);
+    expect((await developer.delete(url)).status).toBe(409);
+    expect((await alice.get(url)).status).toBe(200);
+    expect((await alice.delete(url)).status).toBe(204);
+  });
+
+  test("a code-managed resource there is changed by a deploy only, by anyone (REL-01)", async () => {
+    // Put there by a deploy, as a promotion does.
+    const code = bundle([manifest("variable", "from-code", { default: "1" })]);
+    expect((await deploy(alice, prod, code)).status).toBe(201);
+    const url = `${ws(prod)}/resources/from-code`;
+    expect((await alice.get(url)).body.ownership).toBe("code");
+    const refusals = [
+      await alice.put(url, { ...resourceBody, ownership: "code", body: { default: "2" } }),
+      await alice.put(url, resourceBody), // takes over a code path
+      await alice.put(`${ws(prod)}/resources/new-code`, { ...resourceBody, ownership: "code" }),
+      await alice.delete(url),
+    ];
+    for (const refused of refusals) {
+      expect(refused.status).toBe(409);
+      expect(refused.body.code).toBe("production_workspace");
+      expect(refused.body.detail).toContain("by a deploy");
+    }
+    expect((await alice.get(url)).body.ownership).toBe("code");
+    expect((await alice.get(`${ws(prod)}/resources/new-code`)).status).toBe(404);
   });
 });

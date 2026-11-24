@@ -14,14 +14,18 @@ import { type ApiError, api, useLoad } from "../api.ts";
 import { failureText, takenText } from "../ask.tsx";
 import { FieldAbout } from "../help/FieldAbout.tsx";
 import { DeployMenu } from "../kit/DeployMenu.tsx";
+import { DraftClash } from "../kit/DraftClash.tsx";
+import { putDraft } from "../kit/draftApi.ts";
 import { useDraftSave } from "../kit/draftSave.ts";
 import { Loading } from "../kit/LoadState.tsx";
-import { ProductionNotice } from "../kit/objects.tsx";
+import { EDITED_KINDS, type EditedKind, isEditedKind, ProductionNotice } from "../kit/objects.tsx";
 import { PageHeader } from "../kit/PageHeader.tsx";
+import { listenChoices } from "../kit/platformEvents.ts";
 import { RemoveDraftButton } from "../kit/RemoveDraftButton.tsx";
 import { clearRecovery, useKeptCopy, useRecoveryCopy } from "../kit/recovery.ts";
 import { StatePill, Tag } from "../kit/status.tsx";
-import { navigate, useNavigationGuard, useQueryValue } from "../router.tsx";
+import { Link, navigate, useNavigationGuard, useQueryValue } from "../router.tsx";
+import { EventStartFields, type StartSettings, switchStart, TagsField } from "./FlowStepFields.tsx";
 import {
   FormDesigner,
   type FormTrigger,
@@ -32,18 +36,7 @@ import {
 import { ResourceIdentity } from "./ResourceIdentity.tsx";
 import { ScheduleFields } from "./ScheduleForm.tsx";
 
-/** The kinds of resource this editor makes and changes: the ones that are settings, with no code. */
-export const EDITED_KINDS = [
-  "connection",
-  "connection_group",
-  "variable",
-  "event",
-  "schedule",
-  "trigger",
-] as const;
-export type EditedKind = (typeof EDITED_KINDS)[number];
-export const isEditedKind = (kind: string): kind is EditedKind =>
-  (EDITED_KINDS as readonly string[]).includes(kind);
+export { EDITED_KINDS, type EditedKind, isEditedKind };
 
 type Body = Record<string, unknown>;
 
@@ -86,6 +79,12 @@ const ABOUT: Record<EditedKind, { noun: string; example: string; says: string; f
     example: "orders/nightly",
     says: "Starts a script or a flow at times given as a cron line.",
     fresh: { script: "", cron: "0 8 * * *" },
+  },
+  data_source: {
+    noun: "data source",
+    example: "erp/orders",
+    says: "A Postgres database outside Volvel that scripts, queries and pages in this workspace read and write. This declares its name and what it is for. Its address and password are set under Data sources, in each workspace, so that dev and production can point at different databases.",
+    fresh: { connector: "postgres" },
   },
   trigger: {
     noun: "trigger",
@@ -164,7 +163,11 @@ export function ResourceEditor({
     typeAsked === "webhook" || typeAsked === "event" || typeAsked === "form"
       ? typeAsked
       : undefined;
-  const [state, setState] = useState<"new" | "draft" | "deployed" | "repository">("new");
+  const [state, setState] = useState<"new" | "draft" | "deployed" | "repository" | "removed">(
+    "new",
+  );
+  // Counted up to read the resource again, as when someone else's version is loaded.
+  const [again, setAgain] = useState(0);
   const [problem, setProblem] = useState<string>();
   const [pathTaken, setPathTaken] = useState<string>();
   const [tried, setTried] = useState(false);
@@ -177,13 +180,13 @@ export function ResourceEditor({
         if (value.trim() === "") delete written[name];
         else written[name] = JSON.parse(value);
       }
-      return api.put<{ body: Body; revision: number }>(`${root}/drafts/${snap.path}`, {
-        kind,
-        schemaVersion: 1,
-        body: written,
+      return putDraft<{ body: Body; revision: number }>(
+        root,
+        snap.path,
+        { kind, schemaVersion: 1, body: written as Record<string, unknown> },
         // A new one is a create: a path that is taken is refused, never overwritten.
-        ...(at ? { revision: at } : opened ? {} : { create: true }),
-      });
+        at ? { revision: at } : opened ? { first: true } : { create: true },
+      );
     },
     applied: (saved, sent, current) => {
       // What the server sends back replaces the screen only if nothing was typed since.
@@ -208,14 +211,16 @@ export function ResourceEditor({
   const { dirty } = draft;
   const busy = draft.saving;
   const savedAs = useRef<string>(undefined);
+  const startShelf = useRef(new Map<string, StartSettings>());
   const resources = useLoad<{ items: { path: string; kind: string; body: { mode?: string } }[] }>(
     `${root}/resources`,
   );
-  const drafts = useLoad<{ items: { path: string; kind: string; deleted: boolean }[] }>(
-    `${root}/drafts`,
-  );
+  const drafts = useLoad<{
+    items: { path: string; kind: string; deleted: boolean; mode?: string }[];
+  }>(`${root}/drafts`);
   const secrets = useLoad<{ items: { name: string }[] }>(`${root}/secrets`);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `again` reads the resource again
   useEffect(() => {
     let current = true;
     const jsonOf = (next: Body): Record<string, string> => ({
@@ -242,8 +247,15 @@ export function ResourceEditor({
     }
     (async () => {
       try {
-        const draft = await api.get<{ body: Body; revision: number }>(`${root}/drafts/${opened}`);
-        open(draft.body, "draft", draft.revision);
+        const draft = await api.get<{ body: Body; revision: number; deleted?: boolean }>(
+          `${root}/drafts/${opened}`,
+        );
+        if (draft.deleted) {
+          // A draft that removes it holds no settings: what is shown is what is deployed, and
+          // nothing is saved from here.
+          const resource = await api.get<{ body: Body }>(`${root}/resources/${opened}`);
+          open(resource.body, "removed", draft.revision);
+        } else open(draft.body, "draft", draft.revision);
       } catch (error) {
         if ((error as ApiError).status !== 404) throw error;
         const resource = await api.get<{ ownership: string; body: Body }>(
@@ -255,7 +267,7 @@ export function ResourceEditor({
     return () => {
       current = false;
     };
-  }, [root, opened, about, askedType, draft.reset]);
+  }, [root, opened, about, askedType, draft.reset, again]);
 
   // Changes not saved are not lost by a click elsewhere, Back, or closing the tab. A draft
   // saves itself a few seconds after the last change; something new waits for its first Save,
@@ -286,7 +298,8 @@ export function ResourceEditor({
   if (problem && !body) return <Notice tone="danger">{problem}</Notice>;
   if (!body) return <Loading />;
 
-  const readOnly = !editable;
+  const removed = state === "removed";
+  const readOnly = !editable || removed;
   /** Something changed: on top of the newest, not of this render's, so two changes both stay. */
   const edit = (part: Partial<Unsaved>) => {
     const next = { path, body, json, ...draft.value(), ...part };
@@ -305,7 +318,12 @@ export function ResourceEditor({
       if (one.kind === wanted && (!mode || one.body.mode === mode)) known.set(one.path, undefined);
     }
     for (const draft of drafts.data?.items ?? []) {
-      if (draft.kind === wanted && !draft.deleted && !known.has(draft.path) && !mode) {
+      if (
+        draft.kind === wanted &&
+        !draft.deleted &&
+        !known.has(draft.path) &&
+        (!mode || draft.mode === mode)
+      ) {
         known.set(draft.path, "A draft, not yet deployed.");
       }
     }
@@ -386,12 +404,21 @@ export function ResourceEditor({
         state={
           <>
             <Tag>{about.noun}</Tag>
-            <StatePill state={state} />
+            {removed ? <StatePill state="draft">Removing</StatePill> : <StatePill state={state} />}
             {dirty ? <StatePill state="unsaved" /> : null}
           </>
         }
         actions={
-          readOnly ? null : (
+          removed && editable && opened ? (
+            <RemoveDraftButton
+              root={root}
+              kind={kind}
+              path={opened}
+              noun={about.noun}
+              state="removed"
+              onDone={() => setAgain((n) => n + 1)}
+            />
+          ) : readOnly ? null : (
             <div className="flex items-center gap-2">
               {opened && state !== "new" ? (
                 <ResourceIdentity
@@ -465,6 +492,12 @@ export function ResourceEditor({
           noun="Resources"
           edit={path ? `resources/edit/${kind}/${path}` : undefined}
         />
+      ) : removed ? (
+        <Notice tone="attention">
+          This {about.noun} is removed in your drafts. Nothing changes until that draft is deployed.
+          The settings shown are what is deployed now. Keep this {about.noun} to take the removal
+          back.
+        </Notice>
       ) : state === "repository" ? (
         <Notice
           tone="attention"
@@ -505,6 +538,13 @@ export function ResourceEditor({
           {kept.path ? ` (${kept.path})` : ""} that was not saved is kept in this browser.
         </Notice>
       ) : null}
+      {draft.clashed ? (
+        <DraftClash
+          what={about.noun}
+          mine={() => JSON.stringify(draft.value()?.body ?? body, null, 2)}
+          onTake={() => setAgain((n) => n + 1)}
+        />
+      ) : null}
       {problem ? <Notice tone="danger">{problem}</Notice> : null}
 
       <Panel as="div" className="flex max-w-2xl flex-col gap-3 p-4">
@@ -535,6 +575,18 @@ export function ResourceEditor({
               onChange={(value) => change({ connector: value ?? "" })}
             />
             {description}
+          </>
+        ) : null}
+        {kind === "data_source" ? (
+          <>
+            {description}
+            <p className="m-0 text-body-sm text-ink-muted">
+              It is a Postgres database. After it is deployed, connect it under{" "}
+              <Link to={`${link}/sources`} className="text-action">
+                Data sources
+              </Link>
+              .
+            </p>
           </>
         ) : null}
         {kind === "variable" ? (
@@ -590,14 +642,20 @@ export function ResourceEditor({
                 : { hint: "What a trigger is cannot be changed once it is saved. Make another." })}
               onChange={(type) => {
                 const kept = { script: text("script"), description: text("description") };
-                edit({
-                  body:
+                // What the trigger was set to returns if it is changed back.
+                const { script: _s, description: _d, ...own } = body as StartSettings;
+                const made = switchStart(
+                  startShelf.current,
+                  { ...own, type: text("type") || "webhook" },
+                  type,
+                  () =>
                     type === "event"
-                      ? { type, ...kept, event: "" }
+                      ? { type, event: "" }
                       : type === "form"
-                        ? { ...newForm(), ...kept }
-                        : { type: "webhook", ...kept },
-                });
+                        ? (newForm() as unknown as StartSettings)
+                        : { type: "webhook" },
+                );
+                edit({ body: { ...made, ...kept } });
               }}
             />
             {script}
@@ -635,22 +693,19 @@ export function ResourceEditor({
             ) : null}
             {body.type === "event" ? (
               <>
-                <ComboboxField
-                  label="Event"
-                  options={ofKind("event")}
-                  value={text("event") || undefined}
-                  disabled={readOnly}
-                  onChange={(value) => change({ event: value ?? "" })}
+                <EventStartFields
+                  events={listenChoices(ofKind("event"))}
+                  event={text("event")}
+                  filter={text("filter") || undefined}
+                  readOnly={readOnly}
+                  onEvent={(event) => change({ event })}
+                  onFilter={(filter) => change({ filter })}
                 />
-                <TextAreaField
-                  name="filter"
-                  label="Only when (optional)"
-                  rows={2}
-                  value={text("filter")}
-                  required={false}
-                  disabled={readOnly}
-                  hint="An expression over event. The script starts only when it is true."
-                  onChange={(value) => change({ filter: value })}
+                <TagsField
+                  value={body.tags as string[] | undefined}
+                  readOnly={readOnly}
+                  given="the event's payload"
+                  onChange={(tags) => change({ tags })}
                 />
               </>
             ) : null}

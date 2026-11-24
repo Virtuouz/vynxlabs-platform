@@ -2,7 +2,7 @@ import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import { PERMISSION_KINDS } from "@volvel/manifest";
 import { Type } from "typebox";
 import type { Principal } from "../kernel/audit.js";
-import { explainAccess, grants } from "../kernel/authorize.js";
+import { appFacing, explainAccess, grants } from "../kernel/authorize.js";
 import { notFound } from "../kernel/errors.js";
 import { access } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
@@ -32,14 +32,19 @@ export function accessRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       "/tenants/:t/access/:principalType/:id",
       {
-        config: { access: access.custom },
+        config: {
+          access: access.custom(
+            "Needs `binding:read` in the tenant, or the caller asking about themselves.",
+          ),
+        },
         schema: {
           summary: "Every permission a member or service account holds, and what gives it",
           description:
             "Read with `binding:read` in the tenant, or by the member about themselves. The " +
             "sources are what the permission check itself reads: bindings to them, to their " +
             "groups and to anyone, at the tenant, a workspace or one resource, and an operator's " +
-            "active access grant. A suspended member's bindings are shown and do not count.",
+            "active access grant. A suspended member's bindings are shown and do not count. A binding " +
+            "to anyone gives only the permissions apps use, and is listed as the source of those alone.",
           tags: ["access"],
           params: Type.Object({
             t: Id,
@@ -166,7 +171,12 @@ export function accessRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           if (kind.scope === "instance") continue;
           for (const [verb, meaning] of Object.entries(kind.verbs)) {
             const permission = `${kind.kind}:${verb}`;
-            const giving = sources.filter((source) => grants(source.role.permissions, permission));
+            // A binding to anyone gives only what apps use: `check()` counts it for nothing else.
+            const giving = sources.filter(
+              (source) =>
+                grants(source.role.permissions, permission) &&
+                (source.through.type !== "anyone" || appFacing(permission)),
+            );
             if (giving.length === 0) continue;
             permissions.push({
               permission,

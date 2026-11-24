@@ -1,7 +1,12 @@
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import { HEARTBEAT_SECONDS } from "@volvel/db";
 import { Type } from "typebox";
+import type { Principal } from "../kernel/audit.js";
 import {
+  callerOf,
+  deleteRowKeepingFiles,
+  type FileCaller,
+  insertRowsKeepingFiles,
   MAX_FILE_BYTES,
   readFile,
   storeFile,
@@ -23,10 +28,11 @@ import {
   withData,
 } from "../kernel/data/rows.js";
 import { openSource, sourceFailure, sourceTable } from "../kernel/data/sources.js";
-import { badRequest, forbidden, forbiddenBecause, HttpError, notFound } from "../kernel/errors.js";
+import { badRequest, forbiddenBecause, HttpError, notFound } from "../kernel/errors.js";
 import { readConnection, readGroupMember } from "../kernel/execution/bindings.js";
 import { loadBundle } from "../kernel/execution/bundles.js";
 import { accessToken, isOAuthSettings } from "../kernel/execution/oauth.js";
+import { redact, redactText } from "../kernel/execution/redact.js";
 import {
   activeRun,
   claimRun,
@@ -38,6 +44,7 @@ import {
   runnable,
   TAG_PATTERN,
 } from "../kernel/execution/runs.js";
+import { servedValues, taskValues } from "../kernel/execution/served.js";
 import {
   beatTask,
   claimTask,
@@ -53,7 +60,7 @@ import type { Kernel } from "../kernel/kernel.js";
 import { pathNow } from "../kernel/resolve.js";
 import { revealSecret } from "../kernel/secrets.js";
 import { runTraceparent } from "../kernel/trace.js";
-import { announceRows } from "./data.js";
+import { announceScriptRows } from "./data.js";
 import { AnyObject, Id, NoContent, Time } from "./shared.js";
 
 const Attempt = Type.Integer({ minimum: 1 });
@@ -113,6 +120,26 @@ const MAX_WAIT_SECONDS = 25;
 /** How long a waiting claim goes without looking, when nothing it hears of wakes it. */
 const CLAIM_LOOK_MS = 1000;
 const MAX_LOG_MESSAGE = 8000;
+/** The most a log line's `fields` keep, as JSON. A line over it keeps a note in their place. */
+const MAX_LOG_FIELDS_BYTES = 32_000;
+/**
+ * What a request may hold, by route. Fastify's own 1 MiB would answer 413 to a batch of lines
+ * that are each within their cap, and to an output the run already did its work for. A worker
+ * sends logs in parts of about 512 KB; the room here is for one that sends more.
+ */
+const LOGS_BODY_LIMIT = 4 * 1024 * 1024;
+/** The largest output a run may report, and the most rows or arguments one data call may carry. */
+export const MAX_OUTPUT_BYTES = 10 * 1024 * 1024;
+const OUTPUT_BODY_LIMIT = MAX_OUTPUT_BYTES + 64 * 1024;
+const DATA_BODY_LIMIT = 8 * 1024 * 1024;
+
+function cappedFields(fields: unknown): unknown {
+  const size = Buffer.byteLength(JSON.stringify(fields));
+  if (size <= MAX_LOG_FIELDS_BYTES) return fields;
+  return {
+    truncated: `The fields of this line were ${size} bytes, and only ${MAX_LOG_FIELDS_BYTES / 1000} KB are kept.`,
+  };
+}
 /** Memory for a script that does not say, in MB. */
 const DEFAULT_MEMORY_MB = 512;
 /** Log lines the worker held but could not deliver. The run says how many. */
@@ -140,7 +167,7 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         .executeTakeFirst();
       const declared = (definition?.body as { connector?: string } | undefined)?.connector;
       const oauth = bound.oauth !== null || isOAuthSettings(bound.config);
-      const connector = declared ?? (oauth ? "oauth2" : "http");
+      const connector = declared ?? bound.connector ?? (oauth ? "oauth2" : "http");
       if (connector === "oauth2" || oauth) {
         // The worker is handed the access token, refreshed when it is about to run out.
         // The client's secret and the refresh token stay here.
@@ -347,6 +374,8 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config,
         schema: {
           summary: "Say that the worker is still at a task",
+          description:
+            "A worker calls this while it works. A task that is not heard from is given to another worker.",
           tags: ["worker protocol"],
           params: TaskParams,
           response: { 204: NoContent },
@@ -362,6 +391,8 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       "/worker/tasks/:id/complete",
       {
         config,
+        // Over its own limit answers 400 with the words below, not Fastify's 413.
+        bodyLimit: 2 * 1024 * 1024,
         schema: {
           summary: "Report what a task found",
           description: `The result is JSON of at most ${MAX_RESULT_BYTES / 1024} KB, in the shape its kind gives.`,
@@ -386,6 +417,7 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config,
         schema: {
           summary: "Report that a task could not be done",
+          description: "Ends the task as failed, with the reason the worker gives.",
           tags: ["worker protocol"],
           params: TaskParams,
           body: Type.Object({
@@ -395,7 +427,12 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         },
       },
       async ({ worker, params, body }, reply) => {
-        await endTask(kernel, worker, params.id, { error: { message: body.error.message } });
+        // The task's own connection is the one thing it was given.
+        const task = await heldTask(db, worker, params.id);
+        const known = await taskValues(kernel, db, task);
+        await endTask(kernel, worker, params.id, {
+          error: { message: redactText(body.error.message, known) },
+        });
         return reply.code(204).send(null);
       },
     );
@@ -443,6 +480,7 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config,
         schema: {
           summary: "Download a bundle",
+          description: "The bundle's bytes, for a worker that does not hold it yet.",
           tags: ["worker protocol"],
           params: RunParams,
           response: { 200: AnyObject },
@@ -506,8 +544,10 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       "/worker/runs/:id/logs",
       {
         config,
+        bodyLimit: LOGS_BODY_LIMIT,
         schema: {
           summary: "Append log lines to a run",
+          description: "Adds lines to the run's log.",
           tags: ["worker protocol"],
           params: RunParams,
           body: Type.Object({
@@ -534,12 +574,15 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         // Logs from an attempt that just ended are still worth keeping.
         let query = db
           .selectFrom("run")
-          .select("id")
+          .selectAll()
           .where("id", "=", params.id)
           .where("tenant_id", "=", worker.tenantId);
         if (worker.workspaceId) query = query.where("workspace_id", "=", worker.workspaceId);
-        if (!(await query.executeTakeFirst())) throw notFound("The run");
+        const run = await query.executeTakeFirst();
+        if (!run) throw notFound("The run");
         if (body.entries.length > 0) {
+          // A line is stored masked: the values the run was given, and secret-named fields.
+          const known = await servedValues(kernel, db, run);
           await db
             .insertInto("run_log")
             .values(
@@ -548,8 +591,8 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                 attempt: body.attempt,
                 logged_at: new Date(entry.time),
                 level: entry.level,
-                message: entry.message.slice(0, MAX_LOG_MESSAGE),
-                fields: JSON.stringify(entry.fields ?? {}),
+                message: redactText(entry.message, known).slice(0, MAX_LOG_MESSAGE),
+                fields: JSON.stringify(cappedFields(redact(entry.fields ?? {}, undefined, known))),
               })),
             )
             .execute();
@@ -564,6 +607,8 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config,
         schema: {
           summary: "Read a secret the running script declared",
+          description:
+            "The secret's value, for a worker that holds the run and a secret the script declared.",
           tags: ["worker protocol"],
           params: Type.Object({ id: Id, name: Type.String() }),
           querystring: AttemptQuery,
@@ -591,6 +636,8 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config,
         schema: {
           summary: "Read a variable the running script declared",
+          description:
+            "The variable's value in the run's workspace, for a variable the script declared.",
           tags: ["worker protocol"],
           params: Type.Object({ id: Id, "*": Type.String() }),
           querystring: AttemptQuery,
@@ -631,6 +678,8 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config,
         schema: {
           summary: "Read a connection the running script declared",
+          description:
+            "The connection's settings and credentials, for a worker that holds the run and a connection the script declared.",
           tags: ["worker protocol"],
           params: Type.Object({ id: Id, "*": Type.String() }),
           querystring: AttemptQuery,
@@ -724,6 +773,8 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config,
         schema: {
           summary: "Read one member of a connection group the running script declared",
+          description:
+            "One connection of the group, chosen by `key`, for a worker that holds the run.",
           tags: ["worker protocol"],
           params: Type.Object({ id: Id, key: Type.String({ maxLength: 100 }), "*": Type.String() }),
           querystring: AttemptQuery,
@@ -836,6 +887,7 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       "/worker/runs/:id/data",
       {
         config,
+        bodyLimit: DATA_BODY_LIMIT,
         schema: {
           summary: "Read or write rows for the running script",
           description:
@@ -879,6 +931,8 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           group?: string[];
           measure?: string[];
         };
+        // Acting for a person, a file a row is given must be one that person may have.
+        let actingFor: FileCaller | undefined;
         const perform = async (
           data: Parameters<typeof findRows>[0],
           target: RowTarget,
@@ -897,7 +951,17 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               const rows = args.rows ?? [];
               if (rows.length === 0 || rows.length > 1000)
                 throw badRequest("Insert between 1 and 1,000 rows at a time.");
-              return insertRows(data, target, rows, scope);
+              return own
+                ? insertRowsKeepingFiles(
+                    kernel,
+                    data,
+                    { tenantId: run.tenant_id, id: run.workspace_id },
+                    target,
+                    rows,
+                    scope,
+                    actingFor,
+                  )
+                : insertRows(data, target, rows, scope);
             }
             case "update":
               // A workspace table's file column names files Volvel stores: a replaced one is
@@ -911,10 +975,22 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                     target,
                     String(args.id),
                     args.patch,
+                    actingFor,
                   )
                 : updateRow(data, target, String(args.id), args.patch);
             case "delete":
-              await deleteRow(data, target, String(args.id));
+              if (own) {
+                await deleteRowKeepingFiles(
+                  kernel,
+                  data,
+                  { tenantId: run.tenant_id, id: run.workspace_id },
+                  { type: "script", id: null },
+                  target,
+                  String(args.id),
+                );
+              } else {
+                await deleteRow(data, target, String(args.id));
+              }
               return null;
             case "aggregate":
               return aggregateRows(data, target, aggregateQueryFrom(args));
@@ -941,10 +1017,12 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         if (!may.table(body.table)) {
           throw forbiddenBecause(`This needs a declared use of the table "${body.table}".`);
         }
+        // The table's path now: the name a script was built with may be from before a rename.
+        const tablePath = await pathNow(db, run.workspace_id, body.table, "table");
         const target = await describeTable(
           (await kernel.data.forTenant(run.tenant_id)).owner,
           run.workspace_id,
-          await pathNow(db, run.workspace_id, body.table, "table"),
+          tablePath,
         );
         // A script is the workspace's own code. Acting for a person, it is held to what they may see.
         const person = body.as ? await personType(run.tenant_id, body.as) : undefined;
@@ -956,23 +1034,17 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           body.as && person
             ? await scopeFor(kernel, run.tenant_id, { type: person, id: body.as }, false)
             : { principalId: null, all: true };
+        if (body.as && person) {
+          actingFor = callerOf(kernel, {
+            type: person,
+            id: body.as,
+            tenantId: run.tenant_id,
+          } as Principal);
+        }
         const result = await withData(kernel, run.tenant_id, scope, (data) =>
           perform(data, target, scope, true),
         );
-        if (body.op !== "find" && body.op !== "get") {
-          const ids =
-            body.op === "insert"
-              ? (result as { id: string }[]).map((row) => row.id)
-              : [String(args.id)];
-          await announceRows(
-            kernel,
-            run.tenant_id,
-            run.workspace_id,
-            body.table,
-            body.op === "insert" ? "inserted" : body.op === "update" ? "updated" : "deleted",
-            ids,
-          );
-        }
+        await announceScriptRows(kernel, run, tablePath, body.op, result, args.id);
         return { result };
       },
     );
@@ -984,6 +1056,7 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         bodyLimit: Math.ceil(MAX_FILE_BYTES * 1.4),
         schema: {
           summary: "Store a file for the running script",
+          description: "Keeps the bytes in the run's workspace and answers the file's id.",
           tags: ["worker protocol"],
           params: RunParams,
           body: Type.Object({
@@ -1018,6 +1091,7 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config,
         schema: {
           summary: "Read a stored file for the running script",
+          description: "The file's bytes, for the worker that holds the run.",
           tags: ["worker protocol"],
           params: Type.Object({ id: Id, fileId: Id }),
           querystring: AttemptQuery,
@@ -1038,8 +1112,10 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       "/worker/runs/:id/complete",
       {
         config,
+        bodyLimit: OUTPUT_BODY_LIMIT,
         schema: {
           summary: "Report that the run succeeded",
+          description: `The output may be up to ${MAX_OUTPUT_BYTES / 1024 / 1024} MB as JSON. A larger one answers 413: report the failure instead, saying the output is too large. What is over 256 KB is kept in file storage.`,
           tags: ["worker protocol"],
           params: RunParams,
           body: Type.Object({
@@ -1072,16 +1148,29 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               message: Type.String({ maxLength: 8000 }),
               stack: Type.Optional(Type.String({ maxLength: 32000 })),
             }),
+            retry: Type.Optional(
+              Type.Boolean({
+                description:
+                  "False when running the script again would repeat work it already did, as when its output was too large to report: the run fails now, whatever attempts it has left. Absent from an older worker, and then the run is retried as its script says.",
+              }),
+            ),
             logsLost: LogsLost,
           }),
           response: { 200: Type.Object({ final: Type.Boolean() }) },
         },
       },
       async ({ worker, params, body }) => {
-        const result = await failRun(kernel, worker, params.id, body.attempt, {
-          message: body.error.message,
-          ...(body.error.stack ? { stack: body.error.stack } : {}),
-        });
+        const result = await failRun(
+          kernel,
+          worker,
+          params.id,
+          body.attempt,
+          {
+            message: body.error.message,
+            ...(body.error.stack ? { stack: body.error.stack } : {}),
+          },
+          body.retry !== false,
+        );
         await recordLostLogs(params.id, body.attempt, body.logsLost);
         return result;
       },

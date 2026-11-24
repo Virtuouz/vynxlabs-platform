@@ -283,11 +283,32 @@ export function ActionsDisplaySection({ env }: { env: Env }) {
           }
         />
         <DrawerBlock label="Where it sits in its place">
-          <PositionPicker
-            label="Where it sits in its place"
-            value={place}
-            onChange={(next) => setConfig(env, "place", next, "its position")}
-          />
+          {lineUp === "left" ? (
+            <PositionPicker
+              label="Where it sits in its place"
+              value={place}
+              onChange={(next) => setConfig(env, "place", next, "its position")}
+            />
+          ) : (
+            // Right and Spread say the row's side themselves: only how high is left to choose.
+            <SegmentedControl<"top" | "middle" | "bottom">
+              label="Where it sits in its place"
+              value={place.split("-")[0] as "top" | "middle" | "bottom"}
+              options={[
+                { value: "top", label: "Top" },
+                { value: "middle", label: "Middle" },
+                { value: "bottom", label: "Bottom" },
+              ]}
+              onChange={(row) =>
+                setConfig(
+                  env,
+                  "place",
+                  `${row}-${place.split("-")[1] ?? "left"}` as Position,
+                  "its position",
+                )
+              }
+            />
+          )}
         </DrawerBlock>
       </Group>
     </>

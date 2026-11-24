@@ -338,6 +338,37 @@ describe("tabs options", () => {
     await screen.findByRole("tab", { name: "Alpha" });
     expect(selected("Alpha")).toBe(true);
   });
+
+  test("remember: two pages with a Tabs of one id keep their own tab (WID-21)", async () => {
+    const one = render(
+      <Page
+        widgets={[tabsWidget({ remember: true })]}
+        user={{ id: "u1", groups: [] }}
+        foldKey="app.visits"
+      />,
+    );
+    fireEvent.click(await screen.findByRole("tab", { name: "Beta" }));
+    one.unmount();
+    render(
+      <Page
+        widgets={[tabsWidget({ remember: true })]}
+        user={{ id: "u1", groups: [] }}
+        foldKey="app.orders"
+      />,
+    );
+    await screen.findByRole("tab", { name: "Alpha" });
+    expect(selected("Alpha")).toBe(true);
+    cleanup();
+    render(
+      <Page
+        widgets={[tabsWidget({ remember: true })]}
+        user={{ id: "u1", groups: [] }}
+        foldKey="app.visits"
+      />,
+    );
+    await screen.findByRole("tab", { name: "Alpha" });
+    expect(selected("Beta")).toBe(true);
+  });
 });
 
 describe("record detail options", () => {
@@ -377,7 +408,7 @@ describe("record detail options", () => {
   test("edit: a click opens an editor, Enter saves through config/edit, Escape cancels", async () => {
     const client = clientOf({ record });
     render(<Page client={client} widgets={[detail({ edit: true })]} />);
-    fireEvent.click(await screen.findByRole("button", { name: "Edit Total" }));
+    fireEvent.click(await screen.findByRole("button", { name: /^Edit Total/ }));
     const field = (await screen.findByLabelText("Total")) as HTMLInputElement;
     expect(field.type).toBe("number");
     fireEvent.change(field, { target: { value: "20" } });
@@ -389,16 +420,26 @@ describe("record detail options", () => {
     // The edited record is `this`, never an `event`, whatever the detail's record came from.
     expect(JSON.stringify(call[2])).toContain('"records":{"this":"a"}');
     // Escape leaves without saving.
-    fireEvent.click(await screen.findByRole("button", { name: "Edit Note" }));
+    fireEvent.click(await screen.findByRole("button", { name: /^Edit Note/ }));
     const note = await screen.findByLabelText("Note");
     fireEvent.keyDown(note, { key: "Escape" });
     await waitFor(() => expect(screen.queryByLabelText("Note")).toBeNull());
     expect(client.act).toHaveBeenCalledTimes(1);
   });
 
+  test("after Escape, focus goes back to the field's button, not to the page (R-last)", async () => {
+    const client = clientOf({ record });
+    render(<Page client={client} widgets={[detail({ edit: true })]} />);
+    fireEvent.click(await screen.findByRole("button", { name: /^Edit Note/ }));
+    const note = await screen.findByLabelText("Note");
+    fireEvent.keyDown(note, { key: "Escape" });
+    const back = await screen.findByRole("button", { name: /^Edit Note/ });
+    await waitFor(() => expect(document.activeElement).toBe(back));
+  });
+
   test("without edit a field is not pressable", async () => {
     render(<Page client={clientOf({ record })} widgets={[detail({})]} />);
     await screen.findByRole("heading", { name: /INV-1/ });
-    expect(screen.queryByRole("button", { name: "Edit Total" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Edit Total/ })).toBeNull();
   });
 });

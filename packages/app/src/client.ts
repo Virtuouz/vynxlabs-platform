@@ -71,7 +71,7 @@ export function appContext(): AppContext {
   const element = globalThis.document?.getElementById("vx-context");
   if (!element?.textContent) {
     throw new Error(
-      "This page was not served by the platform. Open the app at its address, or run it with: volvel dev",
+      "This page was not served by Volvel. Open the app at its address, or run it with: volvel dev",
     );
   }
   cached = JSON.parse(element.textContent) as AppContext;
@@ -147,7 +147,17 @@ export type Filter =
   | {
       column: string;
       /** Default `eq`. */
-      op?: "eq" | "ne" | "gt" | "gte" | "lt" | "lte" | "in" | "contains" | "is_null";
+      op?:
+        | "eq"
+        | "ne"
+        | "gt"
+        | "gte"
+        | "lt"
+        | "lte"
+        | "in"
+        | "contains"
+        | "not_contains"
+        | "is_null";
       value?: unknown;
     };
 

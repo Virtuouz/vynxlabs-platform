@@ -6,7 +6,14 @@
  */
 import type { DataInput, PageFilter, PageWidget, VisualQuery } from "@volvel/manifest";
 import { groupName } from "@volvel/manifest";
-import { DrawerRow, NumberField, NumberFormatRow, ToggleRow } from "@volvel/ui";
+import {
+  DrawerBlock,
+  DrawerRow,
+  NumberField,
+  NumberFormatRow,
+  SelectField,
+  ToggleRow,
+} from "@volvel/ui";
 import type { ColumnInfo, SummaryData } from "@volvel/widgets";
 import { Hash } from "lucide-react";
 import { type ComponentType, createContext, type ReactNode, useContext } from "react";
@@ -14,6 +21,7 @@ import type { Env } from "../controls.tsx";
 import { sampleValue } from "../grouping.ts";
 import type { CatalogColumn } from "../model.ts";
 import {
+  columnsNamed,
   heading,
   tidyVisual,
   visualOf,
@@ -69,9 +77,11 @@ export function queryOf(env: Env, input?: string): Query | undefined {
   const data = env.widget.data?.[name];
   const visual = visualOf(data);
   if (!visual || !data) return undefined;
-  const columns = withSystemColumns(
-    env.catalog.tables.find((one) => one.name === visual.table)?.columns ?? [],
-  );
+  // The table's own columns, and those it follows to ("Also from"), each named `via.column`.
+  const own = env.catalog.tables.find((one) => one.name === visual.table);
+  const columns = own
+    ? columnsNamed(env.catalog, visual.table, visual.joins)
+    : withSystemColumns([]);
   return {
     input: name,
     visual,
@@ -97,6 +107,35 @@ export function groupsOf(query: Query | undefined) {
 /** The date filters of the page: what a comparison is made across. */
 export const dateFilters = (env: Env): string[] =>
   env.filters.filter((filter: PageFilter) => filter.type === "date_range").map((one) => one.name);
+
+/**
+ * "Compare across": which of the page's date ranges the period before is taken from, when the
+ * page has several. With one it is that one and nothing is asked.
+ */
+export function CompareAcross({ env }: { env: Env }) {
+  const names = dateFilters(env);
+  if (names.length < 2) return null;
+  const chosen = typeof env.config.compareTo === "string" ? env.config.compareTo : names[0];
+  return (
+    <DrawerBlock>
+      <SelectField
+        name={`${env.widget.id}-compare-across`}
+        label="Compare across"
+        hint="The page has more than one date range. The period before is taken from this one."
+        value={chosen ?? ""}
+        options={env.filters
+          .filter((filter: PageFilter) => filter.type === "date_range")
+          .map((filter: PageFilter) => ({
+            value: filter.name,
+            label: (filter as { label?: string }).label || heading(filter.name),
+          }))}
+        onChange={(name) =>
+          env.write(withConfig(env.widget, "compareTo", name), "changing what it compares across")
+        }
+      />
+    </DrawerBlock>
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Writing

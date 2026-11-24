@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { setTimeout as sleep } from "node:timers/promises";
-import { Database, sql } from "@volvel/db";
+import { Database, newId, sql } from "@volvel/db";
 import { createTestDatabase, type TestDatabase } from "@volvel/db/testing";
 import { type Bundle, type BundleManifest, bundleDigest } from "@volvel/manifest";
 import { Worker } from "@volvel/worker";
@@ -71,6 +71,15 @@ export const asGroup = { execute: async (input, ctx) => {
   try { await notes.as(input.person).insert({ title: "by them", team: "ops" }); } catch (error) { wrote = error.message; }
   return { theirs, wrote, all: (await notes.find()).length };
 } };
+export const attacher = { execute: async (input, ctx) => {
+  const said = async (work) => { try { await work(); return "allowed"; } catch (error) { return error.message; } };
+  const mine = ctx.table("tasks").as(input.person);
+  return {
+    insert: await said(() => mine.insert({ title: "with a file", attachment: input.file })),
+    update: await said(() => mine.update(input.row, { attachment: input.file })),
+    workspace: await said(() => ctx.table("tasks").insert({ title: "as the workspace", attachment: input.file })),
+  };
+} };
 export const undeclared = { execute: async (input, ctx) => ({ rows: await ctx.table("tasks").find() }) };
 export const erpSync = { execute: async (input, ctx) => {
   const customers = ctx.source("erp").table("customers");
@@ -90,6 +99,8 @@ export const swapper = { execute: async (input, ctx) => {
   return { attachment: row.attachment };
 } };
 export const sink = { execute: async (input) => ({ got: input }) };
+export const looper = { execute: async (input, ctx) => ({ id: (await ctx.table("tasks").insert({ title: "again" })).id }) };
+export const counter = { execute: async (input, ctx) => (await ctx.table("tasks").aggregate({ measures: ["count"] })) };
 `;
 
 function bundle(extra: BundleManifest[] = []): Bundle {
@@ -117,12 +128,15 @@ function bundle(extra: BundleManifest[] = []): Bundle {
       manifest("data_source", "erp", { connector: "postgres" }),
       script("writer", "writer", { tables: ["tasks"] }),
       script("as-person", "asPerson", { tables: ["tasks"] }),
+      script("attacher", "attacher", { tables: ["tasks"] }),
       script("as-group", "asGroup", { tables: ["notes"] }),
       script("undeclared", "undeclared"),
       script("erp-sync", "erpSync", { sources: ["erp"] }),
       script("filer", "filer", { tables: ["tasks"] }),
       script("swapper", "swapper", { tables: ["tasks"] }),
       script("sink", "sink"),
+      script("looper", "looper", { tables: ["tasks"] }),
+      script("counter", "counter", { tables: ["tasks"] }),
       ...extra,
     ],
     code,
@@ -244,7 +258,7 @@ describe("an external Postgres database as a data source", () => {
     const deployed = await deploy(bundle());
     expect(deployed.status, JSON.stringify(deployed.body)).toBe(201);
     expect(deployed.body.summary.warnings).toEqual([
-      { path: "/sources/erp", message: 'the data source "erp" is not bound in this workspace' },
+      { path: "/sources/erp", message: 'the data source "erp" is not set up in this workspace' },
     ]);
   });
 
@@ -324,7 +338,7 @@ describe("an external Postgres database as a data source", () => {
       { path: "/name", message: "must be text" },
     ]);
     expect((await alice.post(rows, { name: "x", tags: ["a"] })).body.errors).toEqual([
-      { path: "/tags", message: '"tags" has a type the platform only reads' },
+      { path: "/tags", message: '"tags" has a type Volvel only reads' },
     ]);
     expect((await alice.get(`${ws()}/source-rows/nope/erp`)).status).toBe(404);
     // A table with no key can be read and added to, not changed.
@@ -334,6 +348,65 @@ describe("an external Postgres database as a data source", () => {
     expect((await alice.get(`${ws()}/source-rows/log/erp`)).body.items[0].message).toBe("hello");
     expect((await alice.patch(`${ws()}/source-row/log/1/erp`, { message: "x" })).status).toBe(400);
     expect((await bob.client.get(rows)).status).toBe(403);
+  });
+
+  test("pages of a table with no key are in a fixed order, so none repeats or is skipped (DAT-29)", async () => {
+    const there = external.router.platform();
+    await sql`create table plain_log (message text, n integer, extra jsonb)`.execute(there);
+    await sql`insert into plain_log values ('c', 1, '{}'), ('a', 2, '{}'), ('b', 1, '{}'), ('a', 1, '[]'), ('c', 0, null)`.execute(
+      there,
+    );
+    const rows = `${ws()}/source-rows/plain_log/erp`;
+    const read = async (query: string) => (await alice.get(`${rows}?${query}`)).body;
+    const first = await read("limit=2");
+    const second = await read(`limit=2&cursor=${first.nextCursor}`);
+    const third = await read(`limit=2&cursor=${second.nextCursor}`);
+    const seen = [...first.items, ...second.items, ...third.items].map(
+      (row: Any) => `${row.message}${row.n}`,
+    );
+    // By every column in turn: the same rows in the same order, whatever order the database holds them.
+    expect(seen).toEqual(["a1", "a2", "b1", "c0", "c1"]);
+  });
+
+  test("TAB-32 and TAB-16: whole numbers past 2^53 are not rounded, and `infinity` is shown as what it is", async () => {
+    const there = external.router.platform();
+    await sql`create table big (id bigint primary key, note text, seen timestamptz, price numeric)`.execute(
+      there,
+    );
+    await sql`insert into big values (9007199254740993, 'odd', 'infinity', 12345678901234567890.123456), (9007199254740992, 'even', '-infinity', 1.5), (5, 'small', now(), 2)`.execute(
+      there,
+    );
+    try {
+      const rows = `${ws()}/source-rows/big/erp`;
+      const listed = (await alice.get(`${rows}?limit=2`)).body;
+      // Paged by key and sorted by it: both keys are read and none is rounded into the other.
+      const all = [
+        ...listed.items,
+        ...(listed.nextCursor
+          ? (await alice.get(`${rows}?limit=2&cursor=${listed.nextCursor}`)).body.items
+          : []),
+      ];
+      expect(all.map((row: Any) => String(row.id)).sort()).toEqual([
+        "5",
+        "9007199254740992",
+        "9007199254740993",
+      ]);
+      const odd = all.find((row: Any) => row.note === "odd");
+      expect(odd.id).toBe("9007199254740993");
+      expect(odd.seen).toBe("Infinity");
+      expect(odd.price).toBe("12345678901234567890.123456");
+      const small = all.find((row: Any) => row.note === "small");
+      expect(small.id).toBe(5);
+      // Each key opens its own row, and changing one leaves the other alone.
+      const one = `${ws()}/source-row/big/9007199254740993/erp`;
+      expect((await alice.get(one)).body.note).toBe("odd");
+      expect((await alice.patch(one, { note: "changed" })).body.note).toBe("changed");
+      expect((await alice.get(`${ws()}/source-row/big/9007199254740992/erp`)).body.note).toBe(
+        "even",
+      );
+    } finally {
+      await sql`drop table big`.execute(there);
+    }
   });
 
   test("a source that cannot be reached, or refuses the password, says so", async () => {
@@ -494,6 +567,60 @@ describe("scripts and data", () => {
   });
 });
 
+describe("a script that writes the table it listens to", () => {
+  test("a chain of its own changes stops, as a chain of events does", async () => {
+    const listening = bundle([
+      manifest("trigger", "on-any-task", {
+        type: "event",
+        script: "looper",
+        event: "platform/row-changed",
+        filter: "event.payload.table == 'tasks' && event.payload.change == 'inserted'",
+      }),
+    ]);
+    expect((await deploy(listening)).status).toBe(201);
+    await alice.post(`${ws()}/rows/tasks`, { title: "Start the chain" });
+    let count = 0;
+    for (let i = 0; i < 60; i++) {
+      await sleep(100);
+      const runs = (await alice.get(`${ws()}/runs?script=looper&limit=100`)).body.items as Any[];
+      count = runs.length;
+      if (
+        runs.length > 0 &&
+        runs.every((run) => run.status !== "queued" && run.status !== "running")
+      ) {
+        await sleep(300);
+        count = ((await alice.get(`${ws()}/runs?script=looper&limit=100`)).body.items as Any[])
+          .length;
+        break;
+      }
+    }
+    // The first change is by a person, at depth 0; each run it causes writes one more, a step deeper.
+    expect(count).toBe(10);
+  });
+
+  test("an aggregate is no change, so it announces nothing and logs no error", async () => {
+    const before = (await alice.get(`${ws()}/events?name=platform/row-changed&limit=200`)).body
+      .items.length;
+    const errors: unknown[][] = [];
+    const log = t.kernel.log.error.bind(t.kernel.log);
+    t.kernel.log.error = ((...given: unknown[]) => {
+      errors.push(given);
+      return log(...(given as [object, string]));
+    }) as typeof t.kernel.log.error;
+    try {
+      const done = await ran("counter");
+      expect(done.status, JSON.stringify(done.error)).toBe("succeeded");
+      await sleep(300);
+    } finally {
+      t.kernel.log.error = log;
+    }
+    expect(JSON.stringify(errors)).not.toContain("platform event could not be published");
+    const after = (await alice.get(`${ws()}/events?name=platform/row-changed&limit=200`)).body.items
+      .length;
+    expect(after).toBe(before);
+  });
+});
+
 describe("files", () => {
   const csv = "name,total\nAda,100\n";
   let fileId: string;
@@ -567,11 +694,13 @@ describe("files", () => {
     ).toBe(413);
     expect((await alice.upload(`${ws()}/files`, "x", "text/plain")).status).toBe(400);
     expect((await alice.upload(`${ws()}/files?name=empty.txt`, "", "text/plain")).status).toBe(400);
-    // Bob may read files, not add or remove them.
+    // Bob may read files, not add or remove them. A file is read through a row he may read: the
+    // row that names it is Alice's, so it is none of his, and is said not to exist.
     expect((await bob.client.upload(`${ws()}/files?name=x.txt`, "x", "text/plain")).status).toBe(
       403,
     );
-    expect((await bob.client.get(`${ws()}/files/${fileId}`)).status).toBe(200);
+    expect((await bob.client.get(`${ws()}/files/${fileId}`)).status).toBe(404);
+    expect((await bob.client.get(`${ws()}/files`)).status).toBe(403);
     expect((await bob.client.delete(`${ws()}/files/${fileId}`)).status).toBe(403);
     expect((await other.get(`${ws()}/files/${fileId}`)).status).toBe(404);
   });
@@ -692,17 +821,330 @@ describe("files", () => {
         .where("id", "=", fileId)
         .executeTakeFirstOrThrow()
     ).storage_key;
-    // The row that points at it does not hold it in place: a file column is a note of an ID.
+    // A row that names it holds it in place: it goes once no row does.
+    expect((await alice.delete(`${ws()}/files/${fileId}`)).status).toBe(409);
+    const naming = (
+      await alice.post(`${ws()}/row-deletions/tasks`, {
+        ids: (
+          await alice.get(
+            `${ws()}/rows/tasks?filter=${encodeURIComponent(JSON.stringify({ column: "attachment", op: "eq", value: fileId }))}`,
+          )
+        ).body.items.map((row: Any) => row.id),
+      })
+    ).body.deleted;
+    expect(naming.length).toBeGreaterThan(0);
     expect((await alice.delete(`${ws()}/files/${fileId}`)).status).toBe(204);
     expect((await alice.get(`${ws()}/files/${fileId}`)).status).toBe(404);
     await expect(t.kernel.storage.get(key)).rejects.toThrow();
   });
 });
 
+describe("files follow the rows that name them (D22)", () => {
+  let carol: Client;
+  let carolId: string;
+  const upload = async (who: Client, name: string) => {
+    const made = await who.upload(`${ws()}/files?name=${name}`, name, "text/plain");
+    expect(made.status, JSON.stringify(made.body)).toBe(201);
+    return made.body.id as string;
+  };
+  const exists = async (id: string) =>
+    (await t.db.selectFrom("file").select("id").where("id", "=", id).executeTakeFirst()) !==
+    undefined;
+  const notesOf = (id: string) =>
+    t.db.selectFrom("row_file_history").select("id").where("file_id", "=", id).execute();
+  const age = (id: string) =>
+    t.db
+      .updateTable("row_file_history")
+      .set({ replaced_at: new Date(Date.now() - 500 * 86_400_000) })
+      .where("file_id", "=", id)
+      .execute();
+
+  beforeAll(async () => {
+    const role = (
+      await alice.post(`/tenants/${tenant}/roles`, {
+        name: "rows_and_files",
+        permissions: ["data:read", "data:write", "file:read", "file:write"],
+      })
+    ).body.id;
+    const made = await alice.post(`/tenants/${tenant}/members`, {
+      email: "carol@acme.example",
+      name: "Carol",
+      password: PASSWORD,
+    });
+    carolId = made.body.id;
+    await alice.post(`/tenants/${tenant}/bindings`, {
+      principalType: "member",
+      principalId: carolId,
+      roleId: role,
+    });
+    carol = await t.signIn("carol@acme.example", PASSWORD);
+  });
+
+  test("DAT-05: listing and deleting every file need the permission past the row policy", async () => {
+    const mine = await upload(carol, "mine.txt");
+    const hers = await upload(alice, "alices.txt");
+    expect((await carol.get(`${ws()}/files`)).status).toBe(403);
+    expect((await carol.delete(`${ws()}/files/${mine}`)).status).toBe(403);
+    expect((await alice.get(`${ws()}/files`)).status).toBe(200);
+    // One she uploaded she reads; one only another person's row names, she does not.
+    expect((await carol.get(`${ws()}/files/${mine}`)).status).toBe(200);
+    expect((await carol.get(`${ws()}/files/${hers}/content`)).status).toBe(404);
+    await alice.post(`${ws()}/rows/tasks`, { title: "Hers", attachment: hers });
+    expect((await carol.get(`${ws()}/files/${hers}`)).status).toBe(404);
+    expect((await carol.delete(`${ws()}/files/${hers}`)).status).toBe(403);
+    // A row she may read names a file she did not upload: she reads it.
+    const given = await upload(alice, "given.txt");
+    await alice.post(`${ws()}/rows/tasks`, {
+      title: "Given",
+      attachment: given,
+      owner_id: carolId,
+    });
+    expect((await carol.get(`${ws()}/files/${given}`)).status).toBe(200);
+    expect((await carol.get(`${ws()}/files/${given}/content`)).status).toBe(200);
+  });
+
+  test("a row is given only a file the caller could already read, as an unknown file is refused", async () => {
+    const hers = await upload(alice, "kept-from-carol.txt");
+    await alice.post(`${ws()}/rows/tasks`, { title: "Alice's", attachment: hers });
+    const mine = await upload(carol, "carols.txt");
+    const row = (await carol.post(`${ws()}/rows/tasks`, { title: "Carol's" })).body.items[0];
+    const at = `${ws()}/row/${row.id}/tasks`;
+
+    const refused = await carol.patch(at, { attachment: hers });
+    const unknown = await carol.patch(at, { attachment: newId() });
+    expect(refused.status).toBe(400);
+    expect(refused.body.detail).toBe(unknown.body.detail);
+    expect((await carol.post(`${ws()}/rows/tasks`, { title: "X", attachment: hers })).status).toBe(
+      400,
+    );
+    expect(
+      (await carol.post(`${ws()}/rows/tasks`, { rows: [{ title: "Y", attachment: hers }] })).status,
+    ).toBe(400);
+    // Her own upload is hers to name, and naming it again changes nothing, so is not asked again.
+    expect((await carol.patch(at, { attachment: mine })).status).toBe(200);
+    expect((await carol.patch(at, { attachment: mine, title: "Again" })).status).toBe(200);
+    // Whoever may read every row may name any file.
+    expect((await alice.post(`${ws()}/rows/tasks`, { title: "Z", attachment: mine })).status).toBe(
+      201,
+    );
+  });
+
+  test("a script acting for a person names only a file that person may read; as the workspace it names any", async () => {
+    const hidden = await upload(alice, "script-hidden.txt");
+    await alice.post(`${ws()}/rows/tasks`, { title: "Alice's", attachment: hidden });
+    const shown = await upload(alice, "script-shown.txt");
+    await alice.post(`${ws()}/rows/tasks`, { title: "Bob's", attachment: shown, owner_id: bob.id });
+    const row = (await alice.post(`${ws()}/rows/tasks`, { title: "Bob's blank", owner_id: bob.id }))
+      .body.items[0];
+
+    const refused = await ran("attacher", { person: bob.id, file: hidden, row: row.id });
+    expect(refused.status, JSON.stringify(refused.error)).toBe("succeeded");
+    expect(refused.output.insert).toContain("not a file of this workspace");
+    expect(refused.output.update).toContain("not a file of this workspace");
+    expect(refused.output.workspace).toBe("allowed");
+
+    const accepted = await ran("attacher", { person: bob.id, file: shown, row: row.id });
+    expect(accepted.output).toEqual({
+      insert: "allowed",
+      update: "allowed",
+      workspace: "allowed",
+    });
+  });
+
+  test("DAT-10: a file a row names is not deleted, and the answer says so", async () => {
+    const id = await upload(alice, "named.txt");
+    const row = (await alice.post(`${ws()}/rows/tasks`, { title: "Names", attachment: id })).body
+      .items[0];
+    const refused = await alice.delete(`${ws()}/files/${id}`);
+    expect(refused.status).toBe(409);
+    expect(refused.body.detail).toContain("A row still names this file");
+    expect(await exists(id)).toBe(true);
+    // The row lets go of it: it is noted, and can be deleted.
+    await alice.patch(`${ws()}/row/${row.id}/tasks`, { attachment: null });
+    expect((await alice.delete(`${ws()}/files/${id}`)).status).toBe(204);
+    expect(await exists(id)).toBe(false);
+  });
+
+  test("TAB-P10: the list says which table names each file, pages by a cursor, and finds by name", async () => {
+    const first = await upload(alice, "p10-a.txt");
+    const second = await upload(alice, "p10-b.txt");
+    const third = await upload(alice, "p10-c.txt");
+    await alice.post(`${ws()}/rows/tasks`, { title: "P10 one", attachment: first });
+    await alice.post(`${ws()}/rows/tasks`, { title: "P10 two", attachment: first });
+    const page = await alice.get(`${ws()}/files?limit=2&search=P10-`);
+    expect(page.status, JSON.stringify(page.body)).toBe(200);
+    expect(page.body.items.map((one: { id: string }) => one.id)).toEqual([third, second]);
+    expect(page.body.items[0].namedBy).toEqual([]);
+    expect(typeof page.body.nextCursor).toBe("string");
+    const next = await alice.get(
+      `${ws()}/files?limit=2&search=p10-&cursor=${encodeURIComponent(page.body.nextCursor)}`,
+    );
+    expect(next.body.items.map((one: { id: string }) => one.id)).toEqual([first]);
+    expect(next.body.nextCursor).toBeNull();
+    // Named by two rows of one table: the answer says the table, the column and how many.
+    expect(next.body.items[0].namedBy).toEqual([
+      expect.objectContaining({ table: "tasks", column: "attachment", rows: 2 }),
+    ]);
+    // A wildcard typed in the search is text.
+    expect((await alice.get(`${ws()}/files?search=%25`)).body.items).toEqual([]);
+    expect((await alice.get(`${ws()}/files?limit=0`)).status).toBe(400);
+    for (const id of [first, second, third]) {
+      await alice.delete(`${ws()}/files/${id}`);
+    }
+  });
+
+  test("a deleted row's files are kept for the audit period, as a replaced one is", async () => {
+    const one = await upload(alice, "gone-one.txt");
+    const two = await upload(alice, "gone-two.txt");
+    const a = (await alice.post(`${ws()}/rows/tasks`, { title: "A", attachment: one })).body
+      .items[0];
+    const b = (await alice.post(`${ws()}/rows/tasks`, { title: "B", attachment: two })).body
+      .items[0];
+    expect((await alice.delete(`${ws()}/row/${a.id}/tasks`)).status).toBe(204);
+    expect((await alice.post(`${ws()}/row-deletions/tasks`, { ids: [b.id] })).body.deleted).toEqual(
+      [b.id],
+    );
+    for (const id of [one, two]) expect(await notesOf(id)).toHaveLength(1);
+    await pruneOnce(t.kernel);
+    expect(await exists(one)).toBe(true);
+    expect(await exists(two)).toBe(true);
+    await age(one);
+    await pruneOnce(t.kernel);
+    expect(await exists(one)).toBe(false);
+    expect(await exists(two)).toBe(true);
+  });
+
+  test("a file of a row that a reference's rule deletes, or of a dropped table, is kept for the audit period", async () => {
+    const table = (columns: Record<string, unknown>, path: string) =>
+      alice.put(`${ws()}/resources/${path}`, {
+        kind: "table",
+        schemaVersion: 1,
+        ownership: "ui",
+        body: { columns },
+      });
+    expect((await table({ name: { type: "text" } }, "kb_boards")).status).toBe(201);
+    expect(
+      (
+        await table(
+          {
+            board: { type: "reference", references: "kb_boards", onDelete: "cascade" },
+            file: { type: "file" },
+          },
+          "kb_cards",
+        )
+      ).status,
+    ).toBe(201);
+    expect(
+      (
+        await table(
+          {
+            card: { type: "reference", references: "kb_cards", onDelete: "cascade" },
+            file: { type: "file" },
+          },
+          "kb_notes",
+        )
+      ).status,
+    ).toBe(201);
+    const board = (await alice.post(`${ws()}/rows/kb_boards`, { name: "b" })).body.items[0].id;
+    const cardFile = await upload(alice, "card.txt");
+    const noteFile = await upload(alice, "note.txt");
+    const card = (await alice.post(`${ws()}/rows/kb_cards`, { board, file: cardFile })).body
+      .items[0].id;
+    await alice.post(`${ws()}/rows/kb_notes`, { card, file: noteFile });
+    expect((await alice.delete(`${ws()}/row/${board}/kb_boards`)).status).toBe(204);
+    // Both rows went with the board, and neither file is lost the moment they did.
+    expect(await notesOf(cardFile)).toHaveLength(1);
+    expect(await notesOf(noteFile)).toHaveLength(1);
+    await age(cardFile);
+    await pruneOnce(t.kernel);
+    expect(await exists(cardFile)).toBe(false);
+    expect(await exists(noteFile)).toBe(true);
+
+    // A table that is dropped for good: its files are noted, and kept as any other.
+    const dropFile = await upload(alice, "dropped.txt");
+    await alice.post(`${ws()}/rows/kb_cards`, { file: dropFile });
+    expect((await alice.delete(`${ws()}/resources/kb_notes`)).status).toBe(204);
+    expect((await alice.delete(`${ws()}/resources/kb_cards`)).status).toBe(204);
+    const purged = await alice.post(`${ws()}/table-purges`, { table: "kb_cards" });
+    expect(purged.status, JSON.stringify(purged.body)).toBe(200);
+    expect(await notesOf(dropFile)).toHaveLength(1);
+    await pruneOnce(t.kernel);
+    expect(await exists(dropFile)).toBe(true);
+  });
+
+  test("TAB-09: a file a row still names is not removed by the retention pass", async () => {
+    // (a) replaced in row A, then row B is inserted naming it.
+    const first = await upload(alice, "again.txt");
+    const second = await upload(alice, "again-2.txt");
+    const a = (await alice.post(`${ws()}/rows/tasks`, { title: "A", attachment: first })).body
+      .items[0];
+    await alice.patch(`${ws()}/row/${a.id}/tasks`, { attachment: second });
+    expect(await notesOf(first)).toHaveLength(1);
+    await alice.post(`${ws()}/rows/tasks`, { title: "B", attachment: first });
+    expect(await notesOf(first)).toHaveLength(0);
+
+    // (b) two rows name one file, and one lets go: the note ages while the other names it.
+    const shared = await upload(alice, "shared.txt");
+    const c = (await alice.post(`${ws()}/rows/tasks`, { title: "C", attachment: shared })).body
+      .items[0];
+    await alice.post(`${ws()}/rows/tasks`, { title: "D", attachment: shared });
+    await alice.patch(`${ws()}/row/${c.id}/tasks`, { attachment: null });
+    await age(shared);
+    await pruneOnce(t.kernel);
+    expect(await exists(shared)).toBe(true);
+    expect(await exists(first)).toBe(true);
+  });
+
+  test("TAB-02: a row names only a file of its workspace, and another tenant's note is left alone", async () => {
+    const globex = await t.db
+      .selectFrom("tenant")
+      .select("id")
+      .where("slug", "=", "globex")
+      .executeTakeFirstOrThrow();
+    const foreignWorkspace = (
+      await other.post(`/tenants/${globex.id}/workspaces`, {
+        slug: "main-dev",
+        name: "Dev",
+        type: "dev",
+      })
+    ).body.id;
+    const foreign = (
+      await other.upload(
+        `/tenants/${globex.id}/workspaces/${foreignWorkspace}/files?name=f.txt`,
+        "f",
+        "text/plain",
+      )
+    ).body.id as string;
+    await t.db
+      .insertInto("row_file_history")
+      .values({
+        id: newId(),
+        tenant_id: globex.id,
+        workspace_id: foreignWorkspace,
+        file_id: foreign,
+        table_name: "orders",
+        row_id: "1",
+        column_name: "doc",
+        replaced_by_type: "member",
+      })
+      .execute();
+    const refused = await alice.post(`${ws()}/rows/tasks`, { title: "X", attachment: foreign });
+    expect(refused.status).toBe(400);
+    const made = (await alice.post(`${ws()}/rows/tasks`, { title: "Y" })).body.items[0];
+    expect(
+      (await alice.patch(`${ws()}/row/${made.id}/tasks`, { attachment: foreign })).status,
+    ).toBe(400);
+    expect(
+      (await alice.patch(`${ws()}/row/${made.id}/tasks`, { attachment: newId() })).status,
+    ).toBe(400);
+    expect(await notesOf(foreign)).toHaveLength(1);
+  });
+});
+
 describe("guards", () => {
   test("every change by a principal went through the write path, and every such route was exercised", () => {
     expect(
-      t.unaudited.filter((route) => !/\/(rows?|source-rows?)\//.test(route)),
+      t.unaudited.filter((route) => !/\/(rows?|source-rows?|row-deletions)\//.test(route)),
       JSON.stringify(t.unaudited),
     ).toEqual([]);
     expect(

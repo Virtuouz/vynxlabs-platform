@@ -105,10 +105,19 @@ test("a new script's first save and run keeps the editor, and shows the run it s
 
   // The code and the test pane are side by side; running needs no tab.
   const pane = screen.getByRole("region", { name: "Test pane" });
+  const brought = vi.fn();
+  Element.prototype.scrollIntoView = brought;
   fireEvent.click(within(pane).getByRole("button", { name: "Save and run" }));
 
   // The result shows in the pane, beside the code.
   expect(await within(pane).findByRole("tablist", { name: "About this run" })).toBeTruthy();
+  // Round 4: the form sits above the result, so a run brings the result into view.
+  await waitFor(() => expect(brought).toHaveBeenCalled());
+  expect(brought.mock.contexts[0]).toBe(
+    within(pane)
+      .getByRole("tablist", { name: "What the test run gave" })
+      .closest("div[class*='scroll-mt']"),
+  );
   expect(location.pathname).toBe("/t/t1/workspaces/w1/scripts/edit/hello/greet");
   // The editor that saved it is still there, and did not read back what it just saved.
   expect(screen.getByLabelText("Source of hello/greet")).toBe(code);
@@ -116,6 +125,44 @@ test("a new script's first save and run keeps the editor, and shows the run it s
   expect(
     calls.filter((one) => one.method === "GET" && one.url === `${base}/drafts/hello/greet`),
   ).toEqual([]);
+});
+
+test("a script written in the console can be given a place among the flow's steps (EXT-08)", async () => {
+  const puts: { body: { node?: unknown } }[] = [];
+  routes[`PUT ${base}/drafts/hello/greet`] = (body) => {
+    puts.push({ body: (body as { body: { node?: unknown } }).body });
+    return { ...(body as object), path: "hello/greet", revision: 1 };
+  };
+  history.replaceState(null, "", "/t/t1/workspaces/w1/scripts/new");
+  show(<AtAddress />);
+  const code = await screen.findByLabelText("Source of the new script");
+  fireEvent.change(screen.getByLabelText("Path"), { target: { value: "hello/greet" } });
+  // Nothing to choose until the script is given a name as a step.
+  expect(screen.queryByLabelText("Group")).toBeNull();
+  fireEvent.change(screen.getByLabelText("Step name"), { target: { value: "Greet someone" } });
+  fireEvent.change(await screen.findByLabelText("Group"), { target: { value: "Greetings" } });
+  fireEvent.change(screen.getByLabelText("Icon"), { target: { value: "mail" } });
+  fireEvent.keyDown(code, { key: "s", metaKey: true });
+  await waitFor(() => expect(puts.length).toBeGreaterThan(0));
+  expect(puts.at(-1)?.body.node).toEqual({
+    label: "Greet someone",
+    category: "Greetings",
+    icon: "mail",
+  });
+  // Emptied, the script is no longer a step: the draft carries no `node`.
+  fireEvent.change(screen.getByLabelText("Step name"), { target: { value: "" } });
+  fireEvent.keyDown(code, { key: "s", metaKey: true });
+  await waitFor(() => expect(puts.at(-1)?.body.node).toBeUndefined());
+  // Typed again, it has the icon and group it had.
+  fireEvent.change(screen.getByLabelText("Step name"), { target: { value: "Greet them" } });
+  fireEvent.keyDown(code, { key: "s", metaKey: true });
+  await waitFor(() =>
+    expect(puts.at(-1)?.body.node).toEqual({
+      label: "Greet them",
+      category: "Greetings",
+      icon: "mail",
+    }),
+  );
 });
 
 test("only a first save keeps the editor: any other address opens a new one", () => {
@@ -204,6 +251,30 @@ test("the run's tab stays as chosen from one run to the next", async () => {
       within(pane).getByRole("tab", { name: "Input and output" }).getAttribute("aria-selected"),
     ).toBe("true"),
   );
+});
+
+test("Ctrl+Enter runs with what the test pane holds now, as its Run button does (P31)", async () => {
+  const sent: unknown[] = [];
+  routes[`POST ${base}/test-runs`] = (body) => {
+    sent.push(body);
+    return { runId: "r1" };
+  };
+  openSaved();
+  routes[`GET ${base}/drafts/hello/greet`] = () => {
+    const draft = draftOf("export default async () => ({});\n");
+    return {
+      ...draft,
+      body: {
+        ...draft.body,
+        input: { type: "object", properties: { name: { type: "string" } }, required: ["name"] },
+      },
+    };
+  };
+  const pane = await screen.findByRole("region", { name: "Test pane" });
+  fireEvent.change(await within(pane).findByLabelText(/^name/i), { target: { value: "Ada" } });
+  fireEvent.keyDown(document.body, { key: "Enter", ctrlKey: true });
+  await waitFor(() => expect(sent).toHaveLength(1));
+  expect(sent[0]).toMatchObject({ script: "hello/greet", input: { name: "Ada" } });
 });
 
 test("⌘S saves the draft, and code that does not build lists where, each line a way to it", async () => {
@@ -310,4 +381,124 @@ test("a deployed script is removed as a draft that removes it, and the Changes s
   await waitFor(() => expect(saved).toHaveLength(1));
   expect(saved[0]).toEqual({ kind: "script", schemaVersion: 1, body: {}, deleted: true });
   await waitFor(() => expect(location.pathname).toBe("/t/t1/workspaces/w1/changes"));
+});
+
+test("a script drafted for removal opens as a removal: its deployed code, read only, and nothing is saved (SCR-11)", async () => {
+  const saved: unknown[] = [];
+  routes[`PUT ${base}/drafts/hello/greet`] = (body) => {
+    saved.push(body);
+    return {};
+  };
+  routes[`GET ${base}/drafts/hello/greet`] = () => ({
+    path: "hello/greet",
+    kind: "script",
+    revision: 2,
+    deleted: true,
+    body: {},
+  });
+  routes[`GET ${base}/resources/hello/greet`] = () => ({
+    ownership: "ui",
+    body: draftOf("export default async () => ({});\n").body,
+  });
+  history.replaceState(null, "", "/t/t1/workspaces/w1/scripts/edit/hello/greet");
+  show(<AtAddress />);
+  expect(await screen.findByText(/This script is removed in your drafts/)).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Keep this script" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Save draft" })).toBeNull();
+  // An autosave would have run by now.
+  await new Promise((done) => setTimeout(done, 3400));
+  expect(saved).toEqual([]);
+}, 15_000);
+
+test("a new script gets the SDK's wait between tries and backoff, and both can be changed (SCR-15)", async () => {
+  const saved: { body: { retries?: unknown } }[] = [];
+  routes[`PUT ${base}/drafts/hello/greet`] = (body) => {
+    saved.push(body as { body: { retries?: unknown } });
+    return { ...(body as object), path: "hello/greet", revision: 1 };
+  };
+  history.replaceState(null, "", "/t/t1/workspaces/w1/scripts/new");
+  show(<AtAddress />);
+  await screen.findByLabelText("Source of the new script");
+  expect((screen.getByLabelText("Give up after (seconds)") as HTMLInputElement).value).toBe("60");
+  expect((screen.getByLabelText("Wait between tries (seconds)") as HTMLInputElement).value).toBe(
+    "30",
+  );
+  const backoff = screen.getByLabelText("Wait longer after each failed try") as HTMLInputElement;
+  expect(backoff.checked).toBe(true);
+  fireEvent.click(backoff);
+  fireEvent.change(screen.getByLabelText("Path"), { target: { value: "hello/greet" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save draft" }));
+  await waitFor(() => expect(saved.length).toBeGreaterThan(0));
+  expect(saved[0]?.body.retries).toEqual({ limit: 0, delaySeconds: 30, backoff: false });
+});
+
+test("the list's inspector offers a script to an agent only when it is deployed (SCR-12)", async () => {
+  const row = (path: string, deployed: boolean) => ({
+    path,
+    ownership: "ui",
+    draft: !deployed,
+    deployed,
+    lastRun: null,
+    failedInARow: 0,
+    retries: 0,
+    inputSchema: { type: "object" },
+    uses: { connections: [], secrets: [], variables: [], tables: [] },
+  });
+  routes[`GET ${base}/scripts`] = () => ({
+    items: [row("hello/live", true), row("hello/new", false)],
+  });
+  history.replaceState(null, "", "/t/t1/workspaces/w1/scripts?item=hello%2Fnew");
+  show(<AtAddress />);
+  await screen.findByRole("button", { name: "Open editor" });
+  expect(screen.queryByRole("button", { name: /Offer to an agent/ })).toBeNull();
+  cleanup();
+  history.replaceState(null, "", "/t/t1/workspaces/w1/scripts?item=hello%2Flive");
+  show(<AtAddress />);
+  await screen.findByRole("button", { name: "Open editor" });
+  expect(screen.getByRole("button", { name: /Offer to an agent/ })).toBeTruthy();
+});
+
+test("SCR-08, EXT-MP3: a script's memory, concurrency, worker pool, the rest of what it uses, and what happens when it fails are set in Settings", async () => {
+  routes[`GET /tenants/t1/worker-pools`] = () => ({
+    items: [
+      { id: null, name: null, description: "" },
+      { id: "p1", name: "eu-office", description: "" },
+    ],
+  });
+  routes[`GET ${base}/tables`] = () => ({ items: [{ name: "orders" }] });
+  routes[`GET ${base}/data-source-bindings`] = () => ({ items: [{ path: "warehouse" }] });
+  routes[`GET ${base}/connection-groups`] = () => ({ items: [{ path: "stores" }] });
+  routes[`GET ${base}/resources`] = () => ({ items: [{ path: "order/placed", kind: "event" }] });
+  routes[`GET ${base}/scripts`] = () => ({ items: [{ path: "ops/alert" }] });
+  routes[`GET ${base}/connection-bindings`] = () => ({ items: [{ path: "chat" }] });
+  let saved: { body: Record<string, unknown> } | undefined;
+  routes[`PUT ${base}/drafts/hello/greet`] = (body) => {
+    saved = body as { body: Record<string, unknown> };
+    return { path: "hello/greet", revision: 2, body: (body as { body: object }).body };
+  };
+  openSaved();
+  fireEvent.input(await screen.findByLabelText("Memory (MB)"), { target: { value: "1024" } });
+  fireEvent.input(screen.getByLabelText("Runs at once"), { target: { value: "4" } });
+  fireEvent.input(screen.getByLabelText("One lane for each value of"), {
+    target: { value: "input.customer" },
+  });
+  fireEvent.change(screen.getByLabelText("Worker pool"), { target: { value: "eu-office" } });
+  fireEvent.change(screen.getByLabelText("If it fails for the last time, start"), {
+    target: { value: "ops/alert" },
+  });
+  fireEvent.change(screen.getByLabelText("and send a summary through"), {
+    target: { value: "chat" },
+  });
+  fireEvent.click(await screen.findByRole("button", { name: "Save draft" }));
+  await waitFor(() => expect(saved).toBeTruthy());
+  expect(saved?.body).toMatchObject({
+    memoryMb: 1024,
+    concurrency: { key: "input.customer", limit: 4 },
+    worker: "eu-office",
+    onFailure: { script: "ops/alert", notify: "chat" },
+  });
+  expect(screen.getByText("Tables it reads and writes")).toBeTruthy();
+  expect(screen.getByText("Data sources it uses")).toBeTruthy();
+  expect(screen.getByText("Events it may publish")).toBeTruthy();
+  expect(screen.getByText("Connection groups it picks from")).toBeTruthy();
 });

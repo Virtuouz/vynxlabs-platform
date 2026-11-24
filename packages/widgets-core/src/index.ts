@@ -118,7 +118,7 @@ export const table = defineWidget({
             align: { enum: ["auto", "right"] },
             // `fixed` gives the column one width, with long values cut short.
             width: { enum: ["auto", "fixed"] },
-            // Clicking its heading sorts the rows shown (the rows read, in the browser).
+            // Clicking its heading sorts the rows shown (the rows read, in the browser). On unless `false`; never for a json or several-choice column.
             sortable: { type: "boolean" },
             // A total row at the bottom: the sum of the rows shown.
             total: { type: "boolean" },
@@ -234,6 +234,51 @@ export const table = defineWidget({
     additionalProperties: false,
   },
   defaults: { pageSize: 25, rowHeight: "comfortable" },
+  /** What each setting is, by its path, for the documentation. */
+  words: {
+    rowHeight: "How tall each row is. `compact` fits more rows.",
+    pageSize: "How many rows are drawn at a time, from 5 to 200.",
+    stripes: "Shade every other row.",
+    "columns.*.column": "The column of the rows it shows.",
+    "columns.*.label": "What the heading says. Left out, the column's own name.",
+    "columns.*.as":
+      "How a value is drawn: as text, as a bar, as a change with an arrow, or as a chip with a dot in the tone `badges` gives its value.",
+    "columns.*.badges":
+      "For `as: badge`: each value's tone. A value left out takes its color from the column, or is neutral.",
+    "columns.*.align": "`right` lines the column up at the right. `auto` does so for numbers.",
+    "columns.*.width": "`fixed` gives the column one width, with long values cut short.",
+    "columns.*.sortable":
+      "Whether clicking its heading sorts the rows shown. On unless `false`, and never for a column of JSON or of several choices.",
+    "columns.*.total": "A total row at the bottom: the sum of the rows shown.",
+    "columns.*.phone": "`false` leaves it out of the list a table becomes on a phone.",
+    "columns.*.hidden": "Keeps the column in the table's data but does not draw it.",
+    empty: "What the table says when there are no rows.",
+    "columns.*.format": "How the numbers of the column are written.",
+    "columns.*.format.style":
+      "How the number is written: as a plain number, as money or as a percentage.",
+    "columns.*.format.currency":
+      "The currency of money, as its three-letter code, such as `USD`. Money without one is in US dollars.",
+    "columns.*.format.minorUnits":
+      "The value is kept in the smallest unit, such as cents, and is shown in the whole unit.",
+    "columns.*.format.decimals": "How many digits follow the point.",
+    "columns.*.format.notation": "`compact` writes 43,120 as 43.1K.",
+    "columns.*.format.grouping": "`false` writes 43120, not 43,120.",
+    "groupRows.column": "The column the rows are kept together by.",
+    "groupRows.by": "For a date or a time: how long each group is, a day, a week or a month.",
+    "groupRows.descending": "Newest or biggest group first.",
+    "rowActions.*.id":
+      "What names this action on the page, and in the permissions. Small letters, digits, `-` and `_`.",
+    "rowActions.*.label": "What the button says.",
+    "rowActions.*.tone": "How the button looks: `danger` for one that deletes or cannot be undone.",
+    "rowActions.*.action":
+      "What it does when pressed: an [action](actions), its steps, its confirmation and who may run it.",
+    "buttons.*.id":
+      "What names this action on the page, and in the permissions. Small letters, digits, `-` and `_`.",
+    "buttons.*.label": "What the button says.",
+    "buttons.*.tone": "How the button looks: `danger` for one that deletes or cannot be undone.",
+    "buttons.*.action":
+      "What it does when pressed: an [action](actions), its steps, its confirmation and who may run it.",
+  },
   events: { rowClick: { gives: "record", label: "When a row is clicked" } },
   layout: { min: { w: 4, h: 4 }, default: { w: 12, h: 8 }, phone: "list" },
 });
@@ -309,6 +354,21 @@ export const list = defineWidget({
     additionalProperties: false,
   },
   defaults: { look: "list" },
+  /** What each setting is, by its path, for the documentation. */
+  words: {
+    title: "The column drawn as the title of each row.",
+    subtitle: "The column drawn under the title.",
+    look: "Whether the rows are a list or cards.",
+    "groupRows.column": "The column the rows are kept together by.",
+    "groupRows.by": "For a date or a time: how long each group is, a day, a week or a month.",
+    "groupRows.descending": "Newest or biggest group first.",
+    "rowActions.*.id":
+      "What names this action on the page, and in the permissions. Small letters, digits, `-` and `_`.",
+    "rowActions.*.label": "What the button says.",
+    "rowActions.*.tone": "How the button looks: `danger` for one that deletes or cannot be undone.",
+    "rowActions.*.action":
+      "What it does when pressed: an [action](actions), its steps, its confirmation and who may run it.",
+  },
   events: { rowClick: { gives: "record", label: "When a record is clicked" } },
   layout: { min: { w: 3, h: 4 }, default: { w: 4, h: 8 }, phone: "stack" },
 });
@@ -430,6 +490,23 @@ export const stat = defineWidget({
     },
     additionalProperties: false,
   },
+  /** What each setting is, by its path, for the documentation. */
+  words: {
+    format: "How the number is written.",
+    trendBy: "A column of dates or times: a small line under the number shows how it went, by it.",
+    delta:
+      "When it is compared with the period before: whether the change is shown as a percentage, as an absolute difference or in percentage points.",
+    goodWhen:
+      "When it is compared with the period before: whether going up is good news or bad news, which decides the color of the change.",
+    "format.style": "How the number is written: as a plain number, as money or as a percentage.",
+    "format.currency":
+      "The currency of money, as its three-letter code, such as `USD`. Money without one is in US dollars.",
+    "format.minorUnits":
+      "The value is kept in the smallest unit, such as cents, and is shown in the whole unit.",
+    "format.decimals": "How many digits follow the point.",
+    "format.notation": "`compact` writes 43,120 as 43.1K.",
+    "format.grouping": "`false` writes 43120, not 43,120.",
+  },
   events: { click: { gives: "nothing", label: "When it is clicked" } },
   layout: { min: { w: 2, h: 2 }, default: { w: 3, h: 3 }, phone: "stack" },
 });
@@ -475,7 +552,7 @@ export const chart = defineWidget({
           group: "Chart type",
           control: "tiles",
           label: "Chart type",
-          help: "Types that cannot work with the data are greyed (see `chartFits`).",
+          help: "Types that cannot work with the data are grayed (see `chartFits`).",
           choices: {
             bar: "Bar",
             line: "Line",
@@ -551,18 +628,18 @@ export const chart = defineWidget({
           group: "Look",
           control: "choice",
           label: "Colors",
-          choices: { theme: "App theme", cool: "Cool", warm: "Warm", mono: "Greys" },
+          choices: { theme: "App theme", cool: "Cool", warm: "Warm", mono: "Grays" },
           order: 5,
         }),
       },
       legend: {
-        enum: ["auto", "shown", "hidden"],
+        enum: ["auto", "hidden"],
         "x-volvel": hint({
           tab: "display",
           group: "Look",
           control: "choice",
           label: "Legend",
-          choices: { auto: "Automatic", shown: "Always", hidden: "Never" },
+          choices: { auto: "Automatic", hidden: "Never" },
           order: 6,
         }),
       },
@@ -659,10 +736,62 @@ export const chart = defineWidget({
           order: 14,
         }),
       },
+      xTitle: {
+        type: "string",
+        maxLength: 60,
+        "x-volvel": hint({
+          tab: "display",
+          group: "Look",
+          level: "more",
+          control: "text",
+          label: "Title along the bottom",
+          when: { axisTitles: true, mark: ["bar", "line", "area", "scatter", "heatmap", null] },
+          help: "Left out: the column's name.",
+          order: 15,
+        }),
+      },
+      yTitle: {
+        type: "string",
+        maxLength: 60,
+        "x-volvel": hint({
+          tab: "display",
+          group: "Look",
+          level: "more",
+          control: "text",
+          label: "Title up the side",
+          when: { axisTitles: true, mark: ["bar", "line", "area", "scatter", "heatmap", null] },
+          help: "Left out: the value's name.",
+          order: 16,
+        }),
+      },
     },
     additionalProperties: false,
   },
   defaults: { mark: "bar", legend: "auto", colors: "theme", axisTitles: false, points: true },
+  /** What each setting is, by its path, for the documentation. */
+  words: {
+    mark: "The kind of chart: bars, a line, an area, a pie, a scatter or a heatmap. A kind the data cannot be drawn as is grayed out in the editor.",
+    horizontal: "For bars: lays them down, so that they run across.",
+    bars: "For bars with several series: whether they are stacked one on another or side by side.",
+    format: "How the numbers are written.",
+    colors:
+      "The colors the series are drawn in: those of the app's theme, cool ones, warm ones or grays.",
+    legend: "Whether the legend is shown when there is more than one series, or never.",
+    values: "Writes each bar's value on it.",
+    axisTitles: "Writes the name of what each axis measures beside it.",
+    compare:
+      "Also draws the period before, for a chart over time. It is compared across the date filter `compareTo` names.",
+    smooth: "For a line: rounds the corners between points.",
+    points: "For a line: marks each point.",
+    "format.style": "How the number is written: as a plain number, as money or as a percentage.",
+    "format.currency":
+      "The currency of money, as its three-letter code, such as `USD`. Money without one is in US dollars.",
+    "format.minorUnits":
+      "The value is kept in the smallest unit, such as cents, and is shown in the whole unit.",
+    "format.decimals": "How many digits follow the point.",
+    "format.notation": "`compact` writes 43,120 as 43.1K.",
+    "format.grouping": "`false` writes 43120, not 43,120.",
+  },
   events: { pointClick: { gives: "group", label: "When someone clicks a point" } },
   layout: { min: { w: 3, h: 4 }, default: { w: 6, h: 6 }, phone: "stack" },
 });
@@ -753,6 +882,21 @@ export const pivot = defineWidget({
     additionalProperties: false,
   },
   defaults: { rowTotals: true, columnTotals: true, shade: true },
+  /** What each setting is, by its path, for the documentation. */
+  words: {
+    format: "How the numbers are written.",
+    shade: "Shades each cell by how big its number is.",
+    rowTotals: "Adds a column with the total of each row.",
+    columnTotals: "Adds a row with the total of each column.",
+    "format.style": "How the number is written: as a plain number, as money or as a percentage.",
+    "format.currency":
+      "The currency of money, as its three-letter code, such as `USD`. Money without one is in US dollars.",
+    "format.minorUnits":
+      "The value is kept in the smallest unit, such as cents, and is shown in the whole unit.",
+    "format.decimals": "How many digits follow the point.",
+    "format.notation": "`compact` writes 43,120 as 43.1K.",
+    "format.grouping": "`false` writes 43120, not 43,120.",
+  },
   events: { cellClick: { gives: "group", label: "When a cell is clicked" } },
   layout: { min: { w: 4, h: 4 }, default: { w: 6, h: 7 }, phone: "stack" },
 });
@@ -808,6 +952,10 @@ export const text = defineWidget({
     additionalProperties: false,
   },
   defaults: { text: "", look: "plain", height: "fit" },
+  /** What each setting is, by its path, for the documentation. */
+  words: {
+    look: "How the text is framed: plain, as a note, as a warning or as a tip.",
+  },
   events: {},
   layout: { min: { w: 2, h: 1 }, default: { w: 6, h: 2 }, phone: "stack" },
 });
@@ -885,6 +1033,13 @@ export const button = defineWidget({
     additionalProperties: false,
   },
   defaults: { label: "Do it", tone: "primary", place: "middle-left" },
+  /** What each setting is, by its path, for the documentation. */
+  words: {
+    label: "What the button says.",
+    icon: "The name of an icon from the console's set, drawn beside the label.",
+    tone: "How the button looks: the main one, a normal one, a quiet one, or a danger one.",
+    full: "Draws the button across the whole width of its cell.",
+  },
   events: { click: { gives: "nothing", label: "When clicked" } },
   layout: {
     min: { w: 2, h: 1 },
@@ -1008,6 +1163,29 @@ export const detail = defineWidget({
           order: 5,
         }),
       },
+      editBy: {
+        type: "object",
+        description:
+          "Who may edit fields in place: the groups, by path. Left out: anyone who can open the page. Checked on the server.",
+        properties: {
+          groups: {
+            type: "array",
+            minItems: 1,
+            maxItems: 10,
+            items: { type: "string", maxLength: 255 },
+          },
+        },
+        required: ["groups"],
+        additionalProperties: false,
+        // Drawn by the Rules tab, as who may run an action is.
+        "x-volvel": hint({
+          tab: "rules",
+          control: "groups",
+          label: "Who can edit",
+          when: { edit: true },
+          order: 1,
+        }),
+      },
       actions: {
         type: "array",
         maxItems: 6,
@@ -1035,6 +1213,37 @@ export const detail = defineWidget({
     additionalProperties: false,
   },
   defaults: { across: 2 },
+  /** What each setting is, by its path, for the documentation. */
+  words: {
+    heading: "The column drawn as the heading of the record.",
+    statusBadges: "The tone of the chip each value of the status is drawn in, by the value.",
+    across: "How many fields are drawn side by side: 1, 2 or 3.",
+    "fields.*.column": "The column of the record it shows.",
+    "fields.*.label": "What the field is called. Left out, the column's own name.",
+    "fields.*.as":
+      "How the value is drawn: as text, or as a chip with a dot in the tone `badges` gives it.",
+    "fields.*.badges": "For `as: badge`: each value's tone.",
+    "fields.*.section": "The heading of the group of fields it is drawn under.",
+    "fields.*.hidden": "Keeps the field out of what is drawn.",
+    "editBy.groups": "The groups, each by its path, whose members may edit fields in place.",
+    "fields.*.format": "How the numbers of the field are written.",
+    "fields.*.format.style":
+      "How the number is written: as a plain number, as money or as a percentage.",
+    "fields.*.format.currency":
+      "The currency of money, as its three-letter code, such as `USD`. Money without one is in US dollars.",
+    "fields.*.format.minorUnits":
+      "The value is kept in the smallest unit, such as cents, and is shown in the whole unit.",
+    "fields.*.format.decimals": "How many digits follow the point.",
+    "fields.*.format.notation": "`compact` writes 43,120 as 43.1K.",
+    "fields.*.format.grouping": "`false` writes 43120, not 43,120.",
+    "actions.*.id":
+      "What names this action on the page, and in the permissions. Small letters, digits, `-` and `_`.",
+    "actions.*.label": "What the button says.",
+    "actions.*.tone": "How the button looks: `danger` for one that deletes or cannot be undone.",
+    "actions.*.action":
+      "What it does when pressed: an [action](actions), its steps, its confirmation and who may run it.",
+    "actions.*.icon": "The name of an icon from the console's set, drawn beside the label.",
+  },
   events: {},
   layout: { min: { w: 3, h: 4 }, default: { w: 6, h: 8 }, phone: "stack" },
 });
@@ -1127,6 +1336,33 @@ export const form = defineWidget({
     additionalProperties: false,
   },
   defaults: { mode: "create", submitLabel: "Save" },
+  /** What each setting is, by its path, for the documentation. */
+  words: {
+    mode: "`create` makes a new record from what is entered, and `edit` changes the record that is open.",
+    submitLabel: "What the button that sends the form says.",
+    "fields.*.column":
+      "The column of the table the field fills in. Its control is picked from the column's type.",
+    "fields.*.label": "What the field is called. Left out, the column's own name.",
+    "fields.*.help": "A line under the field that says what to put in it.",
+    "fields.*.section": "The heading of the group of fields it is drawn under.",
+    "fields.*.required": "The form is not sent while the field is empty.",
+    "fields.*.initial": "What the field starts with when a record is made.",
+    "fields.*.initial.kind":
+      "`today` is today's date, `me` is the person filling the form in, and `value` is the fixed `value`.",
+    "fields.*.initial.as":
+      "For `me`: what of the person is used, their email, their name or their ID.",
+    "fields.*.initial.value": "For `value`: what the field starts with.",
+    "fields.*.format": "How the numbers of the field are written.",
+    "fields.*.format.style":
+      "How the number is written: as a plain number, as money or as a percentage.",
+    "fields.*.format.currency":
+      "The currency of money, as its three-letter code, such as `USD`. Money without one is in US dollars.",
+    "fields.*.format.minorUnits":
+      "The value is kept in the smallest unit, such as cents, and is shown in the whole unit.",
+    "fields.*.format.decimals": "How many digits follow the point.",
+    "fields.*.format.notation": "`compact` writes 43,120 as 43.1K.",
+    "fields.*.format.grouping": "`false` writes 43120, not 43,120.",
+  },
   events: {},
   layout: { min: { w: 3, h: 4 }, default: { w: 6, h: 8 }, phone: "stack" },
 });
@@ -1183,6 +1419,11 @@ export const section = defineWidget({
     additionalProperties: false,
   },
   defaults: { folds: false, look: "plain" },
+  /** What each setting is, by its path, for the documentation. */
+  words: {
+    look: "Whether the section is drawn plain or on a card.",
+    folded: "For a section that folds: whether it starts folded.",
+  },
   events: {},
   layout: { min: { w: 3, h: 2 }, default: { w: 12, h: 6 }, phone: "stack" },
 });
@@ -1268,6 +1509,12 @@ export const tabs = defineWidget({
     ],
     look: "underline",
   },
+  /** What each setting is, by its path, for the documentation. */
+  words: {
+    look: "Whether the tabs are drawn with an underline or as pills.",
+    "tabs.*.id": "What names the tab, and what the widgets placed in it are kept under.",
+    "tabs.*.title": "What the tab says.",
+  },
   events: {},
   layout: { min: { w: 4, h: 3 }, default: { w: 12, h: 8 }, phone: "stack" },
 });
@@ -1333,6 +1580,10 @@ export const filter = defineWidget({
     filters: [{ name: "search", type: "search", label: "Search" }],
     reset: true,
     sit: "row",
+  },
+  /** What each setting is, by its path, for the documentation. */
+  words: {
+    sit: "Whether the filters sit in a row, or behind a button that opens them.",
   },
   events: {},
   layout: {
@@ -1433,6 +1684,18 @@ export const actions = defineWidget({
     showUpTo: 3,
     place: "middle-left",
   },
+  /** What each setting is, by its path, for the documentation. */
+  words: {
+    lineUp: "Where the buttons sit in the widget: at the left, at the right, or spread across it.",
+    place: "Where the widget sits in its cell, by row and then column.",
+    "actions.*.id":
+      "What names this action on the page, and in the permissions. Small letters, digits, `-` and `_`.",
+    "actions.*.label": "What the button says.",
+    "actions.*.tone": "How the button looks: `danger` for one that deletes or cannot be undone.",
+    "actions.*.action":
+      "What it does when pressed: an [action](actions), its steps, its confirmation and who may run it.",
+    "actions.*.icon": "The name of an icon from the console's set, drawn beside the label.",
+  },
   events: {},
   layout: {
     min: { w: 2, h: 1 },
@@ -1441,6 +1704,147 @@ export const actions = defineWidget({
     phone: "stack",
     frame: "none",
   },
+});
+
+/** Progress toward a target: a number, a bar and the share reached. */
+export const goal = defineWidget({
+  type: "core/goal",
+  version: "1.0.0",
+  title: "Goal",
+  description: "How far a number is toward a target",
+  category: "understand",
+  icon: "target",
+  surfaces: ["app", "dashboard"],
+  // The second value, when there is one, is where `goalFrom` reads the goal: a column of the source, summed or the like.
+  data: { value: { shape: "summary", values: { min: 1, max: 2 }, breakdowns: { min: 0, max: 0 } } },
+  dataHints: [
+    {
+      of: "value",
+      controls: [
+        { control: "source", label: "Source" },
+        { control: "measure", label: "Value" },
+        { control: "conditions", label: "Only include", help: "For example: Status is Paid." },
+      ],
+    },
+  ],
+  config: {
+    type: "object",
+    properties: {
+      target: {
+        type: "number",
+        exclusiveMinimum: 0,
+        "x-volvel": hint({
+          tab: "data",
+          group: "Progress",
+          control: "number",
+          label: "Goal",
+          help: "A fixed amount. Or take it from a column below.",
+          order: 1,
+        }),
+      },
+      goalFrom: {
+        type: "string",
+        minLength: 1,
+        maxLength: 130,
+        "x-volvel": hint({
+          tab: "data",
+          group: "Progress",
+          control: "column",
+          of: "value",
+          types: ["number", "integer"],
+          label: "Goal from a column",
+          help: "A column of the result, such as a monthly target. It wins over the fixed amount.",
+          order: 2,
+        }),
+      },
+      label: {
+        type: "string",
+        maxLength: 200,
+        "x-volvel": hint({
+          tab: "display",
+          group: "Heading",
+          control: "text",
+          label: "A line under it",
+          help: "Such as “of $60,000 this month”.",
+          order: 1,
+        }),
+      },
+      format: {
+        ...FORMAT,
+        "x-volvel": hint({
+          tab: "display",
+          group: "Look",
+          control: "format",
+          label: "Numbers",
+          order: 2,
+        }),
+      },
+      percent: {
+        type: "boolean",
+        "x-volvel": hint({
+          tab: "display",
+          group: "Look",
+          control: "switch",
+          label: "Show the percentage",
+          order: 2.5,
+        }),
+      },
+      reached: {
+        enum: ["green", "none"],
+        "x-volvel": hint({
+          tab: "display",
+          group: "Look",
+          control: "segmented",
+          label: "When reached, the bar",
+          choices: { green: "Turns green", none: "Stays" },
+          order: 3,
+        }),
+      },
+      goodWhen: {
+        enum: ["up", "down"],
+        "x-volvel": hint({
+          tab: "display",
+          group: "Look",
+          level: "more",
+          control: "segmented",
+          label: "Good news is",
+          choices: { up: "Up", down: "Down" },
+          order: 4,
+        }),
+      },
+      bands: {
+        type: "boolean",
+        "x-volvel": hint({
+          tab: "display",
+          group: "Look",
+          level: "more",
+          control: "switch",
+          label: "Color by how close",
+          help: "Green when it is going well, amber when it is close, red when it is not.",
+          order: 5,
+        }),
+      },
+    },
+    additionalProperties: false,
+  },
+  defaults: { goodWhen: "up", bands: false, reached: "green", percent: true },
+  /** What each setting is, by its path, for the documentation. */
+  words: {
+    format: "How the numbers are written.",
+    percent: "Writes how far it has come as a percentage.",
+    reached: "When the goal is reached: whether the bar turns green or stays as it was.",
+    goodWhen: "Whether getting closer to the goal means the figure going up or going down.",
+    "format.style": "How the number is written: as a plain number, as money or as a percentage.",
+    "format.currency":
+      "The currency of money, as its three-letter code, such as `USD`. Money without one is in US dollars.",
+    "format.minorUnits":
+      "The value is kept in the smallest unit, such as cents, and is shown in the whole unit.",
+    "format.decimals": "How many digits follow the point.",
+    "format.notation": "`compact` writes 43,120 as 43.1K.",
+    "format.grouping": "`false` writes 43120, not 43,120.",
+  },
+  events: { click: { gives: "nothing", label: "When it is clicked" } },
+  layout: { min: { w: 2, h: 2 }, default: { w: 3, h: 3 }, phone: "stack" },
 });
 
 /**
@@ -1596,6 +2000,20 @@ export const approvals = defineWidget({
     rejectLabel: "Reject",
     advance: true,
   },
+  /** What each setting is, by its path, for the documentation. */
+  words: {
+    look: "How the approvals are drawn: as rows, as cards, or as a queue with the request open beside its list.",
+    opens:
+      "What a click on an approval opens: a side sheet, a modal, or nothing. A queue has the request open beside its list, so a click opens nothing.",
+    empty: "What the widget says when nothing waits for a decision.",
+    approveLabel: "What the button that approves says.",
+    rejectLabel: "What the button that rejects says.",
+    askWhy: "When the person is asked for a reason: never, when rejecting, or always.",
+    confirm: "Ask the person to confirm before an approval is sent.",
+    "fields.*.name": "The name of the field of the approval's detail.",
+    "fields.*.label": "What the field is called.",
+    "fields.*.hidden": "Keeps the field out of what is drawn.",
+  },
   events: {},
   layout: { min: { w: 4, h: 5 }, default: { w: 8, h: 12 }, phone: "stack" },
 });
@@ -1611,6 +2029,7 @@ export const CORE_WIDGETS = [
   stat,
   chart,
   pivot,
+  goal,
   section,
   tabs,
   filter,

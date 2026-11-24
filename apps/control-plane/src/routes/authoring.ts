@@ -18,6 +18,7 @@ import {
   deployDrafts,
   deriveSchemas,
   discardDraft,
+  draftsUsedBy,
   isCodeKind,
   saveDraft,
 } from "../kernel/authoring.js";
@@ -30,7 +31,9 @@ import { downstreamOf, keptNodes, kickFlow, startFlowRun } from "../kernel/flows
 import { draftManifests, markAhead } from "../kernel/git.js";
 import { access, findWorkspace, type RequestContext, type WorkspaceRef } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
+import { requireStanding } from "../kernel/pages/standing.js";
 import { dashboardProblems, interfaceProblems } from "../kernel/pages.js";
+import { listOf } from "../pagination.js";
 import { AnyObject, Id, iso, NullableId, Time, WorkspaceParams } from "./shared.js";
 
 const PathParams = Type.Object({ t: Id, w: Id, "*": Type.String() });
@@ -81,6 +84,12 @@ const DraftSummary = Type.Object({
     description: "The resource the draft is of. Its path, for one that is new.",
   }),
   title: Type.Union([Type.String(), Type.Null()]),
+  mode: Type.Optional(
+    Type.Union([Type.Literal("webhook"), Type.Literal("poll")], {
+      description:
+        "For a draft of a trigger source: how it is asked, so it can be offered where one of that mode is chosen.",
+    }),
+  ),
   renamedFrom: Type.Optional(
     Type.String({ description: "The path the resource has now, when the draft renames it." }),
   ),
@@ -213,7 +222,7 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         throw new HttpError(
           403,
           "console_code_off",
-          "Writing code in the console is turned off for this tenant. Code is deployed from its repository.",
+          "Writing code in the console is turned off for this tenant. Code is deployed from its repository. Someone who may change the tenant can turn it on under Repository.",
         );
       }
     };
@@ -294,7 +303,11 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       `${base}/drafts`,
       {
-        config: { access: access.custom },
+        config: {
+          access: access.custom(
+            "Needs `resource:read` in the workspace, or `interface:read` or `doc:read` alone, which shows only drafts of those kinds.",
+          ),
+        },
         schema: {
           summary: "The drafts of a workspace",
           description:
@@ -302,7 +315,7 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             "that runs until it is deployed.",
           tags: ["authoring"],
           params: WorkspaceParams,
-          response: { 200: Type.Object({ items: Type.Array(DraftSummary) }) },
+          response: { 200: listOf(DraftSummary) },
         },
       },
       async ({ ctx, params }) => {
@@ -321,28 +334,43 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           workspace.id,
           rows.map((row) => row.key),
         );
+        // What runs is found by the resource's key, which a rename does not change, so a draft
+        // at a new path is described against the resource it moves, not as a new one.
         const deployed = new Map(
           rows.length === 0
             ? []
             : (
                 await db
                   .selectFrom("resource")
-                  .select(["path", "body"])
+                  .select(["key", "body"])
                   .where("workspace_id", "=", workspace.id)
                   .where(
-                    "path",
+                    "key",
                     "in",
-                    rows.map((row) => row.path),
+                    rows.map((row) => row.key),
                   )
                   .execute()
-              ).map((row) => [row.path, row.body as Record<string, unknown>]),
+              ).map((row) => [row.key, row.body as Record<string, unknown>]),
         );
         return {
           items: rows.map((row) => ({
             ...summarize(row, owned.get(row.key)),
+            // A dashboard is named in its body until a title is set apart from it.
+            ...(row.kind === "dashboard" &&
+            !row.deleted &&
+            row.title === null &&
+            typeof (row.body as { title?: unknown }).title === "string"
+              ? { title: (row.body as { title: string }).title }
+              : {}),
+            ...(row.kind === "trigger_source" &&
+            !row.deleted &&
+            ((row.body as { mode?: unknown }).mode === "poll" ||
+              (row.body as { mode?: unknown }).mode === "webhook")
+              ? { mode: (row.body as { mode: "poll" | "webhook" }).mode }
+              : {}),
             about: describeChange(
               row.kind,
-              deployed.get(row.path),
+              deployed.get(row.key),
               row.deleted ? undefined : (row.body as Record<string, unknown>),
             ),
           })),
@@ -353,7 +381,11 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       `${base}/resource-files`,
       {
-        config: { access: access.custom },
+        config: {
+          access: access.custom(
+            "Needs `resource:read` in the workspace, or `interface:read` or `doc:read` alone, which shows only drafts of those kinds.",
+          ),
+        },
         schema: {
           summary: "The workspace's console resources as repository files",
           description:
@@ -457,9 +489,15 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       `${base}/drafts/*`,
       {
-        config: { access: access.custom },
+        config: {
+          access: access.custom(
+            "Needs `resource:read` in the workspace, or `interface:read` or `doc:read` alone, which shows only drafts of those kinds.",
+          ),
+        },
         schema: {
           summary: "One draft, with its body",
+          description:
+            "The draft of the resource at the path, as it was last saved in the console, with the revision to send back when saving over it.",
           tags: ["authoring"],
           params: PathParams,
           response: { 200: Draft },
@@ -497,7 +535,11 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       `${base}/rename-effects/*`,
       {
-        config: { access: access.custom },
+        config: {
+          access: access.custom(
+            "Needs `resource:read` in the workspace, or `interface:read` or `doc:read` alone, which shows only drafts of those kinds.",
+          ),
+        },
         schema: {
           summary: "What renaming a query would change",
           description:
@@ -542,7 +584,11 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.put(
       `${base}/drafts/*`,
       {
-        config: { access: access.custom },
+        config: {
+          access: access.custom(
+            "Needs `resource:write` in the workspace, or `interface:write` or `doc:write` alone, which allows only drafts of those kinds.",
+          ),
+        },
         schema: {
           summary: "Save a draft of the resource at a path",
           description:
@@ -565,7 +611,9 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                 description:
                   "Say that this makes something new. When the path already holds a draft or a " +
                   "deployed resource, it is refused with 409 `path_taken` and nothing is saved. " +
-                  "Without it, a save without a revision replaces what is there.",
+                  "A save names the draft it saw (`revision`), or says it makes something new. A save " +
+                  "that does neither over a draft, or names a draft that is gone, is refused with 409 " +
+                  "`draft_changed`.",
               }),
             ),
             path: Type.Optional(
@@ -596,6 +644,9 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           if (!theirs || there === false) throw forbidden("resource:write");
         }
         if (isCodeKind(body.kind)) await mayWriteCode(ctx, workspace);
+        await requireStanding(kernel, ctx, workspace, [
+          { kind: body.kind, path, body: body.body, deleted: body.deleted },
+        ]);
         const saved = await ctx.mutate((trx, audit) =>
           saveDraft(kernel, trx, audit, workspace, ctx.principal, {
             kind: body.kind,
@@ -646,7 +697,11 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.post(
       `${base}/drafts/batch`,
       {
-        config: { access: access.custom },
+        config: {
+          access: access.custom(
+            "Needs `resource:write` in the workspace, or `doc:write` alone, which allows only pages of documentation.",
+          ),
+        },
         schema: {
           summary: "Save, move and remove several pages of documentation at once",
           description:
@@ -714,6 +769,17 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           }
           if (isCodeKind(kind)) await mayWriteCode(ctx, workspace);
         }
+        await requireStanding(
+          kernel,
+          ctx,
+          workspace,
+          body.changes.map((change) => ({
+            kind: change.kind ?? "doc",
+            path: change.path,
+            body: change.body,
+            deleted: change.deleted,
+          })),
+        );
         const paths = await ctx.mutate(async (trx, audit) => {
           const out: string[] = [];
           for (const change of body.changes) {
@@ -770,7 +836,11 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       `${base}/draft-history/*`,
       {
-        config: { access: access.custom },
+        config: {
+          access: access.custom(
+            "Needs `resource:read` in the workspace, or `interface:read` or `doc:read` alone, which shows only drafts of those kinds.",
+          ),
+        },
         schema: {
           summary: "Earlier versions of a draft, newest first",
           description:
@@ -827,29 +897,32 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       `${base}/group-keys`,
       {
-        config: { access: access.workspace("resource:read") },
+        config: {
+          access: access.custom(
+            "Needs `resource:read` in the workspace, or `interface:read` alone, as for the drafts a builder sees.",
+          ),
+        },
         schema: {
           summary: "The keys of the tenant's groups, members' and end users'",
           description:
             "What an action's `runBy` and a widget's `seenBy` name groups by. The builder's " +
             'publish check and its "View as" read it: a group named there that is not here ' +
-            "matches nobody.",
+            "matches nobody. `interface:read` is enough, as it is for the drafts a builder sees.",
           tags: ["authoring"],
           params: WorkspaceParams,
           response: {
-            200: Type.Object({
-              items: Type.Array(
-                Type.Object({
-                  key: Type.String(),
-                  name: Type.String(),
-                  kind: Type.String({ description: "`member` or `end_user`." }),
-                }),
-              ),
-            }),
+            200: listOf(
+              Type.Object({
+                key: Type.String(),
+                name: Type.String(),
+                kind: Type.String({ description: "`member` or `end_user`." }),
+              }),
+            ),
           },
         },
       },
-      async ({ params }) => {
+      async ({ ctx, params }) => {
+        await enter(ctx, params, "resource:read");
         const [members, endUsers] = await Promise.all([
           db
             .selectFrom("principal_group")
@@ -876,7 +949,11 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.post(
       `${base}/draft-history/:id/restore`,
       {
-        config: { access: access.custom },
+        config: {
+          access: access.custom(
+            "Needs `resource:write` in the workspace, or `interface:write` or `doc:write` alone, which allows only drafts of those kinds.",
+          ),
+        },
         schema: {
           summary: "Make an earlier version the draft again",
           description:
@@ -899,6 +976,9 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         if (!full && !(await screenAt(workspace, kept.path, held)))
           throw forbidden("resource:write");
         if (isCodeKind(kept.kind)) await mayWriteCode(ctx, workspace);
+        await requireStanding(kernel, ctx, workspace, [
+          { kind: kept.kind, path: kept.path, body: kept.body, deleted: kept.deleted },
+        ]);
         const saved = await ctx.mutate((trx, audit) =>
           saveDraft(kernel, trx, audit, workspace, ctx.principal, {
             path: kept.path,
@@ -906,6 +986,7 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             schemaVersion: kept.schema_version,
             body: kept.body as Record<string, unknown>,
             deleted: kept.deleted,
+            replace: true,
           }),
         );
         const owned = await ownership(workspace.id, [saved.draft.key]);
@@ -916,7 +997,11 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.delete(
       `${base}/drafts/*`,
       {
-        config: { access: access.custom },
+        config: {
+          access: access.custom(
+            "Needs `resource:write` in the workspace, or `interface:write` or `doc:write` alone, which allows only drafts of those kinds.",
+          ),
+        },
         schema: {
           summary: "Discard a draft",
           description: "The resource stays as it was last deployed.",
@@ -938,13 +1023,19 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       `${base}/changes/preview`,
       {
-        config: { access: access.workspace("deployment:read") },
+        config: {
+          access: access.custom(
+            "Needs `deployment:read`, or `interface:write` for the interfaces and apps named in `paths`.",
+          ),
+        },
         schema: {
           summary: "What deploying the drafts would do",
           description:
             "Found by deploying them and taking it all back, so the answer is exactly what a " +
             "deploy would then do, including every refusal: code that does not build, a " +
-            "manifest that is not valid, a connection that is not bound.",
+            "manifest that is not valid, a connection that is not set up here. Needs " +
+            "`deployment:read`; `interface:write` is enough for the interfaces and apps named in " +
+            "`paths`, as it is to deploy them.",
           tags: ["authoring"],
           params: WorkspaceParams,
           querystring: Type.Object({
@@ -971,11 +1062,33 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           },
         },
       },
-      async ({ ctx, query }) => {
-        const workspace = ctx.workspace as WorkspaceRef;
+      async ({ ctx, params, query }) => {
         const paths = query.paths?.split(",").filter(Boolean);
+        const at = await findWorkspace(kernel, params.t, params.w);
+        ctx.workspace = at;
+        if (
+          !(await ctx.allowed("deployment:read", { tenantId: at.tenantId, workspaceId: at.id }))
+        ) {
+          // The check a builder makes before publishing: what is theirs, named, as the deploy holds them.
+          const { held } = await enter(ctx, params, "deployment:write");
+          if (!paths?.length) throw forbidden("deployment:read");
+          for (const path of paths) {
+            if ((await screenAt(at, path, held)) === true) continue;
+            throw forbidden("deployment:read");
+          }
+        }
+        const workspace = at;
         let summary: Awaited<ReturnType<typeof deployDrafts>>["summary"] | undefined;
         try {
+          // What a deploy would refuse the caller for SQL or a data source's table, this says too.
+          let pending = db
+            .selectFrom("resource_draft")
+            .select(["kind", "path", "body", "deleted"])
+            .where("workspace_id", "=", workspace.id);
+          if (paths) pending = pending.where("path", "in", paths);
+          await requireStanding(kernel, ctx, workspace, await pending.execute(), {
+            deploying: true,
+          });
           await mutate(db, ctx.actor, async (trx, audit) => {
             summary = (await deployDrafts(kernel, trx, audit, workspace, ctx.principal, { paths }))
               .summary;
@@ -1002,12 +1115,16 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.post(
       `${base}/changes/deploy`,
       {
-        config: { access: access.custom },
+        config: {
+          access: access.custom(
+            "Needs `deployment:write` in the workspace, or `interface:write` or `doc:write` alone, which deploys only drafts of those kinds.",
+          ),
+        },
         schema: {
           summary: "Deploy the drafts",
           description:
-            "Composes the drafts with the workspace's bundle into a new bundle and activates " +
-            "it, atomically. The drafts it carried are cleared. Deploying a draft with code in " +
+            "Composes the drafts with the workspace's bundle into a new bundle and deploys " +
+            "it as the next version, atomically. The drafts it carried are cleared. Deploying a draft with code in " +
             "it also needs `code:write`. Needs `deployment:write`. `interface:write` is enough " +
             "to deploy interfaces and the apps that serve them, named in `paths`: with it alone " +
             "nothing else is deployed, and a deploy of everything is refused.",
@@ -1046,12 +1163,14 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         }
         let pending = db
           .selectFrom("resource_draft")
-          .select("kind")
+          .select(["kind", "path", "body", "deleted"])
           .where("workspace_id", "=", workspace.id);
         if (body.paths) pending = pending.where("path", "in", body.paths);
-        if ((await pending.execute()).some((draft) => isCodeKind(draft.kind))) {
+        const drafts = await pending.execute();
+        if (drafts.some((draft) => isCodeKind(draft.kind))) {
           await mayWriteCode(ctx, workspace);
         }
+        await requireStanding(kernel, ctx, workspace, drafts, { deploying: true });
         const result = await ctx.mutate((trx, audit) =>
           deployDrafts(kernel, trx, audit, workspace, ctx.principal, {
             paths: body.paths,
@@ -1165,7 +1284,8 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         schema: {
           summary: "Run a script or a flow as its draft has it",
           description:
-            "Builds a bundle with the workspace's drafts in it, deploys nothing, and starts one " +
+            "Builds a bundle with the draft and the drafts it names in it (every draft with " +
+            "`withAllDrafts`), deploys nothing, and starts one " +
             "run of the script, or of the flow from its manual trigger, from that bundle. Read " +
             "the run as any other. A script needs `code:write`; a flow needs `flow_run:write`, " +
             "and `code:write` too while code is among the drafts, since the flow may run it.",
@@ -1189,6 +1309,14 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                 description:
                   "For a flow: the trigger to start it from, of any kind, with `input` as what " +
                   "that trigger would receive. Default: its manual trigger.",
+              }),
+            ),
+            withAllDrafts: Type.Optional(
+              Type.Boolean({
+                description:
+                  "Build with every draft of the workspace, as a deploy of all would, so that " +
+                  "any draft that does not build refuses the test. Default: the draft being " +
+                  "tested and the drafts it names.",
               }),
             ),
             testFrom: Type.Optional(
@@ -1242,19 +1370,22 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           if (!uploaded) throw notFound("The bundle");
           await mayWriteCode(ctx, workspace);
         }
+        // Its own draft and those it names; with none of its own, what is deployed.
+        const used = body.withAllDrafts ? undefined : await draftsUsedBy(db, workspace, path);
         if (kind === "flow") {
           await ctx.authorize("flow_run:write", {
             tenantId: workspace.tenantId,
             workspaceId: workspace.id,
           });
           if (body.bundleId === undefined) {
-            const code = await db
+            let query = db
               .selectFrom("resource_draft")
               .select("path")
               .where("workspace_id", "=", workspace.id)
               .where("kind", "in", ["script", "connector", "trigger_source"])
-              .where("deleted", "=", false)
-              .executeTakeFirst();
+              .where("deleted", "=", false);
+            if (used) query = query.where("path", "in", used.length > 0 ? used : [""]);
+            const code = await query.executeTakeFirst();
             if (code) await mayWriteCode(ctx, workspace);
           }
         } else if (body.bundleId === undefined) {
@@ -1266,7 +1397,10 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         let activeId: string | undefined;
         if (body.bundleId === undefined) {
           try {
-            composed = (await composeDrafts(kernel, db, workspace)).bundle;
+            if (used && used.length === 0) {
+              throw new HttpError(409, "nothing_to_deploy", "There are no drafts to deploy.");
+            }
+            composed = (await composeDrafts(kernel, db, workspace, used)).bundle;
           } catch (error) {
             if (!(error instanceof HttpError) || error.problemCode !== "nothing_to_deploy")
               throw error;

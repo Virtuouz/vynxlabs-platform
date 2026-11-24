@@ -1,5 +1,6 @@
 import { type Kysely, newId, type PlatformSchema, sql, type Transaction } from "@volvel/db";
 
+import type { AuditAction } from "@volvel/manifest";
 import { commitDataTransactions, rollbackDataTransactions } from "./data/stores.js";
 
 export type Db = Kysely<PlatformSchema>;
@@ -37,7 +38,8 @@ export interface Actor {
 }
 
 export interface AuditInput {
-  action: string;
+  /** One of `AUDIT_ACTIONS` (@volvel/manifest): what is not listed cannot be written. */
+  action: AuditAction;
   targetType: string;
   targetId?: string | null;
   tenantId?: string | null;
@@ -47,6 +49,17 @@ export interface AuditInput {
 }
 
 export type Audit = (input: AuditInput) => Promise<void>;
+
+/**
+ * An actor with no row to look a name up in (the system, acting for an identity provider)
+ * is kept by name in the entry, as `actorName`, so the log can say who it was.
+ */
+function namedActor(actor: Actor, details: Record<string, unknown> = {}) {
+  const { type, name } = actor.principal;
+  return name && (type === "system" || type === "anonymous")
+    ? { ...details, actorName: name }
+    : details;
+}
 
 export async function writeAudit(db: Db | Trx, actor: Actor, input: AuditInput): Promise<void> {
   await db
@@ -62,7 +75,7 @@ export async function writeAudit(db: Db | Trx, actor: Actor, input: AuditInput):
       action: input.action,
       target_type: input.targetType,
       target_id: input.targetId ?? null,
-      details: JSON.stringify(input.details ?? {}),
+      details: JSON.stringify(namedActor(actor, input.details)),
       ip_address: actor.ipAddress ?? null,
       user_agent: actor.userAgent ?? null,
       request_id: actor.requestId ?? null,

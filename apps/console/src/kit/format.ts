@@ -60,16 +60,22 @@ export function ago(value: When, now: When = Date.now()): string {
   return ms > 0 ? `in ${amount}` : `${amount} ago`;
 }
 
+/** The reader's zone as it is on that day: "EST", "GMT+1". */
+export function zoneName(value: When): string {
+  return (
+    new Intl.DateTimeFormat(undefined, { timeZoneName: "short" })
+      .formatToParts(at(value))
+      .find((part) => part.type === "timeZoneName")?.value ?? ""
+  );
+}
+
 /**
  * Everything about a time, for a tooltip: the reader's local time with its
  * zone, the same in UTC, and how long ago.
  */
 export function fullTime(value: When, now: When = Date.now()): string {
   const date = at(value);
-  const zone =
-    new Intl.DateTimeFormat(undefined, { timeZoneName: "short" })
-      .formatToParts(date)
-      .find((part) => part.type === "timeZoneName")?.value ?? "";
+  const zone = zoneName(date);
   const utc = date.toISOString().replace("T", " ").slice(0, 19);
   return `${stamp(date)}${zone ? ` ${zone}` : ""} · ${utc} UTC · ${ago(date, now)}`;
 }
@@ -77,6 +83,11 @@ export function fullTime(value: When, now: When = Date.now()): string {
 /** "12,480": a count, grouped as the reader groups digits. */
 export function count(n: number): string {
   return new Intl.NumberFormat().format(n);
+}
+
+/** "1 row", "12,480 rows": a count with its noun in the form the count needs. */
+export function counted(n: number, one: string, many = `${one}s`): string {
+  return `${count(n)} ${n === 1 ? one : many}`;
 }
 
 /** "runs, events, and audit": things named in one sentence, joined as the copy joins them. */
@@ -116,4 +127,10 @@ export function inZone(value: When, timeZone: string): string {
     hour: "2-digit",
     minute: "2-digit",
   }).format(at(value));
+}
+
+/** A refusal's words ended with a full stop, for a sentence that goes on after them. */
+export function endSentence(text: string): string {
+  const trimmed = text.trimEnd();
+  return /[.!?]$/.test(trimmed) ? trimmed : `${trimmed}.`;
 }

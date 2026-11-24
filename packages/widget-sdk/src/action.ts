@@ -36,6 +36,7 @@ export interface AskedField {
   choices?: string[];
 }
 
+/** Every kind of step an action may have. */
 export const STEP_KINDS = [
   "update",
   "create",
@@ -48,11 +49,13 @@ export const STEP_KINDS = [
   "narrow",
   "rows",
 ] as const;
+/** One of `STEP_KINDS`. */
 export type StepKind = (typeof STEP_KINDS)[number];
 
 /** Steps the server runs: they change data, or start work. */
 export const SERVER_STEPS: readonly StepKind[] = ["update", "create", "delete", "flow", "script"];
 
+/** One thing an action does. Each kind of step is written with `do` and takes its own fields. */
 export type Step =
   /** Set fields of a record to named values. The fields named are all it may change. */
   | { do: "update"; record: RecordRef; set: Record<string, ActionValue> }
@@ -75,6 +78,7 @@ export type Step =
   /** Show the rows behind what was clicked, in a side sheet. Reads only. */
   | { do: "rows" };
 
+/** What happens when someone acts on a widget: an optional confirmation, a list of steps and when it may be pressed. */
 export interface Action {
   /** Asked before anything runs. `text` may name a column of the record as `{column}`. */
   confirm?: { title: string; text?: string; button?: string; ask?: AskedField[] };
@@ -108,6 +112,7 @@ export const CONDITION_TESTS = [
   "is_empty",
   "is_not_empty",
 ] as const;
+/** One of the tests a condition may make of a field. */
 export type ConditionTest = (typeof CONDITION_TESTS)[number];
 
 /**

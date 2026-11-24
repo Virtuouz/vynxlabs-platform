@@ -60,20 +60,26 @@ export interface Catalog {
   /** The workspace's path, for what an editor asks of a table (a column's values). */
   root?: string;
   tables: CatalogTable[];
+  /**
+   * The tables of the data sources bound here, each named `<source path>/<table>` as a page names
+   * it. They are read as a list: no totals, no groups. Pickers of the workspace's own tables
+   * (forms, actions, a page's record) do not offer them.
+   */
+  sources?: CatalogTable[];
   queries: { path: string; description: string }[];
   maySql: boolean;
 }
 /** A flow that can be started by hand, and what its manual trigger takes (JSON Schema). */
 export interface FlowChoice {
   path: string;
-  /** What the workflow is called, where it has a name of its own. */
+  /** What the flow is called, where it has a name of its own. */
   title?: string | null;
-  manualInput?: { properties?: Record<string, unknown> } | null;
+  manualInput?: { properties?: Record<string, unknown>; required?: string[] } | null;
 }
 /** A script of the workspace, and what it takes. */
 export interface ScriptChoice {
   path: string;
-  inputSchema?: { properties?: Record<string, unknown> } | null;
+  inputSchema?: { properties?: Record<string, unknown>; required?: string[] } | null;
 }
 export const EMPTY_CATALOG: Catalog = { tables: [], queries: [], maySql: false };
 
@@ -249,6 +255,12 @@ export function withText(
 export const visualOf = (input: DataInput | undefined): VisualQuery | undefined =>
   input && "visual" in input.source ? input.source.visual : undefined;
 
+/** Whether a widget's data comes from a table, which is all that has rows behind a figure. */
+export function readsTable(data: Record<string, DataInput> | undefined): boolean {
+  const inputs = Object.values(data ?? {});
+  return inputs.length === 0 || inputs.some((input) => visualOf(input) !== undefined);
+}
+
 /**
  * The table an input reads, whichever way it is wired: a table from menus, the record the page
  * opens on (the page's record table), the row selected in a table or list of the page (that
@@ -379,16 +391,121 @@ export function renamedResult(
   return next;
 }
 
+/**
+ * A widget without the settings that name any of `names` (the columns of a table no longer
+ * followed, by either name they are known by): a column setting that names one is unset, a list
+ * of columns or fields loses its entries, and a page filter bound to one loses it from its
+ * binding, which goes when nothing is left for it to narrow.
+ */
+export function withoutColumns(
+  definition: WidgetDefinition,
+  widget: PageWidget,
+  input: string,
+  names: ReadonlySet<string>,
+): PageWidget {
+  const named = (value: unknown): boolean =>
+    typeof value === "string"
+      ? names.has(value)
+      : Boolean(value) &&
+        typeof value === "object" &&
+        !Array.isArray(value) &&
+        names.has(String((value as { column?: unknown }).column));
+  let next = widget;
+  const places = new Set(["columns"]);
+  for (const [name, schema] of Object.entries(definition.config.properties)) {
+    const hint = schema["x-volvel"];
+    if (
+      hint &&
+      (hint.of ?? input) === input &&
+      ["column", "columns", "slots", "groupRows", "fields"].includes(hint.control)
+    ) {
+      places.add(name);
+    }
+  }
+  for (const name of places) {
+    const value = next.config?.[name];
+    if (Array.isArray(value)) {
+      if (value.some(named)) {
+        next = withConfig(
+          next,
+          name,
+          value.filter((one) => !named(one)),
+        );
+      }
+    } else if (named(value)) {
+      next = withConfig(next, name, undefined);
+    }
+  }
+  const filters = next.data?.[input]?.filters;
+  if (
+    next.data?.[input] &&
+    filters?.some((one) => [one.column, ...(one.columns ?? [])].some((c) => c && names.has(c)))
+  ) {
+    const kept = filters.flatMap((one) => {
+      if (one.column && names.has(one.column)) return [];
+      if (!one.columns) return [one];
+      const columns = one.columns.filter((c) => !names.has(c));
+      return columns.length > 0 ? [{ ...one, columns }] : [];
+    });
+    const { filters: _before, ...rest } = next.data[input] as DataInput;
+    next = withInput(next, input, kept.length > 0 ? { ...rest, filters: kept } : rest);
+  }
+  return next;
+}
+
 // ---------------------------------------------------------------------------
 // Page filters
 
 /** The column a page filter narrows: the one it reads its values from, else the one it is named for. */
 export const filterColumn = (filter: PageFilter): string => filter.from?.column ?? filter.name;
 
+/**
+ * The columns of a table by its name: a table of the workspace, with the columns every table has,
+ * or a table of a data source, with only the columns it has.
+ */
+export function columnsNamed(
+  catalog: Catalog,
+  name: string | undefined,
+  /** The reference columns the query follows: a column of each table they point to is `via.column`. */
+  joins: readonly string[] = [],
+): CatalogColumn[] {
+  const own = catalog.tables.find((one) => one.name === name);
+  if (!own) return catalog.sources?.find((one) => one.name === name)?.columns ?? [];
+  const base = withSystemColumns(own.columns);
+  return [
+    ...base,
+    ...joins.flatMap((via) => {
+      const target = base.find((one) => one.name === via)?.references;
+      const table = target ? catalog.tables.find((one) => one.name === target) : undefined;
+      return (table?.columns ?? []).map((column) => ({
+        ...column,
+        name: `${via}.${column.name}`,
+        references: null,
+      }));
+    }),
+  ];
+}
+
+/** The most tables one query may follow. */
+export const MAX_JOINS = 6;
+
+/** The tables a table's own reference columns point to, that the workspace lets this page read. */
+export function followable(
+  catalog: Catalog,
+  table: string | undefined,
+): { via: string; table: string; columns: CatalogColumn[] }[] {
+  const own = catalog.tables.find((one) => one.name === table);
+  if (!own) return [];
+  return own.columns.flatMap((column) => {
+    const target = column.references
+      ? catalog.tables.find((one) => one.name === column.references)
+      : undefined;
+    return target ? [{ via: column.name, table: target.name, columns: target.columns }] : [];
+  });
+}
+
 const hasColumn = (catalog: Catalog, table: string, column: string) =>
-  withSystemColumns(catalog.tables.find((one) => one.name === table)?.columns ?? []).some(
-    (one) => one.name === column,
-  );
+  columnsNamed(catalog, table).some((one) => one.name === column);
 
 /** The most columns a search looks in for one widget (the server allows 12). */
 export const MAX_SEARCH_COLUMNS = 8;
@@ -399,9 +516,7 @@ export const MAX_SEARCH_COLUMNS = 8;
  * names none. Else the table's display column. At most `MAX_SEARCH_COLUMNS`.
  */
 export function searchColumns(widget: PageWidget, table: string, catalog: Catalog): string[] {
-  const columns = withSystemColumns(
-    catalog.tables.find((one) => one.name === table)?.columns ?? [],
-  );
+  const columns = columnsNamed(catalog, table);
   const text = new Set(columns.filter((one) => one.type === "text").map((one) => one.name));
   const config = widget.config ?? {};
   const byDefault = defaultColumns(columns).map((one) => one.name);
@@ -697,9 +812,7 @@ export function defaultInputs(
   catalog: Catalog,
 ): Record<string, DataInput> {
   if (!table) return {};
-  const columns = withSystemColumns(
-    catalog.tables.find((one) => one.name === table)?.columns ?? [],
-  );
+  const columns = columnsNamed(catalog, table);
   const inputs: Record<string, DataInput> = {};
   for (const [name, declared] of Object.entries(definition.data)) {
     if (declared.required === false) continue;

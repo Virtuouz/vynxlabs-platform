@@ -1,8 +1,9 @@
 // @vitest-environment happy-dom
-import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { CommandPalette, ShortcutSheet } from "./kit/CommandPalette.tsx";
 import { Current } from "./kit/current.ts";
+import { openShortcuts } from "./kit/keys.ts";
 import { resetPreferences } from "./prefs.ts";
 import { show } from "./testing.tsx";
 
@@ -64,6 +65,25 @@ beforeEach(() => {
           ],
         });
       }
+      if (q === "zeta") {
+        const one = (kind: string, ref: string) => ({
+          kind,
+          id: `id-${kind}`,
+          ref,
+          workspaceId: W,
+          workspaceSlug: "dev",
+          title: ref,
+          hint: null,
+        });
+        return json({
+          items: [
+            one("variable", "zeta/region"),
+            one("secret", "ZETA_TOKEN"),
+            one("query", "zeta/late-orders"),
+            one("data_source", "zeta/warehouse"),
+          ],
+        });
+      }
       return json({
         items: [
           {
@@ -84,6 +104,14 @@ beforeEach(() => {
             title: "reminders/hourly",
             hint: null,
           },
+        ],
+      });
+    }
+    if (url.pathname.endsWith("/flows")) {
+      return json({
+        items: [
+          { path: "orders/intake", triggers: ["manual"], version: 3 },
+          { path: "orders/draft-only", triggers: ["manual"], version: null },
         ],
       });
     }
@@ -147,6 +175,30 @@ test("a name finds things here before other workspaces, and opens the one chosen
   expect(location.pathname).toBe(`/t/${T}/workspaces/${W}/scripts/reminders/send`);
 });
 
+test("variables, secrets, saved queries and data sources are found, named, and open their own page (SHL-13)", async () => {
+  palette();
+  type("zeta");
+  await screen.findByText("zeta/region");
+  const options = screen.getAllByRole("option").map((one) => one.textContent ?? "");
+  for (const [name, label] of [
+    ["zeta/region", "Variable"],
+    ["ZETA_TOKEN", "Secret"],
+    ["zeta/late-orders", "Query"],
+    ["zeta/warehouse", "Data source"],
+  ] as const) {
+    expect(
+      options.find((one) => one.includes(name)),
+      name,
+    ).toContain(label);
+  }
+  press("ArrowDown");
+  press("ArrowDown");
+  press("Enter");
+  expect(`${location.pathname}${location.search}`).toBe(
+    `/t/${T}/workspaces/${W}/queries?query=zeta%2Flate-orders`,
+  );
+});
+
 test("a pasted run ID opens its run", async () => {
   palette();
   type(`>${RUN}`);
@@ -178,6 +230,34 @@ test("/run picks a script, asks for its input, and starts it", async () => {
     }),
   );
   await waitFor(() => expect(location.pathname).toBe(`/t/${T}/workspaces/${W}/runs/new-run`));
+});
+
+test("/run can start the script later and with a priority (OPS-MP8)", async () => {
+  palette();
+  type("/run");
+  await waitFor(() =>
+    expect(screen.getAllByRole("option")[0]?.textContent).toContain("Run script"),
+  );
+  press("Enter");
+  await screen.findByText("agent/find-client");
+  type("find");
+  press("Enter");
+  fireEvent.input(await screen.findByLabelText("Name"), { target: { value: "Fernhill" } });
+  fireEvent.change(screen.getByLabelText("Start"), { target: { value: "later" } });
+  const at = new Date(Date.now() + 7_200_000);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const field = `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}T${pad(at.getHours())}:${pad(at.getMinutes())}`;
+  fireEvent.change(screen.getByLabelText("Starts at"), { target: { value: field } });
+  fireEvent.change(screen.getByLabelText("Priority"), { target: { value: "-5" } });
+  fireEvent.click(screen.getByRole("button", { name: "Run" }));
+  await waitFor(() =>
+    expect(calls.find((one) => one.method === "POST")?.body).toEqual({
+      script: "agent/find-client",
+      input: { name: "Fernhill" },
+      startAfter: new Date(field).toISOString(),
+      priority: -5,
+    }),
+  );
 });
 
 test("⌘↵ runs what is chosen without opening its page", async () => {
@@ -234,6 +314,27 @@ test("with a run open, its own commands come first, and one that ends something 
   expect(rerun).toHaveBeenCalled();
 });
 
+test("item 29: typing the name of the open page's own command finds it", async () => {
+  const fire = vi.fn();
+  show(
+    <>
+      <Current
+        object={{
+          heading: "This schedule",
+          commands: [{ key: "fire", label: "Fire it now", run: fire }],
+        }}
+      />
+      <CommandPalette open onClose={() => {}} destinations={[]} tenantId={T} workspaceId={W} />
+    </>,
+  );
+  const box = await screen.findByRole("combobox");
+  fireEvent.change(box, { target: { value: "fire it" } });
+  const options = await screen.findAllByRole("option");
+  expect(options[0]?.textContent).toContain("Fire it now");
+  fireEvent.keyDown(box, { key: "Enter" });
+  expect(fire).toHaveBeenCalled();
+});
+
 test("what is pinned comes before what is recent, and ⌘P pins what is chosen", async () => {
   palette();
   type("reminders");
@@ -261,4 +362,73 @@ test("a search that failed says so, with its request ID, and can be tried again"
   fireEvent.click(screen.getByRole("button", { name: "Try again" }));
   expect(await screen.findByText("This workspace")).toBeTruthy();
   expect(screen.queryByRole("alert")).toBeNull();
+});
+
+test("with single keys off, the sheet marks only the shortcuts that turn off (SHL-03)", async () => {
+  localStorage.setItem("vx-pref:shortcuts.single-key", "false");
+  show(<ShortcutSheet />);
+  // F1 opens help; the sheet itself is opened with `?`, which is off, so it is asked for.
+  act(() => openShortcuts());
+  await screen.findByText("Keyboard shortcuts");
+  // Enter, Space and Shift+F10 still work, so they are not marked.
+  expect(screen.getByText("Open the row")).toBeTruthy();
+  expect(screen.getByText("Check the row (single keys off)")).toBeTruthy();
+  expect(screen.getByText("The menu for a step, or for the canvas")).toBeTruthy();
+  // These really are turned off.
+  expect(screen.getByText("Search this list (off)")).toBeTruthy();
+  expect(screen.getByText("Overview (off)")).toBeTruthy();
+  localStorage.clear();
+});
+
+test("WLK-04: the shortcut sheet writes the space bar as Space, not as an empty key cap", async () => {
+  show(<ShortcutSheet />);
+  act(() => openShortcuts());
+  await screen.findByText("Keyboard shortcuts");
+  const row = screen.getByText("Check the row").previousElementSibling as HTMLElement;
+  expect(Array.from(row.children).map((cap) => cap.textContent)).toEqual(["x", "Space"]);
+});
+
+test("w-builder 1: the link of every kind of Recent item opens what it names", async () => {
+  const { pageOf } = await import("./kit/CommandPalette.tsx");
+  const { openedAt } = await import("./recent.ts");
+  const ws = `/t/${T}/workspaces/${W}`;
+  const named = (kind: string, ref: string) =>
+    ({ kind, id: ref, ref, workspaceId: W, workspaceSlug: "dev", title: ref, hint: null }) as never;
+  // Kinds opened at an address that the shell records again when the page is open: the link must
+  // be that very address, or Recent would not be recording what it links to.
+  for (const [kind, ref] of [
+    ["script", "orders/sync"],
+    ["flow", "orders/flow"],
+    ["table", "orders"],
+    ["interface", "boards/main"],
+    ["connection", "mail"],
+    ["event", "orders/paid"],
+    ["doc", "guide/start"],
+    ["variable", "region"],
+    ["data_source", "crm"],
+  ] as const) {
+    const href = pageOf(T, named(kind, ref));
+    expect(openedAt(href), kind).toEqual({ kind, ref });
+  }
+  // A trigger and a schedule, and a saved query, open by the address's own parameter.
+  for (const kind of ["trigger", "schedule"]) {
+    const href = pageOf(T, named(kind, "nightly/run"));
+    expect(href).toBe(`${ws}/triggers?trigger=nightly%2Frun`);
+  }
+  expect(pageOf(T, named("query", "reports/fees"))).toBe(`${ws}/queries?query=reports%2Ffees`);
+  // An app by its path, which the Apps page matches.
+  expect(pageOf(T, named("app", "portal/orders"))).toBe(`${ws}/apps?app=portal%2Forders`);
+  // A run, script or flow, is its own page.
+  expect(pageOf(T, named("flow_run", "r2"))).toBe(`${ws}/runs/r2`);
+  expect(pageOf(T, named("run", "r1"))).toBe(`${ws}/runs/r1`);
+});
+
+test("p31 fc: Start flow offers only a flow that has been deployed, as Run script does", async () => {
+  palette();
+  const box = await screen.findByRole("combobox");
+  fireEvent.change(box, { target: { value: "start flow" } });
+  await screen.findAllByRole("option");
+  fireEvent.keyDown(box, { key: "Enter" });
+  await screen.findByText("orders/intake");
+  expect(screen.queryByText("orders/draft-only")).toBeNull();
 });

@@ -42,6 +42,7 @@ export class Hosts {
   /** Read each time, so an operator's change of setting is seen at once. */
   readonly #config: Pick<Config, "appsOnConsoleAddress">;
   readonly #domains = new Map<string, { domain: AppDomain | null; at: number }>();
+  readonly #off = new Map<string, { off: boolean; at: number }>();
 
   constructor(db: Db, config: Pick<Config, "publicUrl" | "appsUrl" | "appsOnConsoleAddress">) {
     this.#db = db;
@@ -121,9 +122,30 @@ export class Hosts {
     return domain;
   }
 
+  /**
+   * Whether a hostname is registered, proved, and not enabled: a name a tenant holds and has turned
+   * off. It serves nothing, not even the console. A name that is not proved may be anyone's, so it
+   * is left as an address the instance does not know.
+   */
+  async turnedOff(hostname: string): Promise<boolean> {
+    const known = this.#off.get(hostname);
+    if (known && Date.now() - known.at < REMEMBER_MS) return known.off;
+    const row = await this.#db
+      .selectFrom("app_domain")
+      .select("id")
+      .where("hostname", "=", hostname)
+      .where("enabled", "=", false)
+      .where("verified_at", "is not", null)
+      .executeTakeFirst();
+    this.#off.set(hostname, { off: row !== undefined, at: Date.now() });
+    if (this.#off.size > 2000) this.#off.delete(this.#off.keys().next().value as string);
+    return row !== undefined;
+  }
+
   /** Call after a registration changes, so this process answers afresh at once. */
   forget(hostname: string): void {
     this.#domains.delete(hostname);
+    this.#off.delete(hostname);
   }
 
   /** The origin a request arrived at, as a browser names it. */

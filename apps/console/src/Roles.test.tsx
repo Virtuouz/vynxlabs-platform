@@ -1,7 +1,8 @@
 // @vitest-environment happy-dom
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { PERMISSION_KINDS } from "@volvel/manifest";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { allows, Roles, toggle } from "./screens/Roles.tsx";
+import { allows, inShort, Roles, toggle } from "./screens/Roles.tsx";
 import { show } from "./testing.tsx";
 
 const base = "/tenants/t1";
@@ -17,6 +18,8 @@ const kinds = [
   kind("secret", "Workspace"),
   kind("data", "Data"),
   kind("audit", "Tenant", ["read"]),
+  { ...kind("sql", "Data"), explicit: true },
+  { ...kind("tenant", "Instance"), scope: "instance" as const },
 ];
 const role = (over: object) => ({
   id: "r1",
@@ -71,6 +74,18 @@ test("a box reads through wildcards, and taking one away writes the wildcard out
   expect(toggle(["*:*"], kinds, "data", "read", true)).toEqual(["*:*"]);
 });
 
+test("taking one box from a wildcard gives nothing the wildcard never gave", () => {
+  for (const wildcard of [["*:*"], ["*:read"]]) {
+    const next = toggle(wildcard, kinds, "secret", "write", false);
+    // Not sql (given only by its own name), nor a kind only the instance checks.
+    expect(next.filter((one) => one.startsWith("sql:") || one.startsWith("tenant:"))).toEqual([]);
+    expect(next).not.toContain("secret:write");
+  }
+  expect(allows(["*:*"], "sql", "read")).toBe(false);
+  expect(allows(["*:*", "sql:read"], "sql", "read")).toBe(true);
+  // "Everything" ticked and unticked leaves a named explicit permission and other verbs alone.
+});
+
 test("a role is created by ticking boxes, with no permission typed", async () => {
   show(<Roles base={base} />);
   fireEvent.click(await screen.findByRole("button", { name: "Create role" }));
@@ -123,4 +138,24 @@ test("an existing role is changed, keeps what the list does not know, and a buil
   expect(((await screen.findByLabelText("data:read")) as HTMLInputElement).checked).toBe(true);
   expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
   expect(screen.getByText(/A built-in role cannot be changed/)).toBeTruthy();
+});
+
+test("WLK-12: the role summary never writes a comma inside a permission's name, so the list reads", () => {
+  const summary = inShort(
+    role({ permissions: ["data:read", "data_all:read"] }) as never,
+    PERMISSION_KINDS.map((one) => ({
+      kind: one.kind,
+      label: one.label,
+      group: one.group,
+      scope: one.scope,
+      appFacing: Boolean(one.appFacing),
+      verbs: Object.keys(one.verbs).map((verb) => ({
+        verb: verb as "read" | "write",
+        permission: `${one.kind}:${verb}`,
+        description: "",
+      })),
+    })) as never,
+  ).join(" ");
+  expect(summary).toContain("Rows, Rows past the row policy");
+  for (const one of PERMISSION_KINDS) expect(one.label).not.toContain(",");
 });

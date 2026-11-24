@@ -1,4 +1,4 @@
-import type { PointerEvent } from "react";
+import { Fragment, type PointerEvent } from "react";
 
 /**
  * Gives an element that cuts its text the whole of it as a hover title, only
@@ -14,12 +14,21 @@ export function fullOnHover(event: PointerEvent<HTMLElement>) {
   else element.removeAttribute("title");
 }
 
-/** Where a value is cut: its start and its last part show ("billing/…/record-payment"). */
-function split(value: string): [string, string] {
+/**
+ * Where a value is cut: its start and its last part show ("billing/…/record-payment"). A space at
+ * the cut is kept as a no-break space: each part is a box of its own, and a space at the edge of a
+ * box is dropped ("Fire it now" would read "Fire itnow").
+ */
+export function split(value: string): [string, string] {
   const slash = value.lastIndexOf("/");
-  if (slash > 0 && slash < value.length - 1) return [value.slice(0, slash), value.slice(slash)];
-  const tail = Math.min(8, Math.floor(value.length / 3));
-  return [value.slice(0, value.length - tail), value.slice(value.length - tail)];
+  const [head, tail] =
+    slash > 0 && slash < value.length - 1
+      ? [value.slice(0, slash), value.slice(slash)]
+      : (() => {
+          const length = Math.min(8, Math.floor(value.length / 3));
+          return [value.slice(0, value.length - length), value.slice(value.length - length)];
+        })();
+  return [head.replace(/ $/, "\u00a0"), tail.replace(/^ /, "\u00a0")];
 }
 
 /**
@@ -53,6 +62,8 @@ export function Truncate({
   return (
     <span
       data-full={children}
+      // A long one is cut on a phone, where there is no hover: its whole is the title from the start.
+      {...(children.length > 24 ? { title: children } : {})}
       onPointerEnter={fullOnHover}
       className={`flex min-w-0 max-w-full whitespace-nowrap ${className}`}
     >
@@ -64,5 +75,25 @@ export function Truncate({
         {tail}
       </span>
     </span>
+  );
+}
+
+/**
+ * Text that wraps where it has natural breaks: after an @, a dot, a dash, an underscore or a
+ * slash. An email in a narrow cell then breaks as "fernhill.<br>example", never "exampl<br>e".
+ * The words are unchanged: a break opportunity is not a character, so copying gives the text whole.
+ */
+export function Breakable({ children }: { children: string }) {
+  const parts = children.split(/(?<=[@.\-_/])/);
+  return (
+    <>
+      {parts.map((part, index) => (
+        // biome-ignore lint/suspicious/noArrayIndexKey: the parts are a fixed split of one string
+        <Fragment key={index}>
+          {index > 0 ? <wbr /> : null}
+          {part}
+        </Fragment>
+      ))}
+    </>
   );
 }

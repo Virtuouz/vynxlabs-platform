@@ -107,7 +107,7 @@ export function TabsDisplaySection({ env }: { env: Env }) {
     <>
       <Group
         label="Tabs"
-        note="Click a tab on the page to fill it. Rename here or by double-clicking it."
+        note="Click a tab on the page to fill it. Rename one by choosing it here."
       >
         <SortableRows
           label="Tabs"

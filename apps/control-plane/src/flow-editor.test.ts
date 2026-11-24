@@ -188,6 +188,48 @@ describe("what an expression gives", () => {
     expect(context.now).toBeInstanceOf(Date);
   });
 
+  test("shows what the run page shows: a masked field is masked before it is evaluated, so a test cannot guess it", async () => {
+    await alice.put(`${ws()}/drafts/orders/secrets`, {
+      kind: "flow",
+      schemaVersion: 1,
+      body: {
+        nodes: {
+          start: { type: "trigger", trigger: { type: "manual" } },
+          keep: { type: "set", values: { accessToken: "trigger.apiKey", plain: "'ok'" } },
+        },
+        edges: [{ from: "start", to: "keep" }],
+      },
+    });
+    const started = await alice.post(`${ws()}/test-runs`, {
+      flow: "orders/secrets",
+      input: { apiKey: "k-live-98765", password: "hunter22" },
+    });
+    expect(started.status, JSON.stringify(started.body)).toBe(201);
+    const run = started.body.runId as string;
+    await finished(run);
+    const ask = (expression: string) => value({ expression, flowRun: run }, reader);
+    // A masked field is not computed on: the answer would be about the mask, not the value.
+    const cannot = /cannot be previewed/;
+    for (const expression of [
+      "trigger.apiKey",
+      "trigger.password",
+      "size(trigger.apiKey)",
+      "steps.keep.output.accessToken",
+      "trigger.apiKey == 'k-live-98765'",
+      "trigger.apiKey.startsWith('k-')",
+    ]) {
+      const answer = (await ask(expression)).body;
+      expect(answer.value, expression).toBeUndefined();
+      expect(answer.note, expression).toMatch(cannot);
+    }
+    expect((await ask("steps.keep.output.plain")).body.value).toBe("ok");
+    // Reading the whole of it still shows what the run page shows.
+    expect((await ask("trigger")).body.value).toEqual({
+      apiKey: "[redacted]",
+      password: "[redacted]",
+    });
+  });
+
   test("is for those who may read flow runs, in the run's own workspace", async () => {
     expect((await value({ expression: "1", flowRun: testRun }, reader)).status).toBe(200);
     // A run of another workspace is not there.

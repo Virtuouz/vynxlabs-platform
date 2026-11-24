@@ -7,22 +7,14 @@ import type { DrawerIcon } from "@volvel/ui";
 import { Calendar, Hash, Link2, List, ToggleLeft, Type } from "lucide-react";
 import { useId, useRef, useState } from "react";
 import type { Env } from "./controls.tsx";
-import {
-  type CatalogColumn,
-  renamedResult,
-  tidyVisual,
-  withInput,
-  withSystemColumns,
-} from "./model.ts";
+import { type CatalogColumn, columnsNamed, renamedResult, tidyVisual, withInput } from "./model.ts";
 
 export const TEMPORAL = new Set(["date", "timestamp"]);
 export const NUMERIC = new Set(["integer", "number"]);
 
 /** The columns of the table an input reads, with the ones every table has. */
 export function columnsOf(env: Env, visual: VisualQuery | undefined): CatalogColumn[] {
-  return withSystemColumns(
-    env.catalog.tables.find((one) => one.name === visual?.table)?.columns ?? [],
-  );
+  return columnsNamed(env.catalog, visual?.table, visual?.joins);
 }
 
 /** The icon of a column's type. */
@@ -155,7 +147,7 @@ export function ChoiceList<Value extends string>({
           return (
             <label
               key={one.value}
-              className={`flex h-9 cursor-pointer items-center gap-2 rounded-control border px-3 text-body-sm has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-focus ${
+              className={`flex min-h-9 cursor-pointer items-center gap-2 rounded-control border px-3 py-1 text-body-sm has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-focus ${
                 on ? "border-action bg-selected" : "border-transparent hover:bg-selected"
               }`}
             >
@@ -172,9 +164,17 @@ export function ChoiceList<Value extends string>({
                 className="sr-only"
               />
               {Icon ? <Icon size={14} aria-hidden className="shrink-0 text-ink-muted" /> : null}
-              <span className="min-w-0 flex-1 truncate">{one.label}</span>
+              {/* A long hint gives way before the name does, and a name wraps rather than being cut. */}
+              <span className="min-w-[40%] flex-1 [overflow-wrap:anywhere]" title={one.label}>
+                {one.label}
+              </span>
               {one.hint ? (
-                <span className="shrink-0 text-meta text-ink-muted">{one.hint}</span>
+                <span
+                  className="min-w-0 max-w-[50%] truncate text-meta text-ink-muted"
+                  title={one.hint}
+                >
+                  {one.hint}
+                </span>
               ) : null}
             </label>
           );

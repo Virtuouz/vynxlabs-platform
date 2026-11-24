@@ -13,6 +13,7 @@ import { ChartView } from "./chart.tsx";
 import { DetailView } from "./detail.tsx";
 import { FilterView } from "./filter.tsx";
 import { FormView } from "./form.tsx";
+import { GoalView } from "./goal.tsx";
 import { ListView } from "./list.tsx";
 import { PivotView } from "./pivot.tsx";
 import { SectionView } from "./section.tsx";
@@ -40,6 +41,7 @@ export const corePack: CorePack = {
     "core/stat": StatView,
     "core/chart": ChartView,
     "core/pivot": PivotView,
+    "core/goal": GoalView,
     "core/text": TextView,
     "core/section": SectionView,
     "core/tabs": TabsView,
@@ -51,7 +53,16 @@ export const corePack: CorePack = {
 
 export { fitCount } from "./actions.tsx";
 export { metaOf, pastTime, relativeTime, valueWords, whyNot } from "./approvals.tsx";
-export { breakable, DEFAULT_COLUMNS, defaultColumns, isCode, SYSTEM_COLUMNS } from "./cells.tsx";
+export {
+  breakable,
+  type ColumnSpec,
+  columnsToShow,
+  DEFAULT_COLUMNS,
+  defaultColumns,
+  headingOf,
+  isCode,
+  SYSTEM_COLUMNS,
+} from "./cells.tsx";
 export {
   type ChartKind,
   type ChartNeed,
@@ -62,6 +73,7 @@ export {
   isComparing,
   orderRows,
   PALETTES,
+  RAMPS,
   suggestedMark,
   withCompare,
 } from "./chartSpec.ts";

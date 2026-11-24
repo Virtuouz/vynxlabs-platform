@@ -1,4 +1,4 @@
-import { signInWithPassword } from "./sign-in.ts";
+import { ownMember, signInAs } from "./as.ts";
 import { expect, type Page, test } from "./test.ts";
 import { expectNoAxeViolations } from "./visual.ts";
 
@@ -8,10 +8,6 @@ import { expectNoAxeViolations } from "./visual.ts";
  * editing a row have their own keyboard walks, in flow-editor and data-grid.
  */
 
-const ADMIN = {
-  email: process.env.E2E_ADMIN_EMAIL ?? "admin@example.com",
-  password: process.env.E2E_ADMIN_PASSWORD ?? "change-me-please",
-};
 const TENANT_ADMIN = "00000000-0000-7000-8000-000000000002";
 const stamp = Date.now().toString(36);
 
@@ -19,6 +15,18 @@ const stamp = Date.now().toString(36);
 const call = (page: Page, method: string, path: string, body?: unknown): Promise<any> =>
   page.evaluate(
     async ([method, path, body]) => {
+      // A draft save names the draft it saw: its revision now, or none when there is none.
+      if (
+        method === "PUT" &&
+        String(path).includes("/drafts/") &&
+        body &&
+        typeof body === "object" &&
+        !("revision" in body) &&
+        !("create" in body)
+      ) {
+        const seen = await fetch(`/api/v1${path}`);
+        if (seen.ok) body = { ...body, revision: (await seen.json()).revision };
+      }
       const response = await fetch(`/api/v1${path}`, {
         method: method as string,
         headers: body ? { "content-type": "application/json" } : {},
@@ -40,14 +48,14 @@ async function tabTo(page: Page, target: () => Promise<boolean>, most = 60) {
   throw new Error("Tab never reached it");
 }
 
-test("a failed run is opened from the runs list, and access is given, from the keyboard alone", async ({
+test("a failed run is opened from the runs list, and access is given, from the keyboard alone @polish", async ({
   browser,
 }) => {
   test.setTimeout(240_000);
   const page = await (
     await browser.newContext({ viewport: { width: 1440, height: 900 } })
   ).newPage();
-  await signInWithPassword(page, ADMIN.email, ADMIN.password);
+  await signInAs(page, "operator");
   const tenant = await call(page, "POST", "/tenants", { slug: `keys-${stamp}`, name: "Keys" });
   await call(page, "POST", `/tenants/${tenant.id}/access-grants`, {
     reason: "The keyboard e2e test",
@@ -122,6 +130,9 @@ test("a failed run is opened from the runs list, and access is given, from the k
   // A native select chooses by what is typed.
   await page.keyboard.type("Dev");
   await expect(sheet.getByLabel("Where")).toHaveValue(dev.id);
+  // Choosing a workspace adds "What" (everything in it, or one thing) before the role.
+  await page.keyboard.press("Tab");
+  await expect(sheet.getByLabel("What")).toBeFocused();
   await page.keyboard.press("Tab");
   await expect(sheet.getByLabel("Role")).toBeFocused();
   await page.keyboard.press("ArrowDown");
@@ -142,26 +153,30 @@ test("a failed run is opened from the runs list, and access is given, from the k
   );
 });
 
-test("⌘K opens the palette from inside the code editor; g r, / and the sheet work from the keyboard", async ({
+test("⌘K opens the palette from inside the code editor; g r, / and the sheet work from the keyboard @polish", async ({
   browser,
 }) => {
   test.setTimeout(120_000);
-  const page = await (
+  // The operator makes the tenant; the shortcut setting the test changes is a member's of its own.
+  const operator = await (
     await browser.newContext({ viewport: { width: 1440, height: 900 } })
   ).newPage();
-  await signInWithPassword(page, ADMIN.email, ADMIN.password);
-  const tenant = await call(page, "POST", "/tenants", {
+  await signInAs(operator, "operator");
+  const tenant = await call(operator, "POST", "/tenants", {
     slug: `palette-${stamp}`,
     name: "Palette",
     addCreator: true,
   });
-  const dev = await call(page, "POST", `/tenants/${tenant.id}/workspaces`, {
+  const dev = await call(operator, "POST", `/tenants/${tenant.id}/workspaces`, {
     slug: "dev",
     name: "Dev",
     type: "dev",
   });
+  const page = await ownMember(browser, operator, tenant.id, {
+    viewport: { width: 1440, height: 900 },
+  });
   const base = `/t/${tenant.id}/workspaces/${dev.id}`;
-  // Single keys on, whatever an earlier run left: the setting is kept on the server now.
+  // Single keys on: the member is new, and the setting is kept on the server.
   await call(page, "DELETE", "/me/preferences/shortcuts.single-key");
   try {
     // Inside the editor, which keeps ⌘K for its own chords.
@@ -203,33 +218,35 @@ test("⌘K opens the palette from inside the code editor; g r, / and the sheet w
     await page.keyboard.press("o");
     await expect(page).toHaveURL(new RegExp(`${base}/runs`));
   } finally {
-    // Turned on again, for whoever signs in as the admin next, even when a step failed.
+    // Turned on again, even when a step failed.
     await call(page, "DELETE", "/me/preferences/shortcuts.single-key").catch(() => {});
   }
 
-  await call(page, "POST", `/tenants/${tenant.id}/deletion`, { confirm: tenant.slug }).catch(
+  await call(operator, "POST", `/tenants/${tenant.id}/deletion`, { confirm: tenant.slug }).catch(
     () => {},
   );
 });
 
-test("rows are checked with j and x and run again together, and the palette offers the open run's commands", async ({
+test("rows are checked with j and x and run again together, and the palette offers the open run's commands @polish", async ({
   browser,
 }) => {
   test.setTimeout(240_000);
-  const page = await (
+  const operator = await (
     await browser.newContext({ viewport: { width: 1440, height: 900 } })
   ).newPage();
-  await signInWithPassword(page, ADMIN.email, ADMIN.password);
-  await call(page, "DELETE", "/me/preferences/shortcuts.single-key");
-  const tenant = await call(page, "POST", "/tenants", {
+  await signInAs(operator, "operator");
+  const tenant = await call(operator, "POST", "/tenants", {
     slug: `rows-${stamp}`,
     name: "Rows",
     addCreator: true,
   });
-  const dev = await call(page, "POST", `/tenants/${tenant.id}/workspaces`, {
+  const dev = await call(operator, "POST", `/tenants/${tenant.id}/workspaces`, {
     slug: "dev",
     name: "Dev",
     type: "dev",
+  });
+  const page = await ownMember(browser, operator, tenant.id, {
+    viewport: { width: 1440, height: 900 },
   });
   const W = `/tenants/${tenant.id}/workspaces/${dev.id}`;
   const link = `/t/${tenant.id}/workspaces/${dev.id}`;
@@ -289,7 +306,7 @@ test("rows are checked with j and x and run again together, and the palette offe
   await expect(page.getByRole("dialog", { name: /Run hello\/greet again/ })).toBeVisible();
   await page.keyboard.press("Escape");
 
-  await call(page, "POST", `/tenants/${tenant.id}/deletion`, { confirm: tenant.slug }).catch(
+  await call(operator, "POST", `/tenants/${tenant.id}/deletion`, { confirm: tenant.slug }).catch(
     () => {},
   );
 });

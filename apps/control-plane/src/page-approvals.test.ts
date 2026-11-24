@@ -107,6 +107,7 @@ const screen = {
           { flows: ["orders/reorder"] },
           { fields: [{ name: "api_key" }] },
         ),
+        approvalsWidget("texts", { flows: ["orders/reorder"] }, { fields: [{ name: "notes" }] }),
         // Never asks why.
         approvalsWidget("quiet", { flows: ["orders/reorder"] }, { askWhy: "never" }),
         // Seen by managers only.
@@ -378,6 +379,18 @@ describe("reading what waits", () => {
     await decide(bob, step.id, "approve");
   });
 
+  test("a field written as a text from a secret input is masked in the widget too", async () => {
+    const step = await ask("orders/reorder", {
+      password: "pw-hunter-4455",
+      notes: "use pw-hunter-4455 please",
+    });
+    const [item] = (await waitingOf(bob, "texts")).filter((one) => one.id === step.id);
+    expect(item.fields).toEqual([
+      { name: "notes", label: "Notes", value: "use [redacted] please" },
+    ]);
+    await decide(bob, step.id, "approve");
+  });
+
   test("`mine` lists what they may decide; someone holding the permission but not named sees none of it", async () => {
     const step = await ask("orders/reorder");
     expect((await waitingOf(bob)).map((one) => one.id)).toContain(step.id);
@@ -568,6 +581,21 @@ describe("deciding", () => {
     expect((await waitingOf(bob)).map((one) => one.id)).not.toContain(step.id);
   });
 
+  test("WLK-16: a decision a service account made is listed as decided, with its name", async () => {
+    const step = await ask("orders/reorder");
+    expect((await decide(bob, step.id, "approve", { comment: "ok" })).status).toBe(200);
+    const made = await alice.post(`/tenants/${tenant}/service-accounts`, { name: "Nightly bot" });
+    expect(made.status, JSON.stringify(made.body)).toBe(201);
+    await t.db
+      .updateTable("step_run")
+      .set({ decided_by: made.body.id, decided_by_type: "service_account" })
+      .where("flow_run_id", "=", step.run)
+      .where("node_id", "=", "ask")
+      .execute();
+    const decided = (await read(bob, "queue")).body.inputs.requests.decided;
+    expect(decided.find((one: Any) => one.id === step.id)?.decision.by).toBe("Nightly bot");
+  });
+
   test("rejecting fails the flow's step, with the reason, and the widget's rule needs one", async () => {
     const step = await ask("orders/reorder");
     const noReason = await decide(bob, step.id, "reject");
@@ -586,9 +614,11 @@ describe("deciding", () => {
     });
   });
 
-  test("ask why: never lets either through; always needs it for an approval too; at most 2000 characters", async () => {
+  test("ask why: never lets an approval through, a rejection always has its reason; always needs it for an approval too; at most 2000 characters", async () => {
     const a = await ask("orders/reorder");
-    expect((await decide(bob, a.id, "reject", {}, "quiet")).status).toBe(200);
+    // Rejecting is asked about on every route, as the flow and its people read the reason.
+    expect((await decide(bob, a.id, "reject", {}, "quiet")).status).toBe(400);
+    expect((await decide(bob, a.id, "reject", { comment: "No" }, "quiet")).status).toBe(200);
     const b = await ask("orders/reorder");
     expect((await decide(bob, b.id, "approve", {}, "everything")).status).toBe(400);
     expect((await decide(bob, b.id, "approve", { comment: "ok" }, "everything")).status).toBe(200);

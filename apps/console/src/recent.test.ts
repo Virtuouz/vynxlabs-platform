@@ -15,4 +15,23 @@ test("what a page's address says was opened, for the palette's Recent list", () 
   expect(openedAt(`${ws}/scripts/new`)).toBeUndefined();
   expect(openedAt(`${ws}/flows/new`)).toBeUndefined();
   expect(openedAt(`${ws}/runs`)).toBeUndefined();
+  // A page, a variable and a data source by address; a saved query by the address's ?query=.
+  expect(openedAt(`${ws}/docs/guides/start`)).toEqual({ kind: "doc", ref: "guides/start" });
+  expect(openedAt(`${ws}/variables/region`)).toEqual({ kind: "variable", ref: "region" });
+  expect(openedAt(`${ws}/sources/warehouse`)).toEqual({ kind: "data_source", ref: "warehouse" });
+  expect(openedAt(`${ws}/queries`, "late-orders")).toEqual({ kind: "query", ref: "late-orders" });
+  expect(openedAt(`${ws}/queries`)).toBeUndefined();
+});
+
+test("a trigger, a schedule and an app are known by the address of their editor", () => {
+  const ws = "/t/t1/workspaces/w1";
+  expect(openedAt(`${ws}/resources/edit/schedule/nightly`)).toEqual({
+    kind: "schedule",
+    ref: "nightly",
+  });
+  expect(openedAt(`${ws}/resources/edit/trigger/orders/hook`)).toEqual({
+    kind: "trigger",
+    ref: "orders/hook",
+  });
+  expect(openedAt(`${ws}/resources/edit/script/x`)).toBeUndefined();
 });

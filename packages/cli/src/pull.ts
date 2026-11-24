@@ -10,13 +10,14 @@ import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { parseArgs } from "node:util";
 import {
+  isFolderResourceFile,
   ontoWritten,
-  parseRepositoryConfig,
-  REPOSITORY_CONFIG,
   RESOURCE_FOLDER,
+  resourceOfFile,
   sameResourceFile,
 } from "@volvel/manifest";
-import { type Io, loadSettings, locate, refusal, request } from "./cli.js";
+import { readRepositoryConfig } from "./build.js";
+import { CliError, type Io, loadSettings, locate, refusal, request } from "./cli.js";
 
 /** What the last pull wrote, by path under `platform/`. */
 export interface Pulled {
@@ -37,8 +38,20 @@ export const pulledFile = (directory: string): string =>
   join(directory, ".platform", "pulled.json");
 
 export async function readPulled(directory: string): Promise<Pulled | undefined> {
-  const text = await readText(pulledFile(directory));
-  return text ? (JSON.parse(text) as Pulled) : undefined;
+  return readState(pulledFile(directory));
+}
+
+/** What the last pull wrote. A record that cannot be read is said so, with how to start it afresh. */
+async function readState(file: string): Promise<Pulled | undefined> {
+  const text = await readText(file);
+  if (!text) return undefined;
+  try {
+    return JSON.parse(text) as Pulled;
+  } catch {
+    throw new CliError(
+      `${file} is not valid JSON, so the files the last pull wrote are not known. Delete it and run pull again: files that differ will be kept, and pull --force takes the console's.`,
+    );
+  }
 }
 
 const sha = (text: string) => createHash("sha256").update(text).digest("hex");
@@ -54,7 +67,10 @@ async function walk(root: string, dir = root): Promise<string[]> {
   for (const entry of entries) {
     const full = join(dir, entry.name);
     if (entry.isDirectory()) found.push(...(await walk(root, full)));
-    else if (/\.(yaml|ts)$/.test(entry.name)) found.push(relative(root, full).split(sep).join("/"));
+    else {
+      const file = relative(root, full).split(sep).join("/");
+      if (isFolderResourceFile(file)) found.push(file);
+    }
   }
   return found;
 }
@@ -64,8 +80,6 @@ const readText = (file: string) => readFile(file, "utf8").catch(() => undefined)
 /** What to write over a file that is here: the change, put into the file as it was written. */
 const asWritten = (path: string, here: string | undefined, content: string) =>
   here !== undefined && path.endsWith(".yaml") ? ontoWritten(here, content) : content;
-/** A resource's path from one of its files: `orders/sync.script.ts` → `orders/sync`. */
-const stem = (file: string) => file.replace(/\.[a-z_]+\.(yaml|ts)$/, "");
 
 export interface PullReport {
   written: { path: string; how: "new" | "updated" }[];
@@ -93,9 +107,7 @@ export async function pullInto(
     files: { path: string; content: string; resource?: string }[];
   },
 ): Promise<PullReport> {
-  const before: Pulled | undefined = await readText(stateFile).then((text) =>
-    text ? (JSON.parse(text) as Pulled) : undefined,
-  );
+  const before = await readState(stateFile);
   // What another workspace's pull wrote says nothing about this one's files.
   const last = before?.workspace === workspace ? before.files : {};
   const report: PullReport = { written: [], removed: [], unchanged: 0, kept: [] };
@@ -127,7 +139,8 @@ export async function pullInto(
   for (const path of await walk(folder)) {
     if (wanted.has(path)) continue;
     const here = (await readText(join(folder, ...path.split("/")))) ?? "";
-    if (last[path] === sha(here) || force) {
+    // Only a file a pull wrote is the pull's to remove, `--force` or not.
+    if (last[path] === sha(here) || (force && path in last)) {
       await rm(join(folder, ...path.split("/")));
       report.removed.push(path);
     } else {
@@ -188,7 +201,10 @@ export async function pullInto(
     }
   }
   // A draft whose file was kept as it is here was not taken, and a deploy must not clear it.
-  const keptStems = new Set([...report.kept.map((one) => stem(one.path)), ...keptResources]);
+  const keptStems = new Set([
+    ...report.kept.map((one) => resourceOfFile(one.path)),
+    ...keptResources,
+  ]);
   const taken = Object.fromEntries(
     drafts
       .filter((draft) => !keptStems.has(draft.path))
@@ -211,17 +227,19 @@ export async function pull(args: string[], io: Io): Promise<number> {
     args,
     options: {
       dir: { type: "string" },
+      resources: { type: "string" },
       tenant: { type: "string" },
       workspace: { type: "string" },
       deployed: { type: "boolean" },
       force: { type: "boolean" },
     },
   });
-  const settings = await loadSettings(io.env);
-  const { base, workspace } = await locate(settings, values.tenant, values.workspace);
   const directory = resolve(values.dir ?? ".");
   // A file under one of the repository's roots is named for its path, and is not made to say it.
-  const { config } = parseRepositoryConfig(await readText(join(directory, REPOSITORY_CONFIG)));
+  const config = await readRepositoryConfig(directory);
+  const resources = values.resources ?? config.resources ?? RESOURCE_FOLDER;
+  const settings = await loadSettings(io.env);
+  const { base, workspace } = await locate(settings, values.tenant, values.workspace);
   const query = new URLSearchParams({
     ...(values.deployed ? { drafts: "false" } : {}),
     ...(config.roots.length > 0 ? { roots: config.roots.join(",") } : {}),
@@ -239,10 +257,9 @@ export async function pull(args: string[], io: Io): Promise<number> {
     drafts: { path: string; revision: number; deleted: boolean }[];
     bundleVersion: number | null;
   };
-  const folder = join(directory, RESOURCE_FOLDER);
+  const folder = join(directory, resources);
   // From the repository's root: a file in the folder, or one kept anywhere, written `/so`.
-  const shown = (path: string) =>
-    path.startsWith("/") ? path.slice(1) : `${RESOURCE_FOLDER}/${path}`;
+  const shown = (path: string) => (path.startsWith("/") ? path.slice(1) : `${resources}/${path}`);
   const report = await pullInto(
     folder,
     pulledFile(directory),
@@ -278,7 +295,7 @@ export async function pull(args: string[], io: Io): Promise<number> {
   }
   if (files.length > 0) {
     io.out(
-      `${RESOURCE_FOLDER}/ holds the workspace's whole set of console resources: a deploy of this repository replaces the set with it.`,
+      `${resources}/ holds the workspace's whole set of console resources: a deploy of this repository replaces the set with it.`,
     );
   }
   return 0;

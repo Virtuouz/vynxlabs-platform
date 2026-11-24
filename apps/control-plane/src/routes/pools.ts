@@ -3,9 +3,10 @@ import { newId, sql } from "@volvel/db";
 import { Type } from "typebox";
 import { conflict, notFound } from "../kernel/errors.js";
 import { hasOutsideCodeWriters, workerUserMode } from "../kernel/execution/isolation.js";
-import { WORKER_STALE_SECONDS } from "../kernel/execution/workers.js";
+import { assertPoolNameFree, WORKER_STALE_SECONDS } from "../kernel/execution/workers.js";
 import { access } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
+import { listOf } from "../pagination.js";
 import { Id, iso, NoContent, TenantParams, Time } from "./shared.js";
 
 const PoolName = Type.String({ pattern: "^[a-z0-9]+(-[a-z0-9]+)*$", maxLength: 40 });
@@ -30,6 +31,7 @@ const ManagedWorkers = Type.Object({
   state: Type.Union(
     [
       Type.Literal("off"),
+      Type.Literal("unavailable"),
       Type.Literal("host"),
       Type.Literal("isolated"),
       Type.Literal("shared"),
@@ -37,7 +39,8 @@ const ManagedWorkers = Type.Object({
     ],
     {
       description:
-        "`off`: the instance starts no workers for this tenant. `host`: it does, in a worker " +
+        "`off`: this tenant has the instance starting its workers turned off. `unavailable`: it has them " +
+        "on, and the instance starts none for anyone. `host`: it does, in a worker " +
         "host on a network of its own. `isolated`: it does, beside the control plane, as a " +
         "user of their own, because only the operator writes this tenant's code. `shared`: " +
         "the same, as the control plane's own user. `refused`: it would, but workers beside " +
@@ -56,6 +59,7 @@ export function poolRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.tenant("worker:read") },
         schema: {
           summary: "Whether the instance runs this tenant's code on workers it starts",
+          description: "Says whether the instance's own worker host serves the tenant.",
           tags: ["workers"],
           params: TenantParams,
           response: { 200: ManagedWorkers },
@@ -68,7 +72,8 @@ export function poolRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           .where("id", "=", params.t)
           .executeTakeFirstOrThrow();
         const mode = workerUserMode();
-        if (!tenant.managed_workers || mode === "off") return { state: "off" as const };
+        if (!tenant.managed_workers) return { state: "off" as const };
+        if (mode === "off") return { state: "unavailable" as const };
         if (mode === "host") return { state: "host" as const };
         // MANAGED_WORKER_USER=same: the operator says everyone who writes code works for them.
         if (mode === "shared") return { state: "shared" as const };
@@ -91,7 +96,7 @@ export function poolRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             "named by a script and served by nobody shows with no worker online.",
           tags: ["workers"],
           params: TenantParams,
-          response: { 200: Type.Object({ items: Type.Array(Pool) }) },
+          response: { 200: listOf(Pool) },
         },
       },
       async ({ params }) => {
@@ -177,6 +182,7 @@ export function poolRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         },
       },
       async ({ ctx, params, body }, reply) => {
+        assertPoolNameFree(body.name);
         const made = await ctx.mutate(async (trx, audit) => {
           const taken = await trx
             .selectFrom("worker_pool")

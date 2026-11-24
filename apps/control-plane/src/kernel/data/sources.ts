@@ -2,9 +2,9 @@ import { type Kysely, newId, openExternalPostgres, sql } from "@volvel/db";
 import type { Db, Trx } from "../audit.js";
 import { checkHost, guardedLookup } from "../egress.js";
 import { badRequest, HttpError, notFound } from "../errors.js";
-import { decryptFor, encryptFor } from "../execution/bindings.js";
+import { openRow, sealRow } from "../execution/sealed.js";
 import type { Kernel } from "../kernel.js";
-import type { ColumnMeta, RowTarget } from "./rows.js";
+import { type ColumnMeta, type RowTarget, translate } from "./rows.js";
 
 // biome-ignore lint/suspicious/noExplicitAny: an external database has no schema known in advance
 type AnyDb = Kysely<any>;
@@ -33,11 +33,22 @@ export const sourceConfigSchema = {
   additionalProperties: false,
 };
 
-/** The name a data source's password is encrypted under. */
-export const credentialName = (path: string) => `data-source:${path}`;
-
 /** Open pools, one per binding as it currently stands. */
 const pools = new Map<string, { stamp: string; db: AnyDb }>();
+
+/**
+ * Whether a stored password would reach somewhere other than where it was given: another host,
+ * port or user, or a connection that is no longer encrypted (decision D10). It is then dropped,
+ * unless it is given again.
+ */
+export function pointsElsewhere(was: SourceConfig, now: SourceConfig): boolean {
+  return (
+    was.host.toLowerCase() !== now.host.toLowerCase() ||
+    (was.port ?? 5432) !== (now.port ?? 5432) ||
+    was.user !== now.user ||
+    (was.ssl === true && now.ssl !== true)
+  );
+}
 
 export async function bindSource(
   kernel: Kernel,
@@ -48,35 +59,40 @@ export async function bindSource(
 ) {
   const existing = await trx
     .selectFrom("data_source_binding")
-    .select(["id", "credential"])
+    .select(["id", "credential", "config"])
     .where("workspace_id", "=", id.workspaceId)
     .where("path", "=", id.path)
     .executeTakeFirst();
+  const rowId = existing?.id ?? newId();
+  const row = { tenantId: id.tenantId, workspaceId: id.workspaceId, rowId, path: id.path };
+  // Another address keeps no password that was given for the old one (D10).
+  const dropped =
+    password === undefined &&
+    existing?.credential != null &&
+    pointsElsewhere(existing.config as unknown as SourceConfig, config);
+  if (password === undefined && existing?.credential && !dropped) {
+    await openRow(kernel, trx, "data-source", row, existing.credential, "password");
+  }
   const credential =
     password === undefined
-      ? (existing?.credential ?? null)
+      ? dropped
+        ? null
+        : (existing?.credential ?? null)
       : password === null
         ? null
-        : await encryptFor(
-            kernel,
-            trx,
-            id.tenantId,
-            id.workspaceId,
-            credentialName(id.path),
-            password,
-          );
+        : await sealRow(kernel, trx, "data-source", row, password);
   if (existing) {
     await trx
       .updateTable("data_source_binding")
       .set({ config: JSON.stringify(config), credential, updated_at: new Date() })
       .where("id", "=", existing.id)
       .execute();
-    return { created: false };
+    return { created: false, credentialDropped: dropped };
   }
   await trx
     .insertInto("data_source_binding")
     .values({
-      id: newId(),
+      id: rowId,
       tenant_id: id.tenantId,
       workspace_id: id.workspaceId,
       path: id.path,
@@ -85,7 +101,19 @@ export async function bindSource(
       updated_at: new Date(),
     })
     .execute();
-  return { created: true };
+  return { created: true, credentialDropped: false };
+}
+
+/** The password a data source holds, opened. For copying it elsewhere. */
+export async function readSourcePassword(
+  kernel: Kernel,
+  db: Db | Trx,
+  id: { tenantId: string; workspaceId: string; path: string },
+  row: { id: string; credential: Buffer | null },
+) {
+  return row.credential
+    ? await openRow(kernel, db, "data-source", { ...id, rowId: row.id }, row.credential, "password")
+    : null;
 }
 
 /** A connection to a bound source. Pools are reused until the binding changes. */
@@ -110,7 +138,14 @@ export async function openSource(
   if (open?.stamp === stamp) return { db: open.db, schema: config.schema ?? "public" };
   if (open) void open.db.destroy();
   const password = binding.credential
-    ? await decryptFor(kernel, db, tenantId, workspaceId, credentialName(path), binding.credential)
+    ? await openRow(
+        kernel,
+        db,
+        "data-source",
+        { tenantId, workspaceId, rowId: binding.id, path },
+        binding.credential,
+        "password",
+      )
     : undefined;
   // A host written as an address is never looked up, so it is checked here too.
   await checkHost(config.host);
@@ -128,6 +163,24 @@ export async function openSource(
   return { db: connection, schema: config.schema ?? "public" };
 }
 
+/**
+ * Runs something against a bound source, turning what the source refuses or cannot do into the
+ * answers a caller can act on (a rows route, a widget and a script's run say the same words).
+ */
+export async function onSource<T>(
+  kernel: Kernel,
+  db: Db,
+  at: { tenantId: string; workspaceId: string },
+  path: string,
+  run: (source: Awaited<ReturnType<typeof openSource>>) => Promise<T>,
+): Promise<T> {
+  try {
+    return await run(await openSource(kernel, db, at.tenantId, at.workspaceId, path));
+  } catch (error) {
+    throw sourceFailure(path, translate(error));
+  }
+}
+
 export async function closeSource(bindingId: string) {
   const open = pools.get(bindingId);
   pools.delete(bindingId);
@@ -140,7 +193,7 @@ export async function closeAllSources() {
   await Promise.all(open.map((pool) => pool.db.destroy()));
 }
 
-/** Problems reaching a source are the binding's, not the platform's. */
+/** Problems reaching a source are the binding's, not Volvel's. */
 export function sourceFailure(path: string, error: unknown): unknown {
   if (error instanceof HttpError) return error;
   const code = (error as { code?: string }).code ?? "";
@@ -153,6 +206,20 @@ export function sourceFailure(path: string, error: unknown): unknown {
       502,
       "source_unreachable",
       `The data source "${path}" could not be reached. Check its address.`,
+    );
+  // The server asked for a password and none is stored: the address changed, or none was given.
+  if (/client password must be a string/i.test(message))
+    return new HttpError(
+      502,
+      "source_refused",
+      `No password is set for the data source "${path}". Change it and type the password.`,
+    );
+  // Encrypt is on and the server has no SSL: the driver stops before it connects.
+  if (/server does not support SSL/i.test(message))
+    return new HttpError(
+      502,
+      "source_refused",
+      `The data source "${path}" does not accept encrypted connections. Turn Encrypt off for it, or turn SSL on at the server.`,
     );
   if (code === "28P01" || code === "28000")
     return new HttpError(
@@ -197,12 +264,13 @@ interface SourceColumn {
   data_type: string;
   is_nullable: string;
   column_default: string | null;
+  is_identity: string;
 }
 
 /** The tables of a source's schema, as the platform can read and write them. */
 export async function sourceTables(db: AnyDb, schema: string): Promise<RowTarget[]> {
   const columns = await sql<SourceColumn>`
-    select c.table_name, c.column_name, c.data_type, c.is_nullable, c.column_default
+    select c.table_name, c.column_name, c.data_type, c.is_nullable, c.column_default, c.is_identity
     from information_schema.columns c
     join information_schema.tables t on t.table_schema = c.table_schema and t.table_name = c.table_name
     where c.table_schema = ${schema} and t.table_type = 'BASE TABLE'
@@ -237,7 +305,7 @@ export async function sourceTables(db: AnyDb, schema: string): Promise<RowTarget
             physicalName: column.column_name,
             type: type ?? column.data_type,
             required: column.is_nullable === "NO",
-            hasDefault: column.column_default !== null,
+            hasDefault: column.column_default !== null || column.is_identity === "YES",
             writable: type !== null,
           };
         }),

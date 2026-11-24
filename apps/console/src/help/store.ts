@@ -66,13 +66,25 @@ export function useHelpTopic(topic: string | undefined) {
 
 /** Says a topic from inside JSX, for a dialog whose body is drawn only while it is open. */
 export function HelpTopic({ topic }: { topic: string }) {
+  // docs:dynamic the caller's own topic, which check.mjs reads at the JSX's call site
   useHelpTopic(topic);
   return null;
 }
 
+/** Where focus was when the panel opened, before the panel took it. */
+let opener: Element | null = null;
+
 /** Opens the panel: at the screen's own help, or at something else. */
 export function openHelp(target?: HelpTarget) {
+  if (!state.open && typeof document !== "undefined") opener = document.activeElement;
   set(target ? { open: true, target } : { open: true });
+}
+
+/** What had focus when the panel opened, once: for giving it back when the panel closes. */
+export function takeOpener(): Element | null {
+  const was = opener;
+  opener = null;
+  return was;
 }
 
 /** Closes the panel. It keeps its place, for when it is opened again on the same screen. */
@@ -81,13 +93,17 @@ export function closeHelp() {
 }
 
 export function toggleHelp() {
-  set({ open: !state.open });
+  if (state.open) closeHelp();
+  else openHelp();
 }
 
 /** Goes back to the screen's own help. */
 export function showPageHelp() {
   set({ target: undefined });
 }
+
+/** The topic the screen has now, for a test or a caller outside a component. */
+export const getHelpTopic = () => state.topic;
 
 export function useHelp(): HelpState {
   return useSyncExternalStore(

@@ -2,11 +2,13 @@ import { observeElementRect, useVirtualizer } from "@tanstack/react-virtual";
 import { Button, Menu, type MenuItem, Skeleton } from "@volvel/ui";
 import { MoreHorizontal, Rows3 } from "lucide-react";
 import {
+  type CSSProperties,
   isValidElement,
   type KeyboardEvent,
   type ReactNode,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -16,7 +18,7 @@ import { useRestoredScroll } from "../router.tsx";
 import { isTyping, singleKeysOn } from "./keys.ts";
 import { ErrorState, useDelayed } from "./LoadState.tsx";
 import { EmptyCanvas } from "./layout.tsx";
-import { fullOnHover } from "./Truncate.tsx";
+import { Breakable, fullOnHover } from "./Truncate.tsx";
 
 /**
  * The one list: rows of like things, scannable, sortable, selectable, opened by
@@ -37,6 +39,11 @@ export interface DataColumn<Row> {
   align?: "start" | "end";
   /** A width class, such as `w-40`, for columns whose content has a known size. */
   width?: string;
+  /**
+   * A path or a name that must stay readable: the column keeps 14rem at every width, and the
+   * table scrolls sideways before it is squeezed to a few characters.
+   */
+  wide?: boolean;
   /**
    * Long values end in an ellipsis rather than wrapping the row, with the
    * whole value on hover. For a path or a name, put `Truncate mode="middle"`
@@ -61,7 +68,41 @@ const isEmptyContent = (value: unknown): value is EmptyContent =>
 export type SortState = { key: string; dir: "asc" | "desc" } | undefined;
 export type Density = "compact" | "standard" | "comfortable";
 
+/** A cell that is a bare address or path may break after its @, dots and slashes, not in the middle of a word. */
+const breakable = (cell: ReactNode): ReactNode =>
+  typeof cell === "string" && /[@.\-_/]./.test(cell) ? <Breakable>{cell}</Breakable> : cell;
+
 const SHOWN = { 1: "", 2: "hidden sm:table-cell", 3: "hidden lg:table-cell" } as const;
+/**
+ * Beside an inspector the list has a third less room: its second tier of columns waits for a wide
+ * screen and its third for a wider one, so its last column (the actions) is not under the panel.
+ */
+const SHOWN_BESIDE = { 1: "", 2: "hidden xl:table-cell", 3: "hidden 2xl:table-cell" } as const;
+/** The width, in rem, that each tier of columns needs: 7 for a column, 14 for a `wide` one, and the check and actions columns. */
+export function tableMinimums<Row>(
+  columns: DataColumn<Row>[],
+  extras: { checking: boolean; actions: boolean },
+): [number, number, number] {
+  return ([1, 2, 3] as const).map((level) => {
+    const units = columns
+      .filter((column) => (column.priority ?? 1) <= level)
+      .reduce((sum, column) => sum + (column.wide ? 2 : 1), 0);
+    return units * 7 + (extras.checking ? 2.5 : 0) + (extras.actions ? 3 : 0);
+  }) as [number, number, number];
+}
+
+/**
+ * The highest tier of columns whose minimum fits the room the table has. Tiers are chosen by the
+ * width of the table's own box and not the window's: a list under a navigation rail or beside an
+ * inspector has less room than its window, and a column that does not fit is dropped, never left
+ * to be cut at the box's edge or to push the actions out of reach.
+ */
+export function fittingTier(room: number, minimums: readonly number[], rem = 16): 1 | 2 | 3 {
+  if ((minimums[2] ?? 0) * rem <= room) return 3;
+  if ((minimums[1] ?? 0) * rem <= room) return 2;
+  return 1;
+}
+
 const PAD: Record<Density, string> = { compact: "py-0.5", standard: "py-2", comfortable: "py-3" };
 /** Row heights the virtual list estimates with, matching the paddings above. */
 const HEIGHT: Record<Density, number> = { compact: 28, standard: 36, comfortable: 44 };
@@ -90,6 +131,8 @@ export function nextSort(current: SortState, key: string): SortState {
 export interface DataTableProps<Row> {
   /** Names the list for screen readers. */
   label: string;
+  /** An inspector is drawn beside the list, so it has less room: fewer columns at each width. */
+  beside?: boolean;
   columns: DataColumn<Row>[];
   rows: Row[] | undefined;
   rowKey: (row: Row) => string;
@@ -185,19 +228,41 @@ export function DataTable<Row>(props: DataTableProps<Row>) {
     filtered,
     footer,
     arriving,
+    beside = false,
   } = props;
+  const tier = beside ? SHOWN_BESIDE : SHOWN;
   const columns = useMemo(
     () => chooseColumns(allColumns, columnsShown),
     [allColumns, columnsShown],
   );
   const density = props.density ?? "standard";
-  const region = useRef<HTMLDivElement>(null);
+  const region = useRef<HTMLDivElement | null>(null);
+  // The box is also kept as state, so measuring starts when it is drawn (an empty list has none).
+  const [box, setBox] = useState<HTMLDivElement | null>(null);
+  const attach = useCallback((element: HTMLDivElement | null) => {
+    region.current = element;
+    setBox(element);
+  }, []);
   useRestoredScroll(region, `table:${id ?? label}`);
   const [all, setAll] = useState(false);
   const grid = variant !== "static";
   const checking = checked !== undefined && onCheck !== undefined;
 
   const shown = rows && variant === "inset" && !all ? rows.slice(0, 10) : (rows ?? []);
+
+  // A checked row that the table no longer has (a search or filter took it away) is not checked:
+  // what a batch names is what the reader can see.
+  const rowKeyRef = useRef(rowKey);
+  rowKeyRef.current = rowKey;
+  const kept = useMemo(() => {
+    if (!checked || !rows) return checked;
+    const have = new Set(rows.map((row) => rowKeyRef.current(row)));
+    const stay = [...checked].filter((key) => have.has(key));
+    return stay.length === checked.size ? checked : new Set(stay);
+  }, [checked, rows]);
+  useEffect(() => {
+    if (checked && kept && kept !== checked) onCheck?.(new Set(kept));
+  }, [checked, kept, onCheck]);
   const virtual = fill && shown.length > VIRTUAL_AFTER;
   const virtualizer = useVirtualizer({
     count: virtual ? shown.length : 0,
@@ -239,7 +304,7 @@ export function DataTable<Row>(props: DataTableProps<Row>) {
 
   const toggle = (keys: string[], on: boolean) => {
     if (!onCheck) return;
-    const next = new Set(checked);
+    const next = new Set(kept);
     for (const key of keys) {
       if (on) next.add(key);
       else next.delete(key);
@@ -262,7 +327,9 @@ export function DataTable<Row>(props: DataTableProps<Row>) {
     // Typing in a field inside a cell is the field's business.
     if (isTyping(target) || target.closest("[role=menu]")) return;
     // j, k and x are single-key shortcuts, which a person may turn off (WCAG 2.1.4).
-    if (["j", "k", "x", "J", "K"].includes(event.key) && !singleKeysOn()) return;
+    // With Shift held a letter arrives in capitals: `J` is Shift+j.
+    const letter = event.key.length === 1 ? event.key.toLowerCase() : event.key;
+    if (["j", "k", "x"].includes(letter) && !singleKeysOn()) return;
     const { row, column } = focus;
     const page = Math.max(1, Math.floor((region.current?.clientHeight ?? 360) / HEIGHT[density]));
     const current = shown[row];
@@ -271,7 +338,7 @@ export function DataTable<Row>(props: DataTableProps<Row>) {
       event.preventDefault();
       placeFocus(to, col);
     };
-    switch (event.key) {
+    switch (letter) {
       case "ArrowDown":
       case "j":
         if (event.shiftKey && checking && key !== undefined) {
@@ -315,7 +382,7 @@ export function DataTable<Row>(props: DataTableProps<Row>) {
       case "x":
         if (!checking || key === undefined || target.closest("a,button")) return;
         event.preventDefault();
-        toggle([key], !checked?.has(key));
+        toggle([key], !kept?.has(key));
         setAnchor(row);
         return;
       case "a":
@@ -324,7 +391,7 @@ export function DataTable<Row>(props: DataTableProps<Row>) {
         toggle(shown.map(rowKey), true);
         return;
       case "Escape":
-        if (checking && checked && checked.size > 0) {
+        if (checking && kept && kept.size > 0) {
           event.preventDefault();
           onCheck?.(new Set());
         }
@@ -335,6 +402,35 @@ export function DataTable<Row>(props: DataTableProps<Row>) {
   const slow = useDelayed(loading === true || rows === undefined);
   const edge = (index: number, count: number) =>
     `${index === 0 ? "pl-4 md:pl-6" : ""} ${index === count - 1 ? "pr-4 md:pr-6" : ""}`;
+  // The width its columns need where they are shown, so no cell runs under the next and an action
+  // column is never cut off. Where the box can be measured, the tier shown is the one that fits
+  // it (`fittingTier`); before that, and where nothing is measured, the window's width decides.
+  const mins = tableMinimums(columns, { checking, actions: actions !== undefined });
+  const minimums: Record<string, string> = {};
+  mins.forEach((rem, index) => {
+    minimums[`--table-min-${index + 1}`] = `${rem}rem`;
+  });
+  const [room, setRoom] = useState<number | undefined>();
+  useLayoutEffect(() => {
+    if (!box) {
+      setRoom(undefined);
+      return;
+    }
+    const read = () => setRoom(box.clientWidth > 0 ? box.clientWidth : undefined);
+    read();
+    if (typeof ResizeObserver === "undefined") return;
+    const watch = new ResizeObserver(read);
+    watch.observe(box);
+    return () => watch.disconnect();
+  }, [box]);
+  const rem =
+    typeof document === "undefined"
+      ? 16
+      : Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+  const fit = room === undefined ? undefined : fittingTier(room, mins, rem);
+  /** Which tier a column belongs to shows by the box when it is measured, by the window when not. */
+  const shownAt = (priority: 1 | 2 | 3 | undefined) =>
+    fit === undefined ? tier[priority ?? 1] : (priority ?? 1) <= fit ? "" : "hidden";
   const cells = [
     ...(checking ? [{ kind: "check" as const }] : []),
     ...columns.map((column) => ({ kind: "data" as const, column })),
@@ -386,9 +482,8 @@ export function DataTable<Row>(props: DataTableProps<Row>) {
     const after = virtual
       ? virtualizer.getTotalSize() - ((items.at(-1)?.start ?? 0) + (items.at(-1)?.size ?? 0))
       : 0;
-    const anyChecked = checking && (checked?.size ?? 0) > 0;
-    const allChecked =
-      checking && shown.length > 0 && shown.every((row) => checked?.has(rowKey(row)));
+    const anyChecked = checking && (kept?.size ?? 0) > 0;
+    const allChecked = checking && shown.length > 0 && shown.every((row) => kept?.has(rowKey(row)));
     body = (
       <>
         {anyChecked && batch ? (
@@ -397,8 +492,8 @@ export function DataTable<Row>(props: DataTableProps<Row>) {
             aria-label="Batch actions"
             className="sticky top-0 layer-sticky flex flex-wrap items-center gap-2 border-line border-b bg-action-soft px-4 py-1.5 md:px-6"
           >
-            <span className="text-meta font-medium">{checked?.size} selected</span>
-            {batch(new Set(checked))}
+            <span className="text-meta font-medium">{kept?.size} selected</span>
+            {batch(new Set(kept))}
             <Button size="small" variant="quiet" onClick={() => onCheck?.(new Set())}>
               Clear
             </Button>
@@ -409,7 +504,20 @@ export function DataTable<Row>(props: DataTableProps<Row>) {
           role={grid ? "grid" : undefined}
           aria-rowcount={grid ? shown.length + 1 : undefined}
           onKeyDown={onKeyDown}
-          className="w-full table-fixed border-collapse text-left"
+          style={
+            {
+              ...minimums,
+              // Measured: the minimum of the tier that fits, and never more than the box has.
+              ...(fit !== undefined ? { minWidth: `min(var(--table-min-${fit}), 100%)` } : {}),
+            } as CSSProperties
+          }
+          className={`w-full table-fixed border-collapse text-left ${
+            fit !== undefined
+              ? ""
+              : beside
+                ? "min-w-[var(--table-min-1)] xl:min-w-[var(--table-min-2)] 2xl:min-w-[var(--table-min-3)]"
+                : "min-w-[var(--table-min-1)] sm:min-w-[var(--table-min-2)] lg:min-w-[var(--table-min-3)]"
+          }`}
           aria-busy={refreshing || undefined}
         >
           <thead
@@ -453,7 +561,7 @@ export function DataTable<Row>(props: DataTableProps<Row>) {
                         : undefined
                     }
                     // A width asked for is for a table with room: on a phone the columns take what they need, or the one beside it is squeezed.
-                    className={`px-3 py-2 font-medium ${column.width ? `${column.width} max-sm:w-auto` : ""} ${SHOWN[column.priority ?? 1]} ${
+                    className={`whitespace-nowrap px-3 py-2 font-medium ${column.wide ? "w-[14rem]" : column.width ? `${column.width} max-sm:w-auto` : ""} ${shownAt(column.priority)} ${
                       column.align === "end" ? "text-right" : ""
                     } ${edges}`}
                   >
@@ -490,7 +598,7 @@ export function DataTable<Row>(props: DataTableProps<Row>) {
               const row = shown[index] as Row;
               const key = rowKey(row);
               const on = key === selected;
-              const ticked = checked?.has(key) ?? false;
+              const ticked = kept?.has(key) ?? false;
               const extra = detail?.(row);
               return (
                 <tr
@@ -600,12 +708,12 @@ export function DataTable<Row>(props: DataTableProps<Row>) {
                       <td
                         key={columnKey(column)}
                         {...common}
-                        className={`px-3 ${PAD[density]} ${SHOWN[column.priority ?? 1]} ${
+                        className={`px-3 [overflow-wrap:anywhere] ${PAD[density]} ${shownAt(column.priority)} ${
                           column.align === "end" ? "text-right tabular-nums" : ""
                         } ${column.truncate ? "truncate" : ""} ${edges} ${ring}`}
                         onPointerEnter={column.truncate ? fullOnHover : undefined}
                       >
-                        {column.cell(row)}
+                        {breakable(column.cell(row))}
                         {position === (checking ? 1 : 0) && extra ? (
                           <div className="mt-0.5 truncate text-meta">{extra}</div>
                         ) : null}
@@ -641,7 +749,7 @@ export function DataTable<Row>(props: DataTableProps<Row>) {
 
   return (
     <div
-      ref={region}
+      ref={attach}
       data-table={id}
       className={`${fill ? "min-h-0 flex-1 overflow-auto" : "overflow-x-auto"} ${
         // panel-allowed: a table drawn on its own carries the panel's edge itself.

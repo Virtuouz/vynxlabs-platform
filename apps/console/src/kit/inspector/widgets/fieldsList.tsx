@@ -22,6 +22,9 @@ import { Layers } from "lucide-react";
 import { useState } from "react";
 import { columnOptions } from "../controls.tsx";
 import { heading, tableOfInput } from "../model.ts";
+import { FieldAsBadge } from "./choiceBadges.tsx";
+import type { Tone } from "./columnModel.ts";
+import { StartsAs } from "./fieldStart.tsx";
 import { BackHead, dashedFace, type Env, Group, setConfig } from "./recordShared.tsx";
 
 export interface FieldRow {
@@ -32,6 +35,8 @@ export interface FieldRow {
   required?: boolean;
   hidden?: boolean;
   format?: unknown;
+  /** What a form's new record starts with in this field. */
+  initial?: unknown;
   [more: string]: unknown;
 }
 
@@ -192,6 +197,12 @@ export function FieldsList({
           const merged: FieldRow = { ...row, ...change };
           for (const key of ["label", "help"] as const) if (!merged[key]) delete merged[key];
           if (!merged.hidden) delete merged.hidden;
+          if (merged.initial === undefined) delete merged.initial;
+          // A field drawn as text, with no colors of its own, says nothing of either.
+          if (merged.as === "text") delete merged.as;
+          if (merged.as !== "badge") delete merged.badges;
+          else if (merged.badges && Object.keys(merged.badges as object).length === 0)
+            delete merged.badges;
           // Not asking for a field the table asks for is said, not left out: an unset one follows the table.
           if (!merged.required && !(kind === "form" && requiredOf(env, row)))
             delete merged.required;
@@ -228,11 +239,37 @@ export function FieldsList({
               />
             ) : null}
           </DrawerBlock>
-          {type === "Number" ? (
+          {type === "Number" || type === "Money" ? (
             <NumberFormatRow
               label="Format"
               value={open.format as Parameters<typeof NumberFormatRow>[0]["value"]}
               onChange={(format) => patch({ format })}
+            />
+          ) : null}
+          {kind === "detail" ? (
+            <FieldAsBadge
+              env={env}
+              column={open.column}
+              as={open.as}
+              badges={open.badges as Record<string, Tone> | undefined}
+              onChange={(change) => patch(change)}
+            />
+          ) : null}
+          {kind === "form" ? (
+            <StartsAs
+              env={env}
+              row={open}
+              money={
+                type === "Money"
+                  ? {
+                      currency:
+                        (open.format as { currency?: string } | undefined)?.currency ?? "USD",
+                      minorUnits:
+                        (open.format as { minorUnits?: boolean } | undefined)?.minorUnits === true,
+                    }
+                  : undefined
+              }
+              onChange={(initial) => patch({ initial })}
             />
           ) : null}
           <DrawerBlock>
@@ -277,13 +314,15 @@ export function FieldsList({
         <BackHead onBack={() => setEditing(undefined)} title={sectionOpen} kind="Section" />
         <Group label="Section">
           <DrawerBlock>
-            <TextField
-              name={`${env.widget.id}-section-name`}
-              label="Name"
-              required={false}
-              value={sectionOpen}
-              maxLength={60}
-              onChange={(to) => {
+            <SectionName
+              id={`${env.widget.id}-section-name`}
+              name={sectionOpen}
+              others={
+                rows
+                  .map((row) => row.section)
+                  .filter((one) => one && one !== sectionOpen) as string[]
+              }
+              onRename={(to) => {
                 rename(to);
                 // The list is found again by the new name.
                 setEditing(`${SECTION}${to}`);
@@ -407,4 +446,45 @@ export function FieldsList({
 function swap(row: FieldRow, to: string): FieldRow {
   const { section: _before, ...rest } = row;
   return to ? { ...rest, section: to } : rest;
+}
+
+/**
+ * A section's name, held here while it is typed: the section is renamed once what is typed is a
+ * name no other section has. An emptied box, or a name another section holds, writes nothing, so
+ * the fields never lose their section while it is retyped.
+ */
+function SectionName({
+  id,
+  name,
+  others,
+  onRename,
+}: {
+  id: string;
+  name: string;
+  others: readonly string[];
+  onRename: (to: string) => void;
+}) {
+  const [draft, setDraft] = useState(name);
+  const trimmed = draft.trim();
+  const problem =
+    trimmed === ""
+      ? "A section needs a name."
+      : others.includes(trimmed)
+        ? `${trimmed} is another section's name.`
+        : undefined;
+  return (
+    <TextField
+      name={id}
+      label="Name"
+      required={false}
+      value={draft}
+      maxLength={60}
+      {...(problem ? { error: problem } : {})}
+      onChange={(to) => {
+        setDraft(to);
+        const next = to.trim();
+        if (next !== "" && !others.includes(next) && next !== name) onRename(next);
+      }}
+    />
+  );
 }

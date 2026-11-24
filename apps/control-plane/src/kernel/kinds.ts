@@ -21,6 +21,8 @@ export interface AppliedResource {
   workspaceId: string;
   path: string;
   body: Record<string, unknown>;
+  /** Where the resource is managed, when the caller knows (a removal does). */
+  ownership?: string;
 }
 
 /**

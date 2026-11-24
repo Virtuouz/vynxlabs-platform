@@ -118,14 +118,19 @@ export function RunCompare({
       </span>
       {showInput ? (
         before.data ? (
-          <DiffView
-            before={before.data.input}
-            after={input}
-            beforeLabel="The last success's input"
-            afterLabel="This run's input"
-            testId="input-diff"
-            maxHeight="24rem"
-          />
+          JSON.stringify(before.data.input) === JSON.stringify(input) ? (
+            // The server compared the real values, and the page holds them masked.
+            <p className="m-0 text-meta text-ink-muted">Only masked values differ.</p>
+          ) : (
+            <DiffView
+              before={before.data.input}
+              after={input}
+              beforeLabel="The last success's input"
+              afterLabel="This run's input"
+              testId="input-diff"
+              maxHeight="24rem"
+            />
+          )
         ) : before.error ? (
           <ErrorState error={before.error} onRetry={before.reload} />
         ) : (
@@ -223,7 +228,11 @@ export function RunComparePage({
               return (
                 <EmptyCanvas
                   title="The code is the same in both"
-                  text={`Both runs used version ${now.data.bundleVersion ?? "?"}. What differs is the input or the environment, not the code.`}
+                  text={`${
+                    now.data.bundleVersion === then.data.bundleVersion
+                      ? `Both runs used v${now.data.bundleVersion ?? "?"}.`
+                      : `The last success used v${then.data.bundleVersion ?? "?"} and this run v${now.data.bundleVersion ?? "?"}, and the code did not change between them.`
+                  } What differs is the input or the environment, not the code.`}
                   action={
                     <span className="flex flex-wrap justify-center gap-4 text-meta">
                       <Link to={`${link}/runs/${id}`}>Input of this run</Link>

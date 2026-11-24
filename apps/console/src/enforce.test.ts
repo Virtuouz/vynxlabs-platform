@@ -1,6 +1,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
 import { expect, test } from "vitest";
+import { BRITISH } from "../../../packages/docs/words.mjs";
 
 /**
  * Every list in the console is drawn by `DataTable` (08 §3.6), so a list is learned
@@ -66,10 +67,10 @@ test("nothing says Loading… in a paragraph of its own", () => {
 /**
  * Every screen's heading is `PageHeader` (08 §3.1), so a title, its state and
  * its actions sit in the same place everywhere and focus lands on it when the
- * screen opens. Sign-in and the approval link stand outside the console's shell.
+ * screen opens. Sign-in, the approval link and the password link stand outside the console's shell.
  */
 test("no screen writes its own h1", () => {
-  const outside = ["PageHeader.tsx", "SignIn.tsx", "ApproveLink.tsx"];
+  const outside = ["PageHeader.tsx", "SignIn.tsx", "ApproveLink.tsx", "ResetPassword.tsx"];
   const found: string[] = [];
   for (const path of [...files(join(here, "screens")), ...files(join(here, "kit"))]) {
     if (outside.some((name) => path.endsWith(name))) continue;
@@ -133,7 +134,7 @@ test("no type size, corner, shadow, layer or spacing step is written by hand", (
  */
 test("no Badge says a state", () => {
   const states =
-    /<Badge\b[^>]*>\s*(Active|Running|Failed|Succeeded|Paused|Revoked|Expired|Enabled|Disabled|Verified|Not verified|Draft|Deployed|On|Off|Ended|Waiting|Queued|Canceled|Reachable|Not reachable)\s*</;
+    /<Badge\b[^>]*>\s*(Active|Running|Failed|Succeeded|Paused|Revoked|Expired|Enabled|Disabled|Verified|Not verified|Draft|Deployed|On|Off|Ended|Waiting|Queued|Canceled|Reached|Not tested)\s*</;
   const found: string[] = [];
   for (const path of [
     ...files(join(here, "screens")),
@@ -625,6 +626,115 @@ test("what draws a served page takes only types from the manifest's main entry",
           .filter((one) => one !== "" && !one.startsWith("type "));
         if (values.length > 0) found.push(`${where(path)} imports ${values.join(", ")}`);
       }
+    }
+  }
+  expect(found).toEqual([]);
+});
+
+/**
+ * Every string a person reads is in American spelling (phase 29, VOC-20..33): canceled,
+ * color, gray. Stored values and code names (`cancelled` in the database and API fields,
+ * `isColour`) stay, so a string with no space in it is a value, not prose, and is left alone.
+ * A line that must keep a British spelling says why with `british-ok:` on it or the line before.
+ * The documentation's own content (`packages/docs/content`) is not read here.
+ */
+test("no string a person reads is in British spelling", () => {
+  const root = resolve(here, "../../..");
+  const dirs = [
+    "apps/console/src",
+    "apps/control-plane/src",
+    "packages/screens/src",
+    "packages/ui/src",
+    "packages/widgets-core",
+    "packages/widgets-labs",
+    "packages/widget-sdk/src",
+    "packages/cli/src",
+    "packages/app/src",
+    "packages/sdk/src",
+    "packages/worker/src",
+    "packages/manifest/src",
+    "examples/fernhill",
+  ];
+  const british = BRITISH;
+  const found: string[] = [];
+  const walk = (dir: string): string[] =>
+    readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+      if (["node_modules", "dist", "content", ".next", "build"].includes(entry.name)) return [];
+      const path = join(dir, entry.name);
+      if (entry.isDirectory()) return walk(path);
+      return /\.(tsx?|mjs)$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name) ? [path] : [];
+    });
+  for (const dir of dirs) {
+    const full = join(root, dir);
+    if (!existsSync(full)) continue;
+    for (const path of walk(full)) {
+      const lines = readFileSync(path, "utf8").split("\n");
+      lines.forEach((line, index) => {
+        if (/^\s*(\/\/|\*|\/\*)/.test(line)) return;
+        if (/british-ok:/.test(line) || /british-ok:/.test(lines[index - 1] ?? "")) return;
+        // Each quoted string, and what is inside a template's `${...}`, which is read on its own.
+        const strings: string[] = [];
+        const read = (code: string) => {
+          for (const one of code.matchAll(
+            /"((?:[^"\\]|\\.)*)"|'((?:[^'\\]|\\.)*)'|`((?:[^`\\]|\\.)*)`/g,
+          )) {
+            const text = one[1] ?? one[2] ?? one[3] ?? "";
+            for (const inner of text.matchAll(/\$\{([^}]*)\}/g)) read(inner[1] ?? "");
+            strings.push(text.replace(/\$\{[^}]*\}/g, " ").replace(/`[^`]*`/g, " "));
+          }
+        };
+        read(line);
+        // JSX text between tags.
+        for (const one of line.matchAll(/>([^<>{}]+)</g)) strings.push(one[1] ?? "");
+        for (const text of strings) {
+          // A word alone is a stored value (`cancelled`) unless it is a label, which starts in capitals.
+          if (!/\s/.test(text.trim()) && !/^[A-Z]/.test(text.trim())) continue;
+          // A word inside a code name or attribute (aria-labelledby) is not prose.
+          const hit = text.match(british);
+          if (hit && !/^(?:aria-|[a-z]+[A-Z])/.test(text.trim())) {
+            found.push(`${path.slice(root.length + 1)}:${index + 1} says "${hit[0]}"`);
+          }
+        }
+      });
+    }
+  }
+  expect(found).toEqual([]);
+});
+
+/**
+ * The word is "flow", never "workflow", in anything a person sees (vocabulary, VOC-01..16).
+ * Code names and stored values stay: the lucide `Workflow` icon is not text, and a search
+ * alias that lets an old habit find a card says so with `search-alias:` on its line.
+ */
+test("no string of the console, screens, widgets or ui says workflow", () => {
+  const root = join(here, "..", "..", "..");
+  const all = (dir: string): string[] =>
+    readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+      const path = join(dir, entry.name);
+      if (entry.isDirectory())
+        return entry.name === "node_modules" || entry.name === "dist" ? [] : all(path);
+      return /\.(ts|tsx)$/.test(entry.name) ? [path] : [];
+    });
+  const found: string[] = [];
+  for (const dir of [
+    join(here),
+    join(root, "packages", "screens", "src"),
+    join(root, "packages", "widgets-core", "src"),
+    join(root, "packages", "ui", "src"),
+  ]) {
+    for (const path of all(dir)) {
+      if (path.endsWith("enforce.test.ts")) continue;
+      readFileSync(path, "utf8")
+        .split("\n")
+        .forEach((line, index) => {
+          if (line.includes("search-alias:")) return;
+          const text = line.replace(
+            /<Workflow\b|\bicon: Workflow\b|\bWorkflow(?=[,}\s]*(,|\}|$|\s+from))|\bflow: Workflow\b|\? Workflow\b/g,
+            "",
+          );
+          if (/workflow/i.test(text))
+            found.push(`${path.slice(root.length + 1)}:${index + 1} says workflow`);
+        });
     }
   }
   expect(found).toEqual([]);

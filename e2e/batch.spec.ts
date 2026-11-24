@@ -1,4 +1,4 @@
-import { signInWithPassword } from "./sign-in.ts";
+import { signInAs } from "./as.ts";
 import { expect, type Page, test } from "./test.ts";
 import { expectNoAxeViolations } from "./visual.ts";
 
@@ -7,16 +7,24 @@ import { expectNoAxeViolations } from "./visual.ts";
  * interactions, with a result for each.
  */
 
-const ADMIN = {
-  email: process.env.E2E_ADMIN_EMAIL ?? "admin@example.com",
-  password: process.env.E2E_ADMIN_PASSWORD ?? "change-me-please",
-};
 const stamp = Date.now().toString(36);
 
 // biome-ignore lint/suspicious/noExplicitAny: answers are inspected freely
 const call = (page: Page, method: string, path: string, body?: unknown): Promise<any> =>
   page.evaluate(
     async ([method, path, body]) => {
+      // A draft save names the draft it saw: its revision now, or none when there is none.
+      if (
+        method === "PUT" &&
+        String(path).includes("/drafts/") &&
+        body &&
+        typeof body === "object" &&
+        !("revision" in body) &&
+        !("create" in body)
+      ) {
+        const seen = await fetch(`/api/v1${path}`);
+        if (seen.ok) body = { ...body, revision: (await seen.json()).revision };
+      }
       const response = await fetch(`/api/v1${path}`, {
         method: method as string,
         headers: body ? { "content-type": "application/json" } : {},
@@ -29,14 +37,14 @@ const call = (page: Page, method: string, path: string, body?: unknown): Promise
     [method, path, body] as const,
   );
 
-test("twenty-five runs are run again in three interactions, and each is accounted for", async ({
+test("twenty-five runs are run again in three interactions, and each is accounted for @operate", async ({
   browser,
 }) => {
   test.setTimeout(300_000);
   const page = await (
     await browser.newContext({ viewport: { width: 1440, height: 900 } })
   ).newPage();
-  await signInWithPassword(page, ADMIN.email, ADMIN.password);
+  await signInAs(page, "operator");
   const tenant = await call(page, "POST", "/tenants", {
     slug: `batch-${stamp}`,
     name: "Batch",

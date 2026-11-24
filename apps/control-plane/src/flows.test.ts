@@ -19,6 +19,7 @@ let otherTenant: string;
 let dev: string;
 let alice: Client;
 let bob: Client; // developer: may start flows, may not approve
+const LEAK_VALUE = "leak-7f3a9c21-private";
 let worker: Worker;
 let working: Promise<unknown>;
 let roles: Record<string, string>;
@@ -70,7 +71,9 @@ export const double = { execute: async (input, ctx) => { ctx.log.info("Doubling"
 export const risky = { execute: async (input) => { if (input.fail) throw new Error("The ERP said no"); return { ok: true }; } };
 export const slow = { execute: async (input, ctx) => { await wait(input.ms, ctx.signal); return { label: "${label}" }; } };
 export const sink = { execute: async (input) => ({ got: input }) };
+export const finished = { execute: async (input) => ({ got: input }) };
 export const publisher = { execute: async (input, ctx) => { await ctx.events.publish(input.event, input.payload); return { published: true }; } };
+export const leaky = { execute: async (input) => ({ echo: input.say }) };
 export const big = { execute: async () => ({ blob: "x".repeat(300 * 1024) }) };
 `;
 
@@ -81,21 +84,46 @@ function bundle(
   const manifests = change([
     manifest("connection", "chat", { connector: "http" }),
     manifest("event", "orders/placed", {
-      payload: object({ id: { type: "string" }, total: { type: "number" } }, ["id", "total"]),
+      payload: object(
+        {
+          id: { type: "string" },
+          total: { type: "number" },
+          card: { type: "string", "x-secret": true },
+        },
+        ["id", "total"],
+      ),
     }),
     script("double", "double", { input: object({ n: { type: "number" } }, ["n"]) }),
     script("risky", "risky"),
     script("slow", "slow"),
     script("sink", "sink"),
+    script("finished-sink", "finished"),
     script("publisher", "publisher", {
       uses: { connections: [], secrets: [], variables: [], events: ["orders/placed"] },
     }),
     script("big", "big"),
+    script("leaky", "leaky", {
+      uses: { connections: [], secrets: ["LEAK"], variables: [] },
+    }),
     manifest("trigger", "big-orders", {
       type: "event",
       script: "sink",
       event: "orders/placed",
       filter: "event.payload.total > 100.0",
+    }),
+    // Hears of every run that did not succeed, by the one event that carries how a run ended.
+    manifest("trigger", "on-not-succeeded", {
+      type: "event",
+      script: "finished-sink",
+      event: "platform/run-finished",
+      filter: "event.payload.status != 'succeeded'",
+    }),
+    // Hears of a flow run that was canceled: the same rule as for a script run.
+    manifest("trigger", "on-flow-canceled", {
+      type: "event",
+      script: "finished-sink",
+      event: "platform/flow-run-finished",
+      filter: "event.payload.status == 'cancelled'",
     }),
     manifest("trigger", "on-failure", {
       type: "event",
@@ -280,6 +308,23 @@ function bundle(
       ],
     ),
     flow(
+      "leaks",
+      {
+        start: manual,
+        show: run("leaky", "{'say': trigger.say}"),
+        gate: {
+          type: "approval",
+          title: "Look at this",
+          detail: "'Sent ' + steps.show.output.echo + ' on'",
+          surface: "tenant",
+        },
+      },
+      [
+        ["start", "show"],
+        ["show", "gate"],
+      ],
+    ),
+    flow(
       "approving",
       {
         start: manual,
@@ -407,6 +452,31 @@ function bundle(
         ["work", "after"],
       ],
     ),
+    // Two ends, each under the inline limit and together over it: this flow's own output is stored.
+    flow("wide", { start: manual, a: set({ x: "trigger.blob" }), b: set({ y: "trigger.blob" }) }, [
+      ["start", "a"],
+      ["start", "b"],
+    ]),
+    flow(
+      "wide-parent",
+      {
+        start: manual,
+        child: { type: "subflow", flow: "wide", input: "{'blob': trigger.blob}" },
+        use: run("risky", "{'fail': now < timestamp(trigger.failUntil)}"),
+        note: set({ note: "steps.child.output.note" }),
+      },
+      [
+        ["start", "child"],
+        ["child", "use"],
+        ["use", "note"],
+      ],
+    ),
+    flow("quoting", { start: manual, span: set({ span: "duration(trigger.apiKey)" }) }, [
+      ["start", "span"],
+    ]),
+    flow("cutting", { start: manual, half: set({ half: "trigger.text.substring(0, 2)" }) }, [
+      ["start", "half"],
+    ]),
     flow(
       "heavy",
       { start: manual, make: run("big"), use: set({ note: "steps.make.output.note" }) },
@@ -533,6 +603,7 @@ beforeAll(async () => {
     config: { baseUrl: `http://127.0.0.1:${(chat.address() as AddressInfo).port}/hook` },
   });
   await alice.patch(ws(), { failureAlert: { notify: "chat" } });
+  expect((await alice.put(`${ws()}/secrets/LEAK`, { value: LEAK_VALUE })).status).toBe(204);
   expect((await deploy(bundle())).status).toBe(201);
 
   const credential = await alice.post(`/tenants/${tenant}/worker-credentials`, { name: "flows" });
@@ -594,6 +665,24 @@ describe("a bundle with a broken flow is refused at upload, with the flow, node 
     ]);
   });
 
+  test("a tag that does not parse is refused, on a flow's start and on a trigger kind (FLW-27)", async () => {
+    const webhook = { type: "trigger", trigger: { type: "webhook", tags: ["trigger.((("] } };
+    expect(
+      await problems(flow("bad", { start: webhook, a: set({ x: "1" }) }, [["start", "a"]])),
+    ).toEqual([
+      expect.stringMatching(
+        /^bad \(flow\): \/body\/nodes\/start\/trigger\/tags\/0 is not a valid expression: /,
+      ),
+    ]);
+    expect(
+      await problems(
+        manifest("trigger", "bad-hook", { type: "webhook", script: "double", tags: ["a >"] }),
+      ),
+    ).toEqual([
+      expect.stringMatching(/^bad-hook \(trigger\): \/body\/tags\/0 is not a valid expression: /),
+    ]);
+  });
+
   test("expressions that do not parse, and references to things that are not there", async () => {
     expect(
       (
@@ -602,6 +691,16 @@ describe("a bundle with a broken flow is refused at upload, with the flow, node 
         )
       )[0],
     ).toMatch(/^bad \(flow\): \/body\/nodes\/a\/values\/x is not a valid expression: /);
+    // A name no expression of a flow has, such as `input` for what started it (FLW-11).
+    expect(
+      await problems(
+        flow("bad", { start: manual, a: set({ x: "input.amount" }) }, [["start", "a"]]),
+      ),
+    ).toEqual([
+      expect.stringMatching(
+        /^bad \(flow\): \/body\/nodes\/a\/values\/x is not a valid expression: .*input/,
+      ),
+    ]);
     expect(
       await problems(
         flow(
@@ -742,7 +841,8 @@ describe("running a flow", () => {
       input: { sku: "A", quantity: 0 },
     });
     expect(refused.status).toBe(400);
-    expect(refused.body.detail).toContain("/input/quantity");
+    // The words name the field; the path is in `errors`.
+    expect(refused.body.detail).toContain("quantity must be");
     expect(refused.body.errors).toEqual(
       expect.arrayContaining([expect.objectContaining({ path: "/input/quantity" })]),
     );
@@ -751,7 +851,7 @@ describe("running a flow", () => {
 
     const parent = await finished(await start("calls-typed"));
     expect(parent.status).toBe("failed");
-    expect(step(parent, "child").error.message).toContain("/input");
+    expect(step(parent, "child").error.message).toContain("It needs quantity");
   });
 
   test("a failed step takes its error path when it has one", async () => {
@@ -788,6 +888,12 @@ describe("running a flow", () => {
     const alerts = notified.slice(before).map((body) => JSON.parse(body));
     expect(alerts).toHaveLength(1);
     expect(alerts[0]).toMatchObject({ run: { id, script: "unhandled" } });
+    // The flow run says what became of the alert, as a script run does (OPS-MP10).
+    const alerted = await until(
+      () => read(id),
+      (r) => r.alert !== null && r.alert !== undefined,
+    );
+    expect(alerted.alert).toMatchObject({ alertedAt: expect.any(String) });
 
     const stopped = await finished(await start("stopping", { reason: "out of stock" }));
     expect(stopped.error.message).toBe('The step "stop" failed: Stopped: out of stock');
@@ -813,6 +919,69 @@ describe("running a flow", () => {
     expect(step(done, "make").output).toEqual({
       stored: expect.stringMatching(/^runs\/.+\/output\.json$/),
     });
+  });
+
+  test("WLK-15: an input too large to load is named when an expression reads a key of it", async () => {
+    const failed = await finished(await start("wide", { blob: "x".repeat(300 * 1024) }));
+    expect(failed.status).toBe("failed");
+    expect(failed.error.message).toContain("No such key: blob");
+    expect(failed.error.message).toContain(
+      "The input the flow was started with is too large to use in an expression",
+    );
+  });
+
+  test("a sub-flow's answer too large to hold gives the next step a note, and a retry keeps its own copy (FLW-33)", async () => {
+    const blob = "x".repeat(200 * 1024);
+    const failUntil = new Date(Date.now() + 1500).toISOString();
+    const failed = await finished(await start("wide-parent", { blob, failUntil }));
+    expect(failed.status).toBe("failed");
+    const child = await read(step(failed, "child").childFlowRunId);
+    expect(child.output).toEqual({
+      stored: expect.stringMatching(/^flow-runs\/.+\/output\.json$/),
+    });
+    // The next step's expressions see the note, as they do for a script's large output.
+    const next = await alice.post(`${ws()}/flow-runs`, {
+      flow: "wide-parent",
+      input: { blob, failUntil: new Date(0).toISOString() },
+    });
+    const done = await finished(next.body.id);
+    expect(done.output.note.note).toMatch(/too large to use in an expression/);
+
+    await new Promise((resolve) => setTimeout(resolve, 1600));
+    const retried = await alice.post(`${ws()}/flow-runs/${failed.id}/retry`, { from: "failed" });
+    expect(retried.status, JSON.stringify(retried.body)).toBe(201);
+    const again = await finished(retried.body.id);
+    // What the retry kept is stored under the retry's own name, not the run it copies.
+    expect(step(again, "child").output).toEqual({
+      stored: expect.stringContaining(`flow-runs/${retried.body.id}/`),
+    });
+  });
+
+  test("an expression's failure that quotes a secret the run was given is masked in the lists too (mask2)", async () => {
+    const id = await start("quoting", { apiKey: "k-live-98765" });
+    const done = await finished(id);
+    expect(done.status).toBe("failed");
+    const listed = (await alice.get(`${ws()}/flow-runs`)).body.items.find(
+      (one: Any) => one.id === id,
+    );
+    expect(JSON.stringify(listed)).not.toContain("k-live-98765");
+    expect(JSON.stringify(done)).not.toContain("k-live-98765");
+    const activity = (await alice.get(`${ws()}/activity?q=${id}`)).body;
+    expect(JSON.stringify(activity)).not.toContain("k-live-98765");
+  });
+
+  test("a value the database cannot hold does not leave the run going for ever (FLW-02)", async () => {
+    // The second character is an emoji: cut after two units, half of it is left.
+    const done = await finished(await start("cutting", { text: "a\u{1F600}b" }));
+    expect(done.status, JSON.stringify(done.error)).toBe("succeeded");
+    expect(done.output.half.half).toBeTypeOf("string");
+    // A NUL in what a start is given is refused, naming where, and is not a 500.
+    const refused = await alice.post(`${ws()}/flow-runs`, {
+      flow: "cutting",
+      input: { text: "a\u0000b" },
+    });
+    expect(refused.status).toBe(400);
+    expect(refused.body.detail).toContain("at text");
   });
 
   test("a sub-flow runs as a step, and a foreach can run a flow per item", async () => {
@@ -918,6 +1087,35 @@ describe("a flow chosen when the step runs", () => {
 });
 
 describe("starting one flow and no other", () => {
+  test("a screen asks what is held on one flow, and a grant on it counts (GOV-37)", async () => {
+    // The member and the binding on `linear` are made by the next test; this one makes its own.
+    const role = await alice.post(`/tenants/${tenant}/roles`, {
+      name: "flow_starter_asked",
+      description: "Starts flows it is bound to.",
+      permissions: ["flow_run:write"],
+    });
+    const member = await alice.post(`/tenants/${tenant}/members`, {
+      email: "quinn@acme.example",
+      name: "Quinn",
+      password: PASSWORD,
+    });
+    const linear = (await alice.get(`${ws()}/resources/linear`)).body;
+    await alice.post(`/tenants/${tenant}/bindings`, {
+      workspaceId: dev,
+      resourceId: linear.id,
+      principalType: "member",
+      principalId: member.body.id,
+      roleId: role.body.id,
+    });
+    const quinn = await t.signIn("quinn@acme.example", PASSWORD);
+    const asked = (query: string) =>
+      quinn.get(`${ws()}/allowed?permissions=flow_run:write${query}`);
+    expect((await asked("")).body.allowed).toEqual([]);
+    expect((await asked("&kind=flow&path=linear")).body.allowed).toEqual(["flow_run:write"]);
+    expect((await asked("&kind=flow&path=parent")).body.allowed).toEqual([]);
+    expect((await asked("&kind=flow&path=no-such-flow")).body.allowed).toEqual([]);
+  });
+
   test("someone allowed to start a single flow starts it, reads how it ended, and nothing else", async () => {
     const role = await alice.post(`/tenants/${tenant}/roles`, {
       name: "flow_starter",
@@ -965,7 +1163,137 @@ describe("starting one flow and no other", () => {
     const aliceRun = await start("linear", { n: 1 });
     expect((await petra.get(`${ws()}/flow-runs/${aliceRun}`)).status).toBe(403);
     expect((await petra.get(`${ws()}/flow-runs`)).status).toBe(403);
-    expect((await petra.post(`${ws()}/flow-runs/${started.body.id}/cancel`)).status).toBe(403);
+    // She may cancel what she may start: hers has ended, so it says so; another flow's is refused.
+    expect((await petra.post(`${ws()}/flow-runs/${started.body.id}/cancel`)).status).toBe(409);
+    const parentRun = await start("parent", { n: 1 });
+    expect((await petra.post(`${ws()}/flow-runs/${parentRun}/cancel`)).status).toBe(403);
+  });
+});
+
+describe("someone bound on one flow or one script reaches that one (phase 29, r-screens 6)", () => {
+  test("reads, starts and re-runs the flow it was given, and nothing else", async () => {
+    const role = await alice.post(`/tenants/${tenant}/roles`, {
+      name: "one_flow_operator",
+      description: "Reads, starts and re-runs the flows it is bound to.",
+      permissions: ["flow:read", "flow_run:read", "flow_run:write"],
+    });
+    const gina = await alice.post(`/tenants/${tenant}/members`, {
+      email: "gina@acme.example",
+      name: "Gina",
+      password: PASSWORD,
+    });
+    const linear = (await alice.get(`${ws()}/resources/linear`)).body;
+    await alice.post(`/tenants/${tenant}/bindings`, {
+      workspaceId: dev,
+      resourceId: linear.id,
+      principalType: "member",
+      principalId: gina.body.id,
+      roleId: role.body.id,
+    });
+    await alice.post(`/tenants/${tenant}/members`, {
+      email: "nogrant@acme.example",
+      name: "No grant",
+      password: PASSWORD,
+    });
+    const gina_ = await t.signIn("gina@acme.example", PASSWORD);
+    const nogrant = await t.signIn("nogrant@acme.example", PASSWORD);
+
+    // The flow she was given.
+    const page = await gina_.get(`${ws()}/flows/linear`);
+    expect(page.status, JSON.stringify(page.body)).toBe(200);
+    expect((await gina_.get(`${ws()}/flows/parent`)).status).toBe(403);
+
+    const started = await gina_.post(`${ws()}/flow-runs`, { flow: "linear", input: { n: 3 } });
+    expect(started.status, JSON.stringify(started.body)).toBe(201);
+    await finished(started.body.id);
+    const listed = await gina_.get(`${ws()}/flow-runs?flow=linear`);
+    expect(listed.status, JSON.stringify(listed.body)).toBe(200);
+    expect(listed.body.items.some((one: Any) => one.id === started.body.id)).toBe(true);
+    const run = await gina_.get(`${ws()}/flow-runs/${started.body.id}`);
+    expect(run.status).toBe(200);
+    expect(run.body.steps.length).toBeGreaterThan(0);
+    expect((await gina_.get(`${ws()}/flow-runs/${started.body.id}/definition`)).status).toBe(200);
+    expect((await gina_.get(`${ws()}/flow-runs/${started.body.id}/retry-plan`)).status).toBe(200);
+    const again = await gina_.post(`${ws()}/flow-runs/${started.body.id}/retry`, {
+      from: "start",
+    });
+    expect(again.status, JSON.stringify(again.body)).toBe(201);
+    await finished(again.body.id);
+
+    // Another flow, its runs, and a list of every run are not hers.
+    const others = await start("parent", { n: 1 });
+    await finished(others);
+    expect((await gina_.get(`${ws()}/flow-runs?flow=parent`)).status).toBe(403);
+    expect((await gina_.get(`${ws()}/flow-runs`)).status).toBe(403);
+    expect((await gina_.get(`${ws()}/flow-runs/${others}`)).status).toBe(403);
+    expect((await gina_.get(`${ws()}/flow-runs/${others}/definition`)).status).toBe(403);
+    expect((await gina_.get(`${ws()}/flow-runs/${others}/retry-plan`)).status).toBe(403);
+    expect((await gina_.post(`${ws()}/flow-runs/${others}/retry`, { from: "start" })).status).toBe(
+      403,
+    );
+    expect((await gina_.post(`${ws()}/flow-runs/${others}/cancel`)).status).toBe(403);
+    expect(
+      (await gina_.post(`${ws()}/flow-runs`, { flow: "parent", input: { n: 1 } })).status,
+    ).toBe(403);
+    // Writes she was not given: the flow's drawing, a script.
+    expect((await gina_.put(`${ws()}/flow-layouts/linear`, { positions: {} })).status).toBe(403);
+    expect((await gina_.get(`${ws()}/runs`)).status).toBe(403);
+
+    // Someone with no grant is refused all of it.
+    for (const path of [
+      `/flows/linear`,
+      `/flow-runs?flow=linear`,
+      `/flow-runs/${started.body.id}`,
+      `/flow-runs/${started.body.id}/definition`,
+      `/flow-runs/${started.body.id}/retry-plan`,
+    ]) {
+      expect((await nogrant.get(`${ws()}${path}`)).status, path).toBeGreaterThanOrEqual(403);
+    }
+    expect(
+      (await nogrant.post(`${ws()}/flow-runs/${started.body.id}/retry`, { from: "start" })).status,
+    ).toBeGreaterThanOrEqual(403);
+    expect(
+      (await nogrant.post(`${ws()}/flow-runs`, { flow: "linear", input: {} })).status,
+    ).toBeGreaterThanOrEqual(403);
+  });
+
+  test("reads, runs and re-runs the script it was given, and no other", async () => {
+    const role = await alice.post(`/tenants/${tenant}/roles`, {
+      name: "one_script_operator",
+      description: "Reads and runs the scripts it is bound to.",
+      permissions: ["run:read", "run:write"],
+    });
+    const sam = await alice.post(`/tenants/${tenant}/members`, {
+      email: "scripty@acme.example",
+      name: "Scripty",
+      password: PASSWORD,
+    });
+    const double = (await alice.get(`${ws()}/resources/double`)).body;
+    await alice.post(`/tenants/${tenant}/bindings`, {
+      workspaceId: dev,
+      resourceId: double.id,
+      principalType: "member",
+      principalId: sam.body.id,
+      roleId: role.body.id,
+    });
+    const scripty = await t.signIn("scripty@acme.example", PASSWORD);
+    const mine = await scripty.post(`${ws()}/runs`, { script: "double", input: { n: 2 } });
+    expect(mine.status, JSON.stringify(mine.body)).toBe(201);
+    const theirs = await alice.post(`${ws()}/runs`, { script: "sink", input: {} });
+    expect(theirs.status, JSON.stringify(theirs.body)).toBe(201);
+    const listed = await scripty.get(`${ws()}/runs?script=double`);
+    expect(listed.status, JSON.stringify(listed.body)).toBe(200);
+    expect((await scripty.get(`${ws()}/runs?script=sink`)).status).toBe(403);
+    expect((await scripty.get(`${ws()}/runs`)).status).toBe(403);
+    // Someone else's run of the script she was given, and of one she was not.
+    const aliceDouble = await alice.post(`${ws()}/runs`, { script: "double", input: { n: 5 } });
+    expect((await scripty.get(`${ws()}/runs/${aliceDouble.body.id}`)).status).toBe(200);
+    expect((await scripty.get(`${ws()}/runs/${aliceDouble.body.id}/logs`)).status).toBe(200);
+    expect((await scripty.get(`${ws()}/runs/${theirs.body.id}`)).status).toBe(403);
+    expect((await scripty.get(`${ws()}/runs/${theirs.body.id}/logs`)).status).toBe(403);
+    expect((await scripty.post(`${ws()}/runs/${theirs.body.id}/cancel`)).status).toBe(403);
+    expect((await scripty.post(`${ws()}/runs/${theirs.body.id}/rerun`, {})).status).toBe(403);
+    expect((await scripty.post(`${ws()}/runs/${aliceDouble.body.id}/rerun`, {})).status).toBe(201);
   });
 });
 
@@ -980,6 +1308,11 @@ describe("waiting", () => {
     // It is not "running" to a person: it waits for its time.
     expect(paused.state).toBe("waiting_time");
     expect(step(paused, "pause").state).toBe("waiting_time");
+    // The list counts the runs that wait for a person: a delay waits for its time (FLW-13).
+    const listed = (await alice.get(`${ws()}/flows`)).body.items.find(
+      (one: { path: string }) => one.path === "waiting",
+    );
+    expect(listed.runs.waiting).toBe(0);
     expect(Date.parse(step(paused, "pause").wakeAt)).toBeGreaterThan(Date.now() + 3000_000);
     // Whatever else is due on the instance, this flow is not: it stays where it is.
     await advanceDueFlows(t.kernel);
@@ -1003,6 +1336,10 @@ describe("waiting", () => {
     );
     // Every list says the same: it waits for a person.
     expect(waiting).toMatchObject({ status: "running", state: "waiting_approval" });
+    const counted = (await alice.get(`${ws()}/flows`)).body.items.find(
+      (one: { path: string }) => one.path === "approving",
+    );
+    expect(counted.runs.waiting).toBeGreaterThanOrEqual(1);
     expect(step(waiting, "gate").state).toBe("waiting_approval");
     const listed = (await alice.get(`${ws()}/activity?state=waiting_approval`)).body;
     expect(listed.items.map((one: { id: string; state: string }) => [one.id, one.state])).toEqual([
@@ -1124,6 +1461,28 @@ describe("waiting", () => {
     );
   });
 
+  test("a canceled flow run is heard of by platform/flow-run-finished, as a canceled script run is", async () => {
+    const id = await start("slow-flow", { ms: 20_000 });
+    await until(
+      () => read(id),
+      (r) => step(r, "work")?.runId != null,
+    );
+    expect((await alice.post(`${ws()}/flow-runs/${id}/cancel`)).body.status).toBe("cancelled");
+    const heard = await until(
+      async () => {
+        const items = (await alice.get(`${ws()}/runs?script=finished-sink&limit=100`)).body
+          .items as Any[];
+        for (const candidate of items.filter((r) => r.status === "succeeded")) {
+          const found = (await alice.get(`${ws()}/runs/${candidate.id}`)).body;
+          if (found.input.flowRunId === id) return found;
+        }
+        return undefined;
+      },
+      (found) => found !== undefined,
+    );
+    expect(heard.input).toMatchObject({ flowRunId: id, flow: "slow-flow", status: "cancelled" });
+  });
+
   test("a flow run can be canceled, and its running step is canceled with it", async () => {
     const id = await start("slow-flow", { ms: 20_000 });
     const running = await until(
@@ -1219,7 +1578,10 @@ describe("retrying a flow run", () => {
       () => read(id),
       (r) => step(r, "gate")?.status === "waiting",
     );
-    await alice.post(`${ws()}/flow-runs/${id}/approvals/gate`, { decision: "reject" });
+    await alice.post(`${ws()}/flow-runs/${id}/approvals/gate`, {
+      decision: "reject",
+      comment: "Not this one",
+    });
     expect((await finished(id)).state).toBe("failed");
     const started = await retry(id, { from: "failed" });
     const asked = await until(
@@ -1407,6 +1769,55 @@ describe("events and triggers", () => {
     expect(listed[0].source).toMatchObject({ type: "api" });
   });
 
+  test("an event is listed as the run it started shows it: masked by key name", async () => {
+    const sent = await alice.post(`${ws()}/events`, {
+      name: "orders/placed",
+      payload: { id: "o-3", total: 5, apiKey: "k-live-98765", password: "hunter22" },
+    });
+    expect(sent.status, JSON.stringify(sent.body)).toBe(201);
+    const listed = (await alice.get(`${ws()}/events?id=${sent.body.id}`)).body.items;
+    expect(JSON.stringify(listed)).not.toContain("k-live-98765");
+    expect(listed[0].payload).toEqual({
+      id: "o-3",
+      total: 5,
+      apiKey: "[redacted]",
+      password: "[redacted]",
+    });
+  });
+
+  test("the flow run an event started shows its input and trigger masked by the event's schema", async () => {
+    const sent = await alice.post(`${ws()}/events`, {
+      name: "orders/placed",
+      payload: { id: "o-4", total: 5, card: "4111-2468-0000" },
+    });
+    const runs = await until(
+      async () =>
+        (await alice.get(`${ws()}/flow-runs?flow=many-triggers&limit=50`)).body.items.filter(
+          (r: Any) => r.trigger.eventId === sent.body.id,
+        ),
+      (items) => items.length === 1,
+    );
+    const run = (await alice.get(`${ws()}/flow-runs/${runs[0].id}`)).body;
+    expect(JSON.stringify(run)).not.toContain("4111-2468-0000");
+    expect(run.input.card).toBe("[redacted]");
+  });
+
+  test("the flow run page and the approval queue hold what a step was served, wherever it turns up", async () => {
+    const id = await start("leaks", { say: LEAK_VALUE });
+    const waiting = await until(
+      async () => (await alice.get(`${ws()}/approvals`)).body.items,
+      (items) => items.some((one: Any) => one.flowRunId === id),
+    );
+    const page = await read(id);
+    const queue = (await alice.get(`/tenants/${tenant}/approvals`)).body;
+    const everything = JSON.stringify([page, waiting, queue]);
+    await alice.post(`${ws()}/flow-runs/${id}/cancel`, {});
+    expect(everything).not.toContain(LEAK_VALUE);
+    expect(step(page, "show").output.echo).toBe("[redacted]");
+    expect(step(page, "show").input.say).toBe("[redacted]");
+    expect(waiting.find((one: Any) => one.flowRunId === id).detail).toBe("Sent [redacted] on");
+  });
+
   test("a payload that breaks the schema, an unknown event and a platform name are refused", async () => {
     const wrong = await alice.post(`${ws()}/events`, {
       name: "orders/placed",
@@ -1510,6 +1921,39 @@ describe("events and triggers", () => {
     expect(detail.trigger).toMatchObject({ type: "event", event: "platform/run-failed" });
     // Nothing listens for runs that succeed, so no such event is stored.
     expect((await alice.get(`${ws()}/events?name=platform/run-succeeded`)).body.items).toEqual([]);
+  });
+
+  test("one event says how any run ended, a canceled one too, and the two older events stay", async () => {
+    const heardOf = async (runId: string) =>
+      until(
+        async () => {
+          const heard = (
+            await alice.get(`${ws()}/runs?script=finished-sink&limit=100`)
+          ).body.items.filter((r: Any) => r.status === "succeeded");
+          for (const candidate of heard) {
+            const found = (await alice.get(`${ws()}/runs/${candidate.id}`)).body;
+            if (found.input.runId === runId) return found;
+          }
+          return undefined;
+        },
+        (found) => found !== undefined,
+      );
+    const failing = (await alice.post(`${ws()}/runs`, { script: "risky", input: { fail: true } }))
+      .body.id;
+    expect((await heardOf(failing))?.input).toMatchObject({
+      runId: failing,
+      script: "risky",
+      status: "failed",
+      error: "The ERP said no",
+    });
+    const slow = (await alice.post(`${ws()}/runs`, { script: "slow", input: { ms: 1500 } })).body
+      .id;
+    expect((await alice.post(`${ws()}/runs/${slow}/cancel`)).body.status).toBe("cancelled");
+    expect((await heardOf(slow))?.input).toMatchObject({
+      runId: slow,
+      script: "slow",
+      status: "cancelled",
+    });
   });
 });
 
@@ -1689,7 +2133,7 @@ describe("schedules that start flows", () => {
     expect(scheduled).toMatchObject({
       status: "succeeded",
       triggerNode: "start",
-      trigger: { type: "schedule", schedule: "typed-hourly" },
+      trigger: { type: "schedule", trigger: "typed-hourly" },
     });
 
     // Fire now: one run, said to be by hand, and the next time stays where it was.

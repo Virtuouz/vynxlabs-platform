@@ -1,8 +1,12 @@
 import { type ChildProcess, spawn } from "node:child_process";
+import { chown, mkdir, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import {
+  canSignalOtherUsers,
   formatMachine,
   type MachineProbe,
   type MachineShare,
@@ -28,8 +32,23 @@ export interface WorkerHostOptions {
   url: string;
   /** WORKER_HOST_TOKEN. */
   token: string;
-  /** The user workers run as. Never the host's own. */
-  user: { uid: number; gid: number };
+  /**
+   * The users workers run as. Never the host's own. Each worker has a user of its own from
+   * `count` ids starting at `uid` and `gid` (default: as many as workers may be alive), so
+   * that one tenant's script cannot read or change another tenant's worker, its files or
+   * its environment. The host's firewall rules name the same range.
+   */
+  user: { uid: number; gid: number; count?: number };
+  /** Where each worker's private directory is made. Default: the system's temporary directory. */
+  scratchRoot?: string;
+  /** Starts a worker. Replaced in tests, which cannot switch users. */
+  spawn?: typeof spawn;
+  /** How long to wait after a worker could not be started, before asking for the next lease. */
+  startFailurePauseMs?: number;
+  /** How long to wait before asking again when the control plane has no worker host route. Default 30 s. */
+  routeOffPauseMs?: number;
+  /** Touched each time the control plane answers a request for work: what the container's health check reads. */
+  heartbeatFile?: string;
   /** Workers alive at once. Default: twice the machine's run slots, as each costs memory too. */
   maxWorkers?: number;
   /** Scripts running at once on this machine, across all its workers. Default: from its memory. */
@@ -61,16 +80,23 @@ const ENDED_TRIES = 5;
 /** The host refused the token. There is no point in going on. */
 export class HostTokenRefused extends Error {}
 
+/** The control plane has no worker host route: its MANAGED_WORKERS is not `host`. */
+export class HostRouteOff extends Error {}
+
 export class WorkerHost {
   readonly #options: WorkerHostOptions;
   readonly #url: string;
   readonly #log: WorkerLog;
   readonly #bin: string;
   readonly #workers = new Map<string, ChildProcess>();
+  /** The pause while the control plane has no worker host route, cut short when the host stops. */
+  #resting: AbortController | undefined;
   readonly #probe: MachineProbe;
   readonly #guard: MemoryGuard;
   /** What this machine's workers share. */
   readonly machine: MachineShare;
+  /** The user slot each live lease holds, so that two never share one. */
+  readonly #slots = new Map<string, number>();
   #stopping = false;
   #asking: AbortController | undefined;
 
@@ -102,9 +128,28 @@ export class WorkerHost {
 
   /** Asks for leases and starts workers until stopped, or until the token is refused. */
   async run(): Promise<"stopped" | "refused"> {
-    const max = this.#options.maxWorkers ?? this.machine.slots * 2;
+    const wanted = this.#options.maxWorkers ?? this.machine.slots * 2;
+    const max = Math.min(wanted, this.#options.user.count ?? wanted);
+    if (max < wanted) {
+      this.#log(
+        "warn",
+        "fewer workers than the machine could run: the range of users is the limit",
+        {
+          wanted,
+          users: max,
+        },
+      );
+    }
     this.#log("info", "this machine's share", { ...this.machine, maxWorkers: max });
+    if (!canSignalOtherUsers()) {
+      this.#log(
+        "warn",
+        "this process may not send signals to workers of other users: it cannot stop them, " +
+          "drain them or end a script when memory runs short. Give its container CAP_KILL.",
+      );
+    }
     this.#guard.start();
+    let routeOffSaid = false;
     while (!this.#stopping) {
       if (this.#workers.size >= max || this.#shortOfMemory()) {
         await sleep(1000);
@@ -112,7 +157,11 @@ export class WorkerHost {
       }
       try {
         const lease = await this.#lease();
-        if (lease) this.#start(lease);
+        routeOffSaid = false;
+        if (lease && !(await this.#start(lease))) {
+          // A start that fails would fail again at once: ask again after a pause, not in a loop.
+          await sleep(this.#options.startFailurePauseMs ?? 5000);
+        }
       } catch (error) {
         if (error instanceof HostTokenRefused) {
           this.#log("error", "The control plane refused the worker host token.");
@@ -121,6 +170,23 @@ export class WorkerHost {
           return "refused";
         }
         if (this.#stopping) break;
+        if (error instanceof HostRouteOff) {
+          // Said once, not at every try: it is a setting, not a fault that comes and goes.
+          if (!routeOffSaid) {
+            routeOffSaid = true;
+            this.#log(
+              "warn",
+              "The control plane's MANAGED_WORKERS is not set to host, so it starts no workers through this host. Set MANAGED_WORKERS=host there, or stop this host. Asking again every 30 seconds.",
+            );
+          }
+          this.#resting = new AbortController();
+          await sleep(this.#options.routeOffPauseMs ?? 30_000, undefined, {
+            signal: this.#resting.signal,
+          }).catch(() => {});
+          this.#resting = undefined;
+          continue;
+        }
+        routeOffSaid = false;
         this.#log("warn", "The control plane could not be reached. Trying again.", {
           error: (error as Error).message,
         });
@@ -131,20 +197,36 @@ export class WorkerHost {
   }
 
   /** Stops asking, and asks each worker to finish what it is doing and exit. */
-  async stop(graceSeconds = 30): Promise<void> {
+  async stop(graceSeconds = 30, giveUpSeconds = 10): Promise<void> {
     this.#stopping = true;
     this.#asking?.abort();
+    this.#resting?.abort();
     this.#guard.stop();
     await Promise.all(
-      [...this.#workers.values()].map(
-        (child) =>
+      [...this.#workers.entries()].map(
+        ([leaseId, child]) =>
           new Promise<void>((resolve) => {
             if (child.exitCode !== null || child.signalCode !== null) return resolve();
-            const force = setTimeout(() => child.kill("SIGKILL"), graceSeconds * 1000);
-            child.once("exit", () => {
-              clearTimeout(force);
+            const timers: NodeJS.Timeout[] = [];
+            const done = () => {
+              for (const timer of timers) clearTimeout(timer);
               resolve();
-            });
+            };
+            child.once("exit", done);
+            timers.push(setTimeout(() => child.kill("SIGKILL"), graceSeconds * 1000));
+            // A worker that cannot be signalled is left, and said: its lease stays held.
+            timers.push(
+              setTimeout(
+                () => {
+                  this.#log("error", "a worker could not be stopped and is left running", {
+                    leaseId,
+                    pid: child.pid,
+                  });
+                  done();
+                },
+                (graceSeconds + giveUpSeconds) * 1000,
+              ),
+            );
             child.kill("SIGTERM");
           }),
       ),
@@ -162,6 +244,7 @@ export class WorkerHost {
       ...(signal ? { signal } : {}),
     });
     if (response.status === 401) throw new HostTokenRefused();
+    if (response.status === 404) throw new HostRouteOff();
     if (!response.ok) {
       throw new Error(`POST ${path} answered ${response.status}: ${await response.text()}`);
     }
@@ -176,7 +259,11 @@ export class WorkerHost {
         { waitSeconds: this.#options.leaseWaitSeconds ?? 20 },
         this.#asking.signal,
       );
-      return ((await response.json()) as { lease: Lease | null }).lease;
+      const lease = ((await response.json()) as { lease: Lease | null }).lease;
+      // The control plane answered: the host is well, whether or not there is work.
+      const beat = this.#options.heartbeatFile ?? join(tmpdir(), "volvel-host-alive");
+      await writeFile(beat, `${new Date().toISOString()}\n`).catch(() => {});
+      return lease;
     } catch (error) {
       if (this.#stopping) return null;
       throw error;
@@ -185,25 +272,73 @@ export class WorkerHost {
     }
   }
 
-  #start(lease: Lease) {
+  /** The lowest user slot no live lease holds. */
+  #freeSlot(): number {
+    const taken = new Set(this.#slots.values());
+    let slot = 0;
+    while (taken.has(slot)) slot += 1;
+    return slot;
+  }
+
+  /** Whether the worker was started. A lease that could not be served is ended at once. */
+  async #start(lease: Lease): Promise<boolean> {
     const env: Record<string, string> = {};
     for (const name of PASSED_THROUGH) {
       const value = process.env[name];
       if (value !== undefined) env[name] = value;
     }
-    const { uid, gid } = this.#options.user;
-    const child = spawn(process.execPath, [this.#bin, "--token-stdin"], {
-      env: {
-        ...env,
-        HOME: "/tmp",
-        VOLVEL_URL: this.#url,
-        VOLVEL_WORKER_IDLE_EXIT: String(lease.idleExitSeconds),
-        VOLVEL_WORKER_MACHINE: formatMachine(this.machine),
-      },
-      stdio: ["pipe", "pipe", "pipe"],
-      uid,
-      gid,
-    });
+    const slot = this.#freeSlot();
+    this.#slots.set(lease.id, slot);
+    const uid = this.#options.user.uid + slot;
+    const gid = this.#options.user.gid + slot;
+    // The worker's own directory: its home, its temporary files and the bundle it keeps.
+    // Nobody else's user can open it, and it is gone with the worker.
+    const home = join(this.#options.scratchRoot ?? tmpdir(), `volvel-lease-${lease.id}`);
+    try {
+      await rm(home, { recursive: true, force: true });
+      await mkdir(home, { mode: 0o700 });
+      if (process.getuid?.() === 0) await chown(home, uid, gid);
+    } catch (error) {
+      this.#slots.delete(lease.id);
+      this.#log("error", "a worker's directory could not be made", {
+        tenantId: lease.tenantId,
+        error: (error as Error).message,
+      });
+      void this.#ended(lease);
+      return false;
+    }
+    let child: ChildProcess;
+    try {
+      child = (this.#options.spawn ?? spawn)(process.execPath, [this.#bin, "--token-stdin"], {
+        env: {
+          ...env,
+          HOME: home,
+          TMPDIR: home,
+          VOLVEL_URL: this.#url,
+          VOLVEL_WORKER_IDLE_EXIT: String(lease.idleExitSeconds),
+          VOLVEL_WORKER_MACHINE: formatMachine(this.machine),
+        },
+        stdio: ["pipe", "pipe", "pipe"],
+        cwd: home,
+        uid,
+        gid,
+      });
+    } catch (error) {
+      // Node throws at once when it may not switch to the worker's user: this is not an
+      // unreachable control plane, and the lease is over.
+      this.#slots.delete(lease.id);
+      const root = process.getuid?.() === 0;
+      this.#log("error", "a worker could not be started", {
+        tenantId: lease.tenantId,
+        error: (error as Error).message,
+        hint: root
+          ? "the process needs CAP_SETUID and CAP_SETGID to start a worker as another user"
+          : "the process is not root: run the worker host as root, with CAP_SETUID and CAP_SETGID",
+      });
+      void rm(home, { recursive: true, force: true }).catch(() => {});
+      void this.#ended(lease);
+      return false;
+    }
     // Handed over once, on a pipe, and kept out of the worker's environment and command line.
     child.stdin?.end(`${lease.token}\n`);
     this.#workers.set(lease.id, child);
@@ -219,17 +354,33 @@ export class WorkerHost {
       if (ended) return;
       ended = true;
       this.#workers.delete(lease.id);
+      this.#slots.delete(lease.id);
       this.#log("info", "a worker exited", { tenantId: lease.tenantId, code });
+      void rm(home, { recursive: true, force: true }).catch(() => {});
       void this.#ended(lease);
     };
     child.once("exit", end);
-    child.once("error", (error) => {
+    let spawned = false;
+    child.once("spawn", () => {
+      spawned = true;
+    });
+    // Node reports a signal that was refused here too, as it reports a worker that could not start.
+    // A refused signal leaves the worker running and its lease held: it is not an exit.
+    child.on("error", (error) => {
+      if (spawned) {
+        this.#log("error", "a signal to a worker was refused: the worker is still running", {
+          tenantId: lease.tenantId,
+          error: error.message,
+        });
+        return;
+      }
       this.#log("error", "a worker could not be started", {
         tenantId: lease.tenantId,
         error: error.message,
       });
       end(null);
     });
+    return true;
   }
 
   /** Says the lease is over, so its credential is revoked now rather than when it expires. */

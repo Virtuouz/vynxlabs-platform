@@ -1,4 +1,10 @@
 import {
+  checkFlow,
+  FORM_RESERVED_NAMES,
+  type FlowBody as ManifestFlow,
+  RESPONSE_HEADERS_REFUSED,
+} from "@volvel/manifest";
+import {
   Appear,
   Button,
   CheckboxField,
@@ -30,10 +36,13 @@ import {
   type ReactFlowInstance,
   useEdgesState,
   useNodesState,
+  useUpdateNodeInternals,
   type Viewport,
 } from "@xyflow/react";
 import { ago } from "../kit/format.ts";
+import { useGroupKeys } from "../kit/inspector/groupChoices.tsx";
 import { glide } from "../kit/motion.ts";
+import { listenChoices } from "../kit/platformEvents.ts";
 import "@xyflow/react/dist/style.css";
 import { Play, Plus, Redo2, TriangleAlert, Undo2 } from "lucide-react";
 import {
@@ -48,20 +57,41 @@ import {
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, failureText, notify, takenText } from "../ask.tsx";
 import { autoLayout, describe, type GraphEdge, type GraphNode } from "../FlowGraph.tsx";
-import { type Clip, type ClipStep, copySteps, pasteSteps, readClip } from "../flowClipboard.ts";
+import {
+  type Clip,
+  type ClipStep,
+  copySteps,
+  pasteSteps,
+  readClipReport,
+} from "../flowClipboard.ts";
 import { renameInNode } from "../flowRename.ts";
 import { DeployMenu } from "../kit/DeployMenu.tsx";
+import { DraftClash } from "../kit/DraftClash.tsx";
+import { putDraft } from "../kit/draftApi.ts";
 import { useDraftSave } from "../kit/draftSave.ts";
 import { useHistory } from "../kit/history.ts";
 import { formatCombo, isTyping, keysOf, useShortcut } from "../kit/keys.ts";
 import { Loading } from "../kit/LoadState.tsx";
 import { PageHeader } from "../kit/PageHeader.tsx";
 import { RemoveDraftButton } from "../kit/RemoveDraftButton.tsx";
+import { inWords } from "../kit/refusalWords.ts";
 import { retryAfter } from "../kit/retry.ts";
 import { SplitPane } from "../kit/SplitPane.tsx";
-import { type RunState, STATE_STROKE, StatePill, stateLabel, Tag } from "../kit/status.tsx";
+import { type RunState, STATE_STROKE, StatePill, Tag } from "../kit/status.tsx";
 import { navigate, useNavigationGuard, useUrlParam } from "../router.tsx";
+import { outlineIcon } from "./builder/widgetIcons.ts";
 import { ExpressionField, ExpressionPreview } from "./ExpressionField.tsx";
+import {
+  ApproversFields,
+  DurationField,
+  EventStartFields,
+  GrantsFields,
+  InputSchemaField,
+  MAX_TAGS,
+  type StartSettings,
+  switchStart,
+  TagsField,
+} from "./FlowStepFields.tsx";
 import {
   FormDesigner,
   missingInputs,
@@ -70,6 +100,7 @@ import {
   type PickableNode,
   type Picked,
   RespondSettings,
+  updateGrants,
   WebhookSettings,
 } from "./FlowSteps.tsx";
 import { useFlowRunLive } from "./Flows.tsx";
@@ -87,6 +118,12 @@ interface FlowBody {
   layout?: Record<string, { x: number; y: number }>;
 }
 type CanvasNode = Node<{ id: string; node: FlowNode }>;
+
+/** A step's icon in the palette, from the kit's set; a name the set lacks is a puzzle piece. */
+function PaletteIcon({ name }: { name: string }) {
+  const Icon = outlineIcon(name);
+  return <Icon size={14} aria-hidden className="shrink-0 text-ink-muted" />;
+}
 
 const OTHERWISE = "otherwise";
 const NODE_ID = /^[a-z][a-z0-9_]*$/;
@@ -131,7 +168,7 @@ const PALETTE: {
   {
     group: "Starts",
     label: "On a form",
-    hint: "When someone fills in a page the platform serves.",
+    hint: "When someone fills in a page Volvel serves.",
     base: "form",
     make: () => ({ type: "trigger", trigger: newForm() }),
   },
@@ -175,7 +212,7 @@ const PALETTE: {
     label: "For each",
     hint: "Runs a script or flow per item.",
     base: "each",
-    make: () => ({ type: "foreach", items: "trigger.items", script: "" }),
+    make: () => ({ type: "foreach", items: "trigger.items" }),
   },
   {
     group: "Logic",
@@ -207,22 +244,58 @@ const PALETTE: {
   },
 ];
 
+/** The name a script's step starts with: its last word, in what a step's name may hold. */
+export function stepNameFor(path: string): string {
+  const name = (path.split("/").at(-1) ?? "").toLowerCase().replace(/[^a-z0-9_]/g, "_");
+  return /^[a-z]/.test(name) ? name.slice(0, 55) : `step_${name}`.slice(0, 55);
+}
+
+/** What the flow kind's schema allows in a step's text. */
+const MAX_EXPRESSION = 2000; // said as "2,000" in the problem below
+const MAX_APPROVAL_TITLE = 200;
+const MAX_CASES = 20;
+export const MAX_DESCRIPTION = 500;
+
+/** The most items a For each runs at once. */
+const MAX_AT_ONCE = 20;
+
+/**
+ * What a script step becomes when it runs another script: the fields the new script
+ * has keep what was written, and what the old script's picks handed over is taken back
+ * while the new script's picks hand over theirs. A grant written by hand stays.
+ */
+export function changedScript(
+  node: FlowNode,
+  script: string,
+  specs: ReadonlyMap<string, PickableNode>,
+): Partial<FlowNode> {
+  const before = specs.get(String(node.script));
+  const after = specs.get(script);
+  const inputs = node.inputs as Record<string, string> | undefined;
+  if (node.input !== undefined || !inputs) return { script };
+  const known = after ? Object.keys(after.input.properties ?? {}) : undefined;
+  const kept = Object.fromEntries(
+    Object.entries(inputs).filter(([name]) => known === undefined || known.includes(name)),
+  );
+  let grants = node.with;
+  if (before) grants = updateGrants(before, grants, inputs, {});
+  if (after) grants = updateGrants(after, grants, {}, kept);
+  return { script, inputs: kept, with: grants };
+}
+
 /** The handles a node offers for edges leaving it: one per case of a branch, and the error path. */
 function outputs(node: FlowNode): { id: string; label: string }[] {
   if (node.type === "branch") {
     const cases = (node.cases as { name: string }[] | undefined) ?? [];
+    // A condition that cannot be worked out fails the step, so a branch has an error path too.
     return [
       ...cases.map((one) => ({ id: `case:${one.name}`, label: one.name })),
       { id: `case:${OTHERWISE}`, label: OTHERWISE },
+      { id: "error", label: "on error" },
     ];
   }
   if (node.type === "fail") return [];
-  if (
-    node.type === "trigger" ||
-    node.type === "join" ||
-    node.type === "set" ||
-    node.type === "delay"
-  ) {
+  if (node.type === "trigger" || node.type === "join" || node.type === "delay") {
     return [{ id: "next", label: "" }];
   }
   return [
@@ -241,8 +314,17 @@ export const NodeRuns = createContext<ReadonlyMap<string, { state: RunState; too
 function FlowNodeCard({ data, selected }: NodeProps<CanvasNode>) {
   const { id, node } = data;
   const out = outputs(node);
+  const sides = out.filter((one) => one.id !== "error");
   const named = useContext(NodeNames).get(String(node.script ?? ""));
   const ran = useContext(NodeRuns).get(id);
+  // React Flow measures a node's handles once. A case renamed makes new handle ids, and an edge
+  // to a handle it has not measured is not drawn until a reload.
+  const updateInternals = useUpdateNodeInternals();
+  const handleIds = out.map((handle) => handle.id).join("\u0000");
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the ids are the trigger
+  useEffect(() => {
+    updateInternals(id);
+  }, [id, handleIds, updateInternals]);
   return (
     <div
       className={`w-52 rounded-control border bg-surface px-3 py-2 [.dragging_&]:shadow-drag ${
@@ -261,7 +343,7 @@ function FlowNodeCard({ data, selected }: NodeProps<CanvasNode>) {
           <StatePill state={ran.state} detail={ran.took} />
         </div>
       ) : null}
-      {out.map((handle, index) => (
+      {out.map((handle) => (
         <Handle
           key={handle.id}
           id={handle.id}
@@ -270,8 +352,8 @@ function FlowNodeCard({ data, selected }: NodeProps<CanvasNode>) {
           style={
             handle.id === "error"
               ? { background: "var(--vx-danger)" }
-              : out.filter((one) => one.id !== "error").length > 1
-                ? { top: `${((index + 1) / (out.length + 1)) * 100}%` }
+              : sides.length > 1
+                ? { top: `${((sides.indexOf(handle) + 1) / (sides.length + 1)) * 100}%` }
                 : {}
           }
           title={handle.label || "next"}
@@ -281,7 +363,8 @@ function FlowNodeCard({ data, selected }: NodeProps<CanvasNode>) {
   );
 }
 const nodeTypes = { flow: FlowNodeCard };
-const FIT = { maxZoom: 1, padding: 0.25 };
+/** The whole flow in view, but never smaller than text can be read at: a long flow is panned, not shrunk. */
+export const FIT = { maxZoom: 1, minZoom: 0.7, padding: 0.25 };
 /** "1 step", "3 steps". */
 const plural = (count: number) => `${count} step${count === 1 ? "" : "s"}`;
 
@@ -345,6 +428,8 @@ export function insertAfter(
   edges: Edge[],
   after: string | undefined,
   id: string,
+  /** The new step, which says where a connection onward leaves it. */
+  made?: FlowNode,
 ): { position: { x: number; y: number }; edges: Edge[] } {
   const from = nodes.find((node) => node.id === after);
   const last = nodes.reduce<(typeof nodes)[number] | undefined>(
@@ -365,16 +450,54 @@ export function insertAfter(
   if (!from) return { position, edges };
   const onward = (edge: Edge) =>
     edge.source === from.id && (edge.sourceHandle ?? "next") === "next";
+  // Where the new step goes on: its "next", the first case of a branch, or nowhere (a fail step).
+  const leaves = made ? outputs(made).find((output) => output.id !== "error")?.id : "next";
+  const handed = (edge: Edge): Edge[] => {
+    if (!onward(edge)) return [edge];
+    if (!leaves) return [];
+    const label = leaves.startsWith("case:") ? { label: leaves.slice(5) } : {};
+    return [{ ...edge, id: `${id}->${edge.target}`, source: id, sourceHandle: leaves, ...label }];
+  };
   return {
     position,
     edges: [
-      ...edges.map((edge) =>
-        onward(edge) ? { ...edge, id: `${id}->${edge.target}`, source: id } : edge,
-      ),
+      ...edges.flatMap(handed),
       { id: `${from.id}->${id}`, source: from.id, target: id, sourceHandle: "next" },
     ],
   };
 }
+
+/**
+ * The edges that still lead somewhere after a branch's cases changed: a case that
+ * was renamed keeps its connection under the new name, and a case that is gone
+ * takes its connection with it.
+ */
+export function followCases(
+  edges: Edge[],
+  branch: string,
+  cases: { name: string }[],
+  renamed?: { from: string; to: string },
+): Edge[] {
+  const named = new Set([...cases.map((one) => one.name), OTHERWISE]);
+  return edges.flatMap((edge) => {
+    if (edge.source !== branch || !edge.sourceHandle?.startsWith("case:")) return [edge];
+    const was = edge.sourceHandle.slice(5);
+    const now = renamed && was === renamed.from ? renamed.to : was;
+    if (!named.has(now)) return [];
+    return now === was ? [edge] : [{ ...edge, sourceHandle: `case:${now}`, label: now }];
+  });
+}
+
+/** Whether a step is a start with an address of its own, and no key to keep it by yet. */
+export const keepsAddress = (node: FlowNode): boolean => {
+  if (node.type !== "trigger" || node.key) return false;
+  const type = (node.trigger as { type?: string } | undefined)?.type;
+  return type === "webhook" || type === "form";
+};
+
+/** The ids that were added from the palette, with a step's new name added when it is renamed. */
+export const carryName = (ids: ReadonlySet<string>, from: string, to: string): Set<string> =>
+  new Set(ids.has(from) ? [...ids, to] : ids);
 
 /** One thing wrong with a flow: what, and which step and field it is in, to go to it. */
 export interface Problem {
@@ -382,6 +505,50 @@ export interface Problem {
   node?: string;
   /** The inspector field it is about: `script`, `title`, `inputs/<name>`… */
   field?: string;
+}
+
+/**
+ * What the build and a deploy check about a flow's graph that the editor's own list did not
+ * name, in words. A step the editor already names is left to it, so one fault is said once.
+ */
+export function manifestProblems(
+  nodes: Record<string, FlowNode>,
+  edges: GraphEdge[],
+  named: Problem[],
+): Problem[] {
+  let issues: { path: string; message: string }[];
+  try {
+    issues = checkFlow({ nodes, edges } as unknown as ManifestFlow);
+  } catch {
+    return [];
+  }
+  const seen = new Set(named.map((one) => one.node).filter(Boolean));
+  const out: Problem[] = [];
+  for (const issue of issues) {
+    const node = /^\/body\/nodes\/([^/]+)/.exec(issue.path)?.[1];
+    if (node && seen.has(node)) continue;
+    // A fault of the flow as a whole is said once, and only when nothing else is.
+    if (!node && named.length > 0) continue;
+    out.push({ message: inWords(`${issue.path} ${issue.message}`), ...(node ? { node } : {}) });
+  }
+  return out;
+}
+
+/** The expressions a step holds, to measure against the longest the kind takes. */
+function expressionsOf(node: FlowNode): string[] {
+  const out: string[] = [];
+  for (const key of ["items", "input", "flowFrom", "message", "detail", "with"]) {
+    const value = (node as Record<string, unknown>)[key];
+    if (typeof value === "string") out.push(value);
+  }
+  for (const key of ["values", "inputs", "headers"]) {
+    const map = (node as Record<string, unknown>)[key];
+    if (map && typeof map === "object")
+      for (const value of Object.values(map)) if (typeof value === "string") out.push(value);
+  }
+  for (const one of (node as { cases?: { when?: unknown }[] }).cases ?? [])
+    if (typeof one.when === "string") out.push(one.when);
+  return out;
 }
 
 /** What is wrong with a flow that can be seen without asking the server, as words. */
@@ -394,6 +561,8 @@ export function problemsAt(
   edges: GraphEdge[],
   /** The scripts that are nodes with a form of their own, by path. */
   specs: ReadonlyMap<string, PickableNode> = new Map(),
+  /** The keys of the tenant's groups of members, once read: an approval's group is checked against them. */
+  groups?: ReadonlySet<string>,
 ): Problem[] {
   const problems: Problem[] = [];
   const ids = Object.keys(nodes);
@@ -401,8 +570,45 @@ export function problemsAt(
   if (!ids.some((id) => nodes[id]?.type === "trigger"))
     problems.push({ message: "Add a way for the flow to start." });
   const reached = new Set(edges.map((edge) => edge.to));
+  for (const edge of edges) {
+    const from = nodes[edge.from];
+    if (!from) continue;
+    if (from.type === "fail") {
+      problems.push({
+        message: `${edge.from} ends the flow, so nothing can follow it.`,
+        node: edge.from,
+      });
+    } else if (from.type === "branch") {
+      const cases = ((from.cases as { name: string }[] | undefined) ?? []).map((one) => one.name);
+      if (edge.output === undefined && !edge.error) {
+        problems.push({
+          message: `A connection leaves ${edge.from} to ${edge.to} without saying which case it follows.`,
+          node: edge.from,
+        });
+      } else if (
+        edge.output !== undefined &&
+        edge.output !== OTHERWISE &&
+        !cases.includes(edge.output)
+      ) {
+        problems.push({
+          message: `${edge.from} has no case "${edge.output}", and a connection leaves by it to ${edge.to}.`,
+          node: edge.from,
+        });
+      }
+    }
+  }
   for (const id of ids) {
     const node = nodes[id] as FlowNode;
+    if (node.type === "branch") {
+      const names = ((node.cases as { name: string }[] | undefined) ?? []).map((one) => one.name);
+      if (new Set(names).size !== names.length || names.includes(OTHERWISE)) {
+        problems.push({
+          message: `${id} needs a different name for each case, and "${OTHERWISE}" is taken.`,
+          node: id,
+          field: "cases",
+        });
+      }
+    }
     if (node.type !== "trigger" && !reached.has(id))
       problems.push({ message: `Nothing leads to ${id}.`, node: id });
     if (node.type === "script" && !node.script)
@@ -416,7 +622,8 @@ export function problemsAt(
         type: string;
         respond?: string;
         title?: string;
-        verify?: { header?: string; secret?: string };
+        verify?: { header?: string; secret?: string; signed?: string; timestampHeader?: string };
+        tags?: string[];
         fields?: { name: string; label: string; type: string; options?: string[] }[];
       };
       if (trigger.type === "webhook" && trigger.respond === "flow" && !answers) {
@@ -432,6 +639,24 @@ export function problemsAt(
           field: "secret",
         });
       }
+      if (
+        trigger.type === "webhook" &&
+        trigger.verify?.signed?.includes("{timestamp}") &&
+        !trigger.verify.timestampHeader
+      ) {
+        problems.push({
+          message: `${id} signs the timestamp and names no header it is sent in.`,
+          node: id,
+          field: "verify-timestamp-header",
+        });
+      }
+      if ((trigger.tags ?? []).length > MAX_TAGS) {
+        problems.push({
+          message: `${id} gives more than ${MAX_TAGS} tags.`,
+          node: id,
+          field: "tags",
+        });
+      }
       if (trigger.type === "form") {
         if (!trigger.title)
           problems.push({ message: `${id} needs a title for its form.`, node: id, field: "title" });
@@ -444,6 +669,12 @@ export function problemsAt(
           });
         }
         for (const field of trigger.fields ?? []) {
+          if (FORM_RESERVED_NAMES.includes(field.name))
+            problems.push({
+              message: `${id} has a question called "${field.name}", which is kept for the form itself. Choose another name.`,
+              node: id,
+              field: "fields",
+            });
           if (!field.label)
             problems.push({
               message: `${id} has a question with no text.`,
@@ -460,10 +691,33 @@ export function problemsAt(
         }
       }
     }
+    if (
+      node.type === "foreach" &&
+      typeof node.concurrency === "number" &&
+      (node.concurrency < 1 || node.concurrency > MAX_AT_ONCE)
+    ) {
+      problems.push({
+        message: `${id} runs ${node.concurrency} at once: choose from 1 to ${MAX_AT_ONCE}.`,
+        node: id,
+        field: "concurrency",
+      });
+    }
+    for (const [field, seconds] of [
+      ["seconds", node.type === "delay" ? node.seconds : undefined],
+      ["timeout", node.type === "approval" ? node.timeoutSeconds : undefined],
+    ] as const) {
+      if (typeof seconds === "number" && seconds > 2592000) {
+        problems.push({
+          message: `${id} waits longer than the most allowed, 30 days.`,
+          node: id,
+          field,
+        });
+      }
+    }
     if (node.type === "subflow" && node.flowFrom === undefined && !node.flow) {
       problems.push({ message: `${id} has no flow chosen.`, node: id, field: "flow" });
     }
-    if (node.type === "subflow" && node.flowFrom !== undefined) {
+    if ((node.type === "subflow" || node.type === "foreach") && node.flowFrom !== undefined) {
       if (!node.flowFrom)
         problems.push({
           message: `${id} needs an expression that gives the flow to start.`,
@@ -478,7 +732,70 @@ export function problemsAt(
         });
       }
     }
-    if (node.type === "foreach" && !node.script && !node.flow)
+    // A field a step needs, left empty: the draft keeps it, and it is said here, and at deploy.
+    const empty = (value: unknown) => typeof value !== "string" || value.trim() === "";
+    if (node.type === "approval" && groups) {
+      for (const group of (node.approvers as { groups?: string[] } | undefined)?.groups ?? []) {
+        if (!groups.has(group)) {
+          problems.push({
+            message: `${id} asks the group ${group}, which this tenant does not have. Choose another group, or ask a tenant admin to make it.`,
+            node: id,
+            field: "approvers",
+          });
+        }
+      }
+    }
+    if (node.type === "approval" && empty(node.title))
+      problems.push({ message: `${id} needs a title for the approval.`, node: id, field: "title" });
+    if (
+      node.type === "approval" &&
+      typeof node.title === "string" &&
+      node.title.length > MAX_APPROVAL_TITLE
+    )
+      problems.push({
+        message: `${id} has a title of more than ${MAX_APPROVAL_TITLE} letters. Make it shorter.`,
+        node: id,
+        field: "title",
+      });
+    if (node.type === "branch" && ((node.cases as unknown[] | undefined) ?? []).length > MAX_CASES)
+      problems.push({
+        message: `${id} has more than ${MAX_CASES} cases. Join some, or split it in two.`,
+        node: id,
+        field: "cases",
+      });
+    const tooLong = expressionsOf(node).some((text) => text.length > MAX_EXPRESSION);
+    if (tooLong)
+      problems.push({
+        message: `${id} has an expression longer than 2,000 letters. Move part of it to a Set step.`,
+        node: id,
+      });
+    if (node.type === "fail" && empty(node.message))
+      problems.push({ message: `${id} needs a message to fail with.`, node: id, field: "message" });
+    if (
+      node.type === "branch" &&
+      ((node.cases as { when?: unknown }[] | undefined) ?? []).some((one) => empty(one.when))
+    )
+      problems.push({
+        message: `${id} has a case with no condition.`,
+        node: id,
+        field: "cases",
+      });
+    if (
+      node.type === "set" &&
+      Object.values((node.values as Record<string, unknown> | undefined) ?? {}).some(empty)
+    )
+      problems.push({
+        message: `${id} has a value with no expression.`,
+        node: id,
+        field: "values",
+      });
+    if (node.type === "foreach" && empty(node.items))
+      problems.push({
+        message: `${id} needs an expression that gives the items to go through.`,
+        node: id,
+        field: "items",
+      });
+    if (node.type === "foreach" && !node.script && !node.flow && node.flowFrom === undefined)
       problems.push({
         message: `${id} needs a script or a flow to run for each item.`,
         node: id,
@@ -491,8 +808,36 @@ export function problemsAt(
     ) {
       problems.push({ message: `${id} has no event chosen.`, node: id, field: "event" });
     }
+    const eventFilter =
+      node.type === "trigger" && (node.trigger as { type: string }).type === "event"
+        ? (node.trigger as { filter?: string }).filter
+        : undefined;
+    // An event start has no `trigger` to read: its filter is over `event`.
+    if (eventFilter && /(^|[^\w.])trigger\s*[.[]/.test(eventFilter)) {
+      problems.push({
+        message: `${id}'s filter reads trigger, which an event start does not have. Read the event instead: event.payload or event.name.`,
+        node: id,
+        field: "filter",
+      });
+    }
   }
   return problems;
+}
+
+/** Pastes the steps in the clipboard's text, and says what could not be pasted and why. */
+function pasteText(text: string, paste: (clip: Clip) => void) {
+  const { clip, skipped, nothing } = readClipReport(text);
+  const said = skipped.map((one) => `${one.id}: ${one.why}.`).join(" ");
+  if (!clip) {
+    notify.error(said ? `${nothing} ${said}` : (nothing ?? "Nothing was pasted."));
+    return;
+  }
+  paste(clip);
+  if (skipped.length > 0) {
+    notify.error(
+      `${skipped.length === 1 ? "1 step was" : `${skipped.length} steps were`} not pasted. ${said}`,
+    );
+  }
 }
 
 /** A flow drawn on a canvas. Saving makes a draft, deployed from the Releases screen. */
@@ -517,14 +862,18 @@ export function FlowEditor({
   // Where the canvas was left this session, read once per flow.
   const kept = useMemo(() => viewportOf(path), [path]);
   const [canvas, setCanvas] = useState<ReactFlowInstance<CanvasNode, Edge>>();
-  const [state, setState] = useState<"new" | "draft" | "deployed" | "repository">("new");
+  const [state, setState] = useState<"new" | "draft" | "deployed" | "repository" | "removed">(
+    "new",
+  );
   const [loaded, setLoaded] = useState(false);
   const [starterId, setStarterId] = useState("blank");
   const [testing, setTesting] = useState(false);
   const [testRunId, setTestRunId] = useState<string>();
-  /** The steps the flow had when it was opened: a schedule among them keeps its own zone. */
-  const loadedIds = useRef(new Set<string>());
+  /** The steps added here from the palette: a schedule among them takes the workspace's zone. */
+  const addedIds = useRef(new Set<string>());
+  const shelves = useRef(new Map<string, Map<string, StartSettings>>());
   const [testTrigger, setTestTrigger] = useState<string>();
+  const [testAll, setTestAll] = useState(false);
   const [editedSinceTest, setEditedSinceTest] = useState(false);
   const live = useFlowRunLive(root, testRunId);
   const [problem, setProblem] = useState<string>();
@@ -534,19 +883,25 @@ export function FlowEditor({
   // Autosaves that failed in a row, and whether they have been given up until asked again.
   const failures = useRef(0);
   const [gaveUp, setGaveUp] = useState(false);
+  // Counted up to read the flow again, as when someone else's version is loaded.
+  const [again, setAgain] = useState(0);
   const [savedAt, setSavedAt] = useState<number>();
   // What a save sends is read from the newest render when it goes out, so that a change made
   // while one is in flight is in the next. The hook counts the changes and sends again.
   const toSend = useRef<() => FlowBody>(() => ({ nodes: {}, edges: [] }));
   const draft = useDraftSave<null, { revision: number }>({
     send: (_snapshot, at) =>
-      api.put<{ revision: number }>(`${root}/drafts/${pathNow.current}`, {
-        kind: "flow",
-        schemaVersion: 1,
-        body: toSend.current(),
+      putDraft<{ revision: number }>(
+        root,
+        pathNow.current,
+        {
+          kind: "flow",
+          schemaVersion: 1,
+          body: toSend.current() as unknown as Record<string, unknown>,
+        },
         // A new flow is a create: a path that is taken is refused, never overwritten.
-        ...(at ? { revision: at } : opened ? {} : { create: true }),
-      }),
+        at ? { revision: at } : opened ? { first: true } : { create: true },
+      ),
     applied: (_saved, _sent, _current) => {
       setState("draft");
       setSavedAt(Date.now());
@@ -574,18 +929,18 @@ export function FlowEditor({
       path: string;
       description: string;
       inputSchema: PickableNode["input"];
-      node: { label: string; category?: string; takes?: string[] } | null;
+      node: { label: string; icon?: string; category?: string; takes?: string[] } | null;
     }[];
   }>(`${root}/scripts`);
   const core = useLoad<{ items: PickableNode[] }>("/core-nodes");
   const secrets = useLoad<{ items: { name: string }[] }>(`${root}/secrets`);
   const flows = useLoad<{ items: { path: string; description: string }[] }>(`${root}/flows`);
-  const drafts = useLoad<{ items: { path: string; kind: string; deleted: boolean }[] }>(
-    `${root}/drafts`,
-  );
-  const events = useLoad<{ items: { path: string; kind: string; body?: { mode?: string } }[] }>(
-    `${root}/resources?limit=200`,
-  );
+  const drafts = useLoad<{
+    items: { path: string; kind: string; deleted: boolean; mode?: string }[];
+  }>(`${root}/drafts`);
+  const events = useLoad<{
+    items: { path: string; kind: string; ownership?: string; body?: { mode?: string } }[];
+  }>(`${root}/resources?limit=200`);
 
   const choices = (
     kind: "script" | "flow",
@@ -605,11 +960,21 @@ export function FlowEditor({
   /** What the workspace has of a kind, deployed or still a draft. */
   const ofKind = (kind: string, mode?: string): Option[] => {
     const known = new Map<string, string | undefined>();
+    // A flow of the repository may name only what the repository defines: a deploy refuses the
+    // rest ("is not a table in this repository"), so what was made in the console is not offered.
+    const fromCode = state === "repository";
     for (const one of events.data?.items ?? []) {
+      if (fromCode && one.ownership !== "code") continue;
       if (one.kind === kind && (!mode || one.body?.mode === mode)) known.set(one.path, undefined);
     }
-    for (const draft of drafts.data?.items ?? []) {
-      if (draft.kind === kind && !draft.deleted && !known.has(draft.path) && !mode)
+    for (const draft of fromCode ? [] : (drafts.data?.items ?? [])) {
+      // A draft of a source says how it is asked, so it is offered where that kind is wanted.
+      if (
+        draft.kind === kind &&
+        !draft.deleted &&
+        !known.has(draft.path) &&
+        (!mode || draft.mode === mode)
+      )
         known.set(draft.path, "A draft, not yet deployed.");
     }
     return [...known].map(([value, hint]) => ({ value, label: value, ...(hint ? { hint } : {}) }));
@@ -626,7 +991,7 @@ export function FlowEditor({
   }));
   /**
    * Every script a step can run, each with a form for its input: the platform's,
-   * the workspace's labelled ones, then the rest by their path. A plain script's
+   * the workspace's labeled ones, then the rest by their path. A plain script's
    * form is drawn from its input schema.
    */
   const pickable = useMemo<PickableNode[]>(
@@ -637,6 +1002,7 @@ export function FlowEditor({
         .map((one) => ({
           path: one.path,
           label: one.node?.label ?? one.path,
+          ...(one.node?.icon ? { icon: one.node.icon } : {}),
           category: one.node?.category ?? (one.node ? "This workspace's" : "Scripts"),
           description: one.description,
           takes: one.node?.takes ?? [],
@@ -646,6 +1012,14 @@ export function FlowEditor({
     [core.data, scripts.data],
   );
   const specs = useMemo(() => new Map(pickable.map((one) => [one.path, one])), [pickable]);
+  /** Every script a step can run: the platform's and the workspace's by their labels, then drafts. */
+  const stepScripts = useMemo<Option[]>(() => {
+    const listed = new Set(pickable.map((one) => one.path));
+    return [
+      ...pickable.map((one) => ({ value: one.path, label: one.label, hint: one.path })),
+      ...scriptOptions.filter((one) => !listed.has(one.value)),
+    ];
+  }, [pickable, scriptOptions]);
   const names = useMemo(() => new Map(pickable.map((one) => [one.path, one.label])), [pickable]);
 
   /** A change to the graph: saved a moment later, and no longer what the last test ran. */
@@ -671,12 +1045,15 @@ export function FlowEditor({
     },
   );
   const { clear: clearHistory, undo, redo } = history;
+  // The toast outlives the render that made it: Undo reaches the one that is current.
+  const undoRef = useRef(undo);
+  undoRef.current = undo;
 
   const open = useCallback(
     (body: FlowBody) => {
       clearHistory();
       const positions = { ...autoLayout(body.nodes, body.edges), ...(body.layout ?? {}) };
-      loadedIds.current = new Set(Object.keys(body.nodes));
+      addedIds.current = new Set();
       setDescription(body.description ?? "");
       const chosenInAddress = new URLSearchParams(location.search).get("step");
       setNodes(
@@ -703,13 +1080,23 @@ export function FlowEditor({
       open({ nodes: { start: { type: "trigger", trigger: { type: "manual" } } }, edges: [] });
       return;
     }
-    if (opened === savedAs.current) return;
+    if (opened === savedAs.current && again === 0) return;
     (async () => {
       try {
-        const found = await api.get<{ body: FlowBody; revision: number }>(
+        const found = await api.get<{ body: FlowBody; revision: number; deleted?: boolean }>(
           `${root}/drafts/${opened}`,
         );
         if (!current) return;
+        if (found.deleted) {
+          // A draft that removes it holds no steps: what is shown is what is deployed, and
+          // nothing is saved from here, so the removal is never undone by an autosave.
+          const resource = await api.get<{ body: FlowBody }>(`${root}/resources/${opened}`);
+          if (!current) return;
+          open(resource.body);
+          draft.reset(null, found.revision);
+          setState("removed");
+          return;
+        }
         open(found.body);
         draft.reset(null, found.revision);
         setState("draft");
@@ -719,24 +1106,42 @@ export function FlowEditor({
           `${root}/resources/${opened}`,
         );
         if (!current) return;
-        open(resource.body);
+        // Where the flow was arranged on its page since is newer than the positions in its body.
+        const arranged = await api
+          .get<{ layout?: FlowBody["layout"] }>(`${root}/flows/${opened}`)
+          .then((page) => page.layout)
+          .catch(() => undefined);
+        if (!current) return;
+        open(arranged ? { ...resource.body, layout: arranged } : resource.body);
         setState(resource.ownership === "ui" ? "deployed" : "repository");
       }
     })().catch((error) => current && setProblem(failureText(error)));
     return () => {
       current = false;
     };
-  }, [root, opened, open, draft.reset]);
+  }, [root, opened, open, draft.reset, again]);
 
   const flowNodes = useMemo(
     () => Object.fromEntries(nodes.map((node) => [node.id, node.data.node])),
     [nodes],
   );
   const flowEdges = useMemo(() => edges.map(toFlowEdge), [edges]);
-  const found = useMemo(
-    () => problemsAt(flowNodes, flowEdges, specs),
-    [flowNodes, flowEdges, specs],
+  // What was typed as a manual start's schema and is not JSON yet, by step: kept when another step is chosen.
+  const unsavedSchemas = useRef(new Map<string, string>());
+  const keyed = useGroupKeys(root);
+  const memberGroups = useMemo(
+    () =>
+      keyed.loaded
+        ? new Set(keyed.groups.filter((one) => one.kind === "member").map((one) => one.key))
+        : undefined,
+    [keyed.loaded, keyed.groups],
   );
+  const found = useMemo(() => {
+    const own = problemsAt(flowNodes, flowEdges, specs, memberGroups);
+    // What a deploy refuses is told here too, in the same words, so the two lists agree.
+    const refused = manifestProblems(flowNodes, flowEdges, own);
+    return [...own, ...refused];
+  }, [flowNodes, flowEdges, specs, memberGroups]);
   const chosen = nodes.find((node) => node.id === selected);
 
   const add = (entry: { base: string; make: () => FlowNode }) => {
@@ -744,6 +1149,7 @@ export function FlowEditor({
     for (let n = 2; nodes.some((node) => node.id === id); n++) id = `${entry.base}_${n}`;
     history.record(`Add ${id}`);
     const made = entry.make();
+    addedIds.current = new Set([...addedIds.current, id]);
     // After the chosen step, joined to it, taking over where it went next. A trigger,
     // or a step added with nothing chosen, goes to the right of everything.
     // Joined only after a step that goes on to one next step: a branch goes on by its
@@ -753,7 +1159,7 @@ export function FlowEditor({
       made.type !== "trigger" &&
       before !== undefined &&
       outputs(before).some((output) => output.id === "next");
-    const placed = insertAfter(nodes, edges, joinable ? selected : undefined, id);
+    const placed = insertAfter(nodes, edges, joinable ? selected : undefined, id, made);
     const at = placed.position;
     setNodes((before) => [
       // The new step is the chosen one, on the canvas as in the panel beside it.
@@ -785,6 +1191,7 @@ export function FlowEditor({
     history.record(`Rename ${from}`);
     // Every expression that reads the step reads it by its new name.
     let updated = 0;
+    let addressKept = false;
     const renamed = nodes.map((node) => {
       const { node: changed, count } = renameInNode(
         node.data.node as unknown as Record<string, unknown>,
@@ -793,12 +1200,30 @@ export function FlowEditor({
       );
       updated += count;
       const id = node.id === from ? to : node.id;
-      return { ...node, id, data: { id, node: changed as unknown as FlowNode } };
+      const start = node.data.node;
+      // A start with an address keeps it through the rename: the old name becomes its key.
+      const keeps = node.id === from && keepsAddress(start) && state !== "new";
+      if (keeps) addressKept = true;
+      return {
+        ...node,
+        id,
+        data: {
+          id,
+          node: (keeps ? { ...changed, key: from } : changed) as unknown as FlowNode,
+        },
+      };
     });
     setNodes(renamed);
+    addedIds.current = carryName(addedIds.current, from, to);
     if (updated > 0) {
       notify.success(
-        `Renamed ${from} to ${to}, and updated ${updated} reference${updated === 1 ? "" : "s"} to it.`,
+        `Renamed ${from} to ${to}, and updated ${updated} reference${updated === 1 ? "" : "s"} to it.${
+          addressKept ? ` Its address stays: the step keeps the key ${from}.` : ""
+        }`,
+      );
+    } else if (addressKept) {
+      notify.success(
+        `Renamed ${from} to ${to}. Its address stays: the step keeps the key ${from}.`,
       );
     }
     setEdges((before) =>
@@ -812,12 +1237,18 @@ export function FlowEditor({
     touch();
     return true;
   };
+  /** Removing a step never asks: the message says what went, and offers Undo (D34). */
+  const saidRemoved = (what: string) =>
+    notify.info(`Removed ${what}. Its connections went with it.`, {
+      action: { label: "Undo", onClick: () => undoRef.current() },
+    });
   const remove = (id: string) => {
     history.record(`Remove ${id}`);
     setNodes((before) => before.filter((node) => node.id !== id));
     setEdges((before) => before.filter((edge) => edge.source !== id && edge.target !== id));
     setSelected(undefined);
     touch();
+    saidRemoved(id);
   };
   /** The steps chosen on the canvas: several with ⌘-click or a box, or the one chosen. */
   const chosenIds = (): string[] => {
@@ -869,7 +1300,7 @@ export function FlowEditor({
     if (ids.length === 0) return false;
     pasteClip(clipOf(ids));
   };
-  const removeMany = (ids: string[]) => {
+  const removeMany = (ids: string[], say = true) => {
     if (ids.length === 0) return;
     const gone = new Set(ids);
     history.record(`Remove ${plural(ids.length)}`);
@@ -877,6 +1308,7 @@ export function FlowEditor({
     setEdges((before) => before.filter((edge) => !gone.has(edge.source) && !gone.has(edge.target)));
     setSelected(undefined);
     touch();
+    if (say) saidRemoved(ids.length === 1 ? (ids[0] as string) : plural(ids.length));
   };
   // ⌘C, ⌘X and ⌘V copy, cut and paste steps, within a flow or between flows. They are the
   // browser's own copy and paste, so a field being typed in, or text chosen on the page,
@@ -894,7 +1326,7 @@ export function FlowEditor({
       if (ids.length === 0 || !event.clipboardData) return;
       event.clipboardData.setData("text/plain", JSON.stringify(clipboard.current.clipOf(ids)));
       event.preventDefault();
-      if (cut) clipboard.current.removeMany(ids);
+      if (cut) clipboard.current.removeMany(ids, false);
       notify.success(
         `${plural(ids.length)} ${cut ? "cut" : "copied"}. Paste them here or in another flow.`,
       );
@@ -903,10 +1335,10 @@ export function FlowEditor({
     const onCut = (event: ClipboardEvent) => copy(event, true);
     const onPaste = (event: ClipboardEvent) => {
       if (isTyping(document.activeElement) || document.querySelector('[role="dialog"]')) return;
-      const clip = readClip(event.clipboardData?.getData("text/plain") ?? "");
-      if (!clip) return;
+      const text = event.clipboardData?.getData("text/plain") ?? "";
+      if (!text.trim()) return;
       event.preventDefault();
-      clipboard.current.pasteClip(clip);
+      pasteText(text, clipboard.current.pasteClip);
     };
     document.addEventListener("copy", onCopy);
     document.addEventListener("cut", onCut);
@@ -976,9 +1408,8 @@ export function FlowEditor({
         keys: formatCombo("Mod+V"),
         onSelect: () => {
           void navigator.clipboard?.readText().then((text) => {
-            const clip = readClip(text);
-            if (clip) pasteClip(clip);
-            else notify.info("The clipboard holds no steps. Copy steps from a flow first.");
+            if (!text.trim()) notify.info("The clipboard is empty. Copy steps from a flow first.");
+            else pasteText(text, pasteClip);
           }, notify.error);
         },
       },
@@ -1077,6 +1508,7 @@ export function FlowEditor({
     ),
   });
   const save = async (): Promise<boolean> => {
+    if (state === "removed") return false;
     setProblem(undefined);
     setPathTaken(undefined);
     if (!PATH.test(path)) {
@@ -1093,7 +1525,16 @@ export function FlowEditor({
   // tries until the next change or Retry, so that a lost connection is said, not hidden.
   // biome-ignore lint/correctness/useExhaustiveDependencies: `save` reads the latest state when it runs
   useEffect(() => {
-    if (!dirty || busy || gaveUp || state === "new" || state === "repository") return;
+    if (
+      !dirty ||
+      busy ||
+      gaveUp ||
+      draft.clashed ||
+      state === "new" ||
+      state === "repository" ||
+      state === "removed"
+    )
+      return;
     const wait = failures.current === 0 ? 1500 : retryAfter(failures.current);
     const timer = setTimeout(async () => {
       if (await save()) {
@@ -1104,7 +1545,7 @@ export function FlowEditor({
       if (failures.current >= 5) setGaveUp(true);
     }, wait);
     return () => clearTimeout(timer);
-  }, [dirty, busy, gaveUp, state, nodes, edges, description]);
+  }, [dirty, busy, gaveUp, state, nodes, edges, description, draft.clashed]);
   // A change after giving up is worth trying again.
   // biome-ignore lint/correctness/useExhaustiveDependencies: a change is the reason to try again
   useEffect(() => {
@@ -1140,6 +1581,7 @@ export function FlowEditor({
       flow: path,
       input,
       ...(testFromTrigger && testFromTrigger !== manualId ? { triggerNode: testFromTrigger } : {}),
+      ...(testAll ? { withAllDrafts: true } : {}),
     });
     setTestRunId(started.runId);
     setEditedSinceTest(false);
@@ -1152,6 +1594,7 @@ export function FlowEditor({
       const started = await api.post<{ runId: string }>(`${root}/test-runs`, {
         flow: path,
         testFrom: { flowRunId: live.run.id, node },
+        ...(testAll ? { withAllDrafts: true } : {}),
       });
       setTestRunId(started.runId);
       setEditedSinceTest(false);
@@ -1221,12 +1664,19 @@ export function FlowEditor({
   if (!loaded) return problem ? <Notice tone="danger">{problem}</Notice> : <Loading />;
 
   const node = chosen?.data.node;
-  const expression = (label: string, key: string, hint?: string) =>
+  const expression = (
+    label: string,
+    key: string,
+    hint?: string,
+    // `keepEmpty`: an emptied field stays in its mode, and is said to be unfinished.
+    { keepEmpty = false, required = false }: { keepEmpty?: boolean; required?: boolean } = {},
+  ) =>
     chosen && node ? (
       <ExpressionField
         name={key}
         label={label}
         rows={2}
+        required={required}
         value={(node[key] as string | undefined) ?? ""}
         hint={hint}
         // A foreach's input and flow are worked out for each item: the preview takes the first.
@@ -1235,7 +1685,9 @@ export function FlowEditor({
             ? ((node.items as string | undefined) ?? undefined)
             : undefined
         }
-        onChange={(value) => update(chosen.id, { [key]: value === "" ? undefined : value })}
+        onChange={(value) =>
+          update(chosen.id, { [key]: value === "" && !keepEmpty ? undefined : value })
+        }
       />
     ) : null;
 
@@ -1243,16 +1695,18 @@ export function FlowEditor({
   const matches = (label: string, hint?: string) =>
     !wanted || label.toLowerCase().includes(wanted) || (hint ?? "").toLowerCase().includes(wanted);
   const saveState = dirty
-    ? state === "new" || state === "repository"
-      ? "Not saved"
-      : gaveUp
-        ? "Could not save."
-        : failures.current > 0
-          ? "Could not save. Trying again…"
-          : "Saving…"
+    ? draft.clashed
+      ? "Not saved: someone else saved this flow"
+      : state === "new" || state === "repository"
+        ? "Not saved"
+        : gaveUp
+          ? "Could not save."
+          : failures.current > 0
+            ? "Could not save. Trying again…"
+            : "Saving…"
     : savedAt
       ? `Draft saved ${ago(savedAt)}`
-      : stateLabel(state);
+      : "";
 
   const keepViewport = (viewport: Viewport) => {
     if (!path) return;
@@ -1280,6 +1734,7 @@ export function FlowEditor({
               variant="primary"
               size="small"
               aria-expanded={adding}
+              disabled={state === "removed"}
               onClick={() => setAdding((open) => !open)}
             >
               <Plus aria-hidden="true" size={14} /> Add step
@@ -1297,6 +1752,12 @@ export function FlowEditor({
                   placeholder="Find a step"
                   value={addSearch}
                   onChange={(event) => setAddSearch(event.target.value)}
+                  onKeyDown={(event) => {
+                    // Enter takes the first match, as a search that lists does everywhere else.
+                    if (event.key !== "Enter") return;
+                    event.preventDefault();
+                    event.currentTarget.parentElement?.querySelector("button")?.click();
+                  }}
                   className="h-8 rounded-control border border-line bg-structure px-3 text-ink outline-none placeholder:text-ink-subtle"
                 />
                 {[...new Set(PALETTE.map((entry) => entry.group))].map((group) => {
@@ -1339,16 +1800,16 @@ export function FlowEditor({
                           className="flex flex-col rounded-control px-2 py-1.5 text-left hover:bg-selected"
                           onClick={() => {
                             add({
-                              base: (one.path.split("/").at(-1) ?? "step").replace(
-                                /[^a-z0-9_]/g,
-                                "_",
-                              ),
+                              base: stepNameFor(one.path),
                               make: () => ({ type: "script", script: one.path, inputs: {} }),
                             });
                             setAdding(false);
                           }}
                         >
-                          <span>{one.label}</span>
+                          <span className="flex items-center gap-1.5">
+                            {one.icon ? <PaletteIcon name={one.icon} /> : null}
+                            {one.label}
+                          </span>
                           {one.description ? (
                             <span className="truncate text-meta text-ink-subtle">
                               {one.description}
@@ -1377,9 +1838,13 @@ export function FlowEditor({
                     edges={drawnEdges}
                     nodeTypes={nodeTypes}
                     onNodesChange={(changes) => {
-                      if (changes.some((change) => change.type === "remove"))
-                        history.record("Remove a step");
+                      const gone = changes.filter((change) => change.type === "remove");
+                      if (gone.length > 0) history.record("Remove a step");
                       onNodesChange(changes);
+                      if (gone.length > 0)
+                        saidRemoved(
+                          gone.length === 1 ? (gone[0] as { id: string }).id : plural(gone.length),
+                        );
                       if (
                         changes.some(
                           (change) => change.type === "position" || change.type === "remove",
@@ -1394,6 +1859,11 @@ export function FlowEditor({
                       if (changes.some((change) => change.type === "remove")) touch();
                     }}
                     onConnect={connect}
+                    // A flow drafted for removal is read, not changed.
+                    nodesDraggable={state !== "removed"}
+                    nodesConnectable={state !== "removed"}
+                    edgesReconnectable={state !== "removed"}
+                    deleteKeyCode={state === "removed" ? null : "Backspace"}
                     // A drag is one step to undo, however far it went.
                     onNodeDragStart={() => history.record("Move a step")}
                     onSelectionDragStart={() => history.record("Move steps")}
@@ -1413,8 +1883,8 @@ export function FlowEditor({
                   >
                     <Background />
                     <Controls />
-                    {/* With the test panel open the canvas is short, and the map would cover the graph. */}
-                    {testing ? null : <MiniMap pannable zoomable />}
+                    {/* With the test panel open the canvas is short, and on a phone it is small: the map would cover the graph. */}
+                    {testing ? null : <MiniMap pannable zoomable className="max-sm:hidden" />}
                   </ReactFlow>
                 </NodeRuns.Provider>
               </NodeNames.Provider>
@@ -1429,362 +1899,446 @@ export function FlowEditor({
           className="flex max-h-[60vh] min-h-0 flex-1 flex-col gap-3 overflow-y-auto border-line border-t bg-surface p-4 lg:max-h-none lg:border-t-0 lg:border-l"
         >
           <ExpressionPreview.Provider value={previewSource}>
-            <StepOutline nodes={nodes} edges={edges} chosen={chosen?.id} onChoose={choose} />
-            {chosenIds().length > 1 ? (
-              <section aria-label="The chosen steps" className="flex flex-col gap-3">
-                <h2 className="m-0 text-title">{plural(chosenIds().length)} chosen</h2>
-                <p className="m-0 font-mono text-code text-ink-muted">{chosenIds().join(", ")}</p>
-                <p className="m-0 text-meta text-ink-muted">
-                  Drag one to move them all. Copy them with {formatCombo("Mod+C")} to paste here or
-                  in another flow; references between them follow their new names.
-                </p>
-                <span className="flex flex-wrap gap-2">
-                  <Button
-                    size="small"
-                    onClick={() => duplicate(chosenIds())}
-                    keys={keysOf("flow.duplicate")}
-                    tooltip="Duplicate"
-                  >
-                    Duplicate
-                  </Button>
-                  <Button size="small" variant="danger" onClick={() => removeMany(chosenIds())}>
-                    Remove {plural(chosenIds().length)}
-                  </Button>
-                </span>
-              </section>
-            ) : chosen && node ? (
-              <>
-                <NameField key={chosen.id} id={chosen.id} rename={rename} />
-                {shown ? (
-                  <LastTest run={shown} node={chosen.id} root={root} onTestFrom={testFrom} />
-                ) : null}
-                {node.type === "trigger" ? (
-                  <>
-                    <SelectField
-                      name="trigger"
-                      label="It starts"
-                      value={(node.trigger as { type: string }).type}
-                      options={[
-                        { value: "manual", label: "By hand, or from another flow" },
-                        { value: "schedule", label: "On a schedule" },
-                        { value: "event", label: "When an event is published" },
-                        { value: "webhook", label: "When its address is called" },
-                        { value: "form", label: "When someone fills in its form" },
-                      ]}
-                      onChange={(type) =>
+            <fieldset
+              disabled={state === "removed"}
+              className="m-0 flex min-w-0 flex-col gap-3 border-0 p-0"
+            >
+              <StepOutline nodes={nodes} edges={edges} chosen={chosen?.id} onChoose={choose} />
+              {chosenIds().length > 1 ? (
+                <section aria-label="The chosen steps" className="flex flex-col gap-3">
+                  <h2 className="m-0 text-title">{plural(chosenIds().length)} chosen</h2>
+                  <p className="m-0 font-mono text-code text-ink-muted">{chosenIds().join(", ")}</p>
+                  <p className="m-0 text-meta text-ink-muted">
+                    Drag one to move them all. Copy them with {formatCombo("Mod+C")} to paste here
+                    or in another flow; references between them follow their new names.
+                  </p>
+                  <span className="flex flex-wrap gap-2">
+                    <Button
+                      size="small"
+                      onClick={() => duplicate(chosenIds())}
+                      keys={keysOf("flow.duplicate")}
+                      tooltip="Duplicate"
+                    >
+                      Duplicate
+                    </Button>
+                    <Button size="small" variant="danger" onClick={() => removeMany(chosenIds())}>
+                      Remove {plural(chosenIds().length)}
+                    </Button>
+                  </span>
+                </section>
+              ) : chosen && node ? (
+                <>
+                  <NameField key={chosen.id} id={chosen.id} rename={rename} />
+                  {shown ? (
+                    <LastTest run={shown} node={chosen.id} root={root} onTestFrom={testFrom} />
+                  ) : null}
+                  {node.type === "trigger" ? (
+                    <>
+                      <SelectField
+                        name="trigger"
+                        label="It starts"
+                        value={(node.trigger as { type: string }).type}
+                        options={[
+                          { value: "manual", label: "By hand, or from another flow" },
+                          { value: "schedule", label: "On a schedule" },
+                          { value: "event", label: "When an event is published" },
+                          { value: "webhook", label: "When its address is called" },
+                          { value: "form", label: "When someone fills in its form" },
+                        ]}
+                        onChange={(type) => {
+                          // What the start was set to returns if it is changed back.
+                          const shelf = shelves.current.get(chosen.id) ?? new Map();
+                          shelves.current.set(chosen.id, shelf);
+                          update(chosen.id, {
+                            trigger: switchStart(shelf, node.trigger as StartSettings, type, () =>
+                              type === "schedule"
+                                ? { type, cron: "0 8 * * *" }
+                                : type === "event"
+                                  ? { type, event: "" }
+                                  : type === "form"
+                                    ? (newForm() as unknown as StartSettings)
+                                    : { type },
+                            ) as FlowNode["trigger"],
+                          });
+                        }}
+                      />
+                      {(node.trigger as { type: string }).type === "manual" ? (
+                        <InputSchemaField
+                          value={(node.trigger as { input?: Record<string, unknown> }).input}
+                          kept={{
+                            get: () => unsavedSchemas.current.get(chosen.id),
+                            set: (text) =>
+                              text === undefined
+                                ? unsavedSchemas.current.delete(chosen.id)
+                                : unsavedSchemas.current.set(chosen.id, text),
+                          }}
+                          onChange={(input) => {
+                            const { input: _was, ...rest } = node.trigger as { input?: unknown };
+                            update(chosen.id, {
+                              trigger: (input ? { ...rest, input } : rest) as FlowNode["trigger"],
+                            });
+                          }}
+                        />
+                      ) : null}
+                      {(node.trigger as { type: string }).type === "webhook" ? (
+                        <WebhookSettings
+                          trigger={node.trigger as Parameters<typeof WebhookSettings>[0]["trigger"]}
+                          sources={ofKind("trigger_source", "webhook")}
+                          secrets={secretOptions}
+                          onChange={(trigger) => update(chosen.id, { trigger })}
+                        />
+                      ) : null}
+                      {(node.trigger as { type: string }).type === "form" ? (
+                        <FormDesigner
+                          trigger={node.trigger as Parameters<typeof FormDesigner>[0]["trigger"]}
+                          onChange={(trigger) => update(chosen.id, { trigger })}
+                        />
+                      ) : null}
+                      {(node.trigger as { type: string }).type === "schedule" ? (
+                        <WhenFields
+                          root={root}
+                          value={
+                            node.trigger as {
+                              cron?: string;
+                              timezone?: string;
+                              overlap?: "allow" | "skip";
+                            }
+                          }
+                          readOnly={false}
+                          // One added from the palette is new; one that came with the flow, or was pasted, keeps its zone.
+                          fresh={addedIds.current.has(chosen.id)}
+                          overlapDefault="skip"
+                          change={(next) => {
+                            const merged: Record<string, unknown> = {
+                              ...(node.trigger as object),
+                              ...next,
+                            };
+                            for (const key of Object.keys(merged)) {
+                              if (merged[key] === undefined) delete merged[key];
+                            }
+                            update(chosen.id, { trigger: merged as FlowNode["trigger"] });
+                          }}
+                        />
+                      ) : null}
+                      {(node.trigger as { type: string }).type === "schedule" &&
+                      (ofKind("trigger_source", "poll").length > 0 ||
+                        (node.trigger as { source?: string }).source) ? (
+                        <ComboboxField
+                          label="Trigger source (optional)"
+                          options={ofKind("trigger_source", "poll")}
+                          value={(node.trigger as { source?: string }).source || undefined}
+                          hint="Each tick runs it, and the flow starts once for each thing it finds."
+                          onChange={(source) => {
+                            const { source: _was, ...rest } = node.trigger as { source?: string };
+                            update(chosen.id, { trigger: source ? { ...rest, source } : rest });
+                          }}
+                        />
+                      ) : null}
+                      {(node.trigger as { type: string }).type === "event" ? (
+                        <>
+                          <EventStartFields
+                            events={listenChoices(eventOptions)}
+                            event={(node.trigger as { event?: string }).event}
+                            filter={(node.trigger as { filter?: string }).filter}
+                            onEvent={(event) =>
+                              update(chosen.id, { trigger: { ...(node.trigger as object), event } })
+                            }
+                            onFilter={(filter) => {
+                              const { filter: _was, ...rest } = node.trigger as { filter?: string };
+                              update(chosen.id, {
+                                trigger: (filter === undefined
+                                  ? rest
+                                  : { ...rest, filter }) as FlowNode["trigger"],
+                              });
+                            }}
+                          />
+                          <TagsField
+                            value={(node.trigger as { tags?: string[] }).tags}
+                            given="the event's payload"
+                            onChange={(tags) => {
+                              const { tags: _was, ...rest } = node.trigger as { tags?: string[] };
+                              update(chosen.id, {
+                                trigger: (tags ? { ...rest, tags } : rest) as FlowNode["trigger"],
+                              });
+                            }}
+                          />
+                        </>
+                      ) : null}
+                    </>
+                  ) : null}
+                  {node.type === "script" || node.type === "foreach" ? (
+                    <ComboboxField
+                      label="Script"
+                      options={stepScripts}
+                      value={(node.script as string | undefined) || undefined}
+                      onChange={(script) =>
+                        // A For each runs a script or a flow: choosing one clears the other.
                         update(chosen.id, {
-                          trigger:
-                            type === "schedule"
-                              ? { type, cron: "0 8 * * *" }
-                              : type === "event"
-                                ? { type, event: "" }
-                                : type === "form"
-                                  ? newForm()
-                                  : { type },
+                          ...(node.type === "script"
+                            ? changedScript(node, script ?? "", specs)
+                            : { script }),
+                          ...(node.type === "foreach" && script
+                            ? { flow: undefined, flowFrom: undefined, allow: undefined }
+                            : {}),
                         })
                       }
                     />
-                    {(node.trigger as { type: string }).type === "webhook" ? (
-                      <WebhookSettings
-                        trigger={node.trigger as Parameters<typeof WebhookSettings>[0]["trigger"]}
-                        sources={ofKind("trigger_source", "webhook")}
-                        secrets={secretOptions}
-                        onChange={(trigger) => update(chosen.id, { trigger })}
+                  ) : null}
+                  {node.type === "subflow" || node.type === "foreach" ? (
+                    <>
+                      <SelectField
+                        name="which"
+                        label="Which flow"
+                        value={node.flowFrom === undefined ? "named" : "chosen"}
+                        options={[
+                          { value: "named", label: "Always the same one" },
+                          { value: "chosen", label: "Chosen by the data, from a list" },
+                        ]}
+                        onChange={(which) =>
+                          update(
+                            chosen.id,
+                            which === "chosen"
+                              ? {
+                                  flow: undefined,
+                                  flowFrom: "trigger.flow",
+                                  allow: node.flow ? [node.flow as string] : [],
+                                  ...(node.type === "foreach" ? { script: undefined } : {}),
+                                }
+                              : {
+                                  flow:
+                                    (node.allow as string[] | undefined)?.[0] ??
+                                    (node.type === "foreach" ? undefined : ""),
+                                  flowFrom: undefined,
+                                  allow: undefined,
+                                },
+                          )
+                        }
                       />
-                    ) : null}
-                    {(node.trigger as { type: string }).type === "form" ? (
-                      <FormDesigner
-                        trigger={node.trigger as Parameters<typeof FormDesigner>[0]["trigger"]}
-                        onChange={(trigger) => update(chosen.id, { trigger })}
+                      {node.flowFrom !== undefined ? (
+                        <>
+                          {expression(
+                            "Expression that gives the flow's path",
+                            "flowFrom",
+                            "It must give one of the flows below, or the step fails.",
+                            { keepEmpty: true, required: true },
+                          )}
+                          <MultiSelectField
+                            label="Flows it may start"
+                            options={flowOptions}
+                            value={(node.allow as string[] | undefined) ?? []}
+                            hint="Nothing outside this list is ever started, whatever the data says."
+                            onChange={(allow) => update(chosen.id, { allow })}
+                          />
+                        </>
+                      ) : (
+                        <ComboboxField
+                          label={node.type === "foreach" ? "Or a flow" : "Flow"}
+                          options={flowOptions}
+                          value={(node.flow as string | undefined) || undefined}
+                          onChange={(flow) =>
+                            update(chosen.id, {
+                              flow: flow ?? (node.type === "foreach" ? undefined : ""),
+                              ...(node.type === "foreach" && flow ? { script: undefined } : {}),
+                            })
+                          }
+                        />
+                      )}
+                    </>
+                  ) : null}
+                  {node.type === "foreach"
+                    ? expression("Items", "items", "An expression that gives a list.", {
+                        required: true,
+                      })
+                    : null}
+                  {node.type === "foreach" ? (
+                    <CheckboxField
+                      name="continueOnError"
+                      label="Keep going when an item fails"
+                      hint="A failed item gives { error: { message } } in the list, and the step still succeeds."
+                      checked={node.continueOnError === true}
+                      onChange={(checked) =>
+                        update(chosen.id, { continueOnError: checked ? true : undefined })
+                      }
+                    />
+                  ) : null}
+                  {node.type === "foreach" ? (
+                    <NumberField
+                      name="concurrency"
+                      label="How many at once (optional)"
+                      value={node.concurrency as number | undefined}
+                      min={1}
+                      max={MAX_AT_ONCE}
+                      step={1}
+                      required={false}
+                      hint={`Items run this many at a time, from 1 to ${MAX_AT_ONCE}. Left empty, one at a time.`}
+                      {...(typeof node.concurrency === "number" &&
+                      (node.concurrency < 1 || node.concurrency > MAX_AT_ONCE)
+                        ? { error: `Choose a number from 1 to ${MAX_AT_ONCE}.` }
+                        : {})}
+                      onChange={(concurrency) => update(chosen.id, { concurrency })}
+                    />
+                  ) : null}
+                  {node.type === "script" && specs.has(String(node.script)) ? (
+                    <NodeInputs
+                      node={node}
+                      spec={specs.get(String(node.script)) as PickableNode}
+                      choices={pickChoices}
+                      onChange={(change) => update(chosen.id, change)}
+                    />
+                  ) : node.type === "script" ||
+                    node.type === "subflow" ||
+                    node.type === "foreach" ? (
+                    expression(
+                      "Input",
+                      "input",
+                      "An expression. trigger is what started the flow, steps.<name>.output what a step gave.",
+                    )
+                  ) : null}
+                  {(node.type === "script" || node.type === "foreach") && node.script ? (
+                    <GrantsFields
+                      value={node.with as Parameters<typeof GrantsFields>[0]["value"]}
+                      choices={{
+                        connections: pickChoices.connection,
+                        tables: pickChoices.table,
+                        events: pickChoices.event,
+                      }}
+                      onChange={(grants) => update(chosen.id, { with: grants })}
+                    />
+                  ) : null}
+                  {node.type === "delay" ? (
+                    <DurationField
+                      name="seconds"
+                      label="How long to wait"
+                      value={node.seconds as number}
+                      onChange={(seconds) => update(chosen.id, { seconds: seconds ?? 1 })}
+                    />
+                  ) : null}
+                  {node.type === "approval" ? (
+                    <>
+                      <TextField
+                        name="title"
+                        label="What is being approved"
+                        maxLength={MAX_APPROVAL_TITLE}
+                        value={(node.title as string) ?? ""}
+                        onChange={(title) => update(chosen.id, { title })}
                       />
-                    ) : null}
-                    {(node.trigger as { type: string }).type === "schedule" ? (
-                      <WhenFields
+                      {expression("Detail to show", "detail")}
+                      <DurationField
+                        name="timeout"
+                        label="Give up after"
+                        value={node.timeoutSeconds as number | undefined}
+                        required={false}
+                        hint="When nobody has decided by then, the step fails, and its error path is taken if it has one. Left empty, it waits as long as it takes."
+                        onChange={(timeoutSeconds) => update(chosen.id, { timeoutSeconds })}
+                      />
+                      <ApproversFields
                         root={root}
                         value={
-                          node.trigger as {
-                            cron?: string;
-                            timezone?: string;
-                            overlap?: "allow" | "skip";
-                          }
+                          node.approvers as { groups?: string[]; roles?: string[] } | undefined
                         }
-                        readOnly={false}
-                        // One added here is new; one that came with the flow keeps its zone.
-                        fresh={!loadedIds.current.has(chosen.id)}
-                        overlapDefault="skip"
-                        change={(next) => {
-                          const merged: Record<string, unknown> = {
-                            ...(node.trigger as object),
-                            ...next,
-                          };
-                          for (const key of Object.keys(merged)) {
-                            if (merged[key] === undefined) delete merged[key];
-                          }
-                          update(chosen.id, { trigger: merged as FlowNode["trigger"] });
-                        }}
+                        onChange={(approvers) => update(chosen.id, { approvers })}
                       />
-                    ) : null}
-                    {(node.trigger as { type: string }).type === "schedule" &&
-                    (ofKind("trigger_source", "poll").length > 0 ||
-                      (node.trigger as { source?: string }).source) ? (
-                      <ComboboxField
-                        label="Trigger source (optional)"
-                        options={ofKind("trigger_source", "poll")}
-                        value={(node.trigger as { source?: string }).source || undefined}
-                        hint="Each tick runs it, and the flow starts once for each thing it finds."
-                        onChange={(source) => {
-                          const { source: _was, ...rest } = node.trigger as { source?: string };
-                          update(chosen.id, { trigger: source ? { ...rest, source } : rest });
-                        }}
-                      />
-                    ) : null}
-                    {(node.trigger as { type: string }).type === "event" ? (
-                      <ComboboxField
-                        label="Event"
-                        options={eventOptions}
-                        value={(node.trigger as { event?: string }).event || undefined}
-                        onChange={(event) =>
+                      <SelectField
+                        name="surface"
+                        label="Where it waits"
+                        hint="An approval is always listed in this workspace. One that matters beyond it can be listed for the whole tenant too."
+                        value={(node.surface as string) ?? "workspace"}
+                        options={[
+                          { value: "workspace", label: "This workspace" },
+                          { value: "tenant", label: "This workspace and the tenant" },
+                        ]}
+                        onChange={(surface) =>
                           update(chosen.id, {
-                            trigger: { ...(node.trigger as object), event: event ?? "" },
+                            surface: surface === "tenant" ? "tenant" : undefined,
                           })
                         }
                       />
-                    ) : null}
-                  </>
-                ) : null}
-                {node.type === "script" &&
-                specs.has(String(node.script)) &&
-                node.input === undefined ? (
-                  <p className="m-0 text-body-sm">
-                    <span className="font-semibold">{specs.get(String(node.script))?.label}</span>{" "}
-                    <code className="font-mono text-code-sm text-ink-muted">
-                      {String(node.script)}
-                    </code>
+                    </>
+                  ) : null}
+                  {node.type === "fail"
+                    ? expression("Message", "message", "An expression that gives text.", {
+                        required: true,
+                      })
+                    : null}
+                  {node.type === "respond" ? (
+                    <RespondSettings
+                      node={node}
+                      onChange={(change) => update(chosen.id, change)}
+                      headers={(values, onChange) => (
+                        <ValuesEditor
+                          legend="Headers"
+                          add="Add a header"
+                          headers
+                          values={values}
+                          onChange={onChange}
+                        />
+                      )}
+                    />
+                  ) : null}
+                  {node.type === "branch" ? (
+                    <CasesEditor
+                      cases={(node.cases as { name: string; when: string }[]) ?? []}
+                      onChange={(cases, renamed) => {
+                        update(chosen.id, { cases });
+                        // A renamed case's connection leaves it under its new name, and a
+                        // removed case takes its connection with it, in the same step to undo.
+                        setEdges((before) => followCases(before, chosen.id, cases, renamed));
+                      }}
+                    />
+                  ) : null}
+                  {node.type === "set" ? (
+                    <ValuesEditor
+                      values={(node.values as Record<string, string>) ?? {}}
+                      onChange={(values) => update(chosen.id, { values })}
+                    />
+                  ) : null}
+                  <ConnectionsEditor
+                    id={chosen.id}
+                    node={node}
+                    nodes={nodes}
+                    edges={edges}
+                    onConnect={(handle, target) =>
+                      connect({
+                        source: chosen.id,
+                        sourceHandle: handle,
+                        target,
+                        targetHandle: null,
+                      })
+                    }
+                    onDisconnect={(handle, target) => disconnect(chosen.id, handle, target)}
+                  />
+                  <div className="mt-auto">
+                    <Button variant="danger" onClick={() => remove(chosen.id)}>
+                      Remove this step
+                    </Button>
+                  </div>
+                </>
+              ) : (
+                <div className="flex flex-col gap-3">
+                  <span aria-hidden="true" className="block h-0.5 w-5 bg-action" />
+                  <h2 className="m-0 text-title">About this flow</h2>
+                  <TextField
+                    name="description"
+                    label="What it does"
+                    maxLength={MAX_DESCRIPTION}
+                    showCount
+                    value={description}
+                    required={false}
+                    onChange={(value) => {
+                      history.record("Change the description", "description");
+                      setDescription(value);
+                      touch();
+                    }}
+                  />
+                  <p className="m-0 text-meta text-ink-muted">
+                    Choose a step to change it, on the canvas or from the steps above. Add steps
+                    with Add step. Say where each one goes next under the step's settings, or drag
+                    from the dot on its right edge to the next step. The red dot underneath is where
+                    it goes when it fails.
                   </p>
-                ) : node.type === "script" || node.type === "foreach" ? (
-                  <ComboboxField
-                    label="Script"
-                    options={scriptOptions}
-                    value={(node.script as string | undefined) || undefined}
-                    onChange={(script) =>
-                      update(chosen.id, {
-                        script: script ?? (node.type === "foreach" ? undefined : ""),
-                      })
-                    }
-                  />
-                ) : null}
-                {node.type === "subflow" ? (
-                  <SelectField
-                    name="which"
-                    label="Which flow"
-                    value={node.flowFrom === undefined ? "named" : "chosen"}
-                    options={[
-                      { value: "named", label: "Always the same one" },
-                      { value: "chosen", label: "Chosen by the data, from a list" },
-                    ]}
-                    onChange={(which) =>
-                      update(
-                        chosen.id,
-                        which === "chosen"
-                          ? {
-                              flow: undefined,
-                              flowFrom: "trigger.flow",
-                              allow: node.flow ? [node.flow as string] : [],
-                            }
-                          : {
-                              flow: (node.allow as string[] | undefined)?.[0] ?? "",
-                              flowFrom: undefined,
-                              allow: undefined,
-                            },
-                      )
-                    }
-                  />
-                ) : null}
-                {node.type === "subflow" && node.flowFrom !== undefined ? (
-                  <>
-                    {expression(
-                      "Expression that gives the flow's path",
-                      "flowFrom",
-                      "It must give one of the flows below, or the step fails.",
-                    )}
-                    <MultiSelectField
-                      label="Flows it may start"
-                      options={flowOptions}
-                      value={(node.allow as string[] | undefined) ?? []}
-                      hint="Nothing outside this list is ever started, whatever the data says."
-                      onChange={(allow) => update(chosen.id, { allow })}
-                    />
-                  </>
-                ) : node.type === "subflow" || node.type === "foreach" ? (
-                  <ComboboxField
-                    label={node.type === "foreach" ? "Or a flow" : "Flow"}
-                    options={flowOptions}
-                    value={(node.flow as string | undefined) || undefined}
-                    onChange={(flow) =>
-                      update(chosen.id, {
-                        flow: flow ?? (node.type === "foreach" ? undefined : ""),
-                      })
-                    }
-                  />
-                ) : null}
-                {node.type === "foreach"
-                  ? expression("Items", "items", "An expression that gives a list.")
-                  : null}
-                {node.type === "foreach" ? (
-                  <CheckboxField
-                    name="continueOnError"
-                    label="Keep going when an item fails"
-                    hint="A failed item gives { error: { message } } in the list, and the step still succeeds."
-                    checked={node.continueOnError === true}
-                    onChange={(checked) =>
-                      update(chosen.id, { continueOnError: checked ? true : undefined })
-                    }
-                  />
-                ) : null}
-                {node.type === "script" && specs.has(String(node.script)) ? (
-                  <NodeInputs
-                    node={node}
-                    spec={specs.get(String(node.script)) as PickableNode}
-                    choices={pickChoices}
-                    onChange={(change) => update(chosen.id, change)}
-                  />
-                ) : node.type === "script" || node.type === "subflow" || node.type === "foreach" ? (
-                  expression(
-                    "Input",
-                    "input",
-                    "An expression. trigger is what started the flow, steps.<name>.output what a step gave.",
-                  )
-                ) : null}
-                {node.type === "delay" ? (
-                  <NumberField
-                    name="seconds"
-                    label="Seconds to wait"
-                    value={node.seconds as number}
-                    min={1}
-                    onChange={(seconds) => update(chosen.id, { seconds: seconds ?? 1 })}
-                  />
-                ) : null}
-                {node.type === "approval" ? (
-                  <>
-                    <TextField
-                      name="title"
-                      label="What is being approved"
-                      value={(node.title as string) ?? ""}
-                      onChange={(title) => update(chosen.id, { title })}
-                    />
-                    {expression("Detail to show", "detail")}
-                    <SelectField
-                      name="surface"
-                      label="Where it waits"
-                      hint="An approval is always listed in this workspace. One that matters beyond it can be listed for the whole tenant too."
-                      value={(node.surface as string) ?? "workspace"}
-                      options={[
-                        { value: "workspace", label: "This workspace" },
-                        { value: "tenant", label: "This workspace and the tenant" },
-                      ]}
-                      onChange={(surface) =>
-                        update(chosen.id, { surface: surface === "tenant" ? "tenant" : undefined })
-                      }
-                    />
-                  </>
-                ) : null}
-                {node.type === "fail"
-                  ? expression("Message", "message", "An expression that gives text.")
-                  : null}
-                {node.type === "respond" ? (
-                  <RespondSettings
-                    node={node}
-                    onChange={(change) => update(chosen.id, change)}
-                    headers={(values, onChange) => (
-                      <ValuesEditor
-                        legend="Headers"
-                        add="Add a header"
-                        values={values}
-                        onChange={onChange}
-                      />
-                    )}
-                  />
-                ) : null}
-                {node.type === "branch" ? (
-                  <CasesEditor
-                    cases={(node.cases as { name: string; when: string }[]) ?? []}
-                    onChange={(cases, renamed) => {
-                      update(chosen.id, { cases });
-                      // The case's connection leaves the same case under its new name.
-                      if (renamed && renamed.from !== renamed.to) {
-                        setEdges((before) =>
-                          before.map((edge) =>
-                            edge.source === chosen.id &&
-                            edge.sourceHandle === `case:${renamed.from}`
-                              ? { ...edge, sourceHandle: `case:${renamed.to}`, label: renamed.to }
-                              : edge,
-                          ),
-                        );
-                      }
-                    }}
-                  />
-                ) : null}
-                {node.type === "set" ? (
-                  <ValuesEditor
-                    values={(node.values as Record<string, string>) ?? {}}
-                    onChange={(values) => update(chosen.id, { values })}
-                  />
-                ) : null}
-                <ConnectionsEditor
-                  id={chosen.id}
-                  node={node}
-                  nodes={nodes}
-                  edges={edges}
-                  onConnect={(handle, target) =>
-                    connect({
-                      source: chosen.id,
-                      sourceHandle: handle,
-                      target,
-                      targetHandle: null,
-                    })
-                  }
-                  onDisconnect={(handle, target) => disconnect(chosen.id, handle, target)}
-                />
-                <div className="mt-auto">
-                  <Button
-                    variant="danger"
-                    onClick={async () => {
-                      const sure = await ask.confirm({
-                        title: `Remove ${chosen.id}?`,
-                        text: "The edges into and out of it go too.",
-                        action: "Remove",
-                        danger: true,
-                      });
-                      if (sure) remove(chosen.id);
-                    }}
-                  >
-                    Remove this step
-                  </Button>
                 </div>
-              </>
-            ) : (
-              <div className="flex flex-col gap-3">
-                <span aria-hidden="true" className="block h-0.5 w-5 bg-action" />
-                <h2 className="m-0 text-title">About this flow</h2>
-                <TextField
-                  name="description"
-                  label="What it does"
-                  value={description}
-                  required={false}
-                  onChange={(value) => {
-                    history.record("Change the description", "description");
-                    setDescription(value);
-                    touch();
-                  }}
-                />
-                <p className="m-0 text-meta text-ink-muted">
-                  Choose a step to change it, on the canvas or from the steps above. Add steps with
-                  Add step. Say where each one goes next under the step's settings, or drag from the
-                  dot on its right edge to the next step. The red dot underneath is where it goes
-                  when it fails.
-                </p>
-              </div>
-            )}
+              )}
+            </fieldset>
           </ExpressionPreview.Provider>
         </aside>
       }
@@ -1800,9 +2354,15 @@ export function FlowEditor({
           title={opened ? path : "New flow"}
           state={
             <>
-              <StatePill
-                state={state === "repository" || (state === "deployed" && !dirty) ? state : "draft"}
-              />
+              {state === "removed" ? (
+                <StatePill state="draft">Removing</StatePill>
+              ) : (
+                <StatePill
+                  state={
+                    state === "repository" || (state === "deployed" && !dirty) ? state : "draft"
+                  }
+                />
+              )}
               {found.length > 0 ? (
                 <span className="flex items-center gap-1 text-meta text-attention">
                   <TriangleAlert aria-hidden="true" size={14} /> {found.length} to fix
@@ -1810,7 +2370,7 @@ export function FlowEditor({
               ) : null}
               <span
                 role="status"
-                className={`text-meta ${gaveUp || failures.current > 0 ? "text-danger" : "text-ink-subtle"}`}
+                className={`text-meta ${gaveUp || draft.clashed || failures.current > 0 ? "text-danger" : "text-ink-subtle"}`}
               >
                 {saveState}
               </span>
@@ -1832,6 +2392,7 @@ export function FlowEditor({
             <>
               <Button
                 size="small"
+                disabled={state === "removed"}
                 onClick={() => {
                   history.record("Tidy up");
                   const positions = autoLayout(flowNodes, flowEdges);
@@ -1868,7 +2429,18 @@ export function FlowEditor({
               <Button size="small" aria-pressed={testing} onClick={() => setTesting((on) => !on)}>
                 <Play aria-hidden="true" size={14} /> Test
               </Button>
-              {opened && state !== "new" ? (
+              {opened && state === "removed" ? (
+                <RemoveDraftButton
+                  root={root}
+                  kind="flow"
+                  path={opened}
+                  noun="flow"
+                  state="removed"
+                  size="small"
+                  onDone={() => setAgain((n) => n + 1)}
+                />
+              ) : null}
+              {opened && state !== "new" && state !== "removed" ? (
                 <ResourceIdentity
                   root={root}
                   link={link}
@@ -1885,7 +2457,7 @@ export function FlowEditor({
                   }}
                 />
               ) : null}
-              {opened && state !== "new" ? (
+              {opened && state !== "new" && state !== "removed" ? (
                 <RemoveDraftButton
                   root={root}
                   kind="flow"
@@ -1900,7 +2472,7 @@ export function FlowEditor({
               <Button
                 size="small"
                 variant={state === "draft" && !dirty ? "secondary" : "primary"}
-                disabled={busy || (!dirty && state !== "new")}
+                disabled={busy || state === "removed" || (!dirty && state !== "new")}
                 onClick={() => void save()}
               >
                 Save draft
@@ -1945,7 +2517,7 @@ export function FlowEditor({
                         disabled={dirty && starterId !== starter.id}
                         onClick={() => {
                           setStarterId(starter.id);
-                          open(starter.body as unknown as FlowBody);
+                          open(starter.body as unknown as ManifestFlow);
                         }}
                       >
                         {starter.label}
@@ -1958,8 +2530,25 @@ export function FlowEditor({
           }
         />
       </div>
-      {state === "repository" || problem || found.length > 0 ? (
+      {state === "repository" ||
+      state === "removed" ||
+      draft.clashed ||
+      problem ||
+      found.length > 0 ? (
         <div className="flex flex-col gap-2 px-4 pt-3 md:px-5">
+          {state === "removed" ? (
+            <Notice tone="attention">
+              This flow is removed in your drafts. Nothing changes until that draft is deployed. The
+              steps shown are what is deployed now. Keep this flow to take the removal back.
+            </Notice>
+          ) : null}
+          {draft.clashed ? (
+            <DraftClash
+              what="flow"
+              mine={() => JSON.stringify(toSend.current(), null, 2)}
+              onTake={() => setAgain((n) => n + 1)}
+            />
+          ) : null}
           {state === "repository" ? (
             <Notice tone="attention">
               This flow is managed in the tenant's repository. Saving a draft of it takes it over.
@@ -2018,6 +2607,8 @@ export function FlowEditor({
               error={live.error}
               changed={editedSinceTest && live.run !== undefined}
               onRun={runTest}
+              withAll={testAll}
+              onWithAll={setTestAll}
               onChoose={(id) => {
                 setSelected(id);
                 setNodes((before) => before.map((one) => ({ ...one, selected: one.id === id })));
@@ -2233,7 +2824,59 @@ function ConnectionsEditor({
   );
 }
 
-function CasesEditor({
+/** A case's name, changed when Enter is pressed or the field is left, not while it is typed. */
+function CaseName({
+  index,
+  name,
+  taken,
+  onRename,
+}: {
+  index: number;
+  name: string;
+  /** The names the other cases have. */
+  taken: string[];
+  onRename: (name: string) => void;
+}) {
+  const [text, setText] = useState(name);
+  const [error, setError] = useState<string>();
+  // A name changed from outside, by undo, is the one shown.
+  useEffect(() => {
+    setText(name);
+    setError(undefined);
+  }, [name]);
+  const commit = () => {
+    if (text === name) return setError(undefined);
+    if (!text.trim()) return setError("A case needs a name.");
+    if (text === OTHERWISE)
+      return setError(
+        `"${OTHERWISE}" is the way out when no case holds, so a case cannot be called that. Choose another name.`,
+      );
+    if (taken.includes(text))
+      return setError(`The name "${text}" is already used. Each case needs its own.`);
+    setError(undefined);
+    onRename(text);
+  };
+  return (
+    <form
+      onSubmit={(event) => {
+        event.preventDefault();
+        commit();
+      }}
+      onBlur={commit}
+    >
+      <TextField
+        name={`case-${index}`}
+        label="Name"
+        value={text}
+        error={error}
+        hint="Press Enter to change it. The connection from this case follows."
+        onChange={setText}
+      />
+    </form>
+  );
+}
+
+export function CasesEditor({
   cases,
   onChange,
 }: {
@@ -2256,11 +2899,11 @@ function CasesEditor({
           data-flip-key={names.keys[index]}
           className="flex flex-col gap-1 rounded-control border border-line p-2"
         >
-          <TextField
-            name={`case-${index}`}
-            label="Name"
-            value={one.name}
-            onChange={(name) =>
+          <CaseName
+            index={index}
+            name={one.name}
+            taken={cases.filter((_, at) => at !== index).map((each) => each.name)}
+            onRename={(name) =>
               onChange(
                 cases.map((each, at) => (at === index ? { ...each, name } : each)),
                 { from: one.name, to: name },
@@ -2304,63 +2947,147 @@ function CasesEditor({
       <div>
         <Button
           size="small"
-          onClick={() => onChange([...cases, { name: `case_${cases.length + 1}`, when: "true" }])}
+          onClick={() => onChange([...cases, { name: freeName("case", cases), when: "true" }])}
         >
           Add a case
         </Button>
       </div>
       <p className="m-0 text-meta text-ink-muted">
-        When no case holds, the flow leaves by “otherwise”.
+        When no case holds, the flow leaves by “otherwise”. Removing a case removes its connection.
       </p>
     </fieldset>
   );
 }
 
-function ValuesEditor({
+/** `base_1`, `base_2`… the first not already a name in `items`. */
+export function freeName(base: string, items: { name: string }[]): string {
+  let n = items.length + 1;
+  while (items.some((one) => one.name === `${base}_${n}`)) n++;
+  return `${base}_${n}`;
+}
+
+interface ValueRow {
+  name: string;
+  value: string;
+}
+
+/** Why a row's name cannot be used, or nothing when it can. */
+export function valueRowProblem(
+  rows: ValueRow[],
+  at: number,
+  headers: boolean,
+): string | undefined {
+  const name = rows[at]?.name ?? "";
+  if (!name.trim()) return "A name is needed.";
+  // Header names are the same name whatever their case.
+  const same = (a: string) => (headers ? a.toLowerCase() : a);
+  if (rows.some((row, other) => other < at && same(row.name) === same(name)))
+    return `The name "${name}" is used twice. Each needs its own.`;
+  if (headers) {
+    if (!/^[A-Za-z0-9-]+$/.test(name)) return "Letters, digits and hyphens only.";
+    if (RESPONSE_HEADERS_REFUSED.includes(name.toLowerCase()))
+      return `A flow may not set the header "${name}".`;
+  }
+  return undefined;
+}
+
+/** What is saved of the rows: those whose name can be used, the first of a name winning. */
+export function rowsToValues(rows: ValueRow[], headers: boolean): Record<string, string> {
+  return Object.fromEntries(
+    rows.filter((_, at) => !valueRowProblem(rows, at, headers)).map((row) => [row.name, row.value]),
+  );
+}
+
+const sameValues = (a: Record<string, string>, b: Record<string, string>) =>
+  JSON.stringify(Object.entries(a)) === JSON.stringify(Object.entries(b));
+
+export function ValuesEditor({
   values,
   onChange,
   legend = "Values",
   add = "Add a value",
+  headers = false,
 }: {
   values: Record<string, string>;
   onChange: (values: Record<string, string>) => void;
   legend?: string;
   add?: string;
+  /** Rows are response headers: their names are checked as header names, up to 20. */
+  headers?: boolean;
 }) {
-  const entries = Object.entries(values);
+  const most = headers ? 20 : 50;
+  const fewest = headers ? 0 : 1;
+  // Held as a list while edited, so that a name typed on the way to another is not a value lost.
+  const [rows, setRows] = useState<ValueRow[]>(() =>
+    Object.entries(values).map(([name, value]) => ({ name, value })),
+  );
+  const keys = useKeys(rows.length);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only a change of the values is news
+  useEffect(() => {
+    // Values changed from outside, by undo, are the rows shown.
+    if (!sameValues(values, rowsToValues(rows, headers)))
+      setRows(Object.entries(values).map(([name, value]) => ({ name, value })));
+  }, [values]);
+  const edit = (next: ValueRow[]) => {
+    setRows(next);
+    onChange(rowsToValues(next, headers));
+  };
+  const seed = headers ? "x-header" : "value";
+  const taken = (name: string) => rows.some((row) => row.name === name);
+  let fresh = headers ? seed : `${seed}_${rows.length + 1}`;
+  for (let n = 2; taken(fresh); n++)
+    fresh = headers ? `${seed}-${n}` : `${seed}_${rows.length + n}`;
   return (
     <fieldset className="m-0 flex flex-col gap-2 border-0 p-0">
       <legend className="p-0 text-body-sm font-medium">{legend}</legend>
-      {entries.map(([name, value], index) => (
-        // biome-ignore lint/suspicious/noArrayIndexKey: a value has no identity but its place while its name is being typed
-        <div key={index} className="grid grid-cols-[1fr_1.4fr] gap-2">
-          <TextField
-            name={`name-${index}`}
-            label="Name"
-            value={name}
-            onChange={(next) =>
-              onChange(
-                Object.fromEntries(
-                  entries.map(([key, each], at) => [at === index ? next : key, each]),
-                ),
-              )
-            }
-          />
-          <ExpressionField
-            name={`value-${index}`}
-            label="Expression"
-            value={value}
-            onChange={(next) => onChange({ ...values, [name]: next })}
-          />
+      {rows.map((row, index) => (
+        <div key={keys.keys[index]} className="flex flex-col gap-1">
+          <div className="grid grid-cols-[1fr_1.4fr] gap-2">
+            <TextField
+              name={`name-${index}`}
+              label="Name"
+              value={row.name}
+              error={valueRowProblem(rows, index, headers)}
+              onChange={(name) =>
+                edit(rows.map((one, at) => (at === index ? { ...one, name } : one)))
+              }
+            />
+            <ExpressionField
+              name={`value-${index}`}
+              label="Expression"
+              value={row.value}
+              onChange={(value) =>
+                edit(rows.map((one, at) => (at === index ? { ...one, value } : one)))
+              }
+            />
+          </div>
+          {rows.length > fewest ? (
+            <div>
+              <Button
+                size="small"
+                variant="danger"
+                onClick={() => {
+                  keys.remove(index);
+                  edit(rows.filter((_, at) => at !== index));
+                }}
+              >
+                {headers ? "Remove header" : "Remove value"}
+              </Button>
+            </div>
+          ) : null}
         </div>
       ))}
       <div>
         <Button
           size="small"
-          onClick={() => onChange({ ...values, [`value_${entries.length + 1}`]: "trigger" })}
+          disabled={rows.length >= most}
+          onClick={() => edit([...rows, { name: fresh, value: headers ? "''" : "trigger" }])}
         >
           {add}
         </Button>
+        {rows.length >= most ? (
+          <p className="m-0 mt-1 text-meta text-ink-muted">A step takes {most} at most.</p>
+        ) : null}
       </div>
     </fieldset>
   );

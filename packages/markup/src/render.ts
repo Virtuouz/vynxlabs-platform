@@ -1,6 +1,7 @@
+import { splitCode } from "./code.js";
 import { imageKind, isExternal, safeHref, topicOf } from "./links.js";
 import { PROFILES, type ProfileName, REGISTRY, type Registry } from "./registry.js";
-import { type Component, type Node, plain } from "./tree.js";
+import { type Component, type Node, plain, type Root, walk } from "./tree.js";
 
 /**
  * What a tree is drawn as, before it is HTML or React: elements with a tag,
@@ -49,6 +50,11 @@ export interface RenderOptions {
   /** Where a screenshot is served from, by its name. */
   screenshot?: (name: string) => string | null | undefined;
   /**
+   * Where the screenshot is served from for a dark page, by its name. When it gives one, both pictures
+   * are drawn and the page's own look shows one of them. Left out, a screenshot is one picture.
+   */
+  screenshotDark?: (name: string) => string | null | undefined;
+  /**
    * Marks each block drawn with the lines of the source it came from, as
    * `data-line` and, for a container, `data-end-line`: for an editor whose
    * preview follows its cursor. A served page leaves it out.
@@ -56,6 +62,16 @@ export interface RenderOptions {
   lines?: boolean;
   /** The terms `::glossary` lists, for its scope. Nothing draws nothing. */
   glossary?: (scope: "collection" | "site") => readonly GlossaryItem[] | null | undefined;
+  /**
+   * The changelog entries `::changelog` draws, newest first, for what it was narrowed to. Nothing
+   * draws nothing. The component shows the first `limit` and says how many more there are.
+   */
+  changelog?:
+    | ((query: {
+        folder?: string;
+        subject?: string;
+      }) => readonly ChangelogItem[] | null | undefined)
+    | undefined;
   /** What is in the folder the page is in, for `::pages`. Nothing draws nothing. */
   folder?: () => readonly FolderItem[] | null | undefined;
   /**
@@ -63,8 +79,20 @@ export interface RenderOptions {
    * that has headings of its own: 2 draws `#` as an h3. None goes past h6.
    */
   headingShift?: number;
+  /**
+   * The level the highest heading the page uses is drawn at, the next one level lower, and so on,
+   * whatever the author wrote: 2 under a page's own title as h1. No level is skipped. When given
+   * it takes the place of `headingShift`, which is for a tree that is only a part of a page.
+   */
+  headingTop?: number;
   /** Put before every id this drawing makes up, so two drawings on one page do not clash. */
   idPrefix?: string;
+  /**
+   * Draws code as spans with classes, for a language it knows: Prism's `token keyword`, never a style, so
+   * that a page's policy needs no change. Nothing leaves the code as it was written. `marks` is what follows
+   * a `/` in the fence (`ts/1,3-5`).
+   */
+  highlight?: (code: string, lang: string, marks?: string) => Drawn[] | null | undefined;
   /** The words of the link behind a term. `{word}` is the term as it was written. "More about {word}" when left out. */
   learnMore?: string;
 }
@@ -78,6 +106,19 @@ export interface GlossaryItem {
   /** The page that defines it, already resolved, and what that page is called. */
   href?: string;
   page?: string;
+}
+
+/** One entry of a changelog, as `::changelog` draws it. */
+export interface ChangelogItem {
+  /** Names the entry's heading, and prefixes the ids of its own. */
+  id: string;
+  title: string;
+  /** Where the entry's page is, already resolved. */
+  href?: string;
+  /** `YYYY-MM-DD`. An entry nothing dates is drawn without one. */
+  date?: string;
+  /** The page's body. */
+  tree: Root;
 }
 
 /** One page or folder of a folder, as `::pages` lists it. */
@@ -94,6 +135,8 @@ export interface Context {
   profile: ProfileName;
   registry: Registry;
   ids: number;
+  /** How many links the node being drawn is inside: a picture in a link is the link's, not a button. */
+  inLink?: number;
   /**
    * A renderer's own way to draw a node: HTML of the caller's, or a React
    * component. It gives back what it drew, or nothing to leave the node as usual.
@@ -104,13 +147,48 @@ export interface Context {
 /** The tag of an element that holds what a renderer drew in its own way. */
 export const CUSTOM = "#custom";
 
-export function context(options: RenderOptions = {}): Context {
+/** How far the headings of `tree` go down so that the highest one used is at `top`; none goes past h6. */
+export function shiftFor(tree: Node, top: number): number {
+  let highest = 7;
+  for (const { node } of walk(tree)) {
+    if (node.type === "heading") highest = Math.min(highest, node.depth);
+  }
+  return highest === 7 ? 0 : top - highest;
+}
+
+export function context(options: RenderOptions = {}, tree?: Node): Context {
+  if (options.headingTop !== undefined && tree) {
+    options = { ...options, headingShift: shiftFor(tree, options.headingTop) };
+  }
   return {
     options,
     profile: options.profile ?? "docs",
     registry: options.registry ?? REGISTRY,
     ids: 0,
   };
+}
+
+/** Draws what is inside a link, noting that it is. */
+export function inLink<T>(ctx: Context, draw: () => T): T {
+  ctx.inLink = (ctx.inLink ?? 0) + 1;
+  try {
+    return draw();
+  } finally {
+    ctx.inLink = (ctx.inLink ?? 1) - 1;
+  }
+}
+
+/**
+ * A picture the reader can press to see larger: the page's script (or the console's own
+ * component) opens the modal on a press. It is a button, so the keyboard reaches it.
+ */
+export function zoomable(ctx: Context, ...pictures: El[]): El {
+  if (ctx.inLink) return pictures[0] as El;
+  return el(
+    "button",
+    { type: "button", class: "vd-zoom", "data-vd-zoom": "", "aria-haspopup": "dialog" },
+    pictures,
+  );
 }
 
 export const el = (tag: string, attrs: El["attrs"] = {}, children: Drawn[] = []): El => ({
@@ -147,6 +225,29 @@ export function srcOf(src: string, ctx: Context): string | undefined {
   if (mapped === null) return undefined;
   const final = mapped ?? src.trim();
   return imageKind(final) === "refused" ? undefined : final;
+}
+
+const DAYS = new Intl.DateTimeFormat("en-GB", {
+  day: "numeric",
+  month: "long",
+  year: "numeric",
+  timeZone: "UTC",
+});
+
+/** A `YYYY-MM-DD` as a reader says it: 24 November 2026. */
+function dayOf(day: string): string | undefined {
+  const at = new Date(`${day}T00:00:00Z`);
+  return Number.isNaN(at.getTime()) ? undefined : DAYS.format(at);
+}
+
+/** A tree with each heading's id put under `prefix`, so that entries drawn on one page never share one. */
+function prefixed<T extends Node>(node: T, prefix: string): T {
+  const copy = { ...node } as T & { children?: Node[]; id?: string };
+  if ("children" in node && Array.isArray(node.children)) {
+    copy.children = (node.children as Node[]).map((child) => prefixed(child, prefix));
+  }
+  if (node.type === "heading") copy.id = `${prefix}-${node.id}`;
+  return copy;
 }
 
 export function drawAll(nodes: readonly Node[], ctx: Context): Drawn[] {
@@ -200,7 +301,7 @@ function usual(node: Node, ctx: Context): Drawn[] {
     case "heading":
       return [
         el(
-          `h${Math.min(6, node.depth + Math.max(0, ctx.options.headingShift ?? 0))}`,
+          `h${Math.max(1, Math.min(6, node.depth + (ctx.options.headingShift ?? 0)))}`,
           { id: node.id },
           inside(),
         ),
@@ -218,14 +319,14 @@ function usual(node: Node, ctx: Context): Drawn[] {
     case "inlineCode":
       return [el("code", {}, [node.value])];
     case "code":
-      return [codeBlock(node.value, node.lang)];
+      return [codeBlock(node.value, node.lang, ctx)];
     case "link": {
       const href = hrefOf(node.href, ctx);
       if (href === undefined) return inside();
       const attrs: El["attrs"] = { href };
       if (node.title) attrs.title = node.title;
       if (isExternal(href)) attrs.rel = "noopener noreferrer";
-      return [el("a", attrs, inside())];
+      return [el("a", attrs, inLink(ctx, inside))];
     }
     case "image": {
       const src = srcOf(node.src, ctx);
@@ -233,7 +334,7 @@ function usual(node: Node, ctx: Context): Drawn[] {
       const attrs: El["attrs"] = { src, alt: node.alt };
       if (node.title) attrs.title = node.title;
       attrs.loading = "lazy";
-      return [el("img", attrs)];
+      return [zoomable(ctx, el("img", attrs))];
     }
     case "list": {
       const attrs: El["attrs"] = {};
@@ -252,15 +353,24 @@ function usual(node: Node, ctx: Context): Drawn[] {
     case "rule":
       return [el("hr")];
     case "table": {
+      // As table-saw labels them: every body cell says which column it is in, so that a row
+      // can stand as label and value pairs where the table is narrow, with no script.
+      const labels = (node.children.find((row) => row.header)?.children ?? []).map((cell) =>
+        plain(cell).replace(/\s+/g, " ").trim(),
+      );
       const cells = (row: (typeof node.children)[number]) =>
         row.children.map((cell, index) => {
           const align = node.align[index];
-          return el(
-            row.header ? "th" : "td",
-            // A class, not a style: a page is served under a policy that takes no inline styles.
-            align ? { class: `vd-align-${align}` } : {},
-            drawAll(cell.children, ctx),
-          );
+          const attrs: El["attrs"] = {};
+          // A class, not a style: a page is served under a policy that takes no inline styles.
+          if (align) attrs.class = `vd-align-${align}`;
+          if (!row.header && labels[index]) attrs["data-label"] = labels[index];
+          const drawn = drawAll(cell.children, ctx);
+          // As table-saw does: a body cell of several pieces (words and code, say) is wrapped in one, so
+          // that stacked as a grid it is a value and not a column for each piece.
+          const value =
+            !row.header && drawn.length > 1 ? [el("span", { class: "vd-cell" }, drawn)] : drawn;
+          return el(row.header ? "th" : "td", attrs, value);
         });
       const head = node.children.filter((row) => row.header);
       const body = node.children.filter((row) => !row.header);
@@ -283,7 +393,11 @@ function usual(node: Node, ctx: Context): Drawn[] {
           ),
         );
       }
-      return [el("div", { class: "vd-table" }, [el("table", {}, parts)])];
+      return [
+        el("div", { class: "vd-table", "data-cols": String(node.align.length || labels.length) }, [
+          el("table", {}, parts),
+        ]),
+      ];
     }
     case "tableRow":
     case "tableCell":
@@ -295,7 +409,7 @@ function usual(node: Node, ctx: Context): Drawn[] {
   }
 }
 
-export function codeBlock(value: string, lang: string | undefined): El {
+export function codeBlock(value: string, lang: string | undefined, ctx?: Context): El {
   // A diagram is drawn by the page's script. Until then, and without it, it is its source.
   if (lang === "mermaid") {
     return el("figure", { class: "vd-mermaid", "data-vd-mermaid": "1" }, [
@@ -304,9 +418,15 @@ export function codeBlock(value: string, lang: string | undefined): El {
       ]),
     ]);
   }
-  const safe = lang && /^[A-Za-z0-9_+#-]+$/.test(lang) ? lang : undefined;
+  // `ts/1,3-5` is the language `ts` with lines to mark; what follows the slash is read by the highlighter alone.
+  const [named, marks] = lang ? lang.split("/", 2) : [];
+  const safe = named && /^[A-Za-z0-9_+#-]+$/.test(named) ? named : undefined;
   return el("pre", safe ? { "data-lang": safe } : {}, [
-    el("code", safe ? { class: `language-${safe}` } : {}, [value]),
+    el(
+      "code",
+      safe ? { class: `language-${safe}` } : {},
+      (safe && ctx?.options.highlight?.(value, safe, marks)) || [value],
+    ),
   ]);
 }
 
@@ -316,7 +436,8 @@ export function tabsOf(node: Component): { label: string; node: Node }[] {
     return node.children
       .filter((child) => child.type === "code")
       .map((child) => ({
-        label: (child.type === "code" && (titleOf(child.meta) ?? child.lang)) || "Code",
+        label:
+          (child.type === "code" && (titleOf(child.meta) ?? child.lang?.split("/")[0])) || "Code",
         node: child,
       }));
   }
@@ -442,7 +563,29 @@ function component(node: Component, ctx: Context): Drawn[] {
       if (!src || imageKind(src) === "refused") {
         return [el("p", { class: "vd-screenshot-missing" }, [alt])];
       }
-      return [el("figure", { class: "vd-screenshot" }, [el("img", { src, alt, loading: "lazy" })])];
+      const pressed = (...pictures: El[]) => zoomable(ctx, ...pictures);
+      const dark = ctx.options.screenshotDark?.(node.props.name ?? "");
+      if (dark && dark !== src && imageKind(dark) !== "refused") {
+        return [
+          el("figure", { class: "vd-screenshot" }, [
+            pressed(
+              el("img", { class: "vd-shot-light", src, alt, loading: "lazy" }),
+              el("img", {
+                class: "vd-shot-dark",
+                src: dark,
+                alt: "",
+                "aria-hidden": "true",
+                loading: "lazy",
+              }),
+            ),
+          ]),
+        ];
+      }
+      return [
+        el("figure", { class: "vd-screenshot" }, [
+          pressed(el("img", { src, alt, loading: "lazy" })),
+        ]),
+      ];
     }
     case "file-tree":
       return [el("div", { class: "vd-file-tree" }, inside())];
@@ -504,6 +647,70 @@ function component(node: Component, ctx: Context): Drawn[] {
         ),
       ];
     }
+    case "changelog": {
+      const found = ctx.options.changelog?.({
+        ...(node.props.folder ? { folder: node.props.folder } : {}),
+        ...(node.props.subject ? { subject: node.props.subject } : {}),
+      });
+      const items = [...(found ?? [])];
+      if (items.length === 0) return [];
+      const limit = Math.max(1, Math.min(50, Number(node.props.limit) || 10));
+      const shift = Math.max(0, ctx.options.headingShift ?? 0);
+      // The entry's title is a heading under the page's own; its body's headings go under that.
+      const level = Math.min(6, 2 + shift);
+      const prefix = ctx.options.idPrefix ?? "vd";
+      const shown = items.slice(0, limit).map((item) => {
+        const own = `${prefix}-changelog-${item.id}`;
+        // Its shallowest heading, whichever it is, goes directly under the entry's title.
+        let shallowest = 6;
+        for (const { node: one } of walk(item.tree)) {
+          if (one.type === "heading") shallowest = Math.min(shallowest, one.depth);
+        }
+        const body = drawAll(prefixed(item.tree, own).children, {
+          ...ctx,
+          // An entry that holds a changelog of its own is not drawn again inside itself.
+          options: {
+            ...ctx.options,
+            headingShift: level + 1 - shallowest,
+            idPrefix: own,
+            changelog: undefined,
+            // Another page's lines are not this page's.
+            lines: false,
+          },
+        });
+        const href = item.href ? hrefOf(item.href, { ...ctx, profile: "docs" }, true) : undefined;
+        const when = item.date ? dayOf(item.date) : undefined;
+        return el("article", { class: "vd-changelog-entry", id: own }, [
+          el("header", { class: "vd-changelog-head" }, [
+            el(`h${level}`, { class: "vd-changelog-title" }, [
+              href ? el("a", { href }, [item.title]) : item.title,
+            ]),
+            ...(when
+              ? [el("time", { class: "vd-changelog-date", datetime: item.date as string }, [when])]
+              : []),
+          ]),
+          el("div", { class: "vd-changelog-body" }, body),
+        ]);
+      });
+      const rest = items.slice(limit);
+      const next = rest[0]?.href
+        ? hrefOf(rest[0].href, { ...ctx, profile: "docs" }, true)
+        : undefined;
+      return [
+        el("div", { class: "vd-changelog" }, [
+          ...shown,
+          ...(rest.length > 0 && next
+            ? [
+                el("p", { class: "vd-changelog-more" }, [
+                  el("a", { href: next }, [
+                    `${rest.length} older ${rest.length === 1 ? "entry" : "entries"}, from ${rest[0]?.title}`,
+                  ]),
+                ]),
+              ]
+            : []),
+        ]),
+      ];
+    }
     case "pages": {
       const items = ctx.options.folder?.() ?? [];
       if (items.length === 0) return [];
@@ -516,7 +723,15 @@ function component(node: Component, ctx: Context): Drawn[] {
             const words: Drawn[] = [
               el("span", { class: "vd-pages-title" }, [item.title]),
               ...(item.description
-                ? [el("span", { class: "vd-pages-text" }, [item.description])]
+                ? [
+                    el(
+                      "span",
+                      { class: "vd-pages-text" },
+                      splitCode(item.description).map((part) =>
+                        part.code ? el("code", {}, [part.text]) : part.text,
+                      ),
+                    ),
+                  ]
                 : []),
             ];
             return el("li", item.folder ? { class: "vd-pages-folder" } : {}, [

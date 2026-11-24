@@ -2,7 +2,7 @@
 
 Fly.io hosts the Vynxlabs-run instances. Nothing in the image is specific to Fly: it reads the same environment variables as every other deployment mode.
 
-This setup has not been run yet. Treat the commands as a starting point and check them against the current Fly documentation.
+The same steps, kept up to date, are in the documentation at `/docs/self-host/how-to/running/install-on-fly` on an instance. This setup has not been run yet. Treat the commands as a starting point and check them against the current Fly documentation.
 
 ## One-time setup
 
@@ -53,7 +53,11 @@ and add the group to `fly.toml`:
   workers = "volvel-worker-host --url http://<app>.internal:8080"
 ```
 
-Size the `workers` machines for the scripts they will run. The worker host runs as root, to start each worker as `vxrun`. Set `MANAGED_WORKERS=false` instead if every tenant is served by standalone workers.
+`fly.toml` sets `HOST = "::"`, because `<app>.internal` is an IPv6 address and the control plane would otherwise listen on IPv4 only, and names the `app` group for its service (`processes = ["app"]`), so the `workers` group has none. The worker host's rules let a worker reach the control plane at that address and the machine's name servers (IPv6 too), and nothing private else. `WORKER_EGRESS_ALLOW` lists, comma separated, networks and names that workers may also reach, such as an internal API. It is empty unless set, and it is not `EGRESS_ALLOW`, which is what the instance itself may reach for a tenant.
+
+The `workers` group must run as root. If its log says "not running as root" or "a worker could not be started", it does not, and no worker will start: the log names the error. The control plane's `kill_timeout` is in `fly.toml`; give the `workers` machines the same.
+
+Size the `workers` machines for the scripts they will run. The worker host runs as root, to start each worker as a user of its own. Set `MANAGED_WORKERS=false` instead if every tenant is served by standalone workers.
 
 `APPS_URL` gives apps written as code an address of their own: `fly certs add apps.<your domain>`. Without it they are not served.
 
@@ -64,7 +68,7 @@ Fly does not restart a machine whose health check fails: the check only decides 
 - No worker takes more work below the memory floor (`RUN_MEMORY_FLOOR_MB`).
 - If memory still runs low, the largest script is stopped.
 
-`swap_size_mb` in `fly.toml` gives the machine room to slow down rather than stall. Size the machine with "Sizing" in `docs/self-hosting.md`.
+`swap_size_mb` in `fly.toml` gives the machine room to slow down rather than stall. Size the machine with [Sizing and scaling](/docs/self-host/explanation/running/sizing-and-scaling) in the documentation, served at `/docs` on the instance.
 
 The database matters as much as the app. A `shared-cpu-1x` Postgres has burst credit for a while, then a fraction of a core, and every tenant's queries slow down together. Give it a `performance` CPU, or use Fly Managed Postgres, for anything past a trial.
 

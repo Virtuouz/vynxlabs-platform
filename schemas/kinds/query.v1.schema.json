@@ -6,7 +6,8 @@
   "properties": {
     "description": {
       "type": "string",
-      "maxLength": 500
+      "maxLength": 500,
+      "description": "What it is for, in plain text."
     },
     "sql": {
       "type": "string",
@@ -35,18 +36,21 @@
               "boolean",
               "date",
               "timestamp"
-            ]
+            ],
+            "description": "What the parameter holds. A value that does not fit is refused."
           },
           "label": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 100
+            "maxLength": 100,
+            "description": "What the parameter is called where a person is asked for it."
           },
           "default": {
             "description": "Used when the query is run without this parameter."
           },
           "required": {
-            "type": "boolean"
+            "type": "boolean",
+            "description": "Whether the query cannot be run without it."
           }
         },
         "required": [

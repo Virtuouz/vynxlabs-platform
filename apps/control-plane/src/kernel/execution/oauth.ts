@@ -17,6 +17,7 @@ import { badRequest, HttpError, notFound } from "../errors.js";
 import type { Kernel } from "../kernel.js";
 import { type BindingName, decryptFor, encryptFor } from "./bindings.js";
 import { BUILTIN_CONFIG_SCHEMAS } from "./connectors.js";
+import { openRow, sealRow } from "./sealed.js";
 
 /** How long a member has to agree at the provider and come back. */
 export const STATE_MINUTES = 10;
@@ -92,9 +93,7 @@ export class TokenRefused extends Error {
   }
 }
 
-const tokensName = (id: BindingName) => `connection-oauth:${id.path}`;
 const stateName = (stateId: string) => `connection-oauth-state:${stateId}`;
-const secretName = (id: BindingName) => `connection:${id.path}`;
 
 /** The binding, checked to be an OAuth one that can be authorized. */
 async function oauthBinding(kernel: Kernel, db: Db | Trx, id: BindingName) {
@@ -114,7 +113,14 @@ async function oauthBinding(kernel: Kernel, db: Db | Trx, id: BindingName) {
     ...row,
     config: row.config as unknown as OAuth2Config,
     secret: row.credential
-      ? await decryptFor(kernel, db, id.tenantId, id.workspaceId, secretName(id), row.credential)
+      ? await openRow(
+          kernel,
+          db,
+          "connection",
+          { tenantId: id.tenantId, workspaceId: id.workspaceId, rowId: row.id, path: id.path },
+          row.credential,
+          "client secret",
+        )
       : undefined,
   };
 }
@@ -257,7 +263,19 @@ export async function finishAuthorization(
       pending.secrets,
     ),
   ) as { verifier: string };
-  const binding = await oauthBinding(kernel, kernel.db, connection);
+  let binding: Awaited<ReturnType<typeof oauthBinding>>;
+  try {
+    binding = await oauthBinding(kernel, kernel.db, connection);
+  } catch (failure) {
+    // The connection was removed, or changed to another kind, while the member was away.
+    if (failure instanceof HttpError && failure.statusCode === 404) {
+      throw refused(
+        `The connection ${connection.path} was removed while you were at the provider. Set it up again, then press Connect.`,
+      );
+    }
+    if (failure instanceof HttpError) throw refused(failure.message);
+    throw failure;
+  }
   let tokens: Tokens;
   try {
     tokens = await tokenRequest(binding.config, binding.secret, {
@@ -311,12 +329,11 @@ async function storeTokens(
   await trx
     .updateTable("connection_binding")
     .set({
-      oauth_tokens: await encryptFor(
+      oauth_tokens: await sealRow(
         kernel,
         trx,
-        id.tenantId,
-        id.workspaceId,
-        tokensName(id),
+        "connection-oauth",
+        { tenantId: id.tenantId, workspaceId: id.workspaceId, rowId: bindingId, path: id.path },
         JSON.stringify(tokens),
       ),
       oauth: JSON.stringify(oauth),
@@ -428,13 +445,13 @@ export async function accessToken(
       );
     }
     const tokens = JSON.parse(
-      await decryptFor(
+      await openRow(
         kernel,
         trx,
-        id.tenantId,
-        id.workspaceId,
-        tokensName(id),
+        "connection-oauth",
+        { tenantId: id.tenantId, workspaceId: id.workspaceId, rowId: binding.id, path: id.path },
         binding.oauth_tokens,
+        "connection",
       ),
     ) as Tokens;
     const now = Date.now();
@@ -513,6 +530,33 @@ export async function accessToken(
     latencyMs: null,
   });
   throw unusable(`The connection ${id.path} needs connecting again in the console: ${problem}`);
+}
+
+/** The tokens a connection holds, as stored, without asking the provider. For masking: nothing is refreshed. */
+export async function storedTokens(
+  kernel: Kernel,
+  db: Db | Trx,
+  id: BindingName,
+): Promise<string[]> {
+  const row = await db
+    .selectFrom("connection_binding")
+    .select(["id", "oauth_tokens"])
+    .where("tenant_id", "=", id.tenantId)
+    .where("workspace_id", "=", id.workspaceId)
+    .where("path", "=", id.path)
+    .executeTakeFirst();
+  if (!row?.oauth_tokens) return [];
+  const tokens = JSON.parse(
+    await openRow(
+      kernel,
+      db,
+      "connection-oauth",
+      { tenantId: id.tenantId, workspaceId: id.workspaceId, rowId: row.id, path: id.path },
+      row.oauth_tokens,
+      "connection",
+    ),
+  ) as Tokens;
+  return [tokens.accessToken, tokens.refreshToken].filter((t): t is string => !!t);
 }
 
 /** Forgets authorizations that were never finished. */

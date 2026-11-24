@@ -2,13 +2,14 @@ import { CircleCheck, CirclePause, Cpu, Globe, LifeBuoy } from "lucide-react";
 import type { ReactNode } from "react";
 import { useLoad } from "../api.ts";
 import { actionWords } from "../audit-words.ts";
-import { ErrorState, Loading } from "../kit/LoadState.tsx";
+import { ErrorState, Loading, Pending } from "../kit/LoadState.tsx";
 import { KeyValues, NextStep, PageHeader, Panel, SectionLabel } from "../kit/layout.tsx";
 import { EnvTag, Mono, StatePill } from "../kit/status.tsx";
+import { useInstanceStartsWorkers } from "../kit/useInstanceStartsWorkers.ts";
 import { when } from "../ListScreen.tsx";
 import { Link } from "../router.tsx";
 import type { TenantCounts, WorkspaceCounts } from "../Shell.tsx";
-import { RenameTenantButton } from "./Environments.tsx";
+import { ConsoleCodeButton, RenameTenantButton } from "./Environments.tsx";
 import { PromotionRequests } from "./Promotion.tsx";
 
 /** Actions that recorded a person's own preference, not a change. */
@@ -21,6 +22,8 @@ interface Workspace {
   type: "production" | "dev";
   linkedWorkspaceId: string | null;
   triggersPaused: boolean;
+  /** An operator has paused every trigger in the instance. */
+  pausedByInstance?: boolean;
 }
 
 interface AuditEntry {
@@ -47,7 +50,14 @@ const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? o
  * and its failures, who is here, and what changed last.
  */
 export function TenantOverview({ base, tenantId }: { base: string; tenantId: string }) {
-  const tenant = useLoad<{ name: string; slug: string }>(base);
+  const tenant = useLoad<{
+    name: string;
+    slug: string;
+    managedWorkers?: boolean;
+    mayRename?: boolean;
+    consoleCode?: boolean;
+  }>(base);
+  const startsWorkers = useInstanceStartsWorkers(base, tenant.data?.managedWorkers);
   const counts = useLoad<TenantCounts>(`${base}/summary`);
   const instance = useLoad<{ mail?: boolean }>("/instance");
   const workspaces = useLoad<{ items: Workspace[] }>(`${base}/workspaces`);
@@ -59,6 +69,8 @@ export function TenantOverview({ base, tenantId }: { base: string; tenantId: str
   const c = counts.data;
   const t = (slug: string) => `/t/${tenantId}/${slug}`;
 
+  // A count the viewer may not read is not zero.
+  const unseen = c !== undefined && (c.approvalsWaiting == null || c.domainsToFix == null);
   const attention: ReactNode[] = [];
   const waiting = c?.approvalsWaiting ?? 0;
   // An older server does not say which are the viewer's: then none is claimed.
@@ -119,16 +131,19 @@ export function TenantOverview({ base, tenantId }: { base: string; tenantId: str
       />,
     );
   }
-  if (c?.workersOnline === 0) {
+  // Workers the instance starts on demand exit when idle: none online is then the normal state.
+  if (c?.workersOnline === 0 && startsWorkers === false) {
     attention.push(
-      <NextStep
-        key="workers"
-        tone="danger"
-        icon={<Cpu aria-hidden="true" size={16} />}
-        title="No worker is online"
-        detail="Runs wait in the queue until one connects."
-        action={<Go to={t("workers")}>Workers</Go>}
-      />,
+      // Whether a worker is connected is the machine's state, so a picture leaves this row out (screenshot.css).
+      <div key="workers" data-worker-state>
+        <NextStep
+          tone="danger"
+          icon={<Cpu aria-hidden="true" size={16} />}
+          title="No worker is online"
+          detail="Runs wait in the queue until one connects."
+          action={<Go to={t("workers")}>Workers</Go>}
+        />
+      </div>,
     );
   }
 
@@ -146,11 +161,17 @@ export function TenantOverview({ base, tenantId }: { base: string; tenantId: str
         meta={tenant.data ? <Mono>{tenant.data.slug}</Mono> : null}
         actions={
           tenant.data ? (
-            <RenameTenantButton tenant={{ id: tenantId, ...tenant.data }} onDone={tenant.reload} />
+            <>
+              <RenameTenantButton
+                tenant={{ id: tenantId, ...tenant.data }}
+                onDone={tenant.reload}
+              />
+              <ConsoleCodeButton tenant={{ id: tenantId, ...tenant.data }} onDone={tenant.reload} />
+            </>
           ) : null
         }
       />
-      {counts.error ? <ErrorState error={counts.error} onRetry={counts.reload} /> : null}
+      {counts.error && c ? <ErrorState error={counts.error} onRetry={counts.reload} /> : null}
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
         <div className="flex min-w-0 flex-col gap-6">
@@ -161,15 +182,21 @@ export function TenantOverview({ base, tenantId }: { base: string; tenantId: str
             {c?.promotionRequests && attention.length === 0 ? null : (
               <Panel className="divide-y divide-line">
                 {!c ? (
-                  <Loading />
+                  <Pending of={counts} what="the counts" />
                 ) : attention.length > 0 ? (
                   attention
                 ) : (
                   <NextStep
-                    tone="success"
+                    tone={unseen ? "action" : "success"}
                     icon={<CircleCheck aria-hidden="true" size={16} />}
-                    title="Nothing needs you"
-                    detail="No approvals or promotions waiting, every hostname works, and workers are online."
+                    title={unseen ? "Nothing you can see needs you" : "Nothing needs you"}
+                    detail={
+                      unseen
+                        ? "Some counts here are not yours to read. Ask an administrator for read access if you need them."
+                        : startsWorkers
+                          ? "No approvals or promotions waiting, every hostname works, and the instance starts workers when there is work."
+                          : "No approvals or promotions waiting, every hostname works, and workers are online."
+                    }
                   />
                 )}
               </Panel>
@@ -312,16 +339,20 @@ function WorkspaceLine({
         <span className="text-meta text-ink-muted">
           {s?.version ? `Running v${s.version}` : "Nothing deployed"}
           {target ? ` · promotes to ${target.name}` : ""}
-          {workspace.triggersPaused ? " · triggers paused" : ""}
+          {workspace.pausedByInstance
+            ? " · triggers paused by the instance"
+            : workspace.triggersPaused
+              ? " · triggers paused"
+              : ""}
         </span>
       </div>
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-meta">
         {s ? (
           <>
             {failed > 0 ? (
-              <StatePill state="failed">{plural(failed, "failed run")} today</StatePill>
+              <StatePill state="failed">{plural(failed, "failed run")} in 24 hours</StatePill>
             ) : (
-              <StatePill state="ok">No failures today</StatePill>
+              <StatePill state="ok">No failures in 24 hours</StatePill>
             )}
             {s.drafts ? <StatePill state="draft">{plural(s.drafts, "draft")}</StatePill> : null}
           </>

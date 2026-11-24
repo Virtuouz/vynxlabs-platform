@@ -1,7 +1,7 @@
 import { showValue } from "@volvel/ui";
 import { ArrowDownRight, ArrowUpRight, Minus } from "@volvel/ui/icons";
 import type { ColumnInfo, RowsData } from "@volvel/widgets";
-import { choiceWords, formatDay, formatOfColumn } from "@volvel/widgets";
+import { choiceWords, formatDay, formatMoment, formatOfColumn } from "@volvel/widgets";
 import type { ReactNode } from "react";
 import { formatNumber, labelOf, numberOf, type ValueFormat } from "./format.ts";
 
@@ -34,7 +34,7 @@ const TONE_CLASS: Record<Tone, string> = {
 
 /**
  * A status: a chip with a dot, as the boards draw it. Its tone is the widget's (`badges`); with
- * none, the colour the column gives the value, drawn as a tint with that colour's dot.
+ * none, the color the column gives the value, drawn as a tint with that color's dot.
  */
 export function DotBadge({
   tone,
@@ -225,6 +225,10 @@ export function columnsToShow(
   }));
 }
 
+/** Whether clicking the heading sorts the column: unless the maker turned it off, and not for what has no order. */
+export const sortableColumn = (spec: ColumnSpec, info: ColumnInfo | undefined): boolean =>
+  spec.sortable !== false && info?.type !== "json" && info?.type !== "enum_list";
+
 export const isNumeric = (info: ColumnInfo | undefined) =>
   info?.type === "number" || info?.type === "integer";
 
@@ -320,18 +324,9 @@ export function cellOf(
     const day = formatDay(value);
     if (day) return <span className="text-ink-muted">{day}</span>;
   }
-  if (type === "timestamp" && typeof value === "string") {
-    const at = new Date(value);
-    if (!Number.isNaN(at.getTime())) {
-      // "Nov 21, 1:10 PM": the year only when it is not this one, as a day is written.
-      return at.toLocaleString(undefined, {
-        month: "short",
-        day: "numeric",
-        ...(at.getFullYear() === new Date().getFullYear() ? {} : { year: "numeric" }),
-        hour: "numeric",
-        minute: "2-digit",
-      });
-    }
+  if (type === "timestamp") {
+    const moment = formatMoment(value);
+    if (moment) return moment;
   }
   const written = showValue(type, value);
   return typeof written === "string" ? breakable(written) : written;

@@ -8,14 +8,19 @@ import { derivedToolName, type FlowBody } from "@volvel/manifest";
 import { Type } from "typebox";
 import { boundInside, check } from "../kernel/authorize.js";
 import { forbidden, HttpError, notFound } from "../kernel/errors.js";
+import { payloadSchemas } from "../kernel/execution/bundles.js";
+import { type Known, redact, redactText } from "../kernel/execution/redact.js";
 import { startRun } from "../kernel/execution/runs.js";
+import { servedValues } from "../kernel/execution/served.js";
+import { approvalDetail, approvalTitle } from "../kernel/flows/approval-detail.js";
 import {
   approversOf,
   approverTitles,
   describeApprovers,
   isApprover,
 } from "../kernel/flows/approvers.js";
-import { decideApproval, kickFlow, startFlowRun } from "../kernel/flows/engine.js";
+import { decideApproval, deciderOf, kickFlow, startFlowRun } from "../kernel/flows/engine.js";
+import { flowKnown } from "../kernel/flows/known.js";
 import { access, findWorkspace, type RequestContext, type WorkspaceRef } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
 import { Id } from "./shared.js";
@@ -203,7 +208,7 @@ async function toolsFor(kernel: Kernel, ctx: Caller, workspace: WorkspaceRef): P
   const readRun = async (id: string) => {
     const run = await db
       .selectFrom("run")
-      .select(["id", "script_path", "status", "output", "output_ref", "error", "started_by_id"])
+      .selectAll()
       .where("id", "=", id)
       .where("workspace_id", "=", workspace.id)
       .executeTakeFirst();
@@ -220,30 +225,53 @@ async function toolsFor(kernel: Kernel, ctx: Caller, workspace: WorkspaceRef): P
     if (!run) throw new HttpError(404, "not_found", "The flow run was not found.");
     return run;
   };
-  const showRun = (run: Awaited<ReturnType<typeof readRun>>) => ({
+  /**
+   * What a call shows of a run. The caller's own run is the answer to what they asked and is
+   * given as it is; another person's is shown as it is on screen, masked (decision D13).
+   */
+  const showRun = async (run: Awaited<ReturnType<typeof readRun>>, shielded: boolean) => {
+    let output: unknown = run.output_ref ? { stored: run.output_ref } : (run.output ?? null);
+    let error = run.error?.message;
+    if (shielded) {
+      const known = await servedValues(kernel, db, run);
+      const schemas = await payloadSchemas(kernel, run.bundle_id, run.script_path);
+      output = redact(output, schemas.output, known);
+      if (error !== undefined) error = redactText(error, known);
+    }
+    return shownRun(run, output, error);
+  };
+  const shownRun = (
+    run: Awaited<ReturnType<typeof readRun>>,
+    output: unknown,
+    error: string | undefined,
+  ) => ({
     runId: run.id,
     script: run.script_path,
     status: run.status,
-    ...(run.status === "succeeded"
-      ? { output: run.output_ref ? { stored: run.output_ref } : (run.output ?? null) }
-      : {}),
-    ...(run.error ? { error: run.error.message } : {}),
+    ...(run.status === "succeeded" ? { output } : {}),
+    ...(error !== undefined ? { error } : {}),
     ...(["queued", "running"].includes(run.status)
       ? { note: "Still running. Call get_run with this runId to see how it ends." }
       : {}),
   });
-  const showFlowRun = (run: Awaited<ReturnType<typeof readFlowRun>>) => ({
-    flowRunId: run.id,
-    flow: run.flow_path,
-    status: run.status,
-    ...(run.status === "succeeded" ? { output: run.output ?? null } : {}),
-    ...(run.error ? { error: (run.error as { message: string }).message } : {}),
-    ...(run.status === "running"
-      ? {
-          note: "Still running. It may be waiting for an approval or a delay. Call get_flow_run with this flowRunId later.",
-        }
-      : {}),
-  });
+  const showFlowRun = async (run: Awaited<ReturnType<typeof readFlowRun>>, shielded: boolean) => {
+    const known = shielded ? await flowKnown(kernel, db, run.id) : undefined;
+    const error = run.error ? (run.error as { message: string }).message : undefined;
+    return {
+      flowRunId: run.id,
+      flow: run.flow_path,
+      status: run.status,
+      ...(run.status === "succeeded"
+        ? { output: shielded ? redact(run.output ?? null, undefined, known) : (run.output ?? null) }
+        : {}),
+      ...(error !== undefined ? { error: shielded ? redactText(error, known) : error } : {}),
+      ...(run.status === "running"
+        ? {
+            note: "Still running. It may be waiting for an approval or a delay. Call get_flow_run with this flowRunId later.",
+          }
+        : {}),
+    };
+  };
 
   /** The tool each resource got, to give it again under the names it had before a rename. */
   const named = new Map<string, { prefix: string; name: string }>();
@@ -282,7 +310,7 @@ async function toolsFor(kernel: Kernel, ctx: Caller, workspace: WorkspaceRef): P
                 .where("idempotency_key", "=", idempotencyKey)
                 .executeTakeFirst()
             : undefined;
-          if (earlier) return showRun(await ended(() => readRun(earlier.id)));
+          if (earlier) return showRun(await ended(() => readRun(earlier.id)), false);
           const started = await ctx.mutate(async (trx, audit) => {
             const result = await startRun(kernel, trx, {
               tenantId: workspace.tenantId,
@@ -303,7 +331,7 @@ async function toolsFor(kernel: Kernel, ctx: Caller, workspace: WorkspaceRef): P
             });
             return result;
           });
-          return showRun(await ended(() => readRun(started.run.id)));
+          return showRun(await ended(() => readRun(started.run.id)), false);
         },
       });
     } else {
@@ -346,7 +374,7 @@ async function toolsFor(kernel: Kernel, ctx: Caller, workspace: WorkspaceRef): P
                 .where("idempotency_key", "=", idempotencyKey)
                 .executeTakeFirst()
             : undefined;
-          if (earlier) return showFlowRun(await ended(() => readFlowRun(earlier.id)));
+          if (earlier) return showFlowRun(await ended(() => readFlowRun(earlier.id)), false);
           const started = await ctx.mutate(async (trx, audit) => {
             const result = await startFlowRun(kernel, trx, {
               tenantId: workspace.tenantId,
@@ -368,7 +396,7 @@ async function toolsFor(kernel: Kernel, ctx: Caller, workspace: WorkspaceRef): P
             return result;
           });
           kickFlow(kernel, started.flowRun.id);
-          return showFlowRun(await ended(() => readFlowRun(started.flowRun.id)));
+          return showFlowRun(await ended(() => readFlowRun(started.flowRun.id)), false);
         },
       });
     }
@@ -412,8 +440,9 @@ async function toolsFor(kernel: Kernel, ctx: Caller, workspace: WorkspaceRef): P
     },
     call: async (input) => {
       const run = await readRun(String(input.runId));
-      if (!mine(run.started_by_id)) await ctx.authorize("run:read", target);
-      return showRun(run);
+      const own = mine(run.started_by_id);
+      if (!own) await ctx.authorize("run:read", target);
+      return showRun(run, !own);
     },
   });
   tools.push({
@@ -428,8 +457,9 @@ async function toolsFor(kernel: Kernel, ctx: Caller, workspace: WorkspaceRef): P
     },
     call: async (input) => {
       const run = await readFlowRun(String(input.flowRunId));
-      if (!mine(run.started_by_id)) await ctx.authorize("flow_run:read", target);
-      return showFlowRun(run);
+      const own = mine(run.started_by_id);
+      if (!own) await ctx.authorize("flow_run:read", target);
+      return showFlowRun(run, !own);
     },
   });
 
@@ -458,6 +488,7 @@ async function toolsFor(kernel: Kernel, ctx: Caller, workspace: WorkspaceRef): P
           .execute();
         // A step that names its approvers is shown only to them, as in the console.
         const memberId = ctx.principal.type === "member" ? ctx.principal.id : null;
+        const cache = new Map<string, Promise<Known>>();
         const mine = [];
         for (const row of rows) {
           const named = approversOf(row.detail as Record<string, unknown>);
@@ -465,14 +496,22 @@ async function toolsFor(kernel: Kernel, ctx: Caller, workspace: WorkspaceRef): P
           mine.push(row);
         }
         return {
-          approvals: mine.map((row) => ({
-            flowRunId: row.flow_run_id,
-            node: row.node_id,
-            flow: row.flow_path,
-            title: (row.detail as { title?: string }).title,
-            detail: (row.detail as { detail?: unknown }).detail ?? null,
-            waitingSince: row.started_at.toISOString(),
-          })),
+          approvals: await Promise.all(
+            mine.map(async (row) => ({
+              flowRunId: row.flow_run_id,
+              node: row.node_id,
+              flow: row.flow_path,
+              title: approvalTitle(
+                (row.detail as { title?: string }).title,
+                await flowKnown(kernel, db, row.flow_run_id, cache),
+              ),
+              detail: approvalDetail(
+                (row.detail as { detail?: unknown }).detail,
+                await flowKnown(kernel, db, row.flow_run_id, cache),
+              ),
+              waitingSince: row.started_at.toISOString(),
+            })),
+          ),
         };
       },
     });
@@ -481,7 +520,7 @@ async function toolsFor(kernel: Kernel, ctx: Caller, workspace: WorkspaceRef): P
     tools.push({
       name: "decide_approval",
       description:
-        "Approves or rejects a waiting approval. Approving lets the flow go on. Rejecting fails the step. Give a comment that says why.",
+        "Approves or rejects a waiting approval. Approving lets the flow go on. Rejecting fails the step: the flow takes its error path, or fails if it has none. A rejection needs a comment that says why.",
       inputSchema: {
         type: "object",
         properties: {
@@ -524,7 +563,8 @@ async function toolsFor(kernel: Kernel, ctx: Caller, workspace: WorkspaceRef): P
             node: String(input.node),
             approve,
             comment,
-            memberId: ctx.principal.type === "member" ? ctx.principal.id : null,
+            decidedBy: deciderOf(ctx.principal),
+            via: "mcp",
           });
           await audit({
             action: approve ? "approval.approved" : "approval.rejected",
@@ -552,6 +592,23 @@ async function toolsFor(kernel: Kernel, ctx: Caller, workspace: WorkspaceRef): P
     });
   }
   return tools;
+}
+
+/**
+ * Whether the caller may start scripts or flows across the workspace, as the `agent_runner`
+ * role given for the whole workspace lets it. That is enough to connect: the tools offered
+ * are the ones it may start, and nothing of the workspace is read.
+ */
+async function mayStartHere(
+  allowed: (
+    permission: string,
+    target: { tenantId: string; workspaceId: string },
+  ) => Promise<boolean>,
+  tenantId: string,
+  workspaceId: string,
+): Promise<boolean> {
+  const target = { tenantId, workspaceId };
+  return (await allowed("run:write", target)) || (await allowed("flow_run:write", target));
 }
 
 export function mcpRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
@@ -612,7 +669,8 @@ export function mcpRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         };
         const reachable =
           (await allowed("workspace:read", { tenantId: params.t, workspaceId: workspace.id })) ||
-          (await boundInside(kernel.db, principal, params.t, workspace.id));
+          (await boundInside(kernel.db, principal, params.t, workspace.id)) ||
+          (await mayStartHere(allowed, params.t, workspace.id));
         const tools = reachable
           ? await toolsFor(
               kernel,
@@ -710,7 +768,8 @@ export function mcpRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         };
         const reachable =
           (await allowed("workspace:read", { tenantId: params.t, workspaceId: workspace.id })) ||
-          (await boundInside(kernel.db, principal, params.t, workspace.id));
+          (await boundInside(kernel.db, principal, params.t, workspace.id)) ||
+          (await mayStartHere(allowed, params.t, workspace.id));
         const tool = reachable
           ? (await toolsFor(kernel, caller, workspace)).find((one) => one.name === body.tool)
           : undefined;
@@ -743,7 +802,11 @@ export function mcpRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.post(
       "/tenants/:t/workspaces/:w/mcp",
       {
-        config: { access: access.custom },
+        config: {
+          access: access.custom(
+            "Needs an API key, usually a service account's, that holds `workspace:read`. Each tool then asks for what it does.",
+          ),
+        },
         schema: {
           summary: "The Model Context Protocol, for an agent",
           description:
@@ -777,12 +840,19 @@ export function mcpRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         }
         // Someone with nothing in this workspace is told nothing about it. Someone bound to
         // single scripts or flows in it, as an agent offered them, reaches those.
-        if (!(await boundInside(kernel.db, ctx.principal, params.t, params.w))) {
+        if (
+          !(await boundInside(kernel.db, ctx.principal, params.t, params.w)) &&
+          !(await mayStartHere(
+            (permission, target) => ctx.allowed(permission, target),
+            params.t,
+            params.w,
+          ))
+        ) {
           await ctx.authorize("workspace:read", { tenantId: params.t, workspaceId: params.w });
         }
 
         const server = new Server(
-          { name: `platform:${workspace.slug}`, version: kernel.version },
+          { name: `volvel:${workspace.slug}`, version: kernel.version },
           { capabilities: { tools: {} } },
         );
         // Tools are worked out per request, from what the caller may do now.

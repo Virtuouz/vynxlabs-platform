@@ -27,11 +27,13 @@
       "type": "object",
       "properties": {
         "connector": {
-          "const": "postgres"
+          "const": "postgres",
+          "description": "What kind of database it is. Only `postgres` is read."
         },
         "description": {
           "type": "string",
-          "maxLength": 500
+          "maxLength": 500,
+          "description": "What it is for, in plain text."
         }
       },
       "required": [

@@ -1,9 +1,10 @@
 import { newId } from "@volvel/db";
-import { PLATFORM_EVENT_PREFIX, validateJson } from "@volvel/manifest";
-import type { Trx } from "../audit.js";
+import { PLATFORM_EVENT_PREFIX, type PlatformEventName, validateJson } from "@volvel/manifest";
+import type { Db, Trx } from "../audit.js";
 import { badRequest, HttpError, notFound } from "../errors.js";
 import { instanceTriggersPaused } from "../execution/control.js";
-import { kickStarted, notPausedAlone, startTarget } from "../execution/triggers.js";
+import { maskFor, redactText, secretStrings } from "../execution/redact.js";
+import { kickStarted, notPausedAlone, recordRefusal, startTarget } from "../execution/triggers.js";
 import type { Kernel } from "../kernel.js";
 import { resolveResource } from "../resolve.js";
 import { ExpressionError } from "./expressions.js";
@@ -29,6 +30,16 @@ export interface PublishEvent {
  * After the transaction commits, pass `started` to `kickStarted` so that flow
  * runs take their first step at once.
  */
+/** The schema an event's payload is held to, by the name it has now or had. Undefined for one that is not defined. */
+export async function eventSchema(
+  db: Db | Trx,
+  workspaceId: string,
+  name: string,
+): Promise<Record<string, unknown> | undefined> {
+  const found = await resolveResource(db, workspaceId, name, { kind: "event" });
+  return (found?.resource.body as { payload?: Record<string, unknown> } | undefined)?.payload;
+}
+
 export async function publishEvent(kernel: Kernel, trx: Trx, asked: PublishEvent) {
   let event = asked;
   const depth = event.depth ?? 0;
@@ -86,6 +97,7 @@ export async function publishEvent(kernel: Kernel, trx: Trx, asked: PublishEvent
           .selectFrom("trigger_state")
           .innerJoin("resource", "resource.id", "trigger_state.resource_id")
           .selectAll("trigger_state")
+          .select("resource.path")
           .where("trigger_state.workspace_id", "=", event.workspaceId)
           .where("trigger_state.type", "=", "event")
           .where("trigger_state.event_name", "=", event.name)
@@ -95,6 +107,13 @@ export async function publishEvent(kernel: Kernel, trx: Trx, asked: PublishEvent
           .orderBy("trigger_state.node_id")
           .execute();
   const started: { kind: string; id: string }[] = [];
+  // What a subscriber's refusal says about the event can quote a value of it: the evaluator names
+  // the value it choked on. The secrets of the payload are masked in what is kept and logged.
+  const maskedPayload = async (text: string) =>
+    redactText(
+      text,
+      maskFor(secretStrings(event.payload, await eventSchema(trx, event.workspaceId, event.name))),
+    );
   for (const subscriber of subscribers) {
     if (subscriber.filter) {
       try {
@@ -104,9 +123,16 @@ export async function publishEvent(kernel: Kernel, trx: Trx, asked: PublishEvent
         if (wanted !== true) continue;
       } catch (error) {
         if (!(error instanceof ExpressionError)) throw error;
+        const reason = await maskedPayload(error.message);
         kernel.log.warn(
-          { event: event.name, target: subscriber.target_path, reason: error.message },
+          { event: event.name, target: subscriber.target_path, reason },
           "an event filter could not be evaluated, so its subscriber was not started",
+        );
+        await recordRefusal(
+          kernel,
+          subscriber,
+          "filter",
+          `The filter could not be worked out for the event ${event.name}: ${reason}`,
         );
         continue;
       }
@@ -115,7 +141,17 @@ export async function publishEvent(kernel: Kernel, trx: Trx, asked: PublishEvent
       started.push(
         await startTarget(kernel, trx, subscriber, {
           input: event.payload,
-          trigger: { type: "event", detail: { event: event.name, eventId: id, depth: depth + 1 } },
+          trigger: {
+            type: "event",
+            detail: {
+              trigger: subscriber.node_id
+                ? `${subscriber.path}#${subscriber.node_id}`
+                : subscriber.path,
+              event: event.name,
+              eventId: id,
+              depth: depth + 1,
+            },
+          },
           idempotencyKey: `event:${id}:${subscriber.resource_id}:${subscriber.node_id}`,
         }),
       );
@@ -128,9 +164,16 @@ export async function publishEvent(kernel: Kernel, trx: Trx, asked: PublishEvent
     } catch (error) {
       // A payload the subscriber's script does not accept must not undo the publish.
       if (!(error instanceof HttpError)) throw error;
+      const reason = await maskedPayload(error.message);
       kernel.log.warn(
-        { event: event.name, target: subscriber.target_path, reason: error.message },
+        { event: event.name, target: subscriber.target_path, reason },
         "an event's subscriber could not be started",
+      );
+      await recordRefusal(
+        kernel,
+        subscriber,
+        "input",
+        `The event ${event.name} does not fit what this starts: ${reason}`,
       );
     }
   }
@@ -147,7 +190,8 @@ export async function publishPlatformEvent(
   event: {
     tenantId: string;
     workspaceId: string;
-    name: string;
+    /** One the platform lists (`PLATFORM_EVENTS`): what is not listed cannot be listened for. */
+    name: PlatformEventName;
     payload: Record<string, unknown>;
     sourceId: string;
     depth: number;

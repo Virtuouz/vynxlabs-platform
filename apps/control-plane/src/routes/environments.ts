@@ -6,6 +6,7 @@ import { access, findWorkspace } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
 import { runClone } from "../kernel/tenancy/clone.js";
 import { deleteTenant, deleteWorkspace, removeStored } from "../kernel/tenancy/remove.js";
+import { listOf } from "../pagination.js";
 import {
   AnyObject,
   Id,
@@ -74,13 +75,17 @@ export function environmentRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.post(
       "/tenants/:t/workspaces/:w/clones",
       {
-        config: { access: access.custom },
+        config: {
+          access: access.custom(
+            "Needs `workspace:write` in the tenant and `workspace:read` in the workspace copied. With data it also needs `data_all:read` and `file:read` there, and with `safe` off `secret:write` and `connection:write`.",
+          ),
+        },
         schema: {
           summary: "Copy a workspace into a new dev workspace",
           description:
             "The copy is a dev workspace linked to the one it came from, and its triggers start " +
             "paused. With `safe` (the default) it gets no connection, no data source and no " +
-            "secret value, so it cannot reach a real system until someone binds it. Needs " +
+            "secret value, so it cannot reach a real system until someone sets it up. Needs " +
             "`workspace:write` in the tenant. Copying data also needs `data_all:read` and " +
             "`file:read` in the source, and turning safety off also needs `secret:write` and " +
             "`connection:write` there. The copying runs after this answers: read the clone to see how it went.",
@@ -190,9 +195,11 @@ export function environmentRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.tenant("workspace:read") },
         schema: {
           summary: "Recent clones in a tenant, newest first",
+          description:
+            "Each copy of a workspace made with `POST .../clones`, with whether it finished.",
           tags: ["tenancy"],
           params: TenantParams,
-          response: { 200: Type.Object({ items: Type.Array(Clone) }) },
+          response: { 200: listOf(Clone, 50) },
         },
       },
       async ({ params }) => ({
@@ -214,6 +221,8 @@ export function environmentRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.tenant("workspace:read") },
         schema: {
           summary: "One clone: whether it finished, and what it copied",
+          description:
+            "How the copy went. The copying continues after the answer that started it, so read this to see whether it is done.",
           tags: ["tenancy"],
           params: Type.Object({ t: Id, id: Id }),
           response: { 200: Clone },
@@ -297,10 +306,16 @@ export function environmentRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             "For operators. Every workspace, resource, secret, custom table and file of the " +
             "tenant is removed for good. Export the tenant first if anything should be kept. " +
             "Its audit entries stay, and so do its members' accounts. Send the tenant's slug " +
-            "as `confirm`. Refused while runs are in progress.",
+            "as `confirm`. Refused while runs are in progress. When the tenant's own database " +
+            "cannot be reached the answer is 503 `data_location_unavailable`; send " +
+            "`tablesLeftBehind: true` as a second confirmation to delete the tenant anyway, " +
+            "leaving its tables in that database, which the entry names.",
           tags: ["tenancy"],
           params: TenantParams,
-          body: Type.Object({ confirm: Type.String() }),
+          body: Type.Object({
+            confirm: Type.String(),
+            tablesLeftBehind: Type.Optional(Type.Boolean()),
+          }),
           response: { 204: NoContent },
         },
       },
@@ -314,7 +329,11 @@ export function environmentRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         if (body.confirm !== tenant.slug) {
           throw badRequest("To delete this tenant, send its slug as confirm.");
         }
-        const keys = await ctx.mutate((trx, audit) => deleteTenant(kernel, trx, audit, params.t));
+        const keys = await ctx.mutate((trx, audit) =>
+          deleteTenant(kernel, trx, audit, params.t, {
+            ...(body.tablesLeftBehind ? { tablesLeftBehind: true } : {}),
+          }),
+        );
         kernel.data.forgetTenant(params.t);
         await removeStored(kernel, keys);
         return reply.code(204).send(null);

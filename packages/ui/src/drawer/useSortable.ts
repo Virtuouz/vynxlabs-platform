@@ -76,7 +76,7 @@ export interface UseSortable<E extends HTMLElement = HTMLUListElement> {
 }
 
 /**
- * Rows that are put in order by hand, one behaviour for every list in the console that has a
+ * Rows that are put in order by hand, one behavior for every list in the console that has a
  * drag handle. Dragging: the row follows the pointer, lifted; the others slide out of its way
  * over `motion-base`; let go, it slides into its place and only then is the new order handed over,
  * so nothing pops. Esc slides it back. The list scrolls when the pointer is near the edge of its

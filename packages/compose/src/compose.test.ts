@@ -131,6 +131,24 @@ describe("composing a bundle", () => {
     expect(module.__vx_describe("toString")).toEqual({});
   });
 
+  test("a console script's input and output are parsed, as defineScript does", async () => {
+    const typed = script(
+      "orders/parsed",
+      'import { z } from "@volvel/sdk";\n' +
+        "export const input = z.object({ name: z.string(), count: z.coerce.number().default(2) });\n" +
+        "export const output = z.object({ twice: z.number() });\n" +
+        "export default async (input: { count: number }) => ({ twice: input.count * 2 });\n",
+    );
+    const bundle = await composeBundle(base, [typed], options);
+    const module = await load(bundle.code);
+    const entry = typed.body.entry as string;
+    expect(await module[entry]?.execute({ name: "a" }, {})).toEqual({ twice: 4 });
+    expect(await module[entry]?.execute({ name: "a", count: "5" }, {})).toEqual({ twice: 10 });
+    await expect(module[entry]?.execute({ count: 1 }, {})).rejects.toThrow(
+      "The script's input does not match its schema",
+    );
+  });
+
   test("composing again replaces the console-managed part and leaves the repository's code alone", async () => {
     const once = await composeCode(baseCode, [hello], options);
     const twice = await composeCode(once, [hello], options);
@@ -220,5 +238,48 @@ describe("composing a bundle", () => {
     await expect(composeBundle(base, [fromRepo], options)).rejects.toThrow(
       "orders/check (script) is not console-managed.",
     );
+  });
+
+  test("EXT-07: a console connector that exports `test` carries it, as the worker's Test button reads it", async () => {
+    const connector: BundleManifest = {
+      kind: "connector",
+      schemaVersion: 1,
+      path: "shop",
+      ownership: "ui",
+      body: {
+        entry: entryFor("connector", "shop"),
+        configSchema: {},
+        source: {
+          language: "typescript",
+          code:
+            "export default (config: { baseUrl: string }) => ({ url: config.baseUrl });\n" +
+            "export async function test(config: { baseUrl: string }) {\n" +
+            "  return { status: 204, message: 'Reached ' + config.baseUrl };\n" +
+            "}\n",
+        },
+      },
+    };
+    const plain: BundleManifest = {
+      ...connector,
+      path: "plain",
+      body: {
+        ...connector.body,
+        entry: entryFor("connector", "plain"),
+        source: { language: "typescript", code: "export default () => ({});\n" },
+      },
+    };
+    const bundle = await composeBundle(base, [connector, plain], options);
+    const module = (await load(bundle.code)) as unknown as Record<
+      string,
+      { create: (config: unknown) => unknown; test?: (config: unknown) => Promise<unknown> }
+    >;
+    const mine = module[connector.body.entry as string];
+    expect(mine?.create({ baseUrl: "https://x.test" })).toEqual({ url: "https://x.test" });
+    expect(await mine?.test?.({ baseUrl: "https://x.test" })).toEqual({
+      status: 204,
+      message: "Reached https://x.test",
+    });
+    // One without a test keeps being tested by building its client.
+    expect(module[plain.body.entry as string]?.test).toBeUndefined();
   });
 });

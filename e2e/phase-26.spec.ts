@@ -1,4 +1,5 @@
-import { signInWithPassword } from "./sign-in.ts";
+import { signInAs } from "./as.ts";
+import { fernhillTenant } from "./fernhill.ts";
 import { type Browser, expect, type Page, test } from "./test.ts";
 
 /**
@@ -21,7 +22,7 @@ import { type Browser, expect, type Page, test } from "./test.ts";
  */
 
 const PASSWORD = process.env.E2E_FERNHILL_PASSWORD ?? "fernhill-demo-2026";
-const TENANT = process.env.E2E_FERNHILL_TENANT ?? "fernhill";
+const TENANT = fernhillTenant();
 const SANDBOX = process.env.E2E_FERNHILL_SANDBOX ?? "sandbox";
 const OWNER = "maya.brooks@fernhill.example";
 const stamp = Date.now().toString(36);
@@ -29,13 +30,26 @@ const PAGE = `screens/p26-${stamp}`;
 const APP = `p26-${stamp}`;
 const PREFIX = `P26-${stamp.toUpperCase()}`;
 const STAFF = `staff-${stamp}@fernhill.example`;
-const today = new Date().toISOString().slice(0, 10);
+// The browser's "last 30 days" ends on its own local date, so a row issued "today" is dated there, not in UTC.
+const today = new Date().toLocaleDateString("en-CA");
 
 // biome-ignore lint/suspicious/noExplicitAny: answers are inspected freely
 type Answer = { status: number; body: any };
 const call = (page: Page, method: string, path: string, body?: unknown): Promise<Answer> =>
   page.evaluate(
     async ([method, path, body]) => {
+      // A draft save names the draft it saw: its revision now, or none when there is none.
+      if (
+        method === "PUT" &&
+        String(path).includes("/drafts/") &&
+        body &&
+        typeof body === "object" &&
+        !("revision" in body) &&
+        !("create" in body)
+      ) {
+        const seen = await fetch(`/api/v1${path}`);
+        if (seen.ok) body = { ...body, revision: (await seen.json()).revision };
+      }
       const response = await fetch(`/api/v1${path}`, {
         method: method as string,
         headers: body ? { "content-type": "application/json" } : {},
@@ -129,8 +143,8 @@ async function endUserSignedIn(browser: Browser, email: string): Promise<Page> {
 test.beforeAll(async ({ browser }) => {
   test.setTimeout(240_000);
   owner = await (await browser.newContext({ viewport: { width: 1440, height: 900 } })).newPage();
-  await signInWithPassword(owner, OWNER, PASSWORD);
-  const tenants = await ok(owner, "GET", "/tenants?limit=200");
+  await signInAs(owner, OWNER);
+  const tenants = await ok(owner, "GET", `/tenants?search=${TENANT}&limit=200`);
   const tenant = tenants.items.find((one: { slug: string }) => one.slug === TENANT);
   test.skip(!tenant, `No tenant ${TENANT}: set up the Fernhill example first.`);
   T = `/tenants/${tenant.id}`;
@@ -265,7 +279,7 @@ test.afterAll(async () => {
   await owner.context().close();
 });
 
-test("pressing an invoice opens Invoice detail in a side sheet, Back closes it, and a shared link opens it again", async () => {
+test("pressing an invoice opens Invoice detail in a side sheet, Back closes it, and a shared link opens it again @fernhill @access", async () => {
   await openApp(owner);
   await rowOf(owner, invoice.open.number).click();
   // The sheet is over the page, which stays in view, and its address names it.
@@ -293,7 +307,7 @@ test("pressing an invoice opens Invoice detail in a side sheet, Back closes it, 
   await expect(sheet(owner)).toHaveCount(0);
 });
 
-test("Mark paid asks first, changes the row, says so, and the table shows it", async () => {
+test("Mark paid asks first, changes the row, says so, and the table shows it @fernhill @access", async () => {
   await openApp(owner);
   await rowOf(owner, invoice.paid.number).click();
   await sheet(owner).getByRole("button", { name: "Mark paid" }).click();
@@ -328,7 +342,7 @@ test("Mark paid asks first, changes the row, says so, and the table shows it", a
   await expect(rowOf(owner, invoice.paid.number)).not.toContainText(/unpaid/i);
 });
 
-test("Edit saves through the form, and a required field is refused before anything is saved", async () => {
+test("Edit saves through the form, and a required field is refused before anything is saved @fernhill @access", async () => {
   await openApp(owner);
   await rowOf(owner, invoice.edit.number).click();
   await sheet(owner).getByRole("button", { name: "Edit" }).click();
@@ -354,7 +368,7 @@ test("Edit saves through the form, and a required field is refused before anythi
   expect((await stored(invoice.edit.number)).total).toBe(4321);
 });
 
-test("New invoice makes a row with the same form, and the table shows it", async () => {
+test("New invoice makes a row with the same form, and the table shows it @fernhill @access", async () => {
   await openApp(owner);
   await owner.getByRole("button", { name: "New invoice" }).click();
   const form = modal(owner, "New invoice");
@@ -379,7 +393,7 @@ test("New invoice makes a row with the same form, and the table shows it", async
   expect(made.clinic).toBe("northside");
 });
 
-test("staff who may only read press Mark paid, because the button is the grant, and can't reach another clinic's invoice", async ({
+test("staff who may only read press Mark paid, because the button is the grant, and can't reach another clinic's invoice @fernhill @access", async ({
   browser,
 }) => {
   test.setTimeout(120_000);
@@ -433,7 +447,7 @@ test("staff who may only read press Mark paid, because the button is the grant, 
   await staff.context().close();
 });
 
-test("a widget shown only to Practice managers is drawn for a manager and not for the front desk", async ({
+test("a widget shown only to Practice managers is drawn for a manager and not for the front desk @fernhill @access", async ({
   browser,
 }) => {
   test.setTimeout(120_000);

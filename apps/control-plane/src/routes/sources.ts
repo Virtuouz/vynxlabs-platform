@@ -2,33 +2,37 @@ import type {
   FastifyPluginAsyncTypebox,
   TypeBoxTypeProvider,
 } from "@fastify/type-provider-typebox";
+import { sql } from "@volvel/db";
 import { validateJson } from "@volvel/manifest";
 import { Type } from "typebox";
 import { CredentialSet, credentialSetters } from "../kernel/credentials.js";
-import { MAX_FILE_BYTES, readFile, storeFile, toStoredFile } from "../kernel/data/files.js";
-import { checkSource } from "../kernel/data/health.js";
 import {
-  deleteRow,
-  findRows,
-  getRow,
-  insertRows,
-  translate,
-  updateRow,
-} from "../kernel/data/rows.js";
+  MAX_FILE_BYTES,
+  mayReadFile,
+  namedFiles,
+  namingOf,
+  readFile,
+  storeFile,
+  toStoredFile,
+} from "../kernel/data/files.js";
+import { checkSource, forgetHealth } from "../kernel/data/health.js";
+import { deleteRow, findRows, getRow, insertRows, updateRow } from "../kernel/data/rows.js";
 import {
   bindSource,
   checkSourceConfig,
   closeSource,
-  openSource,
+  onSource as runOnSource,
   type SourceConfig,
   sourceConfigSchema,
-  sourceFailure,
   sourceTable,
   sourceTables,
 } from "../kernel/data/sources.js";
-import { badRequest, notFound } from "../kernel/errors.js";
-import { access, type WorkspaceRef } from "../kernel/http.js";
+import { badRequest, conflict, notFound } from "../kernel/errors.js";
+import { arrivingManifests } from "../kernel/execution/arriving.js";
+import { access, type RequestContext, type WorkspaceRef } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
+import { UUID } from "../kernel/pages/locate.js";
+import { likeTerm, listOf, pageOf, SearchPageQuery } from "../pagination.js";
 import { parseRowsQuery, RowsPage, RowsQuery, toRowsPage, WildParams, wildPath } from "./data.js";
 import {
   AnyObject,
@@ -36,11 +40,14 @@ import {
   isoOrNull,
   NoContent,
   NullableTime,
+  pageArgs,
   Time,
+  toPage,
   WorkspaceParams,
 } from "./shared.js";
 
-const TableName = Type.String({ pattern: "^[A-Za-z_][A-Za-z0-9_]*$", maxLength: 63 });
+/** A table of the source as the source names it: it is looked up in the source's own list before it is used. */
+const TableName = Type.String({ minLength: 1, maxLength: 63 });
 const SourceRowsParams = Type.Object({ t: Id, w: Id, table: TableName, "*": Type.String() });
 const SourceRowParams = Type.Object({
   t: Id,
@@ -58,23 +65,32 @@ const StoredFile = Type.Object({
   createdAt: Time,
 });
 
+/** A file as the list gives it: with the tables whose rows hold it. */
+const ListedFile = Type.Object({
+  ...StoredFile.properties,
+  namedBy: Type.Array(
+    Type.Object({
+      table: Type.String(),
+      column: Type.String(),
+      rows: Type.Union([Type.Integer(), Type.Null()], {
+        description: "How many rows hold it. Null when the table could not be read just now.",
+      }),
+    }),
+    { description: "The tables whose rows name the file. Empty when no row does." },
+  ),
+});
+
 export function sourceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
   return async (app) => {
     const { db } = kernel;
     const base = "/tenants/:t/workspaces/:w";
 
     /** Runs something against a bound source, turning its refusals into answers the caller can act on. */
-    async function onSource<T>(
+    const onSource = <T>(
       params: { t: string; w: string },
       path: string,
-      run: (source: Awaited<ReturnType<typeof openSource>>) => Promise<T>,
-    ) {
-      try {
-        return await run(await openSource(kernel, db, params.t, params.w, path));
-      } catch (error) {
-        throw sourceFailure(path, translate(error));
-      }
-    }
+      run: Parameters<typeof runOnSource<T>>[4],
+    ) => runOnSource(kernel, db, { tenantId: params.t, workspaceId: params.w }, path, run);
 
     // ----- Bindings -----
 
@@ -101,6 +117,13 @@ export function sourceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       },
       async ({ ctx, params }) => {
         const path = wildPath(params);
+        const bound = await db
+          .selectFrom("data_source_binding")
+          .select("id")
+          .where("workspace_id", "=", params.w)
+          .where("path", "=", path)
+          .executeTakeFirst();
+        if (!bound) throw notFound("A binding for the data source");
         const result = await checkSource(kernel, params.t, params.w, path);
         await ctx.mutate(async (_trx, audit) =>
           audit({
@@ -132,6 +155,11 @@ export function sourceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                   path: Type.String(),
                   description: Type.String(),
                   defined: Type.Boolean(),
+                  arrives: Type.Boolean({
+                    description:
+                      "Declared by a workspace linked to this one, and not deployed here yet: it " +
+                      "arrives with the next promotion, and can be set up here before.",
+                  }),
                   bound: Type.Boolean(),
                   config: Type.Union([AnyObject, Type.Null()]),
                   hasPassword: Type.Boolean(),
@@ -168,7 +196,13 @@ export function sourceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           .where("workspace_id", "=", params.w)
           .execute();
         const setBy = await credentialSetters(db, bindings);
-        const paths = [...new Set([...definitions, ...bindings].map((row) => row.path))].sort();
+        // What the next promotion brings, which production is set up for before it arrives.
+        const arrives = (await arrivingManifests(kernel, db, params.w)).filter(
+          (one) => one.kind === "data_source" && !definitions.some((row) => row.path === one.path),
+        );
+        const paths = [
+          ...new Set([...definitions, ...bindings, ...arrives].map((row) => row.path)),
+        ].sort();
         const checks = await db
           .selectFrom("health_check")
           .selectAll()
@@ -177,15 +211,16 @@ export function sourceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           .execute();
         return {
           items: paths.map((path) => {
-            const definition = definitions.find((row) => row.path === path)?.body as
-              | { description?: string }
-              | undefined;
+            const coming = arrives.find((row) => row.path === path);
+            const definition = (definitions.find((row) => row.path === path)?.body ??
+              coming?.body) as { description?: string } | undefined;
             const binding = bindings.find((row) => row.path === path);
             const check = binding ? checks.find((row) => row.path === path) : undefined;
             return {
               path,
               description: definition?.description ?? "",
-              defined: definition !== undefined,
+              defined: definitions.some((row) => row.path === path),
+              arrives: coming !== undefined,
               bound: binding !== undefined,
               config: binding?.config ?? null,
               hasPassword: Boolean(binding?.credential),
@@ -211,7 +246,8 @@ export function sourceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.workspace("data_source:write") },
         schema: {
           summary: "Bind an external Postgres database in this workspace",
-          description: "Leave `password` out to keep the stored one. Send null to remove it.",
+          description:
+            "Leave `password` out to keep the stored one, when the host, port and user are the same and encryption is not turned off; otherwise the stored one is dropped, and `hasPassword` is then false. Send null to remove it.",
           tags: ["data sources"],
           params: WildParams,
           body: Type.Object({
@@ -228,7 +264,7 @@ export function sourceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         checkSourceConfig(validateJson(sourceConfigSchema, body.config, "/body/config"));
         const config = body.config as unknown as SourceConfig;
         const bindingId = await ctx.mutate(async (trx, audit) => {
-          const { created } = await bindSource(
+          const { created, credentialDropped } = await bindSource(
             kernel,
             trx,
             { tenantId: params.t, workspaceId: params.w, path },
@@ -246,7 +282,7 @@ export function sourceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               host: config.host,
               database: config.database,
               user: config.user,
-              passwordChanged: body.password !== undefined,
+              passwordChanged: body.password !== undefined || credentialDropped,
             },
           });
           const row = await trx
@@ -255,6 +291,8 @@ export function sourceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             .where("workspace_id", "=", params.w)
             .where("path", "=", path)
             .executeTakeFirstOrThrow();
+          // What a check found says nothing about the address or password it did not try.
+          await forgetHealth(trx, params.w, path, "data_source");
           return row.id;
         });
         await closeSource(bindingId);
@@ -268,6 +306,7 @@ export function sourceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.workspace("data_source:write") },
         schema: {
           summary: "Remove a data source's binding",
+          description: "The data source is no longer bound in this workspace. Audited.",
           tags: ["data sources"],
           params: WildParams,
           response: { 204: NoContent },
@@ -283,6 +322,7 @@ export function sourceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             .returning("id")
             .executeTakeFirst();
           if (!row) throw notFound("The data source binding");
+          await forgetHealth(trx, params.w, path, "data_source");
           await audit({
             action: "data_source.unbound",
             targetType: "data_source",
@@ -305,6 +345,7 @@ export function sourceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.workspace("data_source:read") },
         schema: {
           summary: "The tables of a bound data source",
+          description: "The tables the data source lists, read from the source itself.",
           tags: ["data sources"],
           params: WildParams,
           response: {
@@ -321,6 +362,10 @@ export function sourceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                       name: Type.String(),
                       type: Type.String(),
                       required: Type.Boolean(),
+                      hasDefault: Type.Boolean({
+                        description:
+                          "The database fills the column in when a row is added without it (a default, a sequence, an identity).",
+                      }),
                       writable: Type.Boolean(),
                     }),
                   ),
@@ -339,10 +384,11 @@ export function sourceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           items: tables.map((table) => ({
             name: table.name,
             key: table.key,
-            columns: table.columns.map(({ name, type, required, writable }) => ({
+            columns: table.columns.map(({ name, type, required, hasDefault, writable }) => ({
               name,
               type,
               required,
+              hasDefault,
               writable,
             })),
           })),
@@ -356,6 +402,7 @@ export function sourceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.workspace("data_source:read") },
         schema: {
           summary: "Rows of a table in a data source",
+          description: "Rows read from the source system, a page at a time.",
           tags: ["data sources"],
           params: SourceRowsParams,
           querystring: RowsQuery,
@@ -383,6 +430,8 @@ export function sourceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.workspace("data_source:write") },
         schema: {
           summary: "Insert rows into a table in a data source",
+          description:
+            "Writes to the source system, if the binding lets it. Not written to the audit log: the rows are the source system's, not Volvel's.",
           tags: ["data sources"],
           params: SourceRowsParams,
           body: AnyObject,
@@ -416,6 +465,7 @@ export function sourceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.workspace("data_source:read") },
         schema: {
           summary: "One row of a table in a data source",
+          description: "The row with the given key, read from the source system.",
           tags: ["data sources"],
           params: SourceRowParams,
           response: { 200: AnyObject },
@@ -439,6 +489,8 @@ export function sourceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.workspace("data_source:write") },
         schema: {
           summary: "Change a row in a data source",
+          description:
+            "Writes to the source system, if the binding lets it. Not written to the audit log: the rows are the source system's, not Volvel's.",
           tags: ["data sources"],
           params: SourceRowParams,
           body: AnyObject,
@@ -470,6 +522,8 @@ export function sourceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.workspace("data_source:write") },
         schema: {
           summary: "Delete a row in a data source",
+          description:
+            "Deletes in the source system, if the binding lets it. Not written to the audit log: the rows are the source system's, not Volvel's.",
           tags: ["data sources"],
           params: SourceRowParams,
           response: { 204: NoContent },
@@ -497,20 +551,41 @@ export function sourceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.workspace("file:read") },
         schema: {
           summary: "Files stored in a workspace, newest first",
+          description:
+            "Every file of the workspace, so it also needs `data_all:read`. A person who only has `file:read` gets a file by its ID, through a row they may read or because they uploaded it. " +
+            "Each file says which tables name it (`namedBy`): a file that a row names cannot be deleted. " +
+            "`nextCursor` is given while there are more: send it back as `cursor`. `search` matches anywhere in the name.",
           tags: ["files"],
           params: WorkspaceParams,
-          response: { 200: Type.Object({ items: Type.Array(StoredFile) }) },
+          querystring: SearchPageQuery,
+          response: { 200: pageOf(ListedFile) },
         },
       },
-      async ({ params }) => {
-        const rows = await db
-          .selectFrom("file")
-          .selectAll()
-          .where("workspace_id", "=", params.w)
+      async ({ ctx, params, query }) => {
+        await ctx.authorize("data_all:read", { tenantId: params.t, workspaceId: params.w });
+        const args = pageArgs(query);
+        if (args.after !== undefined && !UUID.test(args.after)) {
+          throw badRequest("The cursor is not valid.");
+        }
+        let found = db.selectFrom("file").selectAll().where("workspace_id", "=", params.w);
+        if (args.after) found = found.where("id", "<", args.after);
+        if (query.search) found = found.where(sql`lower(name)`, "like", likeTerm(query.search));
+        const rows = await found
           .orderBy("id", "desc")
-          .limit(200)
+          .limit(args.limit + 1)
           .execute();
-        return { items: rows.map(toStoredFile) };
+        const naming = await namingOf(
+          kernel,
+          params.t,
+          rows.slice(0, args.limit).map((row) => row.id),
+          params.w,
+        );
+        return toPage(
+          rows,
+          args,
+          (row) => row.id,
+          (row) => ({ ...toStoredFile(row), namedBy: naming.get(row.id) ?? [] }),
+        );
       },
     );
 
@@ -530,6 +605,9 @@ export function sourceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             description:
               "The request body is the file. Its type comes from the Content-Type header, its name from `name`.",
             tags: ["files"],
+            consumes: ["application/octet-stream"],
+            // Read as bytes, as sent: the schema says only that a body is taken.
+            body: Type.Unknown(),
             params: WorkspaceParams,
             querystring: Type.Object({ name: Type.String({ minLength: 1, maxLength: 255 }) }),
             response: { 201: StoredFile },
@@ -563,18 +641,38 @@ export function sourceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
 
     const FileParams = Type.Object({ t: Id, w: Id, id: Id });
 
+    async function mayReadOrNotFound(
+      ctx: RequestContext,
+      params: { t: string; w: string },
+      found: Awaited<ReturnType<typeof readFile>>,
+    ) {
+      const allowed = await mayReadFile(
+        kernel,
+        ctx,
+        { tenantId: params.t, id: params.w },
+        { id: found.file.id, createdBy: found.createdBy },
+      );
+      if (!allowed) throw notFound("The file");
+    }
+
     app.get(
       `${base}/files/:id`,
       {
         config: { access: access.workspace("file:read") },
         schema: {
           summary: "A file's details",
+          description:
+            "A file the caller uploaded, or one that a row they may read names. Any other file is answered as not found. `data_all:read` gives every file.",
           tags: ["files"],
           params: FileParams,
           response: { 200: StoredFile },
         },
       },
-      async ({ params }) => (await readFile(kernel, db, params.w, params.id)).file,
+      async ({ ctx, params }) => {
+        const found = await readFile(kernel, db, params.w, params.id);
+        await mayReadOrNotFound(ctx, params, found);
+        return found.file;
+      },
     );
 
     app.get(
@@ -583,13 +681,17 @@ export function sourceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.workspace("file:read") },
         schema: {
           summary: "Download a file",
+          description:
+            "A file the caller uploaded, or one that a row they may read names. Any other file is answered as not found. `data_all:read` gives every file.",
           tags: ["files"],
           params: FileParams,
           response: { 200: Type.Unsafe<Buffer>({ type: "string", format: "binary" }) },
         },
       },
-      async ({ params }, reply) => {
-        const { file, content } = await readFile(kernel, db, params.w, params.id);
+      async ({ ctx, params }, reply) => {
+        const found = await readFile(kernel, db, params.w, params.id);
+        await mayReadOrNotFound(ctx, params, found);
+        const { file, content } = found;
         return (
           reply
             .header("content-type", file.contentType)
@@ -610,12 +712,21 @@ export function sourceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.workspace("file:write") },
         schema: {
           summary: "Delete a file",
+          description:
+            "Needs `file:write` and `data_all:write`. Refused while a row names the file: change or delete the row first. A file that rows named before is kept for the audit log's period and goes with its history.",
           tags: ["files"],
           params: FileParams,
           response: { 204: NoContent },
         },
       },
       async ({ ctx, params }, reply) => {
+        await ctx.authorize("data_all:write", { tenantId: params.t, workspaceId: params.w });
+        const naming = await namedFiles(kernel, params.t, [params.id], params.w);
+        if (naming.has(params.id)) {
+          throw conflict(
+            "A row still names this file. Change the row to another file or none, or delete the row, and then delete the file.",
+          );
+        }
         const key = await ctx.mutate(async (trx, audit) => {
           const row = await trx
             .deleteFrom("file")

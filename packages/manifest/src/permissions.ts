@@ -40,7 +40,7 @@ export const PERMISSION_KINDS: readonly PermissionKind[] = [
     scope: "instance",
     verbs: {
       read: "See the instance's settings, database locations and metrics.",
-      write: "Change the instance's settings and import tenants.",
+      write: "Change the instance's settings.",
     },
   },
   {
@@ -50,7 +50,7 @@ export const PERMISSION_KINDS: readonly PermissionKind[] = [
     scope: "tenant",
     verbs: {
       read: "See a tenant's name and settings.",
-      write: "Create, rename and delete tenants.",
+      write: "Create, rename, import and delete tenants.",
     },
   },
   {
@@ -113,13 +113,13 @@ export const PERMISSION_KINDS: readonly PermissionKind[] = [
   },
   {
     kind: "access",
-    label: "Access releases",
+    label: "Access changes",
     group: "Tenant",
     scope: "tenant",
     verbs: {
-      read: "See how the tenant's access was released, and what a release would change.",
+      read: "See how the tenant's access was changed, and what a change from the repository would do.",
       write:
-        "Release the tenant's access from its repository, go back to an earlier release, and approve one that waits.",
+        "Change the tenant's access from its repository, go back to an earlier access change, and approve one that waits.",
     },
   },
   {
@@ -173,7 +173,7 @@ export const PERMISSION_KINDS: readonly PermissionKind[] = [
     scope: "tenant",
     verbs: {
       read: "See the workers that are connected.",
-      write: "Create worker credentials and turn managed workers on or off.",
+      write: "Create and revoke worker credentials, and make and remove worker pools.",
     },
   },
   {
@@ -279,7 +279,7 @@ export const PERMISSION_KINDS: readonly PermissionKind[] = [
     scope: "workspace",
     verbs: {
       read: "See what was deployed and when.",
-      write: "Activate a bundle and roll back. Promoting needs promotion:write.",
+      write: "Deploy a version and roll back. Promoting needs promotion:write.",
     },
   },
   {
@@ -318,7 +318,7 @@ export const PERMISSION_KINDS: readonly PermissionKind[] = [
     scope: "workspace",
     verbs: {
       read: "See schedules, webhooks and event triggers.",
-      write: "See a webhook's address, which is a credential.",
+      write: "Pause and resume a trigger, and see a webhook's address, which is a credential.",
     },
   },
   {
@@ -334,7 +334,10 @@ export const PERMISSION_KINDS: readonly PermissionKind[] = [
     group: "Flows",
     scope: "workspace",
     appFacing: true,
-    verbs: { read: "See flow runs and their steps.", write: "Start and cancel a flow." },
+    verbs: {
+      read: "See flow runs and their steps.",
+      write: "Start, retry and test a flow, and cancel its runs.",
+    },
   },
   {
     kind: "approval",
@@ -384,7 +387,7 @@ export const PERMISSION_KINDS: readonly PermissionKind[] = [
   },
   {
     kind: "data_all",
-    label: "Rows, past the row policy",
+    label: "Rows past the row policy",
     group: "Data",
     scope: "workspace",
     appFacing: true,
@@ -409,7 +412,11 @@ export const PERMISSION_KINDS: readonly PermissionKind[] = [
     group: "Data",
     scope: "workspace",
     appFacing: true,
-    verbs: { read: "Download files.", write: "Upload files." },
+    verbs: {
+      read: "Download a file that a row you may read names, or that you uploaded. Listing every file also needs the permission to read rows past the row policy.",
+      write:
+        "Upload files. Deleting one also needs the permission to change rows past the row policy, and is refused while a row names the file.",
+    },
   },
   {
     kind: "app",
@@ -489,3 +496,96 @@ export function isGrantablePermission(permission: string): boolean {
 export const APP_FACING_KINDS: readonly string[] = PERMISSION_KINDS.filter(
   (entry) => entry.appFacing,
 ).map((entry) => entry.kind);
+
+/**
+ * Whether a role's permission list grants `kind:verb`. A permission marked explicit is granted
+ * only by its own name: no `*` reaches it, so nobody holds it by having been given everything.
+ * The one rule, for the permission check and for every screen that shows what a role gives.
+ */
+export function grants(permissions: readonly string[], permission: string): boolean {
+  const [kind, verb] = permission.split(":");
+  if (isExplicitKind(kind ?? "")) return permissions.includes(permission);
+  return permissions.some((held) => {
+    const [heldKind, heldVerb] = held.split(":");
+    return (heldKind === "*" || heldKind === kind) && (heldVerb === "*" || heldVerb === verb);
+  });
+}
+
+/** What an interface knows of a kind when it writes a wildcard out: the API's list serves it. */
+export interface KindOfPermission {
+  kind: string;
+  scope: string;
+  explicit?: boolean | undefined;
+  verbs: readonly string[];
+}
+
+/** The permissions a wildcard stands for: never an explicit kind, nor one only the instance checks. */
+function standsFor(kinds: readonly KindOfPermission[], held: string): string[] {
+  const [k, v] = held.split(":") as [string, string];
+  const out: string[] = [];
+  for (const entry of kinds) {
+    if (entry.explicit || entry.scope === "instance") continue;
+    if (k !== "*" && entry.kind !== k) continue;
+    for (const verb of entry.verbs) if (v === "*" || verb === v) out.push(`${entry.kind}:${verb}`);
+  }
+  return out;
+}
+
+const isWildcard = (held: string) => held.startsWith("*:") || held.endsWith(":*");
+
+/**
+ * Turns one box on or off. A wildcard that covers the box is first written out as the
+ * permissions it stands for (and no others: a wildcard never gave an explicit permission), so
+ * that taking one away leaves the rest and gives nothing new.
+ */
+export function setPermission(
+  held: readonly string[],
+  kinds: readonly KindOfPermission[],
+  kind: string,
+  verb: string,
+  on: boolean,
+): string[] {
+  const target = `${kind}:${verb}`;
+  if (on) return grants(held, target) ? [...held] : [...held, target];
+  const next = new Set<string>();
+  for (const one of held) {
+    if (one === target) continue;
+    if (isWildcard(one) && grants([one], target)) {
+      for (const each of standsFor(kinds, one)) if (each !== target) next.add(each);
+    } else {
+      next.add(one);
+    }
+  }
+  return [...next];
+}
+
+/**
+ * "Everything" for one verb. On: `*:verb`, replacing the named permissions of that verb it
+ * covers, and leaving explicit ones and every other verb as they are. Off: takes away only that
+ * verb, from `*:*` and `kind:*` too, and leaves what is given by name for an explicit kind.
+ */
+export function setEveryone(
+  held: readonly string[],
+  kinds: readonly KindOfPermission[],
+  verb: string,
+  on: boolean,
+): string[] {
+  const other = verb === "read" ? "write" : "read";
+  const explicit = new Set(kinds.filter((one) => one.explicit).map((one) => one.kind));
+  const next = new Set<string>();
+  for (const one of held) {
+    const [k, v] = one.split(":") as [string, string];
+    const covered = !explicit.has(k) && (v === verb || (v === "*" && !on));
+    if (on) {
+      if (!(v === verb && !explicit.has(k) && k !== "*")) next.add(one);
+      continue;
+    }
+    if (!covered) {
+      next.add(one);
+    } else if (v === "*") {
+      next.add(`${k}:${other}`);
+    }
+  }
+  if (on && !grants([...next], `*:${verb}`) && !next.has("*:*")) next.add(`*:${verb}`);
+  return [...next];
+}

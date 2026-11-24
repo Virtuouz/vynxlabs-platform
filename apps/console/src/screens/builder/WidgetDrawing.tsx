@@ -2,7 +2,7 @@ import type { Drawing } from "./selectorData.ts";
 
 /**
  * A small drawing of a widget, in the selector's preview pane (board 7): bars for a
- * chart, rows for a table. Simple shapes in the theme's own colours, so it follows
+ * chart, rows for a table. Simple shapes in the theme's own colors, so it follows
  * light and dark. It is a picture, not the widget: it reads nothing.
  */
 export function WidgetDrawing({ drawing }: { drawing: Drawing }) {

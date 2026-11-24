@@ -1,6 +1,8 @@
 import { X } from "lucide-react";
 import { useEffect, useId, useRef } from "react";
 import { DateInput } from "../DateInput.tsx";
+import { localeOf } from "../dates.ts";
+import { MoneyField } from "../Fields.tsx";
 import { SegmentedControl } from "../Pickers.tsx";
 import { DashedAdd, type DrawerIcon } from "./Drawer.tsx";
 
@@ -32,6 +34,30 @@ export interface ConditionOperator {
   /** What is typed after it. Default: by the column's type; `none` for "is empty". */
   input?: "text" | "number" | "date" | "none" | "last" | "between";
 }
+
+/** What a value may be taken from besides being typed: a column of the record the page is open on, or whoever is looking. */
+export interface ConditionValueFrom {
+  /** The columns of the page's record, when the page opens on one. */
+  record?: readonly { id: string; label: string }[];
+  /** "The current user". */
+  user?: boolean;
+}
+
+/** How a column's money is kept, so it is typed as money and written the way the column holds it. */
+export interface ConditionMoney {
+  currency: string;
+  minorUnits: boolean;
+}
+
+/** `{ record: "client" }`, `{ user: "id" }`, or neither. */
+export const valueSource = (value: unknown): "record" | "user" | "value" =>
+  typeof value === "object" && value !== null && !Array.isArray(value)
+    ? "record" in value
+      ? "record"
+      : "user" in value
+        ? "user"
+        : "value"
+    : "value";
 
 export interface ConditionChoice {
   value: string;
@@ -66,6 +92,8 @@ export function ConditionEditor({
   value,
   onChange,
   note,
+  valueFrom,
+  money,
 }: {
   columns: readonly ConditionColumn[];
   /** The operator words for a column type. */
@@ -76,6 +104,10 @@ export function ConditionEditor({
   onChange: (next: ConditionValue) => void;
   /** Under the list: "Status is a choice column, so you pick from its values". */
   note?: string;
+  /** Offers "this record's…" and "the current user" as what a value is compared with. */
+  valueFrom?: (field: string) => ConditionValueFrom | undefined;
+  /** For a money column, how it is kept: the value is typed as money. */
+  money?: (field: string) => ConditionMoney | undefined;
 }) {
   const id = useId();
   // What is typed after the words is kept in view: the list of words is long, the editor scrolls.
@@ -99,6 +131,15 @@ export function ConditionEditor({
   };
   const picked = selected(current.value);
   const input = inputOf(column, operator);
+  const source = valueSource(current.value);
+  // Only a test that compares with one value can compare with a column or the user.
+  const other = valueFrom?.(column.id);
+  const fromOther =
+    other !== undefined &&
+    ((other.record?.length ?? 0) > 0 || other.user === true) &&
+    operator?.test !== "contains" &&
+    operator?.test !== "in";
+  const kept = input === "number" ? money?.(column.id) : undefined;
 
   const chooseField = (field: string) => {
     const next = columns.find((one) => one.id === field);
@@ -186,7 +227,7 @@ export function ConditionEditor({
                 <span className="flex-1">{choice.label ?? choice.value}</span>
                 {choice.count !== undefined ? (
                   <span className="font-mono text-meta text-ink-muted tabular-nums">
-                    {choice.count.toLocaleString("en-US")} {choice.count === 1 ? "row" : "rows"}
+                    {choice.count.toLocaleString(localeOf())} {choice.count === 1 ? "row" : "rows"}
                   </span>
                 ) : null}
               </label>
@@ -234,6 +275,7 @@ export function ConditionEditor({
               <BetweenInput
                 id={id}
                 kind={column.type === "date" ? "date" : "number"}
+                money={money?.(column.id)}
                 value={current.value}
                 onChange={(next) => {
                   const { value: _, ...rest } = current;
@@ -241,36 +283,99 @@ export function ConditionEditor({
                 }}
               />
             ) : input !== "none" ? (
-              <div>
-                <label htmlFor={`${id}-value`} className="sr-only">
-                  Value
-                </label>
-                {input === "date" ? (
-                  <DateInput
-                    id={`${id}-value`}
-                    compact
-                    value={current.value === undefined ? "" : String(current.value)}
-                    onChange={(text) => {
+              <div className="flex flex-col gap-2">
+                {fromOther ? (
+                  <SegmentedControl
+                    label="Compared with"
+                    value={source}
+                    options={[
+                      { value: "value", label: "A value" },
+                      ...(other?.record && other.record.length > 0
+                        ? [{ value: "record", label: "This record's" }]
+                        : []),
+                      ...(other?.user ? [{ value: "user", label: "The current user" }] : []),
+                    ]}
+                    onChange={(next) => {
                       const { value: _, ...rest } = current;
-                      onChange(text === "" ? rest : { ...rest, value: text });
+                      if (next === "record") {
+                        const first = other?.record?.[0];
+                        onChange(first ? { ...rest, value: { record: first.id } } : rest);
+                      } else if (next === "user") onChange({ ...rest, value: { user: "id" } });
+                      else onChange(rest);
                     }}
                   />
+                ) : null}
+                {fromOther && source === "record" ? (
+                  <>
+                    <label htmlFor={`${id}-record`} className="sr-only">
+                      Column of this record
+                    </label>
+                    <select
+                      id={`${id}-record`}
+                      value={(current.value as { record: string }).record}
+                      onChange={(event) =>
+                        onChange({ ...current, value: { record: event.target.value } })
+                      }
+                      className={`${control} w-full`}
+                    >
+                      {other?.record?.map((one) => (
+                        <option key={one.id} value={one.id}>
+                          {one.label}
+                        </option>
+                      ))}
+                    </select>
+                  </>
+                ) : fromOther && source === "user" ? (
+                  <p className="m-0 text-body-sm text-ink-muted">
+                    Whoever is looking: the rows are the ones that name them.
+                  </p>
                 ) : (
-                  <input
-                    id={`${id}-value`}
-                    type={input}
-                    value={current.value === undefined ? "" : String(current.value)}
-                    onChange={(event) => {
-                      const text = event.target.value;
-                      const { value: _, ...rest } = current;
-                      onChange(
-                        text === ""
-                          ? rest
-                          : { ...rest, value: input === "number" ? Number(text) : text },
-                      );
-                    }}
-                    className={`${control} w-full`}
-                  />
+                  <>
+                    <label htmlFor={`${id}-value`} className="sr-only">
+                      Value
+                    </label>
+                    {input === "number" && kept ? (
+                      <MoneyField
+                        name={`${id}-value`}
+                        label="Value"
+                        required={false}
+                        currency={kept.currency}
+                        minorUnits={kept.minorUnits}
+                        value={typeof current.value === "number" ? current.value : undefined}
+                        onChange={(next, problem) => {
+                          if (problem !== undefined) return;
+                          const { value: _, ...rest } = current;
+                          onChange(next === undefined ? rest : { ...rest, value: next });
+                        }}
+                      />
+                    ) : input === "date" ? (
+                      <DateInput
+                        id={`${id}-value`}
+                        compact
+                        value={current.value === undefined ? "" : String(current.value)}
+                        onChange={(text) => {
+                          const { value: _, ...rest } = current;
+                          onChange(text === "" ? rest : { ...rest, value: text });
+                        }}
+                      />
+                    ) : (
+                      <input
+                        id={`${id}-value`}
+                        type={input}
+                        value={current.value === undefined ? "" : String(current.value)}
+                        onChange={(event) => {
+                          const text = event.target.value;
+                          const { value: _, ...rest } = current;
+                          onChange(
+                            text === ""
+                              ? rest
+                              : { ...rest, value: input === "number" ? Number(text) : text },
+                          );
+                        }}
+                        className={`${control} w-full`}
+                      />
+                    )}
+                  </>
                 )}
               </div>
             ) : null}
@@ -340,11 +445,14 @@ function BetweenInput({
   id,
   kind,
   value,
+  money,
   onChange,
 }: {
   id: string;
   kind: "date" | "number";
   value: unknown;
+  /** For a money column: both ends are typed as money, and kept the way the column holds it. */
+  money?: ConditionMoney | undefined;
   onChange: (next: [unknown, unknown] | undefined) => void;
 }) {
   const pair = Array.isArray(value) ? value : [];
@@ -353,50 +461,71 @@ function BetweenInput({
     next[at] = text === "" ? "" : kind === "number" ? Number(text) : text;
     onChange(next[0] === "" && next[1] === "" ? undefined : next);
   };
+  const setMoney = (at: 0 | 1, amount: number | undefined) => {
+    const next: [unknown, unknown] = [pair[0] ?? "", pair[1] ?? ""];
+    next[at] = amount ?? "";
+    onChange(next[0] === "" && next[1] === "" ? undefined : next);
+  };
+  const end = (at: 0 | 1, name: "from" | "to", label: string) =>
+    money && kind === "number" ? (
+      <MoneyField
+        name={`${id}-${name}`}
+        label={label}
+        required={false}
+        currency={money.currency}
+        minorUnits={money.minorUnits}
+        value={typeof pair[at] === "number" ? (pair[at] as number) : undefined}
+        onChange={(next, problem) => {
+          if (problem === undefined) setMoney(at, next);
+        }}
+      />
+    ) : null;
   return (
     <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
       <div>
         <label htmlFor={`${id}-from`} className="sr-only">
           From
         </label>
-        {kind === "date" ? (
-          <DateInput
-            id={`${id}-from`}
-            compact
-            value={pair[0] === undefined ? "" : String(pair[0])}
-            onChange={(text) => set(0, text)}
-          />
-        ) : (
-          <input
-            id={`${id}-from`}
-            type={kind}
-            value={pair[0] === undefined ? "" : String(pair[0])}
-            onChange={(event) => set(0, event.target.value)}
-            className={`${control} w-full`}
-          />
-        )}
+        {end(0, "from", "From") ??
+          (kind === "date" ? (
+            <DateInput
+              id={`${id}-from`}
+              compact
+              value={pair[0] === undefined ? "" : String(pair[0])}
+              onChange={(text) => set(0, text)}
+            />
+          ) : (
+            <input
+              id={`${id}-from`}
+              type={kind}
+              value={pair[0] === undefined ? "" : String(pair[0])}
+              onChange={(event) => set(0, event.target.value)}
+              className={`${control} w-full`}
+            />
+          ))}
       </div>
       <span className="text-body-sm text-ink-muted">and</span>
       <div>
         <label htmlFor={`${id}-to`} className="sr-only">
           To
         </label>
-        {kind === "date" ? (
-          <DateInput
-            id={`${id}-to`}
-            compact
-            value={pair[1] === undefined ? "" : String(pair[1])}
-            onChange={(text) => set(1, text)}
-          />
-        ) : (
-          <input
-            id={`${id}-to`}
-            type={kind}
-            value={pair[1] === undefined ? "" : String(pair[1])}
-            onChange={(event) => set(1, event.target.value)}
-            className={`${control} w-full`}
-          />
-        )}
+        {end(1, "to", "To") ??
+          (kind === "date" ? (
+            <DateInput
+              id={`${id}-to`}
+              compact
+              value={pair[1] === undefined ? "" : String(pair[1])}
+              onChange={(text) => set(1, text)}
+            />
+          ) : (
+            <input
+              id={`${id}-to`}
+              type={kind}
+              value={pair[1] === undefined ? "" : String(pair[1])}
+              onChange={(event) => set(1, event.target.value)}
+              className={`${control} w-full`}
+            />
+          ))}
       </div>
     </div>
   );

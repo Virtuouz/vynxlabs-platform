@@ -1,19 +1,34 @@
 import {
   ABOUT_KINDS,
   type About,
+  DOC_TYPE_LABELS,
+  DOC_TYPES,
+  type DocType,
   FRONTMATTER_SCHEMA,
   frontmatterOf,
+  isDocType,
+  MAX_SUBJECTS,
   type Manifest,
   setFrontmatter,
   type TermDefinition,
 } from "@volvel/docs-engine";
 import { Button, Notice, Panel, SelectField, TextAreaField, TextField } from "@volvel/ui";
 import { Plus, X } from "lucide-react";
+import { useState } from "react";
 
 const SAYS = FRONTMATTER_SCHEMA.properties;
 const text = (value: unknown) => (typeof value === "string" ? value : "");
 const list = <T,>(value: unknown): T[] => (Array.isArray(value) ? (value as T[]) : []);
 /** "a, b" as its parts, for a field that takes several short things. */
+/** What is typed as a subject, written as one is: lowercase, with a hyphen where there was a space. */
+const subjectOf = (typed: string) =>
+  typed
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/^[-_]+|-+$/g, "")
+    .slice(0, 80);
+
 const parts = (typed: string) =>
   typed
     .split(",")
@@ -30,6 +45,8 @@ export function PageDetails({
   onChange,
   index,
   product,
+  inherited,
+  subjects: known = [],
 }: {
   source: string;
   onChange: (source: string) => void;
@@ -37,7 +54,12 @@ export function PageDetails({
   index: boolean;
   /** The product's help, for the topics a page can add its notes to. */
   product: Manifest | undefined;
+  /** The type the folder gives a page that says none. */
+  inherited?: DocType | undefined;
+  /** The subjects the app's other pages name, the most used first: offered to choose from. */
+  subjects?: readonly { subject: string; pages: number }[];
 }) {
+  const [typedSubject, setTypedSubject] = useState("");
   const now = frontmatterOf(source);
   if (now === undefined) {
     return (
@@ -66,8 +88,32 @@ export function PageDetails({
     return product?.pages.find((page) => page.path === path)?.title ?? topic;
   };
 
+  const type = text(now.type);
+  const chosen = list<string>(now.subjects).filter((one) => typeof one === "string");
+  const full = chosen.length >= MAX_SUBJECTS;
+  const offered = known.filter((one) => !chosen.includes(one.subject)).slice(0, 12);
+  const addSubject = (typed: string) => {
+    const subject = subjectOf(typed);
+    if (subject === "" || full || chosen.includes(subject)) return;
+    set({ subjects: [...chosen, subject] });
+    setTypedSubject("");
+  };
+  const typeOptions = [
+    {
+      value: "",
+      label: index
+        ? "None: the pages under it say their own"
+        : inherited
+          ? `Use the folder's (${DOC_TYPE_LABELS[inherited]})`
+          : "None",
+    },
+    ...DOC_TYPES.map((one) => ({ value: one, label: DOC_TYPE_LABELS[one] })),
+    // What is written and is none of them is kept, so that the form says what the source says.
+    ...(type !== "" && !isDocType(type) ? [{ value: type, label: `${type} (not a type)` }] : []),
+  ];
+
   return (
-    <Panel className="flex flex-col gap-5 p-4">
+    <Panel className="flex flex-col gap-5 p-4 max-sm:border-0 max-sm:bg-transparent max-sm:p-0">
       <div className="grid gap-4 md:grid-cols-2">
         <TextField
           name="title"
@@ -98,10 +144,6 @@ export function PageDetails({
           onChange={(description) => set({ description })}
         />
         <div className="flex flex-col gap-4">
-          <p className="m-0 text-meta text-ink-muted">
-            Its place among the others: drag it in the tree, or list it in <code>pages:</code> on
-            its folder's own page.
-          </p>
           {index || now.icon !== undefined ? (
             <TextField
               name="icon"
@@ -113,8 +155,120 @@ export function PageDetails({
               onChange={(icon) => set({ icon })}
             />
           ) : null}
+          <TextField
+            name="date"
+            label="Date"
+            type="date"
+            required={false}
+            value={text(now.date)}
+            hint={SAYS.date.description}
+            onChange={(date) => set({ date })}
+          />
         </div>
       </div>
+      <p className="m-0 text-meta text-ink-muted">
+        <strong className="font-medium text-ink">Place among the others.</strong> Drag the page in
+        the tree, or list it in <code>pages:</code> on its folder's own page.
+      </p>
+
+      <fieldset className="m-0 flex flex-col gap-3 border-0 p-0">
+        <legend className="p-0 font-medium text-body-sm text-ink">What kind of page it is</legend>
+        <div className="max-w-[24rem]">
+          <SelectField
+            name="type"
+            label="Type"
+            required={false}
+            value={type}
+            options={typeOptions}
+            hint={
+              type === "" && inherited && !index
+                ? `The folder says ${DOC_TYPE_LABELS[inherited]}, so this page is one.`
+                : SAYS.type.description
+            }
+            onChange={(next) => set({ type: next })}
+          />
+        </div>
+        <div className="flex flex-col gap-2">
+          <p className="m-0 text-body-sm text-ink-muted">{SAYS.subjects.description}</p>
+          {chosen.length > 0 ? (
+            <ul className="m-0 flex list-none flex-wrap gap-2 p-0">
+              {chosen.map((subject, at) => (
+                <li
+                  key={subject}
+                  className={`inline-flex items-center gap-1 rounded-control border border-line bg-sunken py-0.5 pr-1 pl-2 text-body-sm ${
+                    at >= MAX_SUBJECTS ? "text-ink-subtle line-through" : ""
+                  }`}
+                >
+                  {subject}
+                  <Button
+                    size="small"
+                    variant="quiet"
+                    aria-label={`Remove ${subject}`}
+                    onClick={() => set({ subjects: chosen.filter((one) => one !== subject) })}
+                  >
+                    <X size={14} aria-hidden="true" />
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          {chosen.length > MAX_SUBJECTS ? (
+            <p className="m-0 text-body-sm text-warning">
+              Only the first {MAX_SUBJECTS} are used. Remove the others, or keep the ones a reader
+              would look for first.
+            </p>
+          ) : null}
+          <div className="flex max-w-[24rem] items-end gap-2">
+            <div className="min-w-0 flex-1">
+              <TextField
+                name="subject-add"
+                label="Add a subject"
+                required={false}
+                maxLength={80}
+                disabled={full}
+                value={typedSubject}
+                placeholder="refunds"
+                hint={
+                  full
+                    ? `Five is the most a page uses. Remove one to add another.`
+                    : "A short name, the same on every page about it."
+                }
+                onChange={setTypedSubject}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    addSubject(typedSubject);
+                  }
+                }}
+              />
+            </div>
+            <Button
+              size="small"
+              disabled={full || subjectOf(typedSubject) === ""}
+              onClick={() => addSubject(typedSubject)}
+            >
+              <Plus size={14} aria-hidden="true" /> Subject
+            </Button>
+          </div>
+          {offered.length > 0 && !full ? (
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-body-sm text-ink-muted">On other pages of this site:</span>
+              {offered.map((one) => (
+                <Button
+                  key={one.subject}
+                  size="small"
+                  variant="quiet"
+                  aria-label={`Add ${one.subject}`}
+                  title={`${one.pages} ${one.pages === 1 ? "page" : "pages"}`}
+                  onClick={() => addSubject(one.subject)}
+                >
+                  <Plus size={14} aria-hidden="true" /> {one.subject}
+                </Button>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      </fieldset>
 
       <fieldset className="m-0 flex flex-col gap-2 border-0 p-0">
         <legend className="p-0 font-medium text-body-sm text-ink">Terms it defines</legend>

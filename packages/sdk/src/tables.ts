@@ -5,10 +5,22 @@ export type Filter =
   | {
       column: string;
       /** Default `eq`. */
-      op?: "eq" | "ne" | "gt" | "gte" | "lt" | "lte" | "in" | "contains" | "is_null";
+      op?:
+        | "eq"
+        | "ne"
+        | "gt"
+        | "gte"
+        | "lt"
+        | "lte"
+        | "in"
+        | "has"
+        | "contains"
+        | "not_contains"
+        | "is_null";
       value?: unknown;
     };
 
+/** What `find` takes: a filter, the order, how many rows and where to start. */
 export interface FindOptions {
   filter?: Filter;
   /** Column names. A leading minus sorts that column downwards. */
@@ -18,6 +30,7 @@ export interface FindOptions {
   offset?: number;
 }
 
+/** What `aggregate` takes: the columns to group by, the values to work out and the filter to count rows by. */
 export interface AggregateOptions {
   /**
    * Columns to group by, up to three. A date or a time can be gathered into
@@ -74,6 +87,7 @@ export interface TableClient<Row, Insert = Partial<Row>> {
   as(principalId: string): TableClient<Row, Insert>;
 }
 
+/** What a column may say beside its type: what it holds, whether it is required or unique, and its default. */
 export interface ColumnOptions<Required extends boolean = boolean> {
   /** What the column holds, in plain text. Shown on its heading and where documentation names it. */
   description?: string;
@@ -116,11 +130,11 @@ function spec<Value>(type: string) {
   });
 }
 
-/** One value of an enum column, written in full: with what people read and the colour it is drawn on. */
+/** One value of an enum column, written in full: with what people read and the color it is drawn on. */
 export interface EnumValueSpec<Value extends string = string> {
   value: Value;
   label?: string;
-  /** gray, red, orange, amber, green, teal, blue, violet or pink, or any colour as `#rrggbb`. */
+  /** gray, red, orange, amber, green, teal, blue, violet or pink, or any color as `#rrggbb`. */
   color?: string;
   /** The value's previous spelling. Rows that hold it are rewritten on deploy. */
   renamedFrom?: string;
@@ -152,7 +166,9 @@ export interface ReferenceOptions<Required extends boolean = boolean>
   extends ColumnOptions<Required> {
   /**
    * `restrict` refuses the deletion, `set_null` empties this column, `cascade`
-   * deletes this row too. Left out, `restrict`.
+   * deletes this row too. Left out, `restrict`. The database does the last two: a row it
+   * deletes or empties this way is not announced as a `platform/row-changed` event, only the
+   * row that was deleted is.
    */
   onDelete?: "restrict" | "set_null" | "cascade";
 }
@@ -172,7 +188,6 @@ export const column = {
   /** Any JSON value. */
   json: spec<unknown>("json"),
   uuid: spec<string>("uuid"),
-  /** The ID of a row in another table. */
   /**
    * One of a list of values, which a row's type is narrowed to:
    * `column.enum(["new", "paid"])`. The database refuses any other value.
@@ -180,6 +195,7 @@ export const column = {
   enum: listed("enum", "one"),
   /** Several of a list of values, each at most once. */
   enumList: listed("enum_list", "many"),
+  /** The ID of a row in another table. */
   reference: <const Options extends ReferenceOptions = Record<never, never>>(
     table: string | { path: string },
     options: Options = {} as Options,

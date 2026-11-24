@@ -21,6 +21,8 @@ export function instanceRoutes(deps: {
         config: { access: access.public },
         schema: {
           summary: "Instance information",
+          description:
+            "The core's version, the API version, how far the database is migrated, and where apps are served: at a separate address, at the console's own, or not at all. For a program that has to know which instance it is talking to.",
           tags: ["instance"],
           response: {
             200: Type.Object({

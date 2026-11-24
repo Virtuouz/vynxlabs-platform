@@ -7,6 +7,7 @@ import {
   type LastValue,
   type PageFilter,
   type PageWidget,
+  type VisualBucket,
   type VisualCondition,
   type VisualQuery,
   widgetRegistry,
@@ -17,6 +18,7 @@ import type { RequestContext } from "../../http.js";
 import type { Kernel } from "../../kernel.js";
 import { type ApprovalsWire, readApprovals } from "../../pages/approvals.js";
 import { principalEmail } from "../../pages/who.js";
+import { todayIn } from "../../zones.js";
 import {
   describeTable,
   type Filter,
@@ -25,7 +27,7 @@ import {
   scopeFor,
   withData,
 } from "../rows.js";
-import { openSource, sourceTable } from "../sources.js";
+import { onSource, sourceTable } from "../sources.js";
 import {
   dayAfter,
   type FilterValues,
@@ -78,6 +80,12 @@ export type WireData =
       rows: Record<string, unknown>[];
       /** The same values for the period before, when the widget compares. */
       previous?: Record<string, unknown>[];
+      /** The function each value is, by the value's name: what a total of it can be made of. */
+      measures?: Record<string, string>;
+      /** The period each date breakdown is cut into, by the breakdown's name. */
+      buckets?: Record<string, "day" | "week" | "month" | "quarter" | "year">;
+      /** The days the page's date filter gives the first date breakdown, both ends. */
+      span?: { from: string; to: string };
       /** A figure's number over the time it covers, oldest first. */
       trend?: { at: string; value: number }[];
       followed?: { names: string; now: string };
@@ -171,12 +179,28 @@ export function groupRowsOf(
 const NOTHING: VisualCondition = { column: "id", op: "is_null" };
 
 /** The first day after the period that begins on `day`. */
-function periodEnd(day: string, bucket: string): string {
-  if (bucket === "day") return dayAfter(day);
+export function periodEnd(day: string, bucket: VisualBucket): string {
   const next = new Date(`${day}T00:00:00Z`);
-  if (bucket === "week") next.setUTCDate(next.getUTCDate() + 7);
-  else if (bucket === "month") next.setUTCMonth(next.getUTCMonth() + 1);
-  else next.setUTCFullYear(next.getUTCFullYear() + 1);
+  switch (bucket) {
+    case "day":
+      return dayAfter(day);
+    case "week":
+      next.setUTCDate(next.getUTCDate() + 7);
+      break;
+    case "month":
+      next.setUTCMonth(next.getUTCMonth() + 1);
+      break;
+    case "quarter":
+      next.setUTCMonth(next.getUTCMonth() + 3);
+      break;
+    case "year":
+      next.setUTCFullYear(next.getUTCFullYear() + 1);
+      break;
+    default: {
+      const unreachable: never = bucket;
+      throw new Error(`Unknown bucket ${String(unreachable)}`);
+    }
+  }
   return next.toISOString().slice(0, 10);
 }
 
@@ -530,15 +554,14 @@ export async function readWidget(
     return found;
   };
 
-  /** Rows of a table in a bound data source, which SQL views cannot read. */
-  const external = async (input: DataInput, offset: number) => {
+  /** The data source and table a visual input names, when the table is one in a bound source. */
+  const inSource = async (input: DataInput) => {
     if (!("visual" in input.source)) return undefined;
     const visual = input.source.visual;
     if (catalog.tables.has(visual.table)) return undefined;
     const slash = visual.table.lastIndexOf("/");
     if (slash <= 0) return undefined;
     const sourcePath = visual.table.slice(0, slash);
-    const table = visual.table.slice(slash + 1);
     const bound = await kernel.db
       .selectFrom("data_source_binding")
       .select("id")
@@ -549,69 +572,97 @@ export async function readWidget(
     if (!(await ctx.allowed("data:read", at))) {
       throw forbiddenBecause("This needs the data:read permission.");
     }
+    return { visual, sourcePath, table: visual.table.slice(slash + 1) };
+  };
+
+  /** Rows of a table in a bound data source, which SQL views cannot read. */
+  const external = async (input: DataInput, offset: number) => {
+    const found = await inSource(input);
+    if (!found) return undefined;
+    const { visual, sourcePath, table } = found;
     if ((visual.groupBy?.length ?? 0) > 0 || (visual.measures?.length ?? 0) > 0) {
       throw badRequest("Rows of a data source's table can be listed, not totalled.");
     }
-    const source = await openSource(kernel, kernel.db, tenantId, workspaceId, sourcePath);
-    const target: RowTarget = await sourceTable(source.db, source.schema, sourcePath, table);
-    const extra = conditionsFor(input, filters, request.values);
-    const conditions: Filter[] = [
-      ...(visual.filters ?? []),
-      ...extra.filter((one): one is VisualCondition => !("search" in one)),
-    ].flatMap((one, index): Filter[] => {
-      if (one.op === "not_null") return [{ column: one.column, op: "is_null", value: false }];
-      if (one.op === "last" || one.op === "between") {
-        // Written as the two ends it stands for; the end day is whole, as a page's date range reads it.
-        const type = target.columns.find((column) => column.name === one.column)?.type;
-        if (!type) throw badRequest(`${target.name} has no column "${one.column}".`);
-        const problem = conditionProblem(one, type);
-        if (problem)
-          throw badRequest("The condition is not valid.", [
-            { path: `/filters/${index}/value`, message: problem },
-          ]);
-        if (one.op === "between" && typeof (one.value as unknown[])[0] === "number") {
-          const [from, to] = one.value as number[];
+    // What the source refuses or cannot do is said as the rows route says it.
+    const { target, page } = await onSource(
+      kernel,
+      kernel.db,
+      { tenantId, workspaceId },
+      sourcePath,
+      async (source) => {
+        const target: RowTarget = await sourceTable(source.db, source.schema, sourcePath, table);
+        const extra = conditionsFor(input, filters, request.values);
+        const conditions: Filter[] = [
+          ...(visual.filters ?? []),
+          ...extra.filter((one): one is VisualCondition => !("search" in one)),
+        ].flatMap((one, index): Filter[] => {
+          if (one.op === "not_null") return [{ column: one.column, op: "is_null", value: false }];
+          if (one.op === "last" || one.op === "between") {
+            // Written as the two ends it stands for; the end day is whole, as a page's date range reads it.
+            const type = target.columns.find((column) => column.name === one.column)?.type;
+            if (!type) throw badRequest(`${target.name} has no column "${one.column}".`);
+            const problem = conditionProblem(one, type);
+            if (problem)
+              throw badRequest("The condition is not valid.", [
+                { path: `/filters/${index}/value`, message: problem },
+              ]);
+            if (one.op === "between" && typeof (one.value as unknown[])[0] === "number") {
+              const [from, to] = one.value as number[];
+              return [
+                { column: one.column, op: "gte", value: from },
+                { column: one.column, op: "lte", value: to },
+              ];
+            }
+            const range =
+              one.op === "last"
+                ? lastRange(
+                    (one.value as LastValue).count,
+                    (one.value as LastValue).unit,
+                    todayIn(request.zone),
+                  )
+                : {
+                    from: (one.value as string[])[0] as string,
+                    to: (one.value as string[])[1] as string,
+                  };
+            return [
+              { column: one.column, op: "gte", value: range.from },
+              { column: one.column, op: "lt", value: dayAfter(range.to) },
+            ];
+          }
           return [
-            { column: one.column, op: "gte", value: from },
-            { column: one.column, op: "lte", value: to },
+            {
+              column: one.column,
+              op: one.op,
+              ...(one.value !== undefined ? { value: one.value } : {}),
+            },
           ];
-        }
-        const range =
-          one.op === "last"
-            ? lastRange((one.value as LastValue).count, (one.value as LastValue).unit)
-            : {
-                from: (one.value as string[])[0] as string,
-                to: (one.value as string[])[1] as string,
-              };
-        return [
-          { column: one.column, op: "gte", value: range.from },
-          { column: one.column, op: "lt", value: dayAfter(range.to) },
-        ];
-      }
-      return [
-        {
-          column: one.column,
-          op: one.op,
-          ...(one.value !== undefined ? { value: one.value } : {}),
-        },
-      ];
-    });
-    // A search is each word found in one of its columns: an "or" of "contains" for each word.
-    for (const one of extra) {
-      if (!("search" in one)) continue;
-      for (const word of wordsOf(one.search)) {
-        conditions.push({
-          or: one.columns.map((column) => ({ column, op: "contains", value: word })),
         });
-      }
-    }
-    const sort = (visual.sort ?? []).map((one) => `${one.descending ? "-" : ""}${one.by}`);
-    const page = await findRows(source.db, target, {
-      ...(conditions.length > 0 ? { filter: { and: conditions } } : {}),
-      sort,
-      limit: Math.min(pageOf(widget, request.size), visual.limit ?? pageOf(widget, request.size)),
-      offset,
-    });
+        // A search is each word found in one of its columns: an "or" of "contains" for each word.
+        for (const one of extra) {
+          if (!("search" in one)) continue;
+          for (const word of wordsOf(one.search)) {
+            conditions.push({
+              or: one.columns.map((column) => ({ column, op: "contains", value: word })),
+            });
+          }
+        }
+        const sort = (visual.sort ?? []).map((one) => `${one.descending ? "-" : ""}${one.by}`);
+        const found = await findRows(source.db, target, {
+          ...(conditions.length > 0 ? { filter: { and: conditions } } : {}),
+          sort,
+          // Never past the list's own limit, whichever page is asked for.
+          limit: Math.max(
+            1,
+            Math.min(
+              pageOf(widget, request.size),
+              (visual.limit ?? Number.MAX_SAFE_INTEGER) - offset,
+            ),
+          ),
+          offset,
+        });
+        return { target, page: found };
+      },
+    );
     const shown =
       visual.columns && visual.columns.length > 0
         ? visual.columns
@@ -624,7 +675,12 @@ export async function readWidget(
       ...(target.key ? { id: row[target.key] } : {}),
       ...Object.fromEntries(columns.map((column) => [column.name, row[column.name] ?? null])),
     }));
-    return { columns, rows, nextOffset: page.nextOffset };
+    const capped = visual.limit !== undefined && offset + page.items.length >= visual.limit;
+    return {
+      columns,
+      rows: offset >= (visual.limit ?? Infinity) ? [] : rows,
+      nextOffset: capped ? null : page.nextOffset,
+    };
   };
 
   /** The caller, as `{ user: "id" }` names them. */
@@ -719,7 +775,11 @@ export async function readWidget(
         source: {
           visual: {
             table: own.table,
-            filters: [email !== undefined ? { column: own.by, op: "eq", value: email } : NOTHING],
+            filters: [
+              email !== undefined
+                ? ({ column: own.by, op: "ieq", value: email } as unknown as VisualCondition)
+                : NOTHING,
+            ],
           },
         },
       };
@@ -752,6 +812,7 @@ export async function readWidget(
       filters: request.filters,
       values: request.values,
       catalog: catalog.visual,
+      zone: request.zone,
       ...(request.follow ? { follow: { pageId: request.follow.pageId, place } } : {}),
     };
     const offset = decodeCursor(request.only?.input === name ? request.only.cursor : undefined);
@@ -821,6 +882,10 @@ export async function readWidget(
 
     if (declared.shape === "summary") {
       if (offset > 0) throw badRequest("A summary has one page.");
+      // Figures are drawn from the workspace's tables. A data source's table is read for its rows.
+      if (await inSource(input)) {
+        throw badRequest("Rows of a data source's table can be listed, not totalled.");
+      }
       const asked = await inputQuery(kernel, at, input, page, { shape: "summary" });
       const result = await run(asked);
       const rows = asRecords(result, asked.columns);
@@ -859,6 +924,27 @@ export async function readWidget(
         rows,
       };
       if (asked.followed) wire.followed = asked.followed;
+      // The period of each date breakdown, and the days the page asks for it, so that a chart can
+      // put back the periods with nothing in them by the step the query took, to the page's ends.
+      if (visual) {
+        if ((visual.measures ?? []).length > 0) {
+          wire.measures = Object.fromEntries(
+            (visual.measures ?? []).map((measure) => [measure.as, measure.fn]),
+          );
+        }
+        const cut = (visual.groupBy ?? []).filter((group) => group.bucket !== undefined);
+        if (cut.length > 0) {
+          wire.buckets = Object.fromEntries(
+            cut.flatMap((group) =>
+              group.bucket ? [[groupName(group), group.bucket] as const] : [],
+            ),
+          );
+          const first = cut[0];
+          const filter = (input.filters ?? []).find((one) => one.column === first?.column);
+          const range = filter ? rangeOf(request.values[filter.filter]) : undefined;
+          if (range?.from && range.to) wire.span = { from: range.from, to: range.to };
+        }
+      }
 
       // The same figures for the period before, when the widget compares and this input follows that range.
       const compared =

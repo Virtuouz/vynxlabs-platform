@@ -57,8 +57,10 @@ const row = (more: Record<string, unknown>) => ({
   ...more,
 });
 
+let ownConnectors: object[] = [];
 beforeEach(() => {
   calls = [];
+  ownConnectors = [];
   history.replaceState(null, "", "/t/t1/workspaces/w1/connections");
   testEnds = { status: "succeeded", result: { ok: true, status: 200, latencyMs: 42 } };
   rows = [
@@ -119,6 +121,7 @@ beforeEach(() => {
           { name: "http", builtin: true, configSchema: http },
           { name: "smtp", builtin: true, configSchema: smtp },
           { name: "oauth2", builtin: true, configSchema: oauth2 },
+          ...ownConnectors,
         ],
       });
     }
@@ -140,7 +143,7 @@ test("the list says what each connection's last Test found, and what needs a mem
   expect(screen.getByText("Reached")).toBeTruthy();
   expect(screen.getByText(/^87 ms · tested/)).toBeTruthy();
   expect(screen.getByText("Needs reconnecting")).toBeTruthy();
-  expect(screen.getByText("Not bound")).toBeTruthy();
+  expect(screen.getByText("Not set up here")).toBeTruthy();
   // Reconnect is the OAuth connection's first action, and goes to its provider.
   fireEvent.click(screen.getByRole("button", { name: "Reconnect" }));
   await waitFor(() =>
@@ -186,12 +189,39 @@ test("a new connection is declared in a draft, bound, and tested; a refusal says
     credential: "wrong",
   });
   expect(
-    await within(sheet).findByText("HTTP 401: https://crm.example answered 401."),
+    await within(sheet).findByText("Failed (HTTP 401): https://crm.example answered 401."),
   ).toBeTruthy();
   expect(calls.find((call) => call.url.endsWith("/connection-tests"))?.body).toEqual({
     path: "crm",
   });
   expect(within(sheet).getByRole("button", { name: "Change the token or key" })).toBeTruthy();
+});
+
+test("a new connection can be of the workspace's own connector, with the form that connector gives (P31)", async () => {
+  ownConnectors = [
+    {
+      name: "billing/ledger",
+      builtin: false,
+      configSchema: {
+        type: "object",
+        properties: { region: { type: "string", title: "Region" } },
+        required: ["region"],
+      },
+    },
+  ];
+  show(<Connections root={root} />);
+  fireEvent.click(await screen.findByRole("button", { name: "New connection" }));
+  const sheet = await screen.findByRole("dialog");
+  fireEvent.change(within(sheet).getByLabelText("Connection"), { target: { value: "__new" } });
+  fireEvent.change(within(sheet).getByLabelText("Name"), { target: { value: "books" } });
+  fireEvent.change(await within(sheet).findByLabelText("Kind"), {
+    target: { value: "billing/ledger" },
+  });
+  fireEvent.change(await within(sheet).findByLabelText("Region"), { target: { value: "eu" } });
+  fireEvent.click(within(sheet).getByRole("button", { name: "Save" }));
+  await waitFor(() => expect(put("/connection-bindings/books")).toBeTruthy());
+  expect(put("/drafts/books")?.body).toMatchObject({ body: { connector: "billing/ledger" } });
+  expect(put("/connection-bindings/books")?.body).toMatchObject({ config: { region: "eu" } });
 });
 
 test("a declared connection of another kind is set up with the form its connector gives", async () => {
@@ -280,4 +310,85 @@ test("back from the provider, the connection's sheet opens again and tests it", 
   });
   // The address no longer says it came back.
   await waitFor(() => expect(window.location.search).toBe(""));
+});
+
+test("production lists what the next promotion brings, sets it up as its own kind, and never drafts", async () => {
+  rows = [
+    row({
+      path: "mail",
+      connector: "smtp",
+      defined: false,
+      arrives: true,
+      bound: false,
+      config: null,
+      configSchema: smtp,
+      hasCredential: false,
+    }),
+  ];
+  history.replaceState(null, "", "/t/t1/workspaces/w1/connections?setup=mail");
+  show(<Connections root={root} production />);
+  // The address of a refused promotion's entry opens it.
+  const sheet = await screen.findByRole("dialog");
+  expect(within(sheet).getByLabelText("Server")).toBeTruthy();
+  expect(within(sheet).queryByText("A new connection…")).toBeNull();
+  fireEvent.change(within(sheet).getByLabelText("Server"), { target: { value: "smtp.acme.test" } });
+  fireEvent.change(within(sheet).getByLabelText("From"), { target: { value: "ops@acme.test" } });
+  fireEvent.click(within(sheet).getByRole("button", { name: "Save" }));
+  await waitFor(() => expect(put("/connection-bindings/mail")).toBeTruthy());
+  expect(put("/drafts/mail")).toBeUndefined();
+  expect(put("/connection-bindings/mail")?.body).toMatchObject({
+    config: { host: "smtp.acme.test", from: "ops@acme.test" },
+  });
+});
+
+test("a stored credential is removed from the connection's sheet: Save sends credential null (CFG-MP5)", async () => {
+  show(<Connections root={root} />);
+  const shop = (await screen.findByText("shop")).closest("tr") as HTMLElement;
+  fireEvent.click(within(shop).getByRole("button", { name: "Change" }));
+  const sheet = await screen.findByRole("dialog");
+  fireEvent.click(within(sheet).getByRole("button", { name: /^Remove the token or key/ }));
+  expect(within(sheet).getByText(/will be removed when you save/)).toBeTruthy();
+  fireEvent.click(within(sheet).getByRole("button", { name: /^Save/ }));
+  await waitFor(() => expect(put("/connection-bindings/shop")).toBeTruthy());
+  expect(put("/connection-bindings/shop")?.body).toEqual({
+    config: { baseUrl: "https://shop.example" },
+    credential: null,
+  });
+});
+
+test("WLK-17a: at a phone's width the health, used-by and kind cells keep room, and a header never wraps into the next", async () => {
+  show(<Connections root={root} />);
+  await screen.findByText("HTTP 401: answered 401.");
+  for (const header of screen.getAllByRole("columnheader")) {
+    expect(header.className).toContain("whitespace-nowrap");
+  }
+  const health = document.querySelector("[data-health]");
+  expect(health?.className).toContain("min-w-0");
+  const kind = screen.getAllByText("HTTP")[0]?.closest("td")?.firstElementChild;
+  expect(kind?.className).toContain("whitespace-nowrap");
+});
+
+test("at a phone's width a row keeps its name and its state, and the table does not scroll for the rest (P31)", async () => {
+  show(<Connections root={root} />);
+  await screen.findByText("HTTP 401: answered 401.");
+  const header = (name: string) => screen.getByRole("columnheader", { name });
+  for (const hidden of ["Used by", "Kind", "Points to"]) {
+    expect(header(hidden).className).toContain("hidden");
+  }
+  expect(header("Health").className).not.toContain("hidden");
+  // A connection not set up here says so in the column a phone keeps.
+  const outbox = screen.getByText("outbox").closest("tr") as HTMLElement;
+  const column = [...(outbox.parentElement?.parentElement?.querySelectorAll("th") ?? [])].findIndex(
+    (th) => th.textContent === "Health",
+  );
+  expect(outbox.querySelectorAll("td")[column]?.textContent).toContain("Not set up here");
+});
+
+test("WLK-17g: in production with nothing arriving, Set up a connection says so and opens no empty form", async () => {
+  rows = [row({ path: "shop", connector: "http" })];
+  show(<Connections root={root} production />);
+  await screen.findByText("shop");
+  fireEvent.click(await screen.findByRole("button", { name: "Set up a connection" }));
+  expect(await screen.findByText(/Nothing waits to be set up here/)).toBeTruthy();
+  expect(screen.queryByRole("dialog", { name: /New connection/ })).toBeNull();
 });

@@ -353,11 +353,11 @@ describe("deciding", () => {
     expect(screen.getByRole("button", { name: "Approve" })).toBeTruthy();
   });
 
-  test("ask why: never rejects at once; always asks for an approval too", async () => {
+  test("ask why: never still asks for a rejection's reason; always asks for an approval too", async () => {
     const decide = vi.fn<Decide>(async () => ok());
     const first = draw({ opens: "nothing", askWhy: "never" }, data([item(1)]), { decide });
     fireEvent.click(screen.getByRole("button", { name: "Reject" }));
-    expect(screen.getByLabelText(/optional/)).toBeTruthy();
+    expect(screen.getByLabelText("Why are you rejecting this?")).toBeTruthy();
     first.unmount();
     draw({ opens: "nothing", askWhy: "always" }, data([item(2)]), { decide });
     fireEvent.click(screen.getByRole("button", { name: "Approve" }));

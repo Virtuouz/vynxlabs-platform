@@ -1,14 +1,24 @@
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
-import { type DataLocation, newId } from "@volvel/db";
+import { type DataLocation, newId, sql } from "@volvel/db";
+import { ACCESS_DESCRIPTION_MAX } from "@volvel/manifest";
 import { Type } from "typebox";
 import { MIN_PASSWORD_LENGTH, RETENTION_BOUNDS } from "../config.js";
-import { badRequest, conflict, notFound } from "../kernel/errors.js";
-import { access } from "../kernel/http.js";
+import { endSessions, isOperator, keepingAnAdmin } from "../kernel/administer.js";
+import { badRequest, conflict, forbiddenBecause, notFound } from "../kernel/errors.js";
+import { access, reachedFromInside } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
 import { createMember } from "../kernel/members.js";
 import { effectivePolicy } from "../kernel/retention.js";
 import { accessResource, freeKey, releaseOne } from "../kernel/tenant/releases.js";
-import { likeTerm, pageOf, SearchPageQuery } from "../pagination.js";
+import {
+  afterName,
+  likeTerm,
+  listOf,
+  NamedListQuery,
+  nameKey,
+  pageOf,
+  SearchPageQuery,
+} from "../pagination.js";
 import {
   ApiKey,
   insertApiKey,
@@ -39,11 +49,19 @@ const Tenant = Type.Object({
   name: Type.String(),
   dataLocation: Type.Union([Type.String(), Type.Null()], {
     description:
-      "The dedicated database that holds this tenant's custom tables, or null for the platform database.",
+      "The dedicated database that holds this tenant's custom tables, or null for Volvel's own database.",
   }),
   managedWorkers: Type.Boolean({
     description:
       "Whether the instance starts workers for this tenant. False when the tenant runs everything on workers of its own.",
+  }),
+  managedWorkersLocked: Type.Boolean({
+    description:
+      "True when an operator turned managed workers off. Then only an operator can turn them on again.",
+  }),
+  consoleCode: Type.Boolean({
+    description:
+      "Whether people with `code:write` may write code in the console (scripts, connectors, trigger sources). False: code is deployed from the tenant's repository. A tenant admin or an operator can change it.",
   }),
   createdAt: Time,
 });
@@ -53,6 +71,8 @@ const toTenant = (row: {
   name: string;
   data_location: DataLocation;
   managed_workers: boolean;
+  managed_workers_locked?: boolean;
+  console_code?: boolean;
   created_at: Date;
 }) => ({
   id: row.id,
@@ -60,6 +80,8 @@ const toTenant = (row: {
   name: row.name,
   dataLocation: row.data_location.kind === "dedicated" ? row.data_location.ref : null,
   managedWorkers: row.managed_workers,
+  managedWorkersLocked: row.managed_workers_locked ?? false,
+  consoleCode: row.console_code ?? true,
   createdAt: iso(row.created_at),
 });
 
@@ -72,10 +94,16 @@ const Group = Type.Object({
   name: Type.String({ description: "What people read. It can change." }),
   description: Type.String(),
   managedBy: Type.String({
-    description: "`provider` for one an identity provider made by pushing it, `release` otherwise.",
+    description:
+      "`provider` for one an identity provider made by pushing it, `release` when an access change made it.",
+  }),
+  signInValues: Type.Array(Type.String(), {
+    description:
+      "What a person's sign-in says that puts them in this group (`membership.sso.values`). Filled by the identity provider's sign-in, not by hand.",
   }),
   createdAt: Time,
 });
+const SignInValues = Type.Array(Type.String({ minLength: 1, maxLength: 200 }), { maxItems: 50 });
 const toGroup = (row: {
   id: string;
   tenant_id: string;
@@ -83,6 +111,7 @@ const toGroup = (row: {
   name: string;
   description?: string;
   managed_by: string;
+  sso_values?: string[];
   created_at: Date;
 }) => ({
   id: row.id,
@@ -91,6 +120,7 @@ const toGroup = (row: {
   name: row.name,
   description: row.description ?? "",
   managedBy: row.managed_by,
+  signInValues: [...(row.sso_values ?? [])].sort(),
   createdAt: iso(row.created_at),
 });
 
@@ -112,17 +142,28 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       "/tenants",
       {
-        config: { access: access.signedIn },
+        config: { access: access.signedInOrKey },
         schema: {
           summary: "Tenants the caller can see",
-          description: "Every tenant for an operator. Otherwise the tenants the caller belongs to.",
+          description:
+            "Every tenant for an operator. Otherwise the tenants the caller belongs to; a service account's key sees its own tenant, so that a command by slug can find it.",
           tags: ["tenancy"],
-          querystring: SearchPageQuery,
+          querystring: Type.Object({
+            ...SearchPageQuery.properties,
+            dataLocation: Type.Optional(
+              Type.String({
+                description: "Only the tenants that keep their tables in this database location.",
+              }),
+            ),
+          }),
           response: {
             200: pageOf(
               Type.Object({
                 ...Tenant.properties,
                 workspaceCount: Type.Integer({ minimum: 0 }),
+                mayRename: Type.Boolean({
+                  description: "Whether the caller may change this tenant (its name and settings).",
+                }),
               }),
             ),
           },
@@ -133,7 +174,16 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         const { principal } = ctx;
         let select = db
           .selectFrom("tenant")
-          .select(["id", "slug", "name", "data_location", "managed_workers", "created_at"]);
+          .select([
+            "id",
+            "slug",
+            "name",
+            "data_location",
+            "managed_workers",
+            "managed_workers_locked",
+            "console_code",
+            "created_at",
+          ]);
         if (!(await ctx.allowed("tenant:read", {}))) {
           select =
             principal.type === "member"
@@ -141,7 +191,9 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                   eb
                     .selectFrom("tenant_member")
                     .select("tenant_id")
-                    .where("member_id", "=", principal.id as string),
+                    .where("member_id", "=", principal.id as string)
+                    // Nothing in a tenant a member is suspended in would open, so it is not listed.
+                    .where("suspended_at", "is", null),
                 )
               : select.where("id", "=", principal.tenantId as string);
         }
@@ -150,6 +202,9 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           select = select.where((eb) =>
             eb.or([eb(eb.fn("lower", ["name"]), "like", term), eb("slug", "like", term)]),
           );
+        }
+        if (query.dataLocation !== undefined) {
+          select = select.where(sql<boolean>`data_location ->> 'ref' = ${query.dataLocation}`);
         }
         if (args.after) select = select.where("id", ">", args.after);
         const rows = await select
@@ -169,6 +224,13 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                 )
                 .groupBy("tenant_id")
                 .execute();
+        const mayRename = new Map<string, boolean>();
+        for (const row of rows.slice(0, args.limit)) {
+          mayRename.set(
+            row.id,
+            await ctx.allowed("tenant:write", { tenantId: row.id, orInstance: true }),
+          );
+        }
         return toPage(
           rows,
           args,
@@ -176,6 +238,7 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           (row) => ({
             ...toTenant(row),
             workspaceCount: Number(counts.find((one) => one.tenant_id === row.id)?.count ?? 0),
+            mayRename: mayRename.get(row.id) ?? false,
           }),
         );
       },
@@ -187,6 +250,7 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.instance("tenant:write") },
         schema: {
           summary: "Create a tenant",
+          description: "Makes a tenant. Audited at the instance.",
           tags: ["tenancy"],
           body: Type.Object({
             slug: Slug,
@@ -238,7 +302,16 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                 ? { data_location: JSON.stringify({ kind: "dedicated", ref: body.dataLocation }) }
                 : {}),
             })
-            .returning(["id", "slug", "name", "data_location", "managed_workers", "created_at"])
+            .returning([
+              "id",
+              "slug",
+              "name",
+              "data_location",
+              "managed_workers",
+              "managed_workers_locked",
+              "console_code",
+              "created_at",
+            ])
             .executeTakeFirstOrThrow();
           // The tenant's own log starts with its creation.
           await audit({
@@ -283,21 +356,53 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       "/tenants/:t",
       {
-        config: { access: access.tenantOrInstance("tenant:read") },
+        config: { access: reachedFromInside(access.tenantOrInstance("tenant:read")) },
         schema: {
           summary: "One tenant",
+          description:
+            "The tenant's name, its slug and its settings. Someone whose only grants are on resources inside it is answered the name and slug, with the settings at their defaults.",
           tags: ["tenancy"],
           params: TenantParams,
-          response: { 200: Tenant },
+          response: {
+            200: Type.Object({
+              ...Tenant.properties,
+              mayRename: Type.Boolean({
+                description: "Whether the caller may change this tenant (its name and settings).",
+              }),
+            }),
+          },
         },
       },
-      async ({ params }) => {
+      async ({ ctx, params }) => {
         const row = await db
           .selectFrom("tenant")
-          .select(["id", "slug", "name", "data_location", "managed_workers", "created_at"])
+          .select([
+            "id",
+            "slug",
+            "name",
+            "data_location",
+            "managed_workers",
+            "managed_workers_locked",
+            "console_code",
+            "created_at",
+          ])
           .where("id", "=", params.t)
           .executeTakeFirstOrThrow();
-        return toTenant(row);
+        const whole = toTenant(row);
+        if (ctx.insideOnly) {
+          return {
+            ...whole,
+            dataLocation: null,
+            managedWorkers: false,
+            managedWorkersLocked: false,
+            consoleCode: true,
+            mayRename: false,
+          };
+        }
+        return {
+          ...whole,
+          mayRename: await ctx.allowed("tenant:write", { tenantId: params.t, orInstance: true }),
+        };
       },
     );
 
@@ -306,38 +411,85 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       {
         config: { access: access.tenantOrInstance("tenant:write") },
         schema: {
-          summary: "Rename a tenant, or say whether the instance runs workers for it",
+          summary:
+            "Rename a tenant, say whether the instance runs workers for it, or whether code may be written in the console",
+          description: "Any field may be sent alone. Audited.",
           tags: ["tenancy"],
           params: TenantParams,
           body: Type.Object({
             name: Type.Optional(Name),
             managedWorkers: Type.Optional(Type.Boolean()),
+            consoleCode: Type.Optional(
+              Type.Boolean({
+                description:
+                  "False refuses saving and testing code in the console for this tenant (`console_code_off`). Code deployed from a repository is not affected.",
+              }),
+            ),
           }),
           response: { 200: Tenant },
         },
       },
       async ({ ctx, params, body }) => {
-        if (body.name === undefined && body.managedWorkers === undefined) {
-          throw badRequest("Send a name, or managedWorkers.");
+        if (
+          body.name === undefined &&
+          body.managedWorkers === undefined &&
+          body.consoleCode === undefined
+        ) {
+          throw badRequest("Send a name, managedWorkers, or consoleCode.");
         }
+        const operator =
+          ctx.principal.type === "member" &&
+          ctx.principal.id !== null &&
+          (await isOperator(db, ctx.principal.id));
         const row = await ctx.mutate(async (trx, audit) => {
+          if (body.managedWorkers === true && !operator) {
+            const held = await trx
+              .selectFrom("tenant")
+              .select("managed_workers_locked")
+              .where("id", "=", params.t)
+              .executeTakeFirstOrThrow();
+            if (held.managed_workers_locked) {
+              throw forbiddenBecause(
+                "An operator of this instance turned this off. Only an operator can turn it on again.",
+              );
+            }
+          }
           const updated = await trx
             .updateTable("tenant")
             .set({
               ...(body.name !== undefined ? { name: body.name } : {}),
+              ...(body.consoleCode !== undefined ? { console_code: body.consoleCode } : {}),
               ...(body.managedWorkers !== undefined
-                ? { managed_workers: body.managedWorkers }
+                ? {
+                    managed_workers: body.managedWorkers,
+                    // An operator's off is kept for operators. What a tenant admin does with it
+                    // changes nothing about whose it is: they may only turn it off again.
+                    ...(operator ? { managed_workers_locked: body.managedWorkers === false } : {}),
+                  }
                 : {}),
             })
             .where("id", "=", params.t)
-            .returning(["id", "slug", "name", "data_location", "managed_workers", "created_at"])
+            .returning([
+              "id",
+              "slug",
+              "name",
+              "data_location",
+              "managed_workers",
+              "managed_workers_locked",
+              "console_code",
+              "created_at",
+            ])
             .executeTakeFirstOrThrow();
           await audit({
             action: "tenant.updated",
             targetType: "tenant",
             targetId: params.t,
             tenantId: params.t,
-            details: { name: updated.name, managedWorkers: updated.managed_workers },
+            details: {
+              name: updated.name,
+              managedWorkers: updated.managed_workers,
+              consoleCode: updated.console_code,
+            },
           });
           return updated;
         });
@@ -361,7 +513,10 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         RETENTION_BOUNDS.refusalsDays,
         "Refused webhook requests and SCIM pushes.",
       ),
-      auditDays: Days(RETENTION_BOUNDS.auditDays, "The audit log."),
+      auditDays: Days(
+        RETENTION_BOUNDS.auditDays,
+        "The audit log, and the files that rows replaced or were deleted with. Both go when older.",
+      ),
     };
     const PolicyDays = Type.Object({
       runsDays: Type.Integer(),
@@ -424,7 +579,9 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           summary: "Say how long the tenant's history is kept",
           description:
             "Only the kinds sent change. Null goes back to the instance's default. What is " +
-            "older than the new period is removed by the next retention pass, within minutes.",
+            "older than the new period is removed by the next retention pass, within minutes. " +
+            "A shorter `auditDays` also deletes the files that rows replaced or were deleted with " +
+            "longer ago than the new period.",
           tags: ["tenancy"],
           params: TenantParams,
           body: Type.Partial(Type.Object(RetentionFields)),
@@ -463,12 +620,32 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
 
     // ----- Members of a tenant -----
 
+    /** A tenant's members, each with how many roles they are given directly and groups they are in. */
+    const tenantMembers = (tenantId: string) =>
+      db
+        .selectFrom("member")
+        .innerJoin("tenant_member", "tenant_member.member_id", "member.id")
+        .select([
+          "member.id",
+          "member.name",
+          "member.email",
+          "member.created_at",
+          "tenant_member.suspended_at",
+          sql<number>`(select count(*) from binding b where b.tenant_id = ${tenantId}
+            and b.principal_type = 'member' and b.principal_id = member.id)`.as("direct_roles"),
+          sql<number>`(select count(*) from group_member gm
+            join principal_group g on g.id = gm.group_id
+            where gm.member_id = member.id and g.tenant_id = ${tenantId})`.as("group_count"),
+        ])
+        .where("tenant_member.tenant_id", "=", tenantId);
+
     app.get(
       "/tenants/:t/members",
       {
         config: { access: access.tenant("member:read") },
         schema: {
           summary: "Members of a tenant",
+          description: "The people who hold access to the tenant, with the roles they hold.",
           tags: ["identity"],
           params: TenantParams,
           querystring: SearchPageQuery,
@@ -477,17 +654,7 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       },
       async ({ params, query }) => {
         const args = pageArgs(query);
-        let select = db
-          .selectFrom("member")
-          .innerJoin("tenant_member", "tenant_member.member_id", "member.id")
-          .select([
-            "member.id",
-            "member.name",
-            "member.email",
-            "member.created_at",
-            "tenant_member.suspended_at",
-          ])
-          .where("tenant_member.tenant_id", "=", params.t);
+        let select = tenantMembers(params.t);
         if (query.search) {
           const term = likeTerm(query.search);
           select = select.where((eb) =>
@@ -503,6 +670,27 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           .limit(args.limit + 1)
           .execute();
         return toPage(rows, args, (row) => row.id, toMember);
+      },
+    );
+
+    app.get(
+      "/tenants/:t/members/:memberId",
+      {
+        config: { access: access.tenant("member:read") },
+        schema: {
+          summary: "One member of a tenant",
+          description: "So that a link to a member opens whatever page of the list they are on.",
+          tags: ["identity"],
+          params: Type.Object({ t: Id, memberId: Id }),
+          response: { 200: Member },
+        },
+      },
+      async ({ params }) => {
+        const row = await tenantMembers(params.t)
+          .where("member.id", "=", params.memberId)
+          .executeTakeFirst();
+        if (!row) throw notFound("The member");
+        return toMember(row);
       },
     );
 
@@ -605,36 +793,34 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         if (body.suspended && ctx.principal.id === params.memberId) {
           throw badRequest("You cannot suspend yourself.");
         }
-        return ctx.mutate(async (trx, audit) => {
-          const changed = await trx
-            .updateTable("tenant_member")
-            .set({ suspended_at: body.suspended ? new Date() : null })
-            .where("tenant_id", "=", params.t)
-            .where("member_id", "=", params.memberId)
-            .returning("suspended_at")
-            .executeTakeFirst();
-          if (!changed) throw notFound("The member");
-          if (body.suspended) {
-            await trx
-              .deleteFrom("app_session")
+        return ctx.mutate((trx, audit) =>
+          keepingAnAdmin(trx, params.t, async () => {
+            const changed = await trx
+              .updateTable("tenant_member")
+              .set({
+                suspended_at: body.suspended ? new Date() : null,
+                suspended_by: body.suspended ? "hand" : null,
+              })
               .where("tenant_id", "=", params.t)
-              .where("principal_type", "=", "member")
-              .where("principal_id", "=", params.memberId)
-              .execute();
-          }
-          await audit({
-            action: body.suspended ? "tenant_member.suspended" : "tenant_member.resumed",
-            targetType: "member",
-            targetId: params.memberId,
-            tenantId: params.t,
-          });
-          const member = await trx
-            .selectFrom("member")
-            .select(["id", "name", "email", "created_at"])
-            .where("id", "=", params.memberId)
-            .executeTakeFirstOrThrow();
-          return toMember({ ...member, suspended_at: changed.suspended_at });
-        });
+              .where("member_id", "=", params.memberId)
+              .returning("suspended_at")
+              .executeTakeFirst();
+            if (!changed) throw notFound("The member");
+            if (body.suspended) await endSessions(trx, params.memberId, { tenantId: params.t });
+            await audit({
+              action: body.suspended ? "tenant_member.suspended" : "tenant_member.resumed",
+              targetType: "member",
+              targetId: params.memberId,
+              tenantId: params.t,
+            });
+            const member = await trx
+              .selectFrom("member")
+              .select(["id", "name", "email", "created_at"])
+              .where("id", "=", params.memberId)
+              .executeTakeFirstOrThrow();
+            return toMember({ ...member, suspended_at: changed.suspended_at });
+          }),
+        );
       },
     );
 
@@ -651,49 +837,53 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         },
       },
       async ({ ctx, params }, reply) => {
-        await ctx.mutate(async (trx, audit) => {
-          const removed = await trx
-            .deleteFrom("tenant_member")
-            .where("tenant_id", "=", params.t)
-            .where("member_id", "=", params.memberId)
-            .returning("member_id")
-            .executeTakeFirst();
-          if (!removed) throw notFound("The member");
-          const bindings = await trx
-            .deleteFrom("binding")
-            .where("tenant_id", "=", params.t)
-            .where("principal_type", "=", "member")
-            .where("principal_id", "=", params.memberId)
-            .returning("id")
-            .execute();
-          await trx
-            .deleteFrom("group_member")
-            .where("member_id", "=", params.memberId)
-            .where("group_id", "in", (eb) =>
-              eb.selectFrom("principal_group").select("id").where("tenant_id", "=", params.t),
-            )
-            .execute();
-          // What the tenant's providers knew of the person goes with them.
-          await trx
-            .deleteFrom("identity_link")
-            .where("tenant_id", "=", params.t)
-            .where("principal_type", "=", "member")
-            .where("principal_id", "=", params.memberId)
-            .execute();
-          await trx
-            .deleteFrom("scim_user")
-            .where("tenant_id", "=", params.t)
-            .where("principal_type", "=", "member")
-            .where("principal_id", "=", params.memberId)
-            .execute();
-          await audit({
-            action: "tenant_member.removed",
-            targetType: "member",
-            targetId: params.memberId,
-            tenantId: params.t,
-            details: { bindingsRemoved: bindings.length },
-          });
-        });
+        await ctx.mutate((trx, audit) =>
+          keepingAnAdmin(trx, params.t, async () => {
+            const removed = await trx
+              .deleteFrom("tenant_member")
+              .where("tenant_id", "=", params.t)
+              .where("member_id", "=", params.memberId)
+              .returning("member_id")
+              .executeTakeFirst();
+            if (!removed) throw notFound("The member");
+            // Their sign-ins to this tenant's apps end with their place in it.
+            await endSessions(trx, params.memberId, { tenantId: params.t });
+            const bindings = await trx
+              .deleteFrom("binding")
+              .where("tenant_id", "=", params.t)
+              .where("principal_type", "=", "member")
+              .where("principal_id", "=", params.memberId)
+              .returning("id")
+              .execute();
+            await trx
+              .deleteFrom("group_member")
+              .where("member_id", "=", params.memberId)
+              .where("group_id", "in", (eb) =>
+                eb.selectFrom("principal_group").select("id").where("tenant_id", "=", params.t),
+              )
+              .execute();
+            // What the tenant's providers knew of the person goes with them.
+            await trx
+              .deleteFrom("identity_link")
+              .where("tenant_id", "=", params.t)
+              .where("principal_type", "=", "member")
+              .where("principal_id", "=", params.memberId)
+              .execute();
+            await trx
+              .deleteFrom("scim_user")
+              .where("tenant_id", "=", params.t)
+              .where("principal_type", "=", "member")
+              .where("principal_id", "=", params.memberId)
+              .execute();
+            await audit({
+              action: "tenant_member.removed",
+              targetType: "member",
+              targetId: params.memberId,
+              tenantId: params.t,
+              details: { bindingsRemoved: bindings.length },
+            });
+          }),
+        );
         return reply.code(204).send(null);
       },
     );
@@ -706,19 +896,70 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.tenant("group:read") },
         schema: {
           summary: "Groups in a tenant",
+          description:
+            "The tenant's groups of members. A binding made to a group gives its role to everyone in it.",
           tags: ["identity"],
           params: TenantParams,
-          response: { 200: Type.Object({ items: Type.Array(Group) }) },
+          querystring: NamedListQuery,
+          response: { 200: pageOf(Group) },
         },
       },
-      async ({ params }) => {
+      async ({ params, query }) => {
+        let select = db.selectFrom("principal_group").selectAll().where("tenant_id", "=", params.t);
+        if (query.search) {
+          select = select.where((eb) =>
+            eb(eb.fn("lower", ["name"]), "like", likeTerm(query.search as string)),
+          );
+        }
+        const args = pageArgs(query);
+        const after = afterName(args.after);
+        if (after) {
+          select = select.where((eb) =>
+            eb.or([
+              eb("name", ">", after.name),
+              eb.and([eb("name", "=", after.name), eb("id", ">", after.id)]),
+            ]),
+          );
+        }
+        select = select.orderBy("name").orderBy("id");
+        if (query.limit === undefined) {
+          return { items: (await select.execute()).map(toGroup), nextCursor: null };
+        }
+        const rows = await select.limit(query.limit + 1).execute();
+        return toPage(rows, { ...args, limit: query.limit }, nameKey, toGroup);
+      },
+    );
+
+    app.get(
+      "/tenants/:t/me/groups",
+      {
+        config: { access: access.signedIn },
+        schema: {
+          summary: "The groups the caller is in, in a tenant",
+          description:
+            "The caller's own groups only: a member's groups of members, with what each is " +
+            "called now. A page's rules name groups, and a console page is drawn by them.",
+          tags: ["identity"],
+          params: TenantParams,
+          response: {
+            200: Type.Object({
+              items: Type.Array(Type.Object({ key: Type.String(), name: Type.String() })),
+            }),
+          },
+        },
+      },
+      async ({ ctx, params }) => {
+        const { id, type } = ctx.principal;
+        if (type !== "member" || !id) return { items: [] };
         const rows = await db
-          .selectFrom("principal_group")
-          .selectAll()
-          .where("tenant_id", "=", params.t)
-          .orderBy("name")
+          .selectFrom("group_member")
+          .innerJoin("principal_group", "principal_group.id", "group_member.group_id")
+          .select(["principal_group.key", "principal_group.name"])
+          .where("group_member.member_id", "=", id)
+          .where("principal_group.tenant_id", "=", params.t)
+          .orderBy("principal_group.name")
           .execute();
-        return { items: rows.map(toGroup) };
+        return { items: rows };
       },
     );
 
@@ -728,11 +969,13 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.tenant("group:write") },
         schema: {
           summary: "Create a group",
+          description:
+            "Makes an empty group. Add members to it, then bind a role to the group. Audited.",
           tags: ["identity"],
           params: TenantParams,
           body: Type.Object({
             name: Name,
-            description: Type.Optional(Type.String({ maxLength: 300 })),
+            description: Type.Optional(Type.String({ maxLength: ACCESS_DESCRIPTION_MAX })),
           }),
           response: { 201: Group, 202: Waiting },
         },
@@ -786,7 +1029,8 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           params: GroupParams,
           body: Type.Object({
             name: Type.Optional(Name),
-            description: Type.Optional(Type.String({ maxLength: 300 })),
+            description: Type.Optional(Type.String({ maxLength: ACCESS_DESCRIPTION_MAX })),
+            signInValues: Type.Optional(SignInValues),
           }),
           response: { 200: Group, 202: Waiting },
         },
@@ -800,9 +1044,19 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               "This group is made by the identity provider, which names it. Rename it there.",
             );
           }
+          if (now.managedBy === "provider" && body.signInValues !== undefined) {
+            throw conflict(
+              "This group is made by the identity provider, which fills it. Change it there.",
+            );
+          }
           const description =
             body.description?.trim() ?? (now.resource.body.description as string | undefined);
-          const { description: _was, ...rest } = now.resource.body;
+          const { description: _was, membership: _kept, ...rest } = now.resource.body;
+          const values =
+            body.signInValues !== undefined
+              ? [...new Set(body.signInValues.map((one) => one.trim()).filter(Boolean))].sort()
+              : ((now.resource.body.membership as { sso?: { values?: string[] } } | undefined)?.sso
+                  ?.values ?? []);
           const released = await releaseOne(
             trx,
             audit,
@@ -816,6 +1070,7 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                   ...rest,
                   title: body.name?.trim() ?? (now.resource.body.title as string),
                   ...(description ? { description } : {}),
+                  ...(values.length > 0 ? { membership: { sso: { values } } } : {}),
                 },
               },
             },
@@ -839,6 +1094,7 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.tenant("group:read") },
         schema: {
           summary: "One group and its members",
+          description: "The group and the members in it.",
           tags: ["identity"],
           params: GroupParams,
           response: { 200: Type.Object({ ...Group.properties, members: Type.Array(Member) }) },
@@ -902,6 +1158,7 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.tenant("group:write") },
         schema: {
           summary: "Add a tenant member to a group",
+          description: "Only a member of the tenant can be added. Audited.",
           tags: ["identity"],
           params: GroupMemberParams,
           response: { 204: NoContent },
@@ -946,31 +1203,35 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.tenant("group:write") },
         schema: {
           summary: "Remove a member from a group",
+          description:
+            "The member loses what the group's bindings gave, and keeps what is bound to them directly. Audited.",
           tags: ["identity"],
           params: GroupMemberParams,
           response: { 204: NoContent },
         },
       },
       async ({ ctx, params }, reply) => {
-        await ctx.mutate(async (trx, audit) => {
-          const removed = await trx
-            .deleteFrom("group_member")
-            .where("group_id", "=", params.g)
-            .where("member_id", "=", params.memberId)
-            .where("group_id", "in", (eb) =>
-              eb.selectFrom("principal_group").select("id").where("tenant_id", "=", params.t),
-            )
-            .returning("member_id")
-            .executeTakeFirst();
-          if (!removed) throw notFound("The group member");
-          await audit({
-            action: "group_member.removed",
-            targetType: "group",
-            targetId: params.g,
-            tenantId: params.t,
-            details: { memberId: params.memberId },
-          });
-        });
+        await ctx.mutate((trx, audit) =>
+          keepingAnAdmin(trx, params.t, async () => {
+            const removed = await trx
+              .deleteFrom("group_member")
+              .where("group_id", "=", params.g)
+              .where("member_id", "=", params.memberId)
+              .where("group_id", "in", (eb) =>
+                eb.selectFrom("principal_group").select("id").where("tenant_id", "=", params.t),
+              )
+              .returning("member_id")
+              .executeTakeFirst();
+            if (!removed) throw notFound("The group member");
+            await audit({
+              action: "group_member.removed",
+              targetType: "group",
+              targetId: params.g,
+              tenantId: params.t,
+              details: { memberId: params.memberId },
+            });
+          }),
+        );
         return reply.code(204).send(null);
       },
     );
@@ -983,9 +1244,11 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.tenant("service_account:read") },
         schema: {
           summary: "Service accounts in a tenant",
+          description:
+            "The accounts that act for programs. A service account holds only what is bound to it.",
           tags: ["identity"],
           params: TenantParams,
-          response: { 200: Type.Object({ items: Type.Array(ServiceAccount) }) },
+          response: { 200: listOf(ServiceAccount) },
         },
       },
       async ({ params }) => {
@@ -1005,11 +1268,13 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.tenant("service_account:write") },
         schema: {
           summary: "Create a service account",
+          description:
+            "A named identity for a program, with no keys until one is made. Bind a role to it to give it anything. Audited.",
           tags: ["identity"],
           params: TenantParams,
           body: Type.Object({
             name: Name,
-            description: Type.Optional(Type.String({ maxLength: 300 })),
+            description: Type.Optional(Type.String({ maxLength: ACCESS_DESCRIPTION_MAX })),
           }),
           response: { 201: ServiceAccount, 202: Waiting },
         },
@@ -1061,7 +1326,7 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           params: Type.Object({ t: Id, id: Id }),
           body: Type.Object({
             name: Type.Optional(Name),
-            description: Type.Optional(Type.String({ maxLength: 300 })),
+            description: Type.Optional(Type.String({ maxLength: ACCESS_DESCRIPTION_MAX })),
           }),
           response: { 200: ServiceAccount, 202: Waiting },
         },
@@ -1141,9 +1406,11 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.tenant("service_account:read") },
         schema: {
           summary: "A service account's API keys",
+          description:
+            "The keys made for the account. A key's full value is shown once, when it is made, and is not in this list.",
           tags: ["identity"],
           params: Type.Object({ t: Id, id: Id }),
-          response: { 200: Type.Object({ items: Type.Array(ApiKey) }) },
+          response: { 200: listOf(ApiKey) },
         },
       },
       async ({ params }) => {
@@ -1166,6 +1433,8 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.tenant("service_account:write") },
         schema: {
           summary: "Create an API key for a service account",
+          description:
+            "The key acts as the service account. Its value is in the answer and is never shown again. Audited.",
           tags: ["identity"],
           params: Type.Object({ t: Id, id: Id }),
           body: NewApiKeyBody,
@@ -1181,7 +1450,12 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             .where("tenant_id", "=", params.t)
             .executeTakeFirst();
           if (!account) throw notFound("The service account");
-          const key = await insertApiKey(trx, { type: "service_account", id: params.id }, body);
+          const key = await insertApiKey(
+            trx,
+            { type: "service_account", id: params.id },
+            body,
+            ctx.principal.type === "member" ? ctx.principal.id : null,
+          );
           await audit({
             action: "api_key.created",
             targetType: "api_key",
@@ -1201,6 +1475,7 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.tenant("service_account:write") },
         schema: {
           summary: "Revoke a service account's API key",
+          description: "The key stops working. Audited.",
           tags: ["identity"],
           params: Type.Object({ t: Id, id: Id, keyId: Id }),
           response: { 204: NoContent },

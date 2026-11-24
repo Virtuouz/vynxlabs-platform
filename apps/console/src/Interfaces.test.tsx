@@ -130,7 +130,12 @@ test("an app is made as an interface and the app that serves it, and is then bui
     (await screen.findAllByRole("button", { name: "Make an app" }))[0] as HTMLElement,
   );
   const dialog = await screen.findByRole("dialog");
+  // The interface refuses a name past 100 characters, so the field stops there (BLD-06).
+  expect((within(dialog).getByLabelText("Name") as HTMLInputElement).maxLength).toBe(-1);
+  // ...and says how many are typed (BLD-06).
+  expect(within(dialog).getByText("0 of 100")).toBeTruthy();
   fireEvent.change(within(dialog).getByLabelText("Name"), { target: { value: "Stock room" } });
+  expect(within(dialog).getByText("10 of 100")).toBeTruthy();
   // The address is made from the name.
   expect((within(dialog).getByLabelText("Address") as HTMLInputElement).value).toBe("stock-room");
   fireEvent.click(within(dialog).getByRole("button", { name: "Make the app" }));
@@ -256,7 +261,10 @@ test("widgets are added and removed, and what is wrong is said before anything c
   expect(await screen.findByText("No app serves this yet, so nobody can open it.")).toBeTruthy();
 
   const addChart = async () => {
-    fireEvent.click(screen.getAllByRole("button", { name: "Add to page" })[0] as HTMLElement);
+    // A person's click puts focus on the button: the dialog gives it back to that button when it closes.
+    const opener = screen.getAllByRole("button", { name: "Add to page" })[0] as HTMLElement;
+    opener.focus();
+    fireEvent.click(opener);
     const dialog = within(await screen.findByRole("dialog", { name: "Add to page" }));
     fireEvent.click(dialog.getByRole("button", { name: /Chart/ }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
@@ -367,8 +375,8 @@ test("sharing an app gives a group the app and the tables it shows, and stopping
     200,
     {
       items: [
-        { id: "r1", name: "portal_reader" },
-        { id: "r2", name: "portal_user" },
+        { id: "r1", name: "portal_reader", builtin: true },
+        { id: "r2", name: "portal_user", builtin: true },
       ],
     },
   ];
@@ -383,6 +391,7 @@ test("sharing an app gives a group the app and the tables it shows, and stopping
         principalType: made.principalType,
         principalId: made.principalId ?? null,
         principalLabel: "finance",
+        roleId: "r1",
         roleName: "portal_reader",
         managedByResource: false,
       },
@@ -399,7 +408,10 @@ test("sharing an app gives a group the app and the tables it shows, and stopping
   show(<Apps root={root} />);
   // The app's inspector opens on choosing it, and sharing starts there.
   fireEvent.click(await screen.findByText("Sales"));
-  fireEvent.click(await screen.findByRole("button", { name: "Share" }));
+  const opener = await screen.findByRole("button", { name: "Share" });
+  // A press focuses the control, as in a browser.
+  opener.focus();
+  fireEvent.click(opener);
   const dialog = within(await screen.findByRole("dialog", { name: "Share Sales" }));
   await dialog.findByText("Nobody else yet.");
   // It says what comes with the app, so nobody is surprised by it.
@@ -427,6 +439,90 @@ test("sharing an app gives a group the app and the tables it shows, and stopping
     "b1",
     "b2",
     "b3",
+  ]);
+  // Escape closes the sheet, and the focus is back on the Share that opened it (P31).
+  fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
+  await waitFor(() => expect(screen.queryByRole("dialog", { name: "Share Sales" })).toBeNull());
+  await waitFor(() =>
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Share" })),
+  );
+});
+
+test("stopping to share an app keeps the tables another shared app reads, and says so (APP-12, APP-14)", async () => {
+  const tenant = "/api/v1/tenants/t1";
+  const mine = (id: string, resourceId: string) => ({
+    id,
+    scopeType: "resource",
+    resourceId,
+    principalType: "end_user_group",
+    principalId: "g1",
+    principalLabel: "finance",
+    roleName: "portal_reader",
+    managedByResource: false,
+  });
+  let held: Any[] = [mine("b1", "a1"), mine("b2", "t1"), mine("b3", "t2"), mine("b4", "a2")];
+  const app = (id: string, path: string, reads: string[], more: object = {}) => ({
+    id,
+    path,
+    title: path === "sales" ? "Sales" : "Reports",
+    description: null,
+    url: `https://vx.example/apps/acme/main/${path}/`,
+    domains: [],
+    files: 0,
+    bytes: 0,
+    access: [],
+    reads,
+    ...more,
+  });
+  routes[`GET ${api}/apps`] = () => [
+    200,
+    {
+      items: [
+        app("a1", "sales", ["customers", "orders"], {
+          broaderAccess: [{ scope: "workspace", label: "anyone" }],
+        }),
+        app("a2", "reports", ["orders"], { published: false }),
+      ],
+    },
+  ];
+  routes[`GET ${api}/resources`] = () => [
+    200,
+    {
+      items: [
+        { id: "a1", kind: "app", path: "sales", body: { title: "Sales" } },
+        { id: "t1", kind: "table", path: "customers", body: {} },
+        { id: "t2", kind: "table", path: "orders", body: {} },
+      ],
+    },
+  ];
+  routes[`GET ${tenant}/bindings`] = () => [200, { items: held }];
+  routes[`GET ${tenant}/groups`] = () => [200, { items: [] }];
+  routes[`GET ${tenant}/end-user-groups`] = () => [200, { items: [{ id: "g1", name: "finance" }] }];
+  routes[`GET ${tenant}/roles`] = () => [200, { items: [{ id: "r1", name: "portal_reader" }] }];
+  for (const id of ["b1", "b2", "b3"]) {
+    routes[`DELETE ${tenant}/bindings/${id}`] = () => {
+      held = held.filter((binding) => binding.id !== id);
+      return [204, null];
+    };
+  }
+  const { Apps } = await import("./screens/Apps.tsx");
+  show(<Apps root={root} />);
+  // The list names a binding that reaches every app, and an app switched off has no link.
+  expect(await screen.findByText("anyone (whole workspace)")).toBeTruthy();
+  expect(screen.getByText("Not published")).toBeTruthy();
+  fireEvent.click(await screen.findByText("Sales"));
+  fireEvent.click(await screen.findByRole("button", { name: "Share" }));
+  const dialog = within(await screen.findByRole("dialog", { name: "Share Sales" }));
+  await dialog.findByText(/may open every app of the whole workspace/);
+  fireEvent.click(await dialog.findByRole("button", { name: "Stop sharing with finance" }));
+  const asked = (await screen.findAllByRole("dialog")).at(-1) as HTMLElement;
+  expect(asked.textContent).toContain("their access to its 1 table goes with it");
+  expect(asked.textContent).toContain("1 table stays, for 1 other app that uses it: Reports");
+  fireEvent.click(within(asked).getByRole("button", { name: "Stop sharing" }));
+  await waitFor(() => expect(held.map((binding) => binding.id)).toEqual(["b3", "b4"]));
+  expect(sent("DELETE", "/bindings/").map((call) => call.url.split("/").pop())).toEqual([
+    "b1",
+    "b2",
   ]);
 });
 
@@ -540,6 +636,7 @@ test("an app is renamed in its interface and its app, as one draft, and its addr
   fireEvent.click(await screen.findByRole("button", { name: "Rename" }));
   const dialog = await screen.findByRole("dialog");
   expect(within(dialog).getByText(/Its address does not/)).toBeTruthy();
+  expect((within(dialog).getByLabelText("Name") as HTMLInputElement).maxLength).toBe(-1);
   const save = within(dialog).getByRole("button", { name: "Save as a draft" }) as HTMLButtonElement;
   expect(save.disabled).toBe(true);
   fireEvent.change(within(dialog).getByLabelText("Name"), { target: { value: "Revenue" } });

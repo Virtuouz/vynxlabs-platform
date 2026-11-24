@@ -1,9 +1,15 @@
 import {
+  buildDocSet,
+  changelogOf,
   childrenOf,
+  type DocEntry,
+  type DocSet,
+  frontmatterOf,
   type Manifest,
   orderOf,
   type PageIndex,
   type PageSource,
+  readPage,
   resolveLink,
 } from "@volvel/docs-engine";
 import type { Described } from "../../help/glossary.tsx";
@@ -60,7 +66,11 @@ export interface DocsTable {
 
 export interface DocsList {
   apps: DocsApp[];
+  /** Deployed apps a draft removes: a deploy of the documentation carries the removal. */
+  removedApps?: string[];
   pages: DocPage[];
+  /** Pages that take a term or a topic the product's own help has, as the server found them. */
+  issues?: { app: string; path: string; code: string; message: string }[];
   /** The workspace's tables. To someone who may read only the documentation, the ones its apps name. */
   tables: DocsTable[];
 }
@@ -77,12 +87,14 @@ export function pendingOf(list: DocsList) {
   const tables = list.tables.filter(
     (table) => table.state !== "deployed" && table.state !== "removed" && named.has(table.path),
   );
+  // A removal of an app is a change like any other, and a page removed beside it needs it.
+  const removed = list.removedApps ?? [];
   return {
     pages,
     apps,
     tables,
-    paths: [...pages, ...apps, ...tables].map((one) => one.path),
-    count: pages.length + apps.length + tables.length,
+    paths: [...pages, ...apps, ...tables].map((one) => one.path).concat(removed),
+    count: pages.length + apps.length + tables.length + removed.length,
   };
 }
 
@@ -99,12 +111,51 @@ export function indexOf(list: DocsList, app: DocsApp | undefined): PageIndex[] {
   if (!app) return [];
   return list.pages
     .filter((page) => page.state !== "removed" && page.path.startsWith(`${app.docs}/`))
-    .map((page) => ({
-      path: inApp(app, page.path),
-      topic: page.topic,
-      terms: page.terms.map((term) => term.id),
-      headings: page.headings,
-    }));
+    .map((page) => {
+      // What it says of its type and its place is read from its source, which the list carries:
+      // an instance that lists no more than a page's topic and terms is understood the same.
+      const top = frontmatterOf(page.source);
+      const strings = (value: unknown) =>
+        Array.isArray(value) ? value.filter((one): one is string => typeof one === "string") : [];
+      return {
+        path: inApp(app, page.path),
+        topic: page.topic,
+        terms: page.terms.map((term) => term.id),
+        headings: page.headings,
+        type: typeof top?.type === "string" ? top.type : null,
+        subjects: strings(top?.subjects),
+        moved_from: strings(top?.moved_from),
+      };
+    });
+}
+
+/** The subjects the pages of an app name, with how many pages name each: what a page's own can be chosen from. */
+export function subjectsOf(index: readonly PageIndex[]): { subject: string; pages: number }[] {
+  const counts = new Map<string, number>();
+  for (const page of index) {
+    for (const subject of new Set(page.subjects ?? [])) {
+      counts.set(subject, (counts.get(subject) ?? 0) + 1);
+    }
+  }
+  return [...counts]
+    .map(([subject, pages]) => ({ subject, pages }))
+    .sort((a, b) => b.pages - a.pages || a.subject.localeCompare(b.subject));
+}
+
+/**
+ * An app's pages as the site will be: the navigation, the types and what is related. The pages
+ * other than the one being written are read once for the list; the one being written is read
+ * as it is typed.
+ */
+export function entriesOf(list: DocsList, app: DocsApp | undefined): DocEntry[] {
+  if (!app) return [];
+  return list.pages
+    .filter((page) => page.state !== "removed" && page.path.startsWith(`${app.docs}/`))
+    .map((page) => readPage(inApp(app, page.path), page.source).entry);
+}
+
+export function setOf(others: readonly DocEntry[], current: DocEntry): DocSet {
+  return buildDocSet([...others.filter((one) => one.path !== current.path), current]).set;
 }
 
 /** Every term the workspace's pages define, whichever app they are in. */
@@ -316,4 +367,36 @@ export function glossaryFor(
       href: address(term.page.path),
       page: term.page.title,
     }));
+}
+
+/**
+ * The entries `::changelog` lists on a page in the console: the changelog of the page's own site,
+ * newest first, as the site will draw it. A page in the list carries no last-updated day, so an
+ * entry with no `date:` and none in its name is drawn without one here.
+ */
+export function changelogFor(
+  list: DocsList,
+  page: Pick<DocPage, "path">,
+  query: { folder?: string; subject?: string },
+  address: (path: string) => string,
+) {
+  const app = appFor(list.apps, page.path);
+  // A folder no app names yet is the root of the site it will be: its top folder, as an app's docs is.
+  const docs = app?.docs ?? page.path.split("/")[0] ?? "";
+  if (docs === "" || !page.path.includes("/")) return [];
+  const pages = new Map(
+    list.pages
+      .filter((one) => one.state !== "removed" && one.path.startsWith(`${docs}/`))
+      .map((one) => {
+        const entry = readPage(one.path.slice(docs.length + 1), one.source).entry;
+        return [entry.path, entry] as const;
+      }),
+  );
+  return changelogOf({ pages }, query).map((entry) => ({
+    id: entry.path.replace(/[^a-z0-9_-]+/g, "-"),
+    title: entry.title,
+    href: address(`${docs}/${entry.path}`),
+    ...(entry.date ? { date: entry.date } : {}),
+    tree: entry.page.tree,
+  }));
 }

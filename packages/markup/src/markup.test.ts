@@ -4,11 +4,14 @@ import { fileURLToPath } from "node:url";
 import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test } from "vitest";
+import { LANGUAGE_NAMES, resolveLanguage } from "./highlight.js";
 import {
   COMPONENTS,
   containersAt,
   DOC_CSS,
+  DOC_DARK_CSS,
   ENHANCE_SCRIPT,
+  highlightCode,
   linkKind,
   type Node,
   PROFILES,
@@ -164,7 +167,7 @@ test("a page written to do harm draws no tag of its own, no handler and no addre
     // Every "<" in the output opens or closes one of these, or it is not a tag at all.
     expect(html.match(/<(?!\/)/g)?.length ?? 0).toBe(tags.length);
     for (const [, tag, attrs = ""] of tags) {
-      expect(["h1", "p", "a", "div", "figure", "img", "pre", "code"]).toContain(tag);
+      expect(["h1", "p", "a", "div", "figure", "button", "img", "pre", "code"]).toContain(tag);
       expect(attrs).not.toMatch(/\son[a-z]+=/);
       for (const [, , value = ""] of attrs.matchAll(/\s(href|src)="([^"]*)"/g)) {
         expect(value).toMatch(/^(https:\/\/example\.com\/|\/assets\/)/);
@@ -257,7 +260,7 @@ describe("pictures", () => {
     );
     expect(validate(tree, "docs").map((issue) => issue.code)).toEqual(["image_refused"]);
     expect(renderHtml(tree)).toBe(
-      '<p><img src="./a.png" alt="a" loading="lazy"/> <img src="https://example.com/b.png" alt="b" loading="lazy"/> c</p>',
+      '<p><button type="button" class="vd-zoom" data-vd-zoom="" aria-haspopup="dialog"><img src="./a.png" alt="a" loading="lazy"/></button> <button type="button" class="vd-zoom" data-vd-zoom="" aria-haspopup="dialog"><img src="https://example.com/b.png" alt="b" loading="lazy"/></button> c</p>',
     );
   });
 
@@ -287,6 +290,7 @@ describe("components", () => {
       "code-tabs",
       "file-tree",
       "glossary",
+      "changelog",
       "pages",
     ]);
     const source = readFileSync(join(FIXTURES, "components.md"), "utf8");
@@ -385,6 +389,16 @@ test("headings can be pushed down to sit under a page's own, and never past the 
   expect(renderHtml(tree, { headingShift: 2 })).toBe(
     '<h3 id="one">One</h3><h6 id="five">Five</h6>',
   );
+});
+
+test("the highest heading a page uses is drawn at the level asked, the next one below it, none skipped", () => {
+  const top = (text: string, headingTop = 2) => renderHtml(parse(text), { headingTop });
+  expect(top("## A\n\n### B\n")).toBe('<h2 id="a">A</h2><h3 id="b">B</h3>');
+  expect(top("# A\n\n## B\n")).toBe('<h2 id="a">A</h2><h3 id="b">B</h3>');
+  // The generated reference starts at the fourth level and is drawn from the second.
+  expect(top("#### A\n\n##### B\n")).toBe('<h2 id="a">A</h2><h3 id="b">B</h3>');
+  expect(top("### A\n\n##### B\n")).toBe('<h2 id="a">A</h2><h4 id="b">B</h4>');
+  expect(top("## A\n", 3)).toBe('<h3 id="a">A</h3>');
 });
 
 test("the stylesheet styles only what is inside a page of documentation", () => {
@@ -594,6 +608,15 @@ describe("what is in a folder", () => {
     // Nothing to list draws nothing.
     expect(renderHtml(tree, { profile: "docs" })).toBe("");
   });
+
+  test("a description's backticks are drawn as code, and what is between them stays text", () => {
+    const folder = () => [
+      { title: "SDK", description: "Everything `@volvel/<x>` exports.", href: "sdk" },
+    ];
+    expect(renderHtml(parse("::pages\n"), { profile: "docs", folder })).toContain(
+      '<span class="vd-pages-text">Everything <code>@volvel/&lt;x&gt;</code> exports.</span>',
+    );
+  });
 });
 
 test("an editor's preview is told which lines each block came from", () => {
@@ -605,6 +628,116 @@ test("an editor's preview is told which lines each block came from", () => {
   expect(html).toContain('<section class="vd-tab" data-line="6" data-end-line="8">');
   // A served page says nothing of where its words were.
   expect(renderHtml(parse(source), { profile: "docs" })).not.toContain("data-line");
+});
+
+describe("a changelog", () => {
+  const entry = (id: string, title: string, source: string, date?: string) => ({
+    id,
+    title,
+    href: `/handbook/changelog/${id}`,
+    ...(date ? { date } : {}),
+    tree: parse(source),
+  });
+  const items = [
+    entry(
+      "2026-11-24-new-intake",
+      "New intake",
+      "Intake takes a photo.\n\n# Details\n\nMore.\n\n## Deeper\n",
+      "2026-11-24",
+    ),
+    entry("old-2026-10-02", "Older", "Old words.\n", "2026-10-02"),
+    entry("oldest", "Oldest", "Oldest.\n"),
+  ];
+  const seen: unknown[] = [];
+  const changelog = (query: { folder?: string; subject?: string }) => {
+    seen.push(query);
+    return items;
+  };
+
+  test("::changelog draws each entry: its title linked, its date, its body with headings shifted down and ids prefixed", () => {
+    const html = renderHtml(parse("::changelog{limit=2}\n"), {
+      profile: "docs",
+      changelog,
+      headingShift: 1,
+      idPrefix: "page",
+    });
+    expect(html).toContain(
+      '<article class="vd-changelog-entry" id="page-changelog-2026-11-24-new-intake">',
+    );
+    // The entry's title sits under the page's own headings (h1 shifted to h2), and its body's under that.
+    expect(html).toContain(
+      '<h3 class="vd-changelog-title"><a href="/handbook/changelog/2026-11-24-new-intake">New intake</a></h3>',
+    );
+    expect(html).toContain(
+      '<time class="vd-changelog-date" datetime="2026-11-24">24 November 2026</time>',
+    );
+    expect(html).toContain("Intake takes a photo.");
+    expect(html).toMatch(
+      /<h4 id="page-changelog-2026-11-24-new-intake-[a-z-]*details">Details<\/h4>/,
+    );
+    expect(html).toMatch(
+      /<h5 id="page-changelog-2026-11-24-new-intake-[a-z-]*deeper">Deeper<\/h5>/,
+    );
+    // Written from ## as the template does, the first heading is still directly under the title.
+    const second = renderHtml(parse("::changelog\n"), {
+      profile: "docs",
+      changelog: () => [entry("b", "B", "## What is new\n\n### Settings\n")],
+    });
+    expect(second).toContain(
+      '<h2 class="vd-changelog-title"><a href="/handbook/changelog/b">B</a></h2>',
+    );
+    expect(second).toContain('<h3 id="vd-changelog-b-what-is-new">What is new</h3>');
+    expect(second).toContain('<h4 id="vd-changelog-b-settings">Settings</h4>');
+    // The next ones are a link, and not drawn.
+    expect(html).toContain("Old words.");
+    expect(html).not.toContain("Oldest.");
+    expect(html).toContain(
+      '<p class="vd-changelog-more"><a href="/handbook/changelog/oldest">1 older entry, from Oldest</a></p>',
+    );
+  });
+
+  test("a limit of 10 is the default, and an entry without a date is drawn without one", () => {
+    const html = renderHtml(parse("::changelog\n"), { profile: "docs", changelog });
+    expect(html).toContain("Oldest.");
+    expect(html).not.toContain("vd-changelog-more");
+    expect(html.match(/<time /g)).toHaveLength(2);
+    expect(html).toContain('<h2 class="vd-changelog-title">');
+  });
+
+  test("the folder and the subject are passed on to what draws the entries, and nothing draws nothing", () => {
+    seen.length = 0;
+    renderHtml(parse("::changelog{folder=handbook/changelog subject=intake}\n"), {
+      profile: "docs",
+      changelog,
+    });
+    expect(seen).toEqual([{ folder: "handbook/changelog", subject: "intake" }]);
+    expect(renderHtml(parse("::changelog\n"), { profile: "docs" })).toBe("");
+    expect(renderHtml(parse("::changelog\n"), { profile: "docs", changelog: () => [] })).toBe("");
+  });
+
+  test("an entry that has a changelog of its own is not drawn again inside itself", () => {
+    const loop = [entry("a", "A", "Before.\n\n::changelog\n")];
+    const html = renderHtml(parse("::changelog\n"), { profile: "docs", changelog: () => loop });
+    expect(html.match(/vd-changelog-entry/g)).toHaveLength(1);
+  });
+
+  test("is for the docs and the product, and refuses what is not a number or a name", () => {
+    const codes = (source: string, profile: ProfileName = "docs") =>
+      validate(parse(source), profile, { source }).map((one) => one.code);
+    expect(codes("::changelog{limit=5 folder=a/b subject=x}\n")).toEqual([]);
+    expect(codes("::changelog\n", "product")).toEqual([]);
+    expect(codes("::changelog\n", "description")).toEqual(["component_not_allowed"]);
+    expect(codes("::changelog{limit=0}\n")).not.toEqual([]);
+    expect(codes("::changelog{limit=51}\n")).not.toEqual([]);
+    expect(codes("::changelog{limit=many}\n")).not.toEqual([]);
+    expect(codes("::changelog{folder=A/B}\n")).not.toEqual([]);
+  });
+
+  test("as text it is the titles and days", () => {
+    expect(renderText(parse("::changelog{limit=2}\n"), { profile: "docs", changelog })).toBe(
+      "- New intake (2026-11-24)\n- Older (2026-10-02)",
+    );
+  });
 });
 
 describe("a glossary and a diagram", () => {
@@ -644,5 +777,264 @@ describe("a glossary and a diagram", () => {
     expect(html).toBe(
       '<figure class="vd-mermaid" data-vd-mermaid="1"><pre class="vd-mermaid-source"><code class="language-mermaid">graph TD\n  A --&gt; B</code></pre></figure>',
     );
+  });
+});
+
+describe("the product's own pages", () => {
+  test("may list a folder and a glossary", () => {
+    const source = "::pages\n\n::glossary{scope=site}\n";
+    expect(validate(parse(source), "product", { source })).toEqual([]);
+    const html = renderHtml(parse(source), {
+      profile: "product",
+      folder: () => [{ title: "Errors", href: "errors", description: "What went wrong." }],
+      glossary: () => [
+        { id: "rma", term: "RMA", short: "A return.", href: "rma", page: "Returns" },
+      ],
+    });
+    expect(html).toContain("Errors");
+    expect(html).toContain("A return.");
+  });
+
+  test("show a picture that is a file beside the page, through the resolver that serves it", () => {
+    const html = renderHtml(parse("![Tables](./tables.png)\n"), {
+      profile: "product",
+      image: (src) => `/docs/_assets/${src.replace("./", "")}`,
+    });
+    expect(html).toContain('src="/docs/_assets/tables.png"');
+  });
+});
+
+describe("highlighted code", () => {
+  const source = "```ts\nconst a = 'x'; // note\n```\n";
+
+  test("is code as it was without a highlighter", () => {
+    expect(renderHtml(parse(source))).toBe(
+      '<pre data-lang="ts"><code class="language-ts">const a = \'x\'; // note</code></pre>'.replace(
+        /'/g,
+        "&#x27;",
+      ),
+    );
+  });
+
+  test("is drawn as the highlighter gives it, in classes and never in styles", () => {
+    const html = renderHtml(parse(source), { highlight: highlightCode });
+    expect(html).toContain('<span class="token keyword">const</span>');
+    expect(html).toContain('<span class="token string">&#x27;x&#x27;</span>');
+    expect(html).toContain('<span class="token comment">// note</span>');
+    expect(html).toContain('class="language-ts"');
+    expect(html).not.toContain("style=");
+  });
+
+  test("keeps every character of the code, and escapes it", () => {
+    const code = 'if (a < b && c) { return "</code><script>"; }';
+    const html = renderHtml(parse(`\`\`\`js\n${code}\n\`\`\`\n`), { highlight: highlightCode });
+    expect(html).not.toContain("<script>");
+    expect(
+      html
+        .replace(/<[^>]+>/g, "")
+        .replace(/&lt;/g, "<")
+        .replace(/&gt;/g, ">")
+        .replace(/&quot;/g, '"')
+        .replace(/&amp;/g, "&"),
+    ).toContain(code);
+  });
+
+  test("leaves a language it does not know, and a diagram, as they were", () => {
+    const plain = renderHtml(parse("```cobol\nMOVE 1 TO A\n```\n"), { highlight: highlightCode });
+    expect(plain).toBe(renderHtml(parse("```cobol\nMOVE 1 TO A\n```\n")));
+    const diagram = "```mermaid\ngraph TD; A-->B\n```\n";
+    expect(renderHtml(parse(diagram), { highlight: highlightCode })).toBe(
+      renderHtml(parse(diagram)),
+    );
+  });
+
+  test("is the same in HTML and in React", () => {
+    const tree = parse(source);
+    const html = renderHtml(tree, { highlight: highlightCode });
+    const react = renderToStaticMarkup(
+      renderReact(tree, { highlight: highlightCode }) as ReactElement,
+    );
+    expect(react).toContain('<span class="token keyword">const</span>');
+    expect(react).toContain('<span class="token comment">// note</span>');
+    expect(html).toContain('<span class="token comment">// note</span>');
+  });
+
+  test("covers the languages the documentation is written in", () => {
+    const spans = (lang: string, code: string) =>
+      renderHtml(parse(`\`\`\`${lang}\n${code}\n\`\`\`\n`), { highlight: highlightCode });
+    expect(spans("yaml", "name: fern # x\nitems:\n  - 1")).toContain('token key atrule">name');
+    expect(spans("json", '{"a": [1, true, null]}')).toContain('token number">1');
+    expect(spans("sh", "pnpm add x # run\necho $HOME")).toContain('token comment"># run');
+    expect(spans("tsx", "export const A = () => <b>1</b>;")).toContain('token keyword">export');
+  });
+
+  test("resolves aliases and draws a diff, marks and an unknown language as they are said", () => {
+    const draw = (info: string, code: string) =>
+      renderHtml(parse(`\`\`\`${info}\n${code}\n\`\`\`\n`), { highlight: highlightCode });
+    expect(draw("js", "let a")).toContain('token keyword">let');
+    expect(draw("html", "<b>x</b>")).toContain("token tag");
+    expect(draw("shell", "echo $HOME")).toContain("token environment constant");
+    expect(draw("jsonc", '{"a": 1}')).toContain('token number">1');
+    expect(draw("zsh", "echo $HOME")).toContain("token environment constant");
+    expect(draw("css", "a { color: red; }")).toContain("token property");
+    expect(draw("tsx", "const a = <b>1</b>;")).toContain("token tag");
+    expect(draw("md", "# T")).toContain("token title");
+    expect(draw("text", "a < b")).toBe(
+      '<pre data-lang="text"><code class="language-text">a &lt; b</code></pre>',
+    );
+    // diff-<lang>: lines marked as added and removed, the rest drawn in the language
+    const diff = draw("diff-ts", "-let a = 1;\n+const a = 2;\n keep();");
+    expect(diff).toContain('<span class="token deleted">-<span class="token keyword">let</span>');
+    expect(diff).toContain(
+      '<span class="token inserted">+<span class="token keyword">const</span>',
+    );
+    expect(draw("diff", "-a\n+b")).toContain("token deleted");
+    // lang/1,3-5: those lines in a mark; a token across lines is closed and opened again
+    const marked = draw("ts/1,3-4", "const a = `x\ny`;\nb();\nc();\nd();");
+    expect(marked).toContain('<mark class="vd-line vd-line-mark">');
+    expect(marked.match(/<mark /g)?.length).toBe(3);
+    expect(marked.match(/<span/g)?.length).toBe(marked.match(/<\/span>/g)?.length);
+    expect(marked).toContain('class="language-ts"');
+    expect(draw("ts/", "a")).toContain("language-ts");
+    // an unbalanced or odd mark spec is no mark, not a failure
+    expect(draw("ts/x", "const a")).not.toContain("<mark");
+    // unknown stays plain
+    expect(draw("cobol/1", "MOVE 1")).not.toContain("token");
+  });
+
+  test("the alias table is what Prism's own component list says for the languages imported", async () => {
+    const { createRequire } = await import("node:module");
+    const components = createRequire(import.meta.url)("prismjs/components.json")
+      .languages as Record<string, { alias?: string | string[] }>;
+    for (const lang of LANGUAGE_NAMES) {
+      for (const alias of [components[lang]?.alias ?? []].flat()) {
+        expect(resolveLanguage(alias), alias).toBe(lang);
+      }
+    }
+  });
+
+  test("has a light and a dark style, classes only, for the page and the help to share", () => {
+    expect(DOC_CSS).toMatch(/\.vd-doc \.token\.keyword/);
+    expect(DOC_CSS).toMatch(/\.vd-doc \.token\.string/);
+    expect(DOC_CSS).not.toContain("hljs");
+    expect(DOC_DARK_CSS).toMatch(/--vd-tok-keyword/);
+    expect(DOC_DARK_CSS).toContain('[data-theme="dark"]');
+    expect(DOC_DARK_CSS).not.toMatch(/url\(|@import/);
+  });
+});
+
+describe("a screenshot in both looks", () => {
+  const source = "::screenshot{name=console/deploy alt=Deploy}\n";
+  const draw = (more: Partial<RenderOptions>) => renderHtml(parse(source), { ...OPTIONS, ...more });
+
+  test("is one picture unless a dark one is given", () => {
+    expect(draw({})).toBe(
+      '<figure class="vd-screenshot"><button type="button" class="vd-zoom" data-vd-zoom="" aria-haspopup="dialog"><img src="/assets/console/deploy.png" alt="Deploy" loading="lazy"/></button></figure>',
+    );
+  });
+
+  test("is two, and the page's look shows one", () => {
+    const html = draw({ screenshotDark: () => "/assets/console/deploy-dark.png" });
+    expect(html).toContain('class="vd-shot-light" src="/assets/console/deploy.png" alt="Deploy"');
+    expect(html).toContain('class="vd-shot-dark" src="/assets/console/deploy-dark.png" alt=""');
+    expect(html).toContain('aria-hidden="true"');
+    expect(DOC_CSS).toContain(".vd-shot-dark { display: none; }");
+    expect(DOC_DARK_CSS).toContain(".vd-shot-dark { display: block; }");
+    expect(DOC_DARK_CSS).toContain(".vd-shot-light:has(+ .vd-shot-dark) { display: none; }");
+  });
+
+  test("is one when there is no dark picture for it", () => {
+    expect(draw({ screenshotDark: () => null })).toBe(draw({}));
+  });
+});
+
+test("Prism's core is put on the global before any language loads, as a bundle needs", () => {
+  // A bundler makes the core a lazy module while each language file runs at once and reads the global `Prism`
+  // (the app runtime failed to start, phase 30's e2e run). prism-global reads the core, so it must come first.
+  const order = readFileSync(new URL("./prism.ts", import.meta.url), "utf8")
+    .split("\n")
+    .filter((line) => line.startsWith("import "));
+  const core = order.findIndex((line) => line.includes("prism-core"));
+  const global = order.findIndex((line) => line.includes("./prism-global.js"));
+  const firstLanguage = order.findIndex((line) => line.includes("prismjs/components/prism-markup"));
+  expect(core).toBeGreaterThanOrEqual(0);
+  expect(global).toBeGreaterThan(core);
+  expect(global).toBeLessThan(firstLanguage);
+});
+
+describe("a picture opens larger (p31-site 1)", () => {
+  test("every picture in the text is a button that opens it, and a picture in a link is left to the link", () => {
+    const html = renderHtml(parse("![a](./a.png) [![b](./b.png)](https://example.com)\n"));
+    expect(html).toContain(
+      '<button type="button" class="vd-zoom" data-vd-zoom="" aria-haspopup="dialog"><img src="./a.png" alt="a" loading="lazy"/></button>',
+    );
+    expect(html).toContain(
+      '<a href="https://example.com" rel="noopener noreferrer"><img src="./b.png"',
+    );
+  });
+
+  test("a screenshot is one button over both looks", () => {
+    const html = renderHtml(parse("::screenshot{name=console/deploy alt=Deploy}\n"), {
+      ...OPTIONS,
+      screenshot: () => "/a.png",
+      screenshotDark: () => "/b.png",
+    });
+    expect(html).toBe(
+      '<figure class="vd-screenshot"><button type="button" class="vd-zoom" data-vd-zoom="" aria-haspopup="dialog"><img class="vd-shot-light" src="/a.png" alt="Deploy" loading="lazy"/><img class="vd-shot-dark" src="/b.png" alt="" aria-hidden="true" loading="lazy"/></button></figure>',
+    );
+  });
+
+  test("the stylesheet draws the larger view, with motion only where it is allowed", () => {
+    expect(DOC_CSS).toContain(".vd-lightbox");
+    expect(DOC_CSS).toContain(".vd-lightbox::backdrop");
+    expect(DOC_CSS).toMatch(/\.vd-zoom\s*\{[^}]*cursor: zoom-in/);
+  });
+});
+
+describe("a table stacks on a narrow container (p31-site 3)", () => {
+  const html = renderHtml(
+    parse("| Name | Type |\n| :-- | --: |\n| id | text |\n| age | number |\n"),
+  );
+
+  test("each body cell carries its column's header as its label", () => {
+    expect(html).toContain('<td class="vd-align-left" data-label="Name">id</td>');
+    expect(html).toContain('<td class="vd-align-right" data-label="Type">number</td>');
+    expect(html).not.toMatch(/<th[^>]*data-label/);
+  });
+
+  test("a table knows its columns, and one of two fits a phone unstacked", () => {
+    expect(html).toContain('<div class="vd-table" data-cols="2">');
+    expect(renderHtml(parse("| A | B | C |\n| - | - | - |\n| 1 | 2 | 3 |\n"))).toContain(
+      'data-cols="3"',
+    );
+  });
+
+  test("the larger view's backdrop hides the page behind it", () => {
+    expect(DOC_CSS).toMatch(/\.vd-lightbox::backdrop \{ background: rgb\(0 0 0 \/ 0\.9\d*\)/);
+  });
+
+  test("a cell of several pieces is one value, so that a stacked row does not break it into columns", () => {
+    const mixed = renderHtml(parse("| Name |\n| --- |\n| a `b` c |\n"));
+    expect(mixed).toContain(
+      '<td data-label="Name"><span class="vd-cell">a <code>b</code> c</span></td>',
+    );
+  });
+
+  test("a container query stacks the rows as label and value pairs, and stripes them", () => {
+    expect(DOC_CSS).toMatch(/\.vd-table\s*\{[^}]*container-type: inline-size/);
+    expect(DOC_CSS).toMatch(/@container \(max-width: [\d.]+rem\)/);
+    expect(DOC_CSS).toContain('.vd-table:not([data-cols="1"]):not([data-cols="2"])');
+    expect(DOC_CSS).toContain("attr(data-label)");
+    expect(DOC_CSS).toMatch(/tbody tr:nth-child\(even\)/);
+  });
+});
+
+describe("inline code is its own look (p31-site 4)", () => {
+  test("has its own background, text and border, which a block's does not use", () => {
+    const rule = /\.vd-doc :not\(pre\) > code \{([^}]*)\}/.exec(DOC_CSS)?.[1] ?? "";
+    expect(rule).toContain("var(--vd-code-bg");
+    expect(rule).toContain("var(--vd-code-ink");
+    expect(rule).toContain("var(--vd-code-line");
+    expect(rule).not.toContain("--vd-sunken");
   });
 });

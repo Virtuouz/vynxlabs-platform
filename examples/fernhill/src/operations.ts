@@ -180,7 +180,7 @@ const moveVisit = (of: "this" | "event", to: string, from: string, done: string)
   ],
 });
 
-/** A practice manager or Billing marks an invoice paid: greyed for anyone else, and refused by the server. */
+/** A practice manager or Billing marks an invoice paid: grayed for anyone else, and refused by the server. */
 const markPaid = (of: "this" | "event") => ({
   when: [{ field: "status", of, test: "is" as const, value: "unpaid" }],
   runBy: { groups: BILLING },
@@ -458,7 +458,7 @@ export const operations = defineInterface({
                 action: { steps: [{ do: "open", page: "new-invoice" }] },
               },
               {
-                // A flow, started from the page. Only practice managers may; others see it greyed.
+                // A flow, started from the page. Only practice managers may; others see it grayed.
                 id: "chase",
                 label: "Chase unpaid invoices",
                 tone: "quiet",
@@ -666,7 +666,7 @@ export const operations = defineInterface({
           in: { widget: "charts", tab: "status" },
           at: at(0, 0, 5, 10),
           data: visitsBy([{ column: "status" }]),
-          config: { mark: "pie", legend: "shown", colors: "theme" },
+          config: { mark: "pie", legend: "auto", colors: "theme" },
           on: { pointClick: { steps: [{ do: "rows" }] } },
         },
         {
@@ -724,7 +724,7 @@ export const operations = defineInterface({
           in: { widget: "charts", tab: "where" },
           at: at(0, 0, 6, 10),
           data: visitsBy([{ column: "clinic" }, { column: "status" }]),
-          config: { mark: "bar", bars: "stacked", legend: "shown", values: false },
+          config: { mark: "bar", bars: "stacked", legend: "auto", values: false },
           on: { pointClick: { steps: [{ do: "narrow", filter: "clinic", from: "clinic" }] } },
         },
         {
@@ -974,7 +974,7 @@ export const operations = defineInterface({
         },
         {
           id: "goal",
-          type: "labs/goal",
+          type: "core/goal",
           title: "This month",
           at: at(9, 4, 3, 4),
           data: {
@@ -1435,7 +1435,7 @@ export const operations = defineInterface({
         },
         {
           id: "shelf",
-          type: "labs/goal",
+          type: "core/goal",
           title: "On the shelves",
           subtitle: "Items on hand against the reorder levels, added up.",
           at: at(0, 2, 4, 4),
@@ -1645,7 +1645,7 @@ export const operations = defineInterface({
               filters: stockFilters(),
             },
           },
-          config: { mark: "bar", bars: "grouped", legend: "shown", order: "label" },
+          config: { mark: "bar", bars: "grouped", legend: "auto", order: "label" },
           layout: { narrow: "stack" },
         },
         {

@@ -35,6 +35,8 @@ export interface ActionContext {
   defaultRef: RecordRef;
   /** Whether the widget raises an event that gives a group (a point, a cell). */
   groupEvent: boolean;
+  /** Whether the event can show the rows behind it: a click on a point or a cell, and a click on a number. */
+  rowsEvent: boolean;
   /** What the page is when it is open as: a side sheet, a dialog, or a page. */
   openAs: "page" | "sheet" | "modal";
   columnsOf: (table: string | undefined) => CatalogColumn[];
@@ -70,7 +72,7 @@ export const STEP_WORDS: Record<StepKind, { title: string; help: string }> = {
   update: { title: "Update the record", help: "Set fields of a record" },
   create: { title: "Make a record", help: "Add a row to a table" },
   delete: { title: "Remove the record", help: "Remove a record for good" },
-  flow: { title: "Run a workflow", help: "Start a flow that can be run by hand" },
+  flow: { title: "Run a flow", help: "Start a flow that can be run by hand" },
   script: { title: "Run a script", help: "Start a script of the workspace" },
   open: { title: "Open a page", help: "Go to a page, a side sheet or a dialog" },
   close: { title: "Close", help: "Close this sheet or dialog" },
@@ -84,7 +86,12 @@ export const STEP_WORDS: Record<StepKind, { title: string; help: string }> = {
  * offers narrow, message and rows only; narrowing and showing rows need an event that gives a group.
  */
 export function stepKindsFor(ctx: ActionContext): StepKind[] {
-  if (ctx.surface === "dashboard") return ["narrow", "message", "rows"];
+  if (ctx.surface === "dashboard")
+    return [
+      ...(ctx.groupEvent ? (["narrow"] as const) : []),
+      "message",
+      ...(ctx.rowsEvent ? (["rows"] as const) : []),
+    ];
   const kinds: StepKind[] = [];
   if (refsOf(ctx).length > 0) kinds.push("update");
   kinds.push("create");
@@ -92,7 +99,8 @@ export function stepKindsFor(ctx: ActionContext): StepKind[] {
   kinds.push("flow", "script", "open");
   if (ctx.openAs !== "page") kinds.push("close");
   kinds.push("message");
-  if (ctx.groupEvent) kinds.push("narrow", "rows");
+  if (ctx.groupEvent) kinds.push("narrow");
+  if (ctx.rowsEvent) kinds.push("rows");
   return kinds;
 }
 
@@ -120,6 +128,17 @@ export function newStep(kind: StepKind, ctx: ActionContext, firstPage?: string):
     case "rows":
       return { do: "rows" };
   }
+}
+
+/**
+ * Where a step added by hand goes. Last, except that a message goes before a closing step: said
+ * after the sheet has closed it would be said to nobody.
+ */
+export function addedAt(steps: readonly Step[], step: Step): number {
+  if (step.do !== "message") return steps.length;
+  let at = steps.length;
+  while (at > 0 && steps[at - 1]?.do === "close") at -= 1;
+  return at;
 }
 
 /** An action with a step set, added or removed; the confirmation and conditions are kept. */
@@ -152,13 +171,44 @@ export function valueFromKey(key: string, before?: ActionValue): ActionValue {
   return before && "value" in before ? before : { value: "" };
 }
 
-/** A typed value as it is stored: a number where it reads as one, true and false as booleans. */
-export function typedConstant(text: string): unknown {
+/**
+ * A typed value as it is stored. By the column's type when it is known: text stays text ("007"),
+ * a number is a number, yes and no are booleans, a several-choice column is a list. With no type
+ * (a flow's or a script's input) it is read as it looks: a number, true and false, else text.
+ */
+export function typedConstant(text: string, type?: string): unknown {
   const trimmed = text.trim();
-  if (/^-?\d+(\.\d+)?$/.test(trimmed)) return Number(trimmed);
-  if (trimmed === "true") return true;
-  if (trimmed === "false") return false;
+  const number = /^-?\d+(\.\d+)?$/.test(trimmed);
+  if (type === undefined) {
+    if (number) return Number(trimmed);
+    if (trimmed === "true") return true;
+    if (trimmed === "false") return false;
+    return text;
+  }
+  if (type === "number" || type === "integer") return number ? Number(trimmed) : text;
+  if (type === "boolean") return trimmed === "true" ? true : trimmed === "false" ? false : text;
+  if (type === "enum_list")
+    return trimmed === ""
+      ? []
+      : trimmed
+          .split(",")
+          .map((one) => one.trim())
+          .filter(Boolean);
   return text;
+}
+
+/**
+ * What a value typed for an input of a flow or script is stored as: by the type its schema gives
+ * the input, not by how the text looks. Text stays text ("007"), a list is a list, and an input
+ * that says nothing of its type is read as it looks.
+ */
+export function inputType(property: unknown): string | undefined {
+  const type = (property as { type?: unknown } | null | undefined)?.type;
+  const one = Array.isArray(type) ? type.find((name) => name !== "null") : type;
+  if (one === "string") return "text";
+  if (one === "array") return "enum_list";
+  if (one === "number" || one === "integer" || one === "boolean") return one;
+  return undefined;
 }
 
 const USER_WORDS = {
@@ -215,7 +265,12 @@ export function settableColumns(columns: readonly CatalogColumn[]): CatalogColum
 // What an action grants
 
 /** "Changes Status and Paid on of an invoice." and the sentence that says who may do it, where it acts. */
-export function grantWords(action: Action, ctx: ActionContext): string {
+export function grantWords(
+  action: Action,
+  ctx: ActionContext,
+  /** What each group the action names is called now, by its path. */
+  groupNames: Readonly<Record<string, string>> = {},
+): string {
   const parts: string[] = [];
   const list = (names: string[]) => {
     const words = names.map(heading);
@@ -257,7 +312,12 @@ export function grantWords(action: Action, ctx: ActionContext): string {
   const seen = tables.length
     ? `, on ${tables.map((table) => (table.split("/").pop() ?? table).replace(/_/g, " ")).join(" and ")} they can see`
     : "";
-  return `${parts.join(". ")}. People who can open the ${noun} can do this${seen}.`;
+  const groups = action.runBy?.groups ?? [];
+  const who =
+    groups.length > 0
+      ? `Only ${list(groups.map((path) => groupNames[path] ?? path.split("/").pop() ?? path))} can do this`
+      : `People who can open the ${noun} can do this`;
+  return `${parts.join(". ")}. ${who}${seen}.`;
 }
 
 /** What an input of a flow or script is given, in a line: "Gets this invoice as its input". */

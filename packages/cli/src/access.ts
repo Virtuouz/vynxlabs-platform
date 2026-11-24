@@ -113,6 +113,7 @@ export async function tenantAccess(
       message: { type: "string" as const },
       comment: { type: "string" as const },
       "allow-delete": { type: "string" as const, multiple: true as const },
+      yes: { type: "boolean" as const },
     },
   });
   if (!values.tenant) throw new CliError("This needs --tenant <slug>.");
@@ -147,7 +148,7 @@ export async function tenantAccess(
       for (const line of lines(plan.body.summary)) io.out(line);
       io.out(
         plan.body.waits
-          ? "Nothing was changed. This tenant asks for a second person: a release would wait for one."
+          ? "Nothing was changed. This tenant asks for a second person: an access change would wait for one."
           : 'Nothing was changed. Run "volvel tenant release" to do it.',
       );
       return;
@@ -157,19 +158,19 @@ export async function tenantAccess(
       body: { ...body, ...(values.message ? { message: values.message } : {}) },
     });
     if (released.status >= 300)
-      throw api.refusal(released, `release the access of ${values.tenant}`);
+      throw api.refusal(released, `change the access of ${values.tenant}`);
     if (released.status === 202) {
       io.out(
-        `Release ${released.body.number} of ${values.tenant}'s access waits for a second person: ${counts(released.body.summary)}.`,
+        `Access change ${released.body.release.number} of ${values.tenant}'s access waits for a second person: ${counts(released.body.release.summary)}.`,
       );
-      for (const line of lines(released.body.summary)) io.out(line);
+      for (const line of lines(released.body.release.summary)) io.out(line);
       io.out(
-        `Nothing changed yet. Someone else approves it with: volvel tenant approve ${released.body.number} --tenant ${values.tenant}`,
+        `Nothing changed yet. Someone else approves it with: volvel tenant approve ${released.body.release.number} --tenant ${values.tenant}`,
       );
       return;
     }
     io.out(
-      `Released ${values.tenant}'s access as release ${released.body.number}: ${counts(released.body.summary)}.`,
+      `Changed ${values.tenant}'s access as access change ${released.body.number}: ${counts(released.body.summary)}.`,
     );
     for (const line of lines(released.body.summary)) io.out(line);
     return;
@@ -218,14 +219,16 @@ export async function tenantAccess(
         : `Wrote ${written} of ${files.length} files of ${values.tenant}'s access.`,
     );
     for (const [, path] of extra) {
-      io.out(`  ${path} is in the repository and not in the tenant: a release would make it.`);
+      io.out(
+        `  ${path} is in the repository and not in the tenant: an access change would make it.`,
+      );
     }
     return;
   }
 
   const list = async () => {
     const releases = await call(`${base}/releases`);
-    if (releases.status !== 200) throw api.refusal(releases, "list the releases");
+    if (releases.status !== 200) throw api.refusal(releases, "list the access changes");
     return releases.body.items as {
       id: string;
       number: number;
@@ -246,38 +249,102 @@ export async function tenantAccess(
     return;
   }
 
+  if (action === "approval") {
+    const which = positionals[0];
+    if (which !== undefined && which !== "on" && which !== "off") {
+      throw new CliError("Say on or off: volvel tenant approval on|off --tenant <slug>");
+    }
+    if (which === undefined) {
+      const now = await call(base);
+      if (now.status !== 200) throw api.refusal(now, `read the access of ${values.tenant}`);
+      io.out(
+        now.body.approval
+          ? `${values.tenant} asks for a second person to approve a change to its access.`
+          : `${values.tenant} does not ask for a second person: a change to its access applies at once.`,
+      );
+      return;
+    }
+    const set = await call(`${base}/approval`, {
+      method: "PUT",
+      body: { required: which === "on" },
+    });
+    if (set.status !== 200) throw api.refusal(set, `turn approval ${which} for ${values.tenant}`);
+    io.out(
+      which === "on"
+        ? `${values.tenant} now asks for a second person to approve a change to its access.`
+        : `${values.tenant} no longer asks for a second person: a change to its access applies at once.`,
+    );
+    return;
+  }
+
   if (["approve", "decline", "withdraw", "rollback"].includes(action)) {
     const number = Number(positionals[0]);
     if (!Number.isInteger(number)) {
-      throw new CliError(`Say which release, by its number: volvel tenant ${action} <number>`);
+      throw new CliError(
+        `Say which access change, by its number: volvel tenant ${action} <number>`,
+      );
     }
     const release = (await list()).find((one) => one.number === number);
-    if (!release) throw new CliError(`${values.tenant} has no release ${number} of its access.`);
+    if (!release)
+      throw new CliError(`${values.tenant} has no access change ${number} of its access.`);
     if (action === "rollback") {
+      // What going back takes away is said first, and asked about: a group made since is deleted.
+      const would = await call(`${base}/releases/${release.id}/rollback`);
+      if (would.status !== 200)
+        throw api.refusal(would, `read what going back to access change ${number} does`);
+      const removes = would.body.removes as { kind: string; key: string; label: string }[];
+      const warnings = would.body.warnings as string[];
+      if (removes.length > 0) {
+        io.out(`Going back to access change ${number} removes what was made since:`);
+        for (const one of removes) {
+          io.out(
+            `  deleted  ${one.kind.padEnd(16)} ${one.key}${one.label && one.label !== one.key ? `  (${one.label})` : ""}`,
+          );
+        }
+      }
+      for (const warning of warnings) io.out(`  Note: ${warning}`);
+      if (removes.length > 0 && !values.yes) {
+        if (!io.confirm) {
+          throw new CliError(
+            `Nothing was changed. Run it again with --yes to go back to access change ${number} and remove ${removes.length === 1 ? "that" : "those"}.`,
+          );
+        }
+        if (
+          !(await io.confirm(`Go back to access change ${number} of ${values.tenant}'s access?`))
+        ) {
+          io.out("Nothing was changed.");
+          return;
+        }
+      }
       const back = await call(`${base}/releases/${release.id}/rollback`, {
         method: "POST",
         body: {},
       });
-      if (back.status >= 300) throw api.refusal(back, `go back to release ${number}`);
+      if (back.status >= 300) throw api.refusal(back, `go back to access change ${number}`);
       io.out(
         back.status === 202
-          ? `Going back to release ${number} waits for a second person, as release ${back.body.number}.`
-          : `${values.tenant}'s access is what release ${number} left, as release ${back.body.number}: ${counts(back.body.summary)}.`,
+          ? `Going back to access change ${number} waits for a second person, as access change ${back.body.release.number}.`
+          : `${values.tenant}'s access is what access change ${number} left, as access change ${back.body.number}: ${counts(back.body.summary)}.`,
       );
-      for (const line of lines(back.body.summary)) io.out(line);
+      for (const line of lines((back.body.release ?? back.body).summary)) io.out(line);
       return;
+    }
+    // Whoever answers sees what it is they are answering.
+    if (action === "approve" || action === "decline") {
+      io.out(`Access change ${number} of ${values.tenant}'s access: ${counts(release.summary)}.`);
+      for (const line of lines(release.summary)) io.out(line);
     }
     const decided = await call(`${base}/releases/${release.id}/decision`, {
       method: "POST",
       body: { decision: action, ...(values.comment ? { comment: values.comment } : {}) },
     });
-    if (decided.status >= 300) throw api.refusal(decided, `${action} release ${number}`);
-    io.out(`Release ${number} of ${values.tenant}'s access is ${decided.body.status}.`);
+    if (decided.status >= 300) throw api.refusal(decided, `${action} access change ${number}`);
+    io.out(`Access change ${number} of ${values.tenant}'s access is ${decided.body.status}.`);
     return;
   }
 
   throw new CliError(
-    "Usage: volvel tenant plan | release | pull | releases | approve <n> | decline <n> | withdraw <n> | rollback <n>, with --tenant <slug>",
+    "Usage: volvel tenant plan | release | pull | releases | approve <n> | decline <n> | withdraw <n> | rollback <n> [--yes] | approval [on|off], with --tenant <slug>",
   );
 }
 
@@ -290,4 +357,5 @@ export const ACCESS_ACTIONS = [
   "decline",
   "withdraw",
   "rollback",
+  "approval",
 ];

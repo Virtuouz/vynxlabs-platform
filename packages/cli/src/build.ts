@@ -5,7 +5,7 @@ import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import { Environment } from "@marcbachmann/cel-js";
 import { ComposeError, composeBundle, coreNodesFor } from "@volvel/compose";
-import { checkWorkspaceDocs } from "@volvel/docs-engine";
+import { checkWorkspaceDocs, workspaceDocsWarnings } from "@volvel/docs-engine";
 import {
   type Bundle,
   type BundleManifest,
@@ -15,6 +15,7 @@ import {
   checkBundleAssets,
   checkBundleManifests,
   docsRoots,
+  EXPRESSION_ROOTS,
   formatFor,
   ignoredFolder,
   isResourceFile,
@@ -56,6 +57,11 @@ export interface BuildOptions {
   entry?: string;
   /** The folder of resources managed in the console. Default `platform`. */
   resources?: string;
+  /**
+   * Read the manifests and the pictures of docs apps, and build no app from source: for what
+   * is drawn locally from the files (`volvel dev`). The bundle's digest and assets are not a deploy's.
+   */
+  withoutAppSources?: boolean;
 }
 
 /**
@@ -176,6 +182,8 @@ export interface Built {
   bundle: Bundle;
   /** What the build did that whoever builds should know, and that stopped nothing. */
   notes: string[];
+  /** What the documentation could be better at: shown, and never a reason to stop. */
+  warnings: string[];
   /** By checksum. Each is uploaded before the bundle that lists it. */
   files: Map<string, Buffer>;
 }
@@ -185,26 +193,59 @@ export async function buildBundle(options: BuildOptions): Promise<Bundle> {
   return (await buildRepository(options)).bundle;
 }
 
-/** The apps a repository defines, with where each one's source is. */
-export async function appSources(options: BuildOptions): Promise<AppSource[]> {
-  const { definitions } = await loadDefinitions(options);
+/** The apps made of files among a repository's definitions, with where each one's source is. */
+function appSourcesOf(definitions: readonly (readonly [string, Definition])[]): AppSource[] {
   return (
     definitions
       .map(([, definition]) => definition)
       .filter((definition) => definition.kind === "app")
       // An app that serves an interface has no files of its own to build.
       .filter((definition) => typeof (definition as { source?: unknown }).source === "string")
-      .map((definition) => ({
-        path: definition.path,
-        source: (definition as unknown as { source: string }).source,
-      }))
+      .map((definition) => {
+        const title = (definition.toManifest(definition.path).body as { title?: unknown }).title;
+        return {
+          path: definition.path,
+          title: typeof title === "string" && title !== "" ? title : definition.path,
+          source: (definition as unknown as { source: string }).source,
+        };
+      })
   );
 }
 
+/** The apps a repository defines, with where each one's source is. */
+export async function appSources(options: BuildOptions): Promise<AppSource[]> {
+  const { entry, resources } = await placesOf(options);
+  const { definitions } = await loadDefinitions({ ...options, entry, resources });
+  return appSourcesOf(definitions);
+}
+
 /** Compiles a tenant repository: its manifests, its code, and its apps. */
-export async function buildRepository(options: BuildOptions): Promise<Built> {
-  const directory = resolve(options.directory);
-  const entry = options.entry ?? "src/index.ts";
+/** The repository's `volvel.yaml`, or a build that fails naming what is wrong in it. A build and a pull read it the same way. */
+export async function readRepositoryConfig(directory: string) {
+  const said = parseRepositoryConfig(
+    await readFile(join(resolve(directory), REPOSITORY_CONFIG), "utf8").catch(() => undefined),
+  );
+  if (said.problems.length > 0) throw new BuildError(said.problems);
+  return said.config;
+}
+
+/**
+ * The entry file and the console's folder of a repository: a flag of the command, else
+ * the `entry` and `resources` of `volvel.yaml`, else `src/index.ts` and `platform`.
+ */
+export async function placesOf(options: BuildOptions) {
+  const config = await readRepositoryConfig(options.directory);
+  return {
+    config,
+    entry: options.entry ?? config.entry ?? "src/index.ts",
+    resources: options.resources ?? config.resources ?? RESOURCE_FOLDER,
+  };
+}
+
+export async function buildRepository(given: BuildOptions): Promise<Built> {
+  const directory = resolve(given.directory);
+  const { config, entry, resources } = await placesOf(given);
+  const options = { ...given, entry, resources };
   const { code, sources, definitions, sdk, sdkEntry } = await loadDefinitions(options);
 
   const inOrder = (a: BundleManifest, b: BundleManifest) =>
@@ -212,15 +253,11 @@ export async function buildRepository(options: BuildOptions): Promise<Built> {
   const authored = definitions.map(([name, definition]) => definition.toManifest(name));
   // Resources written as files, by the console or by hand, wherever the repository keeps
   // them. `folder` is where the console writes, and is always read.
-  const folder = options.resources ?? RESOURCE_FOLDER;
-  const said = parseRepositoryConfig(
-    await readFile(join(directory, REPOSITORY_CONFIG), "utf8").catch(() => undefined),
-  );
-  if (said.problems.length > 0) throw new BuildError(said.problems);
-  const docs = docsRoots(said.config, folder);
-  const parsed = parseRepositoryFiles(await resourceFiles(directory, said.config, docs), {
+  const folder = resources;
+  const docs = docsRoots(config, folder);
+  const parsed = parseRepositoryFiles(await resourceFiles(directory, config, docs), {
     folder,
-    roots: said.config.roots,
+    roots: config.roots,
     kinds: WORKSPACE_KINDS,
     docs,
   });
@@ -260,16 +297,11 @@ export async function buildRepository(options: BuildOptions): Promise<Built> {
   ]);
   if (problems.length > 0) throw new BuildError(problems);
 
-  const apps = definitions
-    .map(([, definition]) => definition)
-    .filter((definition) => definition.kind === "app")
-    // An app that serves an interface has no files of its own to build.
-    .filter((definition) => typeof (definition as { source?: unknown }).source === "string")
-    .map((definition) => ({
-      path: definition.path,
-      source: (definition as unknown as { source: string }).source,
-    }));
-  const built = await buildApps(directory, apps);
+  const apps = appSourcesOf(definitions);
+
+  const built: BuiltApps = given.withoutAppSources
+    ? { assets: [], files: new Map() }
+    : await buildApps(directory, apps);
   // A docs app's own files are the pictures kept beside its pages.
   const pictures = await docPictures(directory, docs, manifests);
   built.assets.push(...pictures.assets);
@@ -287,13 +319,14 @@ export async function buildRepository(options: BuildOptions): Promise<Built> {
   const unsigned = !manifests.some((manifest) => manifest.kind === "app")
     ? { formatVersion: formatFor(1, common.manifests), ...common }
     : { formatVersion: formatFor(2, common.manifests), ...common, assets: built.assets };
-  const assetProblems = checkBundleAssets(unsigned);
+  const assetProblems = given.withoutAppSources ? [] : checkBundleAssets(unsigned);
   if (assetProblems.length > 0) throw new BuildError(assetProblems);
   if (fromFiles.manifests.length === 0 && coreNodesFor(unsigned.manifests).length === 0) {
     return {
       bundle: { ...unsigned, digest: bundleDigest(unsigned) },
       files: built.files,
       notes: resolved.rewritten,
+      warnings: workspaceDocsWarnings(manifests),
     };
   }
   // Console-managed code is compiled and joined on exactly as the control plane does it.
@@ -305,6 +338,7 @@ export async function buildRepository(options: BuildOptions): Promise<Built> {
       bundle: { ...rest, digest: bundleDigest(rest) },
       files: built.files,
       notes: resolved.rewritten,
+      warnings: workspaceDocsWarnings(manifests),
     };
   } catch (error) {
     if (error instanceof ComposeError) {
@@ -479,6 +513,9 @@ export function check(manifests: BundleManifest[]): string[] {
   ];
   for (const { where, expression } of bundleExpressions(manifests)) {
     try {
+      // The names an expression reads are checked too: `input` is never one.
+      const checked = strict.check(expression);
+      if (!checked.valid) throw checked.error;
       cel.parse(expression);
     } catch (error) {
       const reason = ((error as Error).message.split("\n")[0] ?? "").trim();
@@ -504,6 +541,14 @@ export function describeBundle(bundle: Bundle): string[] {
     }),
   ];
 }
+
+const strict = new Environment({
+  unlistedVariablesAreDyn: false,
+  homogeneousAggregateLiterals: false,
+}).registerFunction("string(google.protobuf.Timestamp): string", (time: Date) =>
+  time.toISOString(),
+);
+for (const name of EXPRESSION_ROOTS) strict.registerVariable(name, "dyn");
 
 const cel = new Environment({
   unlistedVariablesAreDyn: true,

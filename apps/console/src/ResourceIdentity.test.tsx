@@ -122,7 +122,8 @@ test("a title is changed or taken away where the path is, and an editor's unsave
   );
   const button = screen.getByRole("button", { name: "Name and path" }) as HTMLButtonElement;
   expect(button.disabled).toBe(true);
-  expect(button.title).toBe("Save the draft first.");
+  fireEvent.focus(button.parentElement as HTMLElement);
+  await screen.findByText("Save the draft first.");
 });
 
 test("what the repository's code defines is renamed there, and a file is renamed like anything else", () => {

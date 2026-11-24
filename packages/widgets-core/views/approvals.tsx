@@ -26,7 +26,7 @@ interface ApprovalsConfig {
   advance?: boolean;
 }
 
-/** What the widget says when nothing waits, and why a button is greyed. */
+/** What the widget says when nothing waits, and why a button is grayed. */
 export const NOTHING_WAITS = "Nothing waits for you.";
 const PENDING_MS = 220;
 
@@ -96,7 +96,7 @@ export function valueWords(name: string, value: unknown): string {
   return JSON.stringify(value);
 }
 
-/** Why the buttons are greyed, in the reader's words, or nothing when they may decide. */
+/** Why the buttons are grayed, in the reader's words, or nothing when they may decide. */
 export function whyNot(item: ApprovalItem, may: { building: boolean; can: boolean }): string {
   if (may.building) return "Buttons don't run while you're building.";
   if (!may.can) return "Deciding isn't available here.";
@@ -237,8 +237,8 @@ function Decider({
   const box = useRef<HTMLDivElement>(null);
   const reasonId = useId();
   const blocked = disabledReason !== "";
-  const needs = (which: "approve" | "reject") =>
-    askWhy === "always" || (askWhy !== "never" && which === "reject");
+  // A rejection always says why: the server asks on every route. "Never" is for approving.
+  const needs = (which: "approve" | "reject") => askWhy === "always" || which === "reject";
 
   // Opening the box puts the cursor in it: the reason is what comes next.
   useEffect(() => {
@@ -367,11 +367,7 @@ function Decider({
         <div className="flex flex-col gap-2 rounded-control border border-line bg-sunken p-3">
           <TextAreaField
             label={
-              asking === "reject"
-                ? needs("reject")
-                  ? "Why are you rejecting this?"
-                  : "Why are you rejecting this? (optional)"
-                : "Why are you approving this?"
+              asking === "reject" ? "Why are you rejecting this?" : "Why are you approving this?"
             }
             name="reason"
             rows={2}
@@ -709,17 +705,27 @@ export function ApprovalsView(props: WidgetViewProps<ApprovalsConfig>) {
     setFocus(undefined);
   }, [focus]);
 
+  // A request that leaves is drawn leaving for a moment, then dropped; the moment is let go if
+  // the widget goes first, so nothing is set on a widget that is no longer there.
+  const timers = useRef(new Set<ReturnType<typeof setTimeout>>());
+  useEffect(() => {
+    const kept = timers.current;
+    return () => {
+      for (const timer of kept) clearTimeout(timer);
+      kept.clear();
+    };
+  }, []);
   const leave = useCallback((item: ApprovalItem, at: number) => {
     setLeaving((now) => new Map(now).set(item.id, { item, at, still: reducedMotion() }));
-    setTimeout(
-      () =>
-        setLeaving((now) => {
-          const next = new Map(now);
-          next.delete(item.id);
-          return next;
-        }),
-      PENDING_MS,
-    );
+    const timer = setTimeout(() => {
+      timers.current.delete(timer);
+      setLeaving((now) => {
+        const next = new Map(now);
+        next.delete(item.id);
+        return next;
+      });
+    }, PENDING_MS);
+    timers.current.add(timer);
   }, []);
 
   const onDecide = async (

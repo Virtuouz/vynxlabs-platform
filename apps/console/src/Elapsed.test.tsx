@@ -36,3 +36,17 @@ test("time waiting for a worker is told apart from time running, from when it wa
     ),
   ).toEqual({ waited: 4000, ran: null });
 });
+
+test("a run held for its time has not waited yet, so no wait is shown beside 'Waiting until' (r-build)", () => {
+  expect(
+    waitedAndRan(
+      {
+        createdAt: "2026-03-01T09:00:00Z",
+        scheduledFor: "2026-03-01T10:00:00Z",
+        startedAt: null,
+        finishedAt: null,
+      },
+      Date.parse("2026-03-01T09:30:00Z"),
+    ),
+  ).toEqual({ waited: null, ran: null });
+});

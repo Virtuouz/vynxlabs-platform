@@ -1,4 +1,4 @@
-import { signInWithPassword } from "./sign-in.ts";
+import { signInAs } from "./as.ts";
 import { expect, type Page, test } from "./test.ts";
 import { readEveryList } from "./visual.ts";
 
@@ -10,16 +10,24 @@ import { readEveryList } from "./visual.ts";
  * completing from what the workspace has, and kept by name.
  */
 
-const ADMIN = {
-  email: process.env.E2E_ADMIN_EMAIL ?? "admin@example.com",
-  password: process.env.E2E_ADMIN_PASSWORD ?? "change-me-please",
-};
 const stamp = Date.now().toString(36);
 
 // biome-ignore lint/suspicious/noExplicitAny: answers are inspected freely
 const call = (page: Page, method: string, path: string, body?: unknown): Promise<any> =>
   page.evaluate(
     async ([method, path, body]) => {
+      // A draft save names the draft it saw: its revision now, or none when there is none.
+      if (
+        method === "PUT" &&
+        String(path).includes("/drafts/") &&
+        body &&
+        typeof body === "object" &&
+        !("revision" in body) &&
+        !("create" in body)
+      ) {
+        const seen = await fetch(`/api/v1${path}`);
+        if (seen.ok) body = { ...body, revision: (await seen.json()).revision };
+      }
       const response = await fetch(`/api/v1${path}`, {
         method: method as string,
         headers: body ? { "content-type": "application/json" } : {},
@@ -40,7 +48,7 @@ let T: string;
 test.beforeAll(async ({ browser }) => {
   test.setTimeout(240_000);
   page = await (await browser.newContext({ viewport: { width: 1500, height: 950 } })).newPage();
-  await signInWithPassword(page, ADMIN.email, ADMIN.password);
+  await signInAs(page, "operator");
   await readEveryList(page);
   const tenant = await call(page, "POST", "/tenants", {
     slug: `insight-${stamp}`,
@@ -109,7 +117,7 @@ test.afterAll(async () => {
   await page.context().close();
 });
 
-test("a trigger made here is in the list at once, marked as a draft, and is edited and deployed from there", async () => {
+test("a trigger made here is in the list at once, marked as a draft, and is edited and deployed from there @data", async () => {
   await page.goto(`${link}/triggers`);
   await page.getByRole("button", { name: "New trigger" }).first().click();
   await page.getByRole("menuitem", { name: /Schedule/ }).click();
@@ -146,7 +154,7 @@ test("a trigger made here is in the list at once, marked as a draft, and is edit
   await expect(panel.getByRole("link", { name: "Edit" })).toBeVisible();
 });
 
-test("an approval is listed in its workspace, and for the tenant only when its step says so", async () => {
+test("an approval is listed in its workspace, and for the tenant only when its step says so @data", async () => {
   await call(page, "POST", `${W}/flow-runs`, { flow: "lending/approve", input: {} });
   await page.goto(`${link}/approvals`);
   await expect(page.getByRole("heading", { name: "Approvals" })).toBeVisible();
@@ -166,7 +174,7 @@ test("an approval is listed in its workspace, and for the tenant only when its s
   await expect(page.getByText("Nothing is waiting for you")).toBeVisible();
 });
 
-test("an enum column is added, given colours that can be read, and chosen from in a row", async () => {
+test("an enum column is added, given colours that can be read, and chosen from in a row @data", async () => {
   await page.goto(`${link}/tables/loans?view=definition`);
   await page.getByRole("button", { name: "Add column" }).click();
   const dialog = page.getByRole("dialog", { name: "Add column" });
@@ -217,7 +225,7 @@ test("an enum column is added, given colours that can be read, and chosen from i
   await expect(page.getByRole("grid").getByText("Laptop").first()).toBeVisible();
 });
 
-test("a question is asked of two tables in SQL, with the editor offering what the workspace has, and kept by name", async () => {
+test("a question is asked of two tables in SQL, with the editor offering what the workspace has, and kept by name @data", async () => {
   await page.goto(`${link}/queries`);
   await expect(page.getByRole("heading", { name: "Queries", exact: true })).toBeVisible();
   // The tables are there to read, with what each column is.
@@ -262,7 +270,7 @@ test("a question is asked of two tables in SQL, with the editor offering what th
   await expect(page.getByText("Draft, never deployed")).toBeVisible();
 });
 
-test("a query that is not allowed says why and where, and runs nothing", async () => {
+test("a query that is not allowed says why and where, and runs nothing @data", async () => {
   await page.goto(`${link}/queries`);
   const editor = page.locator(".monaco-editor").first();
   await editor.click();

@@ -1,3 +1,5 @@
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { type Client, startTestApp, type TestApp } from "./testing.js";
 
@@ -161,10 +163,69 @@ describe("saved views", () => {
     expect(elsewhere.status).toBe(404);
   });
 
+  test("an operator working through an access grant may save a view while it lasts (OPS-39)", async () => {
+    const solo = (await t.admin.post("/tenants", { slug: "granted", name: "Granted" })).body.id;
+    const role = (
+      await t.db
+        .selectFrom("role")
+        .select("id")
+        .where("name", "=", "tenant_admin")
+        .executeTakeFirst()
+    )?.id;
+    const view = { tenantId: solo, list: "audit", name: "Mine", state: {} };
+    expect((await t.admin.post("/me/views", view)).status).toBe(404);
+    const grant = await t.admin.post(`/tenants/${solo}/access-grants`, {
+      reason: "Looking into it",
+      roleId: role,
+    });
+    expect(grant.status, JSON.stringify(grant.body)).toBe(201);
+    const saved = await t.admin.post("/me/views", view);
+    expect(saved.status, JSON.stringify(saved.body)).toBe(201);
+    expect((await t.admin.delete(`/tenants/${solo}/access-grants/${grant.body.id}`)).status).toBe(
+      204,
+    );
+    expect((await t.admin.post("/me/views", { ...view, name: "Again" })).status).toBe(404);
+  });
+
   test("are deleted by their maker", async () => {
     expect((await alice.delete(`/me/views/${view}`)).status).toBe(204);
     expect(
       (await alice.get(`/me/views?tenant=${tenant}&workspace=${ws}&list=runs`)).body.items,
     ).toEqual([]);
+  });
+});
+
+/** Every file of the console's source that is not a test. */
+function consoleSources(dir: string): string[] {
+  return readdirSync(dir).flatMap((name) => {
+    const path = join(dir, name);
+    if (statSync(path).isDirectory()) return consoleSources(path);
+    return /\.tsx?$/.test(name) && !/\.test\.tsx?$/.test(name) ? [path] : [];
+  });
+}
+
+describe("the settings the console keeps (SHL-01, SHL-12)", () => {
+  test("every key the console passes to usePreference is one the server keeps", async () => {
+    const found = new Set<string>();
+    const call =
+      /(?:usePreference(?:<[^(]*>)?|useKeptChoice)\(\s*(?:"([^"]+)"|`([^`]+)`|([A-Z_]+))/g;
+    for (const file of consoleSources(join(__dirname, "../../console/src"))) {
+      const source = readFileSync(file, "utf8");
+      for (const match of source.matchAll(call)) {
+        const named = match[3]
+          ? source.match(new RegExp(`const ${match[3]} = "([^"]+)"`))?.[1]
+          : "";
+        const key = match[1] ?? match[2] ?? named;
+        if (!key) throw new Error(`Cannot read the key at ${file}: ${match[0]}`);
+        found.add(key.replace(/\$\{[^}]*"none"[^}]*\}/g, "none").replace(/\$\{[^}]*\}/g, "abc"));
+      }
+    }
+    expect(found.size).toBeGreaterThan(8);
+    const refused: string[] = [];
+    for (const key of found) {
+      if ((await alice.put(`/me/preferences/${key}`, { value: true })).status !== 204)
+        refused.push(key);
+    }
+    expect(refused).toEqual([]);
   });
 });

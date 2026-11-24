@@ -1,4 +1,5 @@
 import { walk } from "@volvel/markup";
+import { diataxisIssues, effectiveType } from "./diataxis.js";
 import { type DocEntry, type DocIssue, readPage } from "./page.js";
 import type { AboutKind } from "./schema.js";
 import { ABOUT_KINDS } from "./schema.js";
@@ -17,12 +18,20 @@ export interface PageIndex {
   terms: readonly string[];
   /** What its headings are addressed by. */
   headings: readonly string[];
+  /** What it says of its own `type:`: on an index, the type of what is under it. Left out, it says none. */
+  type?: string | null | undefined;
+  /** Its `subjects:`. */
+  subjects?: readonly string[] | undefined;
+  /** Its `moved_from:`. */
+  moved_from?: readonly string[] | undefined;
 }
 
 export interface AmongOptions {
   /** The product's own terms and topics, which a page may use and extend and may not take. */
   reservedTerms?: Iterable<string>;
   reservedTopics?: Iterable<string>;
+  /** Names that begin with this are the product's too: see `BuildOptions.reservedPrefix`. */
+  reservedPrefix?: string;
   /** Terms defined elsewhere in the workspace: another docs app's. */
   knownTerms?: Iterable<string>;
   /** Whether a resource is there. Left out, or answering nothing, it is not checked: a deploy says it. */
@@ -82,11 +91,13 @@ export function checkPageAmong(
   // What it says of itself, beside what the others say.
   const reservedTerms = new Set(options.reservedTerms ?? []);
   const reservedTopics = new Set(options.reservedTopics ?? []);
+  const prefixed = (name: string) =>
+    options.reservedPrefix !== undefined && name.startsWith(options.reservedPrefix);
   const topics: Record<string, string> = {};
   for (const one of rest) if (one.topic) topics[one.topic] = one.path;
   const { topic } = entry.frontmatter;
   if (topic !== undefined) {
-    if (reservedTopics.has(topic)) {
+    if (reservedTopics.has(topic) || prefixed(topic)) {
       error(
         "topic_reserved",
         `The topic "${topic}" is one of the product's own. A page can add notes to it with extends: [${topic}], and cannot take its name.`,
@@ -101,7 +112,7 @@ export function checkPageAmong(
   const defined = new Map<string, string>();
   for (const one of rest) for (const id of one.terms) defined.set(id, one.path);
   for (const term of entry.frontmatter.terms ?? []) {
-    if (reservedTerms.has(term.id)) {
+    if (reservedTerms.has(term.id) || prefixed(term.id)) {
       error(
         "term_reserved",
         `The term "${term.id}" is one of the product's own, and cannot be defined again. Give yours another id.`,
@@ -133,6 +144,30 @@ export function checkPageAmong(
       }
     }
   }
+
+  // Where it used to be, and what its type says: the same checks as a deploy's, beside the others.
+  for (const old of entry.frontmatter.moved_from ?? []) {
+    if (old === path) {
+      error("moved_from_self", `moved_from lists "${old}", which is this page's own path.`);
+    } else if (paths.has(old)) {
+      error(
+        "moved_from_exists",
+        `moved_from lists "${old}", and there is a page at that path. A path that is still a page cannot lead somewhere else: take it out of moved_from, or move that page.`,
+      );
+    } else {
+      const other = rest.find((one) => one.moved_from?.includes(old));
+      if (other) {
+        error(
+          "moved_from_duplicate",
+          `moved_from lists "${old}", which ${other.path} also lists. An old path leads to one page.`,
+        );
+      }
+    }
+  }
+  const ownType = (at: string) =>
+    at === path ? entry.frontmatter.type : rest.find((one) => one.path === at)?.type;
+  // Whether a subject is used once, and whether a folder says a type, are known to a deploy alone.
+  issues.push(...diataxisIssues(entry, { type: effectiveType(path, ownType) }));
 
   // Its links and terms, against the pages around it.
   const own = new Set<string>();

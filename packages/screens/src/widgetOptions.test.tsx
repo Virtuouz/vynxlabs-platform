@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { definitionProblems, type SummaryData } from "@volvel/widgets";
 import { chart, pivot, stat } from "@volvel/widgets-core";
 import {
@@ -120,6 +120,24 @@ describe("the chart draws each option", () => {
     expect(axis).toContain("!isValid(datum.value) ? 'None'");
   });
 
+  test("the heatmap's scale takes the palette; the legend is Automatic or Never (WID-28)", () => {
+    const split: SummaryData = {
+      shape: "summary",
+      columns,
+      breakdowns: ["issued", "clinic"],
+      values: ["total"],
+      rows: [
+        { issued: "2026-11-01", clinic: "a", total: 5 },
+        { issued: "2026-11-02", clinic: "b", total: 50 },
+      ],
+    };
+    const plain = spec({ mark: "heatmap", colors: "theme" }, split).encoding.color;
+    const warm = spec({ mark: "heatmap", colors: "warm" }, split).encoding.color;
+    expect(warm).not.toEqual(plain);
+    expect(warm.scale.range).toBeTruthy();
+    expect(chart.config.properties.legend?.enum).toEqual(["auto", "hidden"]);
+  });
+
   test("an area is filled under its line", () => {
     expect(spec({ mark: "area" }, dated).mark).toMatchObject({
       type: "area",
@@ -148,6 +166,90 @@ describe("the chart draws each option", () => {
     const bare = spec({ mark: "bar", axisTitles: false }, grouped).encoding;
     expect(bare.x.title).toBeNull();
     expect(bare.y.title).toBeNull();
+  });
+
+  test("an axis is titled in the words typed, and a title is not a column (WID-08)", () => {
+    const own = spec(
+      { mark: "bar", axisTitles: true, xTitle: "By clinic", yTitle: "Takings" },
+      grouped,
+    ).encoding;
+    expect(own.x.title).toBe("By clinic");
+    expect(own.y.title).toBe("Takings");
+    // Only when titles are asked for; one left empty is named from the data.
+    expect(spec({ mark: "bar", xTitle: "By clinic" }, grouped).encoding.x.title).toBeNull();
+    expect(spec({ mark: "bar", axisTitles: true, xTitle: " " }, grouped).encoding.x.title).toBe(
+      "Clinic",
+    );
+    // `x` and `y` stay what they are: the columns drawn.
+    expect(spec({ mark: "bar", axisTitles: true, x: "total" }, grouped).encoding.x.title).toBe(
+      "Total",
+    );
+  });
+
+  test("periods with nothing are found by the period the query cut, to the page's own ends (WID-16)", () => {
+    const sparse = (rows: Record<string, unknown>[], by: string, span?: SummaryData["span"]) =>
+      ({
+        ...dated,
+        rows,
+        buckets: { issued: by },
+        ...(span ? { span } : {}),
+      }) as SummaryData;
+    const days = (data: SummaryData) =>
+      chartFor({ mark: "line", fillGaps: true }, data).rows.map((row) => row.issued);
+    // Every second week is a week of its own, not two weeks a step.
+    expect(
+      days(
+        sparse(
+          [
+            { issued: "2026-11-02", total: 1 },
+            { issued: "2026-11-16", total: 1 },
+            { issued: "2026-11-30", total: 1 },
+          ],
+          "week",
+        ),
+      ),
+    ).toEqual(["2026-11-02", "2026-11-09", "2026-11-16", "2026-11-23", "2026-11-30"]);
+    // Daily data on one weekday only is days, not weeks.
+    expect(
+      days(
+        sparse(
+          [
+            { issued: "2026-11-02", total: 1 },
+            { issued: "2026-11-09", total: 1 },
+          ],
+          "day",
+        ),
+      ),
+    ).toHaveLength(8);
+    // Months January, March and July are seven months.
+    expect(
+      days(
+        sparse(
+          [
+            { issued: "2026-01-01", total: 1 },
+            { issued: "2026-03-01", total: 1 },
+            { issued: "2026-07-01", total: 1 },
+          ],
+          "month",
+        ),
+      ),
+    ).toHaveLength(7);
+    // The page's range gives the ends: periods before the first row and after the last.
+    expect(
+      days(
+        sparse(
+          [
+            { issued: "2026-11-09", total: 1 },
+            { issued: "2026-11-23", total: 1 },
+          ],
+          "week",
+          {
+            from: "2026-11-01",
+            to: "2026-11-30",
+          },
+        ),
+      ),
+    ).toEqual(["2026-10-26", "2026-11-02", "2026-11-09", "2026-11-16", "2026-11-23", "2026-11-30"]);
   });
 
   test("a named palette colors the marks; the theme leaves it to the tokens", () => {
@@ -351,12 +453,12 @@ const pivotData: SummaryData = {
   ],
 };
 
-function drawPivot(config: object) {
+function drawPivot(config: object, summary: SummaryData = pivotData) {
   render(
     <PivotView
       {...({
         config,
-        data: { rows: pivotData },
+        data: { rows: summary },
         size: { w: 6, h: 6, narrow: false },
         emit: vi.fn(),
         building: false,
@@ -372,6 +474,33 @@ describe("the pivot", () => {
     cleanup();
     drawPivot({ totals: false });
     expect(screen.queryByText("Total")).toBeNull();
+  });
+
+  test("a total is made only of what can be totalled: sums add, the smallest and biggest are found, averages are not totalled (WID-20)", () => {
+    const by = (fn: "sum" | "count" | "min" | "max" | "avg" | "count_distinct") => ({
+      ...pivotData,
+      measures: { n: fn },
+    });
+    drawPivot({}, by("sum"));
+    expect(screen.getByText("20")).toBeTruthy();
+    cleanup();
+    drawPivot({}, by("max"));
+    // The biggest of 1 and 9 is 9, and of everything 9: never the sum, 10 or 20.
+    expect(screen.getAllByText("9").length).toBeGreaterThan(1);
+    expect(screen.queryByText("20")).toBeNull();
+    expect(screen.queryByText("10")).toBeNull();
+    cleanup();
+    drawPivot({}, by("min"));
+    expect(screen.queryByText("20")).toBeNull();
+    expect(screen.getAllByText("1").length).toBeGreaterThan(1);
+    cleanup();
+    for (const fn of ["avg", "count_distinct"] as const) {
+      drawPivot({}, by(fn));
+      expect(screen.queryByText("Total")).toBeNull();
+      expect(screen.queryByText("20")).toBeNull();
+      expect(screen.getByText(/Totals are left out/)).toBeTruthy();
+      cleanup();
+    }
   });
 
   test("rowTotals and columnTotals each stand alone, and win over the older one", () => {
@@ -394,6 +523,41 @@ describe("the pivot", () => {
     expect(screen.getAllByRole("cell").every((one) => !(one as HTMLElement).dataset.shade)).toBe(
       true,
     );
+  });
+
+  test("a click on a cell gives each heading's own stored value: an empty group as nothing, a number as a number", () => {
+    const emit = vi.fn();
+    render(
+      <PivotView
+        {...({
+          config: {},
+          data: {
+            rows: {
+              shape: "summary",
+              columns: [
+                { name: "clinic", label: "Clinic", type: "string" },
+                { name: "rating", label: "Rating", type: "integer" },
+                { name: "n", label: "N", type: "number" },
+              ],
+              breakdowns: ["clinic", "rating"],
+              values: ["n"],
+              rows: [
+                { clinic: null, rating: 3, n: 4 },
+                { clinic: "—", rating: 3, n: 5 },
+              ],
+            },
+          },
+          size: { w: 6, h: 6, narrow: false },
+          emit,
+          building: false,
+          listens: () => true,
+        } as unknown as Parameters<typeof PivotView>[0])}
+      />,
+    );
+    fireEvent.click(screen.getByText("4"));
+    expect(emit).toHaveBeenCalledWith("cellClick", { group: { clinic: null, rating: 3 } });
+    fireEvent.click(screen.getByText("5"));
+    expect(emit).toHaveBeenCalledWith("cellClick", { group: { clinic: "—", rating: 3 } });
   });
 
   test("shadeOf runs from a wash to the deepest", () => {

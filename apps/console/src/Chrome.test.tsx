@@ -1,9 +1,10 @@
 // @vitest-environment happy-dom
-import { act, cleanup, fireEvent, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { notify } from "./ask.tsx";
 import { OperatorMark, OperatorStrip, setOperatorAccess } from "./kit/OperatorStrip.tsx";
 import { PageHeader } from "./kit/PageHeader.tsx";
-import { readPreference, resetPreferences } from "./prefs.ts";
+import { loadPreferences, readPreference, resetPreferences } from "./prefs.ts";
 import { show } from "./testing.tsx";
 
 /**
@@ -40,6 +41,27 @@ test("a description shows on the first visit, and is behind help on the next", a
   expect(screen.queryByText("Scripts and flows that ran here.")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "About Runs" }));
   expect(await screen.findByText("Scripts and flows that ran here.")).toBeTruthy();
+});
+
+test("a description read in another browser is folded once the settings arrive, not shown again (P31)", async () => {
+  // A new browser holds nothing; the server says the list was read. The page draws before the
+  // settings arrive: the description is folded when they do, as on any later visit.
+  let answer: (response: Response) => void = () => {};
+  vi.stubGlobal("fetch", (address: string) =>
+    String(address).endsWith("/me/preferences")
+      ? new Promise<Response>((resolve) => {
+          answer = resolve;
+        })
+      : Promise.resolve(new Response(null, { status: 204 })),
+  );
+  const loading = loadPreferences();
+  show(header());
+  await act(async () => {
+    answer(Response.json({ items: [{ key: "seen:runs", value: true }] }));
+    await loading;
+  });
+  expect(screen.queryByText("Scripts and flows that ran here.")).toBeNull();
+  expect(screen.getByRole("button", { name: "About Runs" })).toBeTruthy();
 });
 
 test("operator access is a strip that hides to a mark, and comes back from it", async () => {
@@ -105,4 +127,26 @@ test("filters have a row of their own under the title and the description", () =
     resetPreferences();
     localStorage.clear();
   }
+});
+
+test("ending operator access that fails says so, and the strip stays (INS-26)", async () => {
+  const failure = vi.spyOn(notify, "error").mockImplementation(() => 0);
+  const end = vi.fn(async () => {
+    throw new Error("The grant could not be ended.");
+  });
+  show(<OperatorStrip />);
+  act(() =>
+    setOperatorAccess({
+      grant: {
+        id: "g1",
+        roleName: "tenant_admin",
+        expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+        reason: "Ticket 1042",
+      },
+      end,
+    }),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "End now" }));
+  await waitFor(() => expect(failure).toHaveBeenCalledTimes(1));
+  expect(screen.getByRole("region", { name: "Operator access" })).toBeTruthy();
 });

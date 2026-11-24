@@ -65,7 +65,16 @@ test("a loading button keeps its label, says it is busy, and cannot be pressed a
   );
   const button = screen.getByRole("button", { name: "Save draft" });
   expect(button.getAttribute("aria-busy")).toBe("true");
-  expect((button as HTMLButtonElement).disabled).toBe(true);
+  expect(button.getAttribute("aria-disabled")).toBe("true");
+  // It is not disabled, so the focus a person had on it stays (NARROW-3).
+  button.focus();
+  expect(document.activeElement).toBe(button);
   fireEvent.click(button);
   expect(press).not.toHaveBeenCalled();
+});
+
+test("WLK-12f: the messages' right edge keeps clear of a panel that says how much room it takes", () => {
+  mount();
+  const holder = document.querySelector<HTMLElement>(".layer-toast");
+  expect(holder?.style.right).toBe("calc(1rem + var(--vx-toast-inset, 0px))");
 });

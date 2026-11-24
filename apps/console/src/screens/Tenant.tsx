@@ -1,7 +1,8 @@
-import { Button, EmptyState, Menu, Notice, TextField } from "@volvel/ui";
+import { Button, EmptyState, Menu, Notice, SelectField, TextField } from "@volvel/ui";
 import { lazy, Suspense, useEffect, useState } from "react";
-import { api, isOperator, type Me, useLoad } from "../api.ts";
+import { ApiError, api, isOperator, type Me, useLoad } from "../api.ts";
 import { notify } from "../ask.tsx";
+import { Can, useNeeds } from "../kit/Can.tsx";
 import { CollectionView } from "../kit/CollectionView.tsx";
 import { useEditorKey } from "../kit/editorKey.ts";
 import { KeyValues } from "../kit/layout.tsx";
@@ -19,7 +20,7 @@ import {
 } from "../ListScreen.tsx";
 import { Link, match, navigate } from "../router.tsx";
 import { EffectiveAccess, MemberPage } from "./Access.tsx";
-import { type KeyRow, keyColumns, showNewKey } from "./Account.tsx";
+import { type KeyRow, keyColumns, keyExpiryField, newKeyBody, showNewKey } from "./Account.tsx";
 import { AgentAccess } from "./AgentAccess.tsx";
 import { Apps } from "./Apps.tsx";
 import { AuditTable } from "./Audit.tsx";
@@ -30,6 +31,7 @@ import { Domains } from "./Domains.tsx";
 import { EndUsers } from "./EndUsers.tsx";
 import { TenantExport, WorkspaceSettings } from "./Environments.tsx";
 import { ConnectionGroups, Connections, Scripts, Variables, Workers } from "./Execution.tsx";
+import { Files } from "./Files.tsx";
 import { GitSync } from "./GitSync.tsx";
 import { NotFound } from "./NotFound.tsx";
 import { OldPaths } from "./OldPaths.tsx";
@@ -79,7 +81,7 @@ const FlowEditor = lazy(() =>
 
 import { ErrorState, Loading } from "../kit/LoadState.tsx";
 import { ObjectPage } from "../kit/ObjectPage.tsx";
-import { ObjectLink, ProductionNotice } from "../kit/objects.tsx";
+import { hasHome, ObjectLink, objectHref, ProductionNotice } from "../kit/objects.tsx";
 import { Code, EnvTag, StatePill } from "../kit/status.tsx";
 import { Alerts } from "./Alerts.tsx";
 import { Flows, FlowView } from "./Flows.tsx";
@@ -102,6 +104,8 @@ interface Workspace {
   type: "production" | "dev";
   linkedWorkspaceId: string | null;
   triggersPaused: boolean;
+  /** An operator has paused every trigger in the instance. */
+  pausedByInstance?: boolean;
 }
 interface Grant {
   id: string;
@@ -142,20 +146,78 @@ const grantForm = (tenantId: string, roles: Role[]): CreateConfig => ({
     {
       name: "durationMinutes",
       label: "Duration",
-      options: [
-        { value: "60", label: "1 hour" },
-        { value: "240", label: "4 hours" },
-        { value: "1440", label: "24 hours" },
-      ],
+      render: ({ value, onChange, error }) => (
+        <GrantLength value={value || undefined} onChange={onChange} error={error} />
+      ),
     },
   ],
   submit: (values) =>
     api.post(`/tenants/${tenantId}/access-grants`, {
       reason: values.reason,
       roleId: values.roleId,
-      durationMinutes: Number(values.durationMinutes),
+      durationMinutes: grantMinutes(values.durationMinutes),
     }),
 });
+
+const LONGEST_GRANT = 1440;
+const GRANT_LENGTHS = [
+  { value: "60", label: "1 hour" },
+  { value: "240", label: "4 hours" },
+  { value: "1440", label: "24 hours" },
+];
+
+/** A grant's length in minutes: one of the offered, or `other:<minutes>` typed by the person. */
+function grantMinutes(value: string | undefined): number {
+  const minutes = Number((value ?? "60").replace(/^other:/, ""));
+  if (!Number.isInteger(minutes) || minutes < 1 || minutes > LONGEST_GRANT) {
+    throw new ApiError(400, {
+      detail: `The length is 1 to ${LONGEST_GRANT} minutes.`,
+      errors: [
+        {
+          path: "/body/durationMinutes",
+          message: `Give a whole number of minutes, from 1 to ${LONGEST_GRANT} (24 hours).`,
+        },
+      ],
+    });
+  }
+  return minutes;
+}
+
+function GrantLength({
+  value,
+  onChange,
+  error,
+}: {
+  value: string | undefined;
+  onChange: (value: string) => void;
+  error: string | undefined;
+}) {
+  const current = value ?? "60";
+  const other = current.startsWith("other:");
+  return (
+    <div className="flex flex-col gap-3">
+      <SelectField
+        name="duration"
+        label="Duration"
+        options={[...GRANT_LENGTHS, { value: "other", label: "Other" }]}
+        value={other ? "other" : current}
+        {...(other ? {} : error ? { error } : {})}
+        onChange={(next) => onChange(next === "other" ? "other:" : next)}
+      />
+      {other ? (
+        <TextField
+          name="durationMinutes"
+          label="Minutes"
+          type="number"
+          value={current.slice("other:".length)}
+          hint={`A whole number, from 1 to ${LONGEST_GRANT} (24 hours).`}
+          {...(error ? { error } : {})}
+          onChange={(text) => onChange(`other:${text}`)}
+        />
+      ) : null}
+    </div>
+  );
+}
 
 /** Built-in roles an operator can pick before having any access to the tenant. */
 const BUILTIN_ROLES: Role[] = [
@@ -184,6 +246,15 @@ export function Tenant({ tenantId, me, path }: { tenantId: string; me: Me; path:
   );
 
   const reloadGrants = grants.reload;
+  // The strip says access is open, so it is read again when the grant runs out.
+  const endsAt = mine ? new Date(mine.expiresAt).getTime() : null;
+  useEffect(() => {
+    if (endsAt === null) return;
+    const wait = endsAt - Date.now();
+    // A grant the clock says is over but the server still lists is asked about slowly, not at once.
+    const timer = setTimeout(reloadGrants, Math.min(wait > 0 ? wait + 500 : 5000, 2_147_000_000));
+    return () => clearTimeout(timer);
+  }, [endsAt, reloadGrants]);
   // The shell says it under its header on every screen while the grant lasts.
   useEffect(() => {
     setOperatorAccess(
@@ -201,29 +272,40 @@ export function Tenant({ tenantId, me, path }: { tenantId: string; me: Me; path:
   useEffect(() => () => setOperatorAccess(null), []);
 
   if (operator && !isMember && !grants.data && !grants.error) return null;
+  if (operator && !isMember && !grants.data && grants.error) {
+    return (
+      <div className="px-4 py-4 md:px-8">
+        <Page title="Your access to this tenant could not be read">
+          <ErrorState error={grants.error} onRetry={grants.reload} />
+        </Page>
+      </div>
+    );
+  }
   if (operator && !isMember && !mine) {
     return (
-      <Page title="You have no access to this tenant">
-        <EmptyState
-          title="Operators see inside a tenant only through an access grant"
-          action={
-            <Button variant="primary" onClick={() => setOpening(true)}>
-              Open operator access
-            </Button>
-          }
-        >
-          A grant is time-limited and needs a reason. The tenant's admins can see it and end it.
-        </EmptyState>
-        <CreateDialog
-          config={grantForm(tenantId, BUILTIN_ROLES)}
-          open={opening}
-          onClose={() => setOpening(false)}
-          onCreated={() => {
-            setOpening(false);
-            grants.reload();
-          }}
-        />
-      </Page>
+      <div className="px-4 py-4 md:px-8">
+        <Page title="You have no access to this tenant">
+          <EmptyState
+            title="Operators see inside a tenant only through an access grant"
+            action={
+              <Button variant="primary" onClick={() => setOpening(true)}>
+                Open operator access
+              </Button>
+            }
+          >
+            A grant is time-limited and needs a reason. The tenant's admins can see it and end it.
+          </EmptyState>
+          <CreateDialog
+            config={grantForm(tenantId, BUILTIN_ROLES)}
+            open={opening}
+            onClose={() => setOpening(false)}
+            onCreated={() => {
+              setOpening(false);
+              grants.reload();
+            }}
+          />
+        </Page>
+      </div>
     );
   }
 
@@ -290,12 +372,12 @@ export function Tenant({ tenantId, me, path }: { tenantId: string; me: Me; path:
 
 function Workspaces({ base, tenantId }: { base: string; tenantId: string }) {
   const existing = useLoad<{ items: Workspace[] }>(`${base}/workspaces`);
-  const production = (existing.data?.items ?? []).filter(
-    (workspace) => workspace.type === "production",
-  );
+  // A dev workspace may promote to production or to another dev workspace, which is what a clone does.
+  const all = existing.data?.items ?? [];
   return (
     <ListScreen<Workspace>
       title="Workspaces"
+      needs={{ base, permission: "workspace:write", what: "this tenant's workspaces" }}
       description="A workspace is a project or an environment. Each one is production or dev, decided when it is created."
       path={`${base}/workspaces`}
       rowKey={(row) => row.id}
@@ -311,12 +393,13 @@ function Workspaces({ base, tenantId }: { base: string; tenantId: string }) {
             </Link>
           ),
         },
-        { header: "Slug", cell: (row) => <Code>{row.slug}</Code> },
-        { header: "Type", cell: (row) => <TypeBadge type={row.type} /> },
+        { header: "Slug", priority: 3, cell: (row) => <Code>{row.slug}</Code> },
+        { header: "Type", priority: 2, cell: (row) => <TypeBadge type={row.type} /> },
         {
           header: "Promotes to",
+          priority: 3,
           cell: (row) =>
-            production.find((candidate) => candidate.id === row.linkedWorkspaceId)?.name ?? "",
+            all.find((candidate) => candidate.id === row.linkedWorkspaceId)?.name ?? "",
         },
       ]}
       empty={{
@@ -347,10 +430,10 @@ function Workspaces({ base, tenantId }: { base: string; tenantId: string }) {
           {
             name: "linkedWorkspaceId",
             label: "Promotes to",
-            hint: "For a dev workspace: the production workspace its changes go to.",
+            hint: "For a dev workspace: the workspace its changes go to, production or another dev workspace.",
             options: [
               { value: "", label: "Nothing" },
-              ...production.map((w) => ({ value: w.id, label: w.name })),
+              ...all.map((w) => ({ value: w.id, label: `${w.name} (${w.type})` })),
             ],
           },
         ],
@@ -390,6 +473,7 @@ const WORKSPACE_TABS = new Set([
   "docs",
   "events",
   "extensions",
+  "files",
   "flow-runs",
   "flows",
   "git",
@@ -531,12 +615,17 @@ function WorkspaceDetail({
           />
         </Suspense>
       ) : tab === "queries" ? (
-        <Queries root={root} link={`/t/${tenantId}/workspaces/${workspaceId}`} />
+        <Queries
+          root={root}
+          link={`/t/${tenantId}/workspaces/${workspaceId}`}
+          editable={workspace.data.type === "dev"}
+        />
       ) : tab === "dashboards" && rest ? (
         <DashboardView
           key={rest}
           root={root}
           id={rest}
+          editable={workspace.data.type === "dev"}
           link={`/t/${tenantId}/workspaces/${workspaceId}`}
         />
       ) : tab === "dashboards" ? (
@@ -565,9 +654,18 @@ function WorkspaceDetail({
           editable={workspace.data.type === "dev"}
         />
       ) : tab === "events" && rest ? (
-        <EventPage root={root} link={`/t/${tenantId}/workspaces/${workspaceId}`} path={rest} />
+        <EventPage
+          root={root}
+          link={`/t/${tenantId}/workspaces/${workspaceId}`}
+          path={rest}
+          production={workspace.data.type === "production"}
+        />
       ) : tab === "events" ? (
-        <EventsWorkbench root={root} link={`/t/${tenantId}/workspaces/${workspaceId}`} />
+        <EventsWorkbench
+          root={root}
+          link={`/t/${tenantId}/workspaces/${workspaceId}`}
+          production={workspace.data.type === "production"}
+        />
       ) : tab === "tables" && rest ? (
         <TableView
           key={rest}
@@ -586,6 +684,8 @@ function WorkspaceDetail({
         />
       ) : tab === "sources" ? (
         <Sources root={root} link={`/t/${tenantId}/workspaces/${workspaceId}`} />
+      ) : tab === "files" ? (
+        <Files root={root} />
       ) : null}
       {tab === "apps" ? (
         <Apps root={root} />
@@ -624,7 +724,13 @@ function WorkspaceDetail({
           reload={workspace.reload}
         />
       ) : tab === "git" ? (
-        <GitSync root={root} link={`/t/${tenantId}/workspaces/${workspaceId}`} />
+        <GitSync
+          root={root}
+          link={`/t/${tenantId}/workspaces/${workspaceId}`}
+          production={
+            workspace.data.type === "production" ? { slug: workspace.data.slug } : undefined
+          }
+        />
       ) : tab === "scripts" && rest ? (
         <ScriptPage
           root={root}
@@ -668,13 +774,14 @@ function WorkspaceDetail({
           root={root}
           link={`/t/${tenantId}/workspaces/${workspaceId}`}
           workspacePaused={workspace.data.triggersPaused}
+          instancePaused={workspace.data.pausedByInstance === true}
           production={workspace.data.type === "production"}
         />
       ) : tab === "connections" && rest ? (
         <ConnectionPage root={root} link={`/t/${tenantId}/workspaces/${workspaceId}`} path={rest} />
       ) : tab === "connections" ? (
         <div className="flex flex-col gap-8">
-          <Connections root={root} />
+          <Connections root={root} production={workspace.data.type === "production"} />
           <ConnectionGroups root={root} />
         </div>
       ) : tab === "variables" && rest ? (
@@ -709,6 +816,7 @@ function WorkspaceDetail({
         <>
           <ListScreen<NamedResource & { id: string; version: number; updatedAt: string }>
             title="Resources"
+            needs={{ base: root, permission: "resource:write", what: "this workspace's resources" }}
             description="Everything deployed to this workspace. Connections, variables, events, schedules and triggers can be made and changed here in a dev workspace. Scripts, flows and apps have screens of their own."
             path={`${root}/resources`}
             rowKey={(row) => row.id}
@@ -728,24 +836,30 @@ function WorkspaceDetail({
             columns={[
               {
                 header: "Path",
-                cell: (row) =>
-                  isEditedKind(row.kind) ? (
-                    <Link
-                      to={`/t/${tenantId}/workspaces/${workspaceId}/resources/edit/${row.kind}/${row.path}`}
-                      className="block min-w-0 font-mono text-code text-action"
-                    >
-                      <Truncate mode="middle">{row.path}</Truncate>
-                    </Link>
-                  ) : (
-                    <span className="flex min-w-0 flex-col">
+                wide: true,
+                cell: (row) => (
+                  <span className="flex min-w-0 flex-col">
+                    {hasHome(row.kind) ? (
+                      <Link
+                        to={objectHref(
+                          `/t/${tenantId}/workspaces/${workspaceId}`,
+                          row.kind,
+                          row.path,
+                        )}
+                        className="block min-w-0 font-mono text-code text-action"
+                      >
+                        <Truncate mode="middle">{row.path}</Truncate>
+                      </Link>
+                    ) : (
                       <Code>
                         <Truncate mode="middle">{row.path}</Truncate>
                       </Code>
-                      {row.title ? (
-                        <span className="text-meta text-ink-muted">{row.title}</span>
-                      ) : null}
-                    </span>
-                  ),
+                    )}
+                    {row.title ? (
+                      <span className="text-meta text-ink-muted">{row.title}</span>
+                    ) : null}
+                  </span>
+                ),
               },
               { header: "Kind", cell: (row) => row.kind },
               {
@@ -790,6 +904,8 @@ function WorkspaceDetail({
       ) : tab === "secrets" ? (
         <ListScreen<{ name: string; updatedAt: string; updatedBy?: string | null }>
           title="Secrets"
+          needs={{ base: root, permission: "secret:write", what: "this workspace's secrets" }}
+          setupField="name"
           description="Values are encrypted with this tenant's own key. A value can be replaced but never read back here."
           path={`${root}/secrets`}
           rowKey={(row) => row.name}
@@ -810,6 +926,7 @@ function WorkspaceDetail({
                 <UsedBy
                   uses={secretUses(row.name)}
                   failed={secretUses.failed}
+                  loaded={secretUses.loaded}
                   link={`/t/${tenantId}/workspaces/${workspaceId}`}
                   all={`/t/${tenantId}/workspaces/${workspaceId}/secrets/${row.name}?tab=used-by`}
                 />
@@ -859,6 +976,7 @@ function WorkspaceDetail({
               label="Delete"
               confirm={`Delete the secret ${row.name}? Anything that uses it will fail.`}
               affected={usersOf(secretUses(row.name))}
+              usesUnread={secretUses.failed || !secretUses.loaded}
               run={() => api.delete(`${root}/secrets/${row.name}`)}
               onDone={reload}
             />
@@ -877,6 +995,8 @@ function ServiceAccounts({ base, path }: { base: string; path: string }) {
 
 interface ServiceAccount {
   id: string;
+  /** What code and a repository name it by. It never changes. */
+  key?: string;
   name: string;
   description: string;
   createdAt: string;
@@ -891,7 +1011,9 @@ function ServiceAccountPage({ base, id }: { base: string; id: string }) {
   const accounts = useLoad<{ items: ServiceAccount[] }>(`${base}/service-accounts`);
   const account = accounts.data?.items.find((one) => one.id === id);
   const [giving, setGiving] = useState(false);
+  const may = useNeeds({ base, permission: "service_account:write", what: "this service account" });
   const [accessVersion, setAccessVersion] = useState(0);
+  const mayGive = useNeeds({ base, permission: "binding:write", what: "this account's access" });
   if (accounts.error) return <ErrorState error={accounts.error} onRetry={accounts.reload} />;
   if (!accounts.data) return <Loading />;
   if (!account) {
@@ -911,12 +1033,14 @@ function ServiceAccountPage({ base, id }: { base: string; id: string }) {
           </p>
         }
         actions={
-          <RemoveButton
-            label="Delete"
-            confirm={`Delete ${account.name}? Its keys stop working at once.`}
-            run={() => api.delete(`${base}/service-accounts/${id}`)}
-            onDone={() => navigate(`/t/${tenantId}/service-accounts`)}
-          />
+          <fieldset disabled={!may.can} className="contents">
+            <RemoveButton
+              label="Delete"
+              confirm={`Delete ${account.name}? Its keys stop working at once.`}
+              run={() => api.delete(`${base}/service-accounts/${id}`)}
+              onDone={() => navigate(`/t/${tenantId}/service-accounts`)}
+            />
+          </fieldset>
         }
         tabs={[
           {
@@ -924,7 +1048,9 @@ function ServiceAccountPage({ base, id }: { base: string; id: string }) {
             label: "Identity",
             content: (
               <div className="max-w-xl">
-                <DescriptionForm base={base} account={account} onSaved={accounts.reload} />
+                <Can base={base} permission="service_account:write" what="this service account">
+                  <DescriptionForm base={base} account={account} onSaved={accounts.reload} />
+                </Can>
               </div>
             ),
           },
@@ -935,6 +1061,7 @@ function ServiceAccountPage({ base, id }: { base: string; id: string }) {
               <ListScreen<KeyRow>
                 as="section"
                 title="Keys"
+                needs={{ base, permission: "service_account:write", what: "this account's keys" }}
                 description="A key acts as the service account, with the access the account has been given."
                 path={keys}
                 rowKey={(row) => row.id}
@@ -942,8 +1069,11 @@ function ServiceAccountPage({ base, id }: { base: string; id: string }) {
                 empty={{ title: "No keys yet" }}
                 create={{
                   action: "Create API key",
-                  fields: [{ name: "name", label: "Name", placeholder: "Deploy pipeline" }],
-                  submit: (values) => api.post(keys, values),
+                  fields: [
+                    { name: "name", label: "Name", placeholder: "Deploy pipeline" },
+                    keyExpiryField,
+                  ],
+                  submit: (values) => api.post(keys, newKeyBody(values)),
                   afterCreate: showNewKey,
                 }}
                 rowActions={(row, reload) =>
@@ -968,10 +1098,16 @@ function ServiceAccountPage({ base, id }: { base: string; id: string }) {
                   <p className="m-0 text-ink-muted">
                     Everything this account may do in the tenant, where, and what gives it.
                   </p>
-                  <Button variant="primary" onClick={() => setGiving(true)}>
+                  <Button
+                    variant="primary"
+                    disabled={!mayGive.can}
+                    {...(mayGive.reason ? { tooltip: mayGive.reason } : {})}
+                    onClick={() => setGiving(true)}
+                  >
                     Give access
                   </Button>
                 </div>
+                {mayGive.line}
                 <EffectiveAccess
                   key={accessVersion}
                   base={base}
@@ -1014,6 +1150,11 @@ function ServiceAccountList({ base }: { base: string }) {
             Create service account
           </Button>
         }
+        needs={{
+          base: base,
+          permission: "service_account:write",
+          what: "this tenant's service accounts",
+        }}
         label="Service accounts"
         rows={accounts.data?.items}
         error={accounts.error}
@@ -1089,7 +1230,7 @@ function ServiceAccountList({ base }: { base: string }) {
   );
 }
 
-/** What a service account is for, in a sentence, changed in place. */
+/** What a service account is called and what it is for, changed in place. Its key stays. */
 function DescriptionForm({
   base,
   account,
@@ -1100,8 +1241,10 @@ function DescriptionForm({
   onSaved: () => void;
 }) {
   const [text, setText] = useState(account.description);
+  const [name, setName] = useState(account.name);
   const [busy, setBusy] = useState(false);
-  const changed = text.trim() !== account.description;
+  const renamed = name.trim() !== account.name;
+  const changed = renamed || text.trim() !== account.description;
   return (
     <form
       className="flex flex-col gap-3"
@@ -1109,8 +1252,16 @@ function DescriptionForm({
         event.preventDefault();
         setBusy(true);
         try {
-          await api.patch(`${base}/service-accounts/${account.id}`, { description: text });
-          notify.success(`What ${account.name} is for is saved.`);
+          if (name.trim() === "") return;
+          await api.patch(`${base}/service-accounts/${account.id}`, {
+            ...(renamed ? { name: name.trim() } : {}),
+            ...(text.trim() !== account.description ? { description: text } : {}),
+          });
+          notify.success(
+            renamed
+              ? `${account.name} is now called ${name.trim()}.`
+              : `What ${account.name} is for is saved.`,
+          );
           onSaved();
         } catch (error) {
           notify.error(error);
@@ -1119,7 +1270,19 @@ function DescriptionForm({
         }
       }}
     >
-      <KeyValues rows={[{ label: "Created", value: <Time value={account.createdAt} /> }]} />
+      <KeyValues
+        rows={[
+          ...(account.key ? [{ label: "Key", value: account.key, mono: true }] : []),
+          { label: "Created", value: <Time value={account.createdAt} mode="stamp" /> },
+        ]}
+      />
+      <TextField
+        name="name"
+        label="Name"
+        hint="What people see. Its key, which code and repositories name it by, never changes, and access given to it and its keys are not touched."
+        value={name}
+        onChange={setName}
+      />
       <TextField
         name="description"
         label="What it is for"

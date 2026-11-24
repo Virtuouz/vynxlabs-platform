@@ -1,7 +1,10 @@
 // @vitest-environment happy-dom
-import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { AUDIT_ACTIONS, auditAreaOf } from "@volvel/manifest";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { AuditTable, targetName, verbOf } from "./screens/Audit.tsx";
+import { AuditTable, auditAreas, targetName, verbOf } from "./screens/Audit.tsx";
 import { show } from "./testing.tsx";
 
 const entry = (id: string, action: string, over: object = {}) => ({
@@ -33,6 +36,9 @@ beforeEach(() => {
   }));
   vi.stubGlobal("fetch", async (address: string) => {
     asked.push(address);
+    if (address === "/api/v1/tenants/t1/workspaces") {
+      return new Response(JSON.stringify({ items: [{ id: "w1", name: "Main" }] }), { status: 200 });
+    }
     if (address.includes("/audit-facets")) {
       return new Response(
         JSON.stringify({
@@ -99,6 +105,7 @@ test("every filter is the server's, chosen from what the log holds", async () =>
   await screen.findAllByText("secret.set");
   const lastList = () => asked.filter((one) => /\/audit\?/.test(one)).at(-1) ?? "";
   // Who, the action and the kind of thing are offered from the log, with how many each.
+  fireEvent.click(screen.getByRole("button", { name: "More filters" }));
   await screen.findByRole("option", { name: "jane@acme.test (6)" });
   fireEvent.change(screen.getByLabelText("Who"), {
     target: { value: "00000000-0000-7000-8000-00000000aaaa" },
@@ -138,6 +145,31 @@ test("an entry linked to is opened, even when it is not among those loaded", asy
   await waitFor(() => expect(details.textContent).toContain("detail-far"));
   expect(fetched).toHaveBeenCalled();
   history.replaceState(null, "", "/");
+});
+
+test("an entry the instance's log keeps for a deleted tenant says whose it was (INS-28)", async () => {
+  vi.stubGlobal("fetch", async (address: string) => {
+    if (address.includes("/audit-facets")) {
+      return new Response(JSON.stringify({ actions: [], actors: [], targetTypes: [] }), {
+        status: 200,
+      });
+    }
+    return new Response(
+      JSON.stringify({
+        items: [
+          entry("own", "instance.updated", { tenantId: null }),
+          entry("gone", "workspace.created", { tenantId: "00000000-0000-7000-8000-0000000000de" }),
+        ],
+        nextCursor: null,
+      }),
+      { status: 200 },
+    );
+  });
+  show(<AuditTable title="Instance log" description="" path="/audit" />);
+  const gone = (await screen.findAllByText("workspace.created"))[0]?.closest("tr") as HTMLElement;
+  expect(within(gone).getByText("Deleted tenant")).toBeTruthy();
+  const own = screen.getAllByText("instance.updated")[0]?.closest("tr") as HTMLElement;
+  expect(within(own).queryByText("Deleted tenant")).toBeNull();
 });
 
 test("an operator's access is said as the tenant's API, and empty details are not drawn as braces", async () => {
@@ -189,4 +221,156 @@ test("the time it covers is asked of the server", async () => {
   await screen.findAllByText("secret.set");
   fireEvent.change(screen.getByLabelText("Since"), { target: { value: "24h" } });
   await waitFor(() => expect(asked.at(-1)).toMatch(/[?&]from=\d{4}-/));
+});
+
+test("the instance's log offers the instance's areas, and every action's first word is in one list (INS-21)", async () => {
+  show(<AuditTable title="Instance log" description="" path="/audit" />);
+  await screen.findAllByText("secret.set");
+  // The areas, not what the log holds (which the facets give, and may be anything).
+  const areas = () =>
+    within(screen.getByLabelText("Area"))
+      .getAllByRole("option")
+      .map((one) => one.getAttribute("value"));
+  const options = areas();
+  for (const own of ["instance", "identity_provider", "database_location", "tenant_import"]) {
+    expect(options, own).toContain(own);
+  }
+  // A tenant's secrets and runs are never in the instance's log.
+  expect(options).not.toContain("secret");
+  expect(options).not.toContain("run");
+  cleanup();
+  show(<AuditTable title="Audit log" description="" path="/tenants/t1/audit" />);
+  await screen.findAllByText("secret.set");
+  const tenant = areas();
+  for (const own of ["promotion", "dashboard", "git_repository", "worker_pool", "trigger"]) {
+    expect(tenant, own).toContain(own);
+  }
+  expect(tenant).not.toContain("database_location");
+
+  // Every action the control plane can write (the one typed list, which `audit()` is bound to)
+  // starts with a word one of the two logs has an area for.
+  const known = new Set([...auditAreas(false), ...auditAreas(true)]);
+  const missing = new Set<string>();
+  for (const action of AUDIT_ACTIONS) {
+    if (!known.has(auditAreaOf(action))) missing.add(auditAreaOf(action));
+  }
+  expect([...missing]).toEqual([]);
+  // Every area a log offers is the start of some action, so that none narrows to nothing.
+  const started = new Set(AUDIT_ACTIONS.map(auditAreaOf));
+  expect([...known].filter((area) => !started.has(area))).toEqual([]);
+  // What is listed is written by something: its whole name, or the word that ends it, is in the
+  // control plane's code (a few are built from a word and a template).
+  const code = sourcesOf(join(__dirname, "../../control-plane/src"))
+    .map((file) => readFileSync(file, "utf8"))
+    .join("\n");
+  const unwritten = AUDIT_ACTIONS.filter(
+    (action) => !code.includes(`"${action}"`) && !code.includes(`"${action.split(".")[1]}"`),
+  );
+  expect(unwritten).toEqual([]);
+});
+
+function sourcesOf(dir: string): string[] {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((one) =>
+    one.isDirectory()
+      ? sourcesOf(join(dir, one.name))
+      : one.name.endsWith(".ts") && !one.name.endsWith(".test.ts") && !one.name.endsWith(".d.ts")
+        ? [join(dir, one.name)]
+        : [],
+  );
+}
+
+const lastList = () => asked.filter((one) => /\/audit\?/.test(one)).at(-1) ?? "";
+
+test("a tenant's log is narrowed to dates and a workspace, and the CSV is the same list (GOV-P9)", async () => {
+  show(<AuditTable title="Audit log" description="" path="/tenants/t1/audit" />);
+  await screen.findAllByText("secret.set");
+  expect(screen.queryByLabelText("From date")).toBeNull();
+  fireEvent.change(screen.getByLabelText("Since"), { target: { value: "custom" } });
+  fireEvent.change(screen.getByLabelText("From date"), { target: { value: "2026-10-01" } });
+  fireEvent.change(screen.getByLabelText("To date"), { target: { value: "2026-10-31" } });
+  await waitFor(() => expect(lastList()).toContain("to="));
+  const from = new URL(lastList(), "http://x").searchParams.get("from");
+  const to = new URL(lastList(), "http://x").searchParams.get("to");
+  // The reader's own days: the start of the first and the end of the last.
+  expect(from).toBe(new Date("2026-10-01T00:00:00").toISOString());
+  expect(to).toBe(new Date("2026-10-31T23:59:59.999").toISOString());
+  await screen.findByRole("option", { name: "Main" });
+  fireEvent.change(screen.getByLabelText("Workspace"), { target: { value: "w1" } });
+  await waitFor(() => expect(lastList()).toContain("workspaceId=w1"));
+  expect(asked.filter((one) => one.includes("/audit-facets")).at(-1)).toContain("workspaceId=w1");
+  const csv = screen.getByRole("link", { name: /CSV/ }).getAttribute("href") ?? "";
+  expect(csv).toContain("/api/v1/tenants/t1/audit-export?");
+  expect(csv).toContain("workspaceId=w1");
+  expect(csv).toContain(encodeURIComponent(to ?? ""));
+  // An end before the start is said.
+  fireEvent.change(screen.getByLabelText("To date"), { target: { value: "2026-09-01" } });
+  expect(screen.getByLabelText("To date")).toBeTruthy();
+});
+
+test("everything about one thing is asked of the log from an entry, and is left again (GOV-P9)", async () => {
+  show(<AuditTable title="Audit log" description="" path="/tenants/t1/audit" />);
+  const details = await screen.findByRole("complementary", { name: "Entry details" });
+  fireEvent.click(within(details).getByRole("button", { name: "Everything about this" }));
+  await waitFor(() => expect(lastList()).toContain("target=target-a"));
+  await screen.findByRole("button", { name: "Show everything" });
+  expect(screen.getByRole("link", { name: /CSV/ }).getAttribute("href")).toContain(
+    "target=target-a",
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Show everything" }));
+  await waitFor(() => expect(lastList()).not.toContain("target="));
+});
+
+test("the instance's log is narrowed by who, what, to what and until when (GOV-P8)", async () => {
+  show(<AuditTable title="Instance log" description="" path="/audit" />);
+  await screen.findAllByText("secret.set");
+  fireEvent.click(screen.getByRole("button", { name: "More filters" }));
+  await screen.findByRole("option", { name: "jane@acme.test (6)" });
+  expect(asked.some((one) => one === "/api/v1/audit-facets?")).toBe(true);
+  expect(screen.queryByLabelText("Workspace")).toBeNull();
+  // The instance's log is a file too, from the server's own route.
+  expect(screen.getByRole("link", { name: /CSV/ }).getAttribute("href")).toContain(
+    "/api/v1/audit-export?",
+  );
+  fireEvent.change(screen.getByLabelText("Who"), {
+    target: { value: "00000000-0000-7000-8000-00000000aaaa" },
+  });
+  await waitFor(() => expect(lastList()).toContain("actorId=00000000-0000-7000-8000-00000000aaaa"));
+  fireEvent.change(screen.getByLabelText("Action"), { target: { value: "secret.set" } });
+  await waitFor(() => expect(lastList()).toContain("action=secret.set"));
+  fireEvent.change(screen.getByLabelText("Done to"), { target: { value: "secret" } });
+  await waitFor(() => expect(lastList()).toContain("targetType=secret"));
+  fireEvent.change(screen.getByLabelText("Since"), { target: { value: "custom" } });
+  fireEvent.change(screen.getByLabelText("To date"), { target: { value: "2026-10-31" } });
+  await waitFor(() => expect(lastList()).toContain("to="));
+  fireEvent.click(
+    within(await screen.findByRole("complementary", { name: "Entry details" })).getByRole(
+      "button",
+      {
+        name: "Everything about this",
+      },
+    ),
+  );
+  await waitFor(() => expect(lastList()).toContain("target=target-"));
+});
+
+test("R-final: the first row holds search and the few used most; the rest are behind 'More filters', which counts those set and applies them", async () => {
+  show(<AuditTable title="Audit log" description="" path="/tenants/t1/audit" />);
+  await screen.findAllByText("secret.set");
+  const lastList = () => asked.filter((one) => /\/audit\?/.test(one)).at(-1) ?? "";
+  // Search comes first, and the three used less are not in the row.
+  const row = screen.getByLabelText("Search").closest("div");
+  expect(row?.firstElementChild?.contains(screen.getByLabelText("Search"))).toBe(true);
+  expect(screen.queryByLabelText("Who")).toBeNull();
+  expect(screen.queryByLabelText("Action")).toBeNull();
+  expect(screen.queryByLabelText("Done to")).toBeNull();
+  const more = screen.getByRole("button", { name: "More filters" });
+  expect(more.getAttribute("aria-expanded")).toBe("false");
+  fireEvent.click(more);
+  expect(more.getAttribute("aria-expanded")).toBe("true");
+  await screen.findByRole("option", { name: "jane@acme.test (6)" });
+  fireEvent.change(screen.getByLabelText("Action"), { target: { value: "secret.set" } });
+  fireEvent.change(screen.getByLabelText("Done to"), { target: { value: "secret" } });
+  await waitFor(() => expect(lastList()).toContain("targetType=secret"));
+  expect(lastList()).toContain("action=secret.set");
+  expect(screen.getByRole("button", { name: "More filters (2)" })).toBeTruthy();
 });

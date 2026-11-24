@@ -14,7 +14,7 @@ export function escapeHtml(text: string): string {
   return text.replace(/[&<>"']/g, (char) => ESCAPES[char] as string);
 }
 
-const VOID = new Set(["br", "hr", "img", "input"]);
+const VOID = new Set(["br", "hr", "img", "input", "source"]);
 
 export function serialize(drawn: readonly Drawn[]): string {
   let out = "";
@@ -55,7 +55,7 @@ export interface HtmlOptions extends RenderOptions {
  * is left as its words.
  */
 export function renderHtml(tree: Node, options: HtmlOptions = {}): string {
-  const ctx = context(options);
+  const ctx = context(options, tree);
   const override = options.override;
   if (override) ctx.custom = (node, usual) => override(node, () => serialize(usual()));
   return serialize(draw(tree, ctx));

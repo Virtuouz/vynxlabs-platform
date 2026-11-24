@@ -144,6 +144,8 @@ export function brandingRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.public },
         schema: {
           summary: "The console's logo",
+          description:
+            "The image uploaded for the console's branding. The console draws its own mark when none was uploaded.",
           tags: ["instance"],
           produces: [...LOGO_TYPES],
           response: { 200: Type.Unknown({ description: "The image." }) },
@@ -171,6 +173,8 @@ export function brandingRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.instance("instance:write") },
         schema: {
           summary: "Remove the console's logo",
+          description:
+            "Takes away the uploaded image, so the console draws its own mark again. Audited.",
           tags: ["instance"],
           response: { 204: NoContent },
         },
@@ -214,6 +218,9 @@ export function brandingRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               "The request body is the image: PNG, JPEG, WebP or SVG, up to 512 KB. It is shown " +
               "in the console's rail and on its sign-in screen.",
             tags: ["instance"],
+            consumes: ["image/png", "image/jpeg", "image/webp", "image/svg+xml"],
+            // Read as bytes, as sent: the schema says only that a body is taken.
+            body: Type.Unknown(),
             response: { 204: NoContent },
           },
         },

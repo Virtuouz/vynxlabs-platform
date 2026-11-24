@@ -1,7 +1,8 @@
 import { Badge, Button, SelectField } from "@volvel/ui";
 import { useEffect, useState } from "react";
-import { api, useLoad } from "../api.ts";
+import { api, askForAccess, useLoad } from "../api.ts";
 import { failureText, notify } from "../ask.tsx";
+import { Can, useCan, useMay } from "../kit/Can.tsx";
 import { ago } from "../kit/format.ts";
 import { ErrorState } from "../kit/LoadState.tsx";
 import { StatePill, Tag } from "../kit/status.tsx";
@@ -28,7 +29,7 @@ interface Settings {
 
 /**
  * Failure alerts: who is told when a run fails for the last time, and what was
- * sent. A script's own `onFailure` wins over the workspace's default. Failures
+ * sent. A script's own `onFailure` replaces the workspace's default. Failures
  * of one script within ten minutes of an alert are counted on it, not sent.
  */
 export function Alerts({
@@ -118,10 +119,15 @@ export function Alerts({
     ["the connections", connections],
   ];
 
+  // Saving the default changes the workspace; the test posts through a connection, which is its own
+  // permission (`connection:write`), so a developer who may do the one is not shut out of the other.
+  const mayChange = useCan(workspaceRoot, "workspace:write");
+  const mayTest = useMay(workspaceRoot, "connection:write")("connection:write");
+
   return (
     <Page
       title="Alerts"
-      description="Who is told when a script or a flow fails for the last time. A script's own onFailure wins over this workspace's default. More failures of one script within ten minutes of an alert are counted on it, not sent again."
+      description="Who is told when a script or a flow fails for the last time. A script's own onFailure replaces this workspace's default, as a whole. More failures of one script within ten minutes of an alert are counted on it, not sent again."
     >
       <section aria-label="Default" className="flex max-w-2xl flex-col gap-3">
         <h2 className="m-0 text-title font-semibold">This workspace's default</h2>
@@ -130,47 +136,54 @@ export function Alerts({
             <ErrorState key={what} what={what} error={load.error} onRetry={load.reload} />
           ) : null,
         )}
-        <div className="grid gap-3 sm:grid-cols-2">
-          <SelectField
-            name="handler"
-            label="Start a script"
-            value={script}
-            disabled={!editable}
-            options={[
-              { value: "", label: "None" },
-              ...(scripts.data || scripts.error
-                ? held(script, scriptOptions, "not found")
-                : scriptOptions),
-            ]}
-            onChange={setScript}
-          />
-          <SelectField
-            name="notify"
-            label="Post to a connection"
-            value={notifyPath}
-            disabled={!editable}
-            options={[
-              { value: "", label: "None" },
-              ...(connections.data || connections.error
-                ? held(notifyPath, connectionOptions, "no longer bound")
-                : connectionOptions),
-            ]}
-            onChange={setNotifyPath}
-          />
-        </div>
-        <p className="m-0 text-body-sm text-ink-muted">
-          The script is given the failed run. The connection is posted a summary as JSON, with a
-          line of text a chat webhook shows as it is.
-        </p>
+        <Can
+          base={workspaceRoot}
+          permission="workspace:write"
+          what="where this workspace's alerts go"
+        >
+          <div className="grid gap-3 sm:grid-cols-2">
+            <SelectField
+              name="handler"
+              label="Start a script"
+              value={script}
+              disabled={!editable}
+              options={[
+                { value: "", label: "None" },
+                ...(scripts.data || scripts.error
+                  ? held(script, scriptOptions, "not found")
+                  : scriptOptions),
+              ]}
+              onChange={setScript}
+            />
+            <SelectField
+              name="notify"
+              label="Post to a connection"
+              value={notifyPath}
+              disabled={!editable}
+              options={[
+                { value: "", label: "None" },
+                ...(connections.data || connections.error
+                  ? held(notifyPath, connectionOptions, "no longer set up here")
+                  : connectionOptions),
+              ]}
+              onChange={setNotifyPath}
+            />
+          </div>
+          <p className="m-0 text-body-sm text-ink-muted">
+            The script is given the failed run. The connection is posted a summary as JSON, with a
+            line of text a chat webhook shows as it is.
+          </p>
+        </Can>
         <div className="flex flex-wrap items-center gap-2">
           {editable ? (
-            <Button variant="primary" disabled={!changed || saving} onClick={save}>
+            <Button variant="primary" disabled={!changed || saving || !mayChange} onClick={save}>
               Save
             </Button>
           ) : null}
           {notifyPath ? (
             <Button
-              disabled={following.waiting}
+              disabled={following.waiting || !mayTest}
+              {...(mayTest ? {} : { tooltip: `It needs connection:write. ${askForAccess()}` })}
               onClick={async () => {
                 setTested(undefined);
                 try {

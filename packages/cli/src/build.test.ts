@@ -225,6 +225,21 @@ describe("a repository with mistakes", () => {
     ]);
   });
 
+  test("catches a name no expression of a flow has, such as `input` (FLW-11)", async () => {
+    const source = `import { defineFlow, defineScript, step, trigger, z } from "@volvel/sdk";\n${script()}export const f = defineFlow({
+      path: "flows/wrong-name",
+      nodes: {
+        start: trigger.manual(),
+        size: step.branch({ big: "input.amount > 100" }),
+        a: step.set({ x: "1" }),
+      },
+      edges: [["start", "size"], ["size", "a", { when: "big" }]],
+    });`;
+    expect(await problems(source)).toEqual([
+      expect.stringMatching(/^flows\/wrong-name \(flow\): .*is not a valid expression: .*input/),
+    ]);
+  });
+
   test("catches a path used twice, an empty repository and code that does not compile", async () => {
     expect(
       await problems(`${head}${script()}export const c = defineConnection({ path: "jobs/a" });`),
@@ -540,6 +555,26 @@ describe("a repository with documentation", () => {
       },
     ]);
     expect(built.files.get(built.bundle.assets?.[0]?.sha256 as string)).toEqual(PNG);
+  });
+
+  test("pages with types and subjects build, and what could be better is said as warnings, never as a refusal", async () => {
+    const directory = await withPages({
+      "platform/docs/handbook/index.md": "---\ntitle: Handbook\n---\n\nHello.\n",
+      "platform/docs/handbook/how/index.md": "---\ntitle: How\ntype: how-to\n---\n",
+      "platform/docs/handbook/how/refund.md":
+        "---\ntitle: Refund an order\nsubjects: [refunds]\nmoved_from: [old/refund]\n---\n\nJust words.\n",
+    });
+    const built = await buildRepository({ directory });
+    expect(built.warnings.join("\n")).toContain("handbook/how/refund (doc)");
+    expect(built.warnings.join("\n")).toContain("no numbered steps");
+    expect(built.warnings.join("\n")).toContain('subject "refunds"');
+  });
+
+  test("a site that uses none of it has no warnings", async () => {
+    const directory = await withPages({
+      "platform/docs/handbook/index.md": "---\ntitle: Handbook\n---\n\nHello.\n",
+    });
+    expect((await buildRepository({ directory })).warnings).toEqual([]);
   });
 
   test("reads them from the folders a repository names, and from nowhere else", async () => {

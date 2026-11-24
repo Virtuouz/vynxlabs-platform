@@ -29,9 +29,20 @@ const MENU: Record<string, { name: string; glyph: string }> = {
   "code-tabs": { name: "Code tabs", glyph: "{}" },
   "file-tree": { name: "File tree", glyph: "┣" },
   pages: { name: "Pages in this folder", glyph: "▤" },
+  glossary: { name: "Glossary", glyph: "A–Z" },
+  changelog: { name: "Changelog", glyph: "◷" },
   field: { name: "Field", glyph: "ƒ" },
   term: { name: "Term", glyph: "Aa" },
   kbd: { name: "Key", glyph: "⌘" },
+};
+
+/**
+ * What the registry can insert and the menu does not offer, and why. A component with an
+ * `insert` that is in neither this nor the menu fails the test beside this file.
+ */
+export const NOT_IN_MENU: Record<string, string> = {
+  product: "Only the product's own pages use it, so no writer's profile has it.",
+  screenshot: "A picture taken when a version is released, written by the people who release it.",
 };
 
 const syntaxOf = (spec: ComponentSpec) =>

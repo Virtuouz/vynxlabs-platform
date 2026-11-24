@@ -7,6 +7,7 @@ import { publishPlatformEvent } from "../kernel/flows/events.js";
 import { pushRelease } from "../kernel/git.js";
 import { access, findWorkspace, type RequestContext, type WorkspaceRef } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
+import { listOf } from "../pagination.js";
 import { AnyObject, Id, iso, isoOrNull, NullableString, Time, WorkspaceParams } from "./shared.js";
 
 type Status = "pending" | "promoted" | "declined" | "withdrawn" | "superseded";
@@ -63,6 +64,31 @@ export const PromotionRequest = Type.Object({
   mine: Type.Boolean(),
 });
 
+/**
+ * The requests this caller may see: their own, and any for a workspace where they may decide.
+ * The list and the promotion preview both show requests, so both ask here (a request holds
+ * the requester's private note).
+ */
+export async function visibleRequests(ctx: RequestContext, rows: Row[]) {
+  const decides = new Map<string, boolean>();
+  const visible: Row[] = [];
+  for (const row of rows) {
+    const mine =
+      row.requested_by_type === ctx.principal.type && row.requested_by_id === ctx.principal.id;
+    if (!decides.has(row.target_workspace_id)) {
+      decides.set(
+        row.target_workspace_id,
+        await ctx.allowed("promotion:write", {
+          tenantId: row.tenant_id,
+          workspaceId: row.target_workspace_id,
+        }),
+      );
+    }
+    if (mine || decides.get(row.target_workspace_id)) visible.push(row);
+  }
+  return visible;
+}
+
 /** Requests as the API shows them, with names for the people and places. */
 export async function describeRequests(kernel: Kernel, ctx: RequestContext, rows: Row[]) {
   const { db } = kernel;
@@ -103,7 +129,7 @@ export async function describeRequests(kernel: Kernel, ctx: RequestContext, rows
         "A member")
       : type === "service_account"
         ? (accounts.find((one) => one.id === id)?.name ?? "A service account")
-        : "The platform";
+        : "Volvel";
   const decides = new Map<string, boolean>();
   for (const target of new Set(rows.map((row) => row.target_workspace_id))) {
     decides.set(
@@ -256,7 +282,11 @@ export function promotionRequestRoutes(kernel: Kernel): FastifyPluginAsyncTypebo
     app.get(
       "/tenants/:t/promotion-requests",
       {
-        config: { access: access.custom },
+        config: {
+          access: access.custom(
+            "Lists the requests the caller may decide and the ones they made. A caller with neither needs `deployment:read` in the tenant to be answered.",
+          ),
+        },
         schema: {
           summary: "Promotion requests one may decide, and one's own",
           description:
@@ -276,7 +306,7 @@ export function promotionRequestRoutes(kernel: Kernel): FastifyPluginAsyncTypebo
             ),
             workspaceId: Type.Optional(Id),
           }),
-          response: { 200: Type.Object({ items: Type.Array(PromotionRequest) }) },
+          response: { 200: listOf(PromotionRequest, 200) },
         },
       },
       async ({ ctx, params, query }) => {
@@ -284,23 +314,7 @@ export function promotionRequestRoutes(kernel: Kernel): FastifyPluginAsyncTypebo
         if (query.status) rows = rows.where("status", "=", query.status);
         if (query.workspaceId) rows = rows.where("source_workspace_id", "=", query.workspaceId);
         const all = await rows.orderBy("created_at", "desc").limit(200).execute();
-        const visible: Row[] = [];
-        const decides = new Map<string, boolean>();
-        for (const row of all) {
-          const mine =
-            row.requested_by_type === ctx.principal.type &&
-            row.requested_by_id === ctx.principal.id;
-          if (!decides.has(row.target_workspace_id)) {
-            decides.set(
-              row.target_workspace_id,
-              await ctx.allowed("promotion:write", {
-                tenantId: params.t,
-                workspaceId: row.target_workspace_id,
-              }),
-            );
-          }
-          if (mine || decides.get(row.target_workspace_id)) visible.push(row);
-        }
+        const visible = await visibleRequests(ctx, all);
         // Someone with no standing in the tenant is told it is not there.
         if (visible.length === 0) await ctx.authorize("deployment:read", { tenantId: params.t });
         return { items: await describeRequests(kernel, ctx, visible) };
@@ -310,7 +324,9 @@ export function promotionRequestRoutes(kernel: Kernel): FastifyPluginAsyncTypebo
     app.get(
       "/tenants/:t/promotion-requests/:id/preview",
       {
-        config: { access: access.custom },
+        config: {
+          access: access.custom("Needs `deployment:read` in the workspace the request is for."),
+        },
         schema: {
           summary: "What deciding a promotion request would do",
           description: "The promotion preview of the bundle the request pinned.",
@@ -348,7 +364,7 @@ export function promotionRequestRoutes(kernel: Kernel): FastifyPluginAsyncTypebo
     app.post(
       "/tenants/:t/promotion-requests/:id/decision",
       {
-        config: { access: access.custom },
+        config: { access: access.custom("Needs `promotion:write` in the workspace promoted to.") },
         schema: {
           summary: "Promote what was asked for, or decline it",
           description:
@@ -472,9 +488,12 @@ export function promotionRequestRoutes(kernel: Kernel): FastifyPluginAsyncTypebo
     app.delete(
       "/tenants/:t/promotion-requests/:id",
       {
-        config: { access: access.custom },
+        config: {
+          access: access.custom("Needs to be the person, or the key, that made the request."),
+        },
         schema: {
           summary: "Withdraw a promotion request one made",
+          description: "Takes the request back before anyone decides it. Audited.",
           tags: ["deploys"],
           params: RequestParams,
           response: { 204: Type.Null() },

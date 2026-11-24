@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { Provisioning } from "./screens/Provisioning.tsx";
 import { answer, show } from "./testing.tsx";
@@ -43,7 +43,7 @@ beforeEach(() => {
       return new Response(null, { status: 204 });
     }
     if (method === "PUT") state = { ...state, settings: body };
-    if (address.endsWith("/pushed")) {
+    if (address.includes("/pushed")) {
       return json({
         people: [
           {
@@ -106,10 +106,11 @@ test("the address, the tokens and what was pushed are shown, and a new token onc
   );
 });
 
-test("how pushes are taken is chosen and saved together", async () => {
+test("how pushes are taken is chosen and saved together, from the save bar (GOV-33)", async () => {
   show(<Provisioning root={root} instance={false} audience="end_users" />);
-  const save = (await screen.findByRole("button", { name: "Save" })) as HTMLButtonElement;
-  expect(save.disabled).toBe(true);
+  await screen.findByLabelText("A person's groups come from");
+  // Nothing is changed: no bar, and nothing to save.
+  expect(screen.queryByRole("region", { name: "Unsaved changes" })).toBeNull();
   expect(screen.getByText(/is disabled, and whatever they were signed in to ends/)).toBeTruthy();
   // Making groups is offered only once pushed groups decide.
   expect(screen.queryByLabelText(/Make a group here/)).toBeNull();
@@ -121,8 +122,27 @@ test("how pushes are taken is chosen and saved together", async () => {
     screen.getByLabelText("The name the provider signs a person in by is pushed as"),
     { target: { value: "externalId" } },
   );
-  expect(save.disabled).toBe(false);
-  fireEvent.click(save);
+  const bar = await screen.findByRole("region", { name: "Unsaved changes" });
+  expect(bar.textContent).toContain("how pushes are taken");
+  // Discard puts back what was saved.
+  fireEvent.click(within(bar).getByRole("button", { name: "Discard" }));
+  expect(screen.queryByRole("region", { name: "Unsaved changes" })).toBeNull();
+  expect((screen.getByLabelText("A person's groups come from") as HTMLSelectElement).value).toBe(
+    "sign_in",
+  );
+  fireEvent.change(screen.getByLabelText("A person's groups come from"), {
+    target: { value: "scim" },
+  });
+  fireEvent.click(screen.getByLabelText(/Make a group here/));
+  fireEvent.change(
+    screen.getByLabelText("The name the provider signs a person in by is pushed as"),
+    { target: { value: "externalId" } },
+  );
+  fireEvent.click(
+    within(await screen.findByRole("region", { name: "Unsaved changes" })).getByRole("button", {
+      name: "Save",
+    }),
+  );
   await waitFor(() => expect(calls.some((call) => call.method === "PUT")).toBe(true));
   expect(calls.find((call) => call.method === "PUT")?.body).toEqual({
     subjectFrom: "externalId",
@@ -146,4 +166,84 @@ test("the people pushed and the pushes refused are listed, with why", async () =
   fireEvent.click(screen.getByRole("radio", { name: /Turned off/ }));
   await waitFor(() => expect(screen.queryByText("Ana Ruiz")).toBeNull());
   expect(screen.getAllByText("bo@acme.example").length).toBeGreaterThan(0);
+});
+
+test("a token says when it expires, and an expired one does not look live (GOV-28)", async () => {
+  state = {
+    ...state,
+    tokens: [
+      {
+        id: "k1",
+        name: "Old",
+        prefix: "vxp_oldoldol",
+        createdAt: "2026-01-01T10:00:00Z",
+        expiresAt: "2026-02-01T10:00:00Z",
+        lastUsedAt: null,
+      },
+      {
+        id: "k2",
+        name: "Fresh",
+        prefix: "vxp_freshfre",
+        createdAt: "2026-11-01T10:00:00Z",
+        expiresAt: "2999-01-01T10:00:00Z",
+        lastUsedAt: null,
+      },
+      {
+        id: "k3",
+        name: "Forever",
+        prefix: "vxp_foreverr",
+        createdAt: "2026-11-01T10:00:00Z",
+        expiresAt: null,
+        lastUsedAt: null,
+      },
+    ],
+  };
+  show(<Provisioning root={root} instance={false} audience="members" />);
+  await screen.findByText("vxp_oldoldol…");
+  expect(screen.getByRole("columnheader", { name: "Expires" })).toBeTruthy();
+  const rowOf = (name: string) => screen.getByText(name).closest("tr") as HTMLElement;
+  expect(rowOf("Old").textContent).toContain("Expired");
+  expect(rowOf("Fresh").textContent).toContain("Active");
+  expect(rowOf("Forever").textContent).toContain("Never");
+});
+
+test("people pushed past the first page say so and load on (GOV-34)", async () => {
+  const person = (n: number) => ({
+    userName: `u${n}@acme.example`,
+    email: `u${n}@acme.example`,
+    displayName: `Person ${n}`,
+    active: true,
+    updatedAt: "2026-11-12T10:00:00Z",
+  });
+  const fetched = globalThis.fetch;
+  vi.stubGlobal("fetch", async (address: string, init?: RequestInit) => {
+    if (address.endsWith("/pushed?limit=200"))
+      return new Response(JSON.stringify({ people: [person(1)], refusals: [], nextCursor: "c1" }), {
+        status: 200,
+      });
+    if (address.endsWith("/pushed?limit=200&cursor=c1"))
+      return new Response(JSON.stringify({ people: [person(2)], refusals: [], nextCursor: null }), {
+        status: 200,
+      });
+    return fetched(address, init);
+  });
+  show(<Provisioning root={root} instance={false} audience="members" />);
+  await screen.findByText("Person 1");
+  await screen.findByText("Showing the first 1 people.");
+  fireEvent.click(screen.getByRole("button", { name: "Load more" }));
+  await screen.findByText("Person 2");
+});
+
+test("a token is made with a length of life, and the list says when it ends (GOV-P1)", async () => {
+  show(<Provisioning root={root} instance={false} audience="members" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Make a token" }));
+  const dialog = await screen.findByRole("dialog");
+  fireEvent.input(within(dialog).getByRole("textbox"), { target: { value: "Okta" } });
+  fireEvent.change(within(dialog).getByLabelText("Expires"), { target: { value: "90" } });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Make the token" }));
+  expect(await screen.findByText("vxp_the-whole-token")).toBeTruthy();
+  expect(calls.find((call) => call.method === "POST")?.body).toEqual({
+    name: "Okta",
+    expiresInDays: 90,
+  });
 });

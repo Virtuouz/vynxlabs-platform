@@ -15,7 +15,7 @@ const ADMIN = {
 /** A logo that is wider than it is tall, in one flat colour that is easy to find again. */
 const LOGO = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 100" width="200" height="100"><rect width="200" height="100" fill="#ff00aa"/></svg>`;
 
-test("a logo uploaded for the console becomes the icon in the tab, at every size, and goes when the logo does", async ({
+test("a logo uploaded for the console becomes the icon in the tab, at every size, and goes when the logo does @instance", async ({
   browser,
 }) => {
   const page = await (

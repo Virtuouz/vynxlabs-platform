@@ -3,7 +3,7 @@ import { ErrorBoundary } from "../kit/ErrorBoundary.tsx";
 import { useInspectorDocked, useWide, WIDE } from "../kit/layout.tsx";
 import { useUrlParam } from "../router.tsx";
 import { HelpPanel } from "./HelpPanel.tsx";
-import { closeHelp, openHelp, useHelp } from "./store.ts";
+import { closeHelp, openHelp, takeOpener, useHelp } from "./store.ts";
 
 /** From here up there is room for a list, its inspector and the help, all three side by side. */
 const THREE_ACROSS = 1680;
@@ -29,16 +29,19 @@ export function HelpDock({
   const widest = useWide(THREE_ACROSS);
   const tablet = useWide(WIDE.rail);
   const inspector = useInspectorDocked();
-  const before = useRef<Element | null>(null);
+  const wasOpen = useRef(false);
 
-  // Opened: remember where focus was. Closed: put it back, if it was in the panel.
+  // Closed: put focus back where it was when the panel opened, if it was in the panel. What had
+  // focus is kept by the store when it opens, as the panel's own mount moves focus to its heading
+  // before this effect could ask.
   useEffect(() => {
     if (open) {
-      before.current = document.activeElement;
+      wasOpen.current = true;
       return;
     }
-    const was = before.current;
-    before.current = null;
+    if (!wasOpen.current) return;
+    wasOpen.current = false;
+    const was = takeOpener();
     if (was instanceof HTMLElement && was.isConnected && document.activeElement === document.body) {
       was.focus();
     }
@@ -81,6 +84,7 @@ export function useHelpInAddress() {
   const [asked, setAsked] = useUrlParam("help");
   useEffect(() => {
     if (asked === undefined) return;
+    // docs:dynamic an address a reader or an older link gave: pageFor answers for what it does not know
     openHelp(asked === "" ? undefined : asked);
     setAsked(undefined);
   }, [asked, setAsked]);

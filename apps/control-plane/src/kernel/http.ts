@@ -10,7 +10,7 @@ import {
   type Trx,
   writeAudit,
 } from "./audit.js";
-import { check, type Target } from "./authorize.js";
+import { boundInside, check, type Target } from "./authorize.js";
 import { forbidden, forbiddenBecause, notFound, unauthenticated } from "./errors.js";
 import type { WorkerScope } from "./execution/runs.js";
 import { resolveWorker } from "./execution/workers.js";
@@ -23,22 +23,40 @@ type Scope = "instance" | "tenant" | "tenant-or-instance" | "workspace";
 
 /** How a route decides who may call it. Every route must declare one. */
 export type Access =
-  | { kind: "public" }
-  | { kind: "signed-in" }
-  /** The handler calls `ctx.authorize` itself, because the target depends on the request body. */
-  | { kind: "custom" }
+  /** `says` is what a caller needs to bring, when it is not nothing: a token in the address, say. */
+  | { kind: "public"; says?: string }
+  /** A member's own account. A service account's key is refused, unless the route says `serviceAccounts`. */
+  | { kind: "signed-in"; serviceAccounts?: boolean }
+  /**
+   * The handler calls `ctx.authorize` itself, because the target depends on the request body.
+   * `says` is what the reference prints: what is decided, and by what.
+   */
+  | { kind: "custom"; says: string }
   /** Called by a worker with a worker credential, under the worker protocol. */
   | { kind: "worker" }
   /** Called by the instance's worker host with WORKER_HOST_TOKEN, to be given leases. */
   | { kind: "worker-host" }
   /** Called by an identity provider with a token made for it, under SCIM. */
   | { kind: "scim" }
-  | { kind: "permission"; permission: string; scope: Scope };
+  | {
+      kind: "permission";
+      permission: string;
+      scope: Scope;
+      /**
+       * Also answered, with no more than the shell needs to draw, to someone whose only grants
+       * are on resources inside (`boundInside`). The handler trims its answer by `ctx.insideOnly`.
+       */
+      inside?: boolean;
+    };
 
 export const access = {
   public: { kind: "public" } as Access,
   signedIn: { kind: "signed-in" } as Access,
-  custom: { kind: "custom" } as Access,
+  /** For a route that is not about a person, such as a batch of calls that are each checked alone. */
+  signedInOrKey: { kind: "signed-in", serviceAccounts: true } as Access,
+  /** A public route that asks for something, such as the token that is in its address. */
+  publicWith: (says: string): Access => ({ kind: "public", says }),
+  custom: (says: string): Access => ({ kind: "custom", says }),
   worker: { kind: "worker" } as Access,
   workerHost: { kind: "worker-host" } as Access,
   scim: { kind: "scim" } as Access,
@@ -55,6 +73,10 @@ export const access = {
     scope: "workspace",
   }),
 };
+
+/** Lets someone who holds a grant on one resource inside reach a route, for the shell alone. */
+export const reachedFromInside = (declared: Access): Access =>
+  declared.kind === "permission" ? { ...declared, inside: true } : declared;
 
 /**
  * A limit for routes an app may call for someone who is not signed in. It counts
@@ -77,6 +99,11 @@ declare module "fastify" {
      * `PREFERENCE_ROUTES` may say so.
      */
     preference?: true;
+    /**
+     * `false`: the route is polled by machines (a probe, a scrape) and is not a trace. A route
+     * names itself; the request hook does not guess from the end of a name.
+     */
+    traced?: false;
   }
   interface FastifyRequest {
     ctx: RequestContext;
@@ -100,6 +127,8 @@ export class RequestContext {
   /** Set on workspace-scoped routes, after the workspace was found in the tenant. */
   workspace: WorkspaceRef | undefined;
   mutated = false;
+  /** Set when the route was reached by a grant on one resource inside, not by its own permission. */
+  insideOnly = false;
   /** Set when the request named a resource by a path it no longer has. The answer says so. */
   moved: AliasUse | undefined;
   readonly #request: FastifyRequest;
@@ -253,6 +282,11 @@ export function installAccessControl(app: FastifyInstance, kernel: Kernel) {
       if (principal.type === "end_user" || principal.appTenantId !== undefined) {
         throw forbiddenBecause("This is only for a member signed in to the workspace.");
       }
+      if (principal.type === "service_account" && !declared.serviceAccounts) {
+        throw forbiddenBecause(
+          "This is only for a person signed in, not for a service account's key.",
+        );
+      }
       return;
     }
 
@@ -270,11 +304,22 @@ export function installAccessControl(app: FastifyInstance, kernel: Kernel) {
       }
       throw error;
     }
-    await ctx.authorize(declared.permission, {
+    const target = {
       tenantId,
       workspaceId: declared.scope === "workspace" ? params.w : undefined,
       orInstance: declared.scope === "tenant-or-instance",
-    });
+    };
+    // A grant on one flow lets its holder reach the flow's workspace and tenant to draw the page,
+    // by the same match `check` uses, and nothing the route would read beyond that.
+    if (
+      declared.inside &&
+      !(await check(kernel.db, principal, declared.permission, target)).allowed &&
+      (await boundInside(kernel.db, principal, tenantId, target.workspaceId))
+    ) {
+      ctx.insideOnly = true;
+    } else {
+      await ctx.authorize(declared.permission, target);
+    }
     if (declared.scope === "workspace") {
       ctx.workspace = await findWorkspace(kernel, tenantId, params.w as string);
     }

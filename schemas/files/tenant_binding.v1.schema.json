@@ -21,6 +21,13 @@
     "body": {
       "type": "object",
       "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "pattern": "^\\S(.*\\S)?$",
+          "description": "What people read. It can change: nothing refers to it."
+        },
         "role": {
           "type": "string",
           "pattern": "^[a-z][a-z0-9_]{0,62}$",
@@ -35,11 +42,13 @@
                 "group",
                 "service_account",
                 "end_user_group"
-              ]
+              ],
+              "description": "What kind of principal: a group of members, a service account or a group of end users."
             },
             "key": {
               "type": "string",
-              "pattern": "^[a-z0-9][a-z0-9_-]{0,62}$"
+              "pattern": "^[a-z0-9][a-z0-9_-]{0,62}$",
+              "description": "Its key, which never changes. What it is called can change."
             }
           },
           "required": [

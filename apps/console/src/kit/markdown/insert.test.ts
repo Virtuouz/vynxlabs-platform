@@ -1,6 +1,14 @@
-import { parse } from "@volvel/markup";
+import { COMPONENTS, parse } from "@volvel/markup";
 import { describe, expect, test } from "vitest";
-import { insertables, insertInto, nameOf, surround, togglePrefix, where } from "./insert.ts";
+import {
+  insertables,
+  insertInto,
+  NOT_IN_MENU,
+  nameOf,
+  surround,
+  togglePrefix,
+  where,
+} from "./insert.ts";
 
 const page = [
   "Before.",
@@ -35,6 +43,17 @@ const item = (name: string, at: number) => {
 };
 
 describe("what the Insert menu offers", () => {
+  test("every component the registry can insert is in the menu, or says why it is not", () => {
+    const names = new Set(insertables([], "docs").map((one) => one.spec.name));
+    const offered = COMPONENTS.filter((spec) => spec.insert).map((spec) => spec.name);
+    expect(
+      offered.filter((name) => !names.has(name) && !(name in NOT_IN_MENU) && name !== "tab"),
+    ).toEqual([]);
+    for (const name of ["glossary", "pages", "changelog"]) expect(names.has(name)).toBe(true);
+    // Nothing is excused that the menu offers.
+    expect(Object.keys(NOT_IN_MENU).filter((name) => names.has(name))).toEqual([]);
+  });
+
   test("inside tabs, only a tab; anywhere else, anything but a tab", () => {
     expect(insertables(where(tree, 1)).map((one) => one.spec.name)).not.toContain("tab");
     expect(insertables(where(tree, 9)).map((one) => one.spec.name)).toContain("alert");

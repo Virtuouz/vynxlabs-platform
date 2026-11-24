@@ -1,4 +1,4 @@
-import { signInWithPassword } from "./sign-in.ts";
+import { signInAs } from "./as.ts";
 import { expect, type Page, test } from "./test.ts";
 import { expectNoAxeViolations, snap } from "./visual.ts";
 
@@ -8,10 +8,6 @@ import { expectNoAxeViolations, snap } from "./visual.ts";
  * baseline that shows when a change to the kit reaches tenant apps.
  */
 
-const ADMIN = {
-  email: process.env.E2E_ADMIN_EMAIL ?? "admin@example.com",
-  password: process.env.E2E_ADMIN_PASSWORD ?? "change-me-please",
-};
 const TENANT_ADMIN = "00000000-0000-7000-8000-000000000002";
 const stamp = Date.now().toString(36);
 
@@ -19,6 +15,18 @@ const stamp = Date.now().toString(36);
 const call = (page: Page, method: string, path: string, body?: unknown): Promise<any> =>
   page.evaluate(
     async ([method, path, body]) => {
+      // A draft save names the draft it saw: its revision now, or none when there is none.
+      if (
+        method === "PUT" &&
+        String(path).includes("/drafts/") &&
+        body &&
+        typeof body === "object" &&
+        !("revision" in body) &&
+        !("create" in body)
+      ) {
+        const seen = await fetch(`/api/v1${path}`);
+        if (seen.ok) body = { ...body, revision: (await seen.json()).revision };
+      }
       const response = await fetch(`/api/v1${path}`, {
         method: method as string,
         headers: body ? { "content-type": "application/json" } : {},
@@ -37,11 +45,11 @@ const WIDTHS = [
   { name: "desktop", width: 1440, height: 960 },
 ] as const;
 
-test("an app served to a tenant's people looks as reviewed, at each width and in each theme", async ({
+test("an app served to a tenant's people looks as reviewed, at each width and in each theme @builder", async ({
   browser,
 }) => {
   const page = await (await browser.newContext()).newPage();
-  await signInWithPassword(page, ADMIN.email, ADMIN.password);
+  await signInAs(page, "operator");
   const tenant = await call(page, "POST", "/tenants", { slug: `show-${stamp}`, name: "Showcase" });
   await call(page, "POST", `/tenants/${tenant.id}/access-grants`, {
     reason: "The tenant apps e2e test",

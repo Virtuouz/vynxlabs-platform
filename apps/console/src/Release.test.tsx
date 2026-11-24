@@ -135,6 +135,25 @@ test("changes that cannot be deployed say why, and offer no deploy", async () =>
   ).toBe(true);
 });
 
+test("WLK-17h: a refusal is a title, a sentence and a list, and what is missing links to where it is set up", async () => {
+  preview = {
+    possible: false,
+    refusal: {
+      code: "bindings_missing",
+      detail: "The workspace is missing something this bundle needs.",
+      errors: [{ path: "/secrets/KEY", message: 'the secret "KEY" is not set in this workspace' }],
+    },
+    summary: null,
+  };
+  show(review());
+  const title = await screen.findByText(/These changes cannot be deployed yet\./);
+  // The title does not run into the sentence, and the sentence not into the list.
+  expect(title.closest("p")?.textContent).toBe("These changes cannot be deployed yet.");
+  expect(screen.getByRole("link", { name: "Set up" }).getAttribute("href")).toContain(
+    "/secrets?setup=KEY",
+  );
+});
+
 test("a draft is set aside after asking, and a production workspace has no review step", async () => {
   const { unmount } = show(review());
   fireEvent.click((await screen.findAllByRole("button", { name: "Set aside" }))[0] as HTMLElement);
@@ -152,6 +171,19 @@ test("a draft is set aside after asking, and a production workspace has no revie
   expect(screen.queryByText("Review draft")).toBeNull();
   // Production has no drafts, so they are not even asked for.
   expect(asked()).toBe(before);
+});
+
+test("an address that names a step this workspace does not have opens the first one (REL-14)", async () => {
+  history.replaceState(null, "", "/?step=review");
+  const first = show(review(production));
+  await screen.findByRole("heading", { name: "Versions" });
+  expect(screen.queryByText("Loading")).toBeNull();
+  first.unmount();
+  // A dev workspace with nothing to promote to has no promote step.
+  history.replaceState(null, "", "/?step=promote");
+  show(review());
+  expect(await screen.findByRole("link", { name: "orders/sync" })).toBeTruthy();
+  history.replaceState(null, "", "/");
 });
 
 test("a promotion that changes an agent's tool says so, asks, and sends that it was confirmed", async () => {
@@ -173,7 +205,15 @@ test("a promotion that changes an agent's tool says so, asks, and sends that it 
     });
     const json = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status });
     if (method === "POST") {
-      return json({ bundleVersion: 8, bundleId: "b8", workspaceId: "w2" }, 201);
+      return json(
+        {
+          bundleVersion: 8,
+          bundleId: "b8",
+          workspaceId: "w2",
+          release: { status: "failed", branch: "release/main", problem: "The remote refused it." },
+        },
+        201,
+      );
     }
     if (address.includes("/promotion-preview")) {
       return json({
@@ -219,6 +259,57 @@ test("a promotion that changes an agent's tool says so, asks, and sends that it 
   await waitFor(() =>
     expect(calls.find((call) => call.method === "POST")?.body).toEqual({ confirmBreaking: true }),
   );
+  // A release commit that failed points at the place that tries it again (REL-06).
+  const retry = await screen.findByRole("link", { name: "Try again from Git sync" });
+  expect(retry.getAttribute("href")).toBe("/t/t1/workspaces/w2/git");
+});
+
+test("a Promote step with nothing deployed says so once: no spinner, no retry, Promote off with the reason (P31)", async () => {
+  const linked: Place = { ...dev, linkedWorkspaceId: "w2" };
+  const target = { id: "w2", name: "Clinics", type: "production", linkedWorkspaceId: null };
+  vi.stubGlobal("fetch", async (address: string) => {
+    const json = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status });
+    if (address.includes("/promotion-preview")) {
+      return json(
+        {
+          status: 409,
+          detail: "This workspace has nothing deployed, so there is nothing to promote.",
+        },
+        409,
+      );
+    }
+    if (address.endsWith("/drift")) {
+      return json({
+        target: { ...target, slug: "main" },
+        versions: { here: 8, there: 7 },
+        counts: { changed: 0, only_here: 0, only_there: 0, in_sync: 0 },
+        items: [],
+      });
+    }
+    return json({ items: address.endsWith("/tenants/t1/workspaces") ? [linked, target] : [] });
+  });
+  show(
+    <Release
+      base="/tenants/t1"
+      root={root}
+      link={link}
+      workspace={linked}
+      step="promote"
+      reload={() => {}}
+    />,
+  );
+  await screen.findAllByText(/nothing to promote/);
+  expect(screen.queryByText("Working out what promoting would do…")).toBeNull();
+  expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+  const promote = screen.getByRole("button", {
+    name: /Promote to production/,
+  }) as HTMLButtonElement;
+  expect(promote.disabled).toBe(true);
+  expect(screen.getAllByText(/nothing to promote/)).toHaveLength(1);
+  // The From panel does not keep a loading placeholder where the version would be (round 5).
+  expect(screen.queryByText(/Runs\s*v…/)).toBeNull();
+  expect(screen.queryByText("Reading what runs…")).toBeNull();
+  expect(screen.getByText("Nothing is deployed here.")).toBeTruthy();
 });
 
 test("a file that differs from the branch says how: new, removed or changed, and on which side", () => {
@@ -279,14 +370,40 @@ test("Versions is the one list: a repeated version rolls back from its row, and 
     />,
   );
   await screen.findByText("Versions of Clinics");
-  // Two history rows for version 1 and one bundle never run: three Activates, none on the running one.
-  const buttons = await screen.findAllByRole("button", { name: "Activate this version" });
-  expect(buttons).toHaveLength(3);
+  // Version 1 was deployed twice and is listed once, with how often: two buttons, none on the
+  // running one: version 1 (earlier than the running 2) rolls back, version 3 (never run) deploys.
+  const buttons = await screen.findAllByRole("button", {
+    name: /^(Roll back to|Deploy) this version$/,
+  });
+  expect(buttons.map((one) => one.textContent)).toEqual([
+    "Roll back to this version",
+    "Deploy this version",
+  ]);
+  expect(screen.getAllByText("v1")).toHaveLength(1);
+  expect(screen.getAllByText("v2")).toHaveLength(1);
+  expect(screen.getByText(/deployed 2 times/)).toBeTruthy();
+  // A version's label keeps room of its own in a row that wraps, so a narrow screen puts the rest
+  // under it instead of cutting it to "Promot…" (round 5; layout is not measured in happy-dom).
+  const label = screen.getByText("Version 1");
+  expect(label.className).toContain("min-w-[min(100%,8rem)]");
+  expect(label.className).not.toContain("min-w-0");
   expect(screen.getByText("Not yet run here")).toBeTruthy();
   expect(screen.queryByText("Bundles and rollback")).toBeNull();
   fireEvent.click(buttons[0] as HTMLElement);
-  expect(await answer("Activate in production")).toContain("Clinics stops running");
+  expect(await answer("Roll back in production")).toContain("Clinics stops running");
   await waitFor(() =>
     expect(calls.find((call) => call.method === "POST")?.body).toEqual({ bundleId: "b1" }),
   );
+});
+
+test("VOC-41: the release screen is Deploy in a dev workspace and Versions in production", async () => {
+  const { sectionLabel, WORKSPACE_SECTIONS } = await import("./nav.ts");
+  const section = WORKSPACE_SECTIONS.operate.find((one) => one.slug === "release");
+  if (!section) throw new Error("the release section is gone");
+  expect(sectionLabel(section, "dev")).toBe("Deploy");
+  expect(sectionLabel(section, undefined)).toBe("Deploy");
+  expect(sectionLabel(section, "production")).toBe("Versions");
+  const runs = WORKSPACE_SECTIONS.operate.find((one) => one.slug === "runs");
+  if (!runs) throw new Error("the runs section is gone");
+  expect(sectionLabel(runs, "production")).toBe("Runs");
 });

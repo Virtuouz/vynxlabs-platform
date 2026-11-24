@@ -57,7 +57,10 @@ export function waitedAndRan(
       started !== null
         ? Math.max(0, started - due)
         : ended === null
-          ? Math.max(0, now - due)
+          ? // A run held for its time has waited for nothing yet: the page says when it starts.
+            due > now
+            ? null
+            : now - due
           : null,
     ran: started !== null ? Math.max(0, (ended ?? now) - started) : null,
   };

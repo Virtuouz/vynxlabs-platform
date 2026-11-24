@@ -18,6 +18,8 @@ import { FlowGraph, type GraphEdge, type GraphNode, type Positions } from "../Fl
 import { AttachedPages, workspaceOf } from "../help/glossary.tsx";
 import { InputDialog } from "../InputDialog.tsx";
 import { StateAnnouncer } from "../kit/Announce.tsx";
+import { REJECTING } from "../kit/approvals.ts";
+import { useMay, useMayOn } from "../kit/Can.tsx";
 import { CollectionView } from "../kit/CollectionView.tsx";
 import { Current } from "../kit/current.ts";
 import { DataTable } from "../kit/DataTable.tsx";
@@ -29,6 +31,7 @@ import { Reconnecting } from "../kit/Reconnecting.tsx";
 import { RemoveDraftButton } from "../kit/RemoveDraftButton.tsx";
 import { ReferenceList } from "../kit/references.tsx";
 import { mayPass, retryAfter } from "../kit/retry.ts";
+import { STARTED_BY, STARTED_ON } from "../kit/starts.ts";
 import { Code, Mono, type RunState, StatePill, Tag } from "../kit/status.tsx";
 import { Time } from "../kit/Time.tsx";
 import { Truncate } from "../kit/Truncate.tsx";
@@ -41,23 +44,6 @@ import { OfferButton } from "./OfferToAgent.tsx";
 import { detailSummary } from "./Operate.tsx";
 
 type FlowStatus = "running" | "succeeded" | "failed" | "cancelled";
-/** How a run began, as the end of a sentence. */
-const STARTED: Record<string, string> = {
-  manual: "by hand",
-  schedule: "by its schedule",
-  webhook: "by a webhook",
-  event: "by an event",
-  flow: "by another flow",
-};
-
-const TRIGGER: Record<string, string> = {
-  manual: "By hand",
-  schedule: "Schedule",
-  webhook: "Webhook",
-  event: "Event",
-  flow: "Another flow",
-};
-
 interface FlowRow {
   path: string;
   description: string;
@@ -107,7 +93,8 @@ export function Flows({
   return (
     <CollectionView<FlowRow>
       title="Flows"
-      description="A flow is a graph of steps the platform runs in order, remembering where it is. It survives a restart."
+      needs={{ base: root, permission: "resource:write", what: "this workspace's flows" }}
+      description="A flow is a graph of steps Volvel runs in order, remembering where it is. It survives a restart."
       actions={
         editable ? (
           <Button variant="primary" onClick={() => navigate(`${link}/flows/new`)}>
@@ -143,7 +130,7 @@ export function Flows({
                 { value: "all", label: "All", count: items.length },
                 {
                   value: "failing",
-                  label: "Failed today",
+                  label: "Failed in 24 hours",
                   count: items.filter((row) => row.runs.failedLastDay > 0).length,
                 },
                 {
@@ -164,10 +151,11 @@ export function Flows({
       columns={[
         {
           header: "Flow",
+          wide: true,
           cell: (row) => (
             <span className="flex min-w-0 flex-col">
               <Link
-                to={`${link}/flows/${row.path}`}
+                to={flowPage(link, row, editable)}
                 className="min-w-0 font-mono text-code text-ink no-underline"
               >
                 <Truncate mode="middle">{row.path}</Truncate>
@@ -187,7 +175,7 @@ export function Flows({
                 ? "Nothing yet"
                 : row.starts.map((one) => (
                     <span key={`${one.type}-${one.detail}`} className="truncate">
-                      {TRIGGER[one.type] ?? one.type}
+                      {STARTED_BY[one.type] ?? one.type}
                       {one.detail ? (
                         <span className="font-mono text-code text-ink-subtle"> · {one.detail}</span>
                       ) : null}
@@ -209,7 +197,7 @@ export function Flows({
               <span className="flex flex-col">
                 <StatePill state={row.lastRun.state} detail={ago(row.lastRun.createdAt)} />
                 <span className="text-meta text-ink-subtle">
-                  {row.runs.lastDay} today
+                  {row.runs.lastDay} in 24 hours
                   {row.runs.failedLastDay ? ` · ${row.runs.failedLastDay} failed` : ""}
                   {row.runs.waiting ? ` · ${row.runs.waiting} waiting` : ""}
                 </span>
@@ -263,7 +251,7 @@ export function Flows({
             onClose={() => setChosen(undefined)}
             footer={
               <>
-                <Button variant="primary" onClick={() => navigate(`${link}/flows/${open.path}`)}>
+                <Button variant="primary" onClick={() => navigate(flowPage(link, open, editable))}>
                   Open
                 </Button>
                 {editable && open.draft !== "removed" ? (
@@ -310,7 +298,7 @@ export function Flows({
                   },
                   { label: "Steps", value: String(open.nodeCount), mono: true },
                   {
-                    label: "Runs today",
+                    label: "Runs in 24 hours",
                     value: `${open.runs.lastDay}, ${open.runs.failedLastDay} failed`,
                     mono: true,
                   },
@@ -324,7 +312,7 @@ export function Flows({
                   open.starts.map((one) => (
                     <span key={`${one.type}-${one.detail}`} className="flex items-center gap-2">
                       <Junction kind="here" size={5} />
-                      {TRIGGER[one.type] ?? one.type}
+                      {STARTED_BY[one.type] ?? one.type}
                       {one.detail ? <Mono className="text-ink-subtle">{one.detail}</Mono> : null}
                     </span>
                   ))
@@ -342,6 +330,17 @@ export function Flows({
     />
   );
 }
+
+/**
+ * Where a flow opens. One that is only a draft has no page of its own to read: it opens in
+ * the editor, which is where it can be seen.
+ */
+export const flowPage = (
+  link: string,
+  row: { path: string; version: number | null },
+  editable: boolean,
+) =>
+  row.version === null && editable ? `${link}/flows/edit/${row.path}` : `${link}/flows/${row.path}`;
 
 /** A flow's size as a short chain of junctions. */
 function StepChain({ count }: { count: number }) {
@@ -391,12 +390,32 @@ export function FlowView({
   editable?: boolean;
 }) {
   const flow = useLoad<FlowDetail>(`${root}/flows/${path}`);
+  // What this person may do here is asked before the controls are drawn (FLW-30).
+  // Starting counts a grant on this flow; editing is a draft and arranging is a layout, which the
+  // server asks of the workspace.
+  const mayStart = useMayOn(root, { kind: "flow", path }, "flow_run:write");
+  const mayDraft = useMay(root, "resource:write", "flow:write");
+  const may = (permission: string) =>
+    permission === "flow_run:write" ? mayStart(permission) : mayDraft(permission);
   const runs = useLoad<{ items: FlowRunRow[] }>(
     `${root}/flow-runs?flow=${encodeURIComponent(path)}&limit=20`,
   );
   const [saved, setSaved] = useState<"saving" | "saved" | string>();
   const [starting, setStarting] = useState(false);
-  if (flow.error) return <ErrorState error={flow.error} onRetry={flow.reload} />;
+  // A link to a flow that is only a draft (a reference, a bookmark) has no page of a deployed flow:
+  // where it can be seen is the editor, in a workspace that has one.
+  const draftOnly = useLoad<{ deleted?: boolean }>(
+    editable && flow.error?.status === 404 ? `${root}/drafts/${path}` : null,
+  );
+  const hasDraft = draftOnly.data !== undefined && !draftOnly.data.deleted;
+  useEffect(() => {
+    if (hasDraft) navigate(`${link}/flows/edit/${path}`, { replace: true });
+  }, [hasDraft, link, path]);
+  if (flow.error) {
+    if (hasDraft || (flow.error.status === 404 && editable && draftOnly.loading))
+      return <Loading />;
+    return <ErrorState error={flow.error} onRetry={flow.reload} />;
+  }
   if (!flow.data) return <Pending of={flow} />;
   const data = flow.data;
   const manualNode = Object.values(data.nodes).find(
@@ -407,6 +426,20 @@ export function FlowView({
   const manualInput = (manualNode?.trigger as { input?: Record<string, unknown> } | undefined)
     ?.input;
 
+  const arrange = async (positions: Positions) => {
+    setSaved("saving");
+    try {
+      await api.put(`${root}/flow-layouts/${data.path}`, { positions });
+      setSaved("saved");
+    } catch (error) {
+      setSaved(
+        (error as ApiError).status === 403
+          ? "You can arrange the graph, but only someone who manages flows can save it."
+          : (error as Error).message,
+      );
+    }
+  };
+
   return (
     <Page
       title={data.path}
@@ -414,10 +447,10 @@ export function FlowView({
       description={data.description}
       action={
         <span className="flex flex-wrap gap-2">
-          {editable ? (
+          {editable && may("resource:write") ? (
             <Button onClick={() => navigate(`${link}/flows/edit/${data.path}`)}>Edit</Button>
           ) : null}
-          {manual ? (
+          {manual && may("flow_run:write") ? (
             <>
               <OfferButton root={root} kind="flow" path={data.path} />
               <Button variant="primary" onClick={() => setStarting(true)}>
@@ -433,7 +466,7 @@ export function FlowView({
         object={{
           heading: "This flow",
           commands: [
-            ...(manual
+            ...(manual && may("flow_run:write")
               ? [
                   {
                     key: "start",
@@ -443,7 +476,7 @@ export function FlowView({
                   },
                 ]
               : []),
-            ...(editable
+            ...(editable && may("resource:write")
               ? [
                   {
                     key: "edit",
@@ -484,30 +517,21 @@ export function FlowView({
         }}
       />
       <FlowGraph
+        key={may("flow:write") ? "arrange" : "fixed"}
         nodes={data.nodes}
         edges={data.edges}
         layout={data.layout}
-        onMove={async (positions) => {
-          setSaved("saving");
-          try {
-            await api.put(`${root}/flow-layouts/${data.path}`, { positions });
-            setSaved("saved");
-          } catch (error) {
-            setSaved(
-              (error as ApiError).status === 403
-                ? "You can arrange the graph, but only someone who manages flows can save it."
-                : (error as Error).message,
-            );
-          }
-        }}
+        {...(may("flow:write") ? { onMove: arrange } : {})}
       />
       <p className="m-0 text-body-sm text-ink-muted" aria-live="polite">
-        {saved === "saving"
-          ? "Saving the arrangement…"
-          : saved === "saved"
-            ? "Arrangement saved. The flow itself is unchanged."
-            : (saved ??
-              "Drag a step, or focus it and use the arrow keys, to arrange the graph. Arranging changes nothing about how the flow runs.")}
+        {!may("flow:write")
+          ? null
+          : saved === "saving"
+            ? "Saving the arrangement…"
+            : saved === "saved"
+              ? "Arrangement saved. The flow itself is unchanged."
+              : (saved ??
+                "Drag a step, or focus it and use the arrow keys, to arrange the graph. Arranging changes nothing about how the flow runs.")}
       </p>
       {data.triggers.length > 0 ? (
         <section>
@@ -565,7 +589,10 @@ export function FlowView({
               ),
             },
             { header: "Status", cell: (row) => <StatePill state={row.state} /> },
-            { header: "Started by", cell: (row) => TRIGGER[row.trigger.type] ?? row.trigger.type },
+            {
+              header: "Started by",
+              cell: (row) => STARTED_BY[row.trigger.type] ?? row.trigger.type,
+            },
           ]}
         />
       </section>
@@ -614,8 +641,12 @@ export interface FlowRunDetail extends FlowRunRow {
   errorSummary: string | null;
   tags: string[];
   retryOf: string | null;
+  /** The flow run whose step started this one: such a run is retried through that one. */
+  parentFlowRunId?: string | null;
   /** The trace the flow run and its runs are part of. */
   traceId?: string | null;
+  /** What became of the failure alert, once there was one. */
+  alert?: Record<string, unknown> | null;
   retries: { id: string; state: RunState; createdAt: string }[];
   startedBy: { type: string; id: string | null };
   input: unknown;
@@ -786,6 +817,7 @@ export function FlowRunView({
   const decide = async (node: string, decision: "approve" | "reject", title: string) => {
     const comment = await ask.prompt({
       title: decision === "approve" ? `Approve “${title}”?` : `Reject “${title}”?`,
+      ...(decision === "reject" ? { text: REJECTING } : {}),
       label: decision === "approve" ? "Note (optional)" : "Why is it rejected?",
       required: decision === "reject",
       multiline: true,
@@ -817,8 +849,8 @@ export function FlowRunView({
           <StateAnnouncer state={run.state} label={`Run of ${run.flow}`} />
           <Reconnecting show={reconnecting} />
           <span className="text-ink-muted">
-            Started {when(run.createdAt)} {STARTED[run.trigger.type] ?? `by ${run.trigger.type}`},
-            on bundle version {run.bundleVersion}
+            Started {when(run.createdAt)} {STARTED_ON[run.trigger.type] ?? `by ${run.trigger.type}`}
+            , on bundle version {run.bundleVersion}
           </span>
         </div>
       )}

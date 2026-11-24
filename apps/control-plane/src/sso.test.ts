@@ -8,6 +8,7 @@ import {
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { inflateRawSync } from "node:zlib";
+import { newId } from "@volvel/db";
 import { generate } from "selfsigned";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { SignedXml } from "xml-crypto";
@@ -549,6 +550,31 @@ describe("a tenant's members signing in over OIDC", () => {
     expect(links).toMatchObject([
       { subject: "u-alice", email: "alice@acme.example", principalType: "member" },
     ]);
+    // A list longer than a page says where it goes on (GOV-34).
+    for (const subject of ["x-1", "x-2"]) {
+      await t.db
+        .insertInto("identity_link")
+        .values({
+          id: newId(),
+          provider_id: provider,
+          tenant_id: tenant,
+          subject,
+          principal_type: "end_user",
+          principal_id: newId(),
+        })
+        .execute();
+    }
+    const first = (await alice.get(`${providers()}/${provider}/links?limit=2`)).body;
+    expect(first.items).toHaveLength(2);
+    expect(typeof first.nextCursor).toBe("string");
+    const rest = (
+      await alice.get(
+        `${providers()}/${provider}/links?limit=2&cursor=${encodeURIComponent(first.nextCursor)}`,
+      )
+    ).body;
+    expect(rest.items).toHaveLength(1);
+    expect(rest.nextCursor).toBeNull();
+    await t.db.deleteFrom("identity_link").where("subject", "in", ["x-1", "x-2"]).execute();
     expect((await audit("sso.signed_in")).at(-1)?.details).toMatchObject({
       linked: true,
       created: false,
@@ -1623,12 +1649,21 @@ describe("a tenant with providers, exported and imported", () => {
         headers: { host: MAIN },
       });
       expect(paused.headers.location).toBe("/?sso_error=provider_off");
-      // The key it was sealed with came too: saving it again works, and turns it back on
-      // once its domain is proved to this instance.
-      const saved = await there.patch(`${providers()}/${customers.id}`, { name: "Acme Customers" });
+      // A rename says nothing about this instance's addresses: the provider stays paused (GOV-31),
+      // and a provider of members can be renamed before its domain is proved.
+      const renamed = await there.patch(`${providers()}/${members.id}`, { name: "Acme SAML 2" });
+      expect(renamed.status, JSON.stringify(renamed.body)).toBe(200);
+      expect(renamed.body.paused).toBe(true);
+      const stillOff = await there.patch(`${providers()}/${customers.id}`, {
+        name: "Acme Customers",
+      });
+      expect(stillOff.body.paused).toBe(true);
+      // The key it was sealed with came too: turning it on works, and for a provider of members
+      // only once its domain is proved to this instance.
+      const saved = await there.patch(`${providers()}/${customers.id}`, { enabled: true });
       expect(saved.status, JSON.stringify(saved.body)).toBe(200);
       expect(saved.body.paused).toBe(false);
-      const resumed = await there.patch(`${providers()}/${members.id}`, { name: "Acme SAML" });
+      const resumed = await there.patch(`${providers()}/${members.id}`, { enabled: true });
       expect(resumed.status).toBe(409);
       expect(resumed.body.code).toBe("domain_needed");
       const metadata = await b.app.inject({
@@ -1651,4 +1686,13 @@ describe("the write path", () => {
   test("every single sign-on route that changes something was exercised and audited", () => {
     expect(t.unexercised((route) => /\/(identity-providers|sso)(\/|$)/.test(route))).toEqual([]);
   });
+});
+
+test("each reason a sign-in is refused reads the same on an app's page as on the console's sign-in", async () => {
+  const { SSO_REFUSAL_REASONS, SSO_REFUSAL_WORDS } = await import("@volvel/manifest");
+  const { SsoRefusal } = await import("./kernel/sso/people.js");
+  for (const reason of SSO_REFUSAL_REASONS) {
+    // What the server refuses with is what the console's sign-in screen says for the same reason.
+    expect(new SsoRefusal(reason, "anything").message, reason).toBe(SSO_REFUSAL_WORDS[reason]);
+  }
 });

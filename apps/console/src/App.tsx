@@ -1,19 +1,25 @@
-import { Notice } from "@volvel/ui";
+import { Closing, Notice } from "@volvel/ui";
 import { lazy, Suspense, useEffect, useRef } from "react";
-import { api, type Me, useLoad } from "./api.ts";
+import { api, isOperator, type Me, useLoad } from "./api.ts";
+import { notify } from "./ask.tsx";
+import { clearSession } from "./clearSession.ts";
 import { loadPreferences } from "./prefs.ts";
-import { match, navigate, usePath } from "./router.tsx";
+import { confirmLeave, match, navigate, usePath } from "./router.tsx";
+import { SessionSheet } from "./SessionSheet.tsx";
 import { Shell } from "./Shell.tsx";
 import { Account } from "./screens/Account.tsx";
 import { ApproveLink } from "./screens/ApproveLink.tsx";
 import { DatabaseLocations, TenantImport } from "./screens/Environments.tsx";
 import { InstanceAudit, InstanceMembers, Operators } from "./screens/Instance.tsx";
 import { InstanceBranding } from "./screens/InstanceBranding.tsx";
+import { InstanceHealth } from "./screens/InstanceHealth.tsx";
 import { InstanceTriggers } from "./screens/InstanceTriggers.tsx";
 import { KitSheet } from "./screens/KitSheet.tsx";
-import { NotFound } from "./screens/NotFound.tsx";
+import { ForOperators, NotFound } from "./screens/NotFound.tsx";
+import { ResetPassword } from "./screens/ResetPassword.tsx";
 import { SignIn } from "./screens/SignIn.tsx";
 import { Tenant } from "./screens/Tenant.tsx";
+import { beginSession, endSession, useSessionEnded } from "./session.ts";
 
 const SingleSignOn = lazy(() =>
   import("./screens/SingleSignOn.tsx").then((m) => ({ default: m.SingleSignOn })),
@@ -42,6 +48,8 @@ export function returnTarget(search: string): string | null {
  */
 export function useRememberPlace(signedIn: boolean, path: string) {
   const sent = useRef<string | undefined>(undefined);
+  // The next person to sign in is told where they are, even if it is the same place.
+  if (!signedIn) sent.current = undefined;
   const inWorkspace = match("/t/:t/workspaces/:w/*", path);
   const tenantId = match("/t/:t/*", path)?.t;
   const workspaceId = inWorkspace?.w;
@@ -58,12 +66,50 @@ export function useRememberPlace(signedIn: boolean, path: string) {
 }
 
 /**
+ * What an OAuth provider's answer says, when the browser comes back to a page that is not the
+ * Connections list (which reads it itself): a connection that was removed on the way, a member
+ * who was signed out, a provider's refusal. Said once, then taken out of the address.
+ */
+export function useOAuthReturn(signedIn: boolean, path: string) {
+  useEffect(() => {
+    if (!signedIn || path.endsWith("/connections")) return;
+    const query = new URLSearchParams(location.search);
+    const error = query.get("oauth_error");
+    const connected = query.get("oauth") === "connected" ? query.get("connection") : null;
+    if (error === null && connected === null) return;
+    if (error !== null) notify.error(new Error(error));
+    else notify.success(`${connected} is connected.`);
+    for (const name of ["oauth", "oauth_error", "connection"]) query.delete(name);
+    const rest = query.toString();
+    navigate(`${location.pathname}${rest ? `?${rest}` : ""}`, { replace: true });
+  }, [signedIn, path]);
+}
+
+/** Whether this page was loaded by a reload of the one before. */
+function reloaded(): boolean {
+  try {
+    const [navigation] = performance.getEntriesByType(
+      "navigation",
+    ) as PerformanceNavigationTiming[];
+    return navigation?.type === "reload";
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Opening the console at its root goes back to where the member was last: the
  * workspace, or the tenant, kept by `useRememberPlace`. Only on opening, so the
  * tenant list stays one click away afterward.
  */
 export function useReopenLastPlace(signedIn: boolean) {
-  const opening = useRef(location.pathname === "/" && returnTarget(location.search) === null);
+  // Opening, not looking: a reload, or a list with a filter or a search in its address, stays on it.
+  const opening = useRef(
+    location.pathname === "/" &&
+      location.search === "" &&
+      returnTarget(location.search) === null &&
+      !reloaded(),
+  );
   useEffect(() => {
     if (!signedIn || !opening.current) return;
     opening.current = false;
@@ -93,11 +139,19 @@ export function App() {
   const path = usePath();
   const signedIn = me.data !== undefined && !me.error;
   useRememberPlace(signedIn, path);
+  useOAuthReturn(signedIn, path);
   useReopenLastPlace(signedIn);
-  // A member's settings follow them from browser to browser.
+  // A member's settings follow them from browser to browser. Started here, before the screens
+  // draw, so that what a screen decides once per visit from them (a list's description read or
+  // not) waits for them. Once per page: a second call is the first's.
+  if (signedIn && me.data?.principal.type === "member") void loadPreferences();
+  const ended = useSessionEnded();
+  const holder = me.data?.principal.id;
+  // From here on a 401 means the session ended, not that nobody signed in.
+  const stale = me.error !== undefined;
   useEffect(() => {
-    if (signedIn && me.data?.principal.type === "member") void loadPreferences();
-  }, [signedIn, me.data?.principal.type]);
+    if (holder && !stale) beginSession(holder);
+  }, [holder, stale]);
   const tenant = match("/t/:tenantId/*", path);
   const target = me.data ? returnTarget(location.search) : null;
   useEffect(() => {
@@ -107,6 +161,9 @@ export function App() {
   // An approval mail's link needs no sign-in: the link is the approver's own.
   const approving = match("/approve/:token", path);
   if (approving?.token) return <ApproveLink token={approving.token} />;
+  // A password link needs no sign-in either: whoever holds it chooses the member's password.
+  const resetting = match("/reset-password/:token", path);
+  if (resetting?.token) return <ResetPassword token={resetting.token} />;
   if (me.loading && !me.data && !me.error) return null;
   if (me.error?.status === 401 || !me.data) {
     if (me.error && me.error.status !== 401) {
@@ -122,7 +179,16 @@ export function App() {
   if (target) return null;
 
   const signOut = async () => {
-    await api.post("/auth/sign-out");
+    // Unsaved changes are asked about first: once the session is gone they cannot be kept.
+    if (!(await confirmLeave())) return;
+    try {
+      await api.post("/auth/sign-out");
+    } catch {
+      notify.error(new Error("You could not be signed out. Check your connection and try again."));
+      return;
+    }
+    endSession();
+    clearSession();
     navigate("/", { replace: true });
     me.reload();
   };
@@ -132,6 +198,10 @@ export function App() {
   else if (tenant?.tenantId)
     screen = <Tenant key={tenant.tenantId} tenantId={tenant.tenantId} me={me.data} path={path} />;
   else if (path === "/account/api-keys") screen = <Account />;
+  // The whole Instance area is for operators: the server refuses the rest, and says so only after
+  // a header and a create button were drawn over it.
+  else if (path.startsWith("/instance/") && !isOperator(me.data))
+    screen = <ForOperators home="/" homeLabel="Go to your tenants" />;
   else if (path === "/instance/members") screen = <InstanceMembers />;
   else if (path === "/instance/operators") screen = <Operators />;
   else if (path === "/instance/single-sign-on") screen = <SingleSignOn base="/instance" />;
@@ -140,12 +210,16 @@ export function App() {
   else if (path === "/instance/import") screen = <TenantImport />;
   else if (path === "/instance/branding") screen = <InstanceBranding />;
   else if (path === "/instance/triggers") screen = <InstanceTriggers />;
+  else if (path === "/instance/health") screen = <InstanceHealth />;
   else if (path === "/instance/kit") screen = <KitSheet />;
 
   return (
     <Shell me={me.data} path={path} tenantId={tenant?.tenantId} onSignOut={signOut}>
       {/* Some screens are fetched when first opened. */}
       <Suspense fallback={<Loading />}>{screen}</Suspense>
+      <Closing subject={ended && me.data.principal.email}>
+        {(email, open) => <SessionSheet email={email} open={open} />}
+      </Closing>
     </Shell>
   );
 }

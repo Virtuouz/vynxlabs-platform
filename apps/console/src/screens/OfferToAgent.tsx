@@ -1,7 +1,8 @@
 import { Button, Dialog, Notice, SelectField } from "@volvel/ui";
 import { useState } from "react";
 import { api, useLoad } from "../api.ts";
-import { failureText } from "../ask.tsx";
+import { failureText, noteWaiting } from "../ask.tsx";
+import { useNeeds } from "../kit/Can.tsx";
 import { Loading } from "../kit/LoadState.tsx";
 import { CopyButton } from "../ListScreen.tsx";
 import { Link } from "../router.tsx";
@@ -13,6 +14,7 @@ interface Account {
 
 interface Binding {
   resourceId: string | null;
+  roleId?: string;
   principalType: string;
   principalId: string | null;
   roleName: string;
@@ -89,7 +91,9 @@ function OfferForm({
             binding.principalType === "service_account" &&
             binding.principalId === id &&
             binding.resourceId === resource.data?.id &&
-            binding.roleName === "agent_runner",
+            // The built-in role, by identity: a role of a workspace may be called the same.
+            runner !== undefined &&
+            binding.roleId === runner.id,
         ),
     );
   const failed = accounts.error ?? roles.error ?? resource.error;
@@ -167,7 +171,8 @@ function OfferForm({
           );
           setDone({ account: chosenAccount, address: offered.address });
         } catch (error) {
-          setProblem(failureText(error));
+          if (noteWaiting(error)) onClose();
+          else setProblem(failureText(error));
         } finally {
           setBusy(false);
         }
@@ -210,17 +215,37 @@ export function OfferButton({
   kind,
   path,
   size,
+  deployed = true,
 }: {
   root: string;
   kind: "script" | "flow";
   path: string;
   size?: "small";
+  /** Only something deployed can be offered: a draft meets a 404. One condition for the editor and the list. */
+  deployed?: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  // Offering gives an agent a role on this one script or flow: a binding, at the resource.
+  const may = useNeeds(
+    deployed
+      ? {
+          base: root,
+          permission: "binding:write",
+          what: "who may use this",
+          resource: { kind, path },
+        }
+      : undefined,
+  );
+  if (!deployed) return null;
   const [, , tenantId = "", , workspaceId = ""] = root.split("/");
   return (
     <>
-      <Button {...(size ? { size } : {})} onClick={() => setOpen(true)}>
+      <Button
+        {...(size ? { size } : {})}
+        disabled={!may.can}
+        {...(may.reason ? { tooltip: may.reason } : {})}
+        onClick={() => setOpen(true)}
+      >
         Offer to an agent…
       </Button>
       <OfferToAgent

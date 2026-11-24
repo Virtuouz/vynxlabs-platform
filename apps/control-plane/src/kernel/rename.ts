@@ -10,7 +10,9 @@ import { conflict } from "./errors.js";
  *
  * These are rewritten and not keyed by the resource's ID, because most of them
  * have to be there before the resource is: production refuses a deploy whose
- * connections are not bound yet.
+ * connections are not bound yet. What is sealed in them (a credential, OAuth
+ * tokens) is bound to the ID of its row, so a rename leaves it readable
+ * (`execution/sealed.ts`). The workspace's default alert is rewritten below.
  *
  * `also` names the other columns of the table's key. When a row is already at
  * the new path, `clash` says which one stays:
@@ -136,6 +138,27 @@ export async function renamePathState(
         );
       }
     }
+  }
+
+  // The workspace's default alert names a script and a connection by path.
+  const workspace = await trx
+    .selectFrom("workspace")
+    .select("failure_alert")
+    .where("id", "=", workspaceId)
+    .executeTakeFirst();
+  const alert = workspace?.failure_alert;
+  if (alert && (alert.notify === from || alert.script === from)) {
+    await trx
+      .updateTable("workspace")
+      .set({
+        failure_alert: JSON.stringify({
+          ...alert,
+          ...(alert.notify === from ? { notify: to } : {}),
+          ...(alert.script === from ? { script: to } : {}),
+        }),
+      })
+      .where("id", "=", workspaceId)
+      .execute();
   }
 
   // A draft is of one resource: it follows it. A draft of something else at the new path is in the way.

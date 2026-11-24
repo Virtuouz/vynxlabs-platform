@@ -1,0 +1,28 @@
+[
+  {
+    "name": "docs/draft-conflict",
+    "address": "docs/edit/handbook/front-desk/booking",
+    "who": "maya.brooks@fernhill.example",
+    "setup": "handbook. A second tab of the same person saves the page first, then the first tab changes a line and presses Save draft, so that the banner 'Someone else saved this page after you opened it' is shown.",
+    "viewport": "1440x900",
+    "ready": "text 'Someone else saved this page after you opened it'",
+    "mask": [],
+    "steps": [
+      "Open the page in two tabs; in the second add a line and press Control+S",
+      "In the first add a different line and press Control+S",
+      "Wait for the banner with Copy what I wrote and Load their version"
+    ],
+    "alt": "The page editor with the red banner 'Someone else saved this page after you opened it', its two buttons Copy what I wrote and Load their version, and the source below still holding the unsaved text."
+  },
+  {
+    "name": "docs/page-details-type",
+    "address": "docs/edit/handbook/front-desk/booking",
+    "who": "maya.brooks@fernhill.example",
+    "setup": "handbook. The page's top says type how-to and subjects [visits, front-desk].",
+    "viewport": "1440x900",
+    "ready": "tab 'Page details' open and the field 'Add a subject' visible",
+    "mask": [],
+    "steps": ["Open the page editor", "Press the tab Page details"],
+    "alt": "Page details with Type set to How-to guide, two subjects shown as chips, and buttons to add subjects other pages of the site use."
+  }
+]

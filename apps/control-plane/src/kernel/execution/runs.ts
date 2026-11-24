@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { newId, sql } from "@volvel/db";
-import { keyOf, validateJson } from "@volvel/manifest";
+import { keyOf, type PlatformEventName, validateJson } from "@volvel/manifest";
 import type { Db, Trx } from "../audit.js";
 import { badRequest, conflict, notFound } from "../errors.js";
 import type { Kernel } from "../kernel.js";
@@ -8,7 +8,8 @@ import { observe } from "../metrics.js";
 import { formerPaths, resolveResource } from "../resolve.js";
 import { traceFor, traceRun } from "../trace.js";
 import { bundleManifest, payloadSchemas } from "./bundles.js";
-import { summarize } from "./redact.js";
+import { redactError, summarize } from "./redact.js";
+import { servedValues } from "./served.js";
 import { type MachineClaim, machineHasRoom, onMachine } from "./workers.js";
 
 /** Input and output above this size go to file storage, and the run keeps a reference. */
@@ -119,6 +120,52 @@ export interface StartRun {
   relay?: Relay | undefined;
 }
 
+/** Where a value has text that the database cannot hold: a NUL, or half of a character. */
+export function unstorable(value: unknown, path = ""): string | undefined {
+  const bad = (text: string) => text.includes("\u0000") || !text.isWellFormed();
+  if (typeof value === "string") return bad(value) ? path || "the value" : undefined;
+  if (Array.isArray(value)) {
+    for (const [index, item] of value.entries()) {
+      const found = unstorable(item, `${path}[${index}]`);
+      if (found) return found;
+    }
+  } else if (typeof value === "object" && value !== null) {
+    for (const [key, item] of Object.entries(value)) {
+      if (bad(key)) return path ? `${path}.${key}` : key;
+      const found = unstorable(item, path ? `${path}.${key}` : key);
+      if (found) return found;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * The value as the database can hold it: half a character becomes U+FFFD, and a NUL is
+ * left out. A step whose expression cuts text in the middle of a character gives such text.
+ */
+export function storable<T>(value: T): T {
+  const clean = (text: string) => text.toWellFormed().replaceAll("\u0000", "");
+  const walk = (one: unknown): unknown => {
+    if (typeof one === "string") return clean(one);
+    if (Array.isArray(one)) return one.map(walk);
+    if (typeof one === "object" && one !== null) {
+      return Object.fromEntries(Object.entries(one).map(([key, item]) => [clean(key), walk(item)]));
+    }
+    return one;
+  };
+  return walk(value) as T;
+}
+
+/** Refuses an input that cannot be stored, naming where, so that a start answers 400 and not 500. */
+export function refuseUnstorable(input: unknown): void {
+  const found = unstorable(input);
+  if (found) {
+    throw badRequest(
+      `The input has text Volvel cannot store, at ${found}: a null character, or half of a character. Remove it and send again.`,
+    );
+  }
+}
+
 /** Keeps a small payload for the row, and puts a large one in file storage. */
 export async function storePayload(
   kernel: Kernel,
@@ -127,7 +174,7 @@ export async function storePayload(
   value: unknown,
   folder = "runs",
 ) {
-  const text = JSON.stringify(value ?? null);
+  const text = JSON.stringify(storable(value ?? null));
   if (Buffer.byteLength(text) <= INLINE_PAYLOAD_BYTES) return { inline: text, ref: null };
   const ref = `${folder}/${runId}/${name}.json`;
   await kernel.storage.put(ref, text, "application/json");
@@ -183,7 +230,12 @@ export function laneOf(
   return { group: `${resourceId}:${key}`, limit: concurrency.limit, key };
 }
 
-export async function startRun(kernel: Kernel, trx: Trx, request: StartRun) {
+/**
+ * What starting a script would refuse, found out without starting it: it is in the bundle, and the
+ * input is what its schema takes. A page's action asks this before its data is saved, and a start
+ * asks it again.
+ */
+export async function checkRunStart(kernel: Kernel, trx: Trx | Kernel["db"], request: StartRun) {
   const workspace = await trx
     .selectFrom("workspace")
     .select(["id", "active_bundle_id"])
@@ -245,7 +297,15 @@ export async function startRun(kernel: Kernel, trx: Trx, request: StartRun) {
 
   const issues = validateJson(body.input, request.input ?? {}, "/input");
   if (issues.length > 0) throw badRequest("The input does not match the script's schema.", issues);
+  return { request, body, bundleId, resourceId, alias };
+}
 
+export async function startRun(kernel: Kernel, trx: Trx, startRequest: StartRun) {
+  const { request, body, bundleId, resourceId, alias } = await checkRunStart(
+    kernel,
+    trx,
+    startRequest,
+  );
   const key = request.idempotencyKey ?? randomUUID();
   if (request.idempotencyKey !== undefined) {
     const earlier = await trx
@@ -275,6 +335,7 @@ export async function startRun(kernel: Kernel, trx: Trx, request: StartRun) {
   const trace = traceFor(
     request.step ? { traceId: flowRun?.trace_id ?? null, ...request.step } : undefined,
   );
+  refuseUnstorable(request.input);
   const input = await storePayload(kernel, id, "input", request.input ?? {});
   const jobId = await kernel.queue.enqueue(
     queueName(request.workspaceId, body.worker),
@@ -504,6 +565,7 @@ export async function completeRun(
   if (!taken) throw conflict("This attempt is no longer in progress. Its result is not recorded.");
   const stored = await storePayload(kernel, run.id, "output", output);
   const schemas = await payloadSchemas(kernel, run.bundle_id, run.script_path);
+  const known = await servedValues(kernel, kernel.db, run);
   const finishedAt = new Date();
   await kernel.db
     .updateTable("run")
@@ -511,18 +573,21 @@ export async function completeRun(
       status: "succeeded",
       output: stored.inline,
       output_ref: stored.ref,
-      output_summary: summarize(output, schemas.output),
+      output_summary: summarize(output, schemas.output, 200, known),
       error: null,
       finished_at: finishedAt,
     })
     .where("id", "=", run.id)
     .execute();
-  observe.runEnded(kernel.metrics, { ...run, finished_at: finishedAt }, "succeeded");
-  traceRun(kernel, { ...run, finished_at: finishedAt }, "succeeded");
-  await afterRun(kernel, run, "succeeded", output);
+  // Passing a trigger source's answer on may fail the run, so what it came to is counted and
+  // traced once that is known: never "succeeded" for a run that then failed.
+  await afterRun(kernel, run, "succeeded", output, (status, message) => {
+    observe.runEnded(kernel.metrics, { ...run, finished_at: finishedAt }, status);
+    traceRun(kernel, { ...run, finished_at: finishedAt }, status, message);
+  });
 }
 
-interface EndedRun {
+export interface EndedRun {
   id: string;
   tenant_id: string;
   workspace_id: string;
@@ -535,13 +600,18 @@ interface EndedRun {
 async function afterRun(
   kernel: Kernel,
   run: EndedRun,
-  status: "succeeded" | "failed",
-  detail: unknown,
+  reportedStatus: "succeeded" | "failed",
+  reportedDetail: unknown,
+  /** Called once the run's end is known, after a trigger source's answer was passed on. */
+  settled?: (status: "succeeded" | "failed", message?: string) => void,
 ) {
+  let status = reportedStatus;
+  let detail = reportedDetail;
   const { kickFlow } = await import("../flows/engine.js");
-  const { publishPlatformEvent } = await import("../flows/events.js");
   if (run.flow_run_id) kickFlow(kernel, run.flow_run_id);
-  // What a trigger source gave back is what starts the trigger's script or flow.
+  // What a trigger source gave back is what starts the trigger's script or flow. It is passed on
+  // before the run is announced, because passing it on may fail the run, and the platform says
+  // what the run came to, not what it was a moment before.
   if (status === "succeeded" && run.trigger_detail?.relay) {
     const { relaySource } = await import("./triggers.js");
     await relaySource(kernel, run, detail).catch((error: Error) =>
@@ -550,21 +620,65 @@ async function afterRun(
         "a trigger source's answer could not be passed on",
       ),
     );
+    const now = await kernel.db
+      .selectFrom("run")
+      .select(["status", "error"])
+      .where("id", "=", run.id)
+      .executeTakeFirst();
+    if (now?.status === "failed") {
+      status = "failed";
+      detail = {
+        message: (now.error as { message?: string } | null)?.message ?? "The run failed.",
+      };
+    }
   }
+  settled?.(status, status === "failed" ? (detail as { message?: string }).message : undefined);
+  const error = status === "failed" ? { error: (detail as { message: string }).message } : {};
+  // The two events for a run that ended well or badly stay. The third says how any run ended,
+  // including one that was canceled.
+  await publishRunEvent(
+    kernel,
+    run,
+    status === "succeeded" ? "platform/run-succeeded" : "platform/run-failed",
+    error,
+  );
+  await publishRunEvent(kernel, run, "platform/run-finished", { status, ...error });
+}
+
+async function publishRunEvent(
+  kernel: Kernel,
+  run: EndedRun,
+  name: PlatformEventName,
+  more: Record<string, unknown>,
+) {
+  const { publishPlatformEvent } = await import("../flows/events.js");
   await publishPlatformEvent(kernel, {
     tenantId: run.tenant_id,
     workspaceId: run.workspace_id,
-    name: status === "succeeded" ? "platform/run-succeeded" : "platform/run-failed",
-    payload: {
-      runId: run.id,
-      script: run.script_path,
-      ...(status === "failed" ? { error: (detail as { message: string }).message } : {}),
-    },
+    name,
+    payload: { runId: run.id, script: run.script_path, ...more },
     sourceId: run.id,
     depth: Number(run.trigger_detail.depth ?? 0),
   }).catch((error) =>
     kernel.log.error({ err: error, runId: run.id }, "a platform event could not be published"),
   );
+}
+
+/** Runs canceled inside a transaction, kept until it has committed and they can be announced. */
+const canceledIn = new WeakMap<object, EndedRun[]>();
+
+/** The runs this transaction canceled so far, handed over once, to be announced after it commits. */
+export function takeCanceled(trx: Trx): EndedRun[] {
+  const runs = canceledIn.get(trx) ?? [];
+  canceledIn.delete(trx);
+  return runs;
+}
+
+/** Says that runs ended as canceled: `platform/run-finished` with `status: "cancelled"`. */
+export async function announceCanceled(kernel: Kernel, runs: EndedRun[]) {
+  for (const run of runs) {
+    await publishRunEvent(kernel, run, "platform/run-finished", { status: "cancelled" });
+  }
 }
 
 export interface RunFailure {
@@ -577,15 +691,21 @@ export async function failRun(
   scope: WorkerScope,
   runId: string,
   attempt: number,
-  error: RunFailure,
+  reported: RunFailure,
+  /** False when another attempt would repeat work that was done: the run ends here. */
+  retry = true,
 ) {
   const run = await activeRun(kernel.db, scope, runId, attempt);
+  // What the script was given never reaches the record, the alerts or the handler: an error
+  // that quotes a URL with its key, or a header, is stored without it.
+  const error = redactError(reported, await servedValues(kernel, kernel.db, run));
   const queue = queueName(run.workspace_id, run.pool);
-  const taken = await kernel.queue.fail(queue, run.queue_job_id as string, {
-    message: error.message,
-  });
+  // A failure that must not be retried ends the job as done, and the run as failed.
+  const taken = retry
+    ? await kernel.queue.fail(queue, run.queue_job_id as string, { message: error.message })
+    : await kernel.queue.complete(queue, run.queue_job_id as string);
   if (!taken) throw conflict("This attempt is no longer in progress. Its result is not recorded.");
-  const state = await kernel.queue.state(queue, run.queue_job_id as string);
+  const state = retry ? await kernel.queue.state(queue, run.queue_job_id as string) : "failed";
   if (state === "retry" || state === "created") {
     await kernel.db
       .updateTable("run")
@@ -619,6 +739,12 @@ export async function finishFailed(kernel: Kernel, runId: string, error: RunFail
   );
 }
 
+/** What cancel says of a run or flow run that has ended: a sentence, in American spelling. */
+export function alreadyEnded(what: "run" | "flow run", status: string): string {
+  const said = status === "cancelled" ? "was already canceled" : `already ${status}`;
+  return `This ${what} ${said}.`;
+}
+
 /** Stops a run that is waiting or in progress. A running script hears on its next heartbeat. */
 export async function cancelRun(kernel: Kernel, trx: Trx, workspaceId: string, runId: string) {
   const run = await trx
@@ -630,7 +756,7 @@ export async function cancelRun(kernel: Kernel, trx: Trx, workspaceId: string, r
     .executeTakeFirst();
   if (!run) throw notFound("The run");
   if (run.status !== "queued" && run.status !== "running") {
-    throw conflict(`The run already ${run.status === "succeeded" ? "succeeded" : run.status}.`);
+    throw conflict(alreadyEnded("run", run.status));
   }
   if (run.queue_job_id) {
     await kernel.queue.cancel(queueName(workspaceId, run.pool), run.queue_job_id);
@@ -643,6 +769,7 @@ export async function cancelRun(kernel: Kernel, trx: Trx, workspaceId: string, r
     .executeTakeFirstOrThrow();
   observe.runEnded(kernel.metrics, cancelled, "cancelled");
   traceRun(kernel, cancelled, "cancelled");
+  canceledIn.set(trx, [...(canceledIn.get(trx) ?? []), cancelled]);
   return cancelled;
 }
 

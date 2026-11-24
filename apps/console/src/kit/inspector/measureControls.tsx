@@ -297,6 +297,61 @@ export function MeasureGroup({
   );
 }
 
+/**
+ * The values after the first, and "Add another measure" while the widget takes more: a chart draws
+ * up to six series (WID-M6). The first is `MeasureRow` at 0, which the drawer places itself.
+ */
+export function MoreMeasures({ env, input, label }: { env: Env; input: string; label: string }) {
+  const visual = visualOf(env.widget.data?.[input]);
+  if (!visual) return null;
+  const max = env.definition.data[input]?.values?.max ?? 1;
+  const measures = visual.measures ?? [];
+  return (
+    <>
+      {measures.slice(1).map((one, index) => (
+        <MeasureRow
+          // The place keeps the editor open while the value's name changes with what it works out.
+          // biome-ignore lint/suspicious/noArrayIndexKey: a part of a query has no identity but its place in the list
+          key={`measure-${index + 1}`}
+          env={env}
+          input={input}
+          at={index + 1}
+          label={`${label} ${index + 2}`}
+        />
+      ))}
+      {measures.length > 0 && measures.length < max ? (
+        <div className="p-2">
+          <DashedAdd
+            onClick={() =>
+              writeVisual(
+                env,
+                input,
+                {
+                  ...visual,
+                  measures: [
+                    ...measures,
+                    {
+                      fn: "count",
+                      as: measureName(
+                        "count",
+                        undefined,
+                        measures.map((one) => one.as),
+                      ),
+                    },
+                  ],
+                },
+                "adding another measure",
+              )
+            }
+          >
+            Add another measure
+          </DashedAdd>
+        </div>
+      ) : null}
+    </>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Breakdown
 

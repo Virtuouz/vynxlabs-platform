@@ -1,5 +1,31 @@
-import type { ReactNode } from "react";
+import { type ReactNode, useId, useState } from "react";
+import { Button } from "./Button.tsx";
+import { useInOverlay } from "./overlay.ts";
 import { useContained } from "./Panel.tsx";
+
+/** What a failure's words can lead to: a label and where it goes. */
+export interface FailureHelp {
+  label: string;
+  onClick: () => void;
+  /**
+   * What to show under the notice when it sits inside a dialog or sheet, where the help panel
+   * would open behind the modal: the explanation itself, and where the whole of it is read.
+   */
+  inline?: { body: () => ReactNode; href: string };
+}
+
+let explainer: ((words: string) => FailureHelp | undefined) | undefined;
+
+/**
+ * The host says, once, which words it knows a way to explain (the words of a failure the API gave
+ * a code for). A danger `Notice` of those words offers the way, as a toast does, so that a failure
+ * shown in a dialog and one shown in a corner are told alike.
+ */
+export function setFailureExplainer(
+  find: ((words: string) => FailureHelp | undefined) | undefined,
+) {
+  explainer = find;
+}
 
 const tones = {
   info: "bg-action-soft text-ink",
@@ -34,6 +60,14 @@ export function Notice({
 }) {
   const contained = useContained();
   const edge = (bare ?? contained) ? "" : edges[tone];
+  const help =
+    action === undefined && tone === "danger" && typeof children === "string"
+      ? explainer?.(children)
+      : undefined;
+  const inOverlay = useInOverlay();
+  const [open, setOpen] = useState(false);
+  const region = useId();
+  const inline = inOverlay ? help?.inline : undefined;
   return (
     <div
       role={tone === "danger" ? "alert" : "status"}
@@ -41,6 +75,29 @@ export function Notice({
     >
       <div>{children}</div>
       {action}
+      {help ? (
+        <Button
+          size="small"
+          variant="quiet"
+          onClick={inline ? () => setOpen((now) => !now) : help.onClick}
+          {...(inline ? { "aria-expanded": open, "aria-controls": region } : {})}
+        >
+          {help.label}
+        </Button>
+      ) : null}
+      {inline && open ? (
+        <section id={region} aria-label="What this means" className="basis-full">
+          <div className="text-ink-muted">{inline.body()}</div>
+          <a
+            href={inline.href}
+            target="_blank"
+            rel="noreferrer"
+            className="mt-2 inline-block text-action underline"
+          >
+            Open in documentation
+          </a>
+        </section>
+      ) : null}
     </div>
   );
 }
@@ -55,7 +112,7 @@ export function EmptyState({
   title: string;
   children?: ReactNode;
   action?: ReactNode;
-  /** In a card that is already a box (a widget's): no box of its own, and centred in the room the card has. */
+  /** In a card that is already a box (a widget's): no box of its own, and centered in the room the card has. */
   inCard?: boolean;
 }) {
   return (

@@ -110,7 +110,7 @@ export function batchRoutes(_kernel: Kernel): FastifyPluginAsyncTypebox {
     app.post(
       `${base}/runs/batch`,
       {
-        // Each item is checked by its own route: run:write to cancel, run:execute to run again.
+        // Each item is checked by its own route: run:write, to cancel and to run again.
         config: { access: access.workspace("run:read") },
         schema: {
           summary: "Cancel, or run again, many script runs",
@@ -243,7 +243,7 @@ export function batchRoutes(_kernel: Kernel): FastifyPluginAsyncTypebox {
       "/tenants/:t/approvals/batch",
       {
         // Who may decide is asked of each approval by its own route.
-        config: { access: access.signedIn },
+        config: { access: access.signedInOrKey },
         schema: {
           summary: "Approve, or reject, many waiting approvals",
           description:

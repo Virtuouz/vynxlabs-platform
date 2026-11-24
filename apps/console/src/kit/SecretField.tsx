@@ -1,6 +1,6 @@
 import { Button, TextField } from "@volvel/ui";
 import { KeyRound } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ago } from "../kit/format.ts";
 
 /**
@@ -21,6 +21,8 @@ export function SecretField({
   required = false,
   disabled = false,
   autoComplete = "new-password",
+  removed = false,
+  onRemove,
 }: {
   label: string;
   name: string;
@@ -35,11 +37,56 @@ export function SecretField({
   required?: boolean;
   disabled?: boolean;
   autoComplete?: string;
+  /** The stored one is to be removed when the form is saved. */
+  removed?: boolean;
+  /** Offers Remove beside Replace, and Keep it once chosen. Leave out where a credential cannot be removed. */
+  onRemove?: (removed: boolean) => void;
 }) {
   const [replacing, setReplacing] = useState(false);
+  // A control that was used goes away: the focus follows to the one that took its place.
+  const root = useRef<HTMLDivElement>(null);
+  const next = useRef<string | null>(null);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs after each change of what is drawn
+  useEffect(() => {
+    const want = next.current;
+    if (!want) return;
+    next.current = null;
+    root.current
+      ?.querySelector<HTMLElement>(want === "field" ? "input" : `[data-secret-focus="${want}"]`)
+      ?.focus();
+  }, [replacing, removed, stored]);
+  // Saved: the stored value now is the one just given, so the stored line shows again and the
+  // form does not go on asking for another.
+  const [seen, setSeen] = useState(setAt);
+  if (seen !== setAt) {
+    setSeen(setAt);
+    setReplacing(false);
+  }
+  if (stored && removed) {
+    return (
+      <div ref={root} className="flex flex-col gap-1">
+        <span className="text-body-sm font-medium text-ink">{label}</span>
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-control border border-line bg-sunken px-3 py-2">
+          <span className="text-body-sm">
+            The stored {label.toLowerCase()} will be removed when you save.
+          </span>
+          <Button
+            size="small"
+            data-secret-focus="keep"
+            onClick={() => {
+              next.current = "remove";
+              onRemove?.(false);
+            }}
+          >
+            Keep the stored one
+          </Button>
+        </div>
+      </div>
+    );
+  }
   if (stored && !replacing) {
     return (
-      <div className="flex flex-col gap-1">
+      <div ref={root} className="flex flex-col gap-1">
         <span className="text-body-sm font-medium text-ink">{label}</span>
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-control border border-line bg-sunken px-3 py-2">
           <span className="flex min-w-0 items-center gap-2 text-body-sm">
@@ -56,13 +103,33 @@ export function SecretField({
             </span>
           </span>
           {disabled ? null : (
-            <Button
-              size="small"
-              aria-label={`Replace the ${label.toLowerCase()}`}
-              onClick={() => setReplacing(true)}
-            >
-              Replace
-            </Button>
+            <span className="flex flex-wrap gap-2">
+              <Button
+                size="small"
+                aria-label={`Replace the ${label.toLowerCase()}`}
+                data-secret-focus="replace"
+                onClick={() => {
+                  next.current = "field";
+                  setReplacing(true);
+                }}
+              >
+                Replace
+              </Button>
+              {onRemove ? (
+                <Button
+                  size="small"
+                  variant="danger"
+                  aria-label={`Remove the ${label.toLowerCase()}`}
+                  data-secret-focus="remove"
+                  onClick={() => {
+                    next.current = "keep";
+                    onRemove(true);
+                  }}
+                >
+                  Remove
+                </Button>
+              ) : null}
+            </span>
           )}
         </div>
         <span className="text-body-sm text-ink-muted">Stored encrypted. It is never shown.</span>
@@ -70,7 +137,7 @@ export function SecretField({
     );
   }
   return (
-    <div className="flex flex-col gap-1">
+    <div ref={root} className="flex flex-col gap-1">
       <TextField
         label={stored ? `New ${label.toLowerCase()}` : label}
         name={name}
@@ -93,6 +160,7 @@ export function SecretField({
           variant="quiet"
           className="w-fit"
           onClick={() => {
+            next.current = "replace";
             onChange("");
             setReplacing(false);
           }}

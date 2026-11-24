@@ -4,9 +4,11 @@ import { DEFAULT_PRODUCT_NAME } from "../../routes/branding.js";
 import type { Db, Principal } from "../audit.js";
 import { check } from "../authorize.js";
 import { badRequest, conflict, forbiddenBecause, HttpError, notFound } from "../errors.js";
-import { redact } from "../execution/redact.js";
+import type { Known } from "../execution/redact.js";
+import { approvalDetail, approvalTitle } from "../flows/approval-detail.js";
 import { approversOf, approverTitles, describeApprovers, isApprover } from "../flows/approvers.js";
 import { decideApproval, kickFlow } from "../flows/engine.js";
+import { flowKnown } from "../flows/known.js";
 import type { RequestContext } from "../http.js";
 import type { Kernel } from "../kernel.js";
 import { type LocatedPage, locatePage, type PageRequest } from "./locate.js";
@@ -122,8 +124,9 @@ function limited(value: unknown): unknown {
 export function fieldsOf(
   detail: unknown,
   widget: PageWidget,
+  known?: Known,
 ): { name: string; label: string; value: unknown }[] {
-  const safe = redact(detail ?? null);
+  const safe = approvalDetail(detail, known);
   if (safe === null || safe === undefined) return [];
   const named = namedFields(widget);
   if (safe === null || typeof safe !== "object" || Array.isArray(safe)) {
@@ -328,6 +331,7 @@ export async function readApprovals(
     if (batch === limits.batches - 1) more = true;
   }
   const waiting: ApprovalItem[] = [];
+  const cache = new Map<string, Promise<Known>>();
   const decidedRows = widget.config?.decided === true ? await decidedSteps(db, at, flows) : [];
   const titles = await flowTitles(db, at.workspaceId, [
     ...new Set([
@@ -338,9 +342,13 @@ export async function readApprovals(
   for (const { row, named, may } of mayList) {
     waiting.push({
       id: itemId(row.flow_run_id, row.node_id),
-      title: String(row.detail.title),
+      title: approvalTitle(row.detail.title, await flowKnown(kernel, db, row.flow_run_id, cache)),
       flow: { path: row.flow_path, title: titleOfFlow(titles, row.flow_path) },
-      fields: fieldsOf(row.detail.detail, widget),
+      fields: fieldsOf(
+        row.detail.detail,
+        widget,
+        await flowKnown(kernel, db, row.flow_run_id, cache),
+      ),
       waitingSince: row.started_at.toISOString(),
       timesOutAt: row.wake_at ? row.wake_at.toISOString() : null,
       mayDecide: may,
@@ -348,23 +356,29 @@ export async function readApprovals(
     });
   }
 
-  const decided: ApprovalItem[] = decidedRows.map((row) => ({
-    id: itemId(row.flow_run_id, row.node_id),
-    title: String(row.detail.title),
-    flow: { path: row.flow_path, title: titleOfFlow(titles, row.flow_path) },
-    fields: fieldsOf(row.detail.detail, widget),
-    waitingSince: row.started_at.toISOString(),
-    timesOutAt: null,
-    mayDecide: false,
-    approvers: null,
-    decision: {
-      approved: row.status === "succeeded",
-      by: row.name || row.email || "A member",
-      at: row.finished_at ? row.finished_at.toISOString() : null,
-      comment: row.decision_comment,
-      via: row.via,
-    },
-  }));
+  const decided: ApprovalItem[] = await Promise.all(
+    decidedRows.map(async (row) => ({
+      id: itemId(row.flow_run_id, row.node_id),
+      title: approvalTitle(row.detail.title, await flowKnown(kernel, db, row.flow_run_id, cache)),
+      flow: { path: row.flow_path, title: titleOfFlow(titles, row.flow_path) },
+      fields: fieldsOf(
+        row.detail.detail,
+        widget,
+        await flowKnown(kernel, db, row.flow_run_id, cache),
+      ),
+      waitingSince: row.started_at.toISOString(),
+      timesOutAt: null,
+      mayDecide: false,
+      approvers: null,
+      decision: {
+        approved: row.status === "succeeded",
+        by: row.name || row.email || row.service_name || "A member",
+        at: row.finished_at ? row.finished_at.toISOString() : null,
+        comment: row.decision_comment,
+        via: row.via,
+      },
+    })),
+  );
   return {
     shape: "approvals",
     ...(request.elsewhere ? { decideIn: await consoleOf(kernel, at) } : {}),
@@ -398,8 +412,18 @@ async function decidedSteps(
   const rows = await db
     .selectFrom("step_run")
     .innerJoin("flow_run", "flow_run.id", "step_run.flow_run_id")
-    .leftJoin("member", "member.id", "step_run.decided_by")
+    .leftJoin("member", (join) =>
+      join
+        .onRef("member.id", "=", "step_run.decided_by")
+        .on("step_run.decided_by_type", "=", "member"),
+    )
+    .leftJoin("service_account", (join) =>
+      join
+        .onRef("service_account.id", "=", "step_run.decided_by")
+        .on("step_run.decided_by_type", "=", "service_account"),
+    )
     .select([
+      "service_account.name as service_name",
       "step_run.flow_run_id",
       "step_run.node_id",
       "step_run.detail",
@@ -543,8 +567,18 @@ export async function decideFromPage(
     const step = await trx
       .selectFrom("step_run")
       .innerJoin("flow_run", "flow_run.id", "step_run.flow_run_id")
-      .leftJoin("member", "member.id", "step_run.decided_by")
+      .leftJoin("member", (join) =>
+        join
+          .onRef("member.id", "=", "step_run.decided_by")
+          .on("step_run.decided_by_type", "=", "member"),
+      )
+      .leftJoin("service_account", (join) =>
+        join
+          .onRef("service_account.id", "=", "step_run.decided_by")
+          .on("step_run.decided_by_type", "=", "service_account"),
+      )
       .select([
+        "service_account.name as decider_service",
         "step_run.status",
         "step_run.detail",
         "step_run.decided_by",
@@ -591,7 +625,7 @@ export async function decideFromPage(
       node: wanted.node,
       approve: request.decision === "approve",
       comment,
-      memberId: standing.memberId,
+      decidedBy: { type: "member", id: standing.memberId },
       via: "app",
     });
     await audit({
@@ -620,7 +654,7 @@ export async function decideFromPage(
     .executeTakeFirst();
   return {
     decision: request.decision,
-    title: result.title,
+    title: approvalTitle(result.title, await flowKnown(kernel, db, wanted.flowRunId)),
     flow: { path: result.flow, title: titleOfFlow(titles, result.flow) },
     by: who?.name || who?.email || "You",
   };
@@ -633,6 +667,7 @@ async function whoDecided(
     decided_by: string | null;
     decider_name: string | null;
     decider_email: string | null;
+    decider_service?: string | null;
     decision_comment: string | null;
     finished_at: Date | null;
     flow_status: string;
@@ -640,13 +675,13 @@ async function whoDecided(
   wanted: "approve" | "reject",
 ): Promise<string> {
   if (step.decided_by) {
-    const who = step.decider_name || step.decider_email || "Someone";
+    const who = step.decider_name || step.decider_email || step.decider_service || "Someone";
     const what = step.status === "succeeded" ? "approved" : "rejected";
     const same = (wanted === "approve") === (step.status === "succeeded");
     return `${who} ${what} this ${agoWords(step.finished_at)}${same ? ", as you meant to" : ""}.`;
   }
   if (step.flow_status !== "running") {
-    return `This request is no longer waiting: its run ${step.flow_status === "cancelled" ? "was cancelled" : "has ended"}.`;
+    return `This request is no longer waiting: its run ${step.flow_status === "cancelled" ? "was canceled" : "has ended"}.`;
   }
   return "This request timed out before anyone decided it.";
 }

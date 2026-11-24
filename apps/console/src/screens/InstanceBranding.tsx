@@ -3,6 +3,7 @@ import { useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
 import { type Branding, BrandMark, useBrand } from "../kit/brand.tsx";
+import { Can } from "../kit/Can.tsx";
 import { sendIcons } from "../kit/icons.ts";
 import { ErrorState, Loading } from "../kit/LoadState.tsx";
 import { PageHeader, Panel, SectionLabel } from "../kit/layout.tsx";
@@ -25,7 +26,11 @@ export function InstanceBranding() {
     return <ErrorState error={loaded.error} onRetry={loaded.reload} />;
   }
   if (!loaded.data) return <Loading />;
-  return <Editor stored={loaded.data} reload={loaded.reload} />;
+  return (
+    <Can base="/instance" permission="instance:write" what="how this instance's console looks">
+      <Editor stored={loaded.data} reload={loaded.reload} />
+    </Can>
+  );
 }
 
 function Editor({ stored, reload }: { stored: Branding; reload: () => void }) {

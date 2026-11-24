@@ -1,9 +1,10 @@
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import { newId } from "@volvel/db";
 import { Type } from "typebox";
-import { badRequest, conflict, forbidden, forbiddenBecause, notFound } from "../kernel/errors.js";
+import { badRequest, conflict, forbiddenBecause, notFound } from "../kernel/errors.js";
 import { access, type RequestContext } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
+import { listOf } from "../pagination.js";
 import { AnyObject, Id, iso, NoContent, Time } from "./shared.js";
 
 /**
@@ -14,7 +15,7 @@ import { AnyObject, Id, iso, NoContent, Time } from "./shared.js";
 
 /** The settings a member may keep, by the shape of their key. Anything else is refused. */
 export const PREFERENCE_KEY =
-  /^(theme|panel|shortcuts\.single-key|editor\.[a-z][a-z-]{0,30}|density:[a-z][a-z0-9-]{0,39}|split:[a-z][a-z0-9-]{0,39}|palette\.pins:[0-9a-f-]{36}|seen:[a-z][a-z0-9-]{0,39}|operator\.strip)$/;
+  /^(theme|panel|shortcuts\.single-key|editor\.[a-z][a-z-]{0,30}|density:[a-z][a-z0-9-]{0,39}|split:[a-z][a-z0-9-]{0,39}|terms\.underline|palette\.pins:(?:none|[0-9a-f-]{36})|seen:[a-z][a-z0-9-]{0,39}|operator\.strip)$/;
 /** The largest one value may be, written out. */
 export const MAX_PREFERENCE_BYTES = 4096;
 /** The most settings one member keeps, and the most views of one list. */
@@ -60,7 +61,7 @@ export function preferenceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           description:
             "What the console keeps for a member between browsers: density, panes and the like.",
           tags: ["identity"],
-          response: { 200: Type.Object({ items: Type.Array(Preference) }) },
+          response: { 200: listOf(Preference) },
         },
       },
       async ({ ctx }) => {
@@ -153,7 +154,7 @@ export function preferenceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       },
     );
 
-    /** The caller is a member of the tenant, and the workspace, if any, is the tenant's. */
+    /** The caller is a member of the tenant, or has a grant in it, and the workspace, if any, is the tenant's. */
     async function mayKeep(member: string, tenantId: string, workspaceId: string | null) {
       const belongs = await db
         .selectFrom("tenant_member")
@@ -161,7 +162,18 @@ export function preferenceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         .where("tenant_id", "=", tenantId)
         .where("member_id", "=", member)
         .executeTakeFirst();
-      if (!belongs) throw notFound("The tenant");
+      // An operator working through an access grant keeps views while the grant lasts (OPS-39).
+      const granted =
+        belongs ??
+        (await db
+          .selectFrom("access_grant")
+          .select("id")
+          .where("tenant_id", "=", tenantId)
+          .where("member_id", "=", member)
+          .where("revoked_at", "is", null)
+          .where("expires_at", ">", new Date())
+          .executeTakeFirst());
+      if (!granted) throw notFound("The tenant");
       if (workspaceId) {
         const workspace = await db
           .selectFrom("workspace")
@@ -211,7 +223,7 @@ export function preferenceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             workspace: Type.Optional(Id),
             list: ListName,
           }),
-          response: { 200: Type.Object({ items: Type.Array(View) }) },
+          response: { 200: listOf(View) },
         },
       },
       async ({ ctx, query }) => {

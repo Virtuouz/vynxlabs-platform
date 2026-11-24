@@ -27,35 +27,52 @@ Options:
                       memory than this. Default: a tenth of it, at least 128 MB.
                       RUN_MEMORY_FLOOR_MB also sets it.
   --max-workers <n>   Workers alive at once. Default: twice the run slots.
+                      MANAGED_WORKERS_MAX also sets it.
 
 WORKER_HOST_TOKEN is the token the control plane was given. VOLVEL_URL can be
-used instead of --url. Workers run as MANAGED_WORKER_UID and MANAGED_WORKER_GID,
-10001 by default; this process must be able to switch to them.`);
+used instead of --url. Each worker runs as a user of its own: the next free one of
+MANAGED_WORKER_USERS (256 by default) from MANAGED_WORKER_UID and MANAGED_WORKER_GID,
+10001 by default, so no more than that many workers run at once. This process must
+be able to switch to them.`);
   process.exit(0);
 }
 
 const log = (level: string, message: string, fields?: Record<string, unknown>) =>
   console.log(JSON.stringify({ time: new Date().toISOString(), level, message, ...fields }));
 
-const url = values.url ?? process.env.VOLVEL_URL;
-const token = process.env.WORKER_HOST_TOKEN;
+/** A setting of the environment. Empty is not set: a compose file that passes it on may pass it empty. */
+const setting = (name: string): string | undefined => {
+  const raw = process.env[name]?.trim();
+  return raw === "" ? undefined : raw;
+};
+const url = values.url ?? setting("VOLVEL_URL");
+const token = setting("WORKER_HOST_TOKEN");
 if (!url || !token) {
   console.error("volvel-worker-host needs --url, or VOLVEL_URL, and WORKER_HOST_TOKEN.");
   process.exit(2);
 }
 const id = (name: string) => {
-  const parsed = Number(process.env[name] ?? "10001");
+  const parsed = Number(setting(name) ?? "10001");
   if (!Number.isInteger(parsed) || parsed <= 0) {
     console.error(`${name} must be a positive whole number.`);
     process.exit(2);
   }
   return parsed;
 };
-const user = { uid: id("MANAGED_WORKER_UID"), gid: id("MANAGED_WORKER_GID") };
+const users = Number(setting("MANAGED_WORKER_USERS") ?? "256");
+if (!Number.isInteger(users) || users < 1 || users > 60000) {
+  console.error("MANAGED_WORKER_USERS must be a whole number from 1 to 60000.");
+  process.exit(2);
+}
+const user = { uid: id("MANAGED_WORKER_UID"), gid: id("MANAGED_WORKER_GID"), count: users };
 // A worker of the host's own user could read the token from this process. Refuse to start any.
-if (process.getuid?.() === user.uid) {
+if (
+  process.getuid?.() !== undefined &&
+  process.getuid() >= user.uid &&
+  process.getuid() < user.uid + users
+) {
   console.error(
-    "volvel-worker-host runs as the user it would start workers as. Run it as root, " +
+    "volvel-worker-host runs as one of the users it would start workers as. Run it as root, " +
       "with CAP_SETUID and CAP_SETGID, so that workers run as a user of their own.",
   );
   process.exit(2);
@@ -76,18 +93,23 @@ const positive = (value: string | undefined, name: string, allowZero = false) =>
   }
   return parsed;
 };
-const slots = positive(values["run-slots"] ?? process.env.RUN_SLOTS, "--run-slots");
+const slots = positive(values["run-slots"] ?? setting("RUN_SLOTS"), "--run-slots");
 const floor = positive(
-  values["memory-floor"] ?? process.env.RUN_MEMORY_FLOOR_MB,
+  values["memory-floor"] ?? setting("RUN_MEMORY_FLOOR_MB"),
   "--memory-floor",
   true,
+);
+
+const maxWorkers = positive(
+  values["max-workers"] ?? setting("MANAGED_WORKERS_MAX"),
+  "--max-workers",
 );
 
 const host = new WorkerHost({
   url,
   token,
   user,
-  ...(values["max-workers"] ? { maxWorkers: Number(values["max-workers"]) } : {}),
+  ...(maxWorkers ? { maxWorkers } : {}),
   ...(slots ? { runSlots: slots } : {}),
   ...(floor !== undefined ? { memoryFloorMb: floor } : {}),
   log,
@@ -95,7 +117,7 @@ const host = new WorkerHost({
 for (const signal of ["SIGTERM", "SIGINT"] as const) {
   process.on(signal, () => void host.stop());
 }
-log("info", "worker host started", { url, uid: user.uid, gid: user.gid });
+log("info", "worker host started", { url, uid: user.uid, gid: user.gid, users });
 const reason = await host.run();
 log("info", `worker host exiting: ${reason}`);
 process.exit(reason === "refused" ? 1 : 0);

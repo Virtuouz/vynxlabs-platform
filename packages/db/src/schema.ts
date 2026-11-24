@@ -32,6 +32,8 @@ export interface TenantTable {
   name: string;
   data_location: ColumnType<DataLocation, string | undefined, string>;
   managed_workers: Generated<boolean>;
+  /** An operator turned managed workers off: only an operator turns them on. */
+  managed_workers_locked: Generated<boolean>;
   console_code: Generated<boolean>;
   /** Whether a change to the tenant's access waits for a second person. */
   access_approval: Generated<boolean>;
@@ -46,6 +48,12 @@ export interface MemberTable {
   image: string | null;
   /** Set when the instance's own identity provider said the person has left. */
   disabled_at: ColumnType<Date | null, Date | null | undefined, Date | null>;
+  /** Who turned the account off: a person here, or the instance's identity provider. */
+  disabled_by: ColumnType<
+    "hand" | "provider" | null,
+    "hand" | "provider" | null | undefined,
+    "hand" | "provider" | null
+  >;
   created_at: Timestamp;
   updated_at: Timestamp;
 }
@@ -82,6 +90,12 @@ export interface TenantMemberTable {
   member_id: string;
   /** Set when the member may not act in this tenant for now. */
   suspended_at: ColumnType<Date | null, Date | null | undefined, Date | null>;
+  /** Who suspended the member: a person here, or the tenant's identity provider. */
+  suspended_by: ColumnType<
+    "hand" | "provider" | null,
+    "hand" | "provider" | null | undefined,
+    "hand" | "provider" | null
+  >;
   created_at: Generated<Date>;
 }
 
@@ -175,6 +189,8 @@ export interface ApiKeyTable {
   expires_at: Date | null;
   last_used_at: Date | null;
   revoked_at: Date | null;
+  /** The member who made a service account's key. */
+  created_by?: string | null;
   created_at: Generated<Date>;
 }
 
@@ -229,6 +245,8 @@ export interface TenantReleaseTable {
   origin: "cli" | "console" | "api" | "rollback";
   created_by_type: string;
   created_by_id: string | null;
+  /** When asked with a service account's key: the member who made that key. */
+  asked_through?: string | null;
   created_at: Generated<Date>;
   decided_by_type: string | null;
   decided_by_id: string | null;
@@ -419,6 +437,10 @@ export interface GitRepositoryTable {
   release_branch: Generated<string | null>;
   /** The branch the tenant's access is committed to. */
   tenant_branch: Generated<string | null>;
+  /** The folder `volvel.yaml` named when a branch was last read. Null: it names none. */
+  file_folder: Generated<string | null>;
+  /** When a branch's `volvel.yaml` was last read, by a sync or a check. Null: not yet. */
+  file_read_at: Generated<Date | null>;
   /** When the sealed credential was last set, and by whom. Stamped by a trigger. */
   credential_set_at: ColumnType<Date | null, never, never>;
   credential_set_by_type: ColumnType<string | null, never, never>;
@@ -434,6 +456,8 @@ export interface WorkspaceGitTable {
   synced_commit: Generated<string | null>;
   synced_files: ColumnType<Record<string, string>, string | undefined, string>;
   synced_said: ColumnType<Record<string, string> | null, string | null | undefined, string | null>;
+  /** The folder those files were kept in, null for a sync before this was kept. */
+  synced_folder: Generated<string | null>;
   state: Generated<GitState>;
   last_error: Generated<string | null>;
   lease_until: Generated<Date | null>;
@@ -496,6 +520,8 @@ export interface ConnectionBindingTable {
   oauth_tokens: Buffer | null;
   /** Where an OAuth connection's authorization stands. No secret. */
   oauth: Json<ConnectionOAuth> | null;
+  /** The kind of connector it was bound or deployed as. Null for a binding older than this. */
+  connector: string | null;
   created_at: Generated<Date>;
   updated_at: Timestamp;
   /** When the sealed credential was last set, and by whom. Stamped by a trigger. */
@@ -690,6 +716,8 @@ export interface FlowRunTable {
   input: NullableJson;
   input_ref: string | null;
   output: NullableJson;
+  /** Where the output is kept when it was too large for the row. */
+  output_ref: Generated<string | null>;
   error: ErrorColumn;
   alert: ColumnType<Record<string, unknown> | null, string | null | undefined, string | null>;
   parent_flow_run_id: string | null;
@@ -729,7 +757,11 @@ export interface StepRunTable {
   child_flow_run_id: string | null;
   wake_at: Date | null;
   detail: ColumnType<Record<string, unknown>, string | undefined, string>;
+  /** The ID of the principal that decided: a member, a service account. */
   decided_by: string | null;
+  decided_by_type: string | null;
+  /** Where: console, api, mcp, app or email. */
+  decided_via: string | null;
   decision_comment: string | null;
   started_at: Generated<Date>;
   finished_at: Date | null;
@@ -786,11 +818,13 @@ export interface DataTableTable {
   created_at: Generated<Date>;
   /** The column that stands for a row where another table refers to it. */
   display_column: string | null;
+  /** Where the table was managed (`code` or `ui`) when it was retired. Null while it is active. */
+  managed_in: string | null;
 }
 
 /** What a column keeps beside its type. */
 export interface DataColumnOptions {
-  /** An enum's values, in order, each with its label and colour. */
+  /** An enum's values, in order, each with its label and color. */
   values?: { value: string; label?: string; color?: string }[];
   /** Values the column had and no longer offers. Rows may still hold them. */
   retired?: string[];
@@ -813,6 +847,8 @@ export interface DataColumnTable {
   status: CatalogStatus;
   retired_at: Date | null;
   created_at: Generated<Date>;
+  /** Its place among the table's columns, as its definition gave it. Null: made before places were kept. */
+  position: ColumnType<number | null, number | null | undefined, number | null>;
 }
 
 export interface DataSourceBindingTable {
@@ -881,7 +917,7 @@ export interface DatabaseLocationTable {
   updated_at: Generated<Date>;
 }
 
-/** Tables shared by every tenant in the platform database. */
+/** Tables shared by every tenant in Volvel's own database. */
 export interface BundleAssetTable {
   tenant_id: string;
   sha256: string;
@@ -898,6 +934,8 @@ export interface EndUserTable {
   password_hash: string | null;
   attributes: ColumnType<Record<string, string>, string | undefined, string>;
   disabled_at: Date | null;
+  /** Who turned the account off: a person here, or the tenant's identity provider. */
+  disabled_by: "hand" | "provider" | null;
   last_signed_in_at: Date | null;
   created_at: Generated<Date>;
   updated_at: Generated<Date>;
@@ -933,6 +971,15 @@ export interface EndUserTokenTable {
   created_at: Generated<Date>;
 }
 
+export interface MemberPasswordTokenTable {
+  id: string;
+  member_id: string;
+  token_hash: string;
+  expires_at: Timestamp;
+  used_at: Date | null;
+  created_at: Generated<Date>;
+}
+
 export interface AppSessionTable {
   id: string;
   tenant_id: string;
@@ -965,8 +1012,11 @@ export interface AppDomainTable {
   hostname: string;
   enabled: Generated<boolean>;
   verified_at: Date | null;
+  /** Enabled by an operator without verifying: the tenant may enable it again after disabling it. */
+  enabled_by_operator: Generated<boolean>;
   checked_at: Date | null;
   check_error: string | null;
+  record_gone_at: Date | null;
   created_by_type: string;
   created_by_id: string | null;
   created_at: Generated<Date>;
@@ -1153,7 +1203,7 @@ export interface WebhookRefusalTable {
   workspace_id: string;
   path: string;
   node_id: Generated<string>;
-  reason: "signature" | "body" | "paused";
+  reason: "signature" | "body" | "paused" | "input" | "filter" | "busy" | "error";
   problem: Generated<string>;
   occurred_at: Generated<Date>;
 }
@@ -1222,6 +1272,7 @@ export interface IdentityDomainTable {
   verified_at: Timestamp | null;
   checked_at: Timestamp | null;
   check_error: string | null;
+  record_gone_at: Timestamp | null;
   created_at: Generated<Date>;
 }
 
@@ -1331,6 +1382,7 @@ export interface PlatformSchema {
   end_user_group: EndUserGroupTable;
   end_user_group_member: EndUserGroupMemberTable;
   end_user_token: EndUserTokenTable;
+  member_password_token: MemberPasswordTokenTable;
   app_session: AppSessionTable;
   app_handoff: AppHandoffTable;
   app_domain: AppDomainTable;

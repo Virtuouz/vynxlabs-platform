@@ -12,12 +12,43 @@ services:
   worker:
     image: ${VOLVEL_IMAGE:?set VOLVEL_IMAGE in .env}
     restart: unless-stopped
+    init: true
+    # A worker finishes the scripts it has before it stops, however long they run; Docker's 10
+    # seconds would cut them off. Raise this to the longest script you run.
+    stop_grace_period: 300s
     # The worker ships inside the platform image.
-    command: ["node", "node_modules/@volvel/worker/dist/bin.js"]
+    # The credential is read from a secret file, not the environment: an environment is
+    # shown by `docker inspect` and read by other processes of the same user.
+    command:
+      - node
+      - node_modules/@volvel/worker/dist/bin.js
+      - --token-file
+      - /run/secrets/worker_token
     environment:
       VOLVEL_URL: ${VOLVEL_URL:?set VOLVEL_URL in .env}
-      VOLVEL_WORKER_TOKEN: ${VOLVEL_WORKER_TOKEN:?set VOLVEL_WORKER_TOKEN in .env}
+      # Runs handled at once. Empty: the worker's own default, 4.
+      VOLVEL_WORKER_CONCURRENCY: ${VOLVEL_WORKER_CONCURRENCY:-}
+      # Seconds with nothing to do before the worker exits. Empty: never. `restart: unless-stopped`
+      # starts it again at once, so set this only where the container is started on demand.
+      VOLVEL_WORKER_IDLE_EXIT: ${VOLVEL_WORKER_IDLE_EXIT:-}
+    secrets: [worker_token]
+    # Healthy while the instance answered the worker's last request for work (it asks every
+    # 20 seconds at most). A worker that cannot reach the instance, or was refused, is not.
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "const age = Date.now() - require('fs').statSync(require('os').tmpdir() + '/volvel-worker-alive').mtimeMs; process.exit(age < 90000 ? 0 : 1)"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
     # The worker keeps nothing: bundles are fetched again after a restart.
     read_only: true
     tmpfs:
       - /tmp
+
+secrets:
+  worker_token:
+    file: ./worker-token

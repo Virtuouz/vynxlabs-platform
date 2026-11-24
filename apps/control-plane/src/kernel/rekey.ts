@@ -1,5 +1,7 @@
+import { randomBytes } from "node:crypto";
 import { sql } from "@volvel/db";
 import { mutate, SYSTEM } from "./audit.js";
+import { DATA_ROLE_SECRET, instanceSecretContext } from "./instance-secrets.js";
 import type { Kernel } from "./kernel.js";
 
 /**
@@ -161,4 +163,31 @@ export async function rekeyIfRotating(kernel: Kernel): Promise<RekeyResult | und
     kernel.log.info(log, "values sealed with the secondary master key were sealed again");
   }
   return result;
+}
+
+/**
+ * Changes the seed of the data role's password, which no rotation of the master key changes
+ * (it is the master key the instance first had). The new seed is random, sealed with the
+ * master key like every secret of the instance. It takes hold when an instance starts: it
+ * makes the role's password and the key that signs the claim from the seed again, in the
+ * platform database and in each dedicated one it opens. So every replica must be restarted
+ * after this, and one that keeps running on the old seed cannot read tenants' tables until it is.
+ */
+export async function rekeyDataRole(kernel: Kernel): Promise<void> {
+  const sealed = kernel.vault.sealForInstance(
+    instanceSecretContext(DATA_ROLE_SECRET),
+    randomBytes(32).toString("base64"),
+  );
+  await mutate(kernel.db, { principal: SYSTEM }, async (trx, audit) => {
+    await trx
+      .insertInto("instance_secret")
+      .values({ name: DATA_ROLE_SECRET, sealed })
+      .onConflict((oc) => oc.column("name").doUpdateSet({ sealed }))
+      .execute();
+    await audit({
+      action: "instance.data_role_rekeyed",
+      targetType: "instance",
+      details: { masterKey: kernel.vault.fingerprints.current },
+    });
+  });
 }

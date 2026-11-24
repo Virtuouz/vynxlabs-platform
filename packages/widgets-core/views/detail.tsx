@@ -1,7 +1,7 @@
 import { Button, Details } from "@volvel/ui";
 import type { ColumnInfo, RecordData, RowsData, WidgetViewProps } from "@volvel/widgets";
 import { formatOfColumn, moneyText, parseMoney } from "@volvel/widgets";
-import { type KeyboardEvent, type ReactNode, useEffect, useState } from "react";
+import { type KeyboardEvent, type ReactNode, useEffect, useRef, useState } from "react";
 import {
   type Tone as BadgeTone,
   type ColumnSpec,
@@ -55,7 +55,7 @@ const GRID = {
 } as const;
 
 /** What a column holds that an editor here can't: never edited in place. */
-const NOT_EDITABLE = new Set(["json", "uuid", "timestamp"]);
+const NOT_EDITABLE = new Set(["json", "uuid", "timestamp", "file"]);
 
 /** A date as a person reads it: "Nov 20, 2026". Anything else says itself. */
 function dateOf(value: unknown): string {
@@ -157,8 +157,20 @@ function FieldEditor({
     if (type === "reference" && choices) void choices("record", column, "").then(setOffered);
   }, [type, choices, column]);
 
+  // Several choices: the list it holds, ticked and unticked, kept in order of the choices.
+  const [ticked, setTicked] = useState<string[]>(Array.isArray(value) ? (value as string[]) : []);
   const commit = async () => {
     if (saving) return;
+    if (type === "enum_list") {
+      setSaving(true);
+      const failed = await save(
+        (info?.values ?? []).map((one) => one.value).filter((one) => ticked.includes(one)),
+      );
+      setSaving(false);
+      if (failed === undefined) stop();
+      else setProblem(failed || "It could not be saved.");
+      return;
+    }
     let amount: number | null | undefined;
     if (money) {
       const read = parseMoney(draft, money);
@@ -212,7 +224,46 @@ function FieldEditor({
           ]
         : offered;
   const control =
-    type === "enum" || type === "boolean" || type === "reference" ? (
+    type === "enum_list" ? (
+      <fieldset
+        aria-label={label}
+        aria-invalid={problem ? true : undefined}
+        className="m-0 flex flex-col gap-1 border-0 p-0"
+        onKeyDown={(event) => {
+          if (event.key === "Escape") {
+            event.preventDefault();
+            event.stopPropagation();
+            stop();
+          }
+        }}
+      >
+        {(info?.values ?? []).map((one, at) => (
+          <label key={one.value} className="flex items-center gap-2 text-body-sm">
+            <input
+              type="checkbox"
+              // biome-ignore lint/a11y/noAutofocus: opened by the person's own click, the editor takes the keys
+              autoFocus={at === 0}
+              checked={ticked.includes(one.value)}
+              disabled={saving}
+              onChange={(event) =>
+                setTicked((now) =>
+                  event.target.checked ? [...now, one.value] : now.filter((x) => x !== one.value),
+                )
+              }
+            />
+            {one.label ?? one.value}
+          </label>
+        ))}
+        <span className="flex gap-2">
+          <Button size="small" variant="primary" loading={saving} onClick={() => void commit()}>
+            Save
+          </Button>
+          <Button size="small" onClick={stop}>
+            Cancel
+          </Button>
+        </span>
+      </fieldset>
+    ) : type === "enum" || type === "boolean" || type === "reference" ? (
       <select
         {...common}
         // biome-ignore lint/a11y/noAutofocus: opened by the person's own click, the editor takes the keys
@@ -285,6 +336,17 @@ export function DetailView({
   const { running, run } = useRunning();
   // Which field is being edited in place.
   const [editing, setEditing] = useState<string>();
+  // The editor leaves with its field's name here; the button that took its place gets the focus.
+  const leaving = useRef<string | undefined>(undefined);
+  const fields = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const column = leaving.current;
+    if (editing !== undefined || column === undefined) return;
+    leaving.current = undefined;
+    for (const one of fields.current?.querySelectorAll<HTMLElement>("[data-field]") ?? []) {
+      if (one.dataset.field === column) one.querySelector<HTMLElement>("button")?.focus();
+    }
+  }, [editing]);
   const input = data.record as NamedRecord | undefined;
   if (input?.shape !== "record") return null;
   const record = input.record;
@@ -319,9 +381,15 @@ export function DetailView({
   const actions = config.actions ?? [];
   const wanted = Number(config.across);
   const across: 1 | 2 | 3 = wanted === 1 || wanted === 3 ? wanted : 2;
-  const editable = config.edit === true && !building && act !== undefined;
+  // Who may edit in place is the host's to say (`can`), for the groups the page names.
+  const mayEdit = can?.("config/edit") !== false;
+  const editable = config.edit === true && !building && act !== undefined && mayEdit;
+  // The server edits only the fields shown: a hidden one is read, not changed, here.
   const canEdit = (column: string) =>
-    editable && !SYSTEM_COLUMNS.has(column) && !NOT_EDITABLE.has(infoOf(column)?.type ?? "text");
+    editable &&
+    !all.some((field) => field.column === column && field.hidden) &&
+    !SYSTEM_COLUMNS.has(column) &&
+    !NOT_EDITABLE.has(infoOf(column)?.type ?? "text");
   const saveField = async (column: string, value: unknown): Promise<string | undefined> => {
     const outcome = await act?.("config/edit", { record: id, inputs: { [column]: value } });
     if (!outcome || outcome.ok) return undefined;
@@ -334,32 +402,7 @@ export function DetailView({
     const open = editing === field.column;
     const pressable = canEdit(field.column) && !open;
     return (
-      <div
-        key={field.column}
-        data-field={field.column}
-        className={`flex min-w-0 flex-col gap-0.5 rounded-inner ${
-          pressable
-            ? "-mx-2 -my-1 cursor-text px-2 py-1 hover:bg-sunken focus-visible:outline-2 focus-visible:outline-action"
-            : ""
-        }`}
-        {...(pressable
-          ? {
-              role: "button",
-              tabIndex: 0,
-              "aria-label": `Edit ${label}`,
-              onClick: () => setEditing(field.column),
-              onKeyDown: (event: KeyboardEvent<HTMLElement>) => {
-                if (
-                  event.target === event.currentTarget &&
-                  (event.key === "Enter" || event.key === " ")
-                ) {
-                  event.preventDefault();
-                  setEditing(field.column);
-                }
-              },
-            }
-          : {})}
-      >
+      <div key={field.column} data-field={field.column} className="flex min-w-0 flex-col gap-0.5">
         <dt className="text-meta text-ink-muted">{label}</dt>
         <dd className="m-0 min-w-0 break-words">
           {open ? (
@@ -371,8 +414,21 @@ export function DetailView({
               choices={choices}
               money={moneyOf(field, infoOf(field.column))}
               save={(value) => saveField(field.column, value)}
-              stop={() => setEditing(undefined)}
+              stop={() => {
+                leaving.current = field.column;
+                setEditing(undefined);
+              }}
             />
+          ) : pressable ? (
+            // A button inside the value, so the term and the value are still read as a term and a value.
+            <button
+              type="button"
+              onClick={() => setEditing(field.column)}
+              className="-mx-2 -my-1 block w-[calc(100%+1rem)] cursor-text rounded-inner border-0 bg-transparent px-2 py-1 text-left font-[inherit] text-[length:inherit] text-ink hover:bg-sunken focus-visible:outline-2 focus-visible:outline-action"
+            >
+              <span className="sr-only">Edit {label}: </span>
+              {showField(field, infoOf(field.column), record[field.column], rows)}
+            </button>
           ) : (
             showField(field, infoOf(field.column), record[field.column], rows)
           )}
@@ -389,7 +445,7 @@ export function DetailView({
   );
 
   return (
-    <div className="flex flex-col gap-4">
+    <div ref={fields} className="flex flex-col gap-4">
       <div className="flex items-start gap-x-3">
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
           {heading ? (
@@ -448,6 +504,11 @@ export function DetailView({
             );
           })}
         </div>
+      ) : null}
+      {config.edit === true && !building && act !== undefined && !mayEdit ? (
+        <p className="m-0 text-meta text-ink-muted">
+          {why?.("config/edit", record) ?? "You may not edit this."}
+        </p>
       ) : null}
       {sectionsOf(shown).map((section) => (
         <section key={section.name} className="flex flex-col gap-2">

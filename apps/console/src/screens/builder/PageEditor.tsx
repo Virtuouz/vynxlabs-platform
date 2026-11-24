@@ -10,7 +10,7 @@ import {
   type WidgetIn,
 } from "@volvel/manifest";
 import { focusWidget, GRID, neighbourOf, sizedByHand } from "@volvel/screens";
-import { Button, Closing, EmptyState, edgeShadows, Kbd } from "@volvel/ui";
+import { Button, Closing, EmptyState, edgeShadows, Kbd, Notice } from "@volvel/ui";
 import type { Surface, Tab, WidgetDefinition } from "@volvel/widgets";
 import { Plus, X } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
@@ -248,7 +248,7 @@ export function PageEditor({
   /** Someone who may not edit looks at the page: nothing is added, moved or changed, and the drawer is read. */
   readOnly?: boolean;
 }) {
-  const { catalog } = useCatalog(root);
+  const { catalog, error: catalogError } = useCatalog(root);
   const { groups: keyed } = useGroupKeys(root);
   // What each group the rules name is called now: a renamed group keeps its key.
   const groupNames = useMemo(
@@ -327,6 +327,16 @@ export function PageEditor({
   const suggestedInfo = useTableInfo(root, suggested);
   const nextSteps = suggestionsFor(context, suggestedInfo);
   const widget = widgets.find((one) => one.id === selected);
+  // On a screen too narrow for the settings pane they are a sheet, and closing it returns the
+  // focus to whatever opened it, which a widget takes as being chosen: the sheet opened again at
+  // once, and neither its X nor Esc could close it. A widget the focus only arrives on within a
+  // moment of the sheet closing is not chosen by that (a press on it is).
+  const closedSheetAt = useRef(0);
+  const SHEET_RETURN_MS = 1000;
+  const canvasSelect = (id: string | undefined, via?: "focus") => {
+    if (via === "focus" && Date.now() - closedSheetAt.current < SHEET_RETURN_MS) return;
+    onSelect(id);
+  };
   const full = widgets.length >= MAX_PAGE_WIDGETS;
   // "Add to page" adds into the container that is chosen (or that holds the widget that is).
   const addsTo = resolved(widgets, targetOfSelection(widgets, selected));
@@ -843,7 +853,7 @@ export function PageEditor({
                       editing={{
                         readOnly,
                         selected,
-                        onSelect,
+                        onSelect: canvasSelect,
                         onChange: fromCanvas,
                         ...(layout?.askLayout ? { askLayout: layout.askLayout } : {}),
                         onRename: (id, title) =>
@@ -900,12 +910,25 @@ export function PageEditor({
     <EditOnPage.Provider value={(id) => setWriting(id)}>
       <EditorShell
         {...shell}
+        notices={
+          <>
+            {shell.notices}
+            {catalogError ? (
+              <Notice tone="danger">
+                The tables and saved queries could not be read, so the widgets here cannot offer
+                them yet: {catalogError} Reload the page, or ask a tenant admin whether you may read
+                them.
+              </Notice>
+            ) : null}
+          </>
+        }
         outline={outline}
         outlineKey={pageInfo?.page.id ?? ""}
         {...(pageInfo ? { outlineLabel: pageInfo.page.title } : {})}
         canvas={canvas}
         inspectorOpen={widget !== undefined || pageInfo?.settingsOpen === true}
         onCloseInspector={() => {
+          closedSheetAt.current = Date.now();
           onSelect(undefined);
           pageInfo?.onCloseSettings();
         }}

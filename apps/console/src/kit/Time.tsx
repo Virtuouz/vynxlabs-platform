@@ -1,5 +1,5 @@
 import { Tooltip } from "@volvel/ui";
-import { ago, clock, fullTime, stamp, type When } from "./format.ts";
+import { ago, clock, fullTime, stamp, type When, zoneName } from "./format.ts";
 
 /**
  * A time on screen (07 §7.3): "5m ago" or "16:38:54", never wrapping, with
@@ -9,11 +9,14 @@ export function Time({
   value,
   mode = "clock",
   className = "",
+  zone = false,
 }: {
   value: When;
   /** `ago` for lists, `clock` for a time to the second, `stamp` for one shape on every line. */
   mode?: "ago" | "clock" | "stamp";
   className?: string;
+  /** Says the reader's zone after the time, for a page read away from the console. */
+  zone?: boolean;
 }) {
   const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime())) return <span className={className}>—</span>;
@@ -21,7 +24,7 @@ export function Time({
   return (
     <Tooltip label={fullTime(date)}>
       <time dateTime={date.toISOString()} className={`whitespace-nowrap tabular-nums ${className}`}>
-        {text}
+        {zone ? `${text} ${zoneName(date)}`.trim() : text}
       </time>
     </Tooltip>
   );

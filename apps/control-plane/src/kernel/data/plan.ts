@@ -1,4 +1,5 @@
 import {
+  COLUMN_WIDENINGS,
   type ColumnType,
   type EnumValue,
   enumValues,
@@ -40,6 +41,8 @@ export interface CatalogTable {
   policy: TablePolicy;
   /** Paths the table has had before its current one. */
   previousNames: string[];
+  /** Where it was managed when it was retired: `code` or `ui`. */
+  managedIn?: string | null;
   /** The column that stands for a row where another table refers to it. */
   display?: string | null;
   columns: CatalogColumn[];
@@ -109,18 +112,6 @@ export interface Plan {
   /** Why the definition cannot be applied. When this is not empty, nothing is. */
   issues: { path: string; message: string }[];
 }
-
-/** Type changes that cannot lose anything. */
-const WIDENINGS: Record<string, ColumnType[]> = {
-  integer: ["number", "text"],
-  number: ["text"],
-  boolean: ["text"],
-  uuid: ["text"],
-  date: ["text"],
-  timestamp: ["text"],
-  // An enum is text that is held to a list, so letting go of the list loses nothing.
-  enum: ["text"],
-};
 
 /** A name for a table inside the workspace's schema. */
 export function physicalTableName(path: string, taken: Set<string>): string {
@@ -197,9 +188,13 @@ export function planTable(
   }
   if (!table) {
     // Going back to an older definition: a table that used to have this path gets it back.
+    // Only one that is no longer declared (a deploy retires what it removes before it applies
+    // anything): a table still declared under its new path keeps its rows, and the old path is new.
     const former = catalog.find(
       (candidate) =>
-        candidate.previousNames.includes(name) && !catalog.some((other) => other.name === name),
+        candidate.status === "retired" &&
+        candidate.previousNames.includes(name) &&
+        !catalog.some((other) => other.name === name),
     );
     if (former) {
       steps.push({ op: "rename_table", tableId: former.id, from: former.name, to: name });
@@ -317,7 +312,7 @@ export function planTable(
       // Allowed when the rows already hold nothing else, which only the rows can say.
       steps.push({ op: "to_enum", ...target, values: want.values });
     } else if (current.type !== want.type) {
-      if (WIDENINGS[current.type]?.includes(want.type)) {
+      if (COLUMN_WIDENINGS[current.type]?.includes(want.type)) {
         steps.push({ op: "widen_column", ...target, to: want.type });
       } else {
         issues.push({

@@ -1,5 +1,5 @@
 import { createWriteStream } from "node:fs";
-import { mkdir, mkdtemp, rm, stat } from "node:fs/promises";
+import { mkdtemp, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable, Transform } from "node:stream";
@@ -15,7 +15,7 @@ import { access } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
 import { exportTenant } from "../kernel/tenancy/export.js";
 import { importTenant, inspectImport } from "../kernel/tenancy/import.js";
-import { STAGE_DIR } from "../kernel/tenancy/staging.js";
+import { ensureStageDir, STAGE_DIR } from "../kernel/tenancy/staging.js";
 import { Id, NoContent, NullableString, Slug, TenantParams } from "./shared.js";
 
 /** Long enough that guessing it is not a way in to a file that holds every secret a tenant has. */
@@ -103,7 +103,7 @@ export function portabilityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           );
         },
       });
-      await pipeline(body, limit, createWriteStream(path));
+      await pipeline(body, limit, createWriteStream(path, { flags: "wx", mode: 0o600 }));
       return received;
     };
     const stagedPath = (id: string) => join(STAGE_DIR, `${id}.tar`);
@@ -125,6 +125,11 @@ export function portabilityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         pendingRuns: Type.Integer(),
         notCarried: Type.Array(Type.String()),
         passphraseOk: Type.Union([Type.Boolean(), Type.Null()]),
+        formatVersion: Type.Union([Type.Integer(), Type.Null()]),
+        authenticated: Type.Union([Type.Boolean(), Type.Null()], {
+          description:
+            "Whether the export's list of contents is signed under its key and the signature is right. False for a format with no signature, and for one whose signature is wrong (then `problem` says so). Null until a passphrase is given.",
+        }),
         tenantPresent: Type.Boolean(),
         slugTaken: Type.Boolean(),
       },
@@ -158,11 +163,55 @@ export function portabilityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     };
 
     app.get(
+      "/instance/tenant-imports/staged",
+      {
+        config: { access: access.instance("tenant:write") },
+        schema: {
+          summary: "The uploaded exports that wait to be imported",
+          description:
+            "Every upload not yet imported, thrown away or expired, with what its check said when it " +
+            "came. `here` is false when another replica of the control plane keeps the file: it " +
+            "cannot be imported from this one, and is uploaded again.",
+          tags: ["portability"],
+          response: {
+            200: Type.Object(
+              { items: Type.Array(Type.Object({ ...Staged.properties, here: Type.Boolean() })) },
+              { description: "Every one there is. The list has no cursor." },
+            ),
+          },
+        },
+      },
+      async () => {
+        const rows = await db
+          .selectFrom("import_staging")
+          .selectAll()
+          .where("expires_at", ">", new Date())
+          .orderBy("created_at", "desc")
+          .execute();
+        return {
+          items: await Promise.all(
+            rows.map(async (row) => ({
+              id: row.id,
+              fileName: row.file_name,
+              sizeBytes: Number(row.size_bytes),
+              expiresAt: row.expires_at.toISOString(),
+              // What the check said when it came, as it was stored.
+              inspection: row.inspection as never,
+              here: Boolean(await stat(stagedPath(row.id)).catch(() => undefined)),
+            })),
+          ),
+        };
+      },
+    );
+
+    app.get(
       "/instance/tenant-imports/staged/:id",
       {
         config: { access: access.instance("tenant:write") },
         schema: {
           summary: "Look at an uploaded export again, with a passphrase or a slug to try",
+          description:
+            "What the staged export holds, so a person can see whether a slug fits before importing. The upload is kept until it is imported or thrown away.",
           tags: ["portability"],
           params: StagedParams,
           querystring: Type.Object({ slug: Type.Optional(Slug) }),
@@ -225,6 +274,7 @@ export function portabilityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.instance("tenant:write") },
         schema: {
           summary: "Throw away an uploaded export",
+          description: "Deletes the staged upload. Nothing was imported.",
           tags: ["portability"],
           params: StagedParams,
           response: { 204: NoContent },
@@ -264,13 +314,15 @@ export function portabilityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               "opens it, and whether its tenant or slug is taken here. Nothing else is written.",
             tags: ["portability"],
             consumes: ["application/x-tar"],
+            // Read as bytes, as sent: the schema says only that a body is taken.
+            body: Type.Unknown(),
             querystring: Type.Object({ name: Type.Optional(Type.String({ maxLength: 200 })) }),
             headers: OptionalPassphrase,
             response: { 201: Staged },
           },
         },
         async ({ ctx, body, query, headers }, reply) => {
-          await mkdir(STAGE_DIR, { recursive: true });
+          await ensureStageDir();
           const id = newId();
           const path = stagedPath(id);
           let size: number;
@@ -280,29 +332,40 @@ export function portabilityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             await rm(path, { force: true });
             throw error;
           }
-          const inspection = await inspectImport(kernel, path, {
-            passphrase: headers["x-export-passphrase"],
-          });
           const expiresAt = new Date(Date.now() + STAGE_HOURS * 3_600_000);
-          await ctx.mutate(async (trx, audit) => {
-            await trx
-              .insertInto("import_staging")
-              .values({
-                id,
-                created_by: ctx.principal.type === "member" ? ctx.principal.id : null,
-                file_name: query.name ?? "export.tar",
-                size_bytes: size,
-                inspection: JSON.stringify(inspection),
-                expires_at: expiresAt,
-              })
-              .execute();
-            await audit({
-              action: "tenant_import.staged",
-              targetType: "import",
-              targetId: id,
-              details: { bytes: size, tenant: inspection.tenant?.slug ?? null },
+          let inspection: Awaited<ReturnType<typeof inspectImport>>;
+          try {
+            inspection = await inspectImport(kernel, path, {
+              passphrase: headers["x-export-passphrase"],
             });
-          });
+          } catch (error) {
+            await rm(path, { force: true });
+            throw error;
+          }
+          try {
+            await ctx.mutate(async (trx, audit) => {
+              await trx
+                .insertInto("import_staging")
+                .values({
+                  id,
+                  created_by: ctx.principal.type === "member" ? ctx.principal.id : null,
+                  file_name: query.name ?? "export.tar",
+                  size_bytes: size,
+                  inspection: JSON.stringify(inspection),
+                  expires_at: expiresAt,
+                })
+                .execute();
+              await audit({
+                action: "tenant_import.staged",
+                targetType: "import",
+                targetId: id,
+                details: { bytes: size, tenant: inspection.tenant?.slug ?? null },
+              });
+            });
+          } catch (error) {
+            await rm(path, { force: true });
+            throw error;
+          }
           return reply.code(201).send({
             id,
             fileName: query.name ?? "export.tar",
@@ -333,7 +396,7 @@ export function portabilityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               dataLocation: Type.Optional(
                 Type.String({
                   description:
-                    "A registered dedicated database for the tenant's custom tables. Without it they go in the platform database.",
+                    "A registered dedicated database for the tenant's custom tables. Without it they go in Volvel's own database.",
                 }),
               ),
             }),
@@ -378,7 +441,7 @@ export function portabilityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                 );
               },
             });
-            await pipeline(body, limit, createWriteStream(path));
+            await pipeline(body, limit, createWriteStream(path, { flags: "wx", mode: 0o600 }));
             ctx.mutated = true;
             const report = await importTenant(kernel, ctx.actor, path, {
               passphrase: headers["x-export-passphrase"],

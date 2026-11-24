@@ -12,24 +12,27 @@ import {
 } from "@volvel/manifest";
 import { announceRows } from "../../routes/data.js";
 import { writeAudit } from "../audit.js";
-import { updateRowKeepingFiles } from "../data/files.js";
+import {
+  deleteRowKeepingFiles,
+  insertRowsKeepingFiles,
+  updateRowKeepingFiles,
+} from "../data/files.js";
 import {
   type DataScope,
-  deleteRow,
   describeTable,
   getRow,
-  insertRows,
   type Row,
   type RowTarget,
   scopeFor,
   withData,
 } from "../data/rows.js";
 import { badRequest, HttpError, notFound } from "../errors.js";
-import { startRun } from "../execution/runs.js";
-import { kickFlow, startFlowRun } from "../flows/engine.js";
+import { checkRunStart, startRun } from "../execution/runs.js";
+import { checkFlowStart, kickFlow, startFlowRun } from "../flows/engine.js";
 import type { RequestContext } from "../http.js";
 import type { Kernel } from "../kernel.js";
 import { resolveResource } from "../resolve.js";
+import { dayIn, startOfDayIn } from "../zones.js";
 import { type LocatedPage, locatePage, type PageRequest } from "./locate.js";
 import { checkRunBy, principalEmail } from "./who.js";
 
@@ -38,6 +41,8 @@ export const MAX_RECORDS = 200;
 
 /** What the browser sends to run an action (phase 26, decision 0004). */
 export interface ActRequest extends PageRequest {
+  /** The reader's time zone: their day is what `today` is (D21). UTC when left out. */
+  zone?: string | undefined;
   widget: string;
   at: string;
   records?:
@@ -412,7 +417,12 @@ export async function runAction(
     action: request.at,
   };
 
-  const changes: { action: string; table: string; id: string; fields: string[] }[] = [];
+  const changes: {
+    action: "create" | "update" | "delete";
+    table: string;
+    id: string;
+    fields: string[];
+  }[] = [];
   const starts: { do: "flow" | "script"; path: string; input: Record<string, unknown> }[] = [];
   let made: { table: string; id: string } | undefined;
   let ids: Partial<Record<RecordRef, string>> = {};
@@ -447,12 +457,14 @@ export async function runAction(
         roundIds[ref] = id;
       }
       ids = rounds.length === 1 ? roundIds : {};
-      // An edit in place of the user's own record is of theirs alone.
-      if (editing) {
-        const source = Object.values(widget.data ?? {})[0]?.source;
-        if (source && "own" in source) {
+      // What a widget of the user's own record runs on is theirs alone: an edit in place, and
+      // every action of the widget, on the record it shows (`this` for an edit, else `event`).
+      const owning = Object.values(widget.data ?? {})[0]?.source;
+      if (owning && "own" in owning) {
+        const shown = records[editing ? "this" : "event"];
+        if (shown) {
           const email = await principalEmail(kernel, tenantId, ctx.principal);
-          const mine = records.this?.[source.own.by];
+          const mine = shown[owning.own.by];
           if (!email || typeof mine !== "string" || mine.toLowerCase() !== email.toLowerCase()) {
             throw notFound("The record");
           }
@@ -472,17 +484,28 @@ export async function runAction(
 
       const resolve = (value: ActionValue): unknown => {
         if ("value" in value) return value.value;
-        if ("today" in value) return new Date().toISOString().slice(0, 10);
+        if ("today" in value) return dayIn(request.zone);
         if ("now" in value) return new Date().toISOString();
         if ("user" in value) return value.user === "id" ? user.id : (user[value.user] ?? null);
         if ("record" in value) return records[value.of ?? "this"]?.[value.record];
         return inputs[value.asked];
       };
       /** The values a step sets: what an answer left out is left alone, not emptied. */
-      const resolveAll = (set: Record<string, ActionValue>) => {
+      const resolveAll = (
+        set: Record<string, ActionValue>,
+        columns?: { name: string; type: string }[],
+      ) => {
         const out: Record<string, unknown> = {};
         for (const [name, value] of Object.entries(set)) {
-          const resolved = resolve(value);
+          let resolved = resolve(value);
+          // A day given for a moment means the start of that day in the reader's zone, kept with its zone (D21).
+          if (
+            typeof resolved === "string" &&
+            /^\d{4}-\d{2}-\d{2}$/.test(resolved) &&
+            columns?.find((column) => column.name === name)?.type === "timestamp"
+          ) {
+            resolved = startOfDayIn(resolved, request.zone);
+          }
           if (resolved !== undefined) out[name] = resolved;
         }
         return out;
@@ -520,9 +543,17 @@ export async function runAction(
           const grant: DataScope = { ...(await callerScope(table)), all: true };
           await actAs(grant);
           if (step.do === "create") {
-            const set = resolveAll(step.set);
+            const set = resolveAll(step.set, table.columns);
             try {
-              const [row] = await insertRows(trx, table, [set], grant);
+              const [row] = await insertRowsKeepingFiles(
+                kernel,
+                trx,
+                { tenantId, id: workspaceId },
+                table,
+                [set],
+                grant,
+                ctx,
+              );
               if (row) {
                 made = { table: table.name, id: String(row.id) };
                 changes.push({
@@ -537,7 +568,7 @@ export async function runAction(
             }
           } else if (step.do === "update") {
             const id = roundIds[step.record] as string;
-            const set = resolveAll(step.set);
+            const set = resolveAll(step.set, table.columns);
             try {
               records[step.record] = await updateRowKeepingFiles(
                 kernel,
@@ -547,6 +578,7 @@ export async function runAction(
                 table,
                 id,
                 set,
+                ctx,
               );
             } catch (error) {
               remap(step.set, error);
@@ -554,7 +586,14 @@ export async function runAction(
             changes.push({ action: "update", table: table.name, id, fields: Object.keys(set) });
           } else {
             const id = roundIds[step.record] as string;
-            await deleteRow(trx, table, id);
+            await deleteRowKeepingFiles(
+              kernel,
+              trx,
+              { tenantId, id: workspaceId },
+              ctx.principal,
+              table,
+              id,
+            );
             delete records[step.record];
             changes.push({ action: "delete", table: table.name, id, fields: [] });
           }
@@ -562,6 +601,20 @@ export async function runAction(
           starts.push({ do: step.do, path: step.path, input: resolveAll(step.input ?? {}) });
         }
       }
+    }
+    // ---- What a start would refuse is found out here, in the order of the steps and before the
+    // data is saved: the throw ends the transaction, and nothing it changed is kept.
+    for (const start of starts) {
+      const asked = {
+        tenantId,
+        workspaceId,
+        input: start.input,
+        trigger: { type: "manual" },
+        startedBy: { type: ctx.principal.type, id: ctx.principal.id },
+      };
+      if (start.do === "flow")
+        await checkFlowStart(kernel, kernel.db, { ...asked, flow: start.path });
+      else await checkRunStart(kernel, kernel.db, { ...asked, script: start.path });
     }
     // ---- Each change is audited, with where it came from, in the same transaction.
     for (const change of changes) {
@@ -585,50 +638,56 @@ export async function runAction(
       change.id,
     ]);
   }
+  // What still fails now (the queue, the database) is answered as saved, and said: the data is kept.
+  const notStarted: { do: "flow" | "script"; path: string }[] = [];
   for (const start of starts) {
-    const trigger = { type: "manual", detail: { origin } };
-    const startedBy = { type: ctx.principal.type, id: ctx.principal.id };
-    if (start.do === "flow") {
-      const result = await ctx.mutate(async (trx, audit) => {
-        const started = await startFlowRun(kernel, trx, {
-          tenantId,
-          workspaceId,
-          flow: start.path,
-          input: start.input,
-          trigger,
-          startedBy,
+    try {
+      const trigger = { type: "manual", detail: { origin } };
+      const startedBy = { type: ctx.principal.type, id: ctx.principal.id };
+      if (start.do === "flow") {
+        const result = await ctx.mutate(async (trx, audit) => {
+          const started = await startFlowRun(kernel, trx, {
+            tenantId,
+            workspaceId,
+            flow: start.path,
+            input: start.input,
+            trigger,
+            startedBy,
+          });
+          await audit({
+            action: "flow_run.started",
+            targetType: "flow_run",
+            targetId: started.flowRun.id,
+            tenantId,
+            workspaceId,
+            details: { flow: start.path, via: "page_action", ...origin },
+          });
+          return started;
         });
-        await audit({
-          action: "flow_run.started",
-          targetType: "flow_run",
-          targetId: started.flowRun.id,
-          tenantId,
-          workspaceId,
-          details: { flow: start.path, via: "page_action", ...origin },
+        kickFlow(kernel, result.flowRun.id);
+      } else {
+        await ctx.mutate(async (trx, audit) => {
+          const started = await startRun(kernel, trx, {
+            tenantId,
+            workspaceId,
+            script: start.path,
+            input: start.input,
+            trigger,
+            startedBy,
+          });
+          await audit({
+            action: "run.started",
+            targetType: "run",
+            targetId: started.run.id,
+            tenantId,
+            workspaceId,
+            details: { script: start.path, via: "page_action", ...origin },
+          });
+          return started;
         });
-        return started;
-      });
-      kickFlow(kernel, result.flowRun.id);
-    } else {
-      await ctx.mutate(async (trx, audit) => {
-        const started = await startRun(kernel, trx, {
-          tenantId,
-          workspaceId,
-          script: start.path,
-          input: start.input,
-          trigger,
-          startedBy,
-        });
-        await audit({
-          action: "run.started",
-          targetType: "run",
-          targetId: started.run.id,
-          tenantId,
-          workspaceId,
-          details: { script: start.path, via: "page_action", ...origin },
-        });
-        return started;
-      });
+      }
+    } catch {
+      notStarted.push({ do: start.do, path: start.path });
     }
   }
 
@@ -651,7 +710,10 @@ export async function runAction(
     client,
     ...(events ? { changed: changes.length === 0 ? 0 : rounds.length } : {}),
     ...(made ? { made } : {}),
-    ...(starts.length > 0 ? { started: starts.length } : {}),
+    ...(starts.length - notStarted.length > 0
+      ? { started: starts.length - notStarted.length }
+      : {}),
+    ...(notStarted.length > 0 ? { notStarted } : {}),
     ...(!said && action.done ? { message: action.done } : {}),
   };
 }

@@ -437,7 +437,7 @@ describe("a grid's headings", () => {
     await screen.findByText("Where it is in its life.");
     expect(onSort).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "status" }));
-    expect(onSort).toHaveBeenCalledWith("status");
+    expect(onSort).toHaveBeenCalledWith("status", false);
     // A value in a row is never looked at, whatever it says.
     expect(screen.getAllByRole("button")).toHaveLength(2);
   });
@@ -460,5 +460,14 @@ describe("a grid's headings", () => {
     await screen.findByText("Where it is in its life.");
     // The row holds the word too, and it is left alone there.
     expect(screen.getAllByRole("button")).toHaveLength(1);
+  });
+});
+
+describe("code in a page of documentation", () => {
+  test("is highlighted with classes, as a served page is, in the help and in a preview alike", () => {
+    const { container } = render(<Doc tree={parse("```ts\nconst a = 1; // one\n```\n")} />);
+    expect(container.querySelector("pre code .token.keyword")?.textContent).toBe("const");
+    expect(container.querySelector("pre code .token.comment")?.textContent).toBe("// one");
+    expect(container.querySelector("pre code")?.textContent).toBe("const a = 1; // one");
   });
 });

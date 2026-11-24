@@ -111,9 +111,12 @@ describe("a table's columns", () => {
 
   test("clicking a sortable heading sorts the rows shown, then reverses, then clears", () => {
     draw("core/table", {
-      columns: [{ column: "number" }, { column: "total", sortable: true }],
+      columns: [
+        { column: "number", sortable: false },
+        { column: "total", sortable: true },
+      ],
     });
-    // A heading that is not sortable is not a button.
+    // A heading the maker turned off is not a button.
     expect(screen.queryByRole("button", { name: "Sort by Number" })).toBeNull();
     const sort = screen.getByRole("button", { name: /total/i });
     expect(bodyOrder()).toEqual(["INV-9338", "INV-9339", "INV-9340"]);
@@ -126,6 +129,12 @@ describe("a table's columns", () => {
     expect(bodyOrder()).toEqual(["INV-9338", "INV-9340", "INV-9339"]);
     fireEvent.click(sort);
     expect(bodyOrder()).toEqual(["INV-9338", "INV-9339", "INV-9340"]);
+  });
+
+  test("a heading sorts unless it is turned off, and not for a column with no order", () => {
+    draw("core/table", { columns: [{ column: "number" }, { column: "total" }] });
+    expect(screen.getByRole("button", { name: /total/i })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /number/i })).toBeTruthy();
   });
 
   test("while building, a heading raises the column event and does not sort", () => {
@@ -272,6 +281,62 @@ describe("selecting several rows", () => {
     ).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Clear" }));
     expect(screen.queryByRole("region", { name: "Rows chosen" })).toBeNull();
+  });
+
+  test("an action the server refuses for several rows is not offered for several, and is for one (WID-25)", () => {
+    const peek = {
+      id: "peek",
+      label: "Peek",
+      action: { steps: [{ do: "rows", table: "invoices" }] },
+    };
+    const narrow = {
+      id: "narrow",
+      label: "Narrow",
+      action: { steps: [{ do: "narrow", filter: "x" }] },
+    };
+    const mark = {
+      id: "pay",
+      label: "Mark paid",
+      action: { steps: [{ do: "message", text: "Hi" }] },
+    };
+    draw(
+      "core/table",
+      { columns: [{ column: "number" }], rowActions: [peek, narrow, mark], select: true },
+      { act: async () => ({ ok: true }), can: () => true },
+    );
+    fireEvent.click(screen.getByRole("checkbox", { name: "Choose INV-9338" }));
+    const one = screen.getByRole("region", { name: "Rows chosen" });
+    expect(within(one).getByRole("button", { name: "Peek" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("checkbox", { name: "Choose INV-9339" }));
+    const two = screen.getByRole("region", { name: "Rows chosen" });
+    expect(within(two).queryByRole("button", { name: "Peek" })).toBeNull();
+    expect(within(two).queryByRole("button", { name: "Narrow" })).toBeNull();
+    expect(within(two).getByRole("button", { name: "Mark paid" })).toBeTruthy();
+  });
+
+  test("at most 200 rows are chosen at once, and the bar says so (WID-25)", () => {
+    const many = Array.from({ length: 230 }, (_, at) => ({
+      id: `r${at}`,
+      number: `INV-${at}`,
+      client: "x",
+      status: "paid",
+      total: at,
+    }));
+    draw(
+      "core/table",
+      { columns: [{ column: "number" }], rowActions, select: true },
+      { act: async () => ({ ok: true }), can: () => true },
+      many,
+    );
+    fireEvent.click(screen.getByRole("checkbox", { name: "Choose every row" }));
+    const bar = screen.getByRole("region", { name: "Rows chosen" });
+    expect(within(bar).getByText("200 chosen")).toBeTruthy();
+    expect(within(bar).getByText(/200 at most/)).toBeTruthy();
+    // A 201st by hand is not taken either.
+    fireEvent.click(screen.getByRole("checkbox", { name: "Choose INV-229" }));
+    expect(
+      within(screen.getByRole("region", { name: "Rows chosen" })).getByText("200 chosen"),
+    ).toBeTruthy();
   });
 
   test("choosing a row is not pressing it", () => {

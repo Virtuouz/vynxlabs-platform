@@ -1,16 +1,19 @@
 import {
   Button,
   ComboboxField,
-  Dialog,
   Notice,
+  NumberField,
   SelectField,
   SideSheet,
   TextField,
 } from "@volvel/ui";
 import { type ReactNode, useEffect, useState } from "react";
-import { ApiError, api, useLoad } from "../api.ts";
+import { ApiError, api, apiFetch, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
-import { count } from "../kit/format.ts";
+import { Can, useNeeds } from "../kit/Can.tsx";
+import { count, endSentence } from "../kit/format.ts";
+import { ListCollection } from "../kit/ListCollection.tsx";
+import { ErrorState, Loading } from "../kit/LoadState.tsx";
 import {
   KeyValues,
   Panel,
@@ -19,11 +22,13 @@ import {
   SettingsRows,
   Stepper,
 } from "../kit/layout.tsx";
+import { consoleLink } from "../kit/objects.tsx";
 import { SaveBar } from "../kit/SaveBar.tsx";
-import { Code, Mono, StatePill, Tag } from "../kit/status.tsx";
+import { Code, lookUp, Mono, StatePill, Tag } from "../kit/status.tsx";
 import { Time } from "../kit/Time.tsx";
-import { ListScreen, Page, RemoveButton, when } from "../ListScreen.tsx";
+import { CreateDialog, Page, RemoveButton, when } from "../ListScreen.tsx";
 import { Link, navigate } from "../router.tsx";
+import { GiveAccess } from "./GiveAccess.tsx";
 
 export interface WorkspaceSummary {
   id: string;
@@ -32,6 +37,8 @@ export interface WorkspaceSummary {
   type: "production" | "dev";
   linkedWorkspaceId: string | null;
   triggersPaused: boolean;
+  /** An operator has paused every trigger in the instance. */
+  pausedByInstance?: boolean;
 }
 
 const failed = (error: unknown) => {
@@ -87,7 +94,9 @@ export function WorkspaceControls({
       <SettingsRows label="Workspace actions">
         <SettingsRow
           title={
-            workspace.triggersPaused ? (
+            workspace.pausedByInstance ? (
+              <StatePill state="paused">Triggers are paused by the instance</StatePill>
+            ) : workspace.triggersPaused ? (
               <StatePill state="paused">Triggers are paused</StatePill>
             ) : (
               <StatePill state="on">Triggers are on</StatePill>
@@ -105,13 +114,19 @@ export function WorkspaceControls({
             )
           }
         >
-          {workspace.triggersPaused
-            ? `No schedule, webhook or event starts anything in this workspace. Runs you start by hand still work.${
-                workspace.type === "dev"
-                  ? " A dev workspace starts this way, so a schedule you try here does not run beside production's."
-                  : ""
+          {workspace.pausedByInstance
+            ? `An operator has paused every trigger in this instance, so nothing starts in this workspace until they resume them.${
+                workspace.triggersPaused
+                  ? " This workspace is paused on its own as well, and stays paused after that."
+                  : " Runs you start by hand still work."
               }`
-            : "Pausing stops every schedule, webhook and event here at once. One trigger can be paused alone under Triggers."}
+            : workspace.triggersPaused
+              ? `No schedule, webhook or event starts anything in this workspace. Runs you start by hand still work.${
+                  workspace.type === "dev"
+                    ? " A dev workspace starts this way, so a schedule you try here does not run beside production's."
+                    : ""
+                }`
+              : "Pausing stops every schedule, webhook and event here at once. One trigger can be paused alone under Triggers."}
         </SettingsRow>
         <SettingsRow
           title="Copy workspace"
@@ -121,8 +136,9 @@ export function WorkspaceControls({
             </Button>
           }
         >
-          A new dev workspace with what is deployed here, and its rows and files if you choose. It
-          gets no connection, data source or secret value until you bind them.
+          A new dev workspace with what is deployed here, and its rows and files if you choose. With
+          Safety on it gets no connection, data source, group member or secret value until you set
+          them up. With Safety off it gets this workspace's.
         </SettingsRow>
         <SettingsRow
           title={<span className="text-danger">Delete workspace</span>}
@@ -200,8 +216,10 @@ export function WorkspaceSettings({
   reload: () => void;
 }) {
   const root = `${base}/workspaces/${workspace.id}`;
-  const detail = useLoad<{ timeZone?: string }>(root);
+  const detail = useLoad<{ timeZone?: string; concurrencyLimit?: number }>(root);
   const storedZone = detail.data?.timeZone ?? "UTC";
+  const storedLimit = detail.data?.concurrencyLimit;
+  const [limit, setLimit] = useState<number | undefined | null>(null);
   const [zone, setZone] = useState<string>();
   const [linked, setLinked] = useState<string | null>();
   const [name, setName] = useState<string>();
@@ -211,8 +229,16 @@ export function WorkspaceSettings({
     timeZone: zone ?? storedZone,
     linkedWorkspaceId: linked !== undefined ? linked : workspace.linkedWorkspaceId,
   };
-  const blank = draft.name.trim() === "";
+  const shownLimit = limit === null ? storedLimit : limit;
+  // Emptied, the field means the limit stays as it is: there is no workspace without one.
+  const limitBad =
+    limit !== null &&
+    limit !== undefined &&
+    (!Number.isInteger(limit) || limit < 1 || limit > 1000);
+  const limitChanged = limit !== null && limit !== undefined && limit !== storedLimit;
+  const blank = draft.name.trim() === "" || limitBad;
   const dirty =
+    limitChanged ||
     draft.name.trim() !== workspace.name ||
     draft.timeZone !== storedZone ||
     draft.linkedWorkspaceId !== workspace.linkedWorkspaceId;
@@ -220,14 +246,26 @@ export function WorkspaceSettings({
     setName(undefined);
     setZone(undefined);
     setLinked(undefined);
+    setLimit(null);
   };
   const save = async () => {
-    if (blank) return;
+    if (blank) {
+      // The field says what is wrong, but at a phone's width it is out of sight: say it here too.
+      notify.error(
+        new Error(
+          limitBad
+            ? "The run limit must be a whole number from 1 to 1000. Correct it, then save."
+            : "A workspace needs a name. Give it one, then save.",
+        ),
+      );
+      return;
+    }
     setSaving(true);
     try {
       await api.patch(root, {
         ...(draft.name.trim() !== workspace.name ? { name: draft.name.trim() } : {}),
         ...(draft.timeZone !== storedZone ? { timeZone: draft.timeZone } : {}),
+        ...(limitChanged ? { concurrencyLimit: limit } : {}),
         ...(draft.linkedWorkspaceId !== workspace.linkedWorkspaceId
           ? { linkedWorkspaceId: draft.linkedWorkspaceId }
           : {}),
@@ -245,44 +283,74 @@ export function WorkspaceSettings({
   return (
     <Page
       title="Workspace settings"
-      description="Pause what starts by itself, make a copy, or delete a dev workspace: these act at once. Its name, where it promotes to and its time zone are saved together, from the bar that appears below."
+      description="Pause what starts by itself, make a copy, or delete the workspace: these act at once. Its name, where it promotes to and its time zone are saved together, from the bar that appears below."
     >
-      <section aria-labelledby="workspace-name" className="flex flex-col gap-3">
-        <h2 id="workspace-name" className="m-0 text-title">
-          Name
-        </h2>
-        <Panel className="flex flex-col gap-3 p-4">
-          <div className="w-full max-w-sm">
-            <TextField
-              name="name"
-              label="Workspace name"
-              value={draft.name}
-              maxLength={200}
-              required
-              onChange={setName}
-              hint={`What people read in lists and the switcher. Its address, ${workspace.slug}, does not change.`}
-              {...(blank ? { error: "A workspace needs a name." } : {})}
+      <Can base={root} permission="workspace:write" what="this workspace's settings">
+        <section aria-labelledby="workspace-name" className="flex flex-col gap-3">
+          <h2 id="workspace-name" className="m-0 text-title">
+            Name
+          </h2>
+          <Panel className="flex flex-col gap-3 p-4">
+            <div className="w-full max-w-sm">
+              <TextField
+                name="name"
+                label="Workspace name"
+                value={draft.name}
+                maxLength={200}
+                required
+                onChange={setName}
+                hint={`What people read in lists and the switcher. Its address, ${workspace.slug}, does not change.`}
+                {...(blank ? { error: "A workspace needs a name." } : {})}
+              />
+            </div>
+          </Panel>
+        </section>
+        <WorkspaceControls
+          key={workspace.id}
+          base={base}
+          tenantId={tenantId}
+          workspace={workspace}
+          reload={reload}
+          promotion={
+            <Promotion
+              base={base}
+              workspace={workspace}
+              reload={reload}
+              linked={draft.linkedWorkspaceId}
+              onLink={setLinked}
             />
-          </div>
-        </Panel>
-      </section>
-      <WorkspaceControls
-        key={workspace.id}
-        base={base}
-        tenantId={tenantId}
-        workspace={workspace}
-        reload={reload}
-        promotion={
-          <Promotion
-            base={base}
-            workspace={workspace}
-            reload={reload}
-            linked={draft.linkedWorkspaceId}
-            onLink={setLinked}
-          />
-        }
-      />
-      <TimeZoneSetting zone={draft.timeZone} onZone={setZone} />
+          }
+        />
+        <TimeZoneSetting zone={draft.timeZone} onZone={setZone} />
+        <section aria-labelledby="run-limit" className="flex flex-col gap-3">
+          <h2 id="run-limit" className="m-0 text-title">
+            Run limit
+          </h2>
+          <Panel className="flex flex-col gap-3 p-4">
+            <p className="m-0 text-ink-muted">
+              How many runs of this workspace may be in progress at once. The rest wait their turn.
+            </p>
+            <div className="w-full max-w-xs">
+              <NumberField
+                name="concurrencyLimit"
+                label="Runs at once"
+                value={shownLimit}
+                min={1}
+                max={1000}
+                step={1}
+                onChange={setLimit}
+                hint={
+                  limit === undefined && storedLimit !== undefined
+                    ? `Left empty, it stays at ${storedLimit}.`
+                    : "1 to 1000."
+                }
+                {...(limitBad ? { error: "A whole number from 1 to 1000." } : {})}
+              />
+            </div>
+          </Panel>
+        </section>
+      </Can>
+      <WorkspaceAccess base={base} workspace={workspace} />
       <SaveBar
         dirty={dirty}
         saving={saving}
@@ -291,6 +359,99 @@ export function WorkspaceSettings({
         what={`the settings of ${workspace.name}`}
       />
     </Page>
+  );
+}
+
+interface HeldHere {
+  id: string;
+  principalLabel: string;
+  roleName: string;
+  resourceKind: string | null;
+  resourcePath: string | null;
+  managedByResource: boolean;
+}
+
+/**
+ * Who holds a role at this workspace, and giving it to someone here. For a workspace admin, who
+ * may give access at the workspace and nowhere else: the people and roles are read here too.
+ */
+export function WorkspaceAccess({
+  base,
+  workspace,
+}: {
+  base: string;
+  workspace: { id: string; name: string };
+}) {
+  const held = useLoad<{ items: HeldHere[] }>(`${base}/bindings?workspaceId=${workspace.id}`);
+  const [giving, setGiving] = useState(false);
+  const may = useNeeds({
+    base: `${base}/workspaces/${workspace.id}`,
+    permission: "binding:write",
+    what: "who holds a role here",
+  });
+  return (
+    <section aria-labelledby="workspace-access" className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 id="workspace-access" className="m-0 text-title">
+          Access
+        </h2>
+        <Button
+          size="small"
+          disabled={!may.can}
+          {...(may.reason ? { tooltip: may.reason } : {})}
+          onClick={() => setGiving(true)}
+        >
+          Give access
+        </Button>
+      </div>
+      {may.line}
+      <Panel className="flex flex-col gap-2 p-4">
+        <p className="m-0 text-ink-muted">
+          Who holds a role in {workspace.name}. Access given to the whole tenant applies here too
+          and is changed under Members and access.
+        </p>
+        {held.error ? (
+          <Notice tone="danger">{failed(held.error)}</Notice>
+        ) : held.data === undefined ? (
+          <Loading what="who holds a role here" lines={2} />
+        ) : held.data.items.length === 0 ? (
+          <p className="m-0 text-ink-muted">Nobody holds a role here yet.</p>
+        ) : (
+          <ul className="m-0 flex list-none flex-col gap-2 p-0">
+            {held.data.items.map((one) => (
+              <li key={one.id} className="flex flex-wrap items-center justify-between gap-2">
+                <span className="flex min-w-0 flex-wrap items-center gap-2">
+                  <span className="font-medium">{one.principalLabel}</span>
+                  <Mono>{one.roleName}</Mono>
+                  {one.resourcePath ? (
+                    <span className="text-meta text-ink-muted">
+                      at {one.resourceKind} {one.resourcePath}
+                    </span>
+                  ) : null}
+                </span>
+                {one.managedByResource ? (
+                  <Tag tone="repository">From repository</Tag>
+                ) : (
+                  <RemoveButton
+                    confirm={`Remove the ${one.roleName} role from ${one.principalLabel} in ${workspace.name}?`}
+                    run={() => api.delete(`${base}/bindings/${one.id}`)}
+                    onDone={held.reload}
+                    disabled={may.reason}
+                  />
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </Panel>
+      <GiveAccess
+        base={base}
+        open={giving}
+        inWorkspace={workspace}
+        onClose={() => setGiving(false)}
+        onGiven={held.reload}
+      />
+    </section>
   );
 }
 
@@ -417,9 +578,12 @@ function CloneDialog({
               {counted(clone.report.rows, "row", "rows")} in{" "}
               {counted(clone.report.tables, "table", "tables")} and{" "}
               {counted(clone.report.files, "file", "files")}.{" "}
-              {clone.report.connections || clone.report.secrets
-                ? "Its connections and secrets were copied: it can reach the same systems as the original."
-                : "It has no connections or secret values, so it cannot reach a real system until you bind it."}
+              {clone.report.connections ||
+              clone.report.secrets ||
+              clone.report.dataSources ||
+              clone.report.connectionGroupMembers
+                ? "Its connections, data sources, group members and secrets were copied: it can reach the same systems as the original. A connection that signs in with OAuth is not signed in: connect it again."
+                : "It has no connections, data sources or secret values, so it cannot reach a real system until you set it up."}
             </p>
           )}
           <div className="flex justify-end gap-2">
@@ -520,30 +684,6 @@ function CloneDialog({
 
 // ----- Promotion: shown above a dev workspace's deployments -----
 
-interface Summary {
-  created: number;
-  updated: number;
-  deleted: number;
-  unchanged: number;
-  data?: string[];
-  changes?: { change: string; kind: string; path: string; from?: string }[];
-  breaking?: { path: string; message: string }[];
-}
-interface Preview {
-  target: { id: string; slug: string; name: string; type: string };
-  bundle: { digest: string; version: number };
-  possible: boolean;
-  refusal: { detail: string; errors: { path: string; message: string }[] } | null;
-  summary: Summary | null;
-}
-
-const CHANGE: Record<string, string> = {
-  created: "Add",
-  updated: "Change",
-  renamed: "Rename",
-  deleted: "Remove",
-};
-
 export function Promotion({
   base,
   workspace,
@@ -561,23 +701,11 @@ export function Promotion({
 }) {
   const root = `${base}/workspaces/${workspace.id}`;
   const others = useLoad<{ items: WorkspaceSummary[] }>(`${base}/workspaces`);
-  const [preview, setPreview] = useState<Preview>();
-  const [open, setOpen] = useState(false);
   const [problem, setProblem] = useState<string>();
-  const [done, setDone] = useState<string>();
   if (workspace.type !== "dev") return null;
   const target = others.data?.items.find((item) => item.id === workspace.linkedWorkspaceId);
-
-  const review = async () => {
-    setProblem(undefined);
-    setDone(undefined);
-    try {
-      setPreview(await api.get<Preview>(`${root}/promotion-preview`));
-      setOpen(true);
-    } catch (error) {
-      setProblem(failed(error));
-    }
-  };
+  // A target chosen in the settings and not saved yet is not what a promotion goes to.
+  const unsaved = linked !== undefined && linked !== (workspace.linkedWorkspaceId ?? null);
 
   return (
     <Panel className="flex flex-col gap-2 p-4">
@@ -619,138 +747,26 @@ export function Promotion({
             }}
           />
         </div>
-        {target ? (
-          <Button variant="primary" onClick={review}>
+        {unsaved ? (
+          <p className="m-0 max-w-measure text-ink-muted">
+            {linked === null
+              ? "Saved, this workspace promotes nowhere. Save to stop, or choose a target again."
+              : "Save the new target to review a promotion to it."}
+          </p>
+        ) : target ? (
+          // The one place that reviews, asks for and makes a promotion is the Release screen's promote step.
+          <Button
+            variant="primary"
+            onClick={() =>
+              navigate(`${consoleLink(base)}/workspaces/${workspace.id}/release?step=promote`)
+            }
+          >
             Review and promote
           </Button>
         ) : null}
       </div>
       {problem ? <Notice tone="danger">{problem}</Notice> : null}
-      {done ? <Notice tone="attention">{done}</Notice> : null}
-
-      <Dialog
-        open={open && preview !== undefined}
-        onClose={() => setOpen(false)}
-        title={`Promote to ${preview?.target.name ?? ""}`}
-        description={
-          preview
-            ? `Version ${preview.bundle.version} here, bundle ${preview.bundle.digest.slice(0, 12)}.`
-            : ""
-        }
-      >
-        {preview ? (
-          <div className="flex flex-col gap-3">
-            {preview.possible && preview.summary ? (
-              <>
-                <PreviewBody summary={preview.summary} target={preview.target.name} />
-                {preview.target.type === "production" && preview.summary.breaking?.length ? (
-                  <Notice tone="attention">
-                    <p className="m-0">
-                      Promoting changes a name that something outside calls. An agent told the old
-                      name will fail until it is told the new one.
-                    </p>
-                    <ul className="mt-1 mb-0 list-disc pl-5">
-                      {preview.summary.breaking.map((entry) => (
-                        <li key={`${entry.path} ${entry.message}`}>{entry.message}</li>
-                      ))}
-                    </ul>
-                  </Notice>
-                ) : null}
-              </>
-            ) : (
-              <Notice tone="danger">
-                <p className="m-0">It cannot be promoted yet. {preview.refusal?.detail}</p>
-                {preview.refusal?.errors.length ? (
-                  <ul className="mt-1 mb-0 list-disc pl-5">
-                    {preview.refusal.errors.map((entry) => (
-                      <li key={entry.path}>{entry.message}</li>
-                    ))}
-                  </ul>
-                ) : null}
-              </Notice>
-            )}
-            <div className="flex justify-end gap-2">
-              <Button onClick={() => setOpen(false)}>Cancel</Button>
-              {preview.possible ? (
-                <Button
-                  variant="promote"
-                  onClick={async () => {
-                    try {
-                      const result = await api.post<{ bundleVersion: number }>(
-                        `${root}/promotions`,
-                        // What breaks is listed in this dialog, above the button that sends this.
-                        preview.summary?.breaking?.length ? { confirmBreaking: true } : {},
-                      );
-                      setOpen(false);
-                      setDone(
-                        `Promoted to ${preview.target.name} as its version ${result.bundleVersion}.`,
-                      );
-                    } catch (error) {
-                      setOpen(false);
-                      setProblem(failed(error));
-                    }
-                  }}
-                >
-                  Promote
-                </Button>
-              ) : null}
-            </div>
-          </div>
-        ) : null}
-      </Dialog>
     </Panel>
-  );
-}
-
-function PreviewBody({ summary, target }: { summary: Summary; target: string }) {
-  const changes = summary.changes ?? [];
-  const data = summary.data ?? [];
-  if (changes.length === 0 && data.length === 0) {
-    return <p className="m-0">{target} already runs this bundle. Promoting changes nothing.</p>;
-  }
-  return (
-    <div className="flex max-h-[50vh] flex-col gap-3 overflow-y-auto">
-      <p className="m-0">
-        This is what promoting will do in {target}. Nothing has been changed yet.
-      </p>
-      {changes.length > 0 ? (
-        <ul className="m-0 flex list-none flex-col gap-1 p-0">
-          {changes.map((entry) => (
-            <li key={`${entry.kind}:${entry.path}`} className="flex flex-wrap items-center gap-2">
-              <Tag
-                tone={
-                  entry.change === "deleted"
-                    ? "danger"
-                    : entry.change === "created"
-                      ? "live"
-                      : "neutral"
-                }
-              >
-                {CHANGE[entry.change] ?? entry.change}
-              </Tag>
-              <span className="text-ink-muted">{entry.kind}</span>
-              {entry.from ? (
-                <>
-                  <Code>{entry.from}</Code>
-                  <span className="text-ink-muted">to</span>
-                </>
-              ) : null}
-              <Code>{entry.path}</Code>
-            </li>
-          ))}
-        </ul>
-      ) : null}
-      {data.length > 0 ? (
-        <div>
-          <p className="m-0 font-medium">To the data</p>
-          <ul className="mt-1 mb-0 list-disc pl-5">
-            {data.map((line) => (
-              <li key={line}>{line}</li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-    </div>
   );
 }
 
@@ -763,91 +779,99 @@ export function TenantExport({ base, slug }: { base: string; slug: string }) {
   const [state, setState] = useState<"idle" | "working" | "done">("idle");
   const [problem, setProblem] = useState<string>();
   const mismatch = again !== "" && again !== passphrase;
+  const tooShort = passphrase !== "" && passphrase.length < 12;
 
   return (
     <Page
       title="Export"
       description="Everything this tenant has, in one file you can keep or take to another instance: resources, bindings, secrets, members, the audit log, tables and files. It is yours."
     >
-      <form
-        className="flex max-w-md flex-col gap-3"
-        onSubmit={async (event) => {
-          event.preventDefault();
-          if (mismatch || passphrase !== again) return;
-          setProblem(undefined);
-          setState("working");
-          try {
-            const response = await fetch(`/api/v1${base}/exports`, {
-              method: "POST",
-              credentials: "same-origin",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify({ passphrase, history: history === "yes" }),
-            });
-            if (!response.ok) throw new ApiError(response.status, await response.json());
-            const link = document.createElement("a");
-            link.href = URL.createObjectURL(await response.blob());
-            link.download = `${slug}-${new Date().toISOString().slice(0, 10)}.tar`;
-            link.click();
-            URL.revokeObjectURL(link.href);
-            setState("done");
-            setPassphrase("");
-            setAgain("");
-          } catch (error) {
-            setState("idle");
-            setProblem(failed(error));
-          }
-        }}
-      >
-        <TextField
-          label="Passphrase"
-          name="passphrase"
-          type="password"
-          value={passphrase}
-          minLength={12}
-          required
-          autoComplete="new-password"
-          onChange={setPassphrase}
-          hint="At least 12 characters. It protects every secret in the file, and it is not stored: without it the secrets cannot be read. Pass it on separately from the file."
-        />
-        <TextField
-          label="Passphrase again"
-          name="again"
-          type="password"
-          value={again}
-          required
-          autoComplete="new-password"
-          onChange={setAgain}
-          error={mismatch ? "The two do not match." : undefined}
-        />
-        <SelectField
-          label="Run, flow and event history"
-          name="history"
-          value={history}
-          onChange={setHistory}
-          options={[
-            { value: "no", label: "Leave it out" },
-            { value: "yes", label: "Include it" },
-          ]}
-          hint="History can make the file much larger."
-        />
-        {problem ? <Notice tone="danger">{problem}</Notice> : null}
-        {state === "done" ? (
-          <Notice tone="attention">
-            The export was downloaded. API keys and worker credentials are never in an export: make
-            new ones wherever the tenant goes.
-          </Notice>
-        ) : null}
-        <div>
-          <Button type="submit" variant="primary" disabled={state === "working" || mismatch}>
-            {state === "working" ? "Exporting…" : "Export tenant"}
-          </Button>
-        </div>
-        <p className="m-0 text-body-sm text-ink-muted">
-          The passphrase protects the secrets in the file. The rest of it, rows and files included,
-          can be read by anyone who has the file, so keep it somewhere safe. For a large tenant, use
-          the command line instead: <Code>{"volvel tenant export"}</Code>.
-        </p>
-      </form>
+      <Can base={base} permission="export:write" what="this tenant's export">
+        <form
+          className="flex max-w-md flex-col gap-3"
+          onSubmit={async (event) => {
+            event.preventDefault();
+            if (mismatch || tooShort || passphrase !== again) return;
+            setProblem(undefined);
+            setState("working");
+            try {
+              const response = await apiFetch(`${base}/exports`, {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ passphrase, history: history === "yes" }),
+              });
+              if (!response.ok) throw new ApiError(response.status, await response.json());
+              const link = document.createElement("a");
+              link.href = URL.createObjectURL(await response.blob());
+              link.download = `${slug}-${new Date().toISOString().slice(0, 10)}.tar`;
+              link.click();
+              URL.revokeObjectURL(link.href);
+              setState("done");
+              setPassphrase("");
+              setAgain("");
+            } catch (error) {
+              setState("idle");
+              setProblem(failed(error));
+            }
+          }}
+        >
+          <TextField
+            label="Passphrase"
+            name="passphrase"
+            type="password"
+            value={passphrase}
+            required
+            autoComplete="new-password"
+            onChange={setPassphrase}
+            error={tooShort ? "Use at least 12 characters." : undefined}
+            hint="At least 12 characters. It protects every secret in the file, and the password of each member who belongs to this tenant alone. It is not stored: without it they cannot be read. Pass it on separately from the file."
+          />
+          <TextField
+            label="Passphrase again"
+            name="again"
+            type="password"
+            value={again}
+            required
+            autoComplete="new-password"
+            onChange={setAgain}
+            error={mismatch ? "The two do not match." : undefined}
+          />
+          <SelectField
+            label="Run, flow and event history"
+            name="history"
+            value={history}
+            onChange={setHistory}
+            options={[
+              { value: "no", label: "Leave it out" },
+              { value: "yes", label: "Include it" },
+            ]}
+            hint="History can make the file much larger."
+          />
+          {problem ? <Notice tone="danger">{problem}</Notice> : null}
+          {state === "done" ? (
+            <Notice tone="attention">
+              The export was downloaded. API keys and worker credentials are never in an export:
+              make new ones wherever the tenant goes.
+            </Notice>
+          ) : null}
+          <div>
+            <Button
+              type="submit"
+              variant="primary"
+              disabled={state === "working" || mismatch || tooShort}
+            >
+              {state === "working" ? "Exporting…" : "Export tenant"}
+            </Button>
+          </div>
+          <p className="m-0 text-body-sm text-ink-muted">
+            The passphrase protects the secrets and members' passwords in the file. A member who
+            also belongs to another tenant, or runs the instance, is exported without a password.
+            The rest of the file, rows and files included, can be read by anyone who has the file,
+            so keep it somewhere safe. For a large tenant, use the command line instead:{" "}
+            <Code>{"volvel tenant export"}</Code>.
+          </p>
+        </form>
+      </Can>
     </Page>
   );
 }
@@ -864,25 +888,108 @@ interface Location {
   problem: string | null;
 }
 
+/** What is said of a location whose address is not changed: the database stays, and so does its sign-in. */
+function EditLocation({ row, onDone }: { row: Location; onDone: () => void }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <Button size="small" onClick={() => setOpen(true)}>
+        Edit
+      </Button>
+      <CreateDialog
+        open={open}
+        onClose={() => setOpen(false)}
+        initial={{ description: row.description }}
+        config={{
+          action: "Edit location",
+          description: `Now ${row.database} on ${row.host}. The address is stored encrypted and never shown: leave it empty to keep it, or give a new one to point ${row.name} at another database. A new address is refused unless it holds what the tenants here keep.`,
+          fields: [
+            { name: "description", label: "What it is for", required: false },
+            {
+              name: "connectionString",
+              label: "New connection string",
+              type: "password",
+              required: false,
+              placeholder: "postgres://user:password@host:5432/database",
+              hint: "Stored encrypted, and never shown again.",
+            },
+          ],
+          submit: ({ description = "", connectionString }) =>
+            api.put(`/instance/database-locations/${row.name}`, {
+              description,
+              ...(connectionString ? { connectionString } : {}),
+            }),
+        }}
+        onCreated={() => {
+          setOpen(false);
+          notify.success(`${row.name} is saved.`);
+          onDone();
+        }}
+      />
+    </>
+  );
+}
+
+/** The tenants that keep their tables in one location: where an operator sees what removing or editing it touches. */
+function LocationTenants({ name }: { name: string }) {
+  const loaded = useLoad<{ items: { id: string; name: string; slug: string }[] }>(
+    `/tenants?dataLocation=${encodeURIComponent(name)}&limit=50`,
+  );
+  if (loaded.error)
+    return <ErrorState error={loaded.error} what="its tenants" onRetry={loaded.reload} />;
+  if (!loaded.data) return <Loading what="its tenants" />;
+  if (loaded.data.items.length === 0) {
+    return <p className="m-0 text-body-sm text-ink-muted">No tenant keeps its tables here.</p>;
+  }
+  return (
+    <ul className="m-0 flex list-none flex-col gap-1 p-0">
+      {loaded.data.items.map((one) => (
+        <li key={one.id} className="flex flex-wrap items-baseline gap-2">
+          <Link to={`/t/${one.id}`} className="font-medium text-action">
+            {one.name}
+          </Link>
+          <Mono className="text-ink-subtle">{one.slug}</Mono>
+        </li>
+      ))}
+      <li>
+        <Link to={`/?location=${encodeURIComponent(name)}`} className="text-action text-meta">
+          Show them in the tenant list
+        </Link>
+      </li>
+    </ul>
+  );
+}
+
 export function DatabaseLocations() {
   return (
-    <ListScreen<Location>
+    <ListCollection<Location>
       title="Database locations"
       description="Databases, other than the instance's own, where a tenant's custom tables can live. A tenant is placed in one when it is created or imported."
       path="/instance/database-locations"
+      needs={{ base: "/instance", permission: "instance:write", what: "the database locations" }}
       rowKey={(row) => row.name}
       columns={[
         { header: "Name", cell: (row) => <Code>{row.name}</Code> },
-        { header: "For", cell: (row) => <span className="text-ink-muted">{row.description}</span> },
-        { header: "Database", cell: (row) => `${row.database} on ${row.host}` },
-        { header: "Tenants", cell: (row) => row.tenants, align: "end" },
+        // Where it is comes before what it is for: it is what a person picks a location by, and it
+        // is the column a tablet should still have.
+        {
+          header: "For",
+          priority: 3,
+          cell: (row) => <span className="text-ink-muted">{row.description}</span>,
+        },
+        {
+          header: "Database",
+          priority: 2,
+          cell: (row) => (row.host ? `${row.database} on ${row.host}` : ""),
+        },
+        { header: "Tenants", priority: 3, cell: (row) => row.tenants, align: "end" },
         {
           header: "Status",
           cell: (row) =>
             row.reachable ? (
-              <StatePill state="reachable" />
+              <StatePill state="ok">Reached</StatePill>
             ) : (
-              <StatePill state="unreachable" detail={row.problem ?? undefined} />
+              <StatePill state="failed" detail={row.problem ?? undefined} />
             ),
         },
       ]}
@@ -893,7 +1000,7 @@ export function DatabaseLocations() {
       create={{
         action: "Register database",
         description:
-          "The platform connects first and prepares the database. The user must own it and be allowed to create roles. Registering a name again changes its address.",
+          "Volvel connects first and prepares the database. The user must own it and be allowed to create roles. Registering a name again changes its address.",
         fields: [
           {
             name: "name",
@@ -916,15 +1023,46 @@ export function DatabaseLocations() {
             ...(description ? { description } : {}),
           }),
       }}
-      rowActions={(row, reload) =>
-        row.tenants > 0 ? null : (
-          <RemoveButton
-            confirm={`Remove "${row.name}" from this instance? Nothing in that database is touched.`}
-            run={() => api.delete(`/instance/database-locations/${row.name}`)}
-            onDone={reload}
-          />
-        )
-      }
+      rowActions={(row, reload) => (
+        <>
+          <EditLocation row={row} onDone={reload} />
+          {row.tenants > 0 ? null : (
+            <RemoveButton
+              confirm={`Remove "${row.name}" from this instance? Nothing in that database is touched.`}
+              run={() => api.delete(`/instance/database-locations/${row.name}`)}
+              onDone={reload}
+            />
+          )}
+        </>
+      )}
+      inspect={{
+        title: (row) => row.name,
+        eyebrow: () => "Database location",
+        body: (row) => (
+          <div className="flex flex-col gap-5">
+            <KeyValues
+              rows={[
+                { label: "For", value: row.description || "Not said" },
+                {
+                  label: "Database",
+                  value: row.host ? `${row.database} on ${row.host}` : "Its address cannot be read",
+                },
+                {
+                  label: "Status",
+                  value: row.reachable
+                    ? "Reached"
+                    : `Failed${row.problem ? `: ${row.problem}` : ""}`,
+                },
+                { label: "Tenants", value: String(row.tenants) },
+              ]}
+            />
+            <section aria-label="Tenants here" className="flex flex-col gap-2">
+              <SectionLabel>Tenants here</SectionLabel>
+              <LocationTenants name={row.name} />
+            </section>
+          </div>
+        ),
+      }}
     />
   );
 }
@@ -953,6 +1091,8 @@ interface Inspection {
   pendingRuns: number;
   notCarried: string[];
   passphraseOk: boolean | null;
+  formatVersion?: number | null;
+  authenticated?: boolean | null;
   tenantPresent: boolean;
   slugTaken: boolean;
 }
@@ -973,9 +1113,8 @@ const bytes = (size: number) =>
 
 /** Sends the export's bytes as they are, with its passphrase in a header when one is given. */
 async function sendTar<T>(path: string, file: File, passphrase: string): Promise<T> {
-  const response = await fetch(`/api/v1${path}`, {
+  const response = await apiFetch(path, {
     method: "POST",
-    credentials: "same-origin",
     headers: {
       "content-type": "application/x-tar",
       ...(passphrase ? { "x-export-passphrase": passphrase } : {}),
@@ -993,9 +1132,8 @@ async function withPassphrase<T>(
   path: string,
   passphrase: string,
 ): Promise<T> {
-  const response = await fetch(`/api/v1${path}`, {
+  const response = await apiFetch(path, {
     method,
-    credentials: "same-origin",
     headers: passphrase ? { "x-export-passphrase": passphrase } : {},
   });
   const text = await response.text();
@@ -1004,17 +1142,79 @@ async function withPassphrase<T>(
   return body as T;
 }
 
-/** One line of what an inspection found, as a state and what it means. */
-function Check({ ok, children }: { ok: boolean | null; children: ReactNode }) {
+/**
+ * One line of what an inspection found, as a state and what it means. A long sentence wraps
+ * under its icon, as it must in a card at a phone's width. `ok` is "note" for what allows the
+ * import and still deserves a look: a warning, not a failure.
+ */
+function Check({ ok, children }: { ok: boolean | null | "note"; children: ReactNode }) {
+  const [, Icon, tone] = lookUp(
+    ok === null ? "unchecked" : ok === "note" ? "warning" : ok ? "ok" : "failed",
+  );
   return (
-    <li>
-      <StatePill state={ok === null ? "unchecked" : ok ? "ok" : "failed"}>{children}</StatePill>
+    <li
+      data-check={ok === "note" ? "note" : ok === null ? "unchecked" : ok ? "ok" : "failed"}
+      className="flex items-start gap-1.5"
+    >
+      <Icon aria-hidden="true" size={14} className={`mt-1 shrink-0 ${tone}`} />
+      <span className={`min-w-0 break-words ${tone}`}>{children}</span>
     </li>
   );
 }
 
+/** Uploads that were checked and not imported, still kept on the instance: they survive a reload. */
+function WaitingUploads({ onOpen }: { onOpen: (upload: Staged) => void }) {
+  const loaded = useLoad<{ items: (Staged & { here: boolean })[] }>(
+    "/instance/tenant-imports/staged",
+  );
+  if (loaded.error) {
+    return <ErrorState error={loaded.error} what="the uploads that wait" onRetry={loaded.reload} />;
+  }
+  if (!loaded.data) return <Loading what="the uploads that wait" />;
+  if (loaded.data.items.length === 0) return null;
+  return (
+    <section aria-label="Uploads that wait" className="flex max-w-[60rem] flex-col gap-2">
+      <SectionLabel>Uploads that wait</SectionLabel>
+      <p className="m-0 text-body-sm text-ink-muted">
+        Checked and not imported yet. Each is kept for an hour after it came, then removed.
+      </p>
+      <ul className="m-0 flex list-none flex-col gap-2 p-0">
+        {loaded.data.items.map((one) => (
+          <li
+            key={one.id}
+            className="flex flex-wrap items-center justify-between gap-2 rounded-control border border-line p-3"
+          >
+            <span className="flex min-w-0 flex-col gap-0.5">
+              <span className="font-medium">
+                {one.inspection.tenant ? one.inspection.tenant.name : one.fileName}
+              </span>
+              <span className="text-meta text-ink-muted">
+                {one.fileName} · {bytes(one.sizeBytes)} · kept until {when(one.expiresAt)}
+                {one.here ? "" : ". Another replica keeps the file: upload it again"}
+              </span>
+            </span>
+            <span className="flex gap-2">
+              {one.here ? (
+                <Button size="small" onClick={() => onOpen(one)}>
+                  Open
+                </Button>
+              ) : null}
+              <RemoveButton
+                label="Throw away"
+                confirm={`Throw away ${one.fileName}? The file is removed from the instance. The export it came from is not touched.`}
+                run={() => api.delete(`/instance/tenant-imports/staged/${one.id}`)}
+                onDone={loaded.reload}
+              />
+            </span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 export function TenantImport() {
-  const locations = useLoad<{ items: Location[] }>("/instance/database-locations");
+  const locations = useLoad<{ items: { name: string }[] }>("/instance/database-locations/names");
   const [file, setFile] = useState<File>();
   const [passphrase, setPassphrase] = useState("");
   const [slug, setSlug] = useState("");
@@ -1023,6 +1223,8 @@ export function TenantImport() {
   const [problem, setProblem] = useState<string>();
   const [staged, setStaged] = useState<Staged>();
   const [report, setReport] = useState<ImportReport>();
+  /** What the verdict on the screen was made with: a changed slug or passphrase makes it old. */
+  const [checkedWith, setCheckedWith] = useState<{ slug: string; passphrase: string }>();
   const step = report ? "done" : staged ? "inspect" : "upload";
 
   const lost = (error: unknown) => {
@@ -1058,7 +1260,35 @@ export function TenantImport() {
     !inspection.problem &&
     inspection.levelMatches &&
     inspection.passphraseOk === true &&
-    !inspection.slugTaken;
+    !inspection.tenantPresent &&
+    !inspection.slugTaken &&
+    checkedWith?.slug === slug &&
+    checkedWith.passphrase === passphrase;
+  const recheck = () =>
+    run(async () => {
+      if (!staged) return;
+      const answer = await withPassphrase<Staged>(
+        "GET",
+        `/instance/tenant-imports/staged/${staged.id}${query({ slug })}`,
+        passphrase,
+      );
+      setStaged(answer);
+      setCheckedWith({ slug, passphrase });
+    });
+  // The check is made again a moment after the slug or the passphrase stops changing.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only what was typed starts it
+  useEffect(() => {
+    if (!staged || !passphrase || working) return;
+    if (checkedWith?.slug === slug && checkedWith.passphrase === passphrase) return;
+    const timer = setTimeout(() => void recheck(), 600);
+    return () => clearTimeout(timer);
+  }, [slug, passphrase, staged?.id, checkedWith]);
+  const startOver = () => {
+    setSlug("");
+    setLocation("");
+    setPassphrase("");
+    setCheckedWith(undefined);
+  };
 
   return (
     <Page
@@ -1088,14 +1318,21 @@ export function TenantImport() {
                 ? `the database location "${report.tenant.dataLocation}".`
                 : "the instance's own database."}
             </li>
-            <li>
-              All {report.pausedWorkspaces} workspaces arrived with their triggers paused. Resume
-              each one when the instance it came from has stopped.
-            </li>
+            {report.pausedWorkspaces > 0 ? (
+              <li>
+                {report.pausedWorkspaces === 1
+                  ? "The workspace arrived with its triggers paused. Resume it"
+                  : `All ${report.pausedWorkspaces} workspaces arrived with their triggers paused. Resume each one`}{" "}
+                when the instance it came from has stopped.
+              </li>
+            ) : (
+              <li>The tenant had no workspaces, so there are no triggers to resume.</li>
+            )}
             {report.cancelled.runs + report.cancelled.flowRuns > 0 ? (
               <li>
-                {report.cancelled.runs} runs and {report.cancelled.flowRuns} flow runs were
-                unfinished in the export, and are recorded as cancelled.
+                {report.cancelled.runs} {report.cancelled.runs === 1 ? "run" : "runs"} and{" "}
+                {report.cancelled.flowRuns} flow {report.cancelled.flowRuns === 1 ? "run" : "runs"}{" "}
+                were unfinished in the export, and are recorded as canceled.
               </li>
             ) : null}
             {report.notCarried.map((line) => (
@@ -1106,7 +1343,14 @@ export function TenantImport() {
             <Button variant="primary" onClick={() => navigate(`/t/${report.tenant.id}/workspaces`)}>
               Open the tenant
             </Button>
-            <Button onClick={() => setReport(undefined)}>Import another</Button>
+            <Button
+              onClick={() => {
+                setReport(undefined);
+                startOver();
+              }}
+            >
+              Import another
+            </Button>
           </div>
         </div>
       ) : staged && inspection ? (
@@ -1172,16 +1416,30 @@ export function TenantImport() {
                       ? "The passphrase opens it"
                       : "The passphrase does not open it"}
                 </Check>
+                <Check
+                  ok={
+                    inspection.authenticated === false ? "note" : (inspection.authenticated ?? null)
+                  }
+                >
+                  {inspection.authenticated === true
+                    ? "Its list of contents is signed with its key, and the signature is right"
+                    : inspection.authenticated === false
+                      ? `Format ${inspection.formatVersion ?? 1} has no signature: nobody vouches that the file is as its author wrote it. It is held to the tenant's own rows and files, but import it only from a source you trust`
+                      : "Signature not checked yet: enter the passphrase"}
+                </Check>
                 <Check ok={!inspection.tenantPresent}>
                   {inspection.tenantPresent
                     ? "This tenant is on this instance already"
                     : "The tenant is not here yet"}
                 </Check>
-                <Check ok={!inspection.slugTaken}>
-                  {inspection.slugTaken
-                    ? "Its slug is taken here: choose another below"
-                    : "Its slug is free here"}
-                </Check>
+                {/* A tenant that is here already holds the slug itself: that one line says all. */}
+                {inspection.tenantPresent ? null : (
+                  <Check ok={!inspection.slugTaken}>
+                    {inspection.slugTaken
+                      ? "Its slug is taken here: choose another below"
+                      : "Its slug is free here"}
+                  </Check>
+                )}
               </ul>
             </section>
             {inspection.notCarried.length > 0 ? (
@@ -1207,7 +1465,7 @@ export function TenantImport() {
                 );
                 setReport(body);
                 setStaged(undefined);
-                setPassphrase("");
+                startOver();
                 setFile(undefined);
               });
             }}
@@ -1238,26 +1496,13 @@ export function TenantImport() {
                 { value: "", label: "The instance's own database" },
                 ...(locations.data?.items ?? []).map((item) => ({
                   value: item.name,
-                  label: `${item.name}: ${item.database} on ${item.host}`,
+                  label: item.name,
                 })),
               ]}
             />
             {problem ? <Notice tone="danger">{problem}</Notice> : null}
             <div className="flex flex-wrap gap-2">
-              <Button
-                disabled={working}
-                onClick={() =>
-                  run(async () =>
-                    setStaged(
-                      await withPassphrase<Staged>(
-                        "GET",
-                        `/instance/tenant-imports/staged/${staged.id}${query({ slug })}`,
-                        passphrase,
-                      ),
-                    ),
-                  )
-                }
-              >
+              <Button disabled={working} onClick={() => void recheck()}>
                 Check again
               </Button>
               <Button type="submit" variant="primary" loading={working} disabled={!ready}>
@@ -1270,6 +1515,7 @@ export function TenantImport() {
                   run(async () => {
                     await api.delete(`/instance/tenant-imports/staged/${staged.id}`);
                     setStaged(undefined);
+                    startOver();
                   })
                 }
               >
@@ -1279,53 +1525,63 @@ export function TenantImport() {
           </form>
         </div>
       ) : (
-        <form
-          className="flex max-w-md flex-col gap-3"
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (!file) return;
-            void run(async () => {
-              setStaged(
-                await sendTar<Staged>(
-                  `/instance/tenant-imports/staged${query({ name: file.name })}`,
-                  file,
-                  passphrase,
-                ),
-              );
-            });
-          }}
-        >
-          <label className="flex flex-col gap-1 text-body-sm font-medium">
-            Export file
-            <input
-              type="file"
-              accept=".tar,application/x-tar"
-              required
-              className="font-normal"
-              onChange={(event) => setFile(event.currentTarget.files?.[0])}
-            />
-          </label>
-          <TextField
-            label="Its passphrase"
-            name="passphrase"
-            type="password"
-            value={passphrase}
-            required={false}
-            autoComplete="off"
-            hint="With it, the check also says whether it opens the file."
-            onChange={setPassphrase}
+        <div className="flex flex-col gap-6">
+          <WaitingUploads
+            onOpen={(upload) => {
+              setProblem(undefined);
+              setStaged(upload);
+              setCheckedWith(undefined);
+            }}
           />
-          {problem ? <Notice tone="danger">{problem}</Notice> : null}
-          <div>
-            <Button type="submit" variant="primary" loading={working} disabled={!file}>
-              {working ? "Uploading…" : "Upload and check"}
-            </Button>
-          </div>
-          <p className="m-0 text-body-sm text-ink-muted">
-            The export must come from an instance at the same version as this one. For a large file,
-            use the command line: <Code>{"volvel tenant import <file>"}</Code>.
-          </p>
-        </form>
+          <form
+            className="flex max-w-md flex-col gap-3"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (!file) return;
+              void run(async () => {
+                setStaged(
+                  await sendTar<Staged>(
+                    `/instance/tenant-imports/staged${query({ name: file.name })}`,
+                    file,
+                    passphrase,
+                  ),
+                );
+                setCheckedWith({ slug: "", passphrase });
+              });
+            }}
+          >
+            <label className="flex flex-col gap-1 text-body-sm font-medium">
+              Export file
+              <input
+                type="file"
+                accept=".tar,application/x-tar"
+                required
+                className="font-normal"
+                onChange={(event) => setFile(event.currentTarget.files?.[0])}
+              />
+            </label>
+            <TextField
+              label="Its passphrase"
+              name="passphrase"
+              type="password"
+              value={passphrase}
+              required={false}
+              autoComplete="off"
+              hint="With it, the check also says whether it opens the file."
+              onChange={setPassphrase}
+            />
+            {problem ? <Notice tone="danger">{problem}</Notice> : null}
+            <div>
+              <Button type="submit" variant="primary" loading={working} disabled={!file}>
+                {working ? "Uploading…" : "Upload and check"}
+              </Button>
+            </div>
+            <p className="m-0 text-body-sm text-ink-muted">
+              The export must come from an instance at the same version as this one. For a large
+              file, use the command line: <Code>{"volvel tenant import <file>"}</Code>.
+            </p>
+          </form>
+        </div>
       )}
     </Page>
   );
@@ -1336,9 +1592,11 @@ export function RenameTenantButton({
   tenant,
   onDone,
 }: {
-  tenant: { id: string; slug: string; name: string };
+  tenant: { id: string; slug: string; name: string; mayRename?: boolean };
   onDone: () => void;
 }) {
+  // Offered only to someone the server lets rename it, wherever the button is drawn.
+  if (tenant.mayRename === false) return null;
   return (
     <Button
       size="small"
@@ -1365,6 +1623,58 @@ export function RenameTenantButton({
   );
 }
 
+/**
+ * Says whether people with `code:write` may write code in the console for a tenant. Off, saving
+ * and testing code is refused (`console_code_off`) and code comes from the tenant's repository.
+ * Offered to whoever the server lets change the tenant, wherever the button is drawn.
+ */
+export function ConsoleCodeButton({
+  tenant,
+  onDone,
+}: {
+  tenant: { id: string; name: string; consoleCode?: boolean; mayRename?: boolean };
+  onDone: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  if (tenant.mayRename === false || tenant.consoleCode === undefined) return null;
+  const on = tenant.consoleCode;
+  return (
+    <Button
+      size="small"
+      loading={busy}
+      onClick={async () => {
+        const sure = await ask.confirm({
+          title: on
+            ? `Turn off code in the console for ${tenant.name}?`
+            : `Turn on code in the console for ${tenant.name}?`,
+          text: on
+            ? "People can no longer save or test scripts, connectors and trigger sources in the console, in any workspace of this tenant. Drafts are kept, and what is deployed keeps running. A tenant admin or an operator can turn it on again."
+            : "People with the code permission can write and test code in the console again.",
+          action: on ? "Turn off" : "Turn on",
+          danger: on,
+        });
+        if (!sure) return;
+        setBusy(true);
+        try {
+          await api.patch(`/tenants/${tenant.id}`, { consoleCode: !on });
+          notify.success(
+            on
+              ? `Code in the console is off for ${tenant.name}.`
+              : `Code in the console is on for ${tenant.name}.`,
+          );
+          onDone();
+        } catch (error) {
+          notify.error(error);
+        } finally {
+          setBusy(false);
+        }
+      }}
+    >
+      {on ? "Turn off code in the console" : "Turn on code in the console"}
+    </Button>
+  );
+}
+
 /** Lets an operator delete a tenant from the list, by typing its slug. */
 export function DeleteTenantButton({
   tenant,
@@ -1387,7 +1697,23 @@ export function DeleteTenantButton({
         });
         if (!sure) return;
         try {
-          await api.post(`/tenants/${tenant.id}/deletion`, { confirm: tenant.slug });
+          try {
+            await api.post(`/tenants/${tenant.id}/deletion`, { confirm: tenant.slug });
+          } catch (error) {
+            if ((error as ApiError).code !== "data_location_unavailable") throw error;
+            // The tenant's own database does not answer: its tables cannot be dropped now.
+            const again = await ask.confirm({
+              title: `Delete ${tenant.name} without dropping its tables?`,
+              text: `${endSentence((error as ApiError).message)} If you go on, the tenant is deleted here and its tables stay in that database, where someone who runs it must drop them. The entry in the instance's log says which. If the database comes back first, cancel and delete again.`,
+              action: "Delete anyway",
+              danger: true,
+            });
+            if (!again) return;
+            await api.post(`/tenants/${tenant.id}/deletion`, {
+              confirm: tenant.slug,
+              tablesLeftBehind: true,
+            });
+          }
           onDone();
         } catch (error) {
           notify.error(error);

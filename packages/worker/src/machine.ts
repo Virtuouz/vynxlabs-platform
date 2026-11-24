@@ -6,6 +6,30 @@ import { hostname } from "node:os";
  * Where there is no `/proc` (macOS in development), every answer is `undefined`
  * and the checks that use them are skipped.
  */
+/** CAP_KILL, in the effective capabilities line of `/proc/<pid>/status`. */
+const CAP_KILL = 5n;
+
+/**
+ * Whether a process may signal processes of other users: it is root with CAP_KILL. A worker
+ * host that is not cannot stop its workers, and the memory guard cannot end a script.
+ * Where this cannot be told (not Linux), it is taken to be so.
+ */
+export function canSignalOtherUsers(
+  uid: number | undefined = process.getuid?.(),
+  status?: string,
+): boolean {
+  if (uid === undefined) return true;
+  if (uid !== 0) return false;
+  try {
+    const text = status ?? readFileSync("/proc/self/status", "utf8");
+    const line = /^CapEff:\s*([0-9a-f]+)/m.exec(text);
+    if (!line) return true;
+    return ((BigInt(`0x${line[1]}`) >> CAP_KILL) & 1n) === 1n;
+  } catch {
+    return true;
+  }
+}
+
 export interface MachineProbe {
   /** Memory in MB: all of it, and what can still be had without swapping. */
   memory(): { totalMb: number; availableMb: number } | undefined;
@@ -20,18 +44,56 @@ function readNumber(text: string, field: string): number | undefined {
   return match ? Number(match[1]) / 1024 : undefined;
 }
 
+/**
+ * Memory as this process may use it: what the machine has, held to the container's limit and
+ * use where there is one (cgroup v2, then v1). A container held to 1 GB on a 16 GB machine has
+ * 1 GB, whatever `/proc/meminfo` says. `read` returns a file's text, or undefined.
+ */
+export function memoryOf(
+  read: (path: string) => string | undefined,
+): { totalMb: number; availableMb: number } | undefined {
+  const meminfo = read("/proc/meminfo");
+  if (meminfo === undefined) return undefined;
+  const machineTotal = readNumber(meminfo, "MemTotal");
+  const machineAvailable = readNumber(meminfo, "MemAvailable");
+  if (machineTotal === undefined || machineAvailable === undefined) return undefined;
+  const MB = 1024 * 1024;
+  const bytes = (text: string | undefined) => {
+    const value = text?.trim();
+    return value && /^\d+$/.test(value) ? Number(value) : undefined;
+  };
+  // v2 says `max` for none; v1 says a number near 2^63.
+  let limit = bytes(read("/sys/fs/cgroup/memory.max"));
+  let used = bytes(read("/sys/fs/cgroup/memory.current"));
+  let cache = readStat(read("/sys/fs/cgroup/memory.stat"), "inactive_file");
+  if (limit === undefined) {
+    limit = bytes(read("/sys/fs/cgroup/memory/memory.limit_in_bytes"));
+    used = bytes(read("/sys/fs/cgroup/memory/memory.usage_in_bytes"));
+    cache = readStat(read("/sys/fs/cgroup/memory/memory.stat"), "total_inactive_file");
+  }
+  if (limit === undefined || limit / MB >= machineTotal) {
+    return { totalMb: machineTotal, availableMb: machineAvailable };
+  }
+  // What the container still has: its limit less what it holds that cannot be given back.
+  const held = Math.max(0, (used ?? 0) - (cache ?? 0));
+  const free = Math.max(0, limit - held) / MB;
+  return { totalMb: limit / MB, availableMb: Math.min(machineAvailable, free) };
+}
+
+function readStat(text: string | undefined, field: string): number | undefined {
+  const match = text ? new RegExp(`^${field} (\\d+)$`, "m").exec(text) : null;
+  return match ? Number(match[1]) : undefined;
+}
+
 export const procProbe: MachineProbe = {
   memory() {
-    try {
-      const text = readFileSync("/proc/meminfo", "utf8");
-      const totalMb = readNumber(text, "MemTotal");
-      const availableMb = readNumber(text, "MemAvailable");
-      return totalMb === undefined || availableMb === undefined
-        ? undefined
-        : { totalMb, availableMb };
-    } catch {
-      return undefined;
-    }
+    return memoryOf((path) => {
+      try {
+        return readFileSync(path, "utf8");
+      } catch {
+        return undefined;
+      }
+    });
   },
   rssMb(pid) {
     try {
@@ -194,7 +256,13 @@ export class MemoryGuard {
     if (!largest) return undefined;
     try {
       process.kill(largest.pid, "SIGKILL");
-    } catch {
+    } catch (error) {
+      // Refused (EPERM) where a script is another user's and there is no CAP_KILL. Said once a minute.
+      this.#quietUntil = now + 60_000;
+      this.#log("error", "the machine is low on memory and a script cannot be stopped", {
+        pid: largest.pid,
+        error: (error as Error).message,
+      });
       return undefined;
     }
     // Give the memory a moment to come back before judging again.

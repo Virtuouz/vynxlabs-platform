@@ -1,4 +1,5 @@
-import { signInWithPassword } from "./sign-in.ts";
+import { signInAs } from "./as.ts";
+import { fernhillTenant } from "./fernhill.ts";
 import { type Browser, expect, type Page, type Request, test } from "./test.ts";
 
 /**
@@ -23,7 +24,7 @@ import { type Browser, expect, type Page, type Request, test } from "./test.ts";
  */
 
 const PASSWORD = process.env.E2E_FERNHILL_PASSWORD ?? "fernhill-demo-2026";
-const TENANT = process.env.E2E_FERNHILL_TENANT ?? "fernhill";
+const TENANT = fernhillTenant();
 const SANDBOX = process.env.E2E_FERNHILL_SANDBOX ?? "sandbox";
 const WORKSPACE = process.env.E2E_FERNHILL_WORKSPACE ?? "clinics";
 const OWNER = "maya.brooks@fernhill.example";
@@ -36,6 +37,18 @@ type Answer = { status: number; body: any };
 const call = (page: Page, method: string, path: string, body?: unknown): Promise<Answer> =>
   page.evaluate(
     async ([method, path, body]) => {
+      // A draft save names the draft it saw: its revision now, or none when there is none.
+      if (
+        method === "PUT" &&
+        String(path).includes("/drafts/") &&
+        body &&
+        typeof body === "object" &&
+        !("revision" in body) &&
+        !("create" in body)
+      ) {
+        const seen = await fetch(`/api/v1${path}`);
+        if (seen.ok) body = { ...body, revision: (await seen.json()).revision };
+      }
       const response = await fetch(`/api/v1${path}`, {
         method: method as string,
         headers: body ? { "content-type": "application/json" } : {},
@@ -67,7 +80,7 @@ const saves = (page: Page, at: string) => {
 
 async function signedIn(browser: Browser, email: string, width = 1440): Promise<Page> {
   const page = await (await browser.newContext({ viewport: { width, height: 900 } })).newPage();
-  await signInWithPassword(page, email, PASSWORD);
+  await signInAs(page, email, PASSWORD);
   return page;
 }
 
@@ -94,7 +107,7 @@ let L: string;
 test.beforeAll(async ({ browser }) => {
   test.setTimeout(120_000);
   owner = await signedIn(browser, OWNER);
-  const tenants = await ok(owner, "GET", "/tenants?limit=200");
+  const tenants = await ok(owner, "GET", `/tenants?search=${TENANT}&limit=200`);
   tenant = tenants.items.find((one: { slug: string }) => one.slug === TENANT);
   test.skip(!tenant, `No tenant ${TENANT}: set up the Fernhill example first.`);
   const workspaces = (await ok(owner, "GET", `/tenants/${tenant.id}/workspaces`)).items;
@@ -114,7 +127,7 @@ test.afterAll(async () => {
   await owner.context().close();
 });
 
-test("POLISH-012: ⌘S right after typing in the script editor sends what was typed", async () => {
+test("POLISH-012: ⌘S right after typing in the script editor sends what was typed @fernhill @operate", async () => {
   test.setTimeout(120_000);
   const path = `${ROOT}/saving`;
   const puts = saves(owner, path);
@@ -141,7 +154,7 @@ test("POLISH-012: ⌘S right after typing in the script editor sends what was ty
   expect(puts[1]?.postDataJSON().body.source.code).toContain("//second");
 });
 
-test("POLISH-012: what is typed while a save is on its way is saved after it, on the newer revision", async () => {
+test("POLISH-012: what is typed while a save is on its way is saved after it, on the newer revision @fernhill @operate", async () => {
   test.setTimeout(120_000);
   const path = `${ROOT}/saving`;
   const puts = saves(owner, path);
@@ -171,7 +184,7 @@ test("POLISH-012: what is typed while a save is on its way is saved after it, on
   expect(stored.body.source.code).toContain("//third//fourth");
 });
 
-test("POLISH-002: a new script at a path that is taken is refused on the path field and overwrites nothing", async () => {
+test("POLISH-002: a new script at a path that is taken is refused on the path field and overwrites nothing @fernhill @operate", async () => {
   test.setTimeout(120_000);
   const taken = (await ok(owner, "GET", `${W}/resources?kind=script&limit=200`)).items[0]?.path;
   test.skip(!taken, "The sandbox has no deployed script.");
@@ -192,7 +205,7 @@ test("POLISH-002: a new script at a path that is taken is refused on the path fi
   await expect.poll(() => draftOf(owner, W, taken)).toBe("none");
 });
 
-test("POLISH-002: Make an app with the name of the Fernhill handbook is refused on the address", async () => {
+test("POLISH-002: Make an app with the name of the Fernhill handbook is refused on the address @fernhill @operate", async () => {
   const handbook = await call(owner, "GET", `${W}/resources/handbook`);
   test.skip(handbook.status !== 200, "The sandbox has no handbook app.");
   await owner.goto(`${L}/screens`);
@@ -206,7 +219,7 @@ test("POLISH-002: Make an app with the name of the Fernhill handbook is refused 
   expect((await ok(owner, "GET", `${W}/resources/handbook`)).revision).toBe(handbook.body.revision);
 });
 
-test("POLISH-010: a create of a flow or a schedule at a taken path is refused by the server, and A1-03's schedule is unchanged", async () => {
+test("POLISH-010: a create of a flow or a schedule at a taken path is refused by the server, and A1-03's schedule is unchanged @fernhill @operate", async () => {
   for (const path of ["inventory/half-hourly", "appointments/after-visit"]) {
     const there = await call(owner, "GET", `${W}/resources/${path}`);
     test.skip(there.status !== 200, `${path} is not deployed in the sandbox.`);
@@ -224,7 +237,7 @@ test("POLISH-010: a create of a flow or a schedule at a taken path is refused by
   }
 });
 
-test("POLISH-003: a script, a flow, a query and a docs site are removed, taken back, removed and deployed", async () => {
+test("POLISH-003: a script, a flow, a query and a docs site are removed, taken back, removed and deployed @fernhill @operate", async () => {
   test.setTimeout(240_000);
   const put = (path: string, kind: string, body: unknown) =>
     ok(owner, "PUT", `${W}/drafts/${path}`, { kind, schemaVersion: 1, body, create: true });
@@ -336,7 +349,7 @@ for (const person of [
   { email: "devi.shah@fernhill.example", who: "the developer", decides: false },
   { email: OWNER, who: "the practice owner", decides: true },
 ]) {
-  test(`POLISH-001: as ${person.who}, the overview's approvals count is the queue Decide opens`, async ({
+  test(`POLISH-001: as ${person.who}, the overview's approvals count is the queue Decide opens @fernhill @operate`, async ({
     browser,
   }) => {
     test.setTimeout(120_000);
@@ -368,7 +381,7 @@ for (const person of [
   });
 }
 
-test("POLISH-001: the 60 locums are past the first page of members, and are found by searching and by loading more", async () => {
+test("POLISH-001: the 60 locums are past the first page of members, and are found by searching and by loading more @fernhill @operate", async () => {
   test.setTimeout(120_000);
   const last = "locum.60@fernhill.example";
   await owner.goto(`/t/${tenant.id}/members`);
@@ -388,7 +401,7 @@ test("POLISH-001: the 60 locums are past the first page of members, and are foun
   });
 });
 
-test("POLISH-010: a shorter retention period asks first, naming its old and new days, and a longer one does not", async () => {
+test("POLISH-010: a shorter retention period asks first, naming its old and new days, and a longer one does not @fernhill @operate", async () => {
   test.setTimeout(120_000);
   const retention = await ok(owner, "GET", `/tenants/${tenant.id}/retention`);
   const now: number = retention.effective.runsDays;

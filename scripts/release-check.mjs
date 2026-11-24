@@ -18,7 +18,16 @@ export const PUBLISHED = [
     holds: ["dist/index.js", "dist/page.d.ts", "dist/action.d.ts"],
   },
   { folder: "packages/markup", name: "@volvel/markup", holds: ["dist/index.js", "dist/react.js"] },
-  { folder: "packages/docs-engine", name: "@volvel/docs-engine", holds: ["dist/index.js"] },
+  {
+    folder: "packages/docs-engine",
+    name: "@volvel/docs-engine",
+    holds: ["dist/index.js", "dist/search-query.js"],
+  },
+  {
+    folder: "packages/docs-site",
+    name: "@volvel/docs-site",
+    holds: ["dist/index.js", "dist/export.js"],
+  },
   {
     folder: "packages/docs",
     name: "@volvel/docs",
@@ -32,7 +41,11 @@ export const PUBLISHED = [
   },
   { folder: "packages/app", name: "@volvel/app", holds: ["dist/index.js"], build: true },
   { folder: "packages/sdk", name: "@volvel/sdk", holds: ["dist/index.js", "dist/index.d.ts"] },
-  { folder: "packages/cli", name: "@volvel/cli", holds: ["dist/volvel.mjs"] },
+  {
+    folder: "packages/cli",
+    name: "@volvel/cli",
+    holds: ["dist/volvel.mjs", "dist/screens/index.html"],
+  },
 ];
 
 const run = (command, args, cwd) =>

@@ -1,0 +1,105 @@
+[
+  {
+    "name": "console/queries-editor",
+    "address": "queries",
+    "who": "Maya Brooks (tenant admin)",
+    "setup": "a dev workspace with a table of orders; no query saved",
+    "viewport": "1440x900",
+    "ready": "the result table is drawn",
+    "mask": [],
+    "steps": [
+      "type a select over the orders table with a $1::date parameter, give it a default day, press Run"
+    ],
+    "alt": "The Queries screen with a query written in the editor, a date field for its parameter, a result of three rows under the editor, and the list of saved queries and tables beside it."
+  },
+  {
+    "name": "console/queries-parameters",
+    "address": "queries",
+    "who": "Maya Brooks (tenant admin)",
+    "setup": "the same query typed in, not saved",
+    "viewport": "1440x900",
+    "ready": "the panel What each parameter is is open",
+    "mask": [],
+    "steps": [
+      "open What each parameter is; set the name to since, the type to date, the label to From and a default day"
+    ],
+    "alt": "The Queries screen with the What each parameter is panel open: name, type, label, default and needed for parameter 1, with the date field above it."
+  },
+  {
+    "name": "console/data-sources-list",
+    "address": "sources",
+    "who": "Maya Brooks (tenant admin)",
+    "setup": "one data source declared and deployed, connected to a Postgres database that the throwaway instance can reach, and tested once",
+    "viewport": "1440x900",
+    "ready": "the source's row shows Reached",
+    "mask": ["time"],
+    "steps": ["press Test on the source's row"],
+    "alt": "The Data sources screen: one source with its purpose, where it points, who uses it, its password and its health, with Edit, Test, Change and Remove from here on its row."
+  },
+  {
+    "name": "console/data-source-connect",
+    "address": "sources",
+    "who": "Maya Brooks (tenant admin)",
+    "setup": "one data source declared and deployed, not connected",
+    "viewport": "1440x900",
+    "ready": "the Connect dialog is open",
+    "mask": [],
+    "steps": ["press Connect on the source's row"],
+    "alt": "The Connect database dialog: Source, Host, Port, Database, User, Password, Schema and Encrypt the connection set to Yes."
+  },
+  {
+    "name": "console/data-source-rows",
+    "address": "sources/<the source>",
+    "who": "Maya Brooks (tenant admin)",
+    "setup": "the connected source of the shot before, with a table of three loans that has a primary key",
+    "viewport": "1440x900",
+    "ready": "the rows are drawn",
+    "mask": [],
+    "steps": [],
+    "alt": "A data source's page: the list of tables on the left, and the rows of the loans table with a filter box under each column heading and the toolbar with Keys, Columns, Compact rows and Add row."
+  },
+  {
+    "name": "console/dashboards-list",
+    "address": "dashboards",
+    "who": "Maya Brooks (tenant admin)",
+    "setup": "a dashboard the workspace keeps (Visits by clinic) and one dashboard of Maya's own",
+    "viewport": "1440x900",
+    "ready": "both dashboards are listed",
+    "mask": ["time"],
+    "steps": [],
+    "alt": "The Dashboards list: a dashboard the workspace keeps with a Resource tag, and one of the member's own, each with who it belongs to, who sees it and when it changed."
+  },
+  {
+    "name": "console/dashboard-edit",
+    "address": "dashboards/<Maya's dashboard>?edit=1",
+    "who": "Maya Brooks (tenant admin)",
+    "setup": "a dashboard of Maya's own with a Stat counting rows of a table and a Table",
+    "viewport": "1440x900",
+    "ready": "the stat shows a figure",
+    "mask": ["time"],
+    "steps": ["choose the Stat so the inspector shows its Data tab"],
+    "alt": "A dashboard in the editor: the outline on the left, a stat and a table on the page, and the inspector showing the stat's Data tab with its source."
+  },
+  {
+    "name": "console/dashboard-resource",
+    "address": "dashboards/at/<path of a kept dashboard>",
+    "who": "Maya Brooks (tenant admin)",
+    "setup": "a dashboard kept as a resource in a dev workspace, with a draft that changes its refresh",
+    "viewport": "1440x900",
+    "ready": "the Draft pill is shown",
+    "mask": ["time"],
+    "steps": [],
+    "alt": "A dashboard the workspace keeps, with a Draft pill and the buttons Edit, Name and path and Discard draft beside its title."
+  },
+  {
+    "name": "console/dashboard-editor",
+    "address": "dashboards/<Maya's dashboard>?edit=1",
+    "who": "Maya Brooks (tenant admin)",
+    "setup": "the same dashboard as the edit shot, with the Source list open in the inspector",
+    "viewport": "1440x900",
+    "ready": "the list Where it reads from is open",
+    "mask": ["time"],
+    "steps": ["choose the Stat, press Source"],
+    "alt": "The dashboard editor with the Where it reads from list open: tables of the workspace, a data source's table, saved queries, and SQL written here."
+  }
+]

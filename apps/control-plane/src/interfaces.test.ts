@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { brotliDecompressSync, gunzipSync } from "node:zlib";
 import { type Bundle, type BundleManifest, bundleDigest } from "@volvel/manifest";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { type Client, startTestApp, type TestApp } from "./testing.js";
+import { type Client, putSeen, startTestApp, type TestApp } from "./testing.js";
 
 // biome-ignore lint/suspicious/noExplicitAny: test responses are inspected freely
 type Any = any;
@@ -642,7 +642,7 @@ describe("someone who maintains apps made in the console, and is not a developer
     pages: [{ id: "main", title: "Stock", widgets }],
   });
   const draft = (who: Client, path: string, kind: string, body: object, more: object = {}) =>
-    who.put(`${devWs()}/drafts/${path}`, {
+    putSeen(who, `${devWs()}/drafts/${path}`, {
       kind,
       schemaVersion: kind === "interface" ? 2 : kind === "dashboard" ? 3 : 1,
       body,
@@ -762,6 +762,20 @@ describe("someone who maintains apps made in the console, and is not a developer
         pages: 1,
       }),
     ]);
+  });
+
+  test("they read what publishing would do, for what is theirs, and the groups an action names (BLD-02)", async () => {
+    const check = await mona.get(`${devWs()}/changes/preview?paths=screens/stock,stock-app`);
+    expect(check.status, JSON.stringify(check.body)).toBe(200);
+    expect(check.body.possible).toBe(true);
+    // Not for everything, and not for what is not hers.
+    expect((await mona.get(`${devWs()}/changes/preview`)).status).toBe(403);
+    expect((await mona.get(`${devWs()}/changes/preview?paths=limits/batch`)).status).toBe(403);
+    expect((await mona.get(`${devWs()}/changes/preview?paths=screens/stock,stock`)).status).toBe(
+      403,
+    );
+    const keys = await mona.get(`${devWs()}/group-keys`);
+    expect(keys.status, JSON.stringify(keys.body)).toBe(200);
   });
 
   test("they deploy what they made by name, and cannot deploy everything", async () => {
@@ -918,6 +932,23 @@ describe("a member's own dashboards", () => {
     ]);
     expect(rows.next).toBeUndefined();
     expect((await data(mona, "nothing")).status).toBe(404);
+  });
+
+  test("what a dashboard is for is kept with it and listed (QSD-MP9)", async () => {
+    const made = await mona.post(base(), { title: "Described" });
+    const saved = await mona.put(`${base()}/${made.body.id}`, {
+      revision: 1,
+      body: { widgets: [], description: "Stock held, counted weekly." },
+    });
+    expect(saved.status, JSON.stringify(saved.body)).toBe(200);
+    expect(saved.body.description).toBe("Stock held, counted weekly.");
+    const listed = (await mona.get(base())).body.items as Any[];
+    expect(listed.find((one) => one.id === made.body.id)).toMatchObject({
+      description: "Stock held, counted weekly.",
+    });
+    // A dashboard that says nothing of what it is for has no description to show.
+    expect(listed.find((one) => one.title === "Stock at a glance")?.description).toBeUndefined();
+    await mona.delete(`${base()}/${made.body.id}`);
   });
 
   test("a dashboard that is not one is refused, and so is a save over a newer one", async () => {

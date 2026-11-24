@@ -468,7 +468,8 @@ export function KitSheet() {
 
       <section className="flex flex-col gap-3">
         <SectionLabel>Saving a page</SectionLabel>
-        <div className="relative overflow-hidden rounded-panel border border-line">
+        {/* Not at the page's end: the bar does not reach into the page's bottom padding here. */}
+        <div className="relative overflow-hidden rounded-panel border border-line [--page-pad-b:0px]">
           <SaveBar dirty guard={false} onSave={() => {}} onDiscard={() => {}} what="an example" />
         </div>
       </section>
@@ -546,7 +547,7 @@ export function KitSheet() {
       <section className="flex flex-col gap-3">
         <SectionLabel>A page of documentation</SectionLabel>
         <Panel className="p-4">
-          <Doc tree={KIT_DOC} headingShift={2} />
+          <Doc tree={KIT_DOC} headingTop={3} />
         </Panel>
       </section>
 
@@ -679,7 +680,7 @@ export function KitSheet() {
             <Button variant="dashed">+ Add a condition</Button>
             <Kbd>esc</Kbd>
             <Kbd>A</Kbd>
-            <Kbd>⌘K</Kbd>
+            <Kbd>{formatCombo("Mod+K")}</Kbd>
           </div>
           <div className="grid gap-3 md:grid-cols-4">
             <SelectField

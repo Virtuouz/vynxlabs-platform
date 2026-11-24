@@ -1,6 +1,7 @@
+import { isExplicitKind } from "@volvel/manifest";
 import { Notice, TextField } from "@volvel/ui";
 import { useState } from "react";
-import { useLoad } from "../api.ts";
+import { type Me, useLoad } from "../api.ts";
 import { clock } from "../kit/format.ts";
 import { ErrorState, Pending } from "../kit/LoadState.tsx";
 import { KeyValues, PageHeader, Panel, SectionLabel } from "../kit/layout.tsx";
@@ -127,7 +128,6 @@ export function EffectiveAccess({
   const groups = [...new Set(shown.map((one) => one.group))];
   const checking = PERMISSION.test(wanted) && !wanted.includes("*");
   const held = checking ? permissions.find((one) => one.permission === wanted) : undefined;
-  const holds = held !== undefined;
   // Where it is held matters: promoting, for one, is checked in the workspace promoted to.
   const heldWhere = held
     ? [
@@ -141,6 +141,14 @@ export function EffectiveAccess({
         ),
       ]
     : [];
+  // Operator access is not the member's own role: said, when it is all that gives the permission.
+  const counting = held
+    ? held.sources.map((sourceId) => byId.get(sourceId)).filter((source) => source?.counts === true)
+    : [];
+  const byOperatorAccess =
+    counting.length > 0 && counting.every((source) => source?.source === "access_grant");
+  // Allowed only when a source that counts gives it: a suspended member's bindings count for nothing.
+  const holds = held !== undefined && heldWhere.length > 0;
   const everything = sources.some((source) => source.role.permissions.includes("*:*"));
   return (
     <section className="flex flex-col gap-4" aria-label="Access">
@@ -179,7 +187,7 @@ export function EffectiveAccess({
         </div>
         {checking ? (
           holds ? (
-            <p className="m-0 flex items-center gap-2" role="status">
+            <p className="m-0 flex flex-wrap items-center gap-x-2 gap-y-1" role="status">
               <StatePill state="allowed" />
               <span className="text-meta text-ink-muted">
                 {principal.name} holds <Mono>{wanted}</Mono>{" "}
@@ -187,22 +195,41 @@ export function EffectiveAccess({
                   ? "everywhere in the tenant."
                   : heldWhere.length > 0
                     ? `only in: ${heldWhere.join(", ")}.`
-                    : "by no binding that counts now."}
+                    : ""}
+                {byOperatorAccess
+                  ? " It comes only from operator access, which ends when the grant does."
+                  : ""}
               </span>
             </p>
           ) : (
             <p className="m-0 flex flex-wrap items-center gap-2" role="status">
               <StatePill state="denied" />
               <span className="text-meta text-ink-muted">
-                {principal.name} does not hold <Mono>{wanted}</Mono> anywhere. A role with it, bound
-                to them or a group of theirs where it is needed, would give it.
+                {held !== undefined ? (
+                  <>
+                    {principal.name} is given <Mono>{wanted}</Mono>, but none of it counts while
+                    they are suspended. It counts again when they are resumed.
+                  </>
+                ) : everything && isExplicitKind(wanted.split(":")[0] ?? "") ? (
+                  <>
+                    {principal.name} holds <Mono>*:*</Mono>, which gives every permission except
+                    those given by name, and <Mono>{wanted}</Mono> is one of those. A role that
+                    lists it, bound to them or a group of theirs, would give it.
+                  </>
+                ) : (
+                  <>
+                    {principal.name} does not hold <Mono>{wanted}</Mono> anywhere. A role with it,
+                    bound to them or a group of theirs where it is needed, would give it.
+                  </>
+                )}
               </span>
             </p>
           )
         ) : null}
         {everything && !wanted ? (
           <p className="m-0 text-meta text-ink-muted">
-            A role they hold gives every permission (<Mono>*:*</Mono>): each is listed with it.
+            A role they hold gives every permission except those given by name (<Mono>*:*</Mono>):
+            each is listed with it.
           </p>
         ) : null}
         {groups.map((group) => (
@@ -246,19 +273,30 @@ export function EffectiveAccess({
 /** A member of the tenant, with everything they may do in it and why. */
 export function MemberPage({ base, tenantId, id }: { base: string; tenantId: string; id: string }) {
   const report = useLoad<AccessReport>(`${base}/access/member/${id}`);
+  const me = useLoad<Me>("/me");
   const principal = report.data?.principal;
-  useTitleObject(principal?.name);
+  // Anyone may read this page about themselves; the list of members is for those who may read it.
+  const self = me.data?.principal.id === id;
+  useTitleObject(self ? "What I may do here" : principal?.name);
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
-        eyebrow="Member"
-        title={principal?.name ?? "Member"}
-        description="Everything they may do in this tenant, where, and what gives it."
-        meta={
-          <Link to={`/t/${tenantId}/members`} className="text-meta">
-            All members
-          </Link>
+        eyebrow={self ? "You" : "Member"}
+        title={self ? "What I may do here" : (principal?.name ?? "Member")}
+        description={
+          self
+            ? "Everything you may do in this tenant, where, and what gives it."
+            : "Everything they may do in this tenant, where, and what gives it."
         }
+        {...(self
+          ? {}
+          : {
+              meta: (
+                <Link to={`/t/${tenantId}/members`} className="text-meta">
+                  All members
+                </Link>
+              ),
+            })}
       />
       {principal ? (
         <Panel className="p-4">

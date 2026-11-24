@@ -1,6 +1,7 @@
 import { type RefObject, useEffect, useRef, useState } from "react";
 import { openHelp } from "../help/store.ts";
 import { openPalette } from "../kit/keys.ts";
+import { plainEditorOnly } from "./plain.ts";
 
 export interface CodeEditorProps {
   /** Names the editor for screen readers: "Source of orders/sync". */
@@ -157,6 +158,10 @@ export function CodeEditor({
   useEffect(() => {
     let gone = false;
     let cleanup = () => {};
+    if (plainEditorOnly()) {
+      setState("plain");
+      return;
+    }
     import("./monaco.ts").then(
       ({ monaco, applyTheme }) => {
         if (gone || !host.current) return;
@@ -515,7 +520,7 @@ export function CodeEditor({
     // A recessed well (07 §7.5), as code is.
     <div
       data-well
-      className="overflow-hidden rounded-control border border-line bg-sunken"
+      className="group/well relative overflow-hidden rounded-control border border-line bg-sunken"
       style={{ height }}
     >
       {state === "ready" ? null : (
@@ -549,6 +554,22 @@ export function CodeEditor({
         />
       )}
       <div ref={host} className={state === "ready" ? "size-full" : "hidden"} />
+      {state === "ready" && !readOnly ? <TabHint /> : null}
     </div>
+  );
+}
+
+/**
+ * The editor takes Tab for indenting, so the keyboard would stay in it. Said while it has focus,
+ * in the corner, as other code editors do: Ctrl+M makes Tab move on, and again takes it back.
+ */
+export function TabHint() {
+  return (
+    <p
+      data-tab-hint=""
+      className="pointer-events-none absolute right-2 bottom-1 m-0 hidden rounded-control bg-raised px-2 py-0.5 text-meta text-ink-muted shadow-overlay group-focus-within/well:block"
+    >
+      Tab indents. Press Ctrl+M, then Tab, to move on.
+    </p>
   );
 }

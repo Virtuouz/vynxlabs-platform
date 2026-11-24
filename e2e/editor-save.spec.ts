@@ -1,4 +1,4 @@
-import { signInWithPassword } from "./sign-in.ts";
+import { signInAs } from "./as.ts";
 import { expect, type Page, type Request, test } from "./test.ts";
 
 /**
@@ -8,16 +8,24 @@ import { expect, type Page, type Request, test } from "./test.ts";
  * script editor are the two that are walked here.
  */
 
-const ADMIN = {
-  email: process.env.E2E_ADMIN_EMAIL ?? "admin@example.com",
-  password: process.env.E2E_ADMIN_PASSWORD ?? "change-me-please",
-};
 const stamp = Date.now().toString(36);
 
 // biome-ignore lint/suspicious/noExplicitAny: answers are inspected freely
 const call = (page: Page, method: string, path: string, body?: unknown): Promise<any> =>
   page.evaluate(
     async ([method, path, body]) => {
+      // A draft save names the draft it saw: its revision now, or none when there is none.
+      if (
+        method === "PUT" &&
+        String(path).includes("/drafts/") &&
+        body &&
+        typeof body === "object" &&
+        !("revision" in body) &&
+        !("create" in body)
+      ) {
+        const seen = await fetch(`/api/v1${path}`);
+        if (seen.ok) body = { ...body, revision: (await seen.json()).revision };
+      }
       const response = await fetch(`/api/v1${path}`, {
         method: method as string,
         headers: body ? { "content-type": "application/json" } : {},
@@ -48,7 +56,7 @@ let dev: string;
 test.beforeAll(async ({ browser }) => {
   test.setTimeout(120_000);
   page = await (await browser.newContext({ viewport: { width: 1500, height: 1000 } })).newPage();
-  await signInWithPassword(page, ADMIN.email, ADMIN.password);
+  await signInAs(page, "operator");
   const made = await call(page, "POST", "/tenants", {
     slug: `save-${stamp}`,
     name: "Saving",
@@ -70,7 +78,7 @@ test.afterAll(async () => {
   await page.context().close();
 });
 
-test("in the docs editor, ⌘S right after typing saves what was typed, and typing during a save is saved after it", async () => {
+test("in the docs editor, ⌘S right after typing saves what was typed, and typing during a save is saved after it @builder", async () => {
   test.setTimeout(120_000);
   const W = `/tenants/${tenant}/workspaces/${dev}`;
   const source = (words: string) => `---\ntitle: Notes\n---\n\n${words}\n`;
@@ -117,7 +125,7 @@ test("in the docs editor, ⌘S right after typing saves what was typed, and typi
   expect(stored.source).toContain("Before. During.");
 });
 
-test("in the script editor, ⌘S right after typing saves what was typed, and typing during a save is saved after it", async () => {
+test("in the script editor, ⌘S right after typing saves what was typed, and typing during a save is saved after it @builder", async () => {
   test.setTimeout(120_000);
   const W = `/tenants/${tenant}/workspaces/${dev}`;
   const puts = saves(page, "hello/saving");

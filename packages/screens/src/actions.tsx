@@ -58,7 +58,12 @@ export function actionAt(widget: PageWidget, at: string): Action | undefined {
   if (parts[0] !== "config") return undefined;
   // A record detail that lets people edit in place: the edit is an action of its own, with no
   // steps to run here. The server checks the fields as it does an action's.
-  if (at === "config/edit") return widget.config?.edit === true ? EDIT_IN_PLACE : undefined;
+  if (at === "config/edit") {
+    if (widget.config?.edit !== true) return undefined;
+    // Who may edit in place is named as who may run an action is (`editBy`), and the server checks it.
+    const by = widget.config.editBy as { groups?: string[] } | undefined;
+    return by?.groups?.length ? { ...EDIT_IN_PLACE, runBy: { groups: by.groups } } : EDIT_IN_PLACE;
+  }
   const property = widget.config?.[parts[1] as string];
   if (parts.length === 2) return isAction(property) ? property : undefined;
   if (parts.length === 4 && parts[3] === "action" && Array.isArray(property)) {
@@ -132,9 +137,11 @@ export function whyNotRun(
   action: Action | undefined,
   user: ActingUser | undefined,
   names?: Readonly<Record<string, string>>,
+  /** What the groups can do: "do this", or "edit this" for a record edited in place. */
+  what = "do this",
 ): string | undefined {
   if (mayRun(action, user)) return undefined;
-  return `Only ${listOf((action?.runBy?.groups ?? []).map((path) => groupTitle(path, names)))} can do this.`;
+  return `Only ${listOf((action?.runBy?.groups ?? []).map((path) => groupTitle(path, names)))} can ${what}.`;
 }
 
 /** Whether a widget is drawn to this person by `rules.seenBy`; drawing only, never security. */
@@ -158,12 +165,40 @@ export function seenByTag(
 }
 
 /** A confirmation's text, with `{column}` filled from the record it is about. */
-export function fillText(text: string, row: Row | undefined, label: (column: string) => string) {
-  return text.replace(/\{([a-z][a-z0-9_]*)\}/g, (_all, column: string) => {
+export function fillText(
+  text: string,
+  row: Row | undefined,
+  label: (column: string) => string,
+  /** Several records: no one of them stands for the rest, so what is said of "its" column is left out. */
+  several = false,
+) {
+  const filled = text.replace(/\{([a-z][a-z0-9_]*)\}/g, (_all, column: string) => {
+    if (several) return "";
     const value = row?.[column];
     if (value === undefined || value === null || value === "") return row ? "" : "this record";
     return label(String(value));
   });
+  return several
+    ? filled
+        .replace(/ {2,}/g, " ")
+        .replace(/ +([?.,!:;])/g, "$1")
+        .trim()
+    : filled;
+}
+
+/**
+ * A confirmation's title. When several records are chosen and the author's title names a field of
+ * one of them, that part is left out, so the title says how many are chosen in its place.
+ */
+export function fillTitle(
+  title: string,
+  row: Row | undefined,
+  label: (column: string) => string,
+  count?: number,
+) {
+  const filled = fillText(title, row, label, count !== undefined);
+  if (count === undefined || filled === title) return filled;
+  return filled.replace(/\s*([?.!:]?)$/, ` (${count} chosen)$1`);
 }
 
 /** What asked fields are, as a form's schema: typed, with the ones that must be given listed. */
@@ -268,7 +303,13 @@ export function useActions(host: ActionsHost): {
 } {
   const toast = useSay();
   const [asking, setAsking] = useState<Asking>();
-  const [rows, setRows] = useState<{ widget: string; input: string; group: Row }>();
+  const [rows, setRows] = useState<{
+    widget: string;
+    input: string;
+    group: Row;
+    format?: unknown;
+    measured?: string[];
+  }>();
   const latest = useRef(host);
   latest.current = host;
   // Whether the address has been told of the question that is open: the address leaving it
@@ -329,19 +370,44 @@ export function useActions(host: ActionsHost): {
           say(step.text, step.tone ?? "success");
         } else if (step.do === "narrow") {
           const value = request.group?.[step.from];
-          values = { ...values, [step.filter]: value ?? null };
+          // A group with no value (rows with none set) gives nothing to narrow by: the page is
+          // left as it is, and it is said, rather than widened.
+          if (value === undefined || value === null) {
+            say("Those rows have no value to narrow the page by.", "info");
+            continue;
+          }
+          values = { ...values, [step.filter]: value };
           now.onFilterValues(values);
         } else if (step.do === "rows") {
           // A clicked point gives its group; a number that isn't broken down (a stat) gives
           // none, and every row behind it is shown.
           const input = request.input;
-          if (input) setRows({ widget: request.widget.id, input, group: request.group ?? {} });
+          if (input) {
+            const visual = (
+              request.widget.data?.[input] as
+                | { source?: { visual?: { measures?: { column?: string }[] } } }
+                | undefined
+            )?.source?.visual;
+            const measured = (visual?.measures ?? []).flatMap((one) =>
+              one.column ? [one.column] : [],
+            );
+            setRows({
+              widget: request.widget.id,
+              input,
+              group: request.group ?? {},
+              format: request.widget.config?.format,
+              measured,
+            });
+          }
         }
       }
       const closing = response.message ?? action.done;
       if (!said && closing) say(closing);
+      // Saved, but what it was to start did not start: said apart, in the words of an error.
+      for (const one of response.notStarted ?? [])
+        say(`Saved. The ${one.do} ${one.path} could not be started.`, "danger");
       now.refresh();
-      // A script or a workflow is started and not waited for: what it changes is read as it lands.
+      // A script or a flow is started and not waited for: what it changes is read as it lands.
       if (response.started) {
         for (const wait of AFTER_A_START)
           later.current.push(setTimeout(() => latest.current.refresh(), wait));
@@ -436,7 +502,27 @@ export function useActions(host: ActionsHost): {
               held.resolve({ ok: false, cancelled: true });
               setAsking(undefined);
             }}
-            submit={(inputs) => call(held.request, held.action, inputs)}
+            submit={async (inputs) => {
+              // What the form typed goes with what the confirmation asked for.
+              const given = { ...held.request.inputs, ...inputs };
+              try {
+                await call(held.request, held.action, given);
+              } catch (error) {
+                // A refusal of what the form holds is the form's to draw, beside the field.
+                const asked = new Set((held.action.confirm?.ask ?? []).map((one) => one.name));
+                const fields = error instanceof ActionError ? error.fields : undefined;
+                if (
+                  held.request.inputs &&
+                  fields &&
+                  Object.keys(fields).some((name) => !asked.has(name))
+                ) {
+                  held.resolve({ ok: false, message: errorWords(error), fields });
+                  setAsking(undefined);
+                  return;
+                }
+                throw error;
+              }
+            }}
           />
         )}
       </Closing>
@@ -506,6 +592,8 @@ function Confirmation({
   onCancel(): void;
 }) {
   const confirm = asking.action.confirm;
+  const several = (asking.request.records?.length ?? 0) > 1;
+  const destroys = asking.action.steps.some((one) => one.do === "delete");
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<ActionError | Error>();
   const words = confirmWords({
@@ -518,10 +606,11 @@ function Confirmation({
         }
       : undefined,
     table: tableOfWidget(asking.request.widget) ?? asking.request.table,
-    row: asking.request.row,
+    row: several ? undefined : asking.request.row,
     facts: asking.request.facts,
+    count: several ? asking.request.records?.length : undefined,
   });
-  const text = words.text ? fillText(words.text, asking.request.row, label) : undefined;
+  const text = words.text ? fillText(words.text, asking.request.row, label, several) : undefined;
   const ask = confirm?.ask ?? [];
   const go = async (inputs: Record<string, unknown>) => {
     setBusy(true);
@@ -544,7 +633,12 @@ function Confirmation({
     <Dialog
       open={open}
       onClose={() => !busy && onCancel()}
-      title={fillText(words.title, asking.request.row, label)}
+      title={fillTitle(
+        words.title,
+        asking.request.row,
+        label,
+        several ? asking.request.records?.length : undefined,
+      )}
       {...(text ? { description: text } : {})}
     >
       {failure && Object.keys(fields).length === 0 ? (
@@ -564,10 +658,21 @@ function Confirmation({
         />
       ) : (
         <div className="flex flex-wrap items-center justify-end gap-2">
-          <Button variant="secondary" onClick={onCancel} disabled={busy}>
+          {/* Starts on the safe answer: the main button, or the way back when it removes a record. */}
+          <Button
+            variant="secondary"
+            onClick={onCancel}
+            disabled={busy}
+            {...(destroys ? { "data-autofocus": "" } : {})}
+          >
             {words.dismiss}
           </Button>
-          <Button variant="primary" loading={busy} onClick={() => go({})}>
+          <Button
+            variant="primary"
+            loading={busy}
+            onClick={() => go({})}
+            {...(destroys ? {} : { "data-autofocus": "" })}
+          >
             {button}
           </Button>
         </div>
@@ -597,7 +702,7 @@ function RowsBehind({
   client: PageDataClient;
   registry: ViewRegistry;
   filterValues: FilterValues;
-  held: { widget: string; input: string; group: Row };
+  held: { widget: string; input: string; group: Row; format?: unknown; measured?: string[] };
   open: boolean;
   onClose(): void;
 }) {
@@ -654,7 +759,7 @@ function RowsBehind({
         <Skeleton lines={4} label="Loading the rows" />
       ) : (
         <View
-          config={{ ...table.definition.defaults }}
+          config={{ ...table.definition.defaults, ...behindColumns(wire, held) }}
           data={{ rows: toWidgetData(wire) }}
           size={{ w: 12, h: 8, narrow: false }}
           emit={() => undefined}
@@ -663,6 +768,23 @@ function RowsBehind({
       )}
     </SideSheet>
   );
+}
+
+/**
+ * The columns of the rows behind a number. The column the number was made of is written as the
+ * widget writes the number (money kept in cents shows as dollars here too); the others as they are.
+ */
+function behindColumns(
+  wire: WireData,
+  held: { format?: unknown; measured?: string[] },
+): { columns?: { column: string; format?: unknown }[] } {
+  if (!held.format || !held.measured?.length || wire.shape !== "rows") return {};
+  return {
+    columns: wire.columns.map((one) => ({
+      column: one.name,
+      ...(held.measured?.includes(one.name) ? { format: held.format } : {}),
+    })),
+  };
 }
 
 /** The record an event gave, from what it carries. */

@@ -2,8 +2,10 @@ import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import { Type } from "typebox";
 import { writeAudit } from "../kernel/audit.js";
 import { badRequest } from "../kernel/errors.js";
+import { approvalDetail, approvalTitle } from "../kernel/flows/approval-detail.js";
 import { linkActor, linkGone, readLink, takeLink } from "../kernel/flows/approval-links.js";
 import { decideApproval, kickFlow } from "../kernel/flows/engine.js";
+import { flowKnown } from "../kernel/flows/known.js";
 import { access } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
 import { Time } from "./shared.js";
@@ -22,7 +24,10 @@ export function approvalLinkRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       "/approval-links/:token",
       {
-        config: { access: access.public, rateLimit: LINK_LIMIT },
+        config: {
+          access: access.publicWith("Needs the approval link's token, which is in the address."),
+          rateLimit: LINK_LIMIT,
+        },
         schema: {
           summary: "What an approval link asks",
           description:
@@ -56,8 +61,14 @@ export function approvalLinkRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         const { link, step } = found;
         const detail = (step.detail ?? {}) as { title?: string; detail?: unknown };
         return {
-          title: detail.title ?? "",
-          detail: detail.detail ?? null,
+          title: approvalTitle(
+            detail.title ?? "",
+            await flowKnown(kernel, kernel.db, step.flow_run_id),
+          ),
+          detail: approvalDetail(
+            detail.detail,
+            await flowKnown(kernel, kernel.db, step.flow_run_id),
+          ),
           flow: step.flow_path,
           flowRunId: step.flow_run_id,
           workspace: {
@@ -77,7 +88,10 @@ export function approvalLinkRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.post(
       "/approval-links/:token",
       {
-        config: { access: access.public, rateLimit: LINK_LIMIT },
+        config: {
+          access: access.publicWith("Needs the approval link's token, which is in the address."),
+          rateLimit: LINK_LIMIT,
+        },
         schema: {
           summary: "Approve or reject from an approval link",
           description:
@@ -117,7 +131,8 @@ export function approvalLinkRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             node: taken.node_id,
             approve: body.decision === "approve",
             comment,
-            memberId: member.id,
+            decidedBy: { type: "member", id: member.id },
+            via: "email",
           });
           await writeAudit(trx, linkActor(member, request), {
             action: body.decision === "approve" ? "approval.approved" : "approval.rejected",

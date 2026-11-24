@@ -307,6 +307,55 @@ describe("where it is used", () => {
     );
   });
 
+  test("WLK-09c: a removal draft cannot be given a name, and a discarded new query leaves no address behind", async () => {
+    routes[`GET ${api}/queries/schema`] = () => [200, { tables: [], functions: [], maySql: true }];
+    const item = (path: string, draft: string) => ({
+      path,
+      description: "",
+      sql: "select 1",
+      parameters: [],
+      ownership: "ui",
+      draft,
+    });
+    routes[`GET ${api}/queries`] = () => [
+      200,
+      { items: [item("reports/old", "removed"), item("reports/fresh", "new")] },
+    ];
+    routes[`GET ${api}/drafts/reports/fresh`] = () => [
+      200,
+      { path: "reports/fresh", kind: "query", body: { sql: "select 1" }, revision: 1 },
+    ];
+    history.replaceState(null, "", "/?query=reports/old");
+    show(<Queries root={root} link={link} />);
+    const rename = await screen.findByRole("button", { name: "Name and path" });
+    expect((rename as HTMLButtonElement).disabled).toBe(true);
+    // The reason is on the stop around the disabled button: focusing it says it.
+    fireEvent.focus(rename.parentElement as HTMLElement);
+    await screen.findByText(
+      "The query is removed in your drafts. Keep it to give it another name.",
+    );
+    cleanup();
+    history.replaceState(null, "", "/?query=reports/fresh");
+    const before = history.length;
+    show(<Queries root={root} link={link} />);
+    const discard = await screen.findByRole("button", { name: "Discard draft" });
+    discard.focus();
+    fireEvent.click(discard);
+    await answer("Discard");
+    await waitFor(() => expect(location.search).toBe(""));
+    // The button went with the query: the keyboard is not left on the page body.
+    await waitFor(() => expect(document.activeElement).not.toBe(document.body));
+    // The entry of the discarded query was replaced, not left behind for Back.
+    expect(history.length).toBe(before);
+  });
+
+  test("WLK-09c: an address that names a query that is not there says so", async () => {
+    routes[`GET ${api}/queries/schema`] = () => [200, { tables: [], functions: [], maySql: true }];
+    history.replaceState(null, "", "/?query=reports/gone");
+    show(<Queries root={root} link={link} />);
+    expect(await screen.findByText(/There is no saved query at reports\/gone/)).toBeTruthy();
+  });
+
   test("Queries names and moves a saved query beside Remove, keeping its key", async () => {
     routes[`GET ${api}/queries/schema`] = () => [200, { tables: [], functions: [], maySql: true }];
     routes[`GET ${api}/queries`] = () => [
@@ -342,6 +391,8 @@ describe("where it is used", () => {
       body: { kind: "query", path: "reports/charges", body: { sql: "select 1" } },
     });
     await waitFor(() => expect(decodeURIComponent(location.search)).toContain("reports/charges"));
+    // The keyboard is where the person was (WLK-09a), not on the page body.
+    await waitFor(() => expect(document.activeElement).not.toBe(document.body));
   });
 
   test("the flow editor removes a deployed flow, as the script editor does", async () => {
@@ -361,5 +412,109 @@ describe("where it is used", () => {
       url: `${api}/drafts/orders/sync`,
       body: { kind: "flow", deleted: true },
     });
+  });
+
+  test("a step added with nothing chosen is saved with the rest, and the editor says what it needs (FLW-09)", async () => {
+    routes[`GET ${api}/drafts/orders/sync`] = () => [404, { code: "not_found", detail: "none" }];
+    routes[`GET ${api}/resources/orders/sync`] = () => [
+      200,
+      {
+        ownership: "ui",
+        body: { nodes: { start: { type: "trigger", trigger: { type: "manual" } } }, edges: [] },
+      },
+    ];
+    routes[`PUT ${api}/drafts/orders/sync`] = () => [200, { revision: 1 }];
+    show(<FlowEditor root={root} link={link} path="orders/sync" />);
+    fireEvent.click(await screen.findByRole("button", { name: "Add step" }));
+    fireEvent.click(await screen.findByText("Run a script"));
+    const list = await screen.findByRole("list", { name: "To fix" });
+    expect(list.textContent).toContain("has no script chosen");
+    fireEvent.click(screen.getByRole("button", { name: "Add step" }));
+    fireEvent.click(await screen.findByText("For each"));
+    await waitFor(() =>
+      expect(screen.getByRole("list", { name: "To fix" }).textContent).toContain(
+        "needs a script or a flow to run for each item",
+      ),
+    );
+    // The draft is saved with the unfinished step in it: nothing is held back.
+    await waitFor(() => expect(sent("PUT")).toHaveLength(1), { timeout: 8000 });
+    const saved = (
+      (sent("PUT")[0] as NonNullable<ReturnType<typeof sent>[number]>).body as {
+        body: { nodes: Record<string, { type: string }> };
+      }
+    ).body.nodes;
+    expect(Object.values(saved).map((node) => node.type)).toContain("script");
+  });
+
+  test("a flow drafted for removal is shown as deployed and cannot be changed", async () => {
+    routes[`GET ${api}/drafts/orders/sync`] = () => [
+      200,
+      { path: "orders/sync", kind: "flow", revision: 2, deleted: true, body: {} },
+    ];
+    routes[`GET ${api}/resources/orders/sync`] = () => [
+      200,
+      {
+        ownership: "ui",
+        body: { nodes: { start: { type: "trigger", trigger: { type: "manual" } } }, edges: [] },
+      },
+    ];
+    show(<FlowEditor root={root} link={link} path="orders/sync" />);
+    expect(await screen.findByText(/This flow is removed in your drafts/)).toBeTruthy();
+    expect((screen.getByRole("button", { name: "Add step" }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+    expect(screen.getByRole("button", { name: "Keep this flow" })).toBeTruthy();
+    expect(screen.getByLabelText("The chosen step").querySelector("fieldset")?.disabled).toBe(true);
+  });
+});
+
+describe("WLK-09a: the keyboard keeps its place", () => {
+  test("a button that disables itself while it works is focused again once the draft is discarded", async () => {
+    show(
+      <RemoveDraftButton
+        root={root}
+        kind="query"
+        path="reports/fees"
+        noun="query"
+        state="draft"
+        onDone={() => {}}
+      />,
+    );
+    const button = screen.getByRole("button", { name: "Discard draft" });
+    button.focus();
+    fireEvent.click(button);
+    await answer("Discard");
+    await waitFor(() => expect(document.activeElement).toBe(button));
+  });
+
+  test("a row that the action removes leaves the focus on what is left of its list, not on the page", async () => {
+    const { RemoveButton } = await import("./ListScreen.tsx");
+    const { useState } = await import("react");
+    function Rows() {
+      const [rows, setRows] = useState(["a", "b"]);
+      return (
+        <ul>
+          {rows.map((name) => (
+            <li key={name}>
+              <RemoveButton
+                label={`Remove ${name}`}
+                confirm={`Remove ${name}?`}
+                run={async () => {}}
+                onDone={() => setRows((now) => now.filter((one) => one !== name))}
+              />
+            </li>
+          ))}
+        </ul>
+      );
+    }
+    show(<Rows />);
+    const first = screen.getByRole("button", { name: "Remove a" });
+    first.focus();
+    fireEvent.click(first);
+    await answer("Remove a");
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Remove a" })).toBeNull());
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole("button", { name: "Remove b" })),
+    );
   });
 });

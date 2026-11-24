@@ -1,3 +1,4 @@
+import { PATH_PATTERN } from "@volvel/manifest";
 import {
   Button,
   type JsonSchema,
@@ -10,7 +11,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { failureText, takenText } from "../ask.tsx";
-import { Loading } from "../kit/LoadState.tsx";
+import { Pending } from "../kit/LoadState.tsx";
 import { SectionLabel } from "../kit/layout.tsx";
 import { SecretField } from "../kit/SecretField.tsx";
 import { StatePill } from "../kit/status.tsx";
@@ -24,9 +25,14 @@ export interface ConnectionRow {
   description: string;
   defined: boolean;
   bound: boolean;
+  /** Declared by a workspace linked to this one: it arrives with the next promotion. */
+  arrives?: boolean;
+  /** A change made in the console that waits to be deployed. */
+  draft?: "new" | "changed" | "removed" | null;
   config: { baseUrl?: string; host?: string; [more: string]: unknown } | null;
   configSchema: Record<string, unknown>;
   hasCredential: boolean;
+  updatedAt?: string | null;
   credentialSetAt?: string | null;
   credentialSetBy?: string | null;
   health: {
@@ -54,6 +60,8 @@ export const CONNECTOR_NAMES: Record<string, string> = {
   http: "HTTP",
   smtp: "Mail (SMTP)",
   oauth2: "OAuth 2.0",
+  /** A binding no deployed, drafted or uploaded declaration speaks for. */
+  unknown: "Not declared anywhere",
 };
 
 /** What the stored secret is called, by kind. */
@@ -65,7 +73,7 @@ const CREDENTIAL: Record<string, { label: string; hint: string }> = {
   smtp: { label: "Password", hint: "The mail server's password for the user above." },
   oauth2: {
     label: "Client secret",
-    hint: "From the app you registered with the provider. Kept on the platform: workers never receive it.",
+    hint: "From the app you registered with the provider. Kept by Volvel: workers never receive it.",
   },
 };
 
@@ -101,9 +109,28 @@ export const OAUTH_PRESETS: Record<
 };
 
 const NEW = "__new";
-const PATH = /^[a-z0-9][a-z0-9-]*(\/[a-z0-9][a-z0-9-]*)*$/;
+// The platform's own pattern for a path (the manifest's), so the wizard refuses nothing it allows.
+const PATH = new RegExp(PATH_PATTERN);
 
 /** Where a provider sends the member back, which the app registered with it must list. */
+/** Whether a connection's settings now point at another origin than the ones held (D10): the stored credential does not go along. */
+export function addressChanged(
+  held: Record<string, unknown> | null | undefined,
+  now: Record<string, unknown>,
+): boolean {
+  if (held == null) return false;
+  const place = (value: unknown) => {
+    try {
+      return new URL(String(value)).origin;
+    } catch {
+      return String(value ?? "");
+    }
+  };
+  return ["baseUrl", "host", "port", "tokenUrl"].some(
+    (field) => place(held[field]) !== place(now[field]),
+  );
+}
+
 export const callbackAddress = () => `${location.origin}/api/v1/oauth/connections/callback`;
 
 /** Sends the browser to the provider to authorize a connection, and back here after. */
@@ -128,10 +155,10 @@ export function testText(task: TaskState): { ok: boolean; text: string } {
   if (task.status === "failed" || !result) {
     return {
       ok: false,
-      text: (task.error?.message ?? "The test did not finish.").replace(
+      text: `Failed: ${(task.error?.message ?? "The test did not finish.").replace(
         /^(GET|POST) \S+ answered \d+: /,
         "",
-      ),
+      )}`,
     };
   }
   if (result.ok) {
@@ -142,9 +169,7 @@ export function testText(task: TaskState): { ok: boolean; text: string } {
   }
   return {
     ok: false,
-    text: [result.status ? `HTTP ${result.status}` : null, result.message]
-      .filter(Boolean)
-      .join(": "),
+    text: `Failed${result.status ? ` (HTTP ${result.status})` : ""}${result.message ? `: ${result.message}` : ""}`,
   };
 }
 
@@ -159,11 +184,14 @@ export function ConnectionWizard({
   row,
   rows,
   returned,
+  production = false,
   onClose,
   onSaved,
 }: {
   root: string;
   open: boolean;
+  /** In production nothing is declared by hand: what is set up here is what a promotion brings. */
+  production?: boolean;
   /** The connection being changed. None for a new one. */
   row: ConnectionRow | undefined;
   rows: ConnectionRow[];
@@ -174,7 +202,7 @@ export function ConnectionWizard({
 }) {
   const kinds = useLoad<{ items: ConnectorKind[] }>(open ? `${root}/connectors` : null);
   const [choice, setChoice] = useState<string>(
-    row?.path ?? rows.find((candidate) => !candidate.bound)?.path ?? NEW,
+    row?.path ?? rows.find((candidate) => !candidate.bound)?.path ?? (production ? "" : NEW),
   );
   // The one chosen stays among the choices once it is bound.
   const declared = rows.filter((candidate) => !candidate.bound || candidate.path === choice);
@@ -188,6 +216,7 @@ export function ConnectionWizard({
   const [config, setConfig] = useState<Record<string, unknown>>(row?.config ?? {});
   const [formKey, setFormKey] = useState(0);
   const [credential, setCredential] = useState("");
+  const [removeCredential, setRemoveCredential] = useState(false);
   const [saved, setSaved] = useState<ConnectionRow | undefined>(row?.bound ? row : undefined);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string>();
@@ -211,6 +240,9 @@ export function ConnectionWizard({
     hint: "The password or key, when the system asks for one.",
   };
   const hasCredential = saved?.hasCredential ?? chosen?.hasCredential ?? false;
+  // Another address keeps no credential that was given for the old one: it is typed again.
+  const addressMoved =
+    hasCredential && credential === "" && addressChanged((saved ?? chosen)?.config, config);
 
   // A preset fills in what it knows, and keeps the client the member typed.
   const applyPreset = (which: keyof typeof OAUTH_PRESETS, tenant = msTenant) => {
@@ -221,10 +253,12 @@ export function ConnectionWizard({
     }));
     setFormKey((key) => key + 1);
   };
-  // biome-ignore lint/correctness/useExhaustiveDependencies: only when the kind becomes OAuth
+  // An OAuth connection with no settings yet, whichever way it was reached (new, chosen from the
+  // list, or opened from a row), starts from a provider's addresses: the field says Google, so it is.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only when the kind or the connection changes
   useEffect(() => {
-    if (!row && isOAuth && Object.keys(config).length === 0) applyPreset("google");
-  }, [isOAuth]);
+    if (isOAuth && Object.keys(config).length === 0) applyPreset("google");
+  }, [isOAuth, choice]);
 
   const following = useTaskEnd(root, taskId, (task) => {
     setTaskId(undefined);
@@ -255,8 +289,8 @@ export function ConnectionWizard({
     setPathTaken(undefined);
     setFound(undefined);
     if (!chosen && !PATH.test(newPath)) {
-      setProblem(
-        "Name it with lowercase letters, digits and dashes, such as crm or google/sheets.",
+      setPathTaken(
+        "Name it with lowercase letters, digits, dashes and underscores, such as crm or google/sheets.",
       );
       return;
     }
@@ -274,9 +308,10 @@ export function ConnectionWizard({
       }
       await api.put(`${root}/connection-bindings/${path}`, {
         config,
-        ...(credential ? { credential } : {}),
+        ...(credential ? { credential } : removeCredential ? { credential: null } : {}),
       });
       setCredential("");
+      setRemoveCredential(false);
       const list = await api.get<{ items: ConnectionRow[] }>(`${root}/connection-bindings`);
       setSaved(
         list.items.find((item) => item.path === path) ?? {
@@ -348,13 +383,17 @@ export function ConnectionWizard({
                 label="Connection"
                 name="connection"
                 value={choice}
-                hint="One the workspace's resources declare and nothing has bound yet, or a new one."
+                hint={
+                  production
+                    ? "One the next promotion brings, or that is declared here, and not set up here yet."
+                    : "One the workspace's resources declare and not set up here yet, or a new one."
+                }
                 options={[
                   ...declared.map((candidate) => ({
                     value: candidate.path,
                     label: `${candidate.path} (${CONNECTOR_NAMES[candidate.connector] ?? candidate.connector})`,
                   })),
-                  { value: NEW, label: "A new connection…" },
+                  ...(production ? [] : [{ value: NEW, label: "A new connection…" }]),
                 ]}
                 onChange={(value) => {
                   setChoice(value);
@@ -362,7 +401,12 @@ export function ConnectionWizard({
                   setFormKey((key) => key + 1);
                 }}
               />
-              {chosen ? null : (
+              {chosen ? null : production ? (
+                <Notice tone="attention">
+                  Nothing waits to be set up here. A connection is declared in a dev workspace and
+                  arrives here with a promotion, which lists what it needs set up first.
+                </Notice>
+              ) : (
                 <div className="grid gap-3 sm:grid-cols-2">
                   <TextField
                     label="Name"
@@ -380,12 +424,13 @@ export function ConnectionWizard({
                     label="Kind"
                     name="kind"
                     value={newKind}
-                    options={(kinds.data?.items ?? [])
-                      .filter((kind) => kind.builtin)
-                      .map((kind) => ({
-                        value: kind.name,
-                        label: CONNECTOR_NAMES[kind.name] ?? kind.name,
-                      }))}
+                    // The kinds every worker has, then the workspace's own connectors.
+                    options={(kinds.data?.items ?? []).map((kind) => ({
+                      value: kind.name,
+                      label: kind.builtin
+                        ? (CONNECTOR_NAMES[kind.name] ?? kind.name)
+                        : `${kind.name} (this workspace's own)`,
+                    }))}
                     onChange={(value) => {
                       setNewKind(value);
                       setConfig({});
@@ -447,12 +492,18 @@ export function ConnectionWizard({
               onChange={(value) => setConfig((value ?? {}) as Record<string, unknown>)}
             />
           ) : (
-            <Loading />
+            <Pending of={kinds} what="the kinds of connection" />
           )}
         </section>
 
         <section className="flex flex-col gap-3" ref={credentialRef} tabIndex={-1}>
           <SectionLabel>3 · {credentialSays.label}</SectionLabel>
+          {addressMoved ? (
+            <Notice tone="attention">
+              The address changed. Saving removes the stored {credentialSays.label.toLowerCase()},
+              which was given for the old one: enter it again to keep using this connection.
+            </Notice>
+          ) : null}
           <SecretField
             label={credentialSays.label}
             name="credential"
@@ -464,6 +515,8 @@ export function ConnectionWizard({
               ? {}
               : { hint: `${credentialSays.hint} Stored encrypted and never shown again.` })}
             onChange={setCredential}
+            removed={removeCredential}
+            onRemove={setRemoveCredential}
           />
         </section>
 
@@ -474,7 +527,7 @@ export function ConnectionWizard({
           {!saved ? (
             <p className="m-0 text-ink-muted">
               Save, and one of this workspace's workers tries it from where scripts run.
-              {chosen
+              {chosen || production
                 ? ""
                 : " A new connection is declared in a draft, deployed with your next change."}
             </p>

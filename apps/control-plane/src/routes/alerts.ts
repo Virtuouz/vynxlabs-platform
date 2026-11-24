@@ -3,7 +3,7 @@ import { sql } from "@volvel/db";
 import { Type } from "typebox";
 import { badRequest } from "../kernel/errors.js";
 import { readConnection } from "../kernel/execution/bindings.js";
-import { queueTask, toTask } from "../kernel/execution/tasks.js";
+import { poolOfConnection, queueTask, toTask } from "../kernel/execution/tasks.js";
 import { access } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
 import { Id, NullableId, NullableString, Time, WorkspaceParams } from "./shared.js";
@@ -176,7 +176,8 @@ export function alertRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           workspaceId: params.w,
           path: body.connection,
         });
-        if (!bound) throw badRequest(`The connection "${body.connection}" is not bound.`);
+        if (!bound)
+          throw badRequest(`The connection "${body.connection}" is not set up in this workspace.`);
         const workspace = await db
           .selectFrom("workspace")
           .select("slug")
@@ -186,6 +187,7 @@ export function alertRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           const queued = await queueTask(trx, {
             tenantId: params.t,
             workspaceId: params.w,
+            pool: await poolOfConnection(trx, params.w, body.connection),
             kind: "deliver",
             subject: `test:${body.connection}`,
             request: {

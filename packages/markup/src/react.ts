@@ -10,6 +10,7 @@ import {
   drawAll,
   type FieldInfo,
   hrefOf,
+  inLink,
   type RenderOptions,
   srcOf,
   type TermInfo,
@@ -61,7 +62,8 @@ export interface Components {
     children: ReactNode;
   }) => ReactNode;
   code?: (props: { value: string; lang?: string }) => ReactNode;
-  image?: (props: { src: string; alt: string; title?: string }) => ReactNode;
+  /** `zoom` is false for a picture inside a link, which the link owns. */
+  image?: (props: { src: string; alt: string; title?: string; zoom: boolean }) => ReactNode;
 }
 
 export interface ReactOptions extends RenderOptions {
@@ -72,6 +74,8 @@ const RENAMED: Record<string, string> = {
   class: "className",
   tabindex: "tabIndex",
   checked: "defaultChecked",
+  srcset: "srcSet",
+  datetime: "dateTime",
 };
 
 function style(text: string): Record<string, string> {
@@ -119,14 +123,16 @@ function own(node: Node, ctx: Context, components: Components): ReactNode | unde
   const inside = () => ("children" in node ? toReact(drawAll(node.children, ctx)) : null);
   switch (node.type) {
     case "link": {
-      const href = hrefOf(node.href, ctx);
-      if (!components.link || href === undefined) return undefined;
-      return components.link({
-        href,
-        external: isExternal(href),
-        ...(node.title ? { title: node.title } : {}),
-        children: inside(),
-      });
+      if (components.link && hrefOf(node.href, ctx) !== undefined) {
+        const href = hrefOf(node.href, ctx) as string;
+        return components.link({
+          href,
+          external: isExternal(href),
+          ...(node.title ? { title: node.title } : {}),
+          children: inLink(ctx, inside),
+        });
+      }
+      return undefined;
     }
     case "code":
       return components.code?.({ value: node.value, ...(node.lang ? { lang: node.lang } : {}) });
@@ -136,6 +142,7 @@ function own(node: Node, ctx: Context, components: Components): ReactNode | unde
       return components.image({
         src,
         alt: node.alt,
+        zoom: !ctx.inLink,
         ...(node.title ? { title: node.title } : {}),
       });
     }
@@ -215,10 +222,17 @@ function ownComponent(
  * elements as `renderHtml`, one for one.
  */
 export function renderReact(tree: Node, options: ReactOptions = {}): ReactNode {
-  const ctx = context(options);
+  const ctx = context(options, tree);
   const components = options.components;
   if (components) ctx.custom = (node) => own(node, ctx, components);
   return toReact(draw(tree, ctx));
 }
 
-export type { FieldInfo, FolderItem, GlossaryItem, RenderOptions, TermInfo } from "./render.js";
+export type {
+  ChangelogItem,
+  FieldInfo,
+  FolderItem,
+  GlossaryItem,
+  RenderOptions,
+  TermInfo,
+} from "./render.js";

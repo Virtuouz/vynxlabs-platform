@@ -4,12 +4,14 @@ import { readdir, readFile, rm } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { extname, join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
-import type { BundleAsset } from "@volvel/manifest";
+import { assetPathProblem, type BundleAsset } from "@volvel/manifest";
 import { BuildError } from "./errors.js";
 
 /** An app as the repository defines it: its path, and the directory its page is in. */
 export interface AppSource {
   path: string;
+  /** What people read: the app's title, or its path when it has none. */
+  title: string;
   source: string;
 }
 
@@ -142,6 +144,8 @@ export async function buildApps(directory: string, apps: AppSource[]): Promise<B
       const content = await readFile(file);
       const sha256 = createHash("sha256").update(content).digest("hex");
       const path = relative(out, file).split(sep).join("/");
+      const unnamed = assetPathProblem(path);
+      if (unnamed) throw new BuildError([`${app.path} (app): ${unnamed}`]);
       built.assets.push({
         app: app.path,
         path,

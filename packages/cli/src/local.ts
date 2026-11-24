@@ -6,9 +6,12 @@ import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 import { buildBundle } from "./build.js";
 import { CliError, type Io } from "./cli.js";
+import { inputOf } from "./input.js";
 
 interface LocalBindings {
   connections?: Record<string, { config: unknown; credential?: string }>;
+  /** The members of each connection group, by group path, then member key. */
+  groups?: Record<string, Record<string, { config: unknown; credential?: string; label?: string }>>;
   secrets?: Record<string, string>;
   variables?: Record<string, string>;
 }
@@ -27,23 +30,25 @@ function notLocal(what: string): never {
 export async function runLocally(args: string[], io: Io) {
   const { values, positionals } = parseArgs({
     args,
-    options: { dir: { type: "string" }, input: { type: "string" } },
+    options: {
+      dir: { type: "string" },
+      entry: { type: "string" },
+      resources: { type: "string" },
+      input: { type: "string" },
+    },
     allowPositionals: true,
   });
   const [path] = positionals;
   if (!path) throw new CliError("Say which script to run: volvel run <script path>");
   const directory = resolve(values.dir ?? ".");
 
-  let input: unknown = {};
-  if (values.input !== undefined) {
-    try {
-      input = JSON.parse(values.input);
-    } catch {
-      throw new CliError('--input must be JSON, for example --input \'{"since":"2026-01-01"}\'');
-    }
-  }
+  const input = await inputOf(values.input);
 
-  const bundle = await buildBundle({ directory });
+  const bundle = await buildBundle({
+    directory,
+    ...(values.entry ? { entry: values.entry } : {}),
+    ...(values.resources ? { resources: values.resources } : {}),
+  });
   const manifest = bundle.manifests.find(
     (candidate) => candidate.kind === "script" && candidate.path === path,
   );
@@ -56,7 +61,12 @@ export async function runLocally(args: string[], io: Io) {
   }
   const body = manifest.body as {
     entry: string;
-    uses: { connections: string[]; secrets: string[]; variables: string[] };
+    uses: {
+      connections: string[];
+      connectionGroups?: string[];
+      secrets: string[];
+      variables: string[];
+    };
   };
 
   const bindingsFile = join(directory, ".platform", "local.json");
@@ -99,6 +109,36 @@ export async function runLocally(args: string[], io: Io) {
       pathToFileURL(createRequire(join(directory, "package.json")).resolve("@volvel/sdk")).href
     );
     const abort = new AbortController();
+    // The connector a connection or group names: as a worker finds it, one of the platform's, or one this repository declares.
+    const connectorOf = (kind: "connection" | "connection_group", path: string) =>
+      (
+        bundle.manifests.find((candidate) => candidate.kind === kind && candidate.path === path)
+          ?.body as { connector?: string } | undefined
+      )?.connector ?? "http";
+    const clientFor = (
+      connector: string,
+      bound: { config: unknown; credential?: string },
+    ): unknown => {
+      if (connector === "http")
+        return sdk.httpConnector.create(bound.config, bound.credential, abort.signal);
+      if (connector === "oauth2")
+        return sdk.oauth2Connector.create(bound.config, bound.credential, abort.signal);
+      if (connector === "smtp") return notLocal("Mail connections");
+      const entry = (
+        bundle.manifests.find(
+          (candidate) => candidate.kind === "connector" && candidate.path === connector,
+        )?.body as { entry?: string } | undefined
+      )?.entry;
+      const own = entry ? (loaded as Record<string, unknown>)[entry] : undefined;
+      if (typeof (own as { create?: unknown } | undefined)?.create !== "function") {
+        throw new Error(`There is no connector "${connector}" in this repository.`);
+      }
+      return (
+        own as unknown as {
+          create(config: unknown, credential: string | undefined, signal: AbortSignal): unknown;
+        }
+      ).create(bound.config, bound.credential, abort.signal);
+    };
     const log = (level: string) => (message: string, fields?: Record<string, unknown>) =>
       io.out(`${level.padEnd(5)} ${message}${fields ? ` ${JSON.stringify(fields)}` : ""}`);
     const output = await loaded[body.entry]?.execute(input, {
@@ -112,7 +152,30 @@ export async function runLocally(args: string[], io: Io) {
           config: unknown;
           credential?: string;
         };
-        return sdk.httpConnector.create(bound.config, bound.credential, abort.signal);
+        return clientFor(connectorOf("connection", name), bound);
+      },
+      connections: (group: string | { path: string }) => {
+        const path = typeof group === "string" ? group : group.path;
+        const members = () =>
+          need(
+            "connection group",
+            path,
+            body.uses.connectionGroups ?? [],
+            bindings.groups?.[path],
+          ) as NonNullable<LocalBindings["groups"]>[string];
+        return {
+          get: async (key: string) => {
+            const member = members()[key];
+            if (!member) {
+              throw new Error(
+                `The group "${path}" has no member "${key}" locally. Add it under groups in ${bindingsFile}.`,
+              );
+            }
+            return clientFor(connectorOf("connection_group", path), member);
+          },
+          keys: async () =>
+            Object.entries(members()).map(([key, member]) => ({ key, label: member.label ?? key })),
+        };
       },
       secret: async (name: string) =>
         need("secret", name, body.uses.secrets, bindings.secrets?.[name]),
@@ -145,18 +208,36 @@ export async function runLocally(args: string[], io: Io) {
   }
 }
 
+/** The SDK a new repository asks for. A release sets it to the version released. */
+export const STARTER_SDK_RANGE = "^0.5.0";
+
 const STARTER: Record<string, string> = {
   "package.json": `${JSON.stringify(
     {
       name: "tenant-repository",
       private: true,
       type: "module",
-      dependencies: { "@volvel/sdk": "^0.5.0" },
+      dependencies: { "@volvel/sdk": STARTER_SDK_RANGE },
     },
     null,
     2,
   )}\n`,
   ".gitignore": "node_modules/\n.platform/\n",
+  "tsconfig.json": `${JSON.stringify(
+    {
+      compilerOptions: {
+        target: "ES2023",
+        module: "ESNext",
+        moduleResolution: "Bundler",
+        strict: true,
+        noEmit: true,
+        skipLibCheck: true,
+      },
+      include: ["src"],
+    },
+    null,
+    2,
+  )}\n`,
   "src/index.ts": `import { defineSchedule, defineScript, z } from "@volvel/sdk";
 
 // Everything this file exports becomes a resource in the workspace you deploy to.
@@ -197,5 +278,14 @@ export async function init(args: string[], io: Io) {
     await writeFile(file, contents);
   }
   io.out(`Created a tenant repository in ${directory}`);
-  io.out("Next: install dependencies, then try `volvel run hello` and `volvel build`.");
+  io.out("Next:");
+  io.out("  1. In that folder, install the repository's dependencies: npm install");
+  io.out(
+    "  2. If the volvel command is not on this machine yet, install the CLI: npm install --global @volvel/cli",
+  );
+  io.out(
+    "  3. Sign in: volvel login --url <your instance> --token <api key>. Create the key in the console under your account menu.",
+  );
+  io.out("  4. Try the script on this machine: volvel run hello. Check the build: volvel build.");
+  io.out("  5. Send it to a dev workspace: volvel deploy --tenant <slug> --workspace <slug>");
 }

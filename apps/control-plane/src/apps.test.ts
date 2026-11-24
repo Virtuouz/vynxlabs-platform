@@ -1,7 +1,9 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
+import { sql } from "@volvel/db";
 import { type Bundle, type BundleManifest, bundleDigest } from "@volvel/manifest";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { sweepAppFiles, sweepDueAppFiles } from "./kernel/apps/assets.js";
 import { DEFAULT_THEME } from "./kernel/apps/theme.js";
 import type { Message } from "./kernel/mail.js";
 import { type Client, startTestApp, type TestApp } from "./testing.js";
@@ -45,6 +47,25 @@ const files: Record<string, { app: string; path: string; type: string; content: 
     path: "assets/app-3f9a1c7e.js",
     type: "text/javascript",
     content: Buffer.from('console.log("orders");'),
+  },
+  // Names a bundler or a site gives, which began with a letter or a digit before (APP-05).
+  chunk: {
+    app: "portal",
+    path: "assets/_commonjsHelpers-9f8e7d6c.js",
+    type: "text/javascript",
+    content: Buffer.from("export {};"),
+  },
+  wellKnown: {
+    app: "portal",
+    path: ".well-known/assetlinks.json",
+    type: "application/json",
+    content: Buffer.from("[]"),
+  },
+  logo: {
+    app: "portal",
+    path: "logo-horizontal.svg",
+    type: "image/svg+xml",
+    content: Buffer.from("<svg xmlns='http://www.w3.org/2000/svg'/>"),
   },
   robots: { app: "portal", path: "robots.txt", type: "text/plain", content: Buffer.from("hello") },
   status: {
@@ -114,6 +135,9 @@ function bundle(change: (manifests: BundleManifest[]) => BundleManifest[] = (m) 
 }
 
 const ws = (workspace = prod, of = tenant) => `/tenants/${of}/workspaces/${workspace}`;
+
+const staffCookie = (visitor: { jar: Map<string, string> }) =>
+  [...visitor.jar].map(([name, value]) => `${name}=${value}`).join("; ");
 
 /** A browser at one address: it keeps the cookies it is given and sends them back there. */
 function browser(app: TestApp, host: string) {
@@ -256,7 +280,7 @@ describe("an app in a bundle", () => {
     const refused = await alice.post(`${ws()}/bundles`, bundle());
     expect(refused.status).toBe(409);
     expect(refused.body.code).toBe("assets_missing");
-    expect(refused.body.errors).toHaveLength(4);
+    expect(refused.body.errors).toHaveLength(7);
 
     const wrong = await alice.put(`${ws()}/bundle-assets/${"0".repeat(64)}`, files.page?.content);
     expect(wrong.status).toBe(400);
@@ -314,11 +338,83 @@ describe("an app in a bundle", () => {
         path: "portal",
         title: "Orders",
         url: "http://localhost:8080/apps/acme/main/portal/",
-        files: 3,
+        files: 6,
         access: ["every end user"],
       },
       { path: "status", title: "Order status", access: ["anyone"] },
     ]);
+  });
+});
+
+describe("who an app is open to (APP-03, APP-14)", () => {
+  test("names groups of end users and service accounts, and the broader bindings that reach the app", async () => {
+    const group = await alice.post(`/tenants/${tenant}/end-user-groups`, { name: "customers" });
+    expect(group.status, JSON.stringify(group.body)).toBe(201);
+    const account = await alice.post(`/tenants/${tenant}/service-accounts`, { name: "robot" });
+    expect(account.status, JSON.stringify(account.body)).toBe(201);
+    const reader = await alice.post(`/tenants/${tenant}/roles`, {
+      name: "app_looker",
+      permissions: ["app:read"],
+    });
+    const nothing = await alice.post(`/tenants/${tenant}/roles`, {
+      name: "table_looker",
+      permissions: ["table:read"],
+    });
+    const gave = async (body: Record<string, unknown>) => {
+      const made = await alice.post(`/tenants/${tenant}/bindings`, body);
+      expect(made.status, JSON.stringify(made.body)).toBe(201);
+      return made.body.id as string;
+    };
+    const portal = (await alice.get(`${ws()}/apps`)).body.items.find(
+      (one: Any) => one.path === "portal",
+    );
+    const made = [
+      await gave({
+        workspaceId: prod,
+        resourceId: portal.id,
+        principalType: "end_user_group",
+        principalId: group.body.id,
+        roleId: reader.body.id,
+      }),
+      await gave({
+        workspaceId: prod,
+        resourceId: portal.id,
+        principalType: "service_account",
+        principalId: account.body.id,
+        roleId: reader.body.id,
+      }),
+      // At the workspace and at the tenant: they reach every app, and the screen said nothing.
+      await gave({ workspaceId: prod, principalType: "anonymous", roleId: reader.body.id }),
+      await gave({ principalType: "end_users", roleId: reader.body.id }),
+      // A role that does not open apps changes nothing.
+      await gave({
+        workspaceId: prod,
+        principalType: "end_user_group",
+        principalId: group.body.id,
+        roleId: nothing.body.id,
+      }),
+    ];
+    try {
+      const shown = (await alice.get(`${ws()}/apps`)).body.items.find(
+        (one: Any) => one.path === "portal",
+      );
+      expect(shown.access).toEqual(
+        expect.arrayContaining(["every end user", "customers", "robot"]),
+      );
+      expect(shown.access).not.toContain("end_user_group");
+      expect(shown.access).not.toContain("service_account");
+      expect(shown.broaderAccess).toEqual(
+        expect.arrayContaining([
+          { scope: "workspace", label: "anyone" },
+          { scope: "tenant", label: "every end user" },
+        ]),
+      );
+      expect(shown.broaderAccess).toHaveLength(2);
+    } finally {
+      for (const id of made) await alice.delete(`/tenants/${tenant}/bindings/${id}`);
+      await alice.delete(`/tenants/${tenant}/end-user-groups/${group.body.id}`);
+      await alice.delete(`/tenants/${tenant}/service-accounts/${account.body.id}`);
+    }
   });
 });
 
@@ -365,6 +461,28 @@ describe("serving by path, on the instance's own address", () => {
     });
   });
 
+  test("a member's groups reach an app written as code, as they reach one made in the console (APP-16)", async () => {
+    const staff = browser(t, MAIN);
+    await staff.signInMember("alice@acme.example", PASSWORD);
+    const me = (await alice.get(`/tenants/${tenant}/members`)).body.items.find(
+      (member: Any) => member.email === "alice@acme.example",
+    );
+    const group = await alice.post(`/tenants/${tenant}/groups`, { name: "Night shift" });
+    expect(group.status, JSON.stringify(group.body)).toBe(201);
+    await alice.put(`/tenants/${tenant}/groups/${group.body.id}/members/${me.id}`);
+    try {
+      const page = await staff.get("/apps/acme/main/portal/");
+      const context = JSON.parse(
+        /<script type="application\/json" id="vx-context">(.*?)<\/script>/.exec(
+          page.body,
+        )?.[1] as string,
+      );
+      expect(context.principal.groups).toEqual(["Night shift"]);
+    } finally {
+      await alice.delete(`/tenants/${tenant}/groups/${group.body.id}`);
+    }
+  });
+
   test("files come with their type, hashed ones may be kept, and a screen of the app gets the page", async () => {
     const staff = browser(t, MAIN);
     await staff.signInMember("alice@acme.example", PASSWORD);
@@ -377,10 +495,31 @@ describe("serving by path, on the instance's own address", () => {
     expect((await staff.get("/apps/acme/main/portal/robots.txt")).headers["cache-control"]).toBe(
       "private, no-cache",
     );
+    expect((await staff.get("/apps/acme/main/portal/.well-known/assetlinks.json")).status).toBe(
+      200,
+    );
+    expect(
+      (await staff.get("/apps/acme/main/portal/assets/_commonjsHelpers-9f8e7d6c.js")).status,
+    ).toBe(200);
+    // A name with a long word in it is not a hash: it may change at the next deploy (APP-04).
+    expect(
+      (await staff.get("/apps/acme/main/portal/logo-horizontal.svg")).headers["cache-control"],
+    ).toBe("private, no-cache");
 
     expect((await staff.get("/apps/acme/main/portal/customers/42")).body).toContain(
       '<div id="app">',
     );
+    // A screen whose last part has a dot is a screen too, to a browser that asks for a page
+    // (APP-15), and a file that is not there is still missing for one that asks for a file.
+    const asked = (path: string, accept: string) =>
+      t.app.inject({
+        url: `/apps/acme/main/portal/${path}`,
+        headers: { host: MAIN, accept, cookie: staffCookie(staff) },
+      });
+    expect(
+      (await asked("users/j.smith", "text/html,application/xhtml+xml,*/*;q=0.8")).statusCode,
+    ).toBe(200);
+    expect((await asked("assets/gone.js", "*/*")).statusCode).toBe(404);
     expect((await staff.get("/apps/acme/main/portal/missing.png")).status).toBe(404);
     expect((await staff.get("/apps/acme/main/portal")).status).toBe(308);
     expect((await staff.get("/apps/acme/main/nothing/")).status).toBe(404);
@@ -397,6 +536,25 @@ describe("serving by path, on the instance's own address", () => {
     expect(page.body).toContain('"principal":{"type":"anonymous"');
     expect((await visitor.get("/apps/acme/main/portal/assets/app-3f9a1c7e.js")).status).toBe(303);
   });
+
+  test("one page with its files is one counted request, not one for each file (HOST-21)", async () => {
+    const counted = async () =>
+      Number(
+        (
+          await sql<{ n: string }>`
+            select coalesce(sum(hits), 0) as n from rate_limit where key like 'front:guest-pages:%'
+          `.execute(t.db)
+        ).rows[0]?.n,
+      );
+    const before = await counted();
+    const visitor = browser(t, MAIN);
+    expect((await visitor.get("/apps/acme/main/status/")).status).toBe(200);
+    for (const file of ["app-3f9a1c7e.js", "style.css", "font.woff2", "logo.png", "icon.svg"]) {
+      await visitor.get(`/apps/acme/main/status/assets/${file}`);
+    }
+    // One page, five files: one write to the database.
+    expect((await counted()) - before).toBe(1);
+  });
 });
 
 describe("an instance with no address for apps", () => {
@@ -411,6 +569,22 @@ describe("an instance with no address for apps", () => {
       expect(page.body).toContain("APPS_URL");
       expect(page.body).not.toContain("Order status");
       expect((await t.app.inject({ url: "/api/v1/instance" })).json().appsAddress).toBe("none");
+    } finally {
+      config.appsOnConsoleAddress = true;
+    }
+  });
+});
+
+describe("the portal home on an instance with no address for apps (APP-09)", () => {
+  test("lists the apps that can be opened, and not the code apps that answer 503", async () => {
+    const config = t.kernel.config;
+    const staff = browser(t, MAIN);
+    expect(await staff.signInMember("alice@acme.example", PASSWORD)).toBe(200);
+    const open = async () => (await staff.get("/portal/acme/")).body as string;
+    expect(await open()).toContain("Order status");
+    config.appsOnConsoleAddress = false;
+    try {
+      expect(await open()).not.toContain("Order status");
     } finally {
       config.appsOnConsoleAddress = true;
     }
@@ -674,6 +848,37 @@ describe("end users", () => {
     });
     expect(forEd.statusCode, forEd.body).toBe(200);
     expect(forEd.json().result.items.map((row: Any) => row.number)).toEqual(["A-1"]);
+  });
+
+  test("a guest may not start a script or a flow, since they could never read the run (APP-02)", async () => {
+    const flowRole = await alice.post(`/tenants/${tenant}/roles`, {
+      name: "guest_flow_starter",
+      permissions: ["flow_run:write"],
+    });
+    const scriptRole = await alice.post(`/tenants/${tenant}/roles`, {
+      name: "guest_script_starter",
+      permissions: ["run:write"],
+    });
+    const bound = await Promise.all(
+      [scriptRole.body.id, flowRole.body.id].map(async (roleId) => {
+        const made = await alice.post(`/tenants/${tenant}/bindings`, {
+          workspaceId: prod,
+          principalType: "anonymous",
+          roleId,
+        });
+        expect(made.status, JSON.stringify(made.body)).toBe(201);
+        return made.body.id as string;
+      }),
+    );
+    const guest = browser(t, MAIN);
+    const base = `/api/v1/tenants/${tenant}/workspaces/${prod}`;
+    const script = await guest.post(`${base}/runs`, { script: "place-order", input: {} });
+    expect(script.status, JSON.stringify(script.body)).toBe(403);
+    expect(script.body.detail).toContain("Sign in");
+    const flow = await guest.post(`${base}/flow-runs`, { flow: "anything", input: {} });
+    expect(flow.status, JSON.stringify(flow.body)).toBe(403);
+    expect(flow.body.detail).toContain("Sign in");
+    for (const id of bound) await alice.delete(`/tenants/${tenant}/bindings/${id}`);
   });
 
   test("sign-up is off until the tenant turns it on", async () => {
@@ -1382,8 +1587,30 @@ describe("a hostname of the tenant's own", () => {
     expect(created.body.challenge.value).toMatch(/^vx-domain=[0-9a-f]{40}$/);
     domainId = created.body.id;
 
-    // Another tenant cannot take the name, and gets a different record to publish.
+    // Another tenant may register the name too, until one of them proves it. It gets a different
+    // record to publish, and the name is not its own: nothing is served, and it cannot enable it.
     const gina = await t.signIn("gina@globex.example", PASSWORD);
+    const otherWorkspace = (
+      await gina.post(`/tenants/${other}/workspaces`, {
+        slug: "main",
+        name: "Main",
+        type: "production",
+      })
+    ).body.id as string;
+    const theirs = await gina.post(`/tenants/${other}/domains`, {
+      workspaceId: otherWorkspace,
+      app: "",
+      hostname: DOMAIN,
+    });
+    expect(theirs.status, JSON.stringify(theirs.body)).toBe(201);
+    expect(theirs.body.challenge.value).not.toBe(created.body.challenge.value);
+    expect(theirs.body).toMatchObject({ enabled: false, verifiedAt: null });
+    const taken = await gina.patch(`/tenants/${other}/domains/${theirs.body.id}`, {
+      enabled: true,
+    });
+    expect(taken.status, JSON.stringify(taken.body)).toBe(409);
+    expect(taken.body.code).toBe("domain_not_verified");
+    // And an app of the other tenant's workspace cannot be given to this tenant's name.
     expect(
       (
         await gina.post(`/tenants/${other}/domains`, {
@@ -1393,6 +1620,7 @@ describe("a hostname of the tenant's own", () => {
         })
       ).status,
     ).toBe(400);
+    await gina.delete(`/tenants/${other}/domains/${theirs.body.id}`);
 
     // Not yet enabled: the name is the instance by another name, and serves no app.
     expect((await browser(t, DOMAIN).get("/api/v1/domain-check")).status).toBe(200);
@@ -1413,6 +1641,17 @@ describe("a hostname of the tenant's own", () => {
       enabled: true,
     });
     expect(enabled.status, JSON.stringify(enabled.body)).toBe(200);
+    // The tenant may turn it off and on again: what an operator enabled stays theirs to use
+    // (APP-13).
+    const domainUrlPath = `/tenants/${tenant}/domains/${domainId}`;
+    expect((await alice.patch(domainUrlPath, { enabled: false })).body.enabled).toBe(false);
+    const again = await alice.patch(domainUrlPath, { enabled: true });
+    expect(again.status, JSON.stringify(again.body)).toBe(200);
+    expect(again.body.enabled).toBe(true);
+    // An operator who turns it off takes that back: only an operator enables it then.
+    await t.admin.patch(domainUrlPath, { enabled: false });
+    expect((await alice.patch(domainUrlPath, { enabled: true })).status).toBe(409);
+    expect((await t.admin.patch(domainUrlPath, { enabled: true })).status).toBe(200);
     await t.admin.delete(`/tenants/${tenant}/access-grants/${grant.body.id}`);
     expect((await alice.get(`/tenants/${tenant}/domains`)).body.items).toMatchObject([
       { hostname: DOMAIN, enabled: true },
@@ -1734,6 +1973,119 @@ describe("moving a tenant", () => {
     } finally {
       await b.stop();
     }
+  });
+});
+
+describe("files no app names any more (APP-17)", () => {
+  test("are swept after a deploy once they are a week old, and no sooner, and what is named stays", async () => {
+    const sweep = (
+      await alice.post(`/tenants/${tenant}/workspaces`, {
+        slug: "sweep",
+        name: "Sweep",
+        type: "production",
+      })
+    ).body.id as string;
+    const place = ws(sweep);
+    const page = (text: string) => Buffer.from(`<html><head></head><body>${text}</body></html>`);
+    const deployWith = async (content: Buffer) => {
+      const asset = { app: "site", path: "index.html", sha256: sha(content) };
+      expect(
+        (await alice.put(`${place}/bundle-assets/${asset.sha256}`, content)).status,
+      ).toBeLessThan(300);
+      const unsigned = {
+        formatVersion: 2 as const,
+        sdkVersion: "0.5.0",
+        core: { min: "0.0.0", below: "99.0.0" },
+        manifests: [manifest("app", "site", { title: "Site", entry: "index.html" })],
+        code: "export {};",
+        assets: [{ ...asset, size: content.length, contentType: "text/html" }],
+      };
+      const bundled = await alice.post(`${place}/bundles`, {
+        ...unsigned,
+        digest: bundleDigest(unsigned),
+      });
+      expect(bundled.status, JSON.stringify(bundled.body)).toBe(201);
+      const deployed = await alice.post(`${place}/deployments`, { bundleId: bundled.body.id });
+      expect(deployed.status, JSON.stringify(deployed.body)).toBe(201);
+      return { sha: asset.sha256, bundleId: bundled.body.id as string };
+    };
+    const held = async (sha256: string) =>
+      (await alice.get(`${place}/bundle-assets/${sha256}`)).status === 200;
+
+    const first = await deployWith(page("first"));
+    const second = await deployWith(page("second"));
+    await sweepDueAppFiles(t.kernel);
+    // Young: the first is no longer named by the active bundle, but may be deployed again.
+    expect(await held(first.sha)).toBe(true);
+    // A week on, it is only the active bundle that names a file.
+    const old = new Date(Date.now() - 8 * 86_400_000);
+    await t.db
+      .updateTable("bundle")
+      .set({ created_at: old })
+      .where("workspace_id", "=", sweep)
+      .execute();
+    await t.db
+      .updateTable("bundle_asset")
+      .set({ created_at: old })
+      .where("tenant_id", "=", tenant)
+      .execute();
+    const third = await deployWith(page("third"));
+    await sweepDueAppFiles(t.kernel);
+    expect(await held(first.sha)).toBe(false);
+    expect(await held(second.sha)).toBe(false);
+    expect(await held(third.sha)).toBe(true);
+    // The files of other workspaces, which are also old, are named by theirs and stay.
+    expect(await held(sha(files.script?.content as Buffer))).toBe(true);
+  });
+});
+
+describe("a bundle stored while the files are swept (APP-17)", () => {
+  test("never names a file that is then deleted", async () => {
+    const ws2 = (
+      await alice.post(`/tenants/${tenant}/workspaces`, {
+        slug: "race",
+        name: "Race",
+        type: "production",
+      })
+    ).body.id as string;
+    const place = ws(ws2);
+    const content = Buffer.from("<html><head></head><body>race</body></html>");
+    const sum = sha(content);
+    expect((await alice.put(`${place}/bundle-assets/${sum}`, content)).status).toBeLessThan(300);
+    await t.db
+      .updateTable("bundle_asset")
+      .set({ created_at: new Date(Date.now() - 9 * 86_400_000) })
+      .where("tenant_id", "=", tenant)
+      .where("sha256", "=", sum)
+      .execute();
+    const unsigned = {
+      formatVersion: 2 as const,
+      sdkVersion: "0.5.0",
+      core: { min: "0.0.0", below: "99.0.0" },
+      manifests: [manifest("app", "site", { title: "Site", entry: "index.html" })],
+      code: "export {};",
+      assets: [
+        {
+          app: "site",
+          path: "index.html",
+          sha256: sum,
+          size: content.length,
+          contentType: "text/html",
+        },
+      ],
+    };
+    let store: Promise<{ status: number; body: Any }> | undefined;
+    const swept = sweepAppFiles(t.kernel, tenant, async () => {
+      // The sweep has listed and holds its lock: a bundle naming the old file is stored now.
+      store = alice.post(`${place}/bundles`, { ...unsigned, digest: bundleDigest(unsigned) });
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    });
+    await swept;
+    const stored = await (store as Promise<{ status: number; body: Any }>);
+    const held = (await alice.get(`${place}/bundle-assets/${sum}`)).status === 200;
+    // Either the file is still there under the bundle, or the store saw it gone and said so.
+    if (stored.status === 201) expect(held).toBe(true);
+    else expect([stored.status, stored.body.code]).toEqual([409, "assets_missing"]);
   });
 });
 

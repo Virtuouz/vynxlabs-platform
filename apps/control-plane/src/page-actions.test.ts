@@ -2,8 +2,8 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type Bundle, type BundleManifest, bundleDigest } from "@volvel/manifest";
-import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { type Client, startTestApp, type TestApp } from "./testing.js";
+import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
+import { type Client, putSeen, startTestApp, type TestApp } from "./testing.js";
 
 /**
  * A page's action runs on the server, as its own grant (decision 0004, phase 26): whoever may
@@ -122,6 +122,10 @@ const recordWidgets = [
   button("other", 10, {
     runBy: { groups: ["sales", "managers", "admins"] },
     steps: [{ do: "update", record: "this", set: { note: { value: "other" } } }],
+  }),
+  button("attach", 11, {
+    confirm: { title: "Attach", ask: [{ name: "file", label: "File", type: "text" }] },
+    steps: [{ do: "update", record: "this", set: { doc: { asked: "file" } } }],
   }),
   button("stamp", 7, {
     steps: [{ do: "update", record: "this", set: { paid_on: { now: true } } }],
@@ -271,6 +275,7 @@ function bundle(): Bundle {
           paid_on: { type: "timestamp" },
           paid_by: { type: "text" },
           note: { type: "text" },
+          doc: { type: "file" },
         },
         // The end users only read, and only their own group's rows.
         policy: {
@@ -281,6 +286,31 @@ function bundle(): Bundle {
       manifest("flow", "flows/ping", {
         nodes: { start: { type: "trigger", trigger: { type: "manual" } } },
         edges: [],
+      }),
+      // A flow and a script that refuse an input without `why`, to start from an action.
+      manifest("flow", "flows/strict", {
+        nodes: {
+          start: {
+            type: "trigger",
+            trigger: {
+              type: "manual",
+              input: {
+                type: "object",
+                required: ["why"],
+                properties: { why: { type: "string" } },
+              },
+            },
+          },
+        },
+        edges: [],
+      }),
+      manifest("script", "strict-script", {
+        entry: "strict",
+        input: { type: "object", required: ["why"], properties: { why: { type: "string" } } },
+        output: { type: "object" },
+        timeoutSeconds: 30,
+        retries: { limit: 0, delaySeconds: 0, backoff: false },
+        uses: { connections: [], secrets: [], variables: [] },
       }),
       manifest("interface", "screens/invoices", screen),
       manifest("dashboard", "boards/by-team", board),
@@ -588,6 +618,33 @@ describe("a button's action, run for someone who may only open the app", () => {
   });
 });
 
+describe("a file an action names (D22)", () => {
+  const upload = async (name: string) =>
+    (await alice.upload(`${ws()}/files?name=${name}`, name, "text/plain")).body.id as string;
+
+  test("is refused unless the caller could already read it, with the answer of a file that is not there", async () => {
+    const hidden = await upload("hidden.txt");
+    await invoice({ team: "sales", doc: hidden });
+    const shown = await upload("shown.txt");
+    await invoice({ team: "finance", doc: shown });
+    const mine = await invoice();
+
+    const refused = await press(ivy, "attach", mine, { inputs: { file: hidden } });
+    expect(refused.status, JSON.stringify(refused.body)).toBe(400);
+    const unknown = await press(ivy, "attach", mine, {
+      inputs: { file: "01a205e4-4930-7604-8ec5-330c38946545" },
+    });
+    expect(unknown.status).toBe(400);
+    expect(refused.body.detail).toBe(unknown.body.detail);
+    expect((await rowOf(mine)).doc ?? null).toBeNull();
+
+    // A file a row she may read names is hers to name.
+    const allowed = await press(ivy, "attach", mine, { inputs: { file: shown } });
+    expect(allowed.status, JSON.stringify(allowed.body)).toBe(200);
+    expect((await rowOf(mine)).doc).toBe(shown);
+  });
+});
+
 describe("what is asked", () => {
   test("is checked against its kind and whether it is required: 400 at /inputs/<name>", async () => {
     const id = await invoice();
@@ -741,7 +798,7 @@ describe("a flow", () => {
   test("a flow that is not there stops the action before anything changes", async () => {
     const id = await invoice();
     // `kick` starts flows/ping, so with the flow there this must have worked; the draft removes it.
-    const saved = await alice.put(`${ws()}/drafts/screens/invoices`, {
+    const saved = await putSeen(alice, `${ws()}/drafts/screens/invoices`, {
       kind: "interface",
       schemaVersion: 2,
       body: {
@@ -770,6 +827,73 @@ describe("a flow", () => {
   });
 });
 
+describe("a flow or script that refuses its input", () => {
+  const rows = async () =>
+    (await alice.get(`${ws()}/rows/invoices?limit=500`)).body.items.length as number;
+  /** A button that makes a row, then starts what `start` says, with nothing to give it. */
+  const trying = async (start: object) => {
+    const saved = await putSeen(alice, `${ws()}/drafts/screens/invoices`, {
+      kind: "interface",
+      schemaVersion: 2,
+      body: {
+        ...screen,
+        pages: screen.pages.map((page) =>
+          page.id === "inv"
+            ? {
+                ...page,
+                widgets: [
+                  button("makeandstart", 0, {
+                    steps: [
+                      { do: "update", record: "this", set: { note: { value: "started" } } },
+                      { do: "create", table: "invoices", set: { number: { value: "INV-X" } } },
+                      start,
+                    ],
+                  }),
+                ],
+              }
+            : page,
+        ),
+      },
+    });
+    expect(saved.status, JSON.stringify(saved.body)).toBe(200);
+  };
+
+  test("a flow whose input is refused saves nothing, pressed once or twice", async () => {
+    await trying({ do: "flow", path: "flows/strict" });
+    const id = await invoice();
+    const before = await rows();
+    for (const _ of [1, 2]) {
+      const refused = await press(alice, "makeandstart", id, { draft: true });
+      expect(refused.status).toBe(400);
+      // Said once, in words: what is missing, not a path and a schema's phrase.
+      expect(refused.body.detail).toBe("The flow flows/strict refused its input. It needs why.");
+    }
+    expect(await rows()).toBe(before);
+    expect((await rowOf(id)).note ?? null).toBeNull();
+    expect((await alice.get(`${ws()}/flow-runs?flow=flows/strict`)).body.items).toHaveLength(0);
+  });
+
+  test("a script whose input is refused saves nothing", async () => {
+    await trying({ do: "script", path: "strict-script" });
+    const id = await invoice();
+    const before = await rows();
+    const refused = await press(alice, "makeandstart", id, { draft: true });
+    expect(refused.status).toBe(400);
+    expect(await rows()).toBe(before);
+    expect((await rowOf(id)).note ?? null).toBeNull();
+  });
+
+  test("what is given is checked as it will be sent", async () => {
+    await trying({ do: "flow", path: "flows/strict", input: { why: { value: "late" } } });
+    const id = await invoice();
+    const before = await rows();
+    const done = await press(alice, "makeandstart", id, { draft: true });
+    expect(done.status, JSON.stringify(done.body)).toBe(200);
+    expect(done.body.started).toBe(1);
+    expect(await rows()).toBe(before + 1);
+  });
+});
+
 describe("a draft", () => {
   const draftOf = (extra: object[]) => ({
     ...screen,
@@ -779,7 +903,7 @@ describe("a draft", () => {
   });
 
   test("holds a button with no steps yet, says so as a problem, and is not deployed with it", async () => {
-    const saved = await alice.put(`${ws()}/drafts/screens/invoices`, {
+    const saved = await putSeen(alice, `${ws()}/drafts/screens/invoices`, {
       kind: "interface",
       schemaVersion: 2,
       body: draftOf([button("unfinished", 8, { steps: [] })]),
@@ -789,7 +913,7 @@ describe("a draft", () => {
   });
 
   test("is refused to an end user and run by an editor", async () => {
-    const saved = await alice.put(`${ws()}/drafts/screens/invoices`, {
+    const saved = await putSeen(alice, `${ws()}/drafts/screens/invoices`, {
       kind: "interface",
       schemaVersion: 2,
       body: draftOf([
@@ -845,7 +969,7 @@ describe("a dashboard", () => {
         },
       ],
     };
-    const saved = await alice.put(`${ws()}/drafts/boards/by-team`, {
+    const saved = await putSeen(alice, `${ws()}/drafts/boards/by-team`, {
       kind: "dashboard",
       schemaVersion: 3,
       body: sneaky,
@@ -1009,6 +1133,46 @@ describe("one action on several rows", () => {
   });
 });
 
+describe("today is the reader's day (D21)", () => {
+  /** The wall clock of a moment in Los Angeles, as `YYYY-MM-DD HH:MM`. */
+  const inLosAngeles = (at: Date) =>
+    new Intl.DateTimeFormat("sv-SE", {
+      timeZone: "America/Los_Angeles",
+      dateStyle: "short",
+      timeStyle: "short",
+    }).format(at);
+
+  test("in the evening in Los Angeles, a step's today into a time column is that day's midnight there", async () => {
+    const id = await invoice();
+    const other = await invoice();
+    const third = await invoice();
+    // The next 03:30 UTC, which is the evening of the day before in Los Angeles; ahead of now, so
+    // that sessions are still valid.
+    const evening = new Date();
+    evening.setUTCHours(3, 30, 0, 0);
+    if (evening.getTime() <= Date.now()) evening.setUTCDate(evening.getUTCDate() + 1);
+    vi.useFakeTimers({ toFake: ["Date"], now: evening });
+    try {
+      const done = await press(ivy, "pay", id, { zone: "America/Los_Angeles" });
+      expect(done.status, JSON.stringify(done.body)).toBe(200);
+      const stored = new Date((await rowOf(id)).paid_on);
+      // Midnight in Los Angeles of the day it is there (the day before UTC's), not midnight UTC.
+      const day = inLosAngeles(evening).slice(0, 10);
+      expect(inLosAngeles(stored)).toBe(`${day} 00:00`);
+      expect(day).not.toBe(evening.toISOString().slice(0, 10));
+      // Without a zone it is UTC's day, as before.
+      expect((await press(ivy, "pay", other)).status).toBe(200);
+      expect(new Date((await rowOf(other)).paid_on).toISOString()).toBe(
+        `${evening.toISOString().slice(0, 10)}T00:00:00.000Z`,
+      );
+      // A zone that is no zone is refused.
+      expect((await press(ivy, "pay", third, { zone: "Mars/Base" })).status).toBe(400);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe("edit in place of a record detail", () => {
   /** A detail that lets people edit what it shows, put in the stored page. */
   beforeAll(async () => {
@@ -1031,6 +1195,21 @@ describe("edit in place of a record detail", () => {
           fields: [{ column: "number" }, { column: "total" }, { column: "status", hidden: true }],
         },
       });
+    // The same, limited to a group: the groups of the end users are keyed (ivy is in "finance").
+    for (const [id, groups] of [
+      ["info_sales", ["sales"]],
+      ["info_finance", ["finance"]],
+    ] as const) {
+      body.pages
+        .find((page) => page.id === "inv")
+        ?.widgets.push({
+          id,
+          type: "core/detail",
+          at: { x: 0, y: 14, w: 6, h: 6 },
+          data: { record: { source: { record: "this" } } },
+          config: { edit: true, editBy: { groups }, fields: [{ column: "total" }] },
+        });
+    }
     await t.db
       .updateTable("resource")
       .set({ body: JSON.stringify(body) })
@@ -1050,6 +1229,17 @@ describe("edit in place of a record detail", () => {
       targetId: id,
       details: { fields: expect.arrayContaining(["total", "number"]), action: "config/edit" },
     });
+  });
+
+  test("is limited to the groups the detail names, and refused to everyone else (WID-19)", async () => {
+    const id = await invoice();
+    const as = (widget: string) =>
+      act(ivy, { widget, at: "config/edit", records: { this: id }, inputs: { total: 77 } });
+    const refused = await as("info_sales");
+    expect(refused.status, JSON.stringify(refused.body)).toBe(403);
+    expect((await rowOf(id)).total).toBe(10);
+    expect((await as("info_finance")).status).toBe(200);
+    expect((await rowOf(id)).total).toBe(77);
   });
 
   test("refuses a column it does not show, or hides, and a value of the wrong type", async () => {
@@ -1075,5 +1265,54 @@ describe("edit in place of a record detail", () => {
     expect(noEdit.status).toBe(404);
     expect((await edit(ivy, await invoice(), {})).status).toBe(400);
     expect((await rowOf(id)).total).toBe(10);
+  });
+});
+
+describe("a detail of the user's own record", () => {
+  beforeAll(async () => {
+    const row = await t.db
+      .selectFrom("resource")
+      .select(["id", "body"])
+      .where("kind", "=", "interface")
+      .where("path", "=", "screens/invoices")
+      .executeTakeFirstOrThrow();
+    const body = row.body as unknown as { pages: { id: string; widgets: object[] }[] };
+    body.pages
+      .find((page) => page.id === "inv")
+      ?.widgets.push({
+        id: "mine",
+        type: "core/detail",
+        at: { x: 0, y: 14, w: 6, h: 6 },
+        data: { record: { source: { own: { table: "invoices", by: "paid_by" } } } },
+        config: {
+          fields: [{ column: "number" }],
+          actions: [
+            {
+              id: "note",
+              label: "Note it",
+              action: {
+                steps: [{ do: "update", record: "event", set: { note: { value: "noted" } } }],
+              },
+            },
+          ],
+        },
+      });
+    await t.db
+      .updateTable("resource")
+      .set({ body: JSON.stringify(body) })
+      .where("id", "=", row.id)
+      .execute();
+  });
+  const note = (id: string) =>
+    act(ivy, { widget: "mine", at: "config/actions/0/action", records: { event: id } });
+
+  test("a button runs on the user's own record, and on no one else's, even one they may read", async () => {
+    const theirs = await invoice({ paid_by: "someone@else.example" });
+    const mine = await invoice({ paid_by: "IVY@customer.example" });
+    expect((await note(theirs)).status).toBe(404);
+    expect((await rowOf(theirs)).note ?? null).toBeNull();
+    const done = await note(mine);
+    expect(done.status, JSON.stringify(done.body)).toBe(200);
+    expect((await rowOf(mine)).note).toBe("noted");
   });
 });

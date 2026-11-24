@@ -20,6 +20,8 @@ export interface ConfirmOptions {
   cancel?: string;
   /** Marks an action that cannot be undone. */
   danger?: boolean;
+  /** Things the question is about, each with a way to go and see it. Going closes the question as "no". */
+  links?: { label: string; onSelect: () => void }[];
 }
 
 export interface PromptOptions extends ConfirmOptions {
@@ -30,6 +32,8 @@ export interface PromptOptions extends ConfirmOptions {
   /** Refuses an empty answer. On by default. */
   required?: boolean;
   multiline?: boolean;
+  /** The most characters the field takes. */
+  maxLength?: number;
   /**
    * Does what the answer is for, before the dialog closes. It resolves to a sentence to show
    * on the field, which keeps what was typed, or to nothing when it went through.
@@ -102,11 +106,17 @@ export function DialogsProvider({ children }: { children: ReactNode }) {
 
   const options = asked?.options;
   const required = asked?.kind === "prompt" ? (asked.options.required ?? true) : false;
+  // The limit is said at the field and refused, never cut quietly while a person types.
+  const limit = asked?.kind === "prompt" ? asked.options.maxLength : undefined;
+  const tooLong = asked?.kind === "prompt" && limit !== undefined && text.length > limit;
+  const lengthSaid = tooLong
+    ? `Use at most ${limit} characters. This is ${text.length}.`
+    : undefined;
   const ready =
     asked?.kind === "type"
       ? text === asked.options.expected
       : asked?.kind === "prompt"
-        ? !required || text.trim() !== ""
+        ? (!required || text.trim() !== "") && !tooLong
         : true;
 
   return (
@@ -133,6 +143,26 @@ export function DialogsProvider({ children }: { children: ReactNode }) {
             }}
           >
             {options?.text ? <div className="text-ink-muted">{options.text}</div> : null}
+            {options?.links && options.links.length > 0 ? (
+              <ul className="m-0 flex list-none flex-col gap-1 p-0 text-body-sm">
+                {options.links.map((one) => (
+                  <li key={one.label} className="flex items-center justify-between gap-3">
+                    <span className="min-w-0 text-ink">{one.label}</span>
+                    <button
+                      type="button"
+                      aria-label={`Show ${one.label}`}
+                      className="shrink-0 cursor-pointer border-0 bg-transparent p-0 text-meta text-action underline outline-offset-2 focus-visible:outline-2 focus-visible:outline-focus"
+                      onClick={() => {
+                        close(false);
+                        one.onSelect();
+                      }}
+                    >
+                      Show it
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
             {asked.kind === "prompt" ? (
               asked.options.multiline ? (
                 <TextAreaField
@@ -140,6 +170,7 @@ export function DialogsProvider({ children }: { children: ReactNode }) {
                   label={asked.options.label}
                   value={text}
                   rows={4}
+                  {...(limit !== undefined ? { maxLength: limit } : {})}
                   {...(asked.options.hint ? { hint: asked.options.hint } : {})}
                   {...(asked.options.placeholder ? { placeholder: asked.options.placeholder } : {})}
                   onChange={setText}
@@ -150,8 +181,16 @@ export function DialogsProvider({ children }: { children: ReactNode }) {
                   label={asked.options.label}
                   value={text}
                   required={required}
-                  {...(fieldError ? { error: fieldError } : {})}
-                  {...(asked.options.hint ? { hint: asked.options.hint } : {})}
+                  {...(fieldError || lengthSaid
+                    ? { error: (fieldError ?? lengthSaid) as string }
+                    : {})}
+                  {...(asked.options.hint || limit
+                    ? {
+                        hint: [asked.options.hint, limit ? `Up to ${limit} characters.` : undefined]
+                          .filter(Boolean)
+                          .join(" "),
+                      }
+                    : {})}
                   {...(asked.options.placeholder ? { placeholder: asked.options.placeholder } : {})}
                   onChange={(value) => {
                     setFieldError(undefined);
@@ -170,9 +209,16 @@ export function DialogsProvider({ children }: { children: ReactNode }) {
               />
             ) : null}
             <div className="flex justify-end gap-2">
-              <Button onClick={() => close(false)}>{options?.cancel ?? "Cancel"}</Button>
+              {/* A question with nothing to type starts on the safe answer: the main button, or Cancel when it destroys. */}
+              <Button
+                onClick={() => close(false)}
+                {...(asked.kind === "confirm" && options?.danger ? { "data-autofocus": "" } : {})}
+              >
+                {options?.cancel ?? "Cancel"}
+              </Button>
               <Button
                 type="submit"
+                {...(asked.kind === "confirm" && !options?.danger ? { "data-autofocus": "" } : {})}
                 variant={options?.danger ? "danger-solid" : "primary"}
                 disabled={!ready}
                 loading={working}

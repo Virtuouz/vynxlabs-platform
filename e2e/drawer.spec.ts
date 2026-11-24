@@ -1,4 +1,4 @@
-import { signInWithPassword } from "./sign-in.ts";
+import { signInAs } from "./as.ts";
 import { expect, type Page, test } from "./test.ts";
 import { readEveryList } from "./visual.ts";
 
@@ -11,16 +11,24 @@ import { readEveryList } from "./visual.ts";
  * leaving with motion by the fixture in `test.ts`.
  */
 
-const ADMIN = {
-  email: process.env.E2E_ADMIN_EMAIL ?? "admin@example.com",
-  password: process.env.E2E_ADMIN_PASSWORD ?? "change-me-please",
-};
 const stamp = Date.now().toString(36);
 
 // biome-ignore lint/suspicious/noExplicitAny: answers are inspected freely
 const call = (page: Page, method: string, path: string, body?: unknown): Promise<any> =>
   page.evaluate(
     async ([method, path, body]) => {
+      // A draft save names the draft it saw: its revision now, or none when there is none.
+      if (
+        method === "PUT" &&
+        String(path).includes("/drafts/") &&
+        body &&
+        typeof body === "object" &&
+        !("revision" in body) &&
+        !("create" in body)
+      ) {
+        const seen = await fetch(`/api/v1${path}`);
+        if (seen.ok) body = { ...body, revision: (await seen.json()).revision };
+      }
       const response = await fetch(`/api/v1${path}`, {
         method: method as string,
         headers: body ? { "content-type": "application/json" } : {},
@@ -40,7 +48,7 @@ let W: string;
 test.beforeAll(async ({ browser }) => {
   test.setTimeout(240_000);
   page = await (await browser.newContext({ viewport: { width: 1500, height: 700 } })).newPage();
-  await signInWithPassword(page, ADMIN.email, ADMIN.password);
+  await signInAs(page, "operator");
   await readEveryList(page);
   const tenant = await call(page, "POST", "/tenants", {
     slug: `drawer-${stamp}`,
@@ -102,21 +110,25 @@ const scrollers = (root: string) =>
     return found;
   }, root);
 
-test("the runs list scrolls in one place, and its header stays", async () => {
+test("the runs list scrolls in one place, and its header stays @polish", async () => {
   await page.goto(`${link}/runs`);
   const table = page.locator('[data-table="runs"]');
   await expect(table.getByRole("row")).not.toHaveCount(0);
   await expect.poll(async () => (await table.getByRole("row").count()) > 30).toBe(true);
   expect(await scrollers("main")).toEqual(["runs"]);
   // Scrolled to the end, the header is still at the top of the list.
+  // Measured against the list's own top: the page above it may change while runs still arrive
+  // (the list is asked again every 5 s), and that is not the header moving.
   const header = table.locator("thead");
-  const before = (await header.boundingBox())?.y;
+  const offset = async () =>
+    ((await header.boundingBox())?.y ?? 0) - ((await table.boundingBox())?.y ?? 0);
+  const before = await offset();
   await table.evaluate((node) => node.scrollTo({ top: node.scrollHeight }));
-  expect((await header.boundingBox())?.y).toBe(before);
+  expect(await offset()).toBe(before);
   await table.evaluate((node) => node.scrollTo({ top: 0 }));
 });
 
-test("the drawer slides open once, stays still for the next run, and slides shut", async () => {
+test("the drawer slides open once, stays still for the next run, and slides shut @polish", async () => {
   await page.goto(`${link}/runs`);
   const table = page.locator('[data-table="runs"]');
   const rows = table.locator("tbody tr");
@@ -124,13 +136,23 @@ test("the drawer slides open once, stays still for the next run, and slides shut
   const drawer = page.getByRole("complementary", { name: "The chosen run" });
   await expect(drawer).toHaveCount(0);
 
-  // Every width the drawer's room has while it is on the page, frame by frame.
+  // Every width the drawer's room has while it is on the page, frame by frame, and whether an
+  // animation was running on it. On a loaded machine frames are skipped, and a slide can end
+  // between two of them: then the running animation is what shows that it slid.
   await page.evaluate(() => {
     const seen: number[] = [];
-    (window as unknown as { __room: number[] }).__room = seen;
+    const host = window as unknown as { __room: number[]; __moving: boolean };
+    host.__room = seen;
+    host.__moving = false;
     const tick = () => {
       const node = document.querySelector('aside[aria-label="The chosen run"]')?.parentElement;
-      if (node) seen.push(Math.round(node.getBoundingClientRect().width));
+      if (node) {
+        seen.push(Math.round(node.getBoundingClientRect().width));
+        const running = [node, ...node.querySelectorAll("aside")].some(
+          (one) => one.getAnimations().length > 0,
+        );
+        if (running) host.__moving = true;
+      }
       requestAnimationFrame(tick);
     };
     requestAnimationFrame(tick);
@@ -140,6 +162,16 @@ test("the drawer slides open once, stays still for the next run, and slides shut
       const seen = (window as unknown as { __room: number[] }).__room;
       return seen.splice(0, seen.length);
     });
+  /** Whether it slid since last asked: a frame part of the way, or an animation running on it. */
+  const slid = async (frames: number[], full: number) => {
+    const moving = await page.evaluate(() => {
+      const host = window as unknown as { __moving: boolean };
+      const was = host.__moving;
+      host.__moving = false;
+      return was;
+    });
+    return moving || frames.some((width) => width > 0 && width < full);
+  };
 
   await rows.nth(0).click();
   await expect(drawer).toBeVisible();
@@ -147,23 +179,26 @@ test("the drawer slides open once, stays still for the next run, and slides shut
   const opening = await widths();
   const full = opening.at(-1) as number;
   expect(full).toBeGreaterThan(280);
-  // It grew: some frame showed it part of the way.
-  expect(opening.some((width) => width > 0 && width < full)).toBe(true);
+  // It grew: some frame showed it part of the way, or it was animating.
+  expect(await slid(opening, full)).toBe(true);
 
   // Another run: what it shows changes, and it does not move.
   const first = await drawer.textContent();
   await rows.nth(3).click();
   await expect.poll(async () => (await drawer.textContent()) !== first).toBe(true);
   await page.waitForTimeout(450);
-  expect(new Set(await widths())).toEqual(new Set([full]));
+  // Still: every frame at its full width, and no animation on it.
+  const still = await widths();
+  expect(new Set(still)).toEqual(new Set([full]));
+  expect(await slid(still, full)).toBe(false);
 
   await drawer.getByRole("button", { name: "Close" }).click();
   await expect(drawer).toHaveCount(0);
   const closing = await widths();
-  expect(closing.some((width) => width > 0 && width < full)).toBe(true);
+  expect(await slid(closing, full)).toBe(true);
 });
 
-test("with reduced motion the drawer is there or it is not", async () => {
+test("with reduced motion the drawer is there or it is not @polish", async () => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto(`${link}/runs`);
   const rows = page.locator('[data-table="runs"] tbody tr');
@@ -177,7 +212,7 @@ test("with reduced motion the drawer is there or it is not", async () => {
   await page.emulateMedia({ reducedMotion: "no-preference" });
 });
 
-test("on a narrower screen the same details slide over the list as a sheet, both ways", async () => {
+test("on a narrower screen the same details slide over the list as a sheet, both ways @polish", async () => {
   // The fixture in test.ts fails this if the sheet arrives or leaves in one frame.
   await page.setViewportSize({ width: 1000, height: 700 });
   await page.goto(`${link}/runs`);
@@ -191,7 +226,7 @@ test("on a narrower screen the same details slide over the list as a sheet, both
   await page.setViewportSize({ width: 1500, height: 700 });
 });
 
-test("a row's JSON is edited in a text area that grows with it and can still be dragged", async () => {
+test("a row's JSON is edited in a text area that grows with it and can still be dragged @polish", async () => {
   const short = { a: 1 };
   const long = Object.fromEntries(Array.from({ length: 30 }, (_, i) => [`key${i}`, i]));
   await call(page, "POST", `${W}/rows/notes`, { title: "short", detail: short });

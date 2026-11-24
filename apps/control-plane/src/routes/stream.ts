@@ -15,7 +15,11 @@ export function streamRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       "/tenants/:t/stream",
       {
-        config: { access: access.custom },
+        config: {
+          access: access.custom(
+            "Needs a sign-in. The caller is sent the events of what they may read: runs where they hold `run:read`, flow runs where they hold `flow_run:read`, and their own runs and flow runs otherwise.",
+          ),
+        },
         schema: {
           summary: "What changes in the tenant's runs, as server-sent events",
           description:
@@ -30,6 +34,7 @@ export function streamRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             "Otherwise at most five streams per caller. Proxies in front must not buffer the " +
             "response.",
           tags: ["runs"],
+          produces: ["text/event-stream"],
           params: TenantParams,
           response: {
             200: Type.String({
@@ -61,14 +66,19 @@ export function streamRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         // Someone who may read no runs here follows their own, as `GET runs/:id` lets them
         // read those. Someone with no standing in the tenant is told it is not there, as
         // everywhere else.
-        let own: string | undefined;
+        // Whoever has an ID follows their own runs wherever they are, besides what they may
+        // read: a member who reads runs in one workspace and starts one in another needs
+        // its events too.
+        const own: string | undefined =
+          ctx.principal.id === null ? undefined : `${ctx.principal.type}:${ctx.principal.id}`;
+        let ownOnly = false;
         if (may.size === 0) {
           try {
             await ctx.authorize("run:read", { tenantId: params.t });
           } catch (error) {
             const standing = error instanceof HttpError && error.statusCode === 403;
             if (!standing || ctx.principal.id === null) throw error;
-            own = `${ctx.principal.type}:${ctx.principal.id}`;
+            ownOnly = true;
           }
         }
 
@@ -82,13 +92,15 @@ export function streamRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           may,
           principal: `${ctx.principal.type}:${ctx.principal.id}`,
           ...(own ? { own } : {}),
+          ownOnly,
           send,
+          close: () => raw.end(),
         });
         if (!unsubscribe) {
           throw new HttpError(
             429,
             "too_many_streams",
-            `At most ${own ? MAX_OWN_STREAMS : MAX_STREAMS} streams may be open at once. Close one first.`,
+            `At most ${ownOnly ? MAX_OWN_STREAMS : MAX_STREAMS} streams may be open at once. Close one first.`,
           );
         }
 

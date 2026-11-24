@@ -29,7 +29,15 @@ const catalog: Catalog = {
         { name: "client", type: "text", references: "clients" },
         { name: "notes", type: "text", references: null },
         { name: "total", type: "number", references: null },
-        { name: "status", type: "enum", references: null },
+        {
+          name: "status",
+          type: "enum",
+          references: null,
+          values: [
+            { value: "paid", count: 3 },
+            { value: "unpaid", count: 2 },
+          ],
+        },
         { name: "issued_at", type: "timestamp", references: null },
       ],
     },
@@ -282,6 +290,10 @@ test("a form says what Submit says, and what happens after saving", () => {
     FormDisplaySection,
   );
   expect(screen.getByText("Required · picker")).toBeTruthy();
+  // WID-22: there is no setting for when a field shows, so the note does not offer one.
+  expect(screen.getByText(/Required and checks come from the table/).textContent).not.toMatch(
+    /when to show/,
+  );
   fireEvent.click(screen.getByRole("button", { name: /Submit says/ }));
   fireEvent.change(screen.getByLabelText("Submit says"), { target: { value: "Create invoice" } });
   expect(mine(seen).config.submitLabel).toBe("Create invoice");
@@ -347,6 +359,7 @@ test("an action group adds a button, opens it, and lines up", () => {
   const seen = mount(actions, group(), ActionsDisplaySection);
   fireEvent.click(screen.getByRole("radio", { name: "Spread" }));
   expect(mine(seen).config.lineUp).toBe("spread");
+  fireEvent.click(screen.getByRole("radio", { name: "Left" }));
   fireEvent.click(screen.getByRole("radio", { name: "Top center" }));
   expect(mine(seen).config.place).toBe("top-center");
   fireEvent.click(screen.getByRole("button", { name: /Button$/ }));
@@ -359,6 +372,20 @@ test("an action group adds a button, opens it, and lines up", () => {
   expect((mine(seen).config.actions as { tone?: string }[])[3]?.tone).toBe("danger");
   fireEvent.click(screen.getByRole("button", { name: "Back" }));
   expect(screen.getByRole("radio", { name: "Left" })).toBeTruthy();
+});
+
+test("with Right or Spread the position is a row, not a grid whose columns do nothing (WID-30)", () => {
+  const seen = mount(actions, group(), ActionsDisplaySection);
+  expect(
+    screen
+      .getByRole("radiogroup", { name: "Where it sits in its place" })
+      .querySelectorAll("button"),
+  ).toHaveLength(9);
+  fireEvent.click(screen.getByRole("radio", { name: "Right" }));
+  expect(screen.queryByRole("radio", { name: "Top center" })).toBeNull();
+  fireEvent.click(screen.getByRole("radio", { name: "Bottom" }));
+  // The column the group had is kept: it is what Left reads again.
+  expect(mine(seen).config.place).toBe("bottom-left");
 });
 
 // ---------------------------------------------------------------------------
@@ -431,6 +458,10 @@ test("tabs say what each holds; its chip sets which opens first; new tabs are ad
   );
   expect(screen.getByText("1 widget")).toBeTruthy();
   expect(screen.getByText("Empty")).toBeTruthy();
+  // BLD-08: renaming is in the drawer; the canvas has no double-click for a tab, so the note does not offer one.
+  expect(screen.getByText(/Click a tab on the page to fill it/).textContent).not.toMatch(
+    /double-click/i,
+  );
   fireEvent.click(screen.getByRole("button", { name: "Open Visits first" }));
   expect(mine(seen).config.opensFirst).toBe("visits");
   fireEvent.click(screen.getByRole("button", { name: /Tab$/ }));
@@ -510,4 +541,145 @@ test("a text's style is chosen by looking at it, and its words show rendered", a
   expect(mine(seen).config.look).toBeUndefined();
   expect(await screen.findByText("dollars")).toBeTruthy();
   expect(screen.getByText(/For steps, tabs and folds/)).toBeTruthy();
+});
+
+test("a field set to money still has its Format row", () => {
+  mount(
+    detail,
+    {
+      data: { record: { source: { visual: { table: "invoices" } } } },
+      config: {
+        fields: [
+          { column: "total", format: { style: "currency", currency: "USD", minorUnits: true } },
+        ],
+      },
+    },
+    DetailDisplaySection,
+  );
+  fireEvent.click(screen.getByRole("button", { name: /^Total/ }));
+  expect(screen.getByText("Format")).toBeTruthy();
+});
+
+test("clearing a section's name to retype it keeps the section and its fields", () => {
+  const seen = mount(
+    detail,
+    {
+      data: { record: { source: { visual: { table: "invoices" } } } },
+      config: { fields: [{ column: "client" }, { column: "notes", section: "Notes" }] },
+    },
+    DetailDisplaySection,
+  );
+  fireEvent.click(screen.getAllByRole("button", { name: /SECTION · NOTES/ }).at(-1) as HTMLElement);
+  const name = screen.getByLabelText("Name");
+  fireEvent.change(name, { target: { value: "" } });
+  const sections = () => (mine(seen).config.fields as { section?: string }[]).map((f) => f.section);
+  expect(sections()).toEqual([undefined, "Notes"]);
+  fireEvent.change(screen.getByLabelText("Name"), { target: { value: "C" } });
+  fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Cost" } });
+  expect(sections()).toEqual([undefined, "Cost"]);
+});
+
+test("setting After saving changes the close and the message in place, and does not move them past an open", () => {
+  const seen = mount(
+    form,
+    {
+      data: { record: { source: { visual: { table: "invoices" } } } },
+      config: {
+        mode: "create",
+        fields: [{ column: "client" }],
+        submit: {
+          steps: [
+            { do: "create", table: "invoices", set: {} },
+            { do: "close" },
+            { do: "open", page: "p" },
+            { do: "message", text: "Opened", tone: "info" },
+          ],
+        },
+      },
+    },
+    FormDisplaySection,
+  );
+  fireEvent.click(screen.getByRole("button", { name: /After saving/ }));
+  fireEvent.change(screen.getByLabelText("Say"), { target: { value: "Made" } });
+  expect((mine(seen).config.submit as { steps: unknown[] }).steps).toEqual([
+    { do: "create", table: "invoices", set: {} },
+    { do: "close" },
+    { do: "open", page: "p" },
+    { do: "message", text: "Made", tone: "info" },
+  ]);
+});
+
+test("a form field says what it starts as: today, the person filling it in, or a value (WID-M1)", () => {
+  const seen = mount(
+    form,
+    {
+      data: { record: { source: { visual: { table: "invoices" } } } },
+      config: {
+        mode: "create",
+        fields: [
+          { column: "issued_at" },
+          { column: "notes" },
+          { column: "total", format: { style: "currency", currency: "USD", minorUnits: true } },
+        ],
+      },
+    },
+    FormDisplaySection,
+  );
+  const fields = () => mine(seen).config.fields as { initial?: unknown }[];
+  fireEvent.click(screen.getByRole("button", { name: /^Issued at/ }));
+  fireEvent.change(screen.getByLabelText("Starts as"), { target: { value: "today" } });
+  expect(fields()[0]?.initial).toEqual({ kind: "today" });
+  fireEvent.change(screen.getByLabelText("Starts as"), { target: { value: "none" } });
+  expect(fields()[0]).not.toHaveProperty("initial");
+  fireEvent.click(screen.getByRole("button", { name: /^Back/ }));
+  fireEvent.click(screen.getByRole("button", { name: /^Notes/ }));
+  fireEvent.change(screen.getByLabelText("Starts as"), { target: { value: "me" } });
+  fireEvent.change(screen.getByLabelText("Their"), { target: { value: "name" } });
+  expect(fields()[1]?.initial).toEqual({ kind: "me", as: "name" });
+  fireEvent.click(screen.getByRole("button", { name: /^Back/ }));
+  fireEvent.click(screen.getByRole("button", { name: /^Total/ }));
+  fireEvent.change(screen.getByLabelText("Starts as"), { target: { value: "value" } });
+  fireEvent.change(screen.getByLabelText(/^Value/), { target: { value: "12.50" } });
+  expect(fields()[2]?.initial).toEqual({ kind: "value", value: 1250 });
+});
+
+test("WID-M4: a detail's choice field can be drawn as a badge, with the colors of its values", async () => {
+  const seen = mount(
+    detail,
+    {
+      data: { record: { source: { visual: { table: "invoices" } } } },
+      config: { fields: [{ column: "status" }, { column: "notes" }] },
+    },
+    DetailDisplaySection,
+  );
+  const fields = () => mine(seen).config.fields as { as?: string; badges?: object }[];
+  fireEvent.click(screen.getAllByRole("button", { name: /^Status/ })[0] as HTMLElement);
+  fireEvent.click(screen.getByRole("radio", { name: "Badge" }));
+  expect(fields()[0]?.as).toBe("badge");
+  fireEvent.click(screen.getByRole("button", { name: "Color of paid" }));
+  fireEvent.click(await screen.findByRole("menuitem", { name: "Green" }));
+  expect(fields()[0]?.badges).toEqual({ paid: "success" });
+  fireEvent.click(screen.getByRole("radio", { name: "Text" }));
+  expect(fields()[0]).toEqual({ column: "status" });
+  // A field that is not a choice has nothing to show as a badge.
+  fireEvent.click(screen.getByRole("button", { name: /^Back/ }));
+  fireEvent.click(screen.getByRole("button", { name: /^Notes/ }));
+  expect(screen.queryByRole("radio", { name: "Badge" })).toBeNull();
+});
+
+test("WID-M4: the status chip of a detail has the colors of its values", async () => {
+  const seen = mount(
+    detail,
+    {
+      data: { record: { source: { visual: { table: "invoices" } } } },
+      config: { status: "status" },
+    },
+    DetailDisplaySection,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Color of unpaid" }));
+  fireEvent.click(await screen.findByRole("menuitem", { name: "Red" }));
+  expect(mine(seen).config.statusBadges).toEqual({ unpaid: "danger" });
+  fireEvent.click(screen.getByRole("button", { name: "Color of unpaid" }));
+  fireEvent.click(await screen.findByRole("menuitem", { name: "Automatic" }));
+  expect(mine(seen).config).not.toHaveProperty("statusBadges");
 });

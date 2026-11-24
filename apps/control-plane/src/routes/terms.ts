@@ -1,36 +1,13 @@
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
-import {
-  buildApp,
-  type DocSet,
-  type DocsApp,
-  docsApps,
-  type ResourceLike,
-  urlOf,
-} from "@volvel/docs-engine";
+import { type DocSet, type DocsApp, docsApps, type ResourceLike, urlOf } from "@volvel/docs-engine";
 import { type Static, Type } from "typebox";
 import { appUrl } from "../kernel/apps/address.js";
+import { DESCRIBED, describer } from "../kernel/docs/describe.js";
+import { buildDocs } from "../kernel/docs/product.js";
 import type { RequestContext, WorkspaceRef } from "../kernel/http.js";
 import { access, findWorkspace, guestLimit } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
 import { Id, NullableString } from "./shared.js";
-
-/**
- * What lets someone learn what a resource is for. Any one of a kind's
- * permissions is enough, held at the workspace or at the resource itself.
- *
- * The first of each is how a member reads the kind. The second is how an end
- * user comes to it through an app: rows they may read, a script or a flow they
- * may start. An end user holds only permissions apps use, so `table:read` and
- * `script:read` never answer for one, whatever they are bound to.
- */
-export const DESCRIBED: Record<string, readonly string[]> = {
-  table: ["table:read", "data:read"],
-  script: ["script:read", "run:write"],
-  flow: ["flow:read", "flow_run:write"],
-  app: ["app:read"],
-  connection: ["connection:read"],
-  query: ["data:read"],
-};
 
 const Described = Type.Object({
   kind: Type.String(),
@@ -87,25 +64,9 @@ interface Built {
 
 /** Whether the caller holds one of a kind's permissions, at the workspace or at one resource. */
 function reader(ctx: RequestContext, at: { tenantId: string; workspaceId: string }) {
-  const everywhere = new Map<string, Promise<boolean>>();
-  const all = ctx.allowed("resource:read", at);
-  return async (kind: string, resourceId: string): Promise<boolean> => {
-    const permissions = DESCRIBED[kind];
-    if (!permissions) return false;
-    if (await all) return true;
-    for (const permission of permissions) {
-      let whole = everywhere.get(permission);
-      if (!whole) {
-        whole = ctx.allowed(permission, at);
-        everywhere.set(permission, whole);
-      }
-      if (await whole) return true;
-    }
-    for (const permission of permissions) {
-      if (await ctx.allowed(permission, { ...at, resourceId })) return true;
-    }
-    return false;
-  };
+  return describer((permission, resourceId) =>
+    ctx.allowed(permission, resourceId === undefined ? at : { ...at, resourceId }),
+  );
 }
 
 export function termRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
@@ -137,7 +98,12 @@ export function termRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       const apps: Built[] = [];
       for (const app of docsApps(rows)) {
         const row = rows.find((one) => one.kind === "app" && one.path === app.path);
-        if (row) apps.push({ app, id: row.id, set: buildApp(app, [...rows, ...around]).set });
+        if (row)
+          apps.push({
+            app,
+            id: row.id,
+            set: buildDocs(kernel.config, app, [...rows, ...around]).set,
+          });
       }
       kept.set(workspaceId, { bundle, apps });
       if (kept.size > 200) kept.delete(kept.keys().next().value as string);
@@ -214,7 +180,12 @@ export function termRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       "/tenants/:t/workspaces/:w/terms",
       {
-        config: { access: access.custom, rateLimit: guestLimit },
+        config: {
+          access: access.custom(
+            "Answers each term as the caller reads the resource it describes. An app may call it for someone who is not signed in, who then gets only what is open to anyone.",
+          ),
+          rateLimit: guestLimit,
+        },
         schema: {
           summary: "What the workspace's words mean, to this caller",
           description:

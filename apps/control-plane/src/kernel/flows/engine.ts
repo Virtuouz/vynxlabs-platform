@@ -14,16 +14,28 @@ import {
 import type { Trx } from "../audit.js";
 import { badRequest, conflict, HttpError, notFound } from "../errors.js";
 import { bundleManifest } from "../execution/bundles.js";
-import { summarize } from "../execution/redact.js";
-import { cancelRun, MAX_TAGS, startRun, storePayload } from "../execution/runs.js";
+import { redactText, summarize } from "../execution/redact.js";
+import {
+  alreadyEnded,
+  announceCanceled,
+  cancelRun,
+  MAX_TAGS,
+  refuseUnstorable,
+  startRun,
+  storable,
+  storePayload,
+  takeCanceled,
+} from "../execution/runs.js";
+import { inputWords } from "../input-words.js";
 import type { Kernel } from "../kernel.js";
 import { observe } from "../metrics.js";
 import { type AliasUse, formerPaths, resolveResource } from "../resolve.js";
 import { traceFlowRun, traceFor } from "../trace.js";
 import { expireLinks, mailApprovers } from "./approval-links.js";
 import { resolveApprovers } from "./approvers.js";
-import { buildContext, type ContextStep, readOutput } from "./context.js";
+import { buildContext, type ContextStep, readOutput, tooLargeIn } from "./context.js";
 import { ExpressionError } from "./expressions.js";
+import { flowKnown } from "./known.js";
 
 /** The most items one foreach will run. More than this belongs in a script. */
 export const MAX_FOREACH_ITEMS = 1000;
@@ -75,10 +87,15 @@ const isActive = (step: StepRow) => ACTIVE.includes(step.status);
 const stepKey = (node: string, item = "") => `${node}\u0000${item}`;
 
 /**
- * Starts a flow run in the caller's transaction: one trigger firing. Starting
- * again with the same idempotency key returns the first run.
+ * What starting a flow would refuse, found out without starting it: the flow is in the bundle,
+ * it has a manual trigger (or the named one), and the input is what that trigger takes. A page's
+ * action asks this before its data is saved, and a start asks it again.
  */
-export async function startFlowRun(kernel: Kernel, trx: Trx, request: StartFlowRun) {
+export async function checkFlowStart(
+  kernel: Kernel,
+  trx: Trx | Kernel["db"],
+  request: StartFlowRun,
+) {
   const workspace = await trx
     .selectFrom("workspace")
     .select(["id", "active_bundle_id"])
@@ -126,16 +143,22 @@ export async function startFlowRun(kernel: Kernel, trx: Trx, request: StartFlowR
   if (entry?.type === "trigger" && entry.trigger.type === "manual" && entry.trigger.input) {
     const issues = validateJson(entry.trigger.input, request.input ?? {}, "/input");
     if (issues.length > 0) {
-      throw badRequest(
-        `The input does not match what the flow ${request.flow} takes: ${issues
-          .slice(0, 3)
-          .map((issue) => `${issue.path} ${issue.message}`)
-          .join("; ")}.`,
-        issues,
-      );
+      throw badRequest(`The flow ${request.flow} refused its input. ${inputWords(issues)}`, issues);
     }
   }
+  return { request, workspace, bundle, manifest, body, alias, triggerNode };
+}
 
+/**
+ * Starts a flow run in the caller's transaction: one trigger firing. Starting
+ * again with the same idempotency key returns the first run.
+ */
+export async function startFlowRun(kernel: Kernel, trx: Trx, startRequest: StartFlowRun) {
+  const { request, bundle, manifest, body, alias, triggerNode } = await checkFlowStart(
+    kernel,
+    trx,
+    startRequest,
+  );
   // By the key the bundle gives it: the flow may have been renamed since that bundle.
   const resource = await trx
     .selectFrom("resource")
@@ -173,6 +196,7 @@ export async function startFlowRun(kernel: Kernel, trx: Trx, request: StartFlowR
   const trace = traceFor(
     request.parent ? { traceId: above?.trace_id ?? null, ...request.parent } : undefined,
   );
+  refuseUnstorable(request.input);
   const input = await storePayload(kernel, id, "input", request.input ?? {}, "flow-runs");
   const flowRun = await trx
     .insertInto("flow_run")
@@ -185,7 +209,7 @@ export async function startFlowRun(kernel: Kernel, trx: Trx, request: StartFlowR
       bundle_id: bundle.id,
       trigger_node: triggerNode,
       trigger_type: request.trigger.type,
-      trigger_detail: JSON.stringify(request.trigger.detail ?? {}),
+      trigger_detail: JSON.stringify(storable(request.trigger.detail ?? {})),
       status: "running",
       input: input.inline,
       input_ref: input.ref,
@@ -328,11 +352,13 @@ async function seedRetry(
     } else if (step.child_flow_run_id) {
       const child = await trx
         .selectFrom("flow_run")
-        .select("output")
+        .select(["output", "output_ref"])
         .where("id", "=", step.child_flow_run_id)
         .executeTakeFirst();
-      output = child?.output ?? null;
-      outputRef = null;
+      // A large answer is copied to the retry's own key, as a script's is: the retry then
+      // needs nothing of the run it retries.
+      output = child?.output_ref ? null : (child?.output ?? null);
+      outputRef = child?.output_ref ?? null;
     }
     const name = `${step.node_id}${step.item_key ? `-${step.item_key}` : ""}`;
     await trx
@@ -356,6 +382,8 @@ async function seedRetry(
           },
         }),
         decided_by: step.decided_by,
+        decided_by_type: step.decided_by_type,
+        decided_via: step.decided_via,
         decision_comment: step.decision_comment,
         started_at: step.started_at,
         finished_at: step.finished_at,
@@ -394,6 +422,8 @@ interface Finished {
 export async function advance(kernel: Kernel, flowRunId: string): Promise<void> {
   const started: string[] = [];
   const asking: string[] = [];
+  let canceled: ReturnType<typeof takeCanceled> = [];
+  let canceledFlowRuns: Finished["flowRun"][] = [];
   const finished = await kernel.db.transaction().execute(async (trx) => {
     await sql`select pg_advisory_xact_lock(hashtextextended(${flowRunId}, 1))`.execute(trx);
     const flowRun = await trx
@@ -413,8 +443,12 @@ export async function advance(kernel: Kernel, flowRunId: string): Promise<void> 
     const result = await pass.run();
     started.push(...pass.started);
     asking.push(...pass.asking);
+    canceled = takeCanceled(trx);
+    canceledFlowRuns = takeCanceledFlows(trx);
     return result;
   });
+  await announceCanceled(kernel, canceled);
+  await announceCanceledFlows(kernel, canceledFlowRuns);
   // Flow runs started as steps take their own first step now that they are committed.
   for (const child of started) kickFlow(kernel, child);
   // Approvers are told of a step that waits for them once it is committed, and never twice.
@@ -428,18 +462,42 @@ export async function advance(kernel: Kernel, flowRunId: string): Promise<void> 
   if (finished) await afterFlowRun(kernel, finished);
 }
 
-async function afterFlowRun(kernel: Kernel, finished: Finished) {
-  const { flowRun } = finished;
-  if (flowRun.parent_flow_run_id) kickFlow(kernel, flowRun.parent_flow_run_id);
+/** Says how a flow run ended, however it ended: `platform/flow-run-finished`. */
+async function publishFlowRunFinished(
+  kernel: Kernel,
+  flowRun: Finished["flowRun"],
+  status: Finished["status"],
+) {
   const { publishPlatformEvent } = await import("./events.js");
   await publishPlatformEvent(kernel, {
     tenantId: flowRun.tenant_id,
     workspaceId: flowRun.workspace_id,
     name: "platform/flow-run-finished",
-    payload: { flowRunId: flowRun.id, flow: flowRun.flow_path, status: finished.status },
+    payload: { flowRunId: flowRun.id, flow: flowRun.flow_path, status },
     sourceId: flowRun.id,
     depth: Number(flowRun.trigger_detail.depth ?? 0),
   }).catch((error) => kernel.log.error({ err: error }, "a platform event could not be published"));
+}
+
+/** The flow runs a transaction canceled, to be announced once it has committed. */
+const canceledFlows = new WeakMap<object, Finished["flowRun"][]>();
+
+/** The flow runs this transaction canceled so far, handed over once. */
+export function takeCanceledFlows(trx: Trx): Finished["flowRun"][] {
+  const flowRuns = canceledFlows.get(trx) ?? [];
+  canceledFlows.delete(trx);
+  return flowRuns;
+}
+
+/** Says that flow runs ended as canceled, as a canceled script run is said to have (`platform/run-finished`). */
+export async function announceCanceledFlows(kernel: Kernel, flowRuns: Finished["flowRun"][]) {
+  for (const flowRun of flowRuns) await publishFlowRunFinished(kernel, flowRun, "cancelled");
+}
+
+async function afterFlowRun(kernel: Kernel, finished: Finished) {
+  const { flowRun } = finished;
+  if (flowRun.parent_flow_run_id) kickFlow(kernel, flowRun.parent_flow_run_id);
+  await publishFlowRunFinished(kernel, flowRun, finished.status);
   // A sub-flow's failure is reported by the flow that started it.
   if (finished.status === "failed" && !flowRun.parent_flow_run_id) {
     const { alertFlowFailure } = await import("../execution/alerts.js");
@@ -583,9 +641,9 @@ class Advance {
         node_id: node,
         item_key: item,
         ...rest,
-        ...(output !== undefined ? { output: JSON.stringify(output) } : {}),
-        ...(error !== undefined ? { error: error ? JSON.stringify(error) : null } : {}),
-        ...(detail !== undefined ? { detail: JSON.stringify(detail) } : {}),
+        ...(output !== undefined ? { output: JSON.stringify(storable(output)) } : {}),
+        ...(error !== undefined ? { error: error ? JSON.stringify(storable(error)) : null } : {}),
+        ...(detail !== undefined ? { detail: JSON.stringify(storable(detail)) } : {}),
       })
       .returningAll()
       .executeTakeFirstOrThrow();
@@ -602,9 +660,9 @@ class Advance {
       .set({
         ...rest,
         ...finished,
-        ...(output !== undefined ? { output: JSON.stringify(output) } : {}),
-        ...(error !== undefined ? { error: error ? JSON.stringify(error) : null } : {}),
-        ...(detail !== undefined ? { detail: JSON.stringify(detail) } : {}),
+        ...(output !== undefined ? { output: JSON.stringify(storable(output)) } : {}),
+        ...(error !== undefined ? { error: error ? JSON.stringify(storable(error)) : null } : {}),
+        ...(detail !== undefined ? { detail: JSON.stringify(storable(detail)) } : {}),
       })
       .where("flow_run_id", "=", step.flow_run_id)
       .where("node_id", "=", step.node_id)
@@ -701,12 +759,25 @@ class Advance {
     expression: string,
     extra?: Record<string, unknown>,
   ): Promise<unknown> {
+    const context = await this.#context(extra);
     try {
-      return await this.#kernel.expressions.evaluate(expression, await this.#context(extra));
+      return await this.#kernel.expressions.evaluate(expression, context);
     } catch (error) {
       if (error instanceof ExpressionError) {
+        const large = error.message.startsWith("No such key") ? tooLargeIn(context) : [];
+        // The evaluator quotes the value it choked on ("Invalid duration string: …"). What the run
+        // was given as a secret is masked here, before the failure is stored, so that every
+        // reader of it (the lists, the alerts, the events) shows it masked.
+        const said = redactText(
+          error.message,
+          await flowKnown(this.#kernel, this.#trx, this.#flowRun.id),
+        );
         throw new StepFailure(
-          `The expression for "${field}" could not be evaluated: ${error.message}`,
+          `The expression for "${field}" could not be evaluated: ${said}${
+            large.length > 0
+              ? `. ${large.map((one) => `${one} is too large to use in an expression, so it has no keys here`).join(". ")}. Read it in a script.`
+              : ""
+          }`,
         );
       }
       throw error;
@@ -840,7 +911,7 @@ class Advance {
             }
             headers[name.toLowerCase()] = value;
           }
-          const answer = JSON.stringify({ status: node.status ?? 200, headers, body });
+          const answer = JSON.stringify(storable({ status: node.status ?? 200, headers, body }));
           if (answer.length > MAX_RESPONSE_LENGTH) {
             throw new StepFailure(
               `The answer is longer than ${MAX_RESPONSE_LENGTH} characters. Answer with less, and let the caller fetch the rest.`,
@@ -1101,14 +1172,15 @@ class Advance {
     error?: { message: string },
   ): Promise<Finished> {
     for (const step of [...this.#steps.values()].filter(isActive)) await this.#cancelStep(step);
-    // A flow's output is what its last steps produced: the nodes nothing leads on from.
+    // A flow's output is what its last steps produced: the nodes nothing leads on from. A step
+    // that went well has no use for an error path, so one with only that after it is last too.
     const output: Record<string, unknown> = {};
     if (status === "succeeded") {
       for (const step of this.#steps.values()) {
         if (
           step.item_key === "" &&
           step.status === "succeeded" &&
-          this.#outgoing(step.node_id).length === 0
+          this.#outgoing(step.node_id).every((edge) => edge.error)
         ) {
           output[step.node_id] = await this.#outputOf(step);
         }
@@ -1126,8 +1198,9 @@ class Advance {
       .set({
         status,
         output: stored.inline ?? JSON.stringify({ stored: stored.ref }),
+        output_ref: stored.ref,
         output_summary: summarize(output),
-        error: error ? JSON.stringify(error) : null,
+        error: error ? JSON.stringify(storable(error)) : null,
         finished_at: new Date(),
       })
       .where("id", "=", this.#flowRun.id)
@@ -1163,6 +1236,7 @@ async function cancelFlowTree(kernel: Kernel, trx: Trx, flowRunId: string): Prom
     .returningAll()
     .executeTakeFirst();
   if (!flowRun) return;
+  canceledFlows.set(trx, [...(canceledFlows.get(trx) ?? []), flowRun]);
   observe.flowRunEnded(kernel.metrics, "cancelled");
   const active = await trx
     .selectFrom("step_run")
@@ -1209,12 +1283,19 @@ export async function cancelFlowRun(
     .where("workspace_id", "=", workspaceId)
     .executeTakeFirst();
   if (!flowRun) throw notFound("The flow run");
-  if (flowRun.status !== "running")
-    throw conflict(
-      `The flow run already ${flowRun.status === "succeeded" ? "succeeded" : flowRun.status}.`,
-    );
+  if (flowRun.status !== "running") throw conflict(alreadyEnded("flow run", flowRun.status));
   await cancelFlowTree(kernel, trx, flowRunId);
   return flowRun;
+}
+
+/** Who a decision is kept as: a member or a service account. Anyone else leaves no one. */
+export function deciderOf(principal: {
+  type: string;
+  id: string | null;
+}): { type: string; id: string } | null {
+  return (principal.type === "member" || principal.type === "service_account") && principal.id
+    ? { type: principal.type, id: principal.id }
+    : null;
 }
 
 /** Records a person's decision on a waiting approval step. */
@@ -1226,9 +1307,10 @@ export async function decideApproval(
     node: string;
     approve: boolean;
     comment?: string | undefined;
-    memberId: string | null;
+    /** Who decided, by type and ID: a member, or a service account. */
+    decidedBy: { type: string; id: string } | null;
     /** Where it was decided, kept on the step so a list can say so without searching the audit. */
-    via?: "app" | undefined;
+    via: "console" | "api" | "mcp" | "app" | "email";
   },
 ) {
   await sql`select pg_advisory_xact_lock(hashtextextended(${request.flowRunId}, 1))`.execute(trx);
@@ -1250,6 +1332,12 @@ export async function decideApproval(
   if (step.status !== "waiting" || step.flow_status !== "running") {
     throw conflict("This approval is no longer waiting for a decision.");
   }
+  // Every route asks, not the mail page alone: the flow and its people read the reason.
+  if (!request.approve && !request.comment?.trim()) {
+    throw badRequest("Say why it is rejected: the flow and its people read it.", [
+      { path: "/comment", message: "is needed" },
+    ]);
+  }
   await trx
     .updateTable("step_run")
     .set({
@@ -1257,12 +1345,14 @@ export async function decideApproval(
       output: JSON.stringify({
         approved: request.approve,
         comment: request.comment ?? null,
-        ...(request.via ? { via: request.via } : {}),
+        ...(request.via === "app" ? { via: request.via } : {}),
       }),
       error: request.approve
         ? null
         : JSON.stringify({ message: `Rejected${request.comment ? `: ${request.comment}` : "."}` }),
-      decided_by: request.memberId,
+      decided_by: request.decidedBy?.id ?? null,
+      decided_by_type: request.decidedBy?.type ?? null,
+      decided_via: request.via,
       decision_comment: request.comment ?? null,
       wake_at: null,
       finished_at: new Date(),
@@ -1306,9 +1396,54 @@ export async function advanceDueFlows(kernel: Kernel): Promise<number> {
     limit 200
   `.execute(kernel.db);
   for (const { id } of due.rows) {
-    await advance(kernel, id).catch((error) =>
-      kernel.log.error({ err: error, flowRunId: id }, "a flow run could not be advanced"),
+    await advance(kernel, id).then(
+      () => stuck.delete(id),
+      async (error) => {
+        kernel.log.error({ err: error, flowRunId: id }, "a flow run could not be advanced");
+        // One that fails every time would hold a place in each sweep for ever, and the
+        // sweep takes the oldest first: after a few tries it is failed, and says why.
+        const tries = (stuck.get(id) ?? 0) + 1;
+        stuck.set(id, tries);
+        if (tries >= MAX_ADVANCE_TRIES) {
+          stuck.delete(id);
+          await failStuck(kernel, id, error).catch((inner) =>
+            kernel.log.error({ err: inner, flowRunId: id }, "a stuck flow run could not be failed"),
+          );
+        }
+      },
     );
   }
   return due.rows.length;
+}
+
+/** How many sweeps may fail to move a flow run before it is failed. */
+const MAX_ADVANCE_TRIES = 3;
+/** Flow runs the sweep could not move, and how many times in a row. */
+const stuck = new Map<string, number>();
+
+async function failStuck(kernel: Kernel, flowRunId: string, cause: unknown) {
+  const message =
+    `The flow could not go on: ${cause instanceof Error ? cause.message : String(cause)}`.slice(
+      0,
+      500,
+    );
+  await kernel.db.transaction().execute(async (trx) => {
+    await sql`select pg_advisory_xact_lock(hashtextextended(${flowRunId}, 1))`.execute(trx);
+    await trx
+      .updateTable("step_run")
+      .set({ status: "cancelled", finished_at: new Date() })
+      .where("flow_run_id", "=", flowRunId)
+      .where("status", "in", ACTIVE)
+      .execute();
+    await trx
+      .updateTable("flow_run")
+      .set({
+        status: "failed",
+        error: JSON.stringify({ message: storable(message) }),
+        finished_at: new Date(),
+      })
+      .where("id", "=", flowRunId)
+      .where("status", "=", "running")
+      .execute();
+  });
 }

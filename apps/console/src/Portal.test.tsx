@@ -110,6 +110,73 @@ test("the apps of a workspace are listed with their addresses and who they are o
   expect(sheet.textContent).toContain("12, 340 KB");
 });
 
+const appRow = (id: string, path: string, title: string, more: object = {}) => ({
+  id,
+  path,
+  title,
+  description: null,
+  url: `https://apps.example.test/apps/acme/main/${path}/`,
+  domains: [],
+  files: 0,
+  bytes: 0,
+  access: [],
+  builtWith: "builder",
+  ownership: "ui",
+  ...more,
+});
+
+test("APP-MP3: apps are searched, filtered by how they are built, sorted, and a console-made one is removed", async () => {
+  routes[`GET /api/v1${base}/workspaces/w1/apps`] = () => [
+    200,
+    {
+      items: [
+        appRow("a1", "portal/orders", "Orders"),
+        appRow("a2", "back-office", "Back office", { builtWith: "code", ownership: "code" }),
+        appRow("a3", "alpha", "Alpha"),
+      ],
+    },
+  ];
+  routes[`PUT /api/v1${base}/workspaces/w1/drafts/portal/orders`] = () => [200, {}];
+  show(<Apps root={`${base}/workspaces/w1`} />);
+  await screen.findByText("Orders");
+  // Search by title or path.
+  fireEvent.input(screen.getByLabelText("Find an app"), { target: { value: "office" } });
+  expect(screen.queryByText("Orders")).toBeNull();
+  expect(screen.getByText("Back office")).toBeTruthy();
+  fireEvent.input(screen.getByLabelText("Find an app"), { target: { value: "" } });
+  // Filter by how it is built.
+  fireEvent.click(screen.getByRole("radio", { name: /^Repository/ }));
+  expect(screen.queryByText("Orders")).toBeNull();
+  fireEvent.click(screen.getByRole("radio", { name: /^All/ }));
+  // Sort by the title's header.
+  fireEvent.click(
+    screen.getByRole("columnheader", { name: /^App/ }).querySelector("button") as HTMLElement,
+  );
+  const titles = () =>
+    screen
+      .getAllByRole("row")
+      .slice(1)
+      .map((row) => row.textContent ?? "");
+  expect(titles()[0]).toContain("Alpha");
+  // A repository app is removed there; a console-made one is removed from its inspector.
+  fireEvent.click(screen.getByText("Back office"));
+  expect((await screen.findByRole("dialog")).textContent).toContain("Managed in the repository");
+  cleanup();
+  show(<Apps root={`${base}/workspaces/w1`} />);
+  fireEvent.click(await screen.findByText("Orders"));
+  const sheet = await screen.findByRole("dialog");
+  fireEvent.click(within(sheet).getByRole("button", { name: "Remove" }));
+  await answer("Remove");
+  await waitFor(() =>
+    expect(
+      sent("PUT").find((call) => call.url.endsWith("/drafts/portal/orders"))?.body,
+    ).toMatchObject({
+      kind: "app",
+      deleted: true,
+    }),
+  );
+});
+
 test("a workspace with no apps says where apps come from", async () => {
   routes[`GET /api/v1${base}/workspaces/w1/apps`] = () => [200, { items: [] }];
   show(<Apps root={`${base}/workspaces/w1`} />);
@@ -205,7 +272,7 @@ test("a link that was emailed says so, and the search is sent to the server", as
   );
 });
 
-test("an end user is disabled and deleted through their own routes, and deleting asks first", async () => {
+test("an end user is disabled and deleted through their own routes, and both ask first", async () => {
   let users = [ada];
   routes[`GET /api/v1${base}/end-users`] = () => [200, { items: users, nextCursor: null }];
   routes[`PATCH /api/v1${base}/end-users/u1`] = (body) => {
@@ -220,6 +287,8 @@ test("an end user is disabled and deleted through their own routes, and deleting
   show(<EndUsers base={base} />);
   fireEvent.click(await screen.findByText(ada.email));
   fireEvent.click(await screen.findByRole("button", { name: "Disable" }));
+  // Disabling signs them out of every app, so it is asked first.
+  expect(await answer("Disable")).toContain(`Disable ${ada.email}?`);
   await screen.findAllByText("Disabled");
   expect(sent("PATCH")[0]?.url).toBe(`/api/v1${base}/end-users/u1`);
   expect(sent("PATCH")[0]?.body).toEqual({ disabled: true });
@@ -399,6 +468,7 @@ const domain = {
   verifiedAt: null,
   checkedAt: null,
   checkError: null,
+  recordGoneAt: null,
   challenge: { name: "_vx-challenge.orders.acme.example", value: "vx-domain=0123abcd" },
   createdAt: "2026-11-12T00:00:00.000Z",
 };
@@ -445,7 +515,7 @@ test("adding a hostname shows its TXT record, a check shows what is missing, and
 
   show(<Domains base={base} />);
   await screen.findByText("No hostnames yet");
-  expect(document.body.textContent).toContain("the platform issues none");
+  expect(document.body.textContent).toContain("Volvel issues none");
   fireEvent.click(screen.getAllByRole("button", { name: "Add a hostname" })[0] as HTMLElement);
   await screen.findByRole("dialog");
   // The first workspace has no app to serve, so nothing can be added there.
@@ -499,6 +569,80 @@ test("adding a hostname shows its TXT record, a check shows what is missing, and
   expect(sent("DELETE")[0]?.url).toBe(`/api/v1${base}/domains/d1`);
 });
 
+test("turning a served hostname off says what stops, and asks first (GOV-35)", async () => {
+  const serving = {
+    ...domain,
+    enabled: true,
+    verifiedAt: "2026-11-01T10:00:00.000Z",
+    checkedAt: "2026-11-12T10:00:00.000Z",
+  };
+  routes[`GET /api/v1${base}/domains`] = () => [200, { items: [serving] }];
+  routes[`GET /api/v1${base}/workspaces`] = () => [200, { items: [] }];
+  routes[`PATCH /api/v1${base}/domains/d1`] = () => [200, { ...serving, enabled: false }];
+  show(<Domains base={base} />);
+  fireEvent.click(await screen.findByRole("button", { name: /Details/, hidden: true }));
+  fireEvent.click(await screen.findByRole("button", { name: "Disable" }));
+  const said = await answer("Cancel");
+  expect(said).toContain("Turn off orders.acme.example?");
+  expect(said).toContain("stops answering");
+  await waitFor(() => expect(screen.queryByText(/Turn off orders/)).toBeNull());
+  expect(sent("PATCH")).toHaveLength(0);
+  fireEvent.click(await screen.findByRole("button", { name: "Disable" }));
+  await answer("Turn off");
+  await waitFor(() => expect(sent("PATCH")[0]?.body).toEqual({ enabled: false }));
+});
+
+test("round 5: a hostname breaks at its dots when the column is narrow, never inside a word", async () => {
+  routes[`GET /api/v1${base}/domains`] = () => [
+    200,
+    { items: [{ ...domain, hostname: "fernhill.localhost", enabled: true }] },
+  ];
+  routes[`GET /api/v1${base}/workspaces`] = () => [200, { items: [] }];
+  show(<Domains base={base} />);
+  const link = await screen.findByRole("link", { name: /fernhill/ });
+  // One <wbr> after the dot: a break opportunity that is not a character, so copying keeps the name whole.
+  expect(link.querySelectorAll("wbr")).toHaveLength(1);
+  expect(link.textContent).toBe("fernhill.localhost");
+  expect(link.className).not.toContain("break-words");
+  cleanup();
+  routes[`GET /api/v1${base}/domains`] = () => [200, { items: [{ ...domain, enabled: false }] }];
+  show(<Domains base={base} />);
+  const name = (await screen.findAllByText(/orders/)).find((one) => one.querySelector("wbr"));
+  expect(name?.querySelectorAll("wbr").length).toBeGreaterThan(0);
+});
+
+test("a hostname an operator enabled without proof says it serves, though nothing proves the name is the tenant's", async () => {
+  const unproved = { ...domain, enabled: true, verifiedAt: null };
+  routes[`GET /api/v1${base}/domains`] = () => [200, { items: [unproved] }];
+  routes[`GET /api/v1${base}/workspaces`] = () => [200, { items: [] }];
+  show(<Domains base={base} />);
+  fireEvent.click(await screen.findByRole("button", { name: /Details/, hidden: true }));
+  const sheet = (await screen.findAllByRole("dialog")).at(-1)?.textContent ?? "";
+  expect(sheet).toContain("Serving, though the name is not verified");
+  expect(sheet).toContain("An operator of this instance enabled it");
+});
+
+test("a member who may not change hostnames is told so, and the way to add one is off (GOV-37)", async () => {
+  routes["GET /api/v1/me"] = () => [
+    200,
+    {
+      principal: { type: "member", id: "m1", name: "Rae", email: null },
+      instancePermissions: [],
+      tenants: [],
+    },
+  ];
+  routes[`GET /api/v1${base}/access/member/m1`] = () => [
+    200,
+    { principal: {}, sources: [], permissions: [{ permission: "domain:read" }] },
+  ];
+  routes[`GET /api/v1${base}/domains`] = () => [200, { items: [] }];
+  routes[`GET /api/v1${base}/workspaces`] = () => [200, { items: [] }];
+  show(<Domains base={base} />);
+  await screen.findByText(/You can see this tenant's hostnames, not change it/);
+  const add = screen.getAllByRole("button", { name: "Add a hostname" })[0] as HTMLButtonElement;
+  expect(add.disabled).toBe(true);
+});
+
 test("a hostname can serve the portal and every app, even from a workspace with no app chosen", async () => {
   let domains: (typeof domain)[] = [];
   routes[`GET /api/v1${base}/domains`] = () => [200, { items: domains }];
@@ -524,6 +668,37 @@ test("a hostname can serve the portal and every app, even from a workspace with 
   );
   const row = (await screen.findByRole("button", { name: /Details/, hidden: true })).closest("tr");
   expect(row?.textContent).toContain("The portal and every app");
+});
+
+test("a hostname whose record is gone is not shown as plainly verified, and says what not serving means (GOV-24, GOV-25)", async () => {
+  const gone = {
+    ...domain,
+    verifiedAt: "2026-11-01T10:00:00.000Z",
+    checkedAt: "2026-11-12T10:00:00.000Z",
+    checkError: "No TXT record _vx-challenge.orders.acme.example was found.",
+    recordGoneAt: "2026-11-10T10:00:00.000Z",
+  };
+  let domains: object[] = [gone];
+  routes[`GET /api/v1${base}/domains`] = () => [200, { items: domains }];
+  routes[`GET /api/v1${base}/workspaces`] = () => [200, { items: [] }];
+  show(<Domains base={base} />);
+  const details = await screen.findByRole("button", { name: /Details/, hidden: true });
+  const row = details.closest("tr") as HTMLElement;
+  expect(row.textContent).toContain("record gone since");
+  fireEvent.click(details);
+  const dialog = await screen.findByRole("dialog");
+  expect(dialog.textContent).not.toContain("Record created and found");
+  expect(dialog.textContent).toContain("Verified");
+  expect(dialog.textContent).toContain("has not been found since");
+  // Verified and not enabled: it serves nothing.
+  expect(dialog.textContent).toContain("not served here");
+  fireEvent.click(screen.getByRole("button", { name: "Close" }));
+  // Not verified and not enabled: the name opens this instance's own address.
+  domains = [{ ...domain }];
+  cleanup();
+  show(<Domains base={base} />);
+  fireEvent.click(await screen.findByRole("button", { name: /Details/, hidden: true }));
+  expect((await screen.findByRole("dialog")).textContent).toContain("opens this instance");
 });
 
 // ----- The console's own colors -----
@@ -557,6 +732,31 @@ test("a branding preview says which colors would be hard to read, and still lets
   expect(screen.getByText("2 pairs are hard to read:")).toBeTruthy();
 });
 
+test("the contrast check reads any color, and says which pairs it could not check (GOV-22)", () => {
+  const every = (value: string) =>
+    Object.fromEntries(Object.keys(KIT.tokens).map((token) => [token, value]));
+  // Every token the same color is not easy to read, whatever way the color is written.
+  for (const white of ["white", "hsl(0 0% 100%)", "#ffffffff", "rgb(255 255 255)"]) {
+    const { unmount } = render(<ContrastCheck values={{ ...KIT.tokens, ...every(white) }} />);
+    expect(screen.queryByText("Every pair checked is easy to read.")).toBeNull();
+    expect(screen.getByText(/pairs are hard to read/)).toBeTruthy();
+    unmount();
+  }
+  // A faint ink is judged as the faint ink it is, not as solid black.
+  render(
+    <ContrastCheck
+      values={{ ...KIT.tokens, ink: "rgba(0,0,0,0.05)", canvas: "#ffffff", surface: "#ffffff" }}
+    />,
+  );
+  expect(screen.getAllByText(/hard to read/).length).toBeGreaterThan(0);
+  cleanup();
+  // A value the check cannot read is said, not passed.
+  render(<ContrastCheck values={{ ...KIT.tokens, ink: "var(--brand)" }} />);
+  expect(screen.queryByText("Every pair checked is easy to read.")).toBeNull();
+  expect(screen.getByText(/could not be checked/)).toBeTruthy();
+  expect(screen.getAllByText(/var\(--brand\)/).length).toBeGreaterThan(0);
+});
+
 test("the end users screen keeps its search and the person open in the address, and Back closes them first", async () => {
   routes[`GET /api/v1${base}/end-users`] = () => [200, { items: [ada], nextCursor: null }];
   routes[`GET /api/v1${base}/end-users/u1`] = () => [200, ada];
@@ -573,5 +773,96 @@ test("the end users screen keeps its search and the person open in the address, 
   await waitFor(() => expect(new URLSearchParams(location.search).get("user")).toBeNull());
   expect(location.pathname).toBe("/t/t1/end-users");
   expect(new URLSearchParams(location.search).get("q")).toBe("ada");
+  history.replaceState(null, "", "/");
+});
+
+test("a hostname is pointed at another app, or at the portal, without being removed (GOV-P6)", async () => {
+  let domains: (typeof domain)[] = [domain];
+  routes[`GET /api/v1${base}/domains`] = () => [200, { items: domains }];
+  routes[`GET /api/v1${base}/workspaces`] = () => [200, { items: [{ id: "w1", name: "Main" }] }];
+  routes[`GET /api/v1${base}/workspaces/w1/apps`] = () => [
+    200,
+    {
+      items: [
+        { id: "a1", path: "portal/orders", title: "Orders" },
+        { id: "a2", path: "portal/billing", title: "Billing" },
+      ],
+    },
+  ];
+  routes[`PATCH /api/v1${base}/domains/d1`] = (body) => {
+    domains = [{ ...domain, app: (body as { app: string }).app }];
+    return [200, domains[0]];
+  };
+  show(<Domains base={base} />);
+  fireEvent.click(await screen.findByRole("button", { name: /Details/, hidden: true }));
+  const dialog = await screen.findByRole("dialog");
+  const change = (await within(dialog).findByRole("button", {
+    name: "Change what it serves",
+  })) as HTMLButtonElement;
+  // Nothing is different yet, so nothing can be sent.
+  expect(change.disabled).toBe(true);
+  const app = (await within(dialog).findByLabelText("App")) as HTMLSelectElement;
+  await within(dialog).findByRole("option", { name: "Billing (portal/billing)" });
+  expect(app.value).toBe("portal/orders");
+  fireEvent.change(app, { target: { value: "portal/billing" } });
+  expect(change.disabled).toBe(false);
+  fireEvent.click(change);
+  await waitFor(() => expect(sent("PATCH")[0]?.body).toEqual({ app: "portal/billing" }));
+  await waitFor(() => expect(document.body.textContent).toContain("Serves portal/billing"));
+
+  fireEvent.change(await within(dialog).findByLabelText("Serves"), { target: { value: "portal" } });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Change what it serves" }));
+  await waitFor(() => expect(sent("PATCH")[1]?.body).toEqual({ app: "" }));
+  await waitFor(() => expect(document.body.textContent).toContain("The portal and every app"));
+});
+
+test("an app that is opened is remembered for the palette's Recent list", async () => {
+  routes[`GET /api/v1${base}/workspaces/w1/apps`] = () => [
+    200,
+    {
+      items: [
+        {
+          id: "a2",
+          path: "back-office",
+          title: "Back office",
+          description: null,
+          url: "https://apps.example.test/apps/acme/main/back-office/",
+          domains: [],
+          files: 1,
+          bytes: 900,
+          access: [],
+        },
+      ],
+    },
+  ];
+  routes["PUT /api/v1/me/recent-items"] = () => [204, null];
+  show(<Apps root={`${base}/workspaces/w1`} />);
+  fireEvent.click(await screen.findByText("Back office"));
+  await waitFor(() =>
+    expect(calls.find((one) => one.url === "/api/v1/me/recent-items")?.body).toEqual({
+      tenantId: "t1",
+      workspaceId: "w1",
+      kind: "app",
+      ref: "back-office",
+    }),
+  );
+});
+
+test("w-builder 1: an app named in the address by its path (as the palette's Recent list has it) opens", async () => {
+  routes[`GET /api/v1${base}/workspaces/w1/apps`] = () => [
+    200,
+    {
+      items: [appRow("a1", "portal/orders", "Orders"), appRow("a2", "back-office", "Back office")],
+    },
+  ];
+  history.replaceState(null, "", "/?app=portal%2Forders");
+  show(<Apps root={`${base}/workspaces/w1`} />);
+  const sheet = await screen.findByRole("dialog");
+  expect(sheet.textContent).toContain("Orders");
+  expect(sheet.textContent).toContain("portal/orders");
+  history.replaceState(null, "", "/?app=a2");
+  cleanup();
+  show(<Apps root={`${base}/workspaces/w1`} />);
+  expect((await screen.findByRole("dialog")).textContent).toContain("Back office");
   history.replaceState(null, "", "/");
 });

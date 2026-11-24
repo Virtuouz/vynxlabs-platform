@@ -68,7 +68,7 @@ test("a trigger named in the address opens, and choosing another changes the add
   expect(await screen.findByText("schedule trigger · node nightly")).toBeTruthy();
 });
 
-test("a schedule fires now from its inspector, and only a resource's schedule offers it", async () => {
+test("a schedule fires now from its inspector, and so does a flow's schedule, naming its node", async () => {
   const posted: { url: string; body: unknown }[] = [];
   vi.stubGlobal("fetch", async (address: string, init: RequestInit = {}) => {
     if (init.method === "POST") {
@@ -92,12 +92,13 @@ test("a schedule fires now from its inspector, and only a resource's schedule of
   });
   await vi.waitFor(() => expect(location.pathname).toBe(`${link}/runs/r1`));
 
-  // A schedule node inside a flow fires with its flow.
+  // A schedule node inside a flow fires with its flow, naming the node (OPS-MP3).
   history.replaceState(null, "", `${link}/triggers?trigger=inventory%2Freorder%23nightly`);
   cleanup();
   show(<TriggersWorkbench root={root} link={link} workspacePaused={false} production={false} />);
-  await screen.findByRole("button", { name: "Pause this trigger" });
-  expect(screen.queryByRole("button", { name: "Fire now" })).toBeNull();
+  fireEvent.click(await screen.findByRole("button", { name: "Fire now" }));
+  await vi.waitFor(() => expect(posted).toHaveLength(2));
+  expect(posted[1]?.body).toEqual({ path: "inventory/reorder", node: "nightly" });
 });
 
 test("new triggers are made in a dev workspace; production says where instead", async () => {
@@ -109,4 +110,101 @@ test("new triggers are made in a dev workspace; production says where instead", 
   fireEvent.click(await screen.findByRole("button", { name: "New trigger" }));
   fireEvent.click(await screen.findByRole("menuitem", { name: "Schedule" }));
   expect(await screen.findByRole("heading", { name: "New schedule" })).toBeTruthy();
+});
+
+test("a viewer is offered no Pause, Resume or Fire now, and an operator is (OPS-35)", async () => {
+  let allowed: string[] = [];
+  const asked: string[] = [];
+  vi.stubGlobal("fetch", async (address: string) => {
+    asked.push(address);
+    if (address.split("?")[0]?.endsWith("/allowed")) return Response.json({ allowed });
+    return Response.json({ items: [trigger("reminders/hourly", "", "reminders/send", "script")] });
+  });
+  history.replaceState(null, "", `${link}/triggers?trigger=reminders%2Fhourly`);
+  show(<TriggersWorkbench root={root} link={link} workspacePaused={false} production={false} />);
+  await screen.findByText("schedule trigger");
+  await vi.waitFor(() => expect(asked.some((one) => one.includes("/allowed?"))).toBe(true));
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  expect(screen.queryByRole("button", { name: "Pause this trigger" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Fire now" })).toBeNull();
+  cleanup();
+  // Pausing changes the trigger; firing it starts a run, which is what the server asks for.
+  allowed = ["trigger:write", "run:write"];
+  show(<TriggersWorkbench root={root} link={link} workspacePaused={false} production={false} />);
+  expect(await screen.findByRole("button", { name: "Pause this trigger" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Fire now" })).toBeTruthy();
+});
+
+test("a paused trigger says who paused it (OPS-36)", async () => {
+  vi.stubGlobal("fetch", async () =>
+    Response.json({
+      items: [
+        {
+          ...trigger("reminders/hourly", "", "reminders/send", "script"),
+          paused: {
+            at: new Date().toISOString(),
+            by: "m2",
+            byName: "Carl Jones",
+            reason: "Holding for the audit",
+          },
+          pausedBy: "trigger",
+        },
+      ],
+    }),
+  );
+  history.replaceState(null, "", `${link}/triggers?trigger=reminders%2Fhourly`);
+  show(<TriggersWorkbench root={root} link={link} workspacePaused={false} production={false} />);
+  expect(await screen.findByText(/by Carl Jones: Holding for the audit/)).toBeTruthy();
+});
+
+test("a pause reason ends its sentence before the next one starts (OPS-36)", async () => {
+  vi.stubGlobal("fetch", async () =>
+    Response.json({
+      items: [
+        {
+          ...trigger("reminders/hourly", "", "reminders/send", "script"),
+          paused: {
+            at: new Date().toISOString(),
+            by: "m2",
+            byName: "Carl Jones",
+            reason: "Checking the weekly run first",
+          },
+          pausedBy: "trigger",
+        },
+      ],
+    }),
+  );
+  history.replaceState(null, "", `${link}/triggers?trigger=reminders%2Fhourly`);
+  show(<TriggersWorkbench root={root} link={link} workspacePaused={false} production={false} />);
+  expect(
+    await screen.findByText(/Checking the weekly run first\. Nothing it would start/),
+  ).toBeTruthy();
+});
+
+test("a schedule that is opened is remembered for the palette's Recent list", async () => {
+  const put: unknown[] = [];
+  vi.stubGlobal("fetch", async (address: string, init: RequestInit = {}) => {
+    if (init.method === "PUT" && address.includes("/me/recent-items")) {
+      put.push(JSON.parse(init.body as string));
+      return new Response(null, { status: 204 });
+    }
+    if (address.split("?")[0]?.endsWith("/allowed"))
+      return Response.json({ allowed: ["trigger:write"] });
+    return Response.json({ items: [trigger("reminders/hourly", "", "reminders/send", "script")] });
+  });
+  history.replaceState(null, "", `${link}/triggers?trigger=reminders%2Fhourly`);
+  show(<TriggersWorkbench root={root} link={link} workspacePaused={false} production={false} />);
+  await screen.findByRole("button", { name: "Pause this trigger" });
+  await vi.waitFor(() =>
+    expect(put).toEqual([
+      { tenantId: "t1", workspaceId: "w1", kind: "schedule", ref: "reminders/hourly" },
+    ]),
+  );
+});
+
+test("a trigger not fired yet does not say that runs by hand are not counted (Fire now is a firing)", async () => {
+  show(<TriggersWorkbench root={root} link={link} workspacePaused={false} production={false} />);
+  await screen.findByRole("link", { name: "reminders/send" });
+  expect(document.body.innerHTML).not.toMatch(/started by hand/);
+  expect(screen.getAllByText("Not fired yet").length).toBeGreaterThan(0);
 });

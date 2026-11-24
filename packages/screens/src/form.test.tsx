@@ -2,12 +2,20 @@
 
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { PageWidget } from "@volvel/manifest";
+import { ToastProvider } from "@volvel/ui";
 import type { ActOutcome, Choice, WidgetViewProps } from "@volvel/widgets";
 import { corePack } from "@volvel/widgets-core/views";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { FormView } from "../../widgets-core/views/form.tsx";
 import { PageView } from "./PageView.tsx";
-import type { PageDataClient, ViewEntry, ViewRegistry, WireData } from "./types.ts";
+import {
+  ActionError,
+  type PageDataClient,
+  type ViewEntry,
+  type ViewRegistry,
+  viewRegistry,
+  type WireData,
+} from "./types.ts";
 
 afterEach(() => {
   cleanup();
@@ -36,6 +44,10 @@ const columns = [
   col("sent", "timestamp", "Sent"),
   col("paid", "boolean", "Paid in full"),
   col("notes", "text", "Notes", { maxLength: 5000 }),
+  col("tags", "enum_list", "Tags", {
+    values: [{ value: "late" }, { value: "vip", label: "VIP" }],
+  }),
+  col("scan", "file", "Scan"),
 ];
 
 const wire = (record: Record<string, unknown> | null): WireData =>
@@ -151,6 +163,16 @@ describe("controls by column type", () => {
     expect(status.tagName).toBe("SELECT");
     expect([...status.options].map((one) => one.text)).toEqual(["None", "Unpaid", "Paid"]);
     expect(screen.getByPlaceholderText("Search client")).toBeTruthy();
+    // A several-choice column is a list to choose from, not a box to type "a,b" in (WID-10).
+    expect(screen.queryByRole("textbox", { name: /Tags/ })).toBeNull();
+    expect(screen.getByText("Tags")).toBeTruthy();
+  });
+
+  test("a file column is not a box to type in: it says where the file is added (WID-10)", async () => {
+    draw(null, create);
+    await ready();
+    expect(screen.queryByRole("textbox", { name: /Scan/ })).toBeNull();
+    expect(screen.getByText(/A file cannot be added in a form/)).toBeTruthy();
   });
 
   test("money is typed as dollars and sent as cents", async () => {
@@ -563,6 +585,24 @@ describe("what a field starts with", () => {
     expect(act.mock.calls[0]?.[1]?.inputs).toEqual({ issued: todayText() });
   });
 
+  test("a time is typed on the reader's clock and sent as the moment it is, with its zone (D21)", async () => {
+    const was = process.env.TZ;
+    process.env.TZ = "America/Los_Angeles";
+    try {
+      const { act } = draw(null, starts([{ column: "number" }, { column: "sent" }]));
+      await ready();
+      type(/Number/, "INV-7");
+      fireEvent.change(screen.getByLabelText(/Sent/), { target: { value: "2026-11-21T19:30" } });
+      fireEvent.click(screen.getByRole("button", { name: "Create invoice" }));
+      await waitFor(() => expect(act).toHaveBeenCalled());
+      // 19:30 in Los Angeles is 03:30 UTC the next day.
+      expect(act.mock.calls[0]?.[1]?.inputs).toMatchObject({ sent: "2026-11-22T03:30:00.000Z" });
+    } finally {
+      if (was === undefined) Reflect.deleteProperty(process.env, "TZ");
+      else process.env.TZ = was;
+    }
+  });
+
   test("a fixed value starts the field", async () => {
     draw(null, starts([{ column: "number", initial: { kind: "value", value: "INV-0" } }]));
     await ready();
@@ -625,5 +665,111 @@ describe("what a form asks for, by the server's rule", () => {
     const label = (name: string) => screen.getByText(name, { selector: "label" }).parentElement;
     expect(label("Minutes")?.textContent).not.toContain("*");
     expect(label("Pet")?.textContent).toContain("*");
+  });
+});
+
+describe("a form whose submit asks to confirm", () => {
+  /** The page with the real host: the dialog, and the server's call, are the host's. */
+  function drawConfirming(refusal?: Error) {
+    const call = vi.fn(async () => {
+      if (refusal) throw refusal;
+      return { client: [] };
+    });
+    const client: PageDataClient = {
+      read: async () => ({ inputs: { record: wire({}) } }),
+      act: call,
+    };
+    render(
+      <ToastProvider>
+        <PageView
+          widgets={[
+            widget({
+              mode: "create",
+              fields: [{ column: "number" }, { column: "notes" }],
+              submitLabel: "Create invoice",
+              submit: {
+                confirm: { title: "Create it?", button: "Yes, create" },
+                steps: [{ do: "create", table: "invoices", set: {} }],
+              },
+            }),
+          ]}
+          filters={[]}
+          registry={viewRegistry(corePack)}
+          client={client}
+          filterValues={{}}
+          onFilterValues={() => {}}
+        />
+      </ToastProvider>,
+    );
+    return call;
+  }
+
+  test("sends what was typed once confirmed", async () => {
+    const call = drawConfirming();
+    await ready();
+    type(/Number/, "INV-9");
+    fireEvent.click(screen.getByRole("button", { name: "Create invoice" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Yes, create" }));
+    await waitFor(() => expect(call).toHaveBeenCalledTimes(1));
+    expect(call).toHaveBeenCalledWith("form", "config/submit", {
+      records: {},
+      inputs: { number: "INV-9" },
+    });
+  });
+
+  test("a refusal of a field is handed back to the form, which keeps what was typed", async () => {
+    const call = drawConfirming(
+      new ActionError("Check what you typed.", 400, { number: "is taken" }),
+    );
+    await ready();
+    type(/Number/, "INV-9");
+    fireEvent.click(screen.getByRole("button", { name: "Create invoice" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Yes, create" }));
+    await waitFor(() => expect(call).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText("is taken")).toBeTruthy();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect((screen.getByLabelText(/Number/) as HTMLInputElement).value).toBe("INV-9");
+  });
+});
+
+describe("an edit form whose record is read again", () => {
+  const record = { id: "r1", number: "A", notes: "First", total: 100 };
+  const config = {
+    mode: "edit",
+    fields: [{ column: "number" }, { column: "notes" }],
+    submitLabel: "Save",
+  };
+  const show = (row: Record<string, unknown>) => (
+    <FormView
+      config={config as never}
+      data={{ record: wire(row) } as never}
+      size={{ w: 6, h: 8, narrow: false }}
+      emit={() => undefined}
+      building={false}
+      act={async () => ({ ok: true })}
+    />
+  );
+
+  test("keeps what was typed when another column changed", async () => {
+    const view = render(show(record));
+    fireEvent.change(await screen.findByLabelText(/Number/), { target: { value: "Typed" } });
+    view.rerender(show({ ...record, total: 250 }));
+    expect((screen.getByLabelText(/Number/) as HTMLInputElement).value).toBe("Typed");
+  });
+
+  test("takes the new value of a field that was not touched, and says when a touched one changed", async () => {
+    const view = render(show(record));
+    fireEvent.change(await screen.findByLabelText(/Number/), { target: { value: "Typed" } });
+    view.rerender(show({ ...record, number: "B", notes: "Second" }));
+    expect((screen.getByLabelText(/Number/) as HTMLInputElement).value).toBe("Typed");
+    expect((screen.getByLabelText(/Notes/) as HTMLTextAreaElement).value).toBe("Second");
+    expect(screen.getByText(/Number was changed by someone else/)).toBeTruthy();
+  });
+
+  test("starts again for another record", async () => {
+    const view = render(show(record));
+    fireEvent.change(await screen.findByLabelText(/Number/), { target: { value: "Typed" } });
+    view.rerender(show({ ...record, id: "r2", number: "Z" }));
+    expect((screen.getByLabelText(/Number/) as HTMLInputElement).value).toBe("Z");
   });
 });

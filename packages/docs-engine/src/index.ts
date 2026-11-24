@@ -1,6 +1,32 @@
 export { type AmongOptions, checkPageAmong, type PageIndex } from "./among.js";
 export {
+  CHANGELOG_NAME,
+  type ChangelogEntry,
+  type ChangelogOptions,
+  changelogDate,
+  changelogOf,
+  dayInName,
+  isChangelogEntry,
+  isDay,
+} from "./changelog.js";
+export {
+  CHANGELOG_TEMPLATE,
+  DIATAXIS_CODES,
+  DOC_TEMPLATES,
+  DOC_TYPE_LABELS,
+  DOC_TYPE_PLURALS,
+  DOC_TYPE_SUMMARIES,
+  DOC_TYPES,
+  type DocType,
+  diataxisIssues,
+  effectiveType,
+  folderType,
+  isDocType,
+  MAX_SUBJECTS,
+} from "./diataxis.js";
+export {
   type Change,
+  changelogEntryName,
   childrenOf,
   inverseOf,
   NAME_PATTERN,
@@ -13,6 +39,7 @@ export {
   planDelete,
   planDuplicate,
   planMove,
+  planNewChangelogEntry,
   planNewFolder,
   planNewPage,
   planRename,
@@ -20,6 +47,7 @@ export {
   slugOf,
 } from "./ops.js";
 export { type Manifest, manifestOf, type PageFile, packageOutput } from "./output.js";
+export { type OpenedPackage, openPackage, setFromManifest } from "./package.js";
 export {
   asDirectory,
   type DocEntry,
@@ -32,6 +60,12 @@ export {
   splitFrontmatter,
   titleOf,
 } from "./page.js";
+export {
+  type MovedPage,
+  type RedirectProblem,
+  redirectedPath,
+  redirectMap,
+} from "./redirects.js";
 export {
   ABOUT_KINDS,
   type About,
@@ -51,6 +85,7 @@ export {
   mark,
   type PageHit,
   type PlaceHit,
+  RESULT_LIMIT,
   type SearchHit,
 } from "./search.js";
 export {
@@ -63,17 +98,24 @@ export {
   type Folder,
   folderItems,
   glossaryOf,
+  homeTypeCardsOf,
   type Nav,
   nameOf,
+  neighboursOf,
   ordered,
   type PageRef,
+  PRODUCT_PREFIX,
   pagesInOrder,
+  RELATED_PER_TYPE,
+  relatedTo,
   resolveAsset,
   resolveLink,
   resourceKey,
   type Target,
   type Term,
+  type TypeCard,
   trailOf,
+  typeCardsOf,
   UNCATEGORIZED,
   urlOf,
 } from "./set.js";
@@ -103,4 +145,5 @@ export {
   type ResourceLike,
   resourceChecker,
   type WorkspaceOptions,
+  workspaceDocsWarnings,
 } from "./workspace.js";

@@ -95,3 +95,63 @@ test("a period outside the bounds is refused before anything is sent", async () 
   expect(screen.queryByRole("dialog")).toBeNull();
   expect(sent).toEqual([]);
 });
+
+test("GOV-11: shortening the audit log says it also deletes the files that rows replaced or were deleted with", async () => {
+  show(<RetentionSettings base={base} />);
+  expect(await screen.findByText(/Files that rows replaced or were deleted with/)).toBeTruthy();
+  fireEvent.change(screen.getByLabelText(/Audit log \(days\)/), { target: { value: "120" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  const said = await answer("Cancel");
+  expect(said).toContain("Audit log: from 400 days to 120.");
+  expect(said).toContain("files that rows replaced, or were deleted with");
+  // Another kind shortened does not say it.
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  fireEvent.change(screen.getByLabelText(/Audit log \(days\)/), { target: { value: "" } });
+  fireEvent.change(screen.getByLabelText(/Runs \(days\)/), { target: { value: "7" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  expect(await answer("Cancel")).not.toContain("files that rows replaced");
+});
+
+test("GOV-26: the audit log is said apart: entries hide at once, leave with their month, and come back if the period is lengthened", async () => {
+  show(<RetentionSettings base={base} />);
+  const page = await screen.findByText(/Who changed what/);
+  expect(page.textContent).toContain("leave with their month");
+  expect(page.textContent).toContain("hidden");
+  // Shortened alone, it is not said to be removed within minutes.
+  fireEvent.change(screen.getByLabelText(/Audit log \(days\)/), { target: { value: "120" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  const alone = await answer("Cancel");
+  expect(alone).not.toContain("within minutes");
+  expect(alone).toContain("stop showing at once");
+  expect(alone).toContain("with their month");
+  expect(alone).toContain("lengthen");
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  // With another kind, the other kind is still said to go within minutes.
+  fireEvent.change(screen.getByLabelText(/Runs \(days\)/), { target: { value: "7" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  const both = await answer("Cancel");
+  expect(both).toContain("Runs older than that are removed within minutes of saving");
+  expect(both).toContain("stop showing at once");
+});
+
+test("a member who may not change retention sees it, told so, and cannot edit it (GOV-37)", async () => {
+  vi.stubGlobal("fetch", async (address: string) => {
+    if (address.endsWith("/me"))
+      return Response.json({
+        principal: { type: "member", id: "m1", name: "Rae", email: null },
+        instancePermissions: [],
+        tenants: [],
+      });
+    if (address.includes("/access/member/m1"))
+      return Response.json({
+        principal: {},
+        sources: [],
+        permissions: [{ permission: "tenant:read" }],
+      });
+    return Response.json(policy(null));
+  });
+  show(<RetentionSettings base={base} />);
+  await screen.findByText(/You can see how long this tenant's history is kept, not change it/);
+  const runs = screen.getByLabelText(/Runs \(days\)/) as HTMLInputElement;
+  expect((runs.closest("fieldset") as HTMLFieldSetElement).disabled).toBe(true);
+});

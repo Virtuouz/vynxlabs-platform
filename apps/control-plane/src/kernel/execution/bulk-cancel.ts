@@ -1,8 +1,8 @@
 import { isId, sql } from "@volvel/db";
 import { HttpError } from "../errors.js";
-import { cancelFlowRun } from "../flows/engine.js";
+import { announceCanceledFlows, cancelFlowRun, takeCanceledFlows } from "../flows/engine.js";
 import type { Kernel } from "../kernel.js";
-import { cancelRun } from "./runs.js";
+import { announceCanceled, cancelRun, takeCanceled } from "./runs.js";
 
 /** Cancelled in one transaction at a time, so a long list never holds one open for long. */
 const BATCH = 200;
@@ -52,6 +52,9 @@ export async function cancelRuns(kernel: Kernel, request: BulkCancel): Promise<B
       .select("id")
       .where("workspace_id", "=", request.workspaceId)
       .where("status", "in", statuses as ("queued" | "running")[]);
+    // "Queued" is what is waiting for a worker: a run set to start later is not (OPS-25).
+    if (request.include !== "all")
+      query = query.where(sql<boolean>`coalesce(scheduled_for, created_at) <= now()`);
     if (passed.length > 0) query = query.where("id", "not in", passed);
     if (request.olderThanSeconds) {
       query = query.where("created_at", "<=", before(request.olderThanSeconds));
@@ -80,6 +83,7 @@ export async function cancelRuns(kernel: Kernel, request: BulkCancel): Promise<B
     }
     const ids = (await query.orderBy("created_at").limit(BATCH).execute()).map((row) => row.id);
     if (ids.length === 0) return { ids, passed: [] };
+    let ended: ReturnType<typeof takeCanceled> = [];
     const missed = await kernel.db.transaction().execute(async (trx) => {
       const left: string[] = [];
       for (const id of ids) {
@@ -93,8 +97,10 @@ export async function cancelRuns(kernel: Kernel, request: BulkCancel): Promise<B
         );
         if (!ok) left.push(id);
       }
+      ended = takeCanceled(trx);
       return left;
     });
+    await announceCanceled(kernel, ended);
     return { ids, passed: missed };
   });
 }
@@ -121,9 +127,15 @@ export async function cancelFlowRuns(
     const missed: string[] = [];
     // One flow run per transaction: each takes its flow run's lock, as a single cancel does.
     for (const id of ids) {
+      let ended: ReturnType<typeof takeCanceled> = [];
+      let endedFlows: ReturnType<typeof takeCanceledFlows> = [];
       const ok = await kernel.db
         .transaction()
-        .execute((trx) => cancelFlowRun(kernel, trx, request.workspaceId, id))
+        .execute(async (trx) => {
+          await cancelFlowRun(kernel, trx, request.workspaceId, id);
+          ended = takeCanceled(trx);
+          endedFlows = takeCanceledFlows(trx);
+        })
         .then(
           () => true,
           (error: unknown) => {
@@ -132,6 +144,8 @@ export async function cancelFlowRuns(
           },
         );
       if (!ok) missed.push(id);
+      await announceCanceled(kernel, ended);
+      await announceCanceledFlows(kernel, endedFlows);
     }
     return { ids, passed: missed };
   });

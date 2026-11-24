@@ -222,6 +222,33 @@ describe("searching a tenant", () => {
     expect((await search(fred, "dora", "&only=people")).body.items).toEqual([]);
   });
 
+  test("variables, saved queries, data sources and secrets are found too, by those who may read each (SHL-13)", async () => {
+    await resources(dev, [
+      { kind: "variable", path: "zeta/region", body: { description: "Where we sell" } },
+      { kind: "query", path: "zeta/late-orders", body: { sql: "select 1" } },
+      { kind: "data_source", path: "zeta/warehouse" },
+    ]);
+    await t.db
+      .insertInto("secret")
+      .values({
+        id: newId(),
+        tenant_id: tenant,
+        workspace_id: dev,
+        name: "ZETA_API_TOKEN",
+        ciphertext: Buffer.from("sealed"),
+        updated_at: new Date(),
+      } as never)
+      .execute();
+    expect(found((await search(alice, "zeta")).body).sort()).toEqual([
+      "data_source dev/zeta/warehouse",
+      "query dev/zeta/late-orders",
+      "secret dev/ZETA_API_TOKEN",
+      "variable dev/zeta/region",
+    ]);
+    // Someone who may read flows only finds none of them, nor the secret's name.
+    expect((await search(fred, "zeta")).body.items).toEqual([]);
+  });
+
   test("it answers quickly over two thousand resources", async () => {
     await search(alice, "thing-1999");
     const times: number[] = [];
@@ -272,5 +299,27 @@ describe("what a member opened last", () => {
       .select((eb) => eb.fn.countAll().as("n"))
       .executeTakeFirstOrThrow();
     expect(Number(kept.n)).toBe(20);
+  });
+
+  test("a page, a variable, a saved query and a data source are remembered too (SHL-13)", async () => {
+    for (const [kind, ref] of [
+      ["doc", "guides/start"],
+      ["variable", "zeta/region"],
+      ["query", "zeta/late-orders"],
+      ["data_source", "zeta/warehouse"],
+    ]) {
+      const kept = await alice.put("/me/recent-items", {
+        tenantId: tenant,
+        workspaceId: dev,
+        kind,
+        ref,
+      });
+      expect(kept.status, `${kind}: ${JSON.stringify(kept.body)}`).toBe(204);
+    }
+    await resources(dev, [{ kind: "doc", path: "guides/start" }]);
+    const recent = (await alice.get(`/me/recent-items?tenant=${tenant}`)).body.items;
+    expect(recent.map((one: { kind: string }) => one.kind).slice(0, 4)).toEqual(
+      expect.arrayContaining(["doc", "variable", "query", "data_source"]),
+    );
   });
 });

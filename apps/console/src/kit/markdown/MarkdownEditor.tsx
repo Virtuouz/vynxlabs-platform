@@ -82,6 +82,8 @@ export interface MarkdownEditorProps {
   /** What the preview draws, in place of the text read as `profile`. Given with `previewLabel`. */
   preview?: ReactNode;
   previewLabel?: string;
+  /** The source is shown and cannot be typed in: a page that is being removed. */
+  readOnly?: boolean;
   /** Other things beside the source, as tabs after the preview. */
   sideTabs?: readonly { id: string; label: string; content: ReactNode }[];
 }
@@ -119,6 +121,7 @@ export function MarkdownEditor({
   preview: custom,
   previewLabel = "Preview of the text",
   sideTabs,
+  readOnly = false,
 }: MarkdownEditorProps) {
   const id = useId();
   const own = useRef<CodeEditorHandle | null>(null);
@@ -342,6 +345,7 @@ export function MarkdownEditor({
               {...(onSave ? { onSave } : {})}
               {...(shownProblems ? { problems: shownProblems } : {})}
               wrap
+              readOnly={readOnly}
               height={fill ? "100%" : height}
               {...(reveal ? { reveal } : {})}
               handle={handle}
@@ -398,7 +402,7 @@ export function MarkdownEditor({
                   <Doc
                     tree={read}
                     profile={profile}
-                    headingShift={1}
+                    headingTop={2}
                     lines
                     idPrefix={`p${id}`}
                     {...(knows.term ? { term: knows.term } : {})}

@@ -18,6 +18,7 @@
     "@volvel/compose": "workspace:*",
     "@volvel/db": "workspace:*",
     "@volvel/docs-engine": "workspace:*",
+    "@volvel/docs-site": "workspace:*",
     "@volvel/manifest": "workspace:*",
     "@volvel/markup": "workspace:*",
     "@volvel/nodes": "workspace:*",

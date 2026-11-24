@@ -27,7 +27,6 @@ import {
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { clock } from "./format.ts";
-import { fullOnHover } from "./Truncate.tsx";
 
 /**
  * What a run, a flow run or a step is doing, as the server says it (`state`):
@@ -42,6 +41,17 @@ export type RunState =
   | "failed"
   | "canceled"
   | "skipped";
+
+/**
+ * The states of a run that is not over: the ones that can be canceled. One rule for the Runs row
+ * menu and the run page.
+ */
+export const LIVE_STATES: readonly RunState[] = [
+  "queued",
+  "running",
+  "waiting_approval",
+  "waiting_time",
+];
 
 type Tone = "neutral" | "subtle" | "action" | "attention" | "success" | "danger";
 const TONE: Record<Tone, string> = {
@@ -102,13 +112,11 @@ const STATES = {
   paused: ["Paused", CirclePause, "attention"],
   // Health: whether something answers, or was proved.
   ok: ["OK", CircleCheck, "success"],
-  reachable: ["Reachable", CircleCheck, "success"],
-  unreachable: ["Not reachable", CircleX, "danger"],
-  unchecked: ["Not checked", CircleDashed, "subtle"],
+  unchecked: ["Not tested", CircleDashed, "subtle"],
   verified: ["Verified", ShieldCheck, "success"],
   unverified: ["Not verified", ShieldAlert, "attention"],
-  bound: ["Bound", CircleCheck, "success"],
-  unbound: ["Not bound", Unlink, "attention"],
+  bound: ["Set up here", CircleCheck, "success"],
+  unbound: ["Not set up here", Unlink, "attention"],
   disconnected: ["Not connected", Unlink, "attention"],
   posted: ["Posted", CircleCheck, "success"],
   not_posted: ["Not posted", CircleX, "danger"],
@@ -150,18 +158,29 @@ export function StatePill({
 }) {
   const [label, Icon, tone] = lookUp(state);
   const word = state === "waiting_time" && until ? `Waiting until ${clock(until)}` : label;
+  // A state's words are never cut: a label that does not fit wraps at its spaces, and what follows
+  // it (the detail) wraps under it before it takes the label's room. A cell too narrow for both
+  // shows the whole of each in two lines, never "Reach…" or a stray "4…".
+  const shown = typeof children === "string" ? children : children === undefined ? word : null;
+  const oneWord = shown !== null && !/\s/.test(shown);
   return (
-    <span onPointerEnter={fullOnHover} className="inline-flex min-w-0 items-center gap-1.5">
-      <Icon
-        aria-hidden="true"
-        size={14}
-        className={`shrink-0 ${tone} ${state === "running" ? "animate-spin-slow" : ""}`}
-      />
-      <span data-cut="" className={`truncate ${tone}`}>
-        {children ?? word}
+    <span data-state-pill="" className="inline-flex max-w-full flex-wrap items-baseline gap-x-1.5">
+      <span className="inline-flex min-w-0 max-w-full items-start gap-1.5">
+        <Icon
+          aria-hidden="true"
+          size={14}
+          className={`mt-[3px] shrink-0 ${tone} ${state === "running" ? "animate-spin-slow" : ""}`}
+        />
+        <span
+          data-label=""
+          // A word is never broken, and it does not shrink: a table cell that may break anywhere would otherwise give it less than its width (round 6).
+          className={`break-words ${oneWord ? "shrink-0 whitespace-nowrap" : "min-w-0"} ${tone}`}
+        >
+          {children ?? word}
+        </span>
       </span>
       {detail ? (
-        <span data-cut="" className="truncate text-meta text-ink-subtle">
+        <span data-detail="" className="min-w-0 break-words text-meta text-ink-subtle">
           {detail}
         </span>
       ) : null}

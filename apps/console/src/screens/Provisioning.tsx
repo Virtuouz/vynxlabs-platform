@@ -3,12 +3,15 @@ import { useEffect, useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
 import { DataTable } from "../kit/DataTable.tsx";
+import { daysChosen, expiryField } from "../kit/expiry.ts";
 import { ErrorState, Loading } from "../kit/LoadState.tsx";
 import { FilterChips, SectionLabel } from "../kit/layout.tsx";
 import { OneTimeSecret } from "../kit/OneTimeSecret.tsx";
+import { LoadMore } from "../kit/paged.tsx";
+import { SaveBar } from "../kit/SaveBar.tsx";
 import { Mono, StatePill } from "../kit/status.tsx";
 import { Time } from "../kit/Time.tsx";
-import { CopyButton, when } from "../ListScreen.tsx";
+import { CopyButton, type CreateConfig, CreateDialog, when } from "../ListScreen.tsx";
 import { useUrlParam } from "../router.tsx";
 
 interface Settings {
@@ -53,6 +56,7 @@ export function Provisioning({
   const [settings, setSettings] = useState<Settings>();
   const [made, setMade] = useState<{ name: string; token: string }>();
   const [busy, setBusy] = useState(false);
+  const [making, setMaking] = useState(false);
   useEffect(() => {
     if (state.data) setSettings(state.data.settings);
   }, [state.data]);
@@ -63,23 +67,22 @@ export function Provisioning({
   const dirty = JSON.stringify(settings) !== JSON.stringify(data.settings);
   const who = audience === "members" ? "member" : "end user";
 
-  const make = async () => {
-    const name = await ask.prompt({
-      title: "Make a token",
-      text: "Name it after what will use it, such as the directory's name. The token is shown once.",
-      label: "Name",
-      action: "Make the token",
-    });
-    if (!name?.trim()) return;
-    try {
+  const makeToken: CreateConfig = {
+    action: "Make the token",
+    description:
+      "Name it after what will use it, such as the directory's name. The token is shown once.",
+    fields: [{ name: "name", label: "Name", placeholder: "Okta" }, expiryField("token")],
+    submit: async (values) => {
+      const days = daysChosen(values);
       const created = await api.post<Token & { token: string }>(`${root}/tokens`, {
-        name: name.trim(),
+        name: (values.name ?? "").trim(),
+        ...(days ? { expiresInDays: days } : {}),
       });
       setMade({ name: created.name, token: created.token });
       state.reload();
-    } catch (error) {
-      notify.error(error);
-    }
+      return created;
+    },
+    done: () => "Made. Copy the token now: it is not shown again.",
   };
   const save = async () => {
     setBusy(true);
@@ -112,7 +115,7 @@ export function Provisioning({
       <section className="flex flex-col gap-2">
         <div className="flex items-center justify-between gap-2">
           <h3 className="m-0 text-emphasis font-semibold">Tokens</h3>
-          <Button variant="primary" onClick={make}>
+          <Button variant="primary" onClick={() => setMaking(true)}>
             Make a token
           </Button>
         </div>
@@ -122,6 +125,12 @@ export function Provisioning({
             <OneTimeSecret value={made.token} noun="token" onDone={() => setMade(undefined)} />
           </Notice>
         ) : null}
+        <CreateDialog
+          config={makeToken}
+          open={making}
+          onClose={() => setMaking(false)}
+          onCreated={() => setMaking(false)}
+        />
         <DataTable<Token>
           variant="static"
           framed
@@ -137,12 +146,32 @@ export function Provisioning({
             { header: "Name", cell: (row) => row.name },
             {
               header: "Begins",
+              priority: 3,
               cell: (row) => <code className="font-mono text-code">{row.prefix}…</code>,
             },
-            { header: "Made", cell: (row) => <Time value={row.createdAt} mode="ago" /> },
+            {
+              header: "Made",
+              priority: 3,
+              cell: (row) => <Time value={row.createdAt} mode="ago" />,
+            },
+            {
+              header: "Expires",
+              priority: 2,
+              cell: (row) => (row.expiresAt ? <Time value={row.expiresAt} mode="ago" /> : "Never"),
+            },
             {
               header: "Last used",
+              priority: 2,
               cell: (row) => (row.lastUsedAt ? when(row.lastUsedAt) : "Never"),
+            },
+            {
+              header: "Status",
+              cell: (row) =>
+                row.expiresAt && new Date(row.expiresAt) <= new Date() ? (
+                  <StatePill state="expired" />
+                ) : (
+                  <StatePill state="active" />
+                ),
             },
             {
               header: "",
@@ -217,11 +246,6 @@ export function Provisioning({
             ) : null}
           </>
         )}
-        <div>
-          <Button variant="primary" disabled={!dirty || busy} onClick={save}>
-            Save
-          </Button>
-        </div>
       </section>
 
       <section className="flex flex-col gap-2">
@@ -247,6 +271,13 @@ export function Provisioning({
         </p>
       </section>
       <Pushed root={root} />
+      <SaveBar
+        dirty={dirty}
+        saving={busy}
+        onSave={() => void save()}
+        onDiscard={() => setSettings(data.settings)}
+        what="how pushes are taken"
+      />
     </div>
   );
 }
@@ -268,10 +299,39 @@ interface Refusal {
 
 /** Who the provider has pushed, and the pushes that were refused with why. */
 function Pushed({ root }: { root: string }) {
-  const pushed = useLoad<{ people: PushedPerson[]; refusals: Refusal[] }>(`${root}/pushed`);
+  const pushed = useLoad<{
+    people: PushedPerson[];
+    refusals: Refusal[];
+    nextCursor: string | null;
+  }>(`${root}/pushed?limit=200`);
+  // The pages after the first, which a reload of the first drops.
+  const [more, setMore] = useState<{ people: PushedPerson[]; nextCursor: string | null }>();
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [moreError, setMoreError] = useState<Error>();
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only a new first page resets
+  useEffect(() => setMore(undefined), [pushed.data]);
+  const nextCursor = more ? more.nextCursor : (pushed.data?.nextCursor ?? null);
+  const loadMore = async () => {
+    if (!nextCursor) return;
+    setLoadingMore(true);
+    setMoreError(undefined);
+    try {
+      const next = await api.get<{ people: PushedPerson[]; nextCursor: string | null }>(
+        `${root}/pushed?limit=200&cursor=${encodeURIComponent(nextCursor)}`,
+      );
+      setMore((current) => ({
+        people: [...(current?.people ?? []), ...next.people],
+        nextCursor: next.nextCursor,
+      }));
+    } catch (error) {
+      setMoreError(error instanceof Error ? error : new Error(String(error)));
+    } finally {
+      setLoadingMore(false);
+    }
+  };
   const [filter, setFilter] = useUrlParam<"all" | "active" | "off">("people", "all");
   if (pushed.error) return <ErrorState error={pushed.error} onRetry={pushed.reload} />;
-  const people = pushed.data?.people ?? [];
+  const people = [...(pushed.data?.people ?? []), ...(more?.people ?? [])];
   const refusals = pushed.data?.refusals ?? [];
   const shown = people.filter((person) =>
     filter === "all" ? true : filter === "active" ? person.active : !person.active,
@@ -307,14 +367,31 @@ function Pushed({ root }: { root: string }) {
                 </span>
               ),
             },
-            { header: "Email", truncate: true, cell: (row) => row.email },
+            {
+              header: "Email",
+              priority: 2,
+              truncate: true,
+              cell: (row) => (row.displayName ? row.email : "—"),
+            },
             {
               header: "State",
               cell: (row) =>
                 row.active ? <StatePill state="active" /> : <StatePill state="off" />,
             },
-            { header: "Last change", cell: (row) => <Time value={row.updatedAt} mode="ago" /> },
+            {
+              header: "Last change",
+              priority: 2,
+              cell: (row) => <Time value={row.updatedAt} mode="ago" />,
+            },
           ]}
+        />
+        <LoadMore
+          shown={people.length}
+          hasMore={nextCursor !== null}
+          loading={loadingMore}
+          error={moreError}
+          noun="people"
+          onMore={() => void loadMore()}
         />
       </section>
       <section className="flex flex-col gap-3">
@@ -338,6 +415,7 @@ function Pushed({ root }: { root: string }) {
                 { header: "When", cell: (row) => <Time value={row.at} mode="ago" /> },
                 {
                   header: "Push",
+                  priority: 2,
                   cell: (row) => (
                     <Mono>
                       {row.method} {row.resource}
@@ -346,9 +424,10 @@ function Pushed({ root }: { root: string }) {
                 },
                 {
                   header: "Answer",
+                  priority: 2,
                   cell: (row) => <StatePill state="failed">{String(row.status)}</StatePill>,
                 },
-                { header: "Why", cell: (row) => row.reason },
+                { header: "Why", priority: 3, cell: (row) => row.reason },
               ]}
             />
           </>

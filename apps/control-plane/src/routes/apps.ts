@@ -12,12 +12,14 @@ import { challengeMet, challengeOf as domainChallenge } from "../kernel/apps/cha
 import { hostnameOf } from "../kernel/apps/hosts.js";
 import { actorOf, createHandoff, startAppSession, takeHandoff } from "../kernel/apps/sessions.js";
 import { cleanTheme, resolveTheme, themeCss } from "../kernel/apps/theme.js";
-import { writeAudit } from "../kernel/audit.js";
+import { type Trx, writeAudit } from "../kernel/audit.js";
+import { principalLabel } from "../kernel/binding-labels.js";
 import { guardedFetch } from "../kernel/egress.js";
 import { badRequest, conflict, forbidden, HttpError, notFound } from "../kernel/errors.js";
 import { loadBundle } from "../kernel/execution/bundles.js";
 import { access, type WorkspaceRef } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
+import { listOf } from "../pagination.js";
 import {
   Id,
   iso,
@@ -50,6 +52,10 @@ const Domain = Type.Object({
   verifiedAt: NullableTime,
   checkedAt: NullableTime,
   checkError: NullableString,
+  recordGoneAt: Type.Union([Time, Type.Null()], {
+    description:
+      "When a check first did not find the record of a verified name. The name stays verified, from `verifiedAt`; this says it may no longer be proved. Empty while the record is found.",
+  }),
   challenge: Type.Object(
     {
       name: Type.String(),
@@ -77,6 +83,26 @@ const Portal = Type.Object({
   portalUrl: Type.String({ description: "Where the tenant's end users sign in." }),
 });
 
+/** Bindings with the names of their members and end users, to which more joins are added. */
+const boundBindings = (db: Kernel["db"]) =>
+  db
+    .selectFrom("binding")
+    .leftJoin("member", (join) =>
+      join
+        .onRef("member.id", "=", "binding.principal_id")
+        .on("binding.principal_type", "=", "member"),
+    )
+    .leftJoin("end_user", (join) =>
+      join
+        .onRef("end_user.id", "=", "binding.principal_id")
+        .on("binding.principal_type", "=", "end_user"),
+    )
+    .leftJoin("principal_group", (join) =>
+      join
+        .onRef("principal_group.id", "=", "binding.principal_id")
+        .on("binding.principal_type", "=", "group"),
+    );
+
 const AppItem = Type.Object({
   id: Id,
   path: Type.String(),
@@ -91,9 +117,26 @@ const AppItem = Type.Object({
   access: Type.Array(Type.String(), {
     description: "Who is bound to a role at the app itself: anyone, every end user, or a name.",
   }),
+  broaderAccess: Type.Array(
+    Type.Object({
+      scope: Type.Union([Type.Literal("workspace"), Type.Literal("tenant")]),
+      label: Type.String(),
+    }),
+    {
+      description:
+        "Who a binding at the workspace or at the tenant lets open this app, and every other app of the workspace: anyone, every end user, or a name.",
+    },
+  ),
+  published: Type.Boolean({
+    description: "False for a documentation app that is switched off: kept, and not served.",
+  }),
   builtWith: Type.Union([Type.Literal("code"), Type.Literal("builder"), Type.Literal("docs")], {
     description:
       "`builder` for an app that serves an interface made in the console, `docs` for one that serves pages of documentation.",
+  }),
+  ownership: Type.String({
+    description:
+      "`code` for an app the repository defines, which is removed there; `ui` for one made in the console.",
   }),
   interface: NullableString,
   docs: Type.Optional(
@@ -177,6 +220,9 @@ export function appRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               "lists its apps' files by checksum, and can only be uploaded once every file " +
               "it lists is here. Files are kept once per tenant.",
             tags: ["deploys"],
+            consumes: ["application/octet-stream"],
+            // Read as bytes, as sent: the schema says only that a body is taken.
+            body: Type.Unknown(),
             params: AssetParams,
             response: { 200: Asset, 201: Asset },
           },
@@ -269,9 +315,10 @@ export function appRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.workspace("app:read") },
         schema: {
           summary: "The apps deployed to a workspace, with where each is served",
+          description: "Each app of the workspace's active bundle, with its address.",
           tags: ["apps"],
           params: WorkspaceParams,
-          response: { 200: Type.Object({ items: Type.Array(AppItem) }) },
+          response: { 200: listOf(AppItem) },
         },
       },
       async ({ ctx, params }) => {
@@ -279,7 +326,7 @@ export function appRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         const tenant = await tenantOf(params.t);
         const resources = await db
           .selectFrom("resource")
-          .select(["id", "path", "body"])
+          .select(["id", "path", "body", "ownership"])
           .where("workspace_id", "=", params.w)
           .where("kind", "=", "app")
           .orderBy("path")
@@ -291,30 +338,31 @@ export function appRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           .where("workspace_id", "=", params.w)
           .orderBy("hostname")
           .execute();
-        const bound = await db
-          .selectFrom("binding")
-          .leftJoin("member", (join) =>
-            join
-              .onRef("member.id", "=", "binding.principal_id")
-              .on("binding.principal_type", "=", "member"),
-          )
-          .leftJoin("end_user", (join) =>
-            join
-              .onRef("end_user.id", "=", "binding.principal_id")
-              .on("binding.principal_type", "=", "end_user"),
-          )
-          .leftJoin("principal_group", (join) =>
-            join
-              .onRef("principal_group.id", "=", "binding.principal_id")
-              .on("binding.principal_type", "=", "group"),
-          )
-          .select([
-            "binding.resource_id",
-            "binding.principal_type",
-            "member.email",
-            "end_user.email as end_user_email",
-            "principal_group.name as group_name",
-          ])
+        const named = (select: ReturnType<typeof boundBindings>) =>
+          select
+            .leftJoin("service_account", (join) =>
+              join
+                .onRef("service_account.id", "=", "binding.principal_id")
+                .on("binding.principal_type", "=", "service_account"),
+            )
+            .leftJoin("end_user_group", (join) =>
+              join
+                .onRef("end_user_group.id", "=", "binding.principal_id")
+                .on("binding.principal_type", "=", "end_user_group"),
+            )
+            .leftJoin("role", "role.id", "binding.role_id")
+            .select([
+              "binding.resource_id",
+              "binding.scope_type",
+              "binding.principal_type",
+              "member.email",
+              "end_user.email as end_user_email",
+              "principal_group.name as group_name",
+              "end_user_group.name as end_user_group_name",
+              "service_account.name as account_name",
+              "role.permissions as role_permissions",
+            ]);
+        const bound = await named(boundBindings(db))
           .where("binding.workspace_id", "=", params.w)
           .where("binding.scope_type", "=", "resource")
           .where(
@@ -323,6 +371,33 @@ export function appRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             resources.map((resource) => resource.id),
           )
           .execute();
+        // A binding at the workspace or at the tenant reaches every app of the workspace. Only
+        // those that give the audiences of an app, and a role that lets them open apps, count.
+        const broader = (
+          await named(boundBindings(db))
+            .where("binding.tenant_id", "=", params.t)
+            .where((where) =>
+              where.or([
+                where.and([
+                  where("binding.scope_type", "=", "workspace"),
+                  where("binding.workspace_id", "=", params.w),
+                ]),
+                where("binding.scope_type", "=", "tenant"),
+              ]),
+            )
+            .where("binding.principal_type", "in", [
+              "anonymous",
+              "end_users",
+              "end_user",
+              "end_user_group",
+            ])
+            .execute()
+        )
+          .filter((binding) => binding.role_permissions?.includes("app:read"))
+          .map((binding) => ({
+            scope: binding.scope_type as "workspace" | "tenant",
+            label: principalLabel(binding),
+          }));
         const active = await db
           .selectFrom("workspace")
           .innerJoin("bundle", "bundle.id", "workspace.active_bundle_id")
@@ -350,6 +425,7 @@ export function appRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               interface?: string;
               docs?: string;
               reads?: string[];
+              published?: boolean;
             };
             const files = assets.filter((asset) => asset.app === resource.path);
             return {
@@ -375,6 +451,7 @@ export function appRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                 })),
               files: files.length,
               bytes: files.reduce((sum, file) => sum + file.size, 0),
+              ownership: resource.ownership,
               builtWith: body.docs
                 ? ("docs" as const)
                 : body.interface
@@ -383,19 +460,11 @@ export function appRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               interface: body.interface ?? null,
               docs: body.docs ?? null,
               reads: body.interface ? tablesOf(body.interface) : [...(body.reads ?? [])].sort(),
+              published: body.docs ? body.published !== false : true,
               access: bound
                 .filter((binding) => binding.resource_id === resource.id)
-                .map(
-                  (binding) =>
-                    binding.email ??
-                    binding.end_user_email ??
-                    binding.group_name ??
-                    (binding.principal_type === "anonymous"
-                      ? "anyone"
-                      : binding.principal_type === "end_users"
-                        ? "every end user"
-                        : binding.principal_type),
-                ),
+                .map(principalLabel),
+              broaderAccess: broader,
             };
           }),
         };
@@ -426,6 +495,7 @@ export function appRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.tenant("portal:read") },
         schema: {
           summary: "A tenant's branding and end-user settings",
+          description: "How the tenant's apps look, and how end users may sign up and in.",
           tags: ["branding"],
           params: TenantParams,
           response: { 200: Portal },
@@ -495,6 +565,7 @@ export function appRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.tenant("portal:write") },
         schema: {
           summary: "Remove the tenant's logo",
+          description: "The tenant's apps stop showing the uploaded logo. Audited.",
           tags: ["branding"],
           params: TenantParams,
           response: { 204: NoContent },
@@ -573,6 +644,7 @@ export function appRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.public },
         schema: {
           summary: "The tenant's logo",
+          description: "The image uploaded for the tenant's apps.",
           tags: ["branding"],
           params: TenantParams,
           produces: ["image/png", "image/jpeg", "image/webp"],
@@ -615,6 +687,7 @@ export function appRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       verified_at: Date | null;
       checked_at: Date | null;
       check_error: string | null;
+      record_gone_at: Date | null;
       created_at: Date;
     }) => ({
       id: row.id,
@@ -626,6 +699,7 @@ export function appRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       verifiedAt: isoOrNull(row.verified_at),
       checkedAt: isoOrNull(row.checked_at),
       checkError: row.check_error,
+      recordGoneAt: isoOrNull(row.record_gone_at),
       challenge: challengeOf(row.tenant_id, row.hostname),
       createdAt: iso(row.created_at),
     });
@@ -650,9 +724,10 @@ export function appRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.tenant("domain:read") },
         schema: {
           summary: "The hostnames a tenant has registered for its apps",
+          description: "Each hostname the tenant registered, with whether it was checked.",
           tags: ["domains"],
           params: TenantParams,
-          response: { 200: Type.Object({ items: Type.Array(Domain) }) },
+          response: { 200: listOf(Domain) },
         },
       },
       async ({ params }) => {
@@ -676,7 +751,7 @@ export function appRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             "The app is then served at the hostname's root, once the registration is " +
             "enabled. Point the name at this instance with a CNAME or an address record, " +
             "and have whatever terminates TLS in front of the instance hold a certificate " +
-            "for it. The platform issues no certificates. The answer carries a DNS TXT " +
+            "for it. Volvel issues no certificates. The answer carries a DNS TXT " +
             "record to create: it shows that whoever controls the name agrees.",
           tags: ["domains"],
           params: TenantParams,
@@ -724,12 +799,27 @@ export function appRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               .executeTakeFirst();
             if (!workspace) throw badRequest("That workspace is not in this tenant.");
           }
+          // Only a name that is proved or enabled belongs to a tenant. Until then anyone may
+          // register it, and the first to prove it holds it. Twice in one tenant is a mistake.
           const taken = await trx
             .selectFrom("app_domain")
-            .select("id")
+            .select(["id", "tenant_id"])
             .where("hostname", "=", hostname)
+            .where((eb) =>
+              eb.or([
+                eb("tenant_id", "=", params.t),
+                eb("verified_at", "is not", null),
+                eb("enabled", "=", true),
+              ]),
+            )
             .executeTakeFirst();
-          if (taken) throw conflict("That hostname is already registered on this instance.");
+          if (taken) {
+            throw conflict(
+              taken.tenant_id === params.t
+                ? "This tenant has already registered that hostname."
+                : "Another tenant has already proved or enabled that hostname on this instance.",
+            );
+          }
           const created = await trx
             .insertInto("app_domain")
             .values({
@@ -756,6 +846,25 @@ export function appRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         return reply.code(201).send(toDomain(row));
       },
     );
+
+    /** A name proved or enabled by one tenant cannot be proved or enabled by another. */
+    const refuseIfHeld = async (
+      trx: Trx,
+      domain: { id: string; tenant_id: string; hostname: string },
+    ) => {
+      const held = await trx
+        .selectFrom("app_domain")
+        .select("id")
+        .where("hostname", "=", domain.hostname)
+        .where("id", "!=", domain.id)
+        .where((eb) => eb.or([eb("verified_at", "is not", null), eb("enabled", "=", true)]))
+        .executeTakeFirst();
+      if (held) {
+        throw conflict(
+          "Another tenant has already proved or enabled that hostname on this instance. Ask its owner, or an operator of the instance, to remove it there first.",
+        );
+      }
+    };
 
     const DomainParams = Type.Object({ t: Id, id: Id });
     const findDomain = async (tenantId: string, id: string) => {
@@ -808,12 +917,19 @@ export function appRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           }
         }
         const row = await ctx.mutate(async (trx, audit) => {
+          if (verified) await refuseIfHeld(trx, domain);
           const updated = await trx
             .updateTable("app_domain")
             .set({
               checked_at: new Date(),
               check_error: problem,
-              ...(verified ? { verified_at: new Date() } : {}),
+              // The first date it was proved stays; a record not found afterwards is said apart.
+              ...(verified && !domain.verified_at ? { verified_at: new Date() } : {}),
+              record_gone_at: verified
+                ? null
+                : domain.verified_at
+                  ? (domain.record_gone_at ?? new Date())
+                  : null,
             })
             .where("id", "=", domain.id)
             .returningAll()
@@ -826,8 +942,20 @@ export function appRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             workspaceId: domain.workspace_id,
             details: { hostname: domain.hostname, verified, reached: problem === null },
           });
+          if (!verified && domain.verified_at && !domain.record_gone_at) {
+            await audit({
+              action: "app_domain.record_gone",
+              targetType: "app_domain",
+              targetId: domain.id,
+              tenantId: params.t,
+              workspaceId: domain.workspace_id,
+              details: { hostname: domain.hostname, verifiedAt: domain.verified_at.toISOString() },
+            });
+          }
           return updated;
         });
+        // Whether the name serves nothing, or the instance, depends on whether it is proved.
+        kernel.hosts.forget(domain.hostname);
         return toDomain(row);
       },
     );
@@ -840,7 +968,8 @@ export function appRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           summary: "Enable or disable a hostname, or point it at another app",
           description:
             "Enabling needs a verified hostname. An operator of the instance may enable one " +
-            "that is not verified, for a name that exists only inside a network.",
+            "that is not verified, for a name that exists only inside a network; the tenant may " +
+            "then disable it and enable it again, until an operator disables it.",
           tags: ["domains"],
           params: DomainParams,
           body: Type.Object({
@@ -852,7 +981,9 @@ export function appRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       },
       async ({ ctx, params, body }) => {
         const domain = await findDomain(params.t, params.id);
-        if (body.enabled && !domain.verified_at && !(await ctx.allowed("instance:write", {}))) {
+        const operator = await ctx.allowed("instance:write", {});
+        // A name an operator enabled may be enabled again by the tenant that turned it off.
+        if (body.enabled && !domain.verified_at && !operator && !domain.enabled_by_operator) {
           throw new HttpError(
             409,
             "domain_not_verified",
@@ -870,10 +1001,17 @@ export function appRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               .executeTakeFirst();
             if (!target) throw badRequest("No app has that path in the domain's workspace.");
           }
+          if (body.enabled) await refuseIfHeld(trx, domain);
           const updated = await trx
             .updateTable("app_domain")
             .set({
               ...(body.enabled !== undefined ? { enabled: body.enabled } : {}),
+              // An operator who enables an unverified name marks it, and who disables one
+              // takes the mark back.
+              ...(operator && body.enabled && !domain.verified_at
+                ? { enabled_by_operator: true }
+                : {}),
+              ...(operator && body.enabled === false ? { enabled_by_operator: false } : {}),
               ...(body.app !== undefined ? { app_path: body.app } : {}),
             })
             .where("id", "=", domain.id)
@@ -945,7 +1083,12 @@ export function appRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       "/app-handoffs/start",
       {
-        config: { access: access.custom, rateLimit: HANDOFF_LIMIT },
+        config: {
+          access: access.custom(
+            "Needs a member's own sign-in at the instance's address. An API key is refused.",
+          ),
+          rateLimit: HANDOFF_LIMIT,
+        },
         schema: {
           summary: "Carry a signed-in member to an app's address",
           description:
@@ -1013,7 +1156,12 @@ export function appRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       "/app-sessions/start",
       {
-        config: { access: access.public, rateLimit: HANDOFF_LIMIT },
+        config: {
+          access: access.publicWith(
+            "Needs the one-time hand-off code in the query, which `/app-handoffs/start` gave.",
+          ),
+          rateLimit: HANDOFF_LIMIT,
+        },
         schema: {
           summary: "Exchange a hand-off code for a sign-in at this address",
           description: "For browsers, at an app's address. See `/app-handoffs/start`.",

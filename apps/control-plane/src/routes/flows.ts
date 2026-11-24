@@ -2,18 +2,29 @@ import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import { sql } from "@volvel/db";
 import { type FlowBody, PATH_PATTERN } from "@volvel/manifest";
 import { Type } from "typebox";
-import { badRequest, conflict, HttpError, notFound } from "../kernel/errors.js";
+import type { Target } from "../kernel/authorize.js";
+import { badRequest, conflict, guestStart, HttpError, notFound } from "../kernel/errors.js";
 import { cancelFlowRuns } from "../kernel/execution/bulk-cancel.js";
 import { bundleManifest, payloadSchemas } from "../kernel/execution/bundles.js";
-import { redact } from "../kernel/execution/redact.js";
-import { readPayload } from "../kernel/execution/runs.js";
+import { instanceTriggersPaused } from "../kernel/execution/control.js";
+import {
+  escapeRegex,
+  type Known,
+  maskedNames,
+  REDACTED,
+  redact,
+  redactText,
+} from "../kernel/execution/redact.js";
+import { announceCanceled, readPayload, takeCanceled } from "../kernel/execution/runs.js";
 import {
   flowStateSql,
   type RunState,
   RunStateSchema,
+  runStateSql,
   stepState,
 } from "../kernel/execution/state.js";
-import { kickStarted, webhookToken } from "../kernel/execution/triggers.js";
+import { kickStarted, notPausedAlone, webhookToken } from "../kernel/execution/triggers.js";
+import { approvalDetail, approvalTitle } from "../kernel/flows/approval-detail.js";
 import {
   approvalStepsOf,
   approversOf,
@@ -22,20 +33,24 @@ import {
   isApprover,
   mayDecide,
 } from "../kernel/flows/approvers.js";
-import { expressionContext } from "../kernel/flows/context.js";
+import { type ContextStep, expressionContext } from "../kernel/flows/context.js";
 import {
+  announceCanceledFlows,
   cancelFlowRun,
   decideApproval,
+  deciderOf,
   keptNodes,
   kickFlow,
   startFlowRun,
+  takeCanceledFlows,
 } from "../kernel/flows/engine.js";
-import { publishEvent } from "../kernel/flows/events.js";
+import { eventSchema, publishEvent } from "../kernel/flows/events.js";
 import { ExpressionError } from "../kernel/flows/expressions.js";
+import { flowKnown } from "../kernel/flows/known.js";
 import { access, findWorkspace, guestLimit } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
 import { resolveResource } from "../kernel/resolve.js";
-import { PageQuery, pageOf } from "../pagination.js";
+import { listOf, PageQuery, pageOf } from "../pagination.js";
 import {
   AnyObject,
   Id,
@@ -54,6 +69,38 @@ import {
 
 const pathPattern = new RegExp(PATH_PATTERN);
 const WildParams = Type.Object({ t: Id, w: Id, "*": Type.String() });
+/** Whether the workspace's triggers are all paused. */
+async function workspacePaused(db: Kernel["db"], workspaceId: string): Promise<boolean> {
+  const row = await db
+    .selectFrom("workspace")
+    .select("triggers_paused")
+    .where("id", "=", workspaceId)
+    .executeTakeFirst();
+  return row?.triggers_paused ?? false;
+}
+
+/** What listens for an event: those that would start something, and those that are on but held. */
+function listenersOf(
+  found: { n: string; active: string } | undefined,
+  everyonePaused: boolean,
+): { listeners: number; pausedListeners: number } {
+  const on = Number(found?.n ?? 0);
+  const active = everyonePaused ? 0 : Number(found?.active ?? 0);
+  return { listeners: active, pausedListeners: on - active };
+}
+
+/**
+ * Where a flow's steps are drawn: the layout its body carries, and over it what was
+ * arranged on the flow page since. A deploy that brings a new layout clears the saved
+ * one, so the newer of the two is what every screen draws.
+ */
+function flowPositions(
+  inBody: unknown,
+  saved: Record<string, { x: number; y: number }> | undefined,
+): Record<string, { x: number; y: number }> {
+  return { ...((inBody as Record<string, { x: number; y: number }> | undefined) ?? {}), ...saved };
+}
+
 function wildPath(params: { "*": string }): string {
   const path = params["*"];
   if (!pathPattern.test(path) || path.length > 255) throw badRequest("The path is not valid.");
@@ -86,6 +133,10 @@ const FlowRun = Type.Object({
   traceId: Type.Union([Type.String(), Type.Null()], {
     description: "The trace the flow run and every run it starts are part of.",
   }),
+  alert: Type.Union([AnyObject, Type.Null()], {
+    description:
+      "What became of the failure alert: `handlerRunId`, `handlerError`, `notified`, `notifyError`, `repeats` (failures counted on this alert), or `suppressed` with `sameAs`.",
+  }),
   createdAt: Time,
   finishedAt: NullableTime,
 });
@@ -107,6 +158,7 @@ interface FlowRunRow {
   retry_of: string | null;
   parent_flow_run_id: string | null;
   trace_id?: string | null;
+  alert?: Record<string, unknown> | null;
   created_at: Date;
   finished_at: Date | null;
 }
@@ -126,6 +178,7 @@ const toFlowRun = (row: FlowRunRow) => ({
   retryOf: row.retry_of,
   parentFlowRunId: row.parent_flow_run_id,
   traceId: row.trace_id ?? null,
+  alert: row.alert ?? null,
   createdAt: iso(row.created_at),
   finishedAt: isoOrNull(row.finished_at),
 });
@@ -190,19 +243,24 @@ interface StepInputRow {
 function stepInput(
   step: StepInputRow,
   schemaOf: (script: string) => Record<string, unknown> | undefined,
+  known: Known,
 ): unknown {
   if (step.run_id) {
     if (step.run_input_ref) return { stored: step.run_input_ref };
-    return redact(step.run_input ?? null, step.run_script ? schemaOf(step.run_script) : undefined);
+    return redact(
+      step.run_input ?? null,
+      step.run_script ? schemaOf(step.run_script) : undefined,
+      known,
+    );
   }
   if (step.child_flow_run_id) {
     return step.child_input_ref
       ? { stored: step.child_input_ref }
-      : redact(step.child_input ?? null);
+      : redact(step.child_input ?? null, undefined, known);
   }
   const detail = (step.detail ?? null) as { items?: unknown; detail?: unknown } | null;
-  if (detail && "items" in detail) return redact(detail.items);
-  if (detail && "detail" in detail) return redact(detail.detail);
+  if (detail && "items" in detail) return redact(detail.items, undefined, known);
+  if (detail && "detail" in detail) return redact(detail.detail, undefined, known);
   return null;
 }
 
@@ -233,11 +291,28 @@ const DecidedApproval = Type.Object({
   title: Type.String(),
   approved: Type.Boolean(),
   comment: NullableString,
-  decidedBy: Type.Union([Type.Object({ id: Id, label: Type.String() }), Type.Null()]),
+  decidedBy: Type.Union([
+    Type.Object({
+      id: Id,
+      label: Type.String(),
+      type: Type.String({ description: "member or service_account" }),
+    }),
+    Type.Null(),
+  ]),
   decidedAt: NullableTime,
-  via: Type.Union([Type.Literal("console"), Type.Literal("email")], {
-    description: "Where it was decided: the console or the API, or a link in the mail.",
-  }),
+  via: Type.Union(
+    [
+      Type.Literal("console"),
+      Type.Literal("api"),
+      Type.Literal("mcp"),
+      Type.Literal("app"),
+      Type.Literal("email"),
+    ],
+    {
+      description:
+        "Where it was decided: the console, the API, MCP, an app, or a link in the mail.",
+    },
+  ),
   waitedSeconds: Type.Union([Type.Number(), Type.Null()]),
 });
 
@@ -297,7 +372,7 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         }
         let found = db
           .selectFrom("flow_run")
-          .select(["id", "trigger_node", "created_at"])
+          .select(["id", "trigger_node", "trigger_detail", "created_at"])
           .select(flowStateSql("flow_run").as("state"))
           .where("workspace_id", "=", params.w);
         if (query.flowRun) found = found.where("id", "=", query.flowRun);
@@ -311,12 +386,53 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         const shown = { id: run.id, createdAt: iso(run.created_at), state: run.state as RunState };
         let extra: Record<string, unknown> = {};
         let note: string | undefined;
-        try {
-          if (query.items) {
-            const items = await kernel.expressions.evaluate(
-              query.items,
-              await expressionContext(db, run),
+        // The expression sees what the run page shows: a test on a masked field cannot be used
+        // to guess it, so the context is masked before it is evaluated, not the answer. One that
+        // reads a masked field is not computed at all: its answer would be about the mask.
+        const known = await flowKnown(kernel, db, run.id);
+        const masked = new Set<string>();
+        const shield = async (step: ContextStep, output: unknown) => {
+          let schema: Record<string, unknown> | undefined;
+          if (step.run_id) {
+            const ran = await db
+              .selectFrom("run")
+              .select(["bundle_id", "script_path"])
+              .where("id", "=", step.run_id)
+              .executeTakeFirst();
+            if (ran) schema = (await payloadSchemas(kernel, ran.bundle_id, ran.script_path)).output;
+          } else if (
+            step.node_id === run.trigger_node &&
+            typeof (run.trigger_detail as { event?: unknown } | null)?.event === "string"
+          ) {
+            schema = await eventSchema(
+              db,
+              params.w,
+              (run.trigger_detail as { event: string }).event,
             );
+          }
+          const safe = redact(output, schema, known);
+          if (JSON.stringify(safe) !== JSON.stringify(output)) {
+            maskedNames(output, safe, safe === REDACTED ? step.node_id : "", masked);
+          }
+          return safe;
+        };
+        const readsMasked = () =>
+          [...masked].some((name) =>
+            [query.expression, query.items ?? ""].some((text) =>
+              new RegExp(`(?<![\\p{L}\\p{N}_])${escapeRegex(name)}(?![\\p{L}\\p{N}_])`, "u").test(
+                text,
+              ),
+            ),
+          );
+        const cannot = {
+          note: "This reads a secret, which a preview does not show, so it cannot be previewed here.",
+          flowRun: shown,
+        };
+        try {
+          const context = await expressionContext(db, run, {}, shield);
+          if (readsMasked()) return cannot;
+          if (query.items) {
+            const items = await kernel.expressions.evaluate(query.items, context);
             if (!Array.isArray(items) || items.length === 0) {
               return {
                 note: "Its items gave no list to take the first of.",
@@ -326,10 +442,10 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             extra = { item: items[0], index: 0 };
             note = "For the first item.";
           }
-          const value = await kernel.expressions.evaluate(
-            query.expression,
-            await expressionContext(db, run, extra),
-          );
+          const value = await kernel.expressions.evaluate(query.expression, {
+            ...context,
+            ...extra,
+          });
           return { value, ...(note ? { note } : {}), flowRun: shown };
         } catch (error) {
           return { error: said(error), flowRun: shown };
@@ -345,6 +461,7 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.workspace("flow:read") },
         schema: {
           summary: "Flows deployed to a workspace, each with its latest run",
+          description: "Every flow of the workspace's active bundle, with how its latest run went.",
           tags: ["flows"],
           params: WorkspaceParams,
           response: {
@@ -463,7 +580,8 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             count(*) filter (where created_at > now() - interval '24 hours') as day,
             count(*) filter (where created_at > now() - interval '24 hours' and status = 'failed') as failed,
             count(*) filter (where status = 'running' and exists (
-              select 1 from step_run s where s.flow_run_id = flow_run.id and s.status = 'waiting'
+              select 1 from step_run s
+              where s.flow_run_id = flow_run.id and s.status = 'waiting' and s.detail ? 'title'
             )) as waiting
           from flow_run where workspace_id = ${params.w} and parent_flow_run_id is null
           group by flow_path
@@ -539,7 +657,9 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       `${base}/flows/*`,
       {
-        config: { access: access.workspace("flow:read") },
+        config: {
+          access: access.custom("Needs `flow:read` at the workspace or at the flow itself."),
+        },
         schema: {
           summary: "One flow: its graph, where its nodes are drawn, and its triggers",
           description: "A webhook's address is included only for callers who hold `trigger:write`.",
@@ -567,6 +687,7 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       },
       async ({ ctx, params }) => {
         const path = wildPath(params);
+        await findWorkspace(kernel, params.t, params.w);
         const flow = await db
           .selectFrom("resource")
           .select(["id", "body", "version"])
@@ -574,6 +695,11 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           .where("kind", "=", "flow")
           .where("path", "=", path)
           .executeTakeFirst();
+        await ctx.authorize("flow:read", {
+          tenantId: params.t,
+          workspaceId: params.w,
+          ...(flow ? { resourceId: flow.id } : {}),
+        });
         if (!flow) throw notFound("The flow");
         const body = flow.body as unknown as FlowBody;
         const layout = await db
@@ -597,10 +723,7 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           nodes: body.nodes as unknown as Record<string, unknown>,
           edges: body.edges as unknown as Record<string, unknown>[],
           // A flow drawn in the console carries its layout in its body. Others keep it apart.
-          layout: {
-            ...((body.layout as Record<string, { x: number; y: number }> | undefined) ?? {}),
-            ...(layout?.positions ?? {}),
-          },
+          layout: flowPositions(body.layout, layout?.positions),
           triggers: await Promise.all(
             states.map(async (state) => {
               const token =
@@ -610,7 +733,7 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               return {
                 node: state.node_id,
                 type: state.type,
-                nextFireAt: isoOrNull(state.next_fire_at),
+                nextFireAt: state.enabled ? isoOrNull(state.next_fire_at) : null,
                 url: token ? `${kernel.config.publicUrl}/api/v1/hooks/${token}` : null,
               };
             }),
@@ -671,6 +794,31 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
 
     // ----- Flow runs -----
 
+    /**
+     * A flow's runs are read, retried and canceled by whoever holds the permission in the
+     * workspace or on the flow itself, as starting one is. A run whose flow is gone has no
+     * flow to hold it on. Asked before the run is looked for, so a run that is not there and one
+     * that is not allowed answer the same.
+     */
+    const authorizeRun = async (
+      ctx: { authorize: (permission: string, target: Target) => Promise<void> },
+      params: { t: string; w: string; id: string },
+      permission: string,
+    ) => {
+      await findWorkspace(kernel, params.t, params.w);
+      const row = await db
+        .selectFrom("flow_run")
+        .select("resource_id")
+        .where("id", "=", params.id)
+        .where("workspace_id", "=", params.w)
+        .executeTakeFirst();
+      await ctx.authorize(permission, {
+        tenantId: params.t,
+        workspaceId: params.w,
+        ...(row?.resource_id ? { resourceId: row.resource_id } : {}),
+      });
+    };
+
     const flowRuns = (workspaceId: string, from: typeof db = db) =>
       from
         .selectFrom("flow_run")
@@ -683,7 +831,11 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       `${base}/flow-runs`,
       {
-        config: { access: access.workspace("flow_run:read") },
+        config: {
+          access: access.custom(
+            "Needs `flow_run:read` at the workspace, or at the flow itself when `flow` names it.",
+          ),
+        },
         schema: {
           summary: "Flow runs in a workspace, newest first",
           description: "Runs started as a step of another flow are left out unless `all` is set.",
@@ -698,19 +850,22 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           response: { 200: pageOf(FlowRun) },
         },
       },
-      async ({ params, query }) => {
+      async ({ ctx, params, query }) => {
+        await findWorkspace(kernel, params.t, params.w);
+        const named = query.flow
+          ? (await resolveResource(db, params.w, query.flow, { kind: "flow" }))?.resource
+          : undefined;
+        await ctx.authorize("flow_run:read", {
+          tenantId: params.t,
+          workspaceId: params.w,
+          ...(named ? { resourceId: named.id } : {}),
+        });
         const args = pageArgs(query);
         let select = flowRuns(params.w);
         if (query.flow) {
           // The runs of the flow that has this path now, under whatever path it had then.
           const path = query.flow;
-          const flow = await db
-            .selectFrom("resource")
-            .select("id")
-            .where("workspace_id", "=", params.w)
-            .where("kind", "=", "flow")
-            .where("path", "=", path)
-            .executeTakeFirst();
+          const flow = named;
           select = select.where((eb) =>
             flow
               ? eb.or([
@@ -734,7 +889,12 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.post(
       `${base}/flow-runs`,
       {
-        config: { access: access.custom, rateLimit: guestLimit },
+        config: {
+          access: access.custom(
+            "Needs `flow_run:write` at the workspace or at the flow itself, which is how an app's users are let start one flow and no other.",
+          ),
+          rateLimit: guestLimit,
+        },
         schema: {
           summary: "Start a flow from its manual trigger",
           description:
@@ -759,6 +919,7 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           workspaceId: params.w,
           resourceId: target?.id,
         });
+        if (ctx.principal.type === "anonymous") throw guestStart("flow");
         const started = await ctx.mutate(async (trx, audit) => {
           const result = await startFlowRun(kernel, trx, {
             tenantId: params.t,
@@ -804,9 +965,22 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       const body = manifest.body as unknown as FlowBody;
       const steps = await db
         .selectFrom("step_run")
-        .leftJoin("member", "member.id", "step_run.decided_by")
+        .leftJoin("member", (join) =>
+          join
+            .onRef("member.id", "=", "step_run.decided_by")
+            .on("step_run.decided_by_type", "=", "member"),
+        )
+        .leftJoin("service_account", (join) =>
+          join
+            .onRef("service_account.id", "=", "step_run.decided_by")
+            .on("step_run.decided_by_type", "=", "service_account"),
+        )
         .selectAll("step_run")
-        .select(["member.email as decided_by_email", "member.name as decided_by_name"])
+        .select([
+          "member.email as decided_by_email",
+          "member.name as decided_by_name",
+          "service_account.name as decided_by_service",
+        ])
         .where("step_run.flow_run_id", "=", id)
         .execute();
       const kept = keptNodes(body, steps, row.trigger_node);
@@ -829,7 +1003,8 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             )
             .map((step) => ({
               node: step.node_id,
-              decidedBy: step.decided_by_name ?? step.decided_by_email ?? null,
+              decidedBy:
+                step.decided_by_name ?? step.decided_by_email ?? step.decided_by_service ?? null,
             })),
         },
       };
@@ -900,7 +1075,11 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       `${base}/flow-runs/:id/definition`,
       {
-        config: { access: access.workspace("flow_run:read") },
+        config: {
+          access: access.custom(
+            "Needs `flow_run:read` at the workspace or at the run's flow itself.",
+          ),
+        },
         schema: {
           summary: "The flow as it was when this run started",
           description:
@@ -921,8 +1100,8 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           },
         },
       },
-      async ({ params }) => {
-        await findWorkspace(kernel, params.t, params.w);
+      async ({ ctx, params }) => {
+        await authorizeRun(ctx, params, "flow_run:read");
         const row = await flowRuns(params.w)
           .where("flow_run.id", "=", params.id)
           .executeTakeFirst();
@@ -969,10 +1148,7 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           bundleVersion: row.bundle_version,
           nodes: body.nodes as unknown as Record<string, unknown>,
           edges: body.edges as unknown as Record<string, unknown>[],
-          layout: {
-            ...(positions ?? {}),
-            ...((body.layout as Record<string, { x: number; y: number }> | undefined) ?? {}),
-          },
+          layout: flowPositions(body.layout, positions),
           changed: shape(now) !== shape(manifest),
         };
       },
@@ -981,7 +1157,11 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       `${base}/flow-runs/:id/retry-plan`,
       {
-        config: { access: access.workspace("flow_run:read") },
+        config: {
+          access: access.custom(
+            "Needs `flow_run:read` at the workspace or at the run's flow itself.",
+          ),
+        },
         schema: {
           summary: "What retrying a flow run from its failed step would keep and run again",
           description:
@@ -1001,8 +1181,8 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           response: { 200: RetryPlan },
         },
       },
-      async ({ params, query }) => {
-        await findWorkspace(kernel, params.t, params.w);
+      async ({ ctx, params, query }) => {
+        await authorizeRun(ctx, params, "flow_run:read");
         const { row, body, plan } = await retryPlanOf(params.w, params.id);
         const target = await retryTarget(params.w, row, query.bundle);
         return {
@@ -1016,7 +1196,11 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.post(
       `${base}/flow-runs/:id/retry`,
       {
-        config: { access: access.workspace("flow_run:write") },
+        config: {
+          access: access.custom(
+            "Needs `flow_run:write` at the workspace or at the run's flow itself.",
+          ),
+        },
         schema: {
           summary: "Run a finished flow run again, from its failed step or from the start",
           description:
@@ -1036,7 +1220,7 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         },
       },
       async ({ ctx, params, body }, reply) => {
-        await findWorkspace(kernel, params.t, params.w);
+        await authorizeRun(ctx, params, "flow_run:write");
         const { row, body: ranOn, plan } = await retryPlanOf(params.w, params.id);
         if (row.status === "running") {
           throw new HttpError(409, "conflict", "The flow run has not ended. Cancel it first.");
@@ -1121,7 +1305,12 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       `${base}/flow-runs/:id`,
       {
-        config: { access: access.custom, rateLimit: guestLimit },
+        config: {
+          access: access.custom(
+            "Needs `flow_run:read` in the workspace. Whoever started a flow run may always read how it ended, without its steps.",
+          ),
+          rateLimit: guestLimit,
+        },
         schema: {
           summary: "One flow run, with every step",
           description:
@@ -1145,28 +1334,42 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       },
       async ({ ctx, params }) => {
         await findWorkspace(kernel, params.t, params.w);
-        const mayReadAll = await ctx.allowed("flow_run:read", {
-          tenantId: params.t,
-          workspaceId: params.w,
-        });
         const row = await flowRuns(params.w)
           .where("flow_run.id", "=", params.id)
           .executeTakeFirst();
+        // At the workspace, or on the run's flow.
+        const at = {
+          tenantId: params.t,
+          workspaceId: params.w,
+          ...(row?.resource_id ? { resourceId: row.resource_id } : {}),
+        };
+        const mayReadAll = await ctx.allowed("flow_run:read", at);
         const own =
           row !== undefined &&
           ctx.principal.id !== null &&
           row.started_by_id === ctx.principal.id &&
           row.started_by_type === ctx.principal.type;
         // To someone who may not read flow runs, one that is not theirs does not exist.
-        if (!mayReadAll && !own) {
-          await ctx.authorize("flow_run:read", { tenantId: params.t, workspaceId: params.w });
-        }
+        if (!mayReadAll && !own) await ctx.authorize("flow_run:read", at);
         if (!row) throw notFound("The flow run");
+        const known = await flowKnown(kernel, db, params.id);
+        const shownRun = (one: typeof row) => {
+          const plain = toFlowRun(one);
+          return {
+            ...plain,
+            error: plain.error ? { message: redactText(plain.error.message, known) } : null,
+            errorSummary: plain.errorSummary ? redactText(plain.errorSummary, known) : null,
+          };
+        };
         if (!mayReadAll) {
           return {
-            ...toFlowRun(row),
-            input: redact(row.input_ref ? { stored: row.input_ref } : (row.input ?? null)),
-            output: redact(row.output ?? null),
+            ...shownRun(row),
+            input: redact(
+              row.input_ref ? { stored: row.input_ref } : (row.input ?? null),
+              undefined,
+              known,
+            ),
+            output: redact(row.output ?? null, undefined, known),
             steps: [],
             retries: [],
           };
@@ -1215,10 +1418,18 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         )) {
           scriptSchemas.set(script, await payloadSchemas(kernel, run.bundle_id, script));
         }
+        // What an event started the flow with is held to the event's schema, as the events list is.
+        const eventName = (run.trigger_detail as { event?: unknown } | null)?.event;
+        const triggerSchema =
+          typeof eventName === "string" ? await eventSchema(db, params.w, eventName) : undefined;
         return {
-          ...toFlowRun(run),
-          input: redact(run.input_ref ? { stored: run.input_ref } : (run.input ?? null)),
-          output: redact(run.output ?? null),
+          ...shownRun(run),
+          input: redact(
+            run.input_ref ? { stored: run.input_ref } : (run.input ?? null),
+            triggerSchema,
+            known,
+          ),
+          output: redact(run.output ?? null, undefined, known),
           retries: retries.map((one) => ({
             id: one.id,
             state: one.state,
@@ -1232,7 +1443,7 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             outputName: step.output_name,
             // What the step was given: a code step's run input, a sub-flow's input, the items
             // of a foreach, the detail an approval showed. Masked as payloads are.
-            input: stepInput(step, (script) => scriptSchemas.get(script)?.input),
+            input: stepInput(step, (script) => scriptSchemas.get(script)?.input, known),
             // A code step's output is its run's. Something large is named, not sent.
             output: step.run_id
               ? step.run_output_ref
@@ -1240,11 +1451,16 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                 : redact(
                     step.run_output ?? null,
                     step.run_script ? scriptSchemas.get(step.run_script)?.output : undefined,
+                    known,
                   )
               : step.output_ref
                 ? { stored: step.output_ref }
-                : redact(step.output ?? null),
-            error: step.error ? { message: step.error.message } : null,
+                : redact(
+                    step.output ?? null,
+                    step.node_id === run.trigger_node ? triggerSchema : undefined,
+                    known,
+                  ),
+            error: step.error ? { message: redactText(step.error.message, known) } : null,
             handled: step.handled,
             runId: step.run_id,
             childFlowRunId: step.child_flow_run_id,
@@ -1256,6 +1472,8 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                   ([name]) => name !== "items" && name !== "copiedFrom",
                 ),
               ),
+              undefined,
+              known,
             ) as Record<string, unknown>,
             copiedFrom:
               (step.detail.copiedFrom as
@@ -1272,17 +1490,28 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.post(
       `${base}/flow-runs/:id/cancel`,
       {
-        config: { access: access.workspace("flow_run:write") },
+        config: {
+          access: access.custom(
+            "Needs `flow_run:write` at the workspace or at the run's flow itself.",
+          ),
+        },
         schema: {
           summary: "Cancel a flow run and the steps it has in progress",
+          description:
+            "The steps that are going are canceled with it. A flow run that has already ended answers 409. Audited.",
           tags: ["flows"],
           params: Type.Object({ t: Id, w: Id, id: Id }),
           response: { 200: FlowRun },
         },
       },
       async ({ ctx, params }) => {
+        await authorizeRun(ctx, params, "flow_run:write");
+        let ended: ReturnType<typeof takeCanceled> = [];
+        let endedFlows: ReturnType<typeof takeCanceledFlows> = [];
         const cancelled = await ctx.mutate(async (trx, audit) => {
           const flowRun = await cancelFlowRun(kernel, trx, params.w, params.id);
+          ended = takeCanceled(trx);
+          endedFlows = takeCanceledFlows(trx);
           await audit({
             action: "flow_run.cancelled",
             targetType: "flow_run",
@@ -1295,6 +1524,8 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         });
         // A canceled sub-flow lets the flow that started it move on.
         if (cancelled.parent_flow_run_id) kickFlow(kernel, cancelled.parent_flow_run_id);
+        await announceCanceled(kernel, ended);
+        await announceCanceledFlows(kernel, endedFlows);
         return toFlowRun(
           await flowRuns(params.w).where("flow_run.id", "=", params.id).executeTakeFirstOrThrow(),
         );
@@ -1358,13 +1589,16 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         .where(sql<boolean>`step_run.detail ? 'title'`)
         .orderBy("step_run.started_at");
     type PendingRow = Awaited<ReturnType<ReturnType<typeof pending>["execute"]>>[number];
-    const toApproval = async (row: PendingRow) => ({
+    const toApproval = async (row: PendingRow, known: Map<string, Promise<Known>>) => ({
       flowRunId: row.flow_run_id,
       workspaceId: row.workspace_id,
       flow: row.flow_path,
       node: row.node_id,
-      title: String(row.detail.title),
-      detail: redact(row.detail.detail ?? null),
+      title: approvalTitle(row.detail.title, await flowKnown(kernel, db, row.flow_run_id, known)),
+      detail: approvalDetail(
+        row.detail.detail,
+        await flowKnown(kernel, db, row.flow_run_id, known),
+      ),
       waitingSince: iso(row.started_at),
       timesOutAt: isoOrNull(row.wake_at),
       approvers: await (async () => {
@@ -1384,13 +1618,24 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       db
         .selectFrom("step_run")
         .innerJoin("flow_run", "flow_run.id", "step_run.flow_run_id")
-        .leftJoin("member", "member.id", "step_run.decided_by")
+        .leftJoin("member", (join) =>
+          join
+            .onRef("member.id", "=", "step_run.decided_by")
+            .on("step_run.decided_by_type", "=", "member"),
+        )
+        .leftJoin("service_account", (join) =>
+          join
+            .onRef("service_account.id", "=", "step_run.decided_by")
+            .on("step_run.decided_by_type", "=", "service_account"),
+        )
         .select([
           "step_run.flow_run_id",
           "step_run.node_id",
           "step_run.detail",
           "step_run.status",
           "step_run.decided_by",
+          "step_run.decided_by_type",
+          "step_run.decided_via",
           "step_run.decision_comment",
           "step_run.started_at",
           "step_run.finished_at",
@@ -1398,6 +1643,7 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           "flow_run.workspace_id",
           "member.email",
           "member.name",
+          "service_account.name as service_name",
           sql<boolean>`exists (
             select 1 from approval_link l
             where l.flow_run_id = step_run.flow_run_id and l.node_id = step_run.node_id
@@ -1410,19 +1656,28 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         .orderBy("step_run.finished_at", "desc")
         .limit(100);
     type DecidedRow = Awaited<ReturnType<ReturnType<typeof decided>["execute"]>>[number];
-    const toDecided = (row: DecidedRow) => ({
+    const toDecided = async (row: DecidedRow, known: Map<string, Promise<Known>>) => ({
       flowRunId: row.flow_run_id,
       workspaceId: row.workspace_id,
       flow: row.flow_path,
       node: row.node_id,
-      title: String(row.detail.title),
+      title: approvalTitle(row.detail.title, await flowKnown(kernel, db, row.flow_run_id, known)),
       approved: row.status === "succeeded",
       comment: row.decision_comment,
       decidedBy: row.decided_by
-        ? { id: row.decided_by, label: row.email ?? row.name ?? "A member" }
+        ? {
+            id: row.decided_by,
+            label: row.service_name ?? row.email ?? row.name ?? "A member",
+            type: row.decided_by_type ?? "member",
+          }
         : null,
       decidedAt: isoOrNull(row.finished_at),
-      via: row.by_link ? ("email" as const) : ("console" as const),
+      via: (row.decided_via ?? (row.by_link ? "email" : "console")) as
+        | "console"
+        | "api"
+        | "mcp"
+        | "app"
+        | "email",
       waitedSeconds: row.finished_at
         ? Math.round((row.finished_at.getTime() - row.started_at.getTime()) / 1000)
         : null,
@@ -1431,7 +1686,11 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       "/tenants/:t/approvals/decided",
       {
-        config: { access: access.custom },
+        config: {
+          access: access.custom(
+            "Lists the decided approvals in the workspaces where the caller holds `approval:read`. A caller who holds it nowhere needs it in the tenant to be answered.",
+          ),
+        },
         schema: {
           summary: "Approvals surfaced to the tenant and decided, newest first",
           description:
@@ -1439,13 +1698,14 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             "caller may read approvals. A workspace lists every one of its own.",
           tags: ["flows"],
           params: TenantParams,
-          response: { 200: Type.Object({ items: Type.Array(DecidedApproval) }) },
+          response: { 200: listOf(DecidedApproval) },
         },
       },
       async ({ ctx, params }) => {
         const rows = await decided(params.t).where(SURFACED).execute();
         const allowed = new Map<string, boolean>();
         const items = [];
+        const known = new Map<string, Promise<Known>>();
         for (const row of rows) {
           if (!allowed.has(row.workspace_id)) {
             allowed.set(
@@ -1456,7 +1716,7 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               }),
             );
           }
-          if (allowed.get(row.workspace_id)) items.push(toDecided(row));
+          if (allowed.get(row.workspace_id)) items.push(await toDecided(row, known));
         }
         if (items.length === 0) await ctx.authorize("approval:read", { tenantId: params.t });
         return { items };
@@ -1476,19 +1736,21 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           tags: ["flows"],
           params: WorkspaceParams,
           querystring: Type.Object({ mine: Type.Optional(Type.Boolean()) }),
-          response: { 200: Type.Object({ items: Type.Array(Approval) }) },
+          response: { 200: listOf(Approval) },
         },
       },
       async ({ ctx, params, query }) => {
         const rows = await pending(params.t)
           .where("flow_run.workspace_id", "=", params.w)
           .execute();
-        if (!query.mine) return { items: await Promise.all(rows.map(toApproval)) };
+        const cache = new Map<string, Promise<Known>>();
+        if (!query.mine)
+          return { items: await Promise.all(rows.map((row) => toApproval(row, cache))) };
         const at = { tenantId: params.t, workspaceId: params.w };
         const items = [];
         for (const row of rows) {
           // A step that names its approvers is shown only to them.
-          if (await mayDecide(db, ctx, at, row.detail)) items.push(await toApproval(row));
+          if (await mayDecide(db, ctx, at, row.detail)) items.push(await toApproval(row, cache));
         }
         return { items };
       },
@@ -1503,21 +1765,26 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           description: "The last hundred.",
           tags: ["flows"],
           params: WorkspaceParams,
-          response: { 200: Type.Object({ items: Type.Array(DecidedApproval) }) },
+          response: { 200: listOf(DecidedApproval) },
         },
       },
       async ({ params }) => {
         const rows = await decided(params.t)
           .where("flow_run.workspace_id", "=", params.w)
           .execute();
-        return { items: rows.map(toDecided) };
+        const known = new Map<string, Promise<Known>>();
+        return { items: await Promise.all(rows.map((row) => toDecided(row, known))) };
       },
     );
 
     app.get(
       "/tenants/:t/approvals",
       {
-        config: { access: access.custom },
+        config: {
+          access: access.custom(
+            "Lists the approvals the caller may decide. A caller with none needs `approval:read` in the tenant to be answered.",
+          ),
+        },
         schema: {
           summary: "Approvals surfaced to the tenant that the caller may decide",
           description:
@@ -1527,12 +1794,13 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           tags: ["flows"],
           params: TenantParams,
           querystring: Type.Object({ all: Type.Optional(Type.Boolean()) }),
-          response: { 200: Type.Object({ items: Type.Array(Approval) }) },
+          response: { 200: listOf(Approval) },
         },
       },
       async ({ ctx, params, query }) => {
         const rows = await pending(params.t).where(SURFACED).execute();
         const allowed = new Map<string, boolean>();
+        const known = new Map<string, Promise<Known>>();
         const items = [];
         const memberId = ctx.principal.type === "member" ? ctx.principal.id : null;
         for (const row of rows) {
@@ -1559,7 +1827,7 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             ))
           )
             continue;
-          items.push(await toApproval(row));
+          items.push(await toApproval(row, known));
         }
         // With nothing to show, answer exactly as the permission check would.
         if (items.length === 0) await ctx.authorize("approval:read", { tenantId: params.t });
@@ -1615,7 +1883,8 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             node: params.node,
             approve: body.decision === "approve",
             comment: body.comment,
-            memberId: ctx.principal.type === "member" ? ctx.principal.id : null,
+            decidedBy: deciderOf(ctx.principal),
+            via: ctx.principal.type === "member" ? "console" : "api",
           });
           await audit({
             action: body.decision === "approve" ? "approval.approved" : "approval.rejected",
@@ -1651,10 +1920,16 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           id: Id,
           target: Type.String(),
           status: Type.String(),
+          state: RunStateSchema,
         }),
       ),
       listeners: Type.Integer({
-        description: "How many deployed triggers here listen for an event of this name.",
+        description:
+          "How many deployed triggers here would start something for an event of this name: on, and not paused.",
+      }),
+      pausedListeners: Type.Integer({
+        description:
+          "How many that are on would start nothing for now, because they, the workspace or the instance is paused.",
       }),
     });
 
@@ -1664,6 +1939,8 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.workspace("event:read") },
         schema: {
           summary: "Events published in a workspace, newest first",
+          description:
+            "Each stored event with its name and payload. An event that nothing subscribes to is not stored.",
           tags: ["events"],
           params: WorkspaceParams,
           querystring: Type.Object({
@@ -1711,27 +1988,43 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                   id: string;
                   target: string;
                   status: string;
+                  state: RunState;
                 }>`
-                  select trigger_detail->>'eventId' as event, 'script' as kind, id, script_path as target, status::text as status
+                  select trigger_detail->>'eventId' as event, 'script' as kind, id, script_path as target, status::text as status,
+                    ${runStateSql("status")} as state
                   from run where workspace_id = ${params.w} and trigger_detail ? 'eventId'
                     and trigger_detail->>'eventId' in (${sql.join(ids)}) and flow_run_id is null
                   union all
-                  select trigger_detail->>'eventId', 'flow', id, flow_path, status::text
-                  from flow_run where workspace_id = ${params.w} and trigger_detail ? 'eventId'
+                  select trigger_detail->>'eventId', 'flow', f.id, f.flow_path, f.status::text,
+                    ${flowStateSql("f")}
+                  from flow_run f where workspace_id = ${params.w} and trigger_detail ? 'eventId'
                     and trigger_detail->>'eventId' in (${sql.join(ids)})
                 `.execute(db)
               ).rows;
         const names = [...new Set(rows.map((row) => row.name))];
+        // An event is shown as the run it started is: by its key names and by its schema.
+        const schemas = new Map<string, Record<string, unknown> | undefined>();
+        for (const name of names) schemas.set(name, await eventSchema(db, params.w, name));
+        // Only a trigger that is on and not paused listens. The others are counted apart, so
+        // that "2 triggers" is never said of two that would start nothing.
+        const everyonePaused =
+          (await instanceTriggersPaused(kernel)) || (await workspacePaused(db, params.w));
         const listening =
           names.length === 0
             ? []
             : await db
                 .selectFrom("trigger_state")
-                .select((eb) => ["event_name", eb.fn.countAll<string>().as("n")])
-                .where("workspace_id", "=", params.w)
-                .where("type", "=", "event")
-                .where("event_name", "in", names)
-                .groupBy("event_name")
+                .innerJoin("resource", "resource.id", "trigger_state.resource_id")
+                .select((eb) => [
+                  "trigger_state.event_name",
+                  eb.fn.countAll<string>().as("n"),
+                  sql<string>`count(*) filter (where ${notPausedAlone})`.as("active"),
+                ])
+                .where("trigger_state.workspace_id", "=", params.w)
+                .where("trigger_state.type", "=", "event")
+                .where("trigger_state.enabled", "=", true)
+                .where("trigger_state.event_name", "in", names)
+                .groupBy("trigger_state.event_name")
                 .execute();
         return toPage(
           rows,
@@ -1745,14 +2038,23 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             return {
               id: row.id,
               name: row.name,
-              payload: row.payload,
+              payload: redact(row.payload, schemas.get(row.name)) as Record<string, unknown>,
               source: { type: row.source_type, id: row.source_id },
               occurredAt: iso(row.occurred_at),
               publishedBy: script ? { run: script.id, script: script.script_path } : null,
               started: started
                 .filter((one) => one.event === row.id)
-                .map(({ kind, id, target, status }) => ({ kind, id, target, status })),
-              listeners: Number(listening.find((one) => one.event_name === row.name)?.n ?? 0),
+                .map(({ kind, id, target, status, state }) => ({
+                  kind,
+                  id,
+                  target,
+                  status,
+                  state,
+                })),
+              ...listenersOf(
+                listening.find((one) => one.event_name === row.name),
+                everyonePaused,
+              ),
             };
           },
         );
@@ -1776,7 +2078,7 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       },
       async ({ ctx, params, body }, reply) => {
         if (body.name.startsWith("platform/")) {
-          throw badRequest("Events under platform/ are published by the platform itself.");
+          throw badRequest("Events under platform/ are published by Volvel itself.");
         }
         const published = await ctx.mutate(async (trx, audit) => {
           const result = await publishEvent(kernel, trx, {

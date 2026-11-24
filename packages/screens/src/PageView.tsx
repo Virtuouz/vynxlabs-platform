@@ -128,7 +128,8 @@ export interface PageViewProps {
   ask?: { open: string | undefined; set(ref: string | undefined): void };
   /**
    * Names where a folded Section is kept in this browser (`volvel.fold.<foldKey>.<widget>`): the
-   * app's path and the page. Left out, a fold lasts until the page is left.
+   * app's path and the page. Left out, a fold lasts until the page is left. A remembered tab is kept
+   * under it too, so two pages with a Tabs of one id do not share one.
    */
   foldKey?: string;
   /**
@@ -140,7 +141,7 @@ export interface PageViewProps {
   device?: Device;
   /**
    * While building: draw the page as this group sees it (`key` is the group's key). A widget it
-   * may not see is faded and says so, an action it may not run is greyed with the reason, a
+   * may not see is faded and says so, an action it may not run is grayed with the reason, a
    * `showWhen` on the user is judged for it. Rows are not: they are read as the builder.
    */
   viewAs?: { key: string; name: string };
@@ -154,7 +155,11 @@ export interface PageViewProps {
      */
     askLayout?(device: "tablet" | "phone"): Promise<boolean>;
     selected: string | undefined;
-    onSelect(id: string | undefined): void;
+    /**
+     * `via: "focus"` is a widget chosen only because the keyboard arrived on it, which the host may
+     * leave alone when the focus was handed back (a sheet closing returns it to a widget).
+     */
+    onSelect(id: string | undefined, via?: "focus"): void;
     /** Every change of place or size, or a removal or duplicate, as a new widget list, with words for Undo ("Moved Invoices"). */
     onChange(widgets: PageWidget[], label: string): void;
     onRename(id: string, title: string): void;
@@ -640,7 +645,8 @@ function Cell({
               : {}),
             onFocus: (event: React.FocusEvent<HTMLElement>) => {
               oneStop.props.onFocus?.(event);
-              if (event.target === event.currentTarget && !selected) editing?.onSelect(widget.id);
+              if (event.target === event.currentTarget && !selected)
+                editing?.onSelect(widget.id, "focus");
             },
             onBlur: oneStop.props.onBlur,
             onPointerDown: (event: React.PointerEvent<HTMLElement>) => {
@@ -758,7 +764,12 @@ function Cell({
                 const denied =
                   building && !ctx.viewing
                     ? undefined
-                    : whyNotRun(actionAt(widget, at), actor, ctx.groupNames);
+                    : whyNotRun(
+                        actionAt(widget, at),
+                        actor,
+                        ctx.groupNames,
+                        at === "config/edit" ? "edit this" : "do this",
+                      );
                 if (denied) return denied;
                 const when = actionAt(widget, at)?.when;
                 const records = { this: record ? thisRow : null, event: row };
@@ -1325,14 +1336,15 @@ export function PageView({
     const wanted = tabsNow[container.id];
     if (wanted !== undefined && ids.includes(wanted)) return wanted;
     const config = container.config as { remember?: boolean; opensFirst?: string } | undefined;
-    const last = !editing && config?.remember ? recallTab(user?.id, container.id) : undefined;
+    const last =
+      !editing && config?.remember ? recallTab(user?.id, container.id, foldKey) : undefined;
     for (const one of [last, config?.opensFirst])
       if (one !== undefined && ids.includes(one)) return one;
     return ids[0];
   };
   const chooseTab = (container: string, tab: string) => {
     if (!editing && byId.get(container)?.config?.remember === true)
-      rememberTab(user?.id, container, tab);
+      rememberTab(user?.id, container, tab, foldKey);
     if (!editing && tabHost) tabHost.choose(container, tab);
     else setOpenTabs((now) => ({ ...now, [container]: tab }));
   };

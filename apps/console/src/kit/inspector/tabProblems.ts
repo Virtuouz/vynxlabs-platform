@@ -10,7 +10,7 @@
  *   works out fewer values than the widget needs;
  * - Display: a widget that would show nothing (a list with nothing placed, a pivot with no grid, a
  *   detail with no record), a button with no label;
- * - Actions: an action with no steps, or that names a page, a table, a workflow or a script that is
+ * - Actions: an action with no steps, or that names a page, a table, a flow or a script that is
  *   gone;
  * - Rules: a group that is gone, named in who may see or run it;
  * - and what the server refused when the draft was saved, by the place it names.
@@ -19,6 +19,7 @@
  */
 import {
   type Action,
+  groupName,
   type InterfaceBody,
   missingGroups,
   type Page,
@@ -30,6 +31,7 @@ import type { Tab, WidgetDefinition } from "@volvel/widgets";
 import {
   actionProblem,
   actionsOf,
+  inputsNeededOf,
   type Known,
   nameAlong,
   problemWords,
@@ -109,6 +111,7 @@ export function actionFix(
       queries: undefined,
       flows: new Set((world.flows ?? []).map((one) => one.path)),
       scripts: new Set((world.scripts ?? []).map((one) => one.path)),
+      inputsNeeded: inputsNeededOf(world.flows, world.scripts),
       groups: undefined,
     },
     (world.pages ?? []).length > 0,
@@ -149,7 +152,7 @@ function columnsOf(visual: VisualQuery): { column: string; where: string }[] {
       // A sort may name a group or a measure by its name: only a plain column name is checked
       // against the table when it is not one of those.
       (visual.measures ?? []).some((measure) => measure.as === one.by) ||
-      (visual.groupBy ?? []).some((group) => group.column === one.by)
+      (visual.groupBy ?? []).some((group) => group.column === one.by || groupName(group) === one.by)
         ? []
         : [{ column: one.by, where: "Sorted by" }],
     ),
@@ -242,6 +245,7 @@ export function tabProblems(input: TabProblemInput): TabProblem[] {
     queries: undefined,
     flows: new Set((input.flows ?? []).map((one) => one.path)),
     scripts: new Set((input.scripts ?? []).map((one) => one.path)),
+    inputsNeeded: inputsNeededOf(input.flows, input.scripts),
     groups: undefined,
   };
   for (const one of actionsOf(widget)) {

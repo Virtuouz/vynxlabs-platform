@@ -1,4 +1,7 @@
-import type { Manifest, PageFile, SearchHit } from "@volvel/docs-engine";
+import type { Manifest, PageFile, PageHit } from "@volvel/docs-engine";
+
+/** Where the instance serves the same documentation to read and search. */
+const DOCS = "/docs";
 
 /**
  * The product's documentation, as the console's own files. They are built
@@ -29,13 +32,66 @@ export const loadManifest = () => load<Manifest>("manifest.json");
 
 export const loadPage = (path: string) => load<PageFile>(`pages/${path}.json`);
 
+/** Where pages that moved or were removed went, from what was deployed. A build without the file moved nothing. */
+export const loadRedirects = () =>
+  load<Record<string, string>>("redirects.json").catch(() => ({}) as Record<string, string>);
+
 /** What each field of each kind is, by `<kind>.<path>`, from the kinds' own schemas. */
 export const loadFields = () => load<Record<string, string>>("fields.json");
 
-let searching: Promise<{ search(query: string, limit?: number): SearchHit[] }> | undefined;
+/** What `/docs/_search.json` answers: pages by their address, with the places on each. */
+interface ServerAnswer {
+  pages: { url: string; title: PageHit["title"]; places: PageHit["places"]; score?: number }[];
+}
 
-/** Searches the help. The index and the code that reads it are fetched the first time something is searched for. */
-export async function searchHelp(query: string): Promise<SearchHit[]> {
+/**
+ * Asks the instance's own `/docs` to search, which holds the index so that this does not have to
+ * be downloaded. Anything but an answer (offline, refused, too many asked, an older instance
+ * with no `/docs`) is undefined, and the help's own index is used instead.
+ */
+async function searchOnInstance(query: string): Promise<PageHit[] | undefined> {
+  try {
+    const response = await fetch(`${DOCS}/_search.json?q=${encodeURIComponent(query)}`);
+    if (!response.ok) return undefined;
+    const answer = (await response.json()) as ServerAnswer;
+    if (!Array.isArray(answer?.pages)) return undefined;
+    const manifest = await loadManifest();
+    const byUrl = new Map(manifest.pages.map((page) => [page.url, page] as const));
+    return answer.pages.flatMap((hit, at) => {
+      const page = byUrl.get(hit.url);
+      // A page this build of the help does not have cannot be opened here.
+      if (!page) return [];
+      return [
+        {
+          path: page.path,
+          url: page.url,
+          title: hit.title,
+          description: page.description ?? "",
+          collection: page.path.split("/")[0] ?? "",
+          ...(page.docType ? { docType: page.docType } : {}),
+          places: hit.places ?? [],
+          // The instance has ranked them already: kept in its order.
+          score: hit.score ?? answer.pages.length - at,
+        },
+      ];
+    });
+  } catch {
+    return undefined;
+  }
+}
+
+let searching:
+  | Promise<{ grouped(query: string, options?: { limit?: number }): PageHit[] }>
+  | undefined;
+
+/**
+ * Searches the help: pages, best first, each with the headings and passages on it that matched.
+ * The instance answers when it can. Otherwise the index and the code that reads it are fetched,
+ * the first time, from the files the help is built into.
+ */
+export async function searchHelp(query: string): Promise<PageHit[]> {
+  const asked = await searchOnInstance(query);
+  if (asked) return asked.slice(0, 12);
   searching ??= Promise.all([
     load<string>("search.json", "text"),
     import("@volvel/docs-engine"),
@@ -43,7 +99,7 @@ export async function searchHelp(query: string): Promise<SearchHit[]> {
   searching.catch(() => {
     searching = undefined;
   });
-  return (await searching).search(query, 12);
+  return (await searching).grouped(query, { limit: 12 });
 }
 
 /** For tests: forget what was fetched. */

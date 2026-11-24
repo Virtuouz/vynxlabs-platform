@@ -6,6 +6,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { InterfaceBuilder } from "./screens/builder/AppBuilder.tsx";
 import { draftChangeCount } from "./screens/builder/changes.ts";
 import { reordered, stepped } from "./screens/builder/outline.ts";
+import { layoutByHandText } from "./screens/builder/PhoneFrame.tsx";
 import { show } from "./testing.tsx";
 
 // Phase 28, A3: the builder's frame (board 1): one header row, the pane's rows, the canvas frame.
@@ -133,6 +134,17 @@ test("the app is named in the header and renamed in place, with no field for it"
   expect(screen.getByRole("heading", { name: "Sales", level: 1 })).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Rename the app" }));
   const field = screen.getByLabelText("Name of the app") as HTMLInputElement;
+  expect(field.maxLength).toBe(-1); // BLD-06: said at the field, not cut
+  // The count is said beside it, as in every other field of a name.
+  expect(field.parentElement?.textContent).toContain("5 of 100");
+  fireEvent.change(field, { target: { value: "x".repeat(101) } });
+  expect(field.value).toHaveLength(101);
+  expect(screen.getByRole("alert").textContent).toBe("Use at most 100 characters. This is 101.");
+  fireEvent.keyDown(field, { key: "Enter" });
+  expect(screen.queryByRole("heading", { name: "x".repeat(101) })).toBeNull();
+  expect(screen.getByLabelText("Name of the app")).toBe(field);
+  fireEvent.change(field, { target: { value: "Tak" } });
+  expect(field.parentElement?.textContent).toContain("3 of 100");
   fireEvent.change(field, { target: { value: "Takings" } });
   fireEvent.keyDown(field, { key: "Enter" });
   expect(await screen.findByRole("heading", { name: "Takings", level: 1 })).toBeTruthy();
@@ -350,6 +362,10 @@ test("the phone preview is drawn in a device, says what was changed by hand, and
   // The one placed by hand, and the one told to hide on narrow screens.
   expect(banner.textContent).toContain("2 widgets changed by hand");
   expect(await screen.findByText("By clinic is hidden on phones")).toBeTruthy();
+  // The question asked before a hand-made place names controls that are on the screen (P31).
+  const button = within(banner).getByRole("button").textContent ?? "";
+  expect(layoutByHandText("phone")).toContain(button);
+  expect(layoutByHandText("phone")).not.toContain("Go back to automatic");
 });
 
 test("Ready to publish: checks, what changes, Try as, and a blocking problem", async () => {
@@ -361,7 +377,7 @@ test("Ready to publish: checks, what changes, Try as, and a blocking problem", a
   fireEvent.click(screen.getAllByRole("button", { name: "Publish" })[0] as HTMLElement);
   expect(await screen.findByRole("heading", { name: "Ready to publish" })).toBeTruthy();
   expect(
-    screen.getByText("Publishes to Sandbox. The live app keeps working until then."),
+    screen.getByText("Deploys to Sandbox. The live app keeps working until then."),
   ).toBeTruthy();
   expect(await screen.findByText("Phone layout hides 1 widget")).toBeTruthy();
   expect(screen.getByText("By clinic, on Money")).toBeTruthy();
@@ -372,6 +388,78 @@ test("Ready to publish: checks, what changes, Try as, and a blocking problem", a
   // The group the rules touch most.
   fireEvent.click(screen.getByRole("button", { name: "Try as Billing first" }));
   expect(await screen.findByRole("button", { name: "View as Billing" })).toBeTruthy();
+});
+
+test("round 4: the publish check lists every change: the list has no height of its own, the check scrolls", async () => {
+  withAside({});
+  await open();
+  fireEvent.click(screen.getAllByRole("button", { name: "Publish" })[0] as HTMLElement);
+  await screen.findByRole("heading", { name: "Ready to publish" });
+  const list = within(screen.getByRole("region", { name: "Changes" })).getByRole("list");
+  expect(list.className).not.toMatch(/max-h-|overflow-y-auto/);
+  const check = document.querySelector("[data-publish-check]") as HTMLElement;
+  expect(check.className).toContain("overflow-y-auto");
+  expect(check.className).toContain("max-h-");
+});
+
+test("a check that the control plane refuses says so, with a way to ask again (BLD-03)", async () => {
+  withAside({});
+  const before = globalThis.fetch;
+  let refused = true;
+  vi.stubGlobal("fetch", async (address: string, init?: RequestInit) =>
+    refused && address.includes("/changes/preview")
+      ? new Response(
+          JSON.stringify({ detail: "This needs the deployment:read permission.", status: 403 }),
+          { status: 403 },
+        )
+      : before(address, init),
+  );
+  await open();
+  fireEvent.click(screen.getAllByRole("button", { name: "Publish" })[0] as HTMLElement);
+  expect(await screen.findByText(/This needs the deployment:read permission/)).toBeTruthy();
+  expect(screen.queryByText("Checking what publishing does…")).toBeNull();
+  refused = false;
+  fireEvent.click(screen.getByRole("button", { name: "Check again" }));
+  expect(await screen.findByRole("heading", { name: "Ready to publish" })).toBeTruthy();
+});
+
+test("tables and groups that could not be read are said, not taken for missing (BLD-03)", async () => {
+  withAside({ rules: { seenBy: { groups: ["vanished"] } } });
+  (stored.pages[0] as { widgets: PageWidget[] }).widgets.push({
+    id: "t",
+    type: "core/table",
+    title: "Ghosts",
+    at: { x: 0, y: 12, w: 12, h: 4 },
+    data: { rows: { source: { visual: { table: "ghost" } } } },
+    config: { columns: [] },
+  } as PageWidget);
+  const before = globalThis.fetch;
+  vi.stubGlobal("fetch", async (address: string, init?: RequestInit) =>
+    address.includes("/queries/schema") || address.includes("/group-keys")
+      ? new Response(JSON.stringify({ detail: "The service is down.", status: 500 }), {
+          status: 500,
+        })
+      : before(address, init),
+  );
+  await open();
+  fireEvent.click(screen.getAllByRole("button", { name: "Publish" })[0] as HTMLElement);
+  expect(await screen.findByText(/Could not check the tables and queries/)).toBeTruthy();
+  expect(screen.getByText(/Could not check .*the groups/)).toBeTruthy();
+  expect(screen.queryByText("1 data source not found")).toBeNull();
+  expect(screen.queryByText(/no longer exists/)).toBeNull();
+});
+
+test("the page editor and the new page dialog say that the tables could not be read (BLD-03)", async () => {
+  const before = globalThis.fetch;
+  vi.stubGlobal("fetch", async (address: string, init?: RequestInit) =>
+    address.includes("/queries/schema")
+      ? new Response(JSON.stringify({ detail: "The service is down.", status: 500 }), {
+          status: 500,
+        })
+      : before(address, init),
+  );
+  await open();
+  expect(await screen.findByText(/The tables and saved queries could not be read/)).toBeTruthy();
 });
 
 test("a table that is not there, or a group that is gone, is said before publishing", async () => {

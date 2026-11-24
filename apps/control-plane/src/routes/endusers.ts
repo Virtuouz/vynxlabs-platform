@@ -1,7 +1,9 @@
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import { sql } from "@volvel/db";
+import { ACCESS_DESCRIPTION_MAX } from "@volvel/manifest";
 import { Type } from "typebox";
 import { MIN_PASSWORD_LENGTH } from "../config.js";
+import { endEndUserSignIns } from "../kernel/administer.js";
 import { portalUrl } from "../kernel/apps/address.js";
 import { actorOf, endAppSession, signInEndUser } from "../kernel/apps/sessions.js";
 import { ANONYMOUS, writeAudit } from "../kernel/audit.js";
@@ -11,6 +13,7 @@ import {
   cleanEmail,
   createEndUser,
   createPasswordToken,
+  endUnusedTokens,
   endUserIdentity,
   setPasswordWithToken,
   signUpAllowed,
@@ -27,7 +30,7 @@ import { access, guestLimit } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
 import { requireEndUserPasswordAllowed } from "../kernel/sso/people.js";
 import { accessResource, freeKey, releaseOne } from "../kernel/tenant/releases.js";
-import { PageQuery, pageOf } from "../pagination.js";
+import { afterName, likeTerm, NamedListQuery, nameKey, PageQuery, pageOf } from "../pagination.js";
 import {
   Id,
   iso,
@@ -54,6 +57,10 @@ const EndUser = Type.Object({
       "Facts about the person that a table's row rules can match: which customer they belong to, which region they cover.",
   }),
   groups: Type.Array(Type.String(), { description: "The names of the groups the person is in." }),
+  signsInWithProvider: Type.Boolean({
+    description:
+      "Whether an identity provider has signed the person in. Such a person may have no password, and is not waiting for an invitation.",
+  }),
   disabled: Type.Boolean(),
   lastSignedInAt: NullableTime,
   createdAt: Time,
@@ -65,6 +72,7 @@ const toEndUser = (row: {
   password_hash: string | null;
   attributes?: Record<string, string>;
   groups?: string[] | null;
+  provider_linked?: boolean | null;
   disabled_at: Date | null;
   last_signed_in_at: Date | null;
   created_at: Date;
@@ -75,6 +83,7 @@ const toEndUser = (row: {
   hasPassword: row.password_hash !== null,
   attributes: row.attributes ?? {},
   groups: row.groups ?? [],
+  signsInWithProvider: row.provider_linked ?? false,
   disabled: row.disabled_at !== null,
   lastSignedInAt: isoOrNull(row.last_signed_in_at),
   createdAt: iso(row.created_at),
@@ -179,12 +188,31 @@ export function endUserRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
 
     // ----- Managing the pool -----
 
+    /** A tenant's end users, with the names of their groups and whether a provider signed them in. */
+    const endUsers = (tenantId: string) =>
+      db
+        .selectFrom("end_user")
+        .selectAll()
+        .select([
+          sql<string[]>`coalesce((
+              select array_agg(g.name order by g.name)
+              from end_user_group_member m join end_user_group g on g.id = m.group_id
+              where m.end_user_id = end_user.id
+            ), '{}')`.as("groups"),
+          sql<boolean>`exists (select 1 from identity_link l
+              where l.principal_type = 'end_user' and l.principal_id = end_user.id)`.as(
+            "provider_linked",
+          ),
+        ])
+        .where("tenant_id", "=", tenantId);
+
     app.get(
       "/tenants/:t/end-users",
       {
         config: { access: access.tenant("end_user:read") },
         schema: {
           summary: "List a tenant's end users",
+          description: "The people who use the tenant's apps. Page through them with `cursor`.",
           tags: ["end users"],
           params: TenantParams,
           querystring: Type.Object({
@@ -196,17 +224,7 @@ export function endUserRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       },
       async ({ params, query }) => {
         const args = pageArgs(query);
-        let select = db
-          .selectFrom("end_user")
-          .selectAll()
-          .select(
-            sql<string[]>`coalesce((
-              select array_agg(g.name order by g.name)
-              from end_user_group_member m join end_user_group g on g.id = m.group_id
-              where m.end_user_id = end_user.id
-            ), '{}')`.as("groups"),
-          )
-          .where("tenant_id", "=", params.t);
+        let select = endUsers(params.t);
         if (query.search) {
           const term = `%${query.search.toLowerCase().replace(/[%_\\]/g, "\\$&")}%`;
           select = select.where((eb) =>
@@ -219,6 +237,25 @@ export function endUserRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           .limit(args.limit + 1)
           .execute();
         return toPage(rows, args, (row) => row.id, toEndUser);
+      },
+    );
+
+    app.get(
+      "/tenants/:t/end-users/:userId",
+      {
+        config: { access: access.tenant("end_user:read") },
+        schema: {
+          summary: "One end user",
+          description: "So that a link to a person opens whatever page of the list they are on.",
+          tags: ["end users"],
+          params: Type.Object({ t: Id, userId: Id }),
+          response: { 200: EndUser },
+        },
+      },
+      async ({ params }) => {
+        const row = await endUsers(params.t).where("id", "=", params.userId).executeTakeFirst();
+        if (!row) throw notFound("The end user");
+        return toEndUser(row);
       },
     );
 
@@ -320,7 +357,10 @@ export function endUserRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             body.purpose,
           );
           await audit({
-            action: `end_user.${body.purpose}_link_created`,
+            action:
+              body.purpose === "invite"
+                ? "end_user.invite_link_created"
+                : "end_user.reset_link_created",
             targetType: "end_user",
             targetId: user.id,
             tenantId: params.t,
@@ -370,7 +410,10 @@ export function endUserRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                 ? { attributes: JSON.stringify(body.attributes) }
                 : {}),
               ...(body.disabled !== undefined
-                ? { disabled_at: body.disabled ? new Date() : null }
+                ? {
+                    disabled_at: body.disabled ? new Date() : null,
+                    disabled_by: body.disabled ? "hand" : null,
+                  }
                 : {}),
             })
             .where("id", "=", params.userId)
@@ -379,11 +422,8 @@ export function endUserRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             .executeTakeFirst();
           if (!updated) throw notFound("The end user");
           if (body.disabled) {
-            await trx
-              .deleteFrom("app_session")
-              .where("principal_type", "=", "end_user")
-              .where("principal_id", "=", updated.id)
-              .execute();
+            await endUnusedTokens(trx, updated.id);
+            await endEndUserSignIns(trx, updated.id);
           }
           await audit({
             action:
@@ -401,7 +441,9 @@ export function endUserRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           });
           return { ...updated, groups: await groupsOf(trx, updated.id) };
         });
-        return toEndUser(row);
+        return toEndUser(
+          (await endUsers(params.t).where("id", "=", row.id).executeTakeFirst()) ?? row,
+        );
       },
     );
 
@@ -474,9 +516,18 @@ export function endUserRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     });
     const Group = Type.Object({
       id: Id,
+      key: Type.String({ description: "What code and a repository name it by. It never changes." }),
       name: Type.String(),
       description: Type.String(),
       memberCount: Type.Integer(),
+      managedBy: Type.String({
+        description:
+          "`provider` for one an identity provider pushed, which is changed there, `release` when an access change made it.",
+      }),
+      signInValues: Type.Array(Type.String(), {
+        description:
+          "What a person's sign-in says that puts them in this group (`membership.sso.values`).",
+      }),
       createdAt: Time,
     });
     const GroupParams = Type.Object({ t: Id, g: Id });
@@ -497,13 +548,15 @@ export function endUserRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.tenant("end_user_group:read") },
         schema: {
           summary: "The tenant's groups of end users",
+          description: "Each group of end users in the tenant.",
           tags: ["end users"],
           params: TenantParams,
-          response: { 200: Type.Object({ items: Type.Array(Group) }) },
+          querystring: NamedListQuery,
+          response: { 200: pageOf(Group) },
         },
       },
-      async ({ params }) => {
-        const rows = await db
+      async ({ params, query }) => {
+        let select = db
           .selectFrom("end_user_group")
           .selectAll("end_user_group")
           .select((eb) =>
@@ -513,18 +566,41 @@ export function endUserRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               .whereRef("end_user_group_member.group_id", "=", "end_user_group.id")
               .as("member_count"),
           )
-          .where("tenant_id", "=", params.t)
-          .orderBy("name")
-          .execute();
-        return {
-          items: rows.map((row) => ({
-            id: row.id,
-            name: row.name,
-            description: row.description,
-            memberCount: Number(row.member_count ?? 0),
-            createdAt: iso(row.created_at),
-          })),
-        };
+          .where("tenant_id", "=", params.t);
+        if (query.search) {
+          select = select.where((eb) =>
+            eb(eb.fn("lower", ["end_user_group.name"]), "like", likeTerm(query.search as string)),
+          );
+        }
+        const args = pageArgs(query);
+        const after = afterName(args.after);
+        if (after) {
+          select = select.where((eb) =>
+            eb.or([
+              eb("end_user_group.name", ">", after.name),
+              eb.and([
+                eb("end_user_group.name", "=", after.name),
+                eb("end_user_group.id", ">", after.id),
+              ]),
+            ]),
+          );
+        }
+        select = select.orderBy("end_user_group.name").orderBy("end_user_group.id");
+        const toItem = (row: Awaited<ReturnType<typeof select.execute>>[number]) => ({
+          id: row.id,
+          key: row.key,
+          name: row.name,
+          description: row.description,
+          memberCount: Number(row.member_count ?? 0),
+          managedBy: row.managed_by,
+          signInValues: [...row.sso_values].sort(),
+          createdAt: iso(row.created_at),
+        });
+        if (query.limit === undefined) {
+          return { items: (await select.execute()).map(toItem), nextCursor: null };
+        }
+        const rows = await select.limit(query.limit + 1).execute();
+        return toPage(rows, { ...args, limit: query.limit }, nameKey, toItem);
       },
     );
 
@@ -535,13 +611,14 @@ export function endUserRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         schema: {
           summary: "Create a group of end users",
           description:
-            "Give a role to the group under Access, and rule a table's rows by it. The name is " +
-            "what a repository's binding and a row rule refer to, so it cannot be changed later.",
+            "Give a role to the group under Access, and rule a table's rows by it. The group's key, " +
+            "made from the name, is what a repository's binding and a row rule refer to, and never " +
+            "changes. The name can be changed.",
           tags: ["end users"],
           params: TenantParams,
           body: Type.Object({
             name: GroupName,
-            description: Type.Optional(Type.String({ maxLength: 500 })),
+            description: Type.Optional(Type.String({ maxLength: ACCESS_DESCRIPTION_MAX })),
           }),
           response: { 201: Group, 202: Waiting },
         },
@@ -586,9 +663,12 @@ export function endUserRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         if (!made.row) return reply.code(202).send(waiting(made.released));
         return reply.code(201).send({
           id: made.row.id,
+          key: made.row.key,
           name: made.row.name,
           description: made.row.description,
           memberCount: 0,
+          managedBy: made.row.managed_by,
+          signInValues: [...made.row.sso_values].sort(),
           createdAt: iso(made.row.created_at),
         });
       },
@@ -600,6 +680,7 @@ export function endUserRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.tenant("end_user_group:read") },
         schema: {
           summary: "One group of end users, with who is in it",
+          description: "The group and the end users in it.",
           tags: ["end users"],
           params: GroupParams,
           response: {
@@ -641,7 +722,10 @@ export function endUserRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           params: GroupParams,
           body: Type.Object({
             name: Type.Optional(GroupName),
-            description: Type.Optional(Type.String({ maxLength: 500 })),
+            description: Type.Optional(Type.String({ maxLength: ACCESS_DESCRIPTION_MAX })),
+            signInValues: Type.Optional(
+              Type.Array(Type.String({ minLength: 1, maxLength: 200 }), { maxItems: 50 }),
+            ),
           }),
           response: { 200: Group, 202: Waiting },
         },
@@ -656,9 +740,19 @@ export function endUserRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               "This group is made by the identity provider, which names it. Rename it there.",
             );
           }
+          if (now.managedBy === "provider" && body.signInValues !== undefined) {
+            throw conflict(
+              "This group is made by the identity provider, which fills it. Change it there.",
+            );
+          }
           const description =
             body.description?.trim() ?? (now.resource.body.description as string | undefined);
-          const { description: _was, ...rest } = now.resource.body;
+          const { description: _was, membership: _kept, ...rest } = now.resource.body;
+          const values =
+            body.signInValues !== undefined
+              ? [...new Set(body.signInValues.map((one) => one.trim()).filter(Boolean))].sort()
+              : ((now.resource.body.membership as { sso?: { values?: string[] } } | undefined)?.sso
+                  ?.values ?? []);
           const released = await releaseOne(
             trx,
             audit,
@@ -672,6 +766,7 @@ export function endUserRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                   ...rest,
                   title: body.name ?? (now.resource.body.title as string),
                   ...(description ? { description } : {}),
+                  ...(values.length > 0 ? { membership: { sso: { values } } } : {}),
                 },
               },
             },
@@ -693,9 +788,12 @@ export function endUserRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         if (!changed.row) return reply.code(202).send(waiting(changed.released));
         return {
           id: changed.row.id,
+          key: changed.row.key,
           name: changed.row.name,
           description: changed.row.description,
           memberCount: changed.members ?? 0,
+          managedBy: changed.row.managed_by,
+          signInValues: [...changed.row.sso_values].sort(),
           createdAt: iso(changed.row.created_at),
         };
       },
@@ -781,6 +879,7 @@ export function endUserRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.tenant("end_user_group:write") },
         schema: {
           summary: "Take an end user out of a group",
+          description: "The person loses what the group's bindings gave them. Audited.",
           tags: ["end users"],
           params: MembershipParams,
           response: { 204: NoContent },
@@ -813,7 +912,12 @@ export function endUserRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       "/tenants/:t/session",
       {
-        config: { access: access.custom, rateLimit: guestLimit },
+        config: {
+          access: access.custom(
+            "Answers for anyone, signed in or not, and says who is calling as the tenant's apps see them.",
+          ),
+          rateLimit: guestLimit,
+        },
         schema: {
           summary: "Who is calling, as this tenant's apps see them",
           description:
@@ -876,9 +980,14 @@ export function endUserRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.post(
       "/tenants/:t/end-user-auth/sign-out",
       {
-        config: { access: access.custom },
+        config: {
+          access: access.custom(
+            "Needs the end user's own session in this tenant. With none there is nothing to end.",
+          ),
+        },
         schema: {
           summary: "End the calling end user's session",
+          description: "Their sign-in to this tenant's apps ends.",
           tags: ["end users"],
           params: TenantParams,
           response: { 204: NoContent },
@@ -1013,7 +1122,12 @@ export function endUserRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.post(
       "/tenants/:t/end-user-auth/passwords",
       {
-        config: { access: access.public, rateLimit: SIGN_IN_LIMIT },
+        config: {
+          access: access.publicWith(
+            "Needs the token of the invitation or reset link, in the body.",
+          ),
+          rateLimit: SIGN_IN_LIMIT,
+        },
         schema: {
           summary: "Set a password with an invitation or reset link's token",
           description: "The token works once. Signs the account in.",
@@ -1063,7 +1177,12 @@ export function endUserRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.put(
       "/tenants/:t/end-user-auth/password",
       {
-        config: { access: access.custom, rateLimit: SIGN_IN_LIMIT },
+        config: {
+          access: access.custom(
+            "Needs the end user's own sign-in to this tenant. A member or an API key is refused.",
+          ),
+          rateLimit: SIGN_IN_LIMIT,
+        },
         schema: {
           summary: "Change the calling end user's password",
           description: "Ends the person's other sign-ins.",

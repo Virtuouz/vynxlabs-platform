@@ -47,10 +47,26 @@ export interface JsonViewProps {
   maxHeight?: string;
 }
 
+/**
+ * What the server sends in place of a payload too large to send (`{ stored: "runs/…/output.json" }`):
+ * the one key and a path under a run's folder.
+ */
+function keptApart(value: unknown): string | undefined {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
+  const keys = Object.keys(value);
+  const stored = (value as { stored?: unknown }).stored;
+  return keys.length === 1 &&
+    typeof stored === "string" &&
+    /^(runs|flow-runs)\/.+\.json$/.test(stored)
+    ? stored
+    : undefined;
+}
+
 /** A value shown as indented, colored JSON, with a button to copy it. */
 export function JsonView({ value, label, tone = "plain", maxHeight = "18rem" }: JsonViewProps) {
   const [copied, setCopied] = useState(false);
-  const text = value === undefined ? "" : JSON.stringify(value, null, 2);
+  const kept = keptApart(value);
+  const text = value === undefined || kept ? "" : JSON.stringify(value, null, 2);
   return (
     // A recessed well (07 §7.5): a border of its own wherever it sits, panels included.
     <div
@@ -84,7 +100,15 @@ export function JsonView({ value, label, tone = "plain", maxHeight = "18rem" }: 
         className="overflow-auto"
       >
         <pre className="m-0 p-3 font-mono text-code-sm leading-relaxed break-words whitespace-pre-wrap">
-          {text ? paint(text) : <span className="text-ink-muted">—</span>}
+          {kept ? (
+            <span className="text-ink-muted">
+              Too large to show here. It is kept with the run, as {kept}. A script can read it.
+            </span>
+          ) : text ? (
+            paint(text)
+          ) : (
+            <span className="text-ink-muted">—</span>
+          )}
         </pre>
       </section>
     </div>

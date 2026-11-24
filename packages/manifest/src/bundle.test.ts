@@ -64,6 +64,40 @@ describe("what a manifest refers to", () => {
   });
 });
 
+describe("what a trigger source names", () => {
+  test("a connection or variable that is not in the repository is caught, as for a script", () => {
+    const source: BundleManifest = {
+      kind: "trigger_source",
+      schemaVersion: 1,
+      path: "sources/inbox",
+      ownership: "code",
+      body: {
+        entry: "inbox",
+        mode: "poll",
+        uses: { connections: ["mail"], variables: ["limits/size"], secrets: ["INBOX_KEY"] },
+      },
+    };
+    const problems = checkBundleManifests([source]);
+    expect(problems).toEqual([
+      expect.stringContaining('connections refers to "mail"'),
+      expect.stringContaining('variables refers to "limits/size"'),
+    ]);
+    expect(
+      checkBundleManifests([
+        source,
+        variable("limits/size"),
+        {
+          kind: "connection",
+          schemaVersion: 1,
+          path: "mail",
+          ownership: "code",
+          body: { connector: "http" },
+        },
+      ]),
+    ).toEqual([]);
+  });
+});
+
 describe("the format a bundle is written in", () => {
   test("is the oldest that can carry it", () => {
     expect(formatFor(1, [variable("a")])).toBe(1);
@@ -103,5 +137,63 @@ describe("the format a bundle is written in", () => {
       "path",
       "schemaVersion",
     ]);
+  });
+});
+
+describe("the names of an app's files (APP-05)", () => {
+  const app = (path: string) => ({
+    kind: "app" as const,
+    schemaVersion: 1,
+    path: "portal",
+    ownership: "code" as const,
+    body: { title: "Portal", entry: path },
+  });
+  const check = (...paths: string[]) =>
+    checkBundleAssets({
+      formatVersion: 2,
+      manifests: [app("index.html")],
+      assets: ["index.html", ...paths].map((path) => ({
+        app: "portal",
+        path,
+        sha256: "0".repeat(64),
+        size: 1,
+        contentType: "text/plain",
+      })),
+    });
+
+  test("may begin with a dot or an underscore, below the top and for .well-known", () => {
+    expect(check("assets/_chunk.js", ".well-known/x", "_helpers-1a2b.js", "a/.hidden")).toEqual([]);
+  });
+
+  test("never be . or .., nor have a space, and the refusal says how to rename the file", () => {
+    for (const path of ["a/../b", "./x", "a b.png", "café.png", "_/x"]) {
+      expect(check(path).join(" "), path).toMatch(/portal \(app\):/);
+    }
+    expect(check("my logo.png")[0]).toContain('the file "my logo.png"');
+    expect(check("my logo.png")[0]).toContain("build.rollupOptions.output");
+  });
+});
+
+describe("a script's worker pool", () => {
+  const script = (worker: string): BundleManifest => ({
+    kind: "script",
+    schemaVersion: 1,
+    path: "jobs/nightly",
+    ownership: "code",
+    body: {
+      entry: "nightly",
+      input: { type: "object" },
+      output: {},
+      timeoutSeconds: 30,
+      retries: { limit: 0, delaySeconds: 0, backoff: false },
+      uses: { connections: [], secrets: [], variables: [] },
+      worker,
+    },
+  });
+
+  test("cannot be called default: that is the queue of scripts that name no pool (GOV-38)", () => {
+    const problems = checkBundleManifests([script("default")]);
+    expect(problems.join("\n")).toContain("pool called default");
+    expect(checkBundleManifests([script("clients-lan")])).toEqual([]);
   });
 });

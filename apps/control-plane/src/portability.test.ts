@@ -1,4 +1,5 @@
-import { mkdtemp, open, rm, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdtemp, open, readdir, rm, stat, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -9,6 +10,7 @@ import { Worker } from "@volvel/worker";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { workspaceSchema } from "./kernel/data/apply.js";
 import type { ExportManifest } from "./kernel/tenancy/export.js";
+import { removeExpiredImports, STAGE_DIR } from "./kernel/tenancy/staging.js";
 import { OWNED_TABLES } from "./kernel/tenancy/tables.js";
 import { TAR_END, tarEntry, tarIndex, tarRead } from "./kernel/tenancy/tar.js";
 import { type Client, startTestApp, type TestApp } from "./testing.js";
@@ -389,6 +391,61 @@ afterAll(async () => {
   await rm(dir, { recursive: true, force: true });
 });
 
+/**
+ * The archive as someone who knows the passphrase could rewrite it: any file changed, added or
+ * dropped, the list of contents made to match, and written in format 1 so that nothing signs it.
+ * The checks that hold a file to its own tenant must hold for such a file too.
+ */
+async function altered(
+  change: (files: Map<string, Buffer>, manifest: ExportManifest) => void,
+  options: { keepSignature?: boolean } = {},
+): Promise<Buffer> {
+  const path = join(dir, `a-${Math.random()}.tar`);
+  await writeFile(path, archive);
+  const file = await open(path);
+  try {
+    const index = await tarIndex(file);
+    const files = new Map<string, Buffer>();
+    for (const entry of index.slice(0, -1)) files.set(entry.path, await tarRead(file, entry));
+    const changed = JSON.parse(
+      (await tarRead(file, index.at(-1) as never)).toString("utf8"),
+    ) as ExportManifest;
+    change(files, changed);
+    if (!options.keepSignature) {
+      changed.formatVersion = 1;
+      delete changed.authentication;
+    }
+    changed.entries = [...files].map(([entryPath, content]) => ({
+      path: entryPath,
+      bytes: content.length,
+      sha256: createHash("sha256").update(content).digest("hex"),
+    }));
+    return Buffer.concat([
+      ...[...files].flatMap(([entryPath, content]) => tarEntry(entryPath, content)),
+      ...tarEntry("manifest.json", Buffer.from(JSON.stringify(changed))),
+      TAR_END,
+    ]);
+  } finally {
+    await file.close();
+  }
+}
+const lines = (content: Buffer | undefined) =>
+  (content?.toString("utf8") ?? "")
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as Any);
+const jsonl = (rows: Any[]) =>
+  Buffer.from(`${rows.map((row) => JSON.stringify(row)).join("\n")}\n`);
+
+async function originalObject(key: string): Promise<Buffer> {
+  let found: Buffer | undefined;
+  await altered((files) => {
+    found = files.get(`objects/${key}`);
+  });
+  if (!found) throw new Error(`no ${key}`);
+  return found;
+}
+
 const importInto = (operator: Client, bytes: Buffer, query = "", passphrase = PASSPHRASE) =>
   operator.upload(`/instance/tenant-imports${query}`, bytes, "application/x-tar", {
     "x-export-passphrase": passphrase,
@@ -447,7 +504,7 @@ describe("exporting a tenant", () => {
     await file.close();
     expect(manifest).toMatchObject({
       format: "volvel-tenant-export",
-      formatVersion: 1,
+      formatVersion: 2,
       tenant: { id: tenant, slug: "acme", name: "Acme Corp" },
       history: true,
       pendingRuns: 2,
@@ -497,9 +554,11 @@ describe("exporting a tenant", () => {
     ]) {
       expect(text.includes(value), value).toBe(false);
     }
-    // What is there is ciphertext, and a password hash for each member.
+    // What is there is ciphertext, and a password hash for each member sealed under the
+    // tenant's key: none is a plain field (GOV-09).
     expect(text).toContain('"ciphertext"');
-    expect(text).toContain('"password_hash"');
+    expect(text).toContain('"password_sealed"');
+    expect(text).not.toContain('"password_hash"');
   });
 
   test("exporting is recorded, and leaves the tenant as it was", async () => {
@@ -576,7 +635,7 @@ describe("an export that should not be imported", () => {
     // The list of contents claims a row that is not there, which is only found after loading.
     const wrongCount = await importInto(
       operatorB,
-      await withManifest((changed) => {
+      await altered((_files, changed) => {
         (changed.counts.secret as number) += 1;
       }),
     );
@@ -590,6 +649,278 @@ describe("an export that should not be imported", () => {
     expect(await data.selectFrom("data_table").select("id").execute()).toEqual([]);
     const schemas = await sql`select 1 from pg_namespace where nspname like 'ws\\_%'`.execute(data);
     expect(schemas.rows).toEqual([]);
+  });
+});
+
+describe("an export that someone changed, who knows its passphrase", () => {
+  const refusedWith = async (bytes: Buffer, detail: RegExp, query = "") => {
+    const refused = await importInto(operatorB, bytes, query);
+    expect(refused.status, JSON.stringify(refused.body)).toBe(400);
+    expect(refused.body.code).toBe("import_refused");
+    expect(refused.body.detail).toMatch(detail);
+  };
+  const nothingWritten = async () => {
+    expect((await operatorB.get(`/tenants/${tenant}`)).status).toBe(404);
+    for (const table of ["workspace", "role", "binding", "secret", "bundle", "file"] as const) {
+      const rows = await b.db
+        .selectFrom(table)
+        .select("id")
+        .where("tenant_id", "=", tenant)
+        .execute();
+      expect(rows, table).toEqual([]);
+    }
+    expect(
+      await b.db
+        .selectFrom("member")
+        .select("id")
+        .where("email", "=", "alice@acme.example")
+        .execute(),
+    ).toEqual([]);
+    const data = (await b.kernel.data.location("acme-db")).owner;
+    expect(await data.selectFrom("data_table").select("id").execute()).toEqual([]);
+  };
+  const elsewhere = async () =>
+    (
+      await b.db
+        .selectFrom("tenant")
+        .select("id")
+        .where("slug", "=", "elsewhere")
+        .executeTakeFirstOrThrow()
+    ).id;
+
+  test("a row of another tenant is refused", async () => {
+    const other = await elsewhere();
+    await refusedWith(
+      await altered((files) => {
+        const rows = lines(files.get("platform/secret.0001.jsonl"));
+        (rows[0] as Any).tenant_id = other;
+        files.set("platform/secret.0001.jsonl", jsonl(rows));
+      }),
+      /secret holds a row that is not this tenant's own/,
+    );
+    await nothingWritten();
+  });
+
+  test("a binding of the whole instance is refused", async () => {
+    const operatorRole = (await rolesOf(b)).operator_admin;
+    await refusedWith(
+      await altered((files) => {
+        const rows = lines(files.get("platform/binding.0001.jsonl"));
+        Object.assign(rows[0] as Any, {
+          scope_type: "instance",
+          tenant_id: null,
+          workspace_id: null,
+          resource_id: null,
+          principal_type: "member",
+          principal_id: bobOnB,
+          role_id: operatorRole,
+        });
+        files.set("platform/binding.0001.jsonl", jsonl(rows));
+      }),
+      /binding holds a row that is not this tenant's own, or is of the instance/,
+    );
+    await nothingWritten();
+  });
+
+  test("a row of a workspace the export does not have is refused", async () => {
+    await refusedWith(
+      await altered((files) => {
+        const rows = lines(files.get("platform/variable_value.0001.jsonl"));
+        (rows[0] as Any).workspace_id = "0199d0aa-0000-7000-8000-00000000abcd";
+        files.set("platform/variable_value.0001.jsonl", jsonl(rows));
+      }),
+      /variable_value holds a row of a workspace that is not in this export/,
+    );
+    await nothingWritten();
+  });
+
+  test("a table, a schema and a path this format does not have are refused", async () => {
+    for (const path of [
+      "platform/access_grant.0001.jsonl",
+      "platform/api_key.0001.jsonl",
+      "platform/tenant_key.0001.jsonl",
+      "platform/not_a_table.0001.jsonl",
+      "evil/x.0001.jsonl",
+      "data/00000000-0000-7000-8000-000000000000/t_x.0001.jsonl",
+      "objects/../outside",
+    ]) {
+      await refusedWith(
+        await altered((files) => files.set(path, jsonl([{ id: "x" }]))),
+        /holds a file that this format does not have|an object with a name that is not allowed/,
+      );
+    }
+    // A table its catalog does not have, in a workspace that is the export's own.
+    await refusedWith(
+      await altered((files) =>
+        files.set(`data/${main}/t_nothing.0001.jsonl`, jsonl([{ id: "x" }])),
+      ),
+      /is a table its catalog does not have/,
+    );
+    await nothingWritten();
+  });
+
+  test("an object no row names is refused, and so is a name with no object", async () => {
+    await refusedWith(
+      await altered((files) =>
+        files.set("objects/bundles/someone-else/theirs.json", Buffer.from("{}")),
+      ),
+      /is not named by any row in it/,
+    );
+    await refusedWith(
+      await altered((files) => {
+        for (const key of [...files.keys()])
+          if (key.startsWith("objects/files/")) files.delete(key);
+      }),
+      /names the object .*, which is not in it/,
+    );
+    await nothingWritten();
+  });
+
+  test("an object that is stored here is neither replaced nor, when the import fails, removed", async () => {
+    let key = "";
+    await altered((files) => {
+      key = [...files.keys()].find((path) => path.startsWith("objects/files/"))?.slice(8) ?? "";
+    });
+    expect(key).not.toBe("");
+    const original = await originalObject(key);
+    await b.kernel.storage.put(key, Buffer.from("someone else's file"), "text/plain");
+    await refusedWith(await altered(() => {}), /is already stored here with other content/);
+    expect((await b.kernel.storage.get(key)).toString()).toBe("someone else's file");
+
+    // With the same content it is not touched, and a failed import leaves it where it was.
+    await b.kernel.storage.put(key, original, "application/octet-stream");
+    const failing = await importInto(
+      operatorB,
+      await altered((_files, changed) => {
+        (changed.counts.secret as number) += 1;
+      }),
+    );
+    expect(failing.status).toBe(500);
+    expect((await b.kernel.storage.get(key)).equals(original)).toBe(true);
+    await b.kernel.storage.remove(key);
+    await nothingWritten();
+  });
+
+  test("a list of contents that was changed, or has no signature, is refused in format 2", async () => {
+    await refusedWith(
+      await altered(
+        (_files, changed) => {
+          changed.counts.secret = 2;
+          changed.tenant.name = "Not Acme";
+        },
+        { keepSignature: true },
+      ),
+      /not signed with this export's key, or was changed after it was/,
+    );
+    await refusedWith(
+      await altered(
+        (_files, changed) => {
+          delete changed.authentication;
+        },
+        { keepSignature: true },
+      ),
+      /not signed with this export's key/,
+    );
+    await nothingWritten();
+  });
+
+  test("the check says whether the list of contents is signed", async () => {
+    const check = async (bytes: Buffer) => {
+      const staged = await operatorB.upload(
+        "/instance/tenant-imports/staged",
+        bytes,
+        "application/x-tar",
+        {
+          "x-export-passphrase": PASSPHRASE,
+        },
+      );
+      expect(staged.status, JSON.stringify(staged.body)).toBe(201);
+      await operatorB.delete(`/instance/tenant-imports/staged/${staged.body.id}`);
+      return staged.body.inspection;
+    };
+    const first = await check(archive);
+    expect(first, JSON.stringify(first)).toMatchObject({
+      members: 3,
+      formatVersion: 2,
+      authenticated: true,
+      problem: null,
+    });
+    expect(await check(await altered(() => {}))).toMatchObject({
+      formatVersion: 1,
+      authenticated: false,
+      passphraseOk: true,
+      problem: null,
+    });
+    const changed = await check(
+      await altered(
+        (_files, one) => {
+          one.tenant.name = "Not Acme";
+        },
+        { keepSignature: true },
+      ),
+    );
+    expect(changed.problem).toMatch(/not signed with this export's key/);
+  });
+
+  test("an upload still waiting is listed after a reload, and can be thrown away (INS-MP11)", async () => {
+    const staged = await operatorB.upload(
+      "/instance/tenant-imports/staged",
+      archive,
+      "application/x-tar",
+      { "x-export-passphrase": PASSPHRASE },
+    );
+    expect(staged.status, JSON.stringify(staged.body)).toBe(201);
+    const listed = await operatorB.get("/instance/tenant-imports/staged");
+    expect(listed.status, JSON.stringify(listed.body)).toBe(200);
+    expect(listed.body.items).toHaveLength(1);
+    expect(listed.body.items[0]).toMatchObject({
+      id: staged.body.id,
+      here: true,
+      inspection: staged.body.inspection,
+    });
+    expect(
+      (await operatorB.delete(`/instance/tenant-imports/staged/${staged.body.id}`)).status,
+    ).toBe(204);
+    expect((await operatorB.get("/instance/tenant-imports/staged")).body.items).toEqual([]);
+  });
+
+  test("an upload waits in a folder and a file only this user can open", async () => {
+    const staged = await operatorB.upload(
+      "/instance/tenant-imports/staged",
+      archive,
+      "application/x-tar",
+      {
+        "x-export-passphrase": PASSPHRASE,
+      },
+    );
+    expect(staged.status).toBe(201);
+    expect((await stat(STAGE_DIR)).mode & 0o777).toBe(0o700);
+    expect((await stat(join(STAGE_DIR, `${staged.body.id}.tar`))).mode & 0o777).toBe(0o600);
+    await operatorB.delete(`/instance/tenant-imports/staged/${staged.body.id}`);
+  });
+
+  test("a file no upload row holds is swept, and one that is held or still arriving is kept (INS-10)", async () => {
+    const staged = await operatorB.upload(
+      "/instance/tenant-imports/staged",
+      archive,
+      "application/x-tar",
+      { "x-export-passphrase": PASSPHRASE },
+    );
+    const held = join(STAGE_DIR, `${staged.body.id}.tar`);
+    const orphan = join(STAGE_DIR, "orphan-of-another-replica.tar");
+    const arriving = join(STAGE_DIR, "arriving.tar");
+    await writeFile(orphan, "left behind");
+    await writeFile(arriving, "still coming");
+    const hoursAgo = new Date(Date.now() - 3 * 3_600_000);
+    await utimes(orphan, hoursAgo, hoursAgo);
+    await removeExpiredImports(b.kernel);
+    const left = await readdir(STAGE_DIR);
+    expect(left).not.toContain("orphan-of-another-replica.tar");
+    expect(left).toContain("arriving.tar");
+    expect(left).toContain(`${staged.body.id}.tar`);
+    await rm(arriving, { force: true });
+    await stat(held);
+    await operatorB.delete(`/instance/tenant-imports/staged/${staged.body.id}`);
   });
 });
 
@@ -977,6 +1308,12 @@ describe("back again", () => {
       ),
     ).toBe(false);
 
+    // A member's email changed here while the tenant was away (INS-16): matched by ID first.
+    await a.db
+      .updateTable("member")
+      .set({ email: "carol-new@acme.example" })
+      .where("id", "=", carolId)
+      .execute();
     const imported = await a.admin.upload(
       "/instance/tenant-imports?slug=acme-returned",
       exported.bytes,
@@ -985,8 +1322,16 @@ describe("back again", () => {
     );
     expect(imported.status, JSON.stringify(imported.body)).toBe(201);
     expect(imported.body.tenant).toMatchObject({ slug: "acme-returned", dataLocation: null });
+    // The tenant was here before and its audit entries were kept: the report still counts the
+    // rows the file brought, the number the check said, not those plus what was already here.
+    expect(imported.body.counts).toEqual(light.counts);
     // Alice's account was still here, so it is linked rather than made again.
     expect(imported.body.members.linked).toBeGreaterThanOrEqual(1);
+    await a.db
+      .updateTable("member")
+      .set({ email: "carol@acme.example" })
+      .where("id", "=", carolId)
+      .execute();
     const back = await a.signIn("alice@acme.example", PASSWORD);
     expect(
       (await back.get(`${ws(main)}/rows/orders?sort=number`)).body.items.map((row: Any) => [
@@ -1003,6 +1348,98 @@ describe("back again", () => {
     const here =
       await sql`select 1 from pg_namespace where nspname = ${workspaceSchema(main)}`.execute(a.db);
     expect(here.rows).toHaveLength(1);
+  });
+});
+
+describe("members' passwords in an export (GOV-09)", () => {
+  async function readArchive(bytes: Buffer): Promise<Map<string, Buffer>> {
+    const path = join(dir, `read-${Math.random()}.tar`);
+    await writeFile(path, bytes);
+    const file = await open(path);
+    try {
+      const out = new Map<string, Buffer>();
+      for (const entry of await tarIndex(file)) out.set(entry.path, await tarRead(file, entry));
+      return out;
+    } finally {
+      await file.close();
+    }
+  }
+  const membersOf = (files: Map<string, Buffer>): Any[] =>
+    (files.get("members.0001.jsonl") as Buffer)
+      .toString("utf8")
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => JSON.parse(line));
+
+  test("a hash is sealed, and left out for a member who belongs elsewhere too", async () => {
+    // Carol also belongs to another tenant here, so her account is not this tenant's to give.
+    const side = (await a.admin.post("/tenants", { slug: "side", name: "Side" })).body.id as string;
+    const carol = await a.db
+      .selectFrom("member")
+      .select("id")
+      .where("email", "=", "carol@acme.example")
+      .executeTakeFirstOrThrow();
+    await a.db
+      .insertInto("tenant_member")
+      .values({ tenant_id: side, member_id: carol.id })
+      .execute();
+    const exported = await alice.post(`/tenants/${tenant}/exports`, { passphrase: PASSPHRASE });
+    expect(exported.status).toBe(200);
+    const members = membersOf(await readArchive(exported.bytes));
+    expect(members.every((member) => !("password_hash" in member))).toBe(true);
+    const sealed = Object.fromEntries(members.map((m) => [m.email, m.password_sealed]));
+    expect(sealed["carol@acme.example"]).toBeNull();
+    expect(typeof sealed["alice@acme.example"]).toBe("string");
+    const hashes = await sql<{ password: string }>`
+      select password from member_account where password is not null`.execute(a.db);
+    for (const { password } of hashes.rows) {
+      expect(exported.bytes.toString("latin1").includes(password)).toBe(false);
+    }
+    await a.db.deleteFrom("tenant_member").where("tenant_id", "=", side).execute();
+  });
+
+  test("an export in format 1, with its hashes as plain fields, is still imported", async () => {
+    const files = await readArchive(archive);
+    const hashes = new Map(
+      (
+        await sql<{ member_id: string; password: string }>`
+          select member_id, password from member_account where provider_id = 'credential'`.execute(
+          a.db,
+        )
+      ).rows.map((row) => [row.member_id, row.password]),
+    );
+    const old = membersOf(files).map(({ password_sealed: _gone, ...member }) => ({
+      ...member,
+      password_hash: hashes.get(member.id) ?? null,
+    }));
+    const body = Buffer.from(`${old.map((member) => JSON.stringify(member)).join("\n")}\n`);
+    files.set("members.0001.jsonl", body);
+    const manifest = JSON.parse((files.get("manifest.json") as Buffer).toString("utf8"));
+    manifest.formatVersion = 1;
+    for (const entry of manifest.entries) {
+      const content = files.get(entry.path) as Buffer;
+      entry.bytes = content.length;
+      entry.sha256 = createHash("sha256").update(content).digest("hex");
+    }
+    files.delete("manifest.json");
+    const bytes = Buffer.concat([
+      ...[...files].flatMap(([path, content]) => tarEntry(path, content)),
+      ...tarEntry("manifest.json", Buffer.from(JSON.stringify(manifest))),
+      TAR_END,
+    ]);
+    const c = await startTestApp();
+    try {
+      const imported = await c.admin.upload(
+        "/instance/tenant-imports",
+        bytes,
+        "application/x-tar",
+        { "x-export-passphrase": PASSPHRASE },
+      );
+      expect(imported.status, JSON.stringify(imported.body)).toBe(201);
+      expect((await c.signIn("carol@acme.example", PASSWORD)).get).toBeDefined();
+    } finally {
+      await c.stop();
+    }
   });
 });
 

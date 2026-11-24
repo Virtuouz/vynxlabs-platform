@@ -1,4 +1,4 @@
-import { Button, Menu, Popover, Tooltip } from "@volvel/ui";
+import { Button, LimitNote, Menu, Popover, Tooltip } from "@volvel/ui";
 import {
   ChevronDown,
   Eye,
@@ -10,6 +10,7 @@ import {
   TriangleAlert,
 } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
+import { NAME_MAX } from "./names.ts";
 
 /** The sizes the preview can be drawn at. */
 export const VIEWPORTS = {
@@ -37,30 +38,34 @@ export function RenameField({
   useEffect(() => field.current?.select(), []);
   const finish = (keep: boolean) => {
     const next = draft.trim();
+    // A name past its limit is not saved, and is not cut: Enter leaves it for the person to shorten.
+    if (keep && draft.length > NAME_MAX) return;
     onDone(keep && next !== "" && next !== title ? next : undefined);
   };
   return (
-    <input
-      ref={field}
-      aria-label="Name of the app"
-      value={draft}
-      maxLength={200}
-      size={Math.max(12, Math.min(draft.length + 2, 40))}
-      onChange={(event) => setDraft(event.target.value)}
-      onBlur={() => finish(true)}
-      onKeyDown={(event) => {
-        // Enter and Escape are the name's own; every other key goes on to the page's shortcuts.
-        if (event.key === "Enter") {
-          event.stopPropagation();
-          finish(true);
-        }
-        if (event.key === "Escape") {
-          event.stopPropagation();
-          finish(false);
-        }
-      }}
-      className="h-9 min-w-0 max-w-full rounded-control border border-action bg-surface px-2 font-[inherit] text-[length:inherit]"
-    />
+    <span className="inline-flex min-w-0 max-w-full items-center gap-2">
+      <input
+        ref={field}
+        aria-label="Name of the app"
+        value={draft}
+        size={Math.max(12, Math.min(draft.length + 2, 40))}
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={() => finish(true)}
+        onKeyDown={(event) => {
+          // Enter and Escape are the name's own; every other key goes on to the page's shortcuts.
+          if (event.key === "Enter") {
+            event.stopPropagation();
+            finish(true);
+          }
+          if (event.key === "Escape") {
+            event.stopPropagation();
+            finish(false);
+          }
+        }}
+        className="h-9 min-w-0 max-w-full rounded-control border border-action bg-surface px-2 font-[inherit] text-[length:inherit]"
+      />
+      <LimitNote value={draft} max={NAME_MAX} always className="shrink-0 font-normal" />
+    </span>
   );
 }
 
@@ -100,7 +105,9 @@ export function DraftPill({ count, onOpen }: { count: number | undefined; onOpen
  * "2 to fix": what keeps the app from being published, beside its name, as a pill that opens the
  * list. The workbench does not move, and nothing is covered, when something needs fixing.
  */
-export function FixPill({ words }: { words: readonly string[] }) {
+export function FixPill({ words: said }: { words: readonly string[] }) {
+  // One failure said twice is one thing to fix.
+  const words = [...new Set(said)];
   if (words.length === 0) return null;
   return (
     <Popover

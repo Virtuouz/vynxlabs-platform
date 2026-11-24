@@ -1,5 +1,6 @@
 import { type Issue, type ProfileName, parse, type Root, validate } from "@volvel/markup";
 import { isMap, parseDocument, parse as parseYaml } from "yaml";
+import { isDay } from "./changelog.js";
 import { check, FRONTMATTER_SCHEMA, type Frontmatter, PATH_PATTERN } from "./schema.js";
 
 /** Something wrong with a page or with a set of them, and where. */
@@ -170,6 +171,15 @@ export function readPage(
         } as Frontmatter;
       }
     }
+  }
+  if (frontmatter.date !== undefined && !isDay(frontmatter.date)) {
+    // Right in shape (the schema said so) and not a day: 2026-02-30. A changelog would skip it silently.
+    error(
+      lineOfKey("date"),
+      "frontmatter_invalid",
+      `The date is not a day on the calendar: "${frontmatter.date}". Write it as YYYY-MM-DD.`,
+    );
+    delete frontmatter.date;
   }
   if (frontmatter.title === "") frontmatter.title = titleOf(path);
 

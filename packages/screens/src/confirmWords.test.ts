@@ -30,6 +30,20 @@ describe("the words of a confirmation", () => {
     });
     expect(words.title).toMatch(/^Cancel the appointment C-1001 of Pepper on Nov 20(, \d{4})?\?$/);
   });
+  test("the day of a timestamp is the one the cell shows, in the reader's zone (P31)", () => {
+    const was = process.env.TZ;
+    process.env.TZ = "America/Chicago";
+    try {
+      const late = { ...visit, starts_at: "2026-12-04T00:20:00.000Z" };
+      const words = confirmWords({ label: "Cancel", table: "appointments", row: late, facts });
+      // 6:20 PM on Dec 3 in Chicago, as the table writes it.
+      expect(words.title).toContain("on Dec 3");
+      expect(words.title).not.toContain("Dec 4");
+    } finally {
+      if (was === undefined) Reflect.deleteProperty(process.env, "TZ");
+      else process.env.TZ = was;
+    }
+  });
   test("the button that goes ahead says the action's own label; the other is Go back for Cancel", () => {
     const words = confirmWords({ label: "Cancel", table: "appointments", row: visit, facts });
     expect(words.button).toBe("Cancel");
@@ -75,5 +89,20 @@ describe("the words of a confirmation", () => {
     expect(nounOf("clinic/appointments")).toBe("appointment");
     expect(nounOf("categories")).toBe("category");
     expect(nounOf(undefined)).toBe("record");
+  });
+});
+
+describe("several records", () => {
+  test("say how many, and do not name the first", () => {
+    const words = confirmWords({
+      label: "Remove",
+      table: "invoices",
+      row: { number: "INV-1" },
+      count: 2,
+    });
+    expect(words.title).toBe("Remove 2 invoices?");
+    expect(confirmWords({ label: "Mark paid", table: "categories", count: 3 }).title).toBe(
+      "Mark paid for 3 categories?",
+    );
   });
 });

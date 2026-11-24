@@ -3,7 +3,7 @@ import { sql } from "@volvel/db";
 import { Type } from "typebox";
 import { WORKER_STALE_SECONDS } from "../kernel/execution/workers.js";
 import { mayDecide } from "../kernel/flows/approvers.js";
-import { access, findWorkspace } from "../kernel/http.js";
+import { access, findWorkspace, reachedFromInside } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
 import { workspaceReferences } from "../kernel/references.js";
 import { Id, TenantParams, WorkspaceParams } from "./shared.js";
@@ -97,14 +97,14 @@ export function summaryRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       "/tenants/:t/workspaces/:w/summary",
       {
-        config: { access: access.workspace("workspace:read") },
+        config: { access: reachedFromInside(access.workspace("workspace:read")) },
         schema: {
           summary: "What needs attention in a workspace",
           description:
-            "Drafts, failed runs over the last 24 hours, connections with nothing bound, " +
+            "Drafts, failed runs over the last 24 hours, connections not set up here, " +
             "approvals waiting, git state and the version that runs here and where it promotes to. " +
             "A count the caller may not read is null.",
-          tags: ["workspaces"],
+          tags: ["tenancy"],
           params: WorkspaceParams,
           response: { 200: WorkspaceSummary },
         },
@@ -301,16 +301,18 @@ export function summaryRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           approvalsWaiting: approvals,
           approvalsWaitingMine: approvalsMine,
           git: git ? { state: git.state } : null,
-          version: here?.version ?? null,
-          linked: linkedRow
-            ? {
-                id: linkedRow.id,
-                name: linkedRow.name,
-                type: linkedRow.type,
-                version: there?.version ?? null,
-                same: Boolean(here && there && here.digest === there.digest),
-              }
-            : null,
+          // Which version runs here, and where it promotes to, is for who reads the workspace.
+          version: ctx.insideOnly ? null : (here?.version ?? null),
+          linked:
+            linkedRow && !ctx.insideOnly
+              ? {
+                  id: linkedRow.id,
+                  name: linkedRow.name,
+                  type: linkedRow.type,
+                  version: there?.version ?? null,
+                  same: Boolean(here && there && here.digest === there.digest),
+                }
+              : null,
         };
       },
     );
@@ -318,14 +320,14 @@ export function summaryRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       "/tenants/:t/summary",
       {
-        config: { access: access.tenant("tenant:read") },
+        config: { access: reachedFromInside(access.tenant("tenant:read")) },
         schema: {
           summary: "What needs attention in a tenant",
           description:
             "Counts for the tenant's navigation: workspaces, approvals waiting, hostnames not " +
             "yet working, workers online, operator access open now and members. A count the " +
             "caller may not read is null.",
-          tags: ["tenants"],
+          tags: ["tenancy"],
           params: TenantParams,
           response: { 200: TenantSummary },
         },
@@ -471,7 +473,7 @@ export function summaryRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             "Worked out from what is deployed: the connections, secrets, variables and tables " +
             "scripts declare, the scripts and flows that flows and triggers start, the events " +
             "flows listen for, and the interfaces apps serve. Narrow it with `kind` and `name`.",
-          tags: ["workspaces"],
+          tags: ["tenancy"],
           params: WorkspaceParams,
           querystring: Type.Object({
             kind: Type.Optional(Type.String({ maxLength: 40 })),

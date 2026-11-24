@@ -48,6 +48,7 @@ export { z };
 
 /** The version of the SDK, and the core versions a bundle built with it works on. */
 export const SDK_VERSION = "0.5.0";
+/** The core versions a bundle built with this SDK works on: from `min` up to, not including, `below`. */
 export const CORE_RANGE = { min: "0.5.0", below: "0.6.0" };
 
 /**
@@ -98,6 +99,7 @@ export interface ResourceDefinition {
   toManifest(entry: string): AuthoredManifest;
 }
 
+/** Whether a value is a resource made with one of the `define` functions, as the build finds them in a repository's exports. */
 export function isResourceDefinition(value: unknown): value is ResourceDefinition {
   return (
     typeof value === "object" &&
@@ -165,6 +167,7 @@ export type InputKey<I> =
     ? `input.${Extract<keyof I, string>}` | `input.${Extract<keyof I, string>}.${string}`
     : `input.${string}`;
 
+/** What `defineScript` takes: the script's path, the schemas of its input and its output, what it uses and the function that runs. */
 export interface ScriptOptions<Input extends z.ZodType, Output extends z.ZodType>
   extends ResourceNames {
   /** The name of the tool an agent sees for it, if it should not follow the path. */
@@ -210,7 +213,11 @@ export interface ScriptOptions<Input extends z.ZodType, Output extends z.ZodType
    * place's worker a credential made for the same pool.
    */
   worker?: string;
-  /** What happens when a run fails for the last time. */
+  /**
+   * What happens when a run fails for the last time. It replaces the workspace's default alert for
+   * this script, as a whole: a script that names only `notify` does not also start the default's
+   * `script`.
+   */
   onFailure?: { script?: string | { path: string }; notify?: string | { path: string } };
   /**
    * Makes the script a step people can pick in the flow editor. Its input
@@ -226,6 +233,7 @@ export interface ScriptOptions<Input extends z.ZodType, Output extends z.ZodType
   run(input: z.output<Input>, ctx: ScriptContext): Promise<z.input<Output>> | z.input<Output>;
 }
 
+/** A script made with `defineScript`. The build finds it among a repository's exports. */
 export interface ScriptDefinition extends ResourceDefinition {
   readonly kind: "script";
   /** Validates the input, runs the script and validates what it returns. */
@@ -240,6 +248,7 @@ export class SchemaError extends Error {
   }
 }
 
+/** Defines a script: a function with a checked input and a checked output, that runs on a worker. */
 export function defineScript<Input extends z.ZodType, Output extends z.ZodType>(
   options: ScriptOptions<Input, Output>,
 ): ScriptDefinition {
@@ -292,6 +301,7 @@ export function defineScript<Input extends z.ZodType, Output extends z.ZodType>(
   };
 }
 
+/** What `defineSchedule` takes: when it fires and what it starts. */
 export interface ScheduleOptions extends ResourceNames {
   path: string;
   /** What it is for, in plain text. */
@@ -318,6 +328,7 @@ export interface ScheduleOptions extends ResourceNames {
   tags?: string[];
 }
 
+/** Defines a schedule: a script or a flow started at times given as a cron line. */
 export function defineSchedule(options: ScheduleOptions): ResourceDefinition {
   return resource("schedule", options, () =>
     compact({
@@ -365,6 +376,7 @@ export interface WebhookRequest<Body = unknown> {
   rawBody: string;
 }
 
+/** What `defineWebhook` takes: the script that receives a request, and how the request is checked. */
 export interface WebhookOptions extends ResourceNames {
   path: string;
   /** What it is for, in plain text. */
@@ -402,7 +414,10 @@ export interface PollTick<Cursor = unknown> {
 
 /** What a polling trigger source answers. */
 export interface PollResult<Cursor = unknown> {
-  /** Each starts the trigger's script or flow, up to a hundred. */
+  /**
+   * Each starts the trigger's script or flow. At most 100 a tick: a tick that gives more fails,
+   * starts nothing and keeps the cursor it had, so give fewer, and the rest on the next tick.
+   */
   items: unknown[];
   /** Where to pick up from next time. Left out, the place it had is kept. */
   cursor?: Cursor;
@@ -423,6 +438,7 @@ interface TriggerSourceCommon {
   worker?: string;
 }
 
+/** What `defineTriggerSource` takes: code of your own that turns requests, or a poll, into starts of a script or a flow. */
 export type TriggerSourceOptions =
   | (TriggerSourceCommon & {
       mode: "webhook";
@@ -436,6 +452,7 @@ export type TriggerSourceOptions =
       run(tick: PollTick, ctx: ScriptContext): Promise<PollResult> | PollResult;
     });
 
+/** A trigger source made with `defineTriggerSource`. */
 export interface TriggerSourceDefinition extends ResourceDefinition {
   readonly kind: "trigger_source";
   execute(input: unknown, ctx: ScriptContext): Promise<unknown>;
@@ -475,6 +492,7 @@ export function defineTriggerSource(options: TriggerSourceOptions): TriggerSourc
   };
 }
 
+/** Defines a webhook: an address that starts a script when a request is made to it. */
 export function defineWebhook(options: WebhookOptions): ResourceDefinition {
   return resource("trigger", options, () =>
     compact({
@@ -532,6 +550,7 @@ export function defineForm(
   );
 }
 
+/** What `defineConnector` takes: the connector's name, the schema of a connection's configuration and how its client is made. */
 export interface ConnectorOptions<Config, Client> extends ResourceNames {
   /** Unique within the workspace, for example `connectors/shop`. Connections name it by this. */
   path: string;
@@ -555,6 +574,7 @@ export interface ConnectorOptions<Config, Client> extends ResourceNames {
   ): Promise<ConnectionTest>;
 }
 
+/** A connector made with `defineConnector`, which connections of your own name. */
 export interface ConnectorDefinition<Config, Client> extends ResourceDefinition {
   readonly kind: "connector";
   create(config: Config, credential: string | undefined, signal: AbortSignal): Client;
@@ -584,6 +604,7 @@ export function defineConnector<Config, Client>(
   };
 }
 
+/** What `defineConnection` takes: the connector it uses, its configuration and the name of the secret that holds the credential. */
 export interface ConnectionOptions extends ResourceNames {
   path: string;
   /** The connector to use: `http`, `smtp` or `oauth2`, which are built in, or one of your own. */
@@ -591,6 +612,7 @@ export interface ConnectionOptions extends ResourceNames {
   description?: string;
 }
 
+/** What `defineConnectionGroup` takes: the connector every member uses, and the connections that are members. */
 export interface ConnectionGroupOptions extends ResourceNames {
   path: string;
   /** The connector every member uses: `http` or `smtp`, which are built in, or one of your own. */
@@ -623,6 +645,7 @@ export function defineConnection(options: ConnectionOptions): ResourceDefinition
   );
 }
 
+/** What `defineVariable` takes: its path, what it is for and the value used in a workspace that has not set its own. */
 export interface VariableOptions extends ResourceNames {
   path: string;
   description?: string;
@@ -637,6 +660,7 @@ export function defineVariable(options: VariableOptions): ResourceDefinition {
   );
 }
 
+/** What `defineQuery` takes: its path, one SELECT over the workspace's tables and the parameters it is given. */
 export interface QueryOptions extends ResourceNames {
   /** The query's name, for example `reports/fees`. */
   path: string;
@@ -672,6 +696,7 @@ export function defineQuery(options: QueryOptions): ResourceDefinition {
   );
 }
 
+/** What `defineEvent` takes: the event's name and the schema of its payload. */
 export interface EventOptions<Payload extends z.ZodType> extends ResourceNames {
   /** The event's name, for example `orders/placed`. */
   path: string;
@@ -692,6 +717,7 @@ export function defineEvent<Payload extends z.ZodType>(
   );
 }
 
+/** What `defineEventTrigger` takes: the event to listen for, what it starts and an optional filter. */
 export interface EventTriggerOptions extends ResourceNames {
   path: string;
   /** What it is for, in plain text. */
@@ -724,6 +750,8 @@ type Target = string | { path: string };
 /** A node of a flow, as the manifest stores it. */
 export type FlowNode = Record<string, unknown> & { type: string };
 
+const keyed = (key: string | undefined) => (key ? { key } : {});
+
 /** The entry points of a flow. A flow may have several, each leading into its own part of the graph. */
 export const trigger = {
   /**
@@ -748,15 +776,25 @@ export const trigger = {
       timezone?: string;
       source?: Target;
       /**
+       * What names this start for as long as the flow lives. Its address, its pause and
+       * when it last fired follow the key when the step is renamed. Left out, the step's
+       * own name is the key.
+       */
+      key?: string;
+      /**
        * `skip`, the default, passes over a time while the flow's last run from this
        * trigger is still going. `allow` starts another beside it.
        */
       overlap?: "allow" | "skip";
+      /** CEL expressions over `trigger` that tag each run it starts. */
+      tags?: string[];
     } = {},
   ): FlowNode => ({
     type: "trigger",
+    ...keyed(options.key),
     trigger: compact({
       type: "schedule",
+      tags: options.tags,
       cron,
       timezone: options.timezone,
       source: options.source ? pathOf(options.source) : undefined,
@@ -774,11 +812,21 @@ export const trigger = {
       source?: Target;
       /** `flow` holds the request open, for up to 25 seconds, for a respond step to answer. */
       respond?: "now" | "flow";
+      /** CEL expressions over `trigger` that tag each run it starts. */
+      tags?: string[];
+      /**
+       * What names this start for as long as the flow lives. Its address, its pause and
+       * when it last fired follow the key when the step is renamed. Left out, the step's
+       * own name is the key.
+       */
+      key?: string;
     } = {},
   ): FlowNode => ({
     type: "trigger",
+    ...keyed(options.key),
     trigger: compact({
       type: "webhook",
+      tags: options.tags,
       input: options.input,
       verify: options.verify,
       source: options.source ? pathOf(options.source) : undefined,
@@ -786,14 +834,24 @@ export const trigger = {
     }),
   }),
   /** Started when someone sends the form, which the platform serves as a page. The input is the fields. */
-  form: (options: FormOptions): FlowNode => ({
+  form: ({ key, ...options }: FormOptions & { key?: string }): FlowNode => ({
     type: "trigger",
+    ...keyed(key),
     trigger: compact({ type: "form", ...options }),
   }),
   /** Started when an event is published. `filter` is CEL over `event.payload`. */
-  event: (event: Target, options: { filter?: string } = {}): FlowNode => ({
+  event: (
+    event: Target,
+    options: { filter?: string; key?: string; tags?: string[] } = {},
+  ): FlowNode => ({
     type: "trigger",
-    trigger: compact({ type: "event", event: pathOf(event), filter: options.filter }),
+    ...keyed(options.key),
+    trigger: compact({
+      type: "event",
+      event: pathOf(event),
+      filter: options.filter,
+      tags: options.tags,
+    }),
   }),
 };
 
@@ -852,19 +910,23 @@ export const step = {
   foreach: (
     items: string,
     options: {
-      script?: Target;
-      flow?: Target;
       input?: string;
       concurrency?: number;
       continueOnError?: boolean;
       with?: StepGrants;
-    },
+    } & (
+      | { script: Target; flow?: undefined; flowFrom?: undefined; allow?: undefined }
+      | { flow: Target; script?: undefined; flowFrom?: undefined; allow?: undefined }
+      | { flowFrom: string; allow: Target[]; script?: undefined; flow?: undefined }
+    ),
   ): FlowNode =>
     compact({
       type: "foreach",
       items,
       script: options.script ? pathOf(options.script) : undefined,
       flow: options.flow ? pathOf(options.flow) : undefined,
+      flowFrom: options.flowFrom,
+      allow: options.allow?.map(pathOf),
       input: options.input,
       concurrency: options.concurrency,
       continueOnError: options.continueOnError,
@@ -898,9 +960,24 @@ export const step = {
       approvers: options.approvers,
       surface: options.surface,
     }) as FlowNode,
-  /** Runs another flow from its manual trigger and waits for it. */
-  subflow: (flow: Target, options: { input?: string } = {}): FlowNode =>
-    compact({ type: "subflow", flow: pathOf(flow), input: options.input }) as FlowNode,
+  /**
+   * Runs another flow from its manual trigger and waits for it. Name it, or give
+   * `flowFrom`, an expression that chooses one of the flows in `allow`.
+   */
+  subflow: (
+    flow: Target | { flowFrom: string; allow: Target[]; input?: string },
+    options: { input?: string } = {},
+  ): FlowNode => {
+    const chosen =
+      typeof flow === "object" && "flowFrom" in flow
+        ? { flowFrom: flow.flowFrom, allow: flow.allow.map(pathOf), input: flow.input }
+        : { flow: pathOf(flow) };
+    return compact({
+      type: "subflow",
+      ...chosen,
+      input: options.input ?? ("input" in chosen ? chosen.input : undefined),
+    }) as FlowNode;
+  },
   /**
    * Answers the request that started the flow, for a webhook trigger with
    * `respond: "flow"`. `body` and each header are expressions. The first
@@ -918,6 +995,7 @@ export type FlowEdge<Node extends string> =
   | [from: Node, to: Node]
   | [from: Node, to: Node, options: { when?: string; error?: boolean }];
 
+/** What `defineFlow` takes: its steps and the edges between them. */
 export interface FlowOptions<Nodes extends Record<string, FlowNode>> extends ResourceNames {
   /** The name of the tool an agent sees for it, if it should not follow the path. */
   mcp?: ToolName;
@@ -926,6 +1004,8 @@ export interface FlowOptions<Nodes extends Record<string, FlowNode>> extends Res
   nodes: Nodes;
   /** Each edge names two of the nodes above. */
   edges: FlowEdge<Extract<keyof Nodes, string>>[];
+  /** Where each node sits in the editor, so positions survive a pull and a deploy. */
+  layout?: Partial<Record<Extract<keyof Nodes, string>, { x: number; y: number }>>;
 }
 
 /**
@@ -939,6 +1019,7 @@ export function defineFlow<Nodes extends Record<string, FlowNode>>(
     compact({
       description: options.description,
       nodes: options.nodes,
+      layout: options.layout,
       edges: options.edges.map(([from, to, edge]) =>
         compact({ from, to, output: edge?.when, error: edge?.error ? true : undefined }),
       ),
@@ -946,6 +1027,7 @@ export function defineFlow<Nodes extends Record<string, FlowNode>>(
   );
 }
 
+/** What `defineTable` takes: the table's path, its columns and who may read and change its rows. */
 export interface TableOptions<C extends Record<string, ColumnSpec<unknown, boolean, boolean>>>
   extends ResourceNames {
   /** The table's name, for example `crm/orders`. */
@@ -975,18 +1057,19 @@ export interface TableOptions<C extends Record<string, ColumnSpec<unknown, boole
             | { everyone: true }
             /** The column holds the person's own ID. */
             | { column: Extract<keyof C, string>; is: "principal" }
-            /** The column names a group the person is in: its ID, or its name in a text column. */
+            /** The column names a group the person is in: its ID, or its key in a text column (its name too, in rows written before groups had keys). */
             | { column: Extract<keyof C, string>; in: "groups" }
             /** The column equals one of the person's attributes. */
             | { column: Extract<keyof C, string>; equals: { attribute: string } };
         }[];
       };
-  /** Columns to index, each entry one index. */
-  indexes?: Extract<keyof C, string>[][];
+  /** Columns to index, each entry one index. `id`, `created_at` and `updated_at` may be named. */
+  indexes?: (Extract<keyof C, string> | "id" | "created_at" | "updated_at")[][];
   /** The table's previous path. Its rows are kept. */
   renamedFrom?: string;
 }
 
+/** A table made with `defineTable`, which carries the type of its rows. */
 export interface TableDefinition<Row, Insert> extends ResourceDefinition {
   readonly kind: "table";
   /** Only for type inference. Never set. */
@@ -1021,6 +1104,7 @@ export function defineTable<C extends Record<string, ColumnSpec<unknown, boolean
   return { ...definition, kind: "table" };
 }
 
+/** What `defineDataSource` takes: its path and what it is for. */
 export interface DataSourceOptions extends ResourceNames {
   path: string;
   description?: string;
@@ -1033,28 +1117,44 @@ export function defineDataSource(options: DataSourceOptions): ResourceDefinition
   );
 }
 
-/** The theme tokens a workspace may set. Each is the CSS variable `--vx-<name>` in the component kit. */
-export type ThemeToken =
-  | "canvas"
-  | "surface"
-  | "sunken"
-  | "line"
-  | "ink"
-  | "ink-muted"
-  | "action"
-  | "action-ink"
-  | "action-soft"
-  | "attention"
-  | "attention-soft"
-  | "danger"
-  | "danger-soft"
-  | "success"
-  | "success-soft"
-  | "radius-control"
-  | "radius-panel"
-  | "font"
-  | "font-code";
+/**
+ * The theme tokens a workspace may set, each the CSS variable `--vx-<name>` in the
+ * component kit. The manifest's own list (`THEME_TOKENS`) is the same: a test holds them equal.
+ */
+export const THEME_TOKENS = [
+  "canvas",
+  "surface",
+  "sunken",
+  "line",
+  "ink",
+  "ink-muted",
+  "action",
+  "action-ink",
+  "action-soft",
+  "attention",
+  "attention-soft",
+  "danger",
+  "danger-soft",
+  "success",
+  "success-soft",
+  "structure",
+  "raised",
+  "selected",
+  "line-strong",
+  "line-control",
+  "ink-subtle",
+  "code-bg",
+  "focus",
+  "radius-control",
+  "radius-panel",
+  "font",
+  "font-code",
+] as const;
 
+/** One of the theme tokens a workspace may set. */
+export type ThemeToken = (typeof THEME_TOKENS)[number];
+
+/** What `defineTheme` takes: the values that replace the tenant's theme for this workspace. */
 export interface ThemeOptions extends ResourceNames {
   /** Default `theme`. A workspace has one theme. */
   path?: string;
@@ -1075,6 +1175,7 @@ export function defineTheme(options: ThemeOptions): ResourceDefinition {
   );
 }
 
+/** What `defineApp` takes: the app's path and title, and the interface or the code it serves. */
 export interface AppOptions extends ResourceNames {
   /** Unique within the workspace. It is part of the app's address, for example `orders`. */
   path: string;
@@ -1126,6 +1227,7 @@ export interface AppOptions extends ResourceNames {
   reads?: string[];
 }
 
+/** An app made with `defineApp`. */
 export interface AppDefinition extends ResourceDefinition {
   readonly kind: "app";
   /** Read by the build. Not part of the manifest. Absent for an app that serves an interface. */
@@ -1181,6 +1283,7 @@ export function defineApp(options: AppOptions): AppDefinition {
   };
 }
 
+/** What `defineInterface` takes: its path and the pages it is made of. */
 export interface InterfaceOptions extends Omit<ResourceNames, "title">, InterfaceBody {
   /** Unique within the workspace, for example `screens/invoices`. */
   path: string;
@@ -1201,6 +1304,7 @@ export function defineInterface(options: InterfaceOptions): ResourceDefinition {
   );
 }
 
+/** What `defineDashboard` takes: its path and the widgets it is made of. */
 export interface DashboardOptions extends Omit<ResourceNames, "title">, DashboardBody {
   /** Unique within the workspace, for example `boards/clinic-visits`. */
   path: string;
@@ -1225,6 +1329,7 @@ export function defineDashboard(options: DashboardOptions): ResourceDefinition {
   );
 }
 
+/** What `defineRole` takes: the role's path, the name bindings refer to and the permissions it holds. */
 export interface RoleOptions extends ResourceNames {
   /** Unique within the workspace, for example `roles/order-reader`. */
   path: string;
@@ -1247,6 +1352,7 @@ export function defineRole(options: RoleOptions): ResourceDefinition & { readonl
   return { ...definition, name: options.name };
 }
 
+/** Who a binding gives a role to: a member, a group of members, an end-user group or a service account. */
 export type BindingPrincipal =
   | { type: "member"; email: string }
   /** A group of members, by its key: `tech-desk`. What it is called can change freely. */
@@ -1265,6 +1371,7 @@ export type BindingPrincipal =
   /** Anyone, signed in or not. This is what makes something public. */
   | { type: "anonymous" };
 
+/** What `defineBinding` takes: the role, who holds it and where. */
 export interface BindingOptions extends ResourceNames {
   /** Unique within the workspace, for example `bindings/portal-orders`. */
   path: string;

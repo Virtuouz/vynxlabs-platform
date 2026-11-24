@@ -15,6 +15,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Search,
+  ShieldCheck,
   Sun,
   UsersRound,
 } from "lucide-react";
@@ -31,11 +32,12 @@ import {
   useCommandKey,
 } from "./kit/CommandPalette.tsx";
 import { ErrorBoundary } from "./kit/ErrorBoundary.tsx";
-import { openShortcuts, useShortcut } from "./kit/keys.ts";
+import { formatCombo, openShortcuts, useShortcut } from "./kit/keys.ts";
 import { LiveIndicator } from "./kit/LiveIndicator.tsx";
 import { useWide, WIDE } from "./kit/layout.tsx";
 import { Junction, Wire } from "./kit/motifs.tsx";
 import { OperatorMark, OperatorStrip } from "./kit/OperatorStrip.tsx";
+import { ReadOnlyStrip } from "./kit/ReadOnly.tsx";
 import { EnvTag, StatePill, Tag } from "./kit/status.tsx";
 import { pageTitle, useNamedObject } from "./kit/title.ts";
 import { useBleeding } from "./kit/workbench.ts";
@@ -48,6 +50,7 @@ import {
   INSTANCE_SECTIONS,
   lastWorkspace,
   rememberWorkspace,
+  sectionLabel,
   TENANT_GROUPS,
   TENANT_SECTIONS,
   type Where,
@@ -57,7 +60,7 @@ import {
 } from "./nav.ts";
 import { usePreference } from "./prefs.ts";
 import { openedAt, useRecordRecent } from "./recent.ts";
-import { Link, navigate, navigationKind, useRestoredScroll } from "./router.tsx";
+import { Link, navigate, navigationKind, useQueryValue, useRestoredScroll } from "./router.tsx";
 import { useTenantStream } from "./stream.ts";
 import { type ThemeChoice, useThemeChoice } from "./theme.ts";
 
@@ -76,7 +79,10 @@ interface WorkspaceSummary {
   slug: string;
   type: "production" | "dev";
   triggersPaused?: boolean;
+  pausedByInstance?: boolean;
   linkedWorkspaceId?: string | null;
+  /** True when the person holds a grant on something inside and nothing on the workspace itself. */
+  onlyInside?: boolean;
 }
 
 /** What `GET …/summary` answers for a workspace. A count the person may not read is null. */
@@ -149,6 +155,9 @@ function panelFor(
   counts: { workspace?: WorkspaceCounts | undefined; tenant?: TenantCounts | undefined },
   /** An area of the rail that was pressed: its sections are shown, wherever the person is. */
   reveal?: { area: Area; workspaceId: string },
+  workspaceType?: string,
+  /** The person reaches only what was given to them inside: no section of the workspace is theirs to open. */
+  onlyInside?: boolean,
 ): { title: string; groups: { label?: string; entries: Entry[] }[] } {
   const { tenantId } = where;
   const workspaceId = reveal?.workspaceId ?? where.workspaceId;
@@ -165,15 +174,15 @@ function panelFor(
           : ws?.git?.state === "ahead" || ws?.git?.state === "behind"
             ? { text: ws.git.state, tone: "neutral" }
             : undefined,
-      connections: some(ws?.unboundConnections, (n) => `${n} missing`, "attention"),
+      connections: some(ws?.unboundConnections, (n) => `${n} not set up`, "attention"),
     };
     return {
       title: AREA_LABEL[area],
       groups: [
         {
-          entries: WORKSPACE_SECTIONS[area].map((section) => ({
+          entries: (onlyInside ? [] : WORKSPACE_SECTIONS[area]).map((section) => ({
             key: section.slug,
-            label: section.label,
+            label: sectionLabel(section, workspaceType),
             icon: section.icon,
             to: `/t/${tenantId}/workspaces/${workspaceId}/${section.slug}`,
             current: where.workspaceId === workspaceId && where.section === section.slug,
@@ -236,7 +245,7 @@ function panelFor(
           entries: [
             {
               key: "api-keys",
-              label: "API keys",
+              label: "Account",
               icon: KeyRound,
               to: "/account/api-keys",
               current: where.section === "/account/api-keys",
@@ -424,7 +433,7 @@ function ReleasePath({ counts }: { counts: WorkspaceCounts }) {
     });
   return (
     <div className="flex flex-col gap-2 border-line border-t px-3 pt-3 pb-4">
-      <p className="m-0 text-label text-ink-subtle uppercase">Release path</p>
+      <p className="m-0 text-label text-ink-subtle uppercase">Deploy path</p>
       <ol className="relative m-0 flex list-none flex-col gap-2 p-0 pl-4">
         <span
           aria-hidden="true"
@@ -641,7 +650,16 @@ function useGoTo(
   });
 }
 
-function AccountMenu({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
+function AccountMenu({
+  me,
+  tenantId,
+  onSignOut,
+}: {
+  me: Me;
+  /** The tenant the person is in, when they are in one. */
+  tenantId?: string | undefined;
+  onSignOut: () => void;
+}) {
   const name = me.principal.email ?? me.principal.name ?? "?";
   return (
     <Menu
@@ -655,10 +673,20 @@ function AccountMenu({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
           onSelect: () => navigate("/account/api-keys"),
         },
         {
-          label: "API keys",
+          label: "Account",
           icon: <KeyRound aria-hidden="true" size={16} />,
           onSelect: () => navigate("/account/api-keys"),
         },
+        // Read by the person about themselves, so it needs no permission to read access.
+        ...(tenantId
+          ? [
+              {
+                label: "What I may do here",
+                icon: <ShieldCheck aria-hidden="true" size={16} />,
+                onSelect: () => navigate(`/t/${tenantId}/members/${me.principal.id}`),
+              },
+            ]
+          : []),
         {
           label: "Help for this page",
           icon: <CircleHelp aria-hidden="true" size={16} />,
@@ -716,7 +744,8 @@ export function Shell({
     tenantId ? `/tenants/${tenantId}/workspaces` : null,
   );
   const workspace = workspaces.data?.items.find((candidate) => candidate.id === workspaceId);
-  const opened = openedAt(path);
+  const [openedQuery] = useQueryValue("query");
+  const opened = openedAt(path, openedQuery);
   useRecordRecent(tenantId ?? undefined, workspaceId ?? undefined, opened?.kind, opened?.ref);
   const wsCounts = useLoad<WorkspaceCounts>(
     tenantId && workspaceId ? `/tenants/${tenantId}/workspaces/${workspaceId}/summary` : null,
@@ -757,6 +786,9 @@ export function Shell({
     me,
     { workspace: wsCounts.data, tenant: tenantCounts.data },
     reveal,
+    workspaces.data?.items.find((one) => one.id === (reveal?.workspaceId ?? workspaceId))?.type,
+    workspaces.data?.items.find((one) => one.id === (reveal?.workspaceId ?? workspaceId))
+      ?.onlyInside,
   );
   // The overview is one screen, and an editor wants the width: neither has a panel.
   const hasPanel = where.area !== "overview" && !where.editor;
@@ -791,14 +823,16 @@ export function Shell({
   });
 
   const here = (() => {
-    if (workspaceId)
-      return Object.values(WORKSPACE_SECTIONS)
+    if (workspaceId) {
+      const section = Object.values(WORKSPACE_SECTIONS)
         .flat()
-        .find((section) => section.slug === where.section)?.label;
+        .find((one) => one.slug === where.section);
+      return section ? sectionLabel(section, workspace?.type) : undefined;
+    }
     if (tenantId) return TENANT_SECTIONS.find((section) => section.slug === where.section)?.label;
     if (where.area === "instance")
       return INSTANCE_SECTIONS.find((section) => section.to === where.section)?.label;
-    if (where.area === "account") return "API keys";
+    if (where.area === "account") return "Your account";
     return undefined;
   })();
 
@@ -858,7 +892,7 @@ export function Shell({
       for (const section of Object.values(WORKSPACE_SECTIONS).flat())
         list.push({
           key: `ws-${section.slug}`,
-          label: section.label,
+          label: sectionLabel(section, workspace?.type),
           where: workspace?.name ?? "This workspace",
           to: `/t/${tenantId}/workspaces/${workspaceId}/${section.slug}`,
           icon: section.icon,
@@ -909,13 +943,22 @@ export function Shell({
         });
     list.push({
       key: "account",
-      label: "API keys",
+      label: "Account",
       where: "Your account",
       to: "/account/api-keys",
       icon: KeyRound,
     });
     return list;
-  }, [tenantId, workspaceId, workspace?.name, workspaces.data, tenant?.name, me.tenants, operator]);
+  }, [
+    tenantId,
+    workspaceId,
+    workspace?.name,
+    workspace?.type,
+    workspaces.data,
+    tenant?.name,
+    me.tenants,
+    operator,
+  ]);
 
   const rail = (onGo?: () => void, inDrawer = false) => (
     <>
@@ -999,7 +1042,7 @@ export function Shell({
         <div className="flex-1" />
         <ThemeMenu compact />
         <div className="mt-2">
-          <AccountMenu me={me} onSignOut={onSignOut} />
+          <AccountMenu me={me} tenantId={tenantId} onSignOut={onSignOut} />
         </div>
       </nav>
 
@@ -1122,9 +1165,11 @@ export function Shell({
                     }))}
                   />
                   {workspace ? <EnvTag type={workspace.type} /> : null}
-                  {workspace?.triggersPaused ? (
+                  {workspace?.triggersPaused || workspace?.pausedByInstance ? (
                     <span className="hidden lg:inline-flex">
-                      <StatePill state="paused" />
+                      <StatePill state="paused">
+                        {workspace.pausedByInstance ? "Paused by the instance" : "Paused"}
+                      </StatePill>
                     </span>
                   ) : null}
                   {ws?.linked ? (
@@ -1259,7 +1304,7 @@ export function Shell({
               <Search aria-hidden="true" size={16} className="mx-1.5 md:mx-0" />
               <span className="hidden flex-1 text-left md:inline">Search or jump to…</span>
               <kbd className="hidden rounded-inner border border-line px-1 font-mono text-tag md:inline">
-                ⌘K
+                {formatCombo("Mod+K")}
               </kbd>
             </button>
           </div>
@@ -1269,6 +1314,7 @@ export function Shell({
           <div data-production-rule="" aria-hidden="true" className="h-0.5 shrink-0 bg-attention" />
         ) : null}
         {tenantId ? <OperatorStrip /> : null}
+        <ReadOnlyStrip />
 
         <main
           id="main"
@@ -1285,13 +1331,13 @@ export function Shell({
           ) : (
             <div
               // A dashboard in its editor changes this div's classes, not the tree, so it is not drawn again.
-              className={`w-full ${bleeding ? "flex min-h-0 flex-1 flex-col" : "px-4 md:px-8"} ${
+              className={`w-full ${bleeding ? "flex min-h-0 flex-1 flex-col" : "flex min-h-full shrink-0 flex-col px-4 md:px-8"} ${
                 bleeding
                   ? ""
                   : where.editor
-                    ? "py-4"
+                    ? "py-4 [--page-pad-b:1rem]"
                     : // An overview takes a wide screen's room for a third column; other pages keep a reading width.
-                      `mx-auto py-6 ${where.area === "overview" ? "max-w-[1440px] 3xl:max-w-[1920px]" : "max-w-[1440px]"}`
+                      `mx-auto py-6 [--page-pad-b:1.5rem] ${where.area === "overview" ? "max-w-[1440px] 3xl:max-w-[1920px]" : "max-w-[1440px]"}`
               }`}
             >
               <ErrorBoundary resetOn={path} what="This page">
@@ -1331,7 +1377,7 @@ export function Shell({
           ) : null}
           {workspaceId && ws ? <ReleasePath counts={ws} /> : null}
           <div className="flex items-center gap-3 border-line border-t pt-3 md:hidden">
-            <AccountMenu me={me} onSignOut={onSignOut} />
+            <AccountMenu me={me} tenantId={tenantId} onSignOut={onSignOut} />
             <span className="min-w-0 flex-1 truncate text-meta text-ink-muted">
               {me.principal.email ?? me.principal.name}
             </span>

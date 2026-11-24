@@ -166,10 +166,10 @@ describe("the example integration", () => {
     expect(refused.code).toBe(1);
     expect(refused.err).toBe(
       [
-        "Could not deploy to main. The workspace is missing something this bundle needs. Bind each one, then deploy again.",
-        '  - the connection "alerts" is not bound in this workspace',
-        '  - the connection "erp" is not bound in this workspace',
-        '  - the connection "shop" is not bound in this workspace',
+        "Could not deploy to main. The workspace is missing something this bundle needs. Set up each one, then deploy again.",
+        '  - the connection "alerts" is not set up in this workspace',
+        '  - the connection "erp" is not set up in this workspace',
+        '  - the connection "shop" is not set up in this workspace',
         '  - the secret "SHOP_WEBHOOK_SECRET" is not set in this workspace',
       ].join("\n"),
     );
@@ -610,18 +610,33 @@ describe("working locally", () => {
     try {
       const page = await (await fetch(server.url)).text();
       const context = JSON.parse(
-        /<script type="application\/json" id="vx-context">(.*?)<\/script>/.exec(
+        /<script type="application\/json" id="vx-context"[^>]*>(.*?)<\/script>/.exec(
           page,
         )?.[1] as string,
       );
       expect(context).toMatchObject({
         api: "/api/v1",
         base: "/",
-        tenant: { slug: "acme" },
-        app: { path: "public" },
+        // No logo is set, so the app is told so and shows none (APP-10).
+        tenant: { slug: "acme", logo: false },
+        app: { path: "public", title: "Acme notices" },
+        // Sign-in pages are reached through this server, so a person comes back to it.
+        portal: "/portal/acme",
         principal: { email: "alice@acme.example" },
       });
       expect(page).toContain("/theme.css");
+      // The page is held to the policy a deployed app has: no inline script but the tooling's own,
+      // which carries this run's nonce (APP-MP1).
+      const policy = (await fetch(server.url)).headers.get("content-security-policy") ?? "";
+      expect(policy).toContain("default-src 'self'");
+      expect(policy).toMatch(/script-src 'self' 'nonce-[A-Za-z0-9+/=]+'/);
+      expect(policy).not.toMatch(/script-src[^;]*unsafe/);
+      expect(policy).toContain("connect-src 'self' ws://localhost:*");
+      // A policy has no way to write an IPv6 host: the browser warns of one.
+      expect(policy).not.toContain("[::1]");
+      const nonce = /'nonce-([^']+)'/.exec(policy)?.[1];
+      expect(page).toContain(`nonce="${nonce}"`);
+      expect((await fetch(`${server.url}portal/acme/sign-in`)).status).toBe(200);
       // The page's source is served as it is, compiled on the way.
       expect((await fetch(`${server.url}main.tsx`)).status).toBe(200);
       // Its API calls reach the instance as the developer.
@@ -635,6 +650,21 @@ describe("working locally", () => {
     } finally {
       await server.close();
     }
+    const loose = await startDevServer({
+      directory: example,
+      app: "public",
+      port: 0,
+      strict: false,
+      instance: { url, token },
+      tenant: { id: tenantId, slug: "acme", name: "Acme" },
+      workspace: { id: base.split("/").at(-1) as string, slug: "main" },
+      principal: { type: "member", id: null, name: "Alice", email: "alice@acme.example" },
+    });
+    try {
+      expect((await fetch(loose.url)).headers.get("content-security-policy")).toBeNull();
+    } finally {
+      await loose.close();
+    }
     const which = await startDevServer({
       directory: example,
       app: undefined,
@@ -644,7 +674,10 @@ describe("working locally", () => {
       workspace: { id: "x", slug: "main" },
       principal: { type: "member", name: null, email: null },
     }).catch((error) => error);
-    expect(which.message).toContain("Say which app: portal, public.");
+    // Every kind of app is offered, an interface by its kind (D64).
+    expect(which.message).toMatch(/^Say which app: .*invoice-desk \(interface\)/m);
+    expect(which.message).toMatch(/portal/);
+    expect(which.message).toMatch(/public/);
   }, 60_000);
 
   test("run executes one script on this machine with local bindings", async () => {

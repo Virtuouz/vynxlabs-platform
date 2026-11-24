@@ -16,7 +16,7 @@ export {
   SURFACE,
   seriesColors,
 } from "./chartTheme.ts";
-export { CONTRAST_NEEDED, contrastRatio, luminance } from "./contrast.ts";
+export { CONTRAST_NEEDED, contrastRatio, luminance, parseColor } from "./contrast.ts";
 export { DateInput, type DateInputProps } from "./DateInput.tsx";
 export { Details } from "./Details.tsx";
 export { Dialog } from "./Dialog.tsx";
@@ -39,9 +39,11 @@ export {
   FieldFrame,
   FieldHelp,
   FieldMarks,
+  LimitNote,
   MoneyField,
   type MoneyFieldProps,
   NumberField,
+  pastLimit,
   SelectField,
   TextAreaField,
   TextField,
@@ -50,7 +52,17 @@ export {
 } from "./Fields.tsx";
 export { checkForm, Form, type FormProperty, type FormProps, type FormSchema } from "./Form.tsx";
 export { duration } from "./format.ts";
-export { Grid, type GridColumn, type GridSort, parseValue, showValue } from "./Grid.tsx";
+export {
+  Grid,
+  type GridColumn,
+  type GridSort,
+  instantFromText,
+  keepsKey,
+  localWall,
+  parseValue,
+  showValue,
+  utcOf,
+} from "./Grid.tsx";
 export { HeadingSlot, hasHeadingControls, OnHeading } from "./HeadingSlot.tsx";
 export { JsonView, type JsonViewProps } from "./JsonView.tsx";
 export {
@@ -70,7 +82,7 @@ export {
   useMarkdownKnowledge,
   type WorkspaceWords,
 } from "./markdownKnowledge.ts";
-export { EmptyState, Notice } from "./Notice.tsx";
+export { EmptyState, type FailureHelp, Notice, setFailureExplainer } from "./Notice.tsx";
 export { type PageNavItem, PageShell, type PageShellProps } from "./PageShell.tsx";
 export { Pagination, type PaginationProps } from "./Pagination.tsx";
 export { ContainedArea, Panel, useContained } from "./Panel.tsx";

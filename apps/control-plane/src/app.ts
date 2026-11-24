@@ -1,16 +1,23 @@
-import { existsSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import rateLimit from "@fastify/rate-limit";
 import fastifyStatic from "@fastify/static";
 import swagger from "@fastify/swagger";
 import type { TypeBoxTypeProvider } from "@fastify/type-provider-typebox";
-import { type Database, newId } from "@volvel/db";
+import { Database, newId } from "@volvel/db";
 import Fastify, { type RouteOptions } from "fastify";
 import { Type } from "typebox";
+import {
+  API_DESCRIPTION,
+  API_TAGS,
+  errorCodeList,
+  finish,
+  SECURITY_SCHEMES,
+} from "./api-description.js";
 import type { Config, LogLevel } from "./config.js";
 import { installFrontDoor } from "./kernel/apps/front.js";
 import { SYSTEM } from "./kernel/audit.js";
+import { authOptions, signInFeatures } from "./kernel/auth.js";
 import { closeAllSources } from "./kernel/data/sources.js";
+import { helpFile } from "./kernel/docs/help-files.js";
 import { consoleDirectory } from "./kernel/docs/product.js";
 import { pushTenantAccess } from "./kernel/git.js";
 import { type Access, access, installAccessControl } from "./kernel/http.js";
@@ -26,7 +33,7 @@ import {
   withTrace,
 } from "./kernel/telemetry.js";
 import { takeReleased } from "./kernel/tenant/releases.js";
-import { errorHandler, notFoundHandler } from "./problem.js";
+import { errorHandler, notFoundHandler, Problem, publicPath } from "./problem.js";
 import { accessRoutes } from "./routes/access.js";
 import { accessReleaseRoutes } from "./routes/access-releases.js";
 import { alertRoutes } from "./routes/alerts.js";
@@ -51,10 +58,12 @@ import { iconRoutes, instanceIcon } from "./routes/icons.js";
 import { identityRoutes } from "./routes/identity.js";
 import { instanceRoutes } from "./routes/instance.js";
 import { instanceControlRoutes } from "./routes/instance-control.js";
+import { instanceSettingsRoutes } from "./routes/instance-settings.js";
 import { interfaceRoutes } from "./routes/interfaces.js";
 import { locationRoutes } from "./routes/locations.js";
 import { masterKeyRoutes } from "./routes/master-key.js";
 import { mcpRoutes } from "./routes/mcp.js";
+import { memberResetRoutes } from "./routes/member-resets.js";
 import { operationsRoutes } from "./routes/operations.js";
 import { pageActionRoutes } from "./routes/page-actions.js";
 import { pageApprovalRoutes } from "./routes/page-approvals.js";
@@ -62,6 +71,7 @@ import { permissionRoutes } from "./routes/permissions.js";
 import { poolRoutes } from "./routes/pools.js";
 import { portabilityRoutes } from "./routes/portability.js";
 import { preferenceRoutes } from "./routes/preferences.js";
+import { productDocsRoutes } from "./routes/product-docs.js";
 import { promotionRequestRoutes } from "./routes/promotion-requests.js";
 import { queryRoutes } from "./routes/queries.js";
 import { scimRoutes } from "./routes/scim.js";
@@ -78,6 +88,7 @@ import { workerRoutes } from "./routes/worker.js";
 import { workerHostRoutes } from "./routes/worker-host.js";
 import { workspaceRoutes } from "./routes/workspaces.js";
 import type { ObjectStore } from "./storage.js";
+import { MemoryObjectStore } from "./storage.js";
 
 export const API_PREFIX = "/api/v1";
 
@@ -92,17 +103,38 @@ export interface AppOptions {
   logLevel?: LogLevel;
   /** Receives every registered route. For tests. */
   onRoute?: (route: RouteOptions) => void;
+  /** Builds the app only to describe it: see `describeApi`. */
+  describing?: boolean;
+}
+
+/** What Fastify is given for `TRUSTED_PROXIES`: a count of hops from this server, or networks. */
+export function trustProxy(trusted: number | string[]) {
+  return typeof trusted === "number" ? (_address: string, hop: number) => hop < trusted : trusted;
 }
 
 /** The built console, when there is one to serve. */
 export async function buildApp(options: AppOptions) {
   const app = Fastify({
-    logger: options.logLevel ? { level: options.logLevel } : false,
+    logger: options.logLevel
+      ? {
+          level: options.logLevel,
+          // An address can hold a secret: the log says the route, not the token.
+          serializers: {
+            req: (request) => ({
+              method: request.method,
+              url: publicPath(request),
+              host: request.host,
+              remoteAddress: request.ip,
+            }),
+          },
+        }
+      : false,
     requestIdHeader: false,
     // On shutdown, do not wait for idle connections or for workers that are long-polling.
     forceCloseConnections: true,
-    // Behind a proxy, the caller's address is in the forwarding header.
-    trustProxy: true,
+    // Behind a proxy, the caller's address is what the proxy added to the forwarding header.
+    // What the caller wrote is not believed past the proxies the operator says (TRUSTED_PROXIES).
+    trustProxy: trustProxy(options.config.trustedProxies),
     genReqId: (request) => {
       const incoming = request.headers["x-request-id"];
       return typeof incoming === "string" && REQUEST_ID.test(incoming) ? incoming : newId();
@@ -115,9 +147,10 @@ export async function buildApp(options: AppOptions) {
     options.version,
     options.config,
     app.log,
+    options.describing,
   );
   app.decorate("kernel", kernel);
-  // A release of a tenant's access is committed to the tenant's branch once it is in the
+  // An access change is committed to the tenant's branch once it is in the
   // database. It has applied already: a push that fails is logged, and the next one carries it.
   app.addHook("onResponse", async (request) => {
     if (request.method === "GET") return;
@@ -167,7 +200,7 @@ export async function buildApp(options: AppOptions) {
     const kind = request.routeOptions.config?.access?.kind;
     // A worker asking for work, and a scrape, are not work anyone follows.
     if (!kernel.telemetry.tracing || kind === "worker" || kind === "worker-host") return;
-    if (route.endsWith("/metrics") || route.endsWith("/health")) return;
+    if (request.routeOptions.config?.traced === false) return;
     const end = Date.now();
     kernel.telemetry.span({
       ...request.trace,
@@ -180,7 +213,7 @@ export async function buildApp(options: AppOptions) {
         "http.request.method": request.method,
         "http.route": route,
         "http.response.status_code": reply.statusCode,
-        "url.path": request.url.split("?")[0],
+        "url.path": publicPath(request),
         "platform.request.id": request.id,
         "platform.tenant.id": (request.params as { t?: string } | undefined)?.t,
       },
@@ -204,14 +237,12 @@ export async function buildApp(options: AppOptions) {
       info: {
         title: "Volvel API",
         version: options.version,
-        description:
-          "The one public API of the platform. Errors are RFC 9457 problem details " +
-          "(application/problem+json) with a stable `code` and the `requestId`. " +
-          "Sign in through `/api/v1/auth/sign-in/email` for a session cookie, or send " +
-          "`Authorization: Bearer <api key>`. Each route says what it needs under `x-access`: " +
-          "a permission and where it is checked, or that it is public, for anyone signed in, " +
-          "or decided by the route itself from what is asked for.",
+        description: API_DESCRIPTION,
       },
+      // Every path below already begins `/api/v1`, so the server is the instance itself.
+      servers: [{ url: "/", description: "This instance" }],
+      tags: API_TAGS.map((tag) => ({ ...tag })),
+      components: { securitySchemes: SECURITY_SCHEMES },
     },
     // What a route needs is in its own configuration. It is written into the description
     // from there, so the two cannot differ.
@@ -241,12 +272,21 @@ export async function buildApp(options: AppOptions) {
     );
     description = {
       ...own,
+      "x-error-codes": errorCodeList(),
       paths: { ...own.paths, ...authPaths },
       components: {
         ...own.components,
-        schemas: { ...auth.components?.schemas, ...own.components?.schemas },
+        schemas: {
+          ...auth.components?.schemas,
+          ...own.components?.schemas,
+          Problem: { ...Problem, $id: undefined },
+        },
       },
     };
+    finish(
+      description as unknown as Parameters<typeof finish>[0],
+      signInFeatures(authOptions(kernel.db, options.config)),
+    );
     return description;
   }
 
@@ -299,16 +339,20 @@ export async function buildApp(options: AppOptions) {
       await api.register(streamRoutes(kernel));
       await api.register(poolRoutes(kernel));
       await api.register(masterKeyRoutes(kernel));
+      await api.register(instanceSettingsRoutes(kernel));
       await api.register(promotionRequestRoutes(kernel));
       await api.register(driftRoutes(kernel));
       await api.register(accessRoutes(kernel));
       await api.register(approvalLinkRoutes(kernel));
+      await api.register(memberResetRoutes(kernel));
       api.get(
         "/openapi.json",
         {
           config: { access: access.public },
           schema: {
             summary: "This API description",
+            description:
+              "This document, as OpenAPI 3.1: every route of the API with what it needs and how it can fail, and the sign-in library's routes.",
             tags: ["instance"],
             response: { 200: Type.Object({}, { additionalProperties: true }) },
           },
@@ -321,30 +365,38 @@ export async function buildApp(options: AppOptions) {
 
   // What a browser asks for at the root of a site, whatever page it is on: the icon for its
   // tab, and what the console is called when it is kept on a home screen.
-  app.get("/favicon.ico", { config: { access: access.public } }, async (_request, reply) => {
-    const icon = (await instanceIcon(kernel, 32)) ?? defaultIcon(32);
-    return reply
-      .header("content-type", "image/x-icon")
-      .header("x-content-type-options", "nosniff")
-      .header("cache-control", "public, max-age=300")
-      .send(icoOf(icon, 32));
-  });
-  app.get("/site.webmanifest", { config: { access: access.public } }, async (_request, reply) => {
-    const branding = await kernel.db
-      .selectFrom("instance_branding")
-      .select("product_name")
-      .executeTakeFirst();
-    return reply
-      .header("content-type", "application/manifest+json")
-      .header("cache-control", "public, max-age=300")
-      .send(
-        webManifest(
-          branding?.product_name ?? "Console",
-          `${API_PREFIX}/instance/branding/icons`,
-          "/",
-        ),
-      );
-  });
+  app.get(
+    "/favicon.ico",
+    { config: { access: access.public }, schema: { hide: true } },
+    async (_request, reply) => {
+      const icon = (await instanceIcon(kernel, 32)) ?? defaultIcon(32);
+      return reply
+        .header("content-type", "image/x-icon")
+        .header("x-content-type-options", "nosniff")
+        .header("cache-control", "public, max-age=300")
+        .send(icoOf(icon, 32));
+    },
+  );
+  app.get(
+    "/site.webmanifest",
+    { config: { access: access.public }, schema: { hide: true } },
+    async (_request, reply) => {
+      const branding = await kernel.db
+        .selectFrom("instance_branding")
+        .select("product_name")
+        .executeTakeFirst();
+      return reply
+        .header("content-type", "application/manifest+json")
+        .header("cache-control", "public, max-age=300")
+        .send(
+          webManifest(
+            branding?.product_name ?? "Console",
+            `${API_PREFIX}/instance/branding/icons`,
+            "/",
+          ),
+        );
+    },
+  );
 
   const consoleDir = consoleDirectory(options.config);
   if (consoleDir) {
@@ -355,24 +407,57 @@ export async function buildApp(options: AppOptions) {
       // the browser takes it, and nothing is compressed while a request waits.
       preCompressed: true,
       cacheControl: false,
+      // The documentation under help/ is answered by one handler, below: it knows which of its
+      // names say what a file holds for ever, and answers a missing file as missing.
+      globIgnore: ["help/**"],
       setHeaders(response, path) {
         // A file under assets has a hash of its content in its name, so it never changes.
+        const hashed =
+          /[\\/]assets[\\/]/.test(path) && /-[\w-]{8}\.[a-z0-9]+(\.(br|gz))?$/i.test(path);
         response.header(
           "cache-control",
-          /[\\/]assets[\\/]/.test(path) ? "public, max-age=31536000, immutable" : "no-cache",
+          hashed ? "public, max-age=31536000, immutable" : "no-cache",
         );
       },
     });
+    app.get(
+      "/help/*",
+      { config: { access: access.public }, schema: { hide: true } },
+      async (request, reply) => {
+        let name: string;
+        try {
+          name = decodeURIComponent((request.params as { "*": string })["*"]);
+        } catch {
+          return notFoundHandler(request, reply);
+        }
+        const file = helpFile(consoleDir, name, String(request.headers["accept-encoding"] ?? ""));
+        if (!file) return notFoundHandler(request, reply);
+        reply
+          .header("content-type", file.type)
+          .header("x-content-type-options", "nosniff")
+          .header("vary", "accept-encoding")
+          // Only a picture named by a hash of itself never changes: the rest is what this release holds.
+          .header(
+            "cache-control",
+            file.immutable ? "public, max-age=31536000, immutable" : "no-cache",
+          );
+        if (file.encoding) reply.header("content-encoding", file.encoding);
+        return reply.send(file.body);
+      },
+    );
   }
+  productDocsRoutes(app, kernel);
   app.setNotFoundHandler((request, reply) => {
     const isApi = request.url === "/api" || request.url.startsWith("/api/");
     // The console is a single-page app: any other path is one of its screens.
+    // The help's files, and /docs, have routes of their own: what is missing there is missing.
     if (consoleDir && request.method === "GET" && !isApi) {
       return reply.sendFile("index.html");
     }
     return notFoundHandler(request, reply);
   });
 
+  app.decorate("describeApi", describe);
   return app;
 }
 
@@ -388,5 +473,34 @@ declare module "fastify" {
 declare module "fastify" {
   interface FastifyInstance {
     kernel: Kernel;
+    /** The API's OpenAPI description, with the sign-in library's routes. Nothing in it needs a database. */
+    describeApi: () => Promise<Record<string, unknown>>;
+  }
+}
+
+/**
+ * The API's description, made without a database: the app is built over a connection that is never
+ * opened, the sign-in library is given a store in memory, and nothing is asked of either. For the
+ * documentation's generators, which run where no Postgres is.
+ */
+export async function describeApi(options: {
+  version: string;
+  config: Config;
+}): Promise<Record<string, unknown>> {
+  const app = await buildApp({
+    database: new Database({
+      connectionString: "postgres://describing@127.0.0.1:1/none",
+      maxConnections: 1,
+    }),
+    storage: new MemoryObjectStore(),
+    version: options.version,
+    config: options.config,
+    describing: true,
+  });
+  try {
+    await app.ready();
+    return await app.describeApi();
+  } finally {
+    await app.close();
   }
 }

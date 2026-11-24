@@ -1089,7 +1089,7 @@ describe("the canvas", () => {
       expect(at(lastList(s), "total")).toEqual(place(2, 2, 3, 3));
     });
 
-    test("Esc, a cancelled pointer and a window that loses the pointer put a drag back, and say so", async () => {
+    test("Esc, a canceled pointer and a window that loses the pointer put a drag back, and say so", async () => {
       const s = spies();
       render(<Builder spies={s} />);
       await screen.findByText("INV-1");
@@ -1098,17 +1098,17 @@ describe("the canvas", () => {
       expect(screen.getByText("3 × 3 · col 3 · row 3")).toBeTruthy();
       fireEvent.keyDown(window, { key: "Escape" });
       expect(screen.queryByText("3 × 3 · col 3 · row 3")).toBeNull();
-      expect(screen.getByText(/Move cancelled\. Invoiced is back where it was\./)).toBeTruthy();
+      expect(screen.getByText(/Move canceled\. Invoiced is back where it was\./)).toBeTruthy();
       // Letting go after that writes nothing.
       drop();
       expect(s.onChange).not.toHaveBeenCalled();
 
-      // A resize, ended by the pointer being cancelled.
+      // A resize, ended by the pointer being canceled.
       fireEvent.click(group("By clinic"));
       press(screen.getByTitle("Drag to change its size"), 500, 300);
       move(500 + 202, 300 + 52);
       fireEvent.pointerCancel(window, { pointerId: 1 });
-      expect(screen.getByText(/Resize cancelled\./)).toBeTruthy();
+      expect(screen.getByText(/Resize canceled\./)).toBeTruthy();
       drop();
       expect(s.onChange).not.toHaveBeenCalled();
 
@@ -1218,6 +1218,38 @@ describe("what the frame offers besides the view", () => {
     );
     await screen.findByText("northside");
     expect(screen.queryByRole("button", { name: "Download Invoices" })).toBeNull();
+  });
+
+  test("a table with no heading still offers its rows as a file (WID-29)", async () => {
+    const client: PageDataClient = {
+      read: async () => ({
+        inputs: {
+          rows: {
+            shape: "rows",
+            columns: [{ name: "clinic", label: "Clinic", type: "text" }],
+            rows: [{ clinic: "northside" }],
+          },
+        },
+      }),
+    };
+    const widget: PageWidget = {
+      id: "t",
+      type: "core/table",
+      at: { x: 0, y: 0, w: 12, h: 8 },
+      data: { rows: { source: { visual: { table: "invoices" } } } },
+    };
+    render(
+      <PageView
+        widgets={[widget]}
+        filters={[]}
+        registry={viewRegistry(corePack)}
+        client={client}
+        filterValues={{}}
+        onFilterValues={() => undefined}
+      />,
+    );
+    await screen.findByText("northside");
+    expect(screen.getAllByRole("button", { name: /^Download/ })).toHaveLength(1);
   });
 
   test("says when a saved query was read through the key a deploy recorded", async () => {

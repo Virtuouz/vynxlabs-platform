@@ -61,6 +61,8 @@ jobs:
       - name: Configure the stack
         run: |
           {
+            # The bundled database and object store are in profiles, as .env.example has them.
+            echo "COMPOSE_PROFILES=postgres,objectstore"
             echo "POSTGRES_PASSWORD=$(openssl rand -hex 24)"
             echo "OBJECTSTORE_SECRET=$(openssl rand -hex 24)"
             echo "AUTH_SECRET=$(openssl rand -hex 32)"
@@ -166,6 +168,7 @@ jobs:
             -e AUTH_SECRET="$(openssl rand -hex 32)" -e MASTER_KEY="$(openssl rand -base64 32)" \
             -e BOOTSTRAP_ADMIN_EMAIL=admin@example.com -e BOOTSTRAP_ADMIN_PASSWORD=change-me-please \
             -e MANAGED_WORKERS=process -e MANAGED_WORKER_USER=same \
+            -e RUN_MEMORY_FLOOR_MB=512 \
             -e EGRESS_ALLOW=127.0.0.0/8,::1,localhost \
             -e MAIL_CAPTURE_DIR=/mail -v /tmp/vx-mail:/mail \
             volvel/volvel:e2e
@@ -176,8 +179,12 @@ jobs:
           docker logs platform
           exit 1
       - name: Build the CLI that seeds Fernhill
+        # Group c is the only one that walks Fernhill: a and b are the polish specs, which
+        # make a tenant of their own.
+        if: matrix.group == 'c'
         run: pnpm exec tsc -b
       - name: Seed Fernhill, the example the walk-throughs use
+        if: matrix.group == 'c'
         # The phase walk-throughs sign in as Fernhill's people and use its data. Its outside
         # systems are stand-ins on 4020, which the instance reaches on the host's network.
         run: |
@@ -191,6 +198,10 @@ jobs:
       - name: Walk the exit criterion, one group of it
         # Approval mail is kept as files the test reads, as a developer's machine can.
         env:
+          # Workers beside each other; each is an address of its own to the instance
+          # (e2e/test.ts). A test that fails is run once more, and one that passes only then
+          # is listed at the end of the run and in the job's summary (e2e/retry-report.ts).
+          E2E_WORKERS: 4
           E2E_MAIL_DIR: /tmp/vx-mail
           # A source the data screens bind to: the stack's own Postgres.
           E2E_SOURCE_URL: postgres://platform:platform@localhost:54329/platform

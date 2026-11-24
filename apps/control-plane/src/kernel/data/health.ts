@@ -96,12 +96,17 @@ export async function recordHealth(
   };
 }
 
-/** Forgets what was found about a connection, which no longer says anything about it. */
-export async function forgetHealth(db: Db | Trx, workspaceId: string, path: string): Promise<void> {
+/** Forgets what was found about a connection or a data source, which no longer says anything about it. */
+export async function forgetHealth(
+  db: Db | Trx,
+  workspaceId: string,
+  path: string,
+  kind: "connection" | "data_source" = "connection",
+): Promise<void> {
   await db
     .deleteFrom("health_check")
     .where("workspace_id", "=", workspaceId)
-    .where("kind", "=", "connection")
+    .where("kind", "=", kind)
     .where("path", "=", path)
     .execute();
 }
@@ -120,6 +125,9 @@ export async function checkDueSources(kernel: Kernel, limit = 10): Promise<numbe
     order by h.checked_at nulls first
     limit ${limit}
   `.execute(kernel.db);
-  for (const row of due.rows) await checkSource(kernel, row.tenant_id, row.workspace_id, row.path);
+  // Together: a source that never answers holds only its own check, not the other nine.
+  await Promise.allSettled(
+    due.rows.map((row) => checkSource(kernel, row.tenant_id, row.workspace_id, row.path)),
+  );
   return due.rows.length;
 }

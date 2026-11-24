@@ -2,7 +2,7 @@ import { type Kysely, type PlatformSchema, sql } from "@volvel/db";
 import { createTestDatabase, type TestDatabase } from "@volvel/db/testing";
 import { type Bundle, type BundleManifest, bundleDigest } from "@volvel/manifest";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { workspaceSchema } from "./kernel/data/apply.js";
+import { upgradePolicies, workspaceSchema } from "./kernel/data/apply.js";
 import { describeTable, findRows, withData } from "./kernel/data/rows.js";
 import { commitDataTransactions } from "./kernel/data/stores.js";
 import { deployBundle } from "./kernel/execution/deploy.js";
@@ -340,11 +340,14 @@ describe("the data API", () => {
       { path: "/label", message: "must be text" },
       { path: "/count", message: "must be a whole number" },
       { path: "/ok", message: "must be true or false" },
-      { path: "/at", message: "must be a date and time, such as 2026-01-31T09:30:00Z" },
-      { path: "/day", message: "must be a date, such as 2026-01-31" },
+      {
+        path: "/at",
+        message: "must be a date and time that exists, with its zone, such as 2026-01-31T09:30:00Z",
+      },
+      { path: "/day", message: "must be a day that exists, such as 2026-01-31" },
       { path: "/ref", message: "must be an ID" },
       { path: "/nope", message: 'there is no column "nope" in lab/samples' },
-      { path: "/id", message: '"id" is set by the platform' },
+      { path: "/id", message: '"id" is set by Volvel' },
     ]);
     expect(
       (await alice.post(`${ws()}/rows/customers`, { email: "a@x.example" })).body.errors,
@@ -362,6 +365,10 @@ describe("the data API", () => {
     });
     expect(again.status).toBe(409);
     expect(again.body.detail).toBe('Another row already has that value for "email".');
+    // The refusal names the field, so the form marks it (walk-fix 29).
+    expect(again.body.errors).toEqual([
+      { path: "/email", message: "Another row already has this value." },
+    ]);
 
     const order = await alice.post(`${ws()}/rows/orders`, {
       number: "A-1",
@@ -424,6 +431,12 @@ describe("the data API", () => {
         "&sort=count",
       ),
     ).toEqual([1, 20, 21, 22, 23, 24]);
+    // Text that does not hold a word is the rest of the rows (not the rows that hold it).
+    const holding = await find({ column: "label", op: "contains", value: "ITEM 2" });
+    const lacking = await find({ column: "label", op: "not_contains", value: "ITEM 2" });
+    expect(holding.length).toBeGreaterThan(0);
+    expect(lacking.length).toBeGreaterThan(0);
+    expect(lacking.filter((count) => holding.includes(count))).toEqual([]);
     expect(await find({ column: "count", op: "in", value: [3, 5, 99] }, "&sort=count")).toEqual([
       3, 5,
     ]);
@@ -865,6 +878,92 @@ describe("row policies", () => {
       expect((await alice.get("/instance/database-locations")).status).toBe(403);
     },
   );
+
+  test.runIf(DEDICATED)(
+    "registering a location's name again with another database is refused while it does not hold the tenants' tables",
+    async () => {
+      const empty = await createTestDatabase();
+      try {
+        const refused = await t.admin.put("/instance/database-locations/acme-db", {
+          connectionString: empty.connectionString,
+        });
+        expect(refused.status, JSON.stringify(refused.body)).toBe(409);
+        expect(refused.body.detail).toMatch(/does not hold them/);
+        expect((await t.admin.get("/instance/database-locations")).body.items[0].reachable).toBe(
+          true,
+        );
+        expect(await data.selectFrom("data_table").select("id").execute()).not.toEqual([]);
+        const same = await t.admin.put("/instance/database-locations/acme-db", {
+          connectionString: (dedicatedDb as TestDatabase).connectionString,
+          description: "Acme's own database, described again",
+        });
+        expect(same.status).toBe(204);
+        // The old connection was closed with the change of address.
+        data = (await t.kernel.data.forTenant(tenant)).owner;
+      } finally {
+        await empty.drop();
+      }
+    },
+  );
+
+  test.runIf(DEDICATED)(
+    "a replica reopens a location whose address another replica changed, and rereads where a tenant lives",
+    async () => {
+      const current = async () =>
+        (
+          await sql<{ name: string }>`select current_database() as name`.execute(
+            (
+              await t.kernel.data.location("acme-db")
+            ).owner,
+          )
+        ).rows[0]?.name;
+      const first = await current();
+      const other = await createTestDatabase();
+      const saved = await t.db
+        .selectFrom("database_location")
+        .select(["connection_encrypted", "updated_at"])
+        .where("name", "=", "acme-db")
+        .executeTakeFirstOrThrow();
+      try {
+        // As another replica would have written it: the row changes, and this process is not told.
+        await t.db
+          .updateTable("database_location")
+          .set({
+            connection_encrypted: t.kernel.data.seal("acme-db", other.connectionString),
+            updated_at: new Date(),
+          })
+          .where("name", "=", "acme-db")
+          .execute();
+        await new Promise((resolve) => setTimeout(resolve, 2200));
+        expect(await current()).not.toBe(first);
+
+        // A tenant moved by another replica: its location is read again, not remembered for good.
+        await t.db
+          .updateTable("tenant")
+          .set({ data_location: JSON.stringify({ kind: "shared" }) })
+          .where("id", "=", tenant)
+          .execute();
+        await new Promise((resolve) => setTimeout(resolve, 2200));
+        expect(await t.kernel.data.locationOf(tenant)).toBeNull();
+      } finally {
+        await t.db
+          .updateTable("tenant")
+          .set({ data_location: JSON.stringify({ kind: "dedicated", ref: "acme-db" }) })
+          .where("id", "=", tenant)
+          .execute();
+        await t.db
+          .updateTable("database_location")
+          .set({ connection_encrypted: saved.connection_encrypted, updated_at: new Date() })
+          .where("name", "=", "acme-db")
+          .execute();
+        await new Promise((resolve) => setTimeout(resolve, 2200));
+        expect(await current()).toBe(first);
+        data = (await t.kernel.data.forTenant(tenant)).owner;
+        await other.drop();
+      }
+    },
+    30_000,
+  );
 });
 
 describe("changing a table without losing data: the exit criterion", () => {
@@ -1022,7 +1121,7 @@ describe("refusals, retiring and purging", () => {
       currency: { type: "text", required: true, default: "USD", unique: true },
     });
     expect(unique.body.detail).toBe(
-      'The table "orders" cannot be changed: column "currency" is now unique, and some rows share a value. Make the values distinct first.',
+      'The table "orders" cannot be changed: column "currency" is now unique, and some rows share a value: "USD" is in 3 rows. Make the values distinct first.',
     );
 
     // Nothing moved: same definition, same active bundle, and the samples table untouched by the failed deploys.
@@ -1240,7 +1339,9 @@ describe("enum columns", () => {
     const wrong = await alice.get(
       `${ws()}/rows/loans?filter=${encodeURIComponent(JSON.stringify({ column: "extras", op: "has", value: "bag" }))}`,
     );
-    expect(wrong.status).toBe(400);
+    // A value the list no longer offers is still found by `has`: a row may hold it (TAB-24).
+    expect(wrong.status).toBe(200);
+    expect(wrong.body.items).toEqual([]);
     const grouped = await alice.get(`${ws()}/aggregate/loans?group=status&measure=count`);
     expect(grouped.status, JSON.stringify(grouped.body)).toBe(200);
     expect(grouped.body.items.map((one: Any) => one.by)).toEqual(
@@ -1566,6 +1667,24 @@ describe("tables made in the console, isolation and guards", () => {
     ).toBe("retired");
   });
 
+  test("a retired table keeps where it was managed, in the list and on its own page", async () => {
+    const mine = (path: string, ownership: string) =>
+      alice.put(`${ws()}/resources/${path}`, {
+        kind: "table",
+        schemaVersion: 1,
+        ownership,
+        body: { columns: { title: { type: "text", required: true } } },
+      });
+    expect((await mine("kept-in-console", "ui")).status).toBe(201);
+    expect((await alice.delete(`${ws()}/resources/kept-in-console`)).status).toBe(204);
+    const listed = (await alice.get(`${ws()}/tables`)).body.items.find(
+      (item: Any) => item.name === "kept-in-console",
+    );
+    expect(listed).toMatchObject({ status: "retired", managedIn: "ui" });
+    const described = await alice.get(`${ws()}/tables/kept-in-console?id=${listed.id}`);
+    expect(described.body).toMatchObject({ status: "retired", managedIn: "ui" });
+  });
+
   test("a required column that was removed comes back even when rows were written without it", async () => {
     const put = (columns: Record<string, object>) =>
       alice.put(`${ws()}/resources/gaps`, {
@@ -1687,6 +1806,74 @@ describe("tables made in the console, isolation and guards", () => {
     expect((await t.anonymous.get(`${ws()}/rows/orders`)).status).toBe(401);
   });
 
+  test("TAB-33: a key that cannot name a row is missing, not an error, and a row of only `rows` is sent in a batch", async () => {
+    const put = await alice.put(`${ws()}/resources/tab33`, {
+      kind: "table",
+      schemaVersion: 1,
+      ownership: "ui",
+      body: { columns: { label: { type: "text" } } },
+    });
+    expect(put.status, JSON.stringify(put.body)).toBe(201);
+    const made = await alice.post(`${ws()}/rows/tab33`, { rows: [{ label: "one" }] });
+    expect(made.status, JSON.stringify(made.body)).toBe(201);
+    const id = made.body.items[0].id;
+    const gone = await alice.post(`${ws()}/row-deletions/tab33`, { ids: ["nope", id] });
+    expect(gone.status, JSON.stringify(gone.body)).toBe(200);
+    expect(gone.body).toEqual({ deleted: [id], missing: ["nope"] });
+    const alone = await alice.post(`${ws()}/row-deletions/tab33`, { ids: ["nope"] });
+    expect(alone.status, JSON.stringify(alone.body)).toBe(200);
+    expect(alone.body).toEqual({ deleted: [], missing: ["nope"] });
+    // A row whose only column is a json one named `rows` is sent as `{ rows: [row] }`.
+    const description = (await alice.get("/openapi.json")).body;
+    expect(
+      description.paths["/api/v1/tenants/{t}/workspaces/{w}/rows/{*}"].post.description,
+    ).toContain("`{ rows: [row] }`");
+  });
+
+  test("TAB-30: columns come as the definition gives them, and one added later comes last", async () => {
+    const put = (columns: Record<string, object>) =>
+      alice.put(`${ws()}/resources/tab30`, {
+        kind: "table",
+        schemaVersion: 1,
+        ownership: "ui",
+        body: { columns },
+      });
+    const text = { type: "text" };
+    expect((await put({ t: text, j: { type: "json" }, d: { type: "date" }, a: text })).status).toBe(
+      201,
+    );
+    const names = async () =>
+      (await alice.get(`${ws()}/tables/tab30`)).body.columns
+        .filter((column: Any) => column.status === "active")
+        .map((column: Any) => column.name);
+    expect(await names()).toEqual(["t", "j", "d", "a"]);
+    const row = (await alice.post(`${ws()}/rows/tab30`, { t: "x" })).body.items[0];
+    expect(Object.keys(row).filter((key) => ["t", "j", "d", "a"].includes(key))).toEqual([
+      "t",
+      "j",
+      "d",
+      "a",
+    ]);
+    // Two columns added in one save come in the order they were given, after the others.
+    expect(
+      (
+        await put({
+          z: text,
+          t: text,
+          j: { type: "json" },
+          d: { type: "date" },
+          a: text,
+          b: text,
+        })
+      ).status,
+    ).toBe(200);
+    expect(await names()).toEqual(["t", "j", "d", "a", "z", "b"]);
+    const csv = await alice.get(`${ws()}/rows-export/tab30`);
+    expect(String(csv.body).split("\r\n")[0]).toMatch(
+      /^(id,created_at,updated_at,)?t,j,d,a,z,b$|t,j,d,a,z,b/,
+    );
+  });
+
   test("every change by a principal went through the write path", () => {
     expect(
       // Rows are the tenant's data, written without an audit entry each, one at a time or many.
@@ -1694,5 +1881,50 @@ describe("tables made in the console, isolation and guards", () => {
       JSON.stringify(t.unaudited),
     ).toEqual([]);
     expect(t.unexercised((route) => /\/table-purges$/.test(route))).toEqual([]);
+  });
+});
+
+describe("tables restored without their policies (HOST-01)", () => {
+  test("opening a store makes the policy of every active table that has none for its role", async () => {
+    const workspace = (
+      await alice.post(`/tenants/${tenant}/workspaces`, {
+        slug: "restored",
+        name: "Restored",
+        type: "dev",
+      })
+    ).body.id as string;
+    const mine = table(
+      "mine",
+      { label: { type: "text" }, owner_id: { type: "uuid" } },
+      { policy: { type: "owner", column: "owner_id" } },
+    );
+    const shared = table(
+      "shared",
+      { label: { type: "text" }, team: { type: "text" } },
+      { policy: { type: "rules", rules: [{ allow: "write", when: { everyone: true } }] } },
+    );
+    const open = table("plain", { label: { type: "text" } });
+    const deployed = await deploy(bundle([mine, shared, open], "restored"), workspace);
+    expect(deployed.status, JSON.stringify(deployed.body)).toBe(201);
+    for (const name of ["mine", "shared", "plain"]) {
+      expect((await alice.post(`${ws(workspace)}/rows/${name}`, { label: "kept" })).status).toBe(
+        201,
+      );
+    }
+    // What `pg_dump` restored onto a server without the role leaves: rows and security, no policy.
+    const schema = workspaceSchema(workspace);
+    for (const physical of ["t_mine", "t_shared", "t_plain"]) {
+      for (const name of ["rows", "rows_read", "rows_insert", "rows_update", "rows_delete"]) {
+        await sql.raw(`drop policy if exists ${name} on "${schema}"."${physical}"`).execute(data);
+      }
+    }
+    expect((await alice.get(`${ws(workspace)}/rows/plain`)).body.items).toHaveLength(0);
+
+    const store = await t.kernel.data.forTenant(tenant);
+    expect(await upgradePolicies(store.owner, store.role)).toBe(3);
+    expect((await alice.get(`${ws(workspace)}/rows/plain`)).body.items).toHaveLength(1);
+    expect((await alice.get(`${ws(workspace)}/rows/shared`)).body.items).toHaveLength(1);
+    expect((await alice.post(`${ws(workspace)}/rows/shared`, { label: "again" })).status).toBe(201);
+    expect(await upgradePolicies(store.owner, store.role)).toBe(0);
   });
 });

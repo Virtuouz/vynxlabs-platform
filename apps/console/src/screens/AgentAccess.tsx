@@ -39,7 +39,7 @@ export function AgentAccess({ base, account }: { base: string; account: string }
     ? JSON.stringify(
         {
           mcpServers: {
-            platform: {
+            volvel: {
               type: "http",
               url: offered.data.address,
               headers: { Authorization: "Bearer <one of this account's API keys>" },
@@ -114,9 +114,10 @@ export function AgentAccess({ base, account }: { base: string; account: string }
                 header: "Tool",
                 cell: (row) => <code className="font-mono text-code">{row.name}</code>,
               },
-              { header: "What it does", cell: (row) => row.description },
+              { header: "What it does", priority: 2, cell: (row) => row.description },
               {
                 header: "It takes",
+                priority: 3,
                 cell: (row) => (
                   <span className="text-ink-muted">
                     {Object.keys(row.inputSchema.properties ?? {})

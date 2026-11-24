@@ -207,6 +207,9 @@ export function adoptLegacy(): string[] {
  * a setting moved from the old keys, is sent to the server.
  */
 export function loadPreferences(): Promise<void> {
+  // Not announced: it starts before the screens that read it draw (the console starts it while
+  // it renders), and they read it as they draw. Its end is announced.
+  if (!loaded) waiting = true;
   loaded ??= (async () => {
     adoptLegacy();
     try {
@@ -227,17 +230,47 @@ export function loadPreferences(): Promise<void> {
       notify();
     } catch {
       // The server can't be reached: this browser's settings stand.
+    } finally {
+      waiting = false;
+      notify();
     }
   })();
   return loaded;
 }
 
+/** Whether the member's settings are on their way from the server. */
+let waiting = false;
+
+/**
+ * Whether the member's settings are on their way from the server: something
+ * decided once per visit from a setting waits until they are here.
+ */
+export function usePreferencesWaiting(): boolean {
+  return useSyncExternalStore(
+    subscribe,
+    () => waiting,
+    () => false,
+  );
+}
+
 /** For tests: forgets what was loaded, so the next test loads again. */
 export function resetPreferences() {
   loaded = undefined;
+  waiting = false;
   moved.clear();
   for (const timer of pending.values()) clearTimeout(timer);
   pending.clear();
   waitingValues.clear();
   snapshots.clear();
+}
+
+/**
+ * Forgets everything of one member's settings that this browser holds, for the next person to
+ * sign in here: the copies kept in storage, what waits to be sent, and the once-per-page load, so
+ * the next member's own settings are read from the server.
+ */
+export function forgetPreferences() {
+  for (const key of localKeys()) writeLocal(key, undefined);
+  resetPreferences();
+  notify();
 }

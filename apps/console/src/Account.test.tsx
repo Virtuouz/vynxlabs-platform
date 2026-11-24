@@ -3,7 +3,7 @@ import { cleanup, fireEvent, renderHook, screen, waitFor, within } from "@testin
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { useRememberPlace } from "./App.tsx";
 import { Account } from "./screens/Account.tsx";
-import { InstanceMembers } from "./screens/Instance.tsx";
+import { InstanceMembers, Operators } from "./screens/Instance.tsx";
 import { SignIn } from "./screens/SignIn.tsx";
 import { Tenants } from "./screens/Tenants.tsx";
 import { answer, show } from "./testing.tsx";
@@ -32,6 +32,18 @@ afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
   vi.useRealTimers();
+});
+
+test("the Account page is headed Account, and API keys is one of its sections (r-screens 2)", async () => {
+  routes["GET /api/v1/api-keys"] = () => [200, { items: [] }];
+  routes["GET /api/v1/me"] = () => [
+    200,
+    { principal: { type: "member", id: "m1", name: "Maya", email: "maya@example.test" } },
+  ];
+  show(<Account />);
+  const headings = await screen.findAllByRole("heading", { level: 1 });
+  expect(headings.map((one) => one.textContent)).toEqual(["Account"]);
+  expect(await screen.findByRole("heading", { level: 2, name: "API keys" })).toBeTruthy();
 });
 
 test("an API key is told apart by its first characters and its last four", async () => {
@@ -127,6 +139,26 @@ test("while the organization's sign-in is required, an owner can sign in with a 
   expect(calls.at(-1)?.body).toEqual({ email: "olive@acme.example", password: "her-password" });
 });
 
+test("a wrong password with a recovery code says the code is spent (GOV-12, D18)", async () => {
+  routes["GET /api/v1/sso/providers?email=olive%40acme.example"] = () => [
+    200,
+    { providers: [{ id: "p1", name: "Acme Login", url: "/api/v1/sso/p1/start" }], password: false },
+  ];
+  routes["POST /api/v1/auth/sign-in/email"] = () => [
+    401,
+    { code: "INVALID_EMAIL_OR_PASSWORD", message: "Invalid email or password" },
+  ];
+  show(<SignIn onSignedIn={vi.fn()} />);
+  fireEvent.input(screen.getByLabelText("Email"), { target: { value: "olive@acme.example" } });
+  fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Use a recovery code" }));
+  expect(screen.getByText(/even if the password is wrong/)).toBeTruthy();
+  fireEvent.input(screen.getByLabelText("Password"), { target: { value: "typo" } });
+  fireEvent.input(screen.getByLabelText(/Recovery code/), { target: { value: "aaaa-bbbb" } });
+  fireEvent.click(screen.getByRole("button", { name: "Sign in with the recovery code" }));
+  expect((await screen.findByRole("alert")).textContent).toContain("code was used up");
+});
+
 test("where a member is is sent once it settles, and only when it changes", async () => {
   vi.useFakeTimers();
   routes["PUT /api/v1/me/recent"] = () => [204, null];
@@ -200,12 +232,15 @@ test("tenants are found by name, and one opens in the inspector", async () => {
   );
   const table = await screen.findByRole("grid", { name: "Tenants" });
   expect(within(table).getByText("Member")).toBeTruthy();
-  expect(within(table).getByText("Through a grant")).toBeTruthy();
+  expect(within(table).getByText("Not a member")).toBeTruthy();
   fireEvent.input(screen.getByLabelText("Search tenants"), { target: { value: "glob" } });
   await waitFor(() => expect(within(table).queryByText("Acme Corp")).toBeNull());
   fireEvent.click(await within(table).findByText("eu"));
   const inspector = await screen.findByRole("dialog");
-  expect(within(inspector).getByText(/operator access grant/)).toBeTruthy();
+  // A sentence ends with its full stop (round 5).
+  expect(within(inspector).getByText(/operator access grant/).textContent).toMatch(
+    /needs a reason\.$/,
+  );
   expect(within(inspector).getByRole("button", { name: "Delete" })).toBeTruthy();
 });
 
@@ -234,6 +269,8 @@ test("disabling a member from the list asks first, and does not open the inspect
   await answer("Disable");
   expect(await screen.findByText("Disabled")).toBeTruthy();
   expect(screen.queryByRole("complementary")).toBeNull();
+  // Disabling someone whose tenants keep an admin still says it was done.
+  expect(await screen.findByText(/is disabled\./)).toBeTruthy();
 });
 
 test("a tenant is renamed from the inspector, keeping its slug", async () => {
@@ -272,4 +309,359 @@ test("a tenant is renamed from the inspector, keeping its slug", async () => {
       body: { name: "Acme Inc" },
     }),
   );
+});
+
+test("a person changes their own password on Account, and the form says what went wrong (INS-13)", async () => {
+  routes["GET /api/v1/api-keys"] = () => [200, { items: [] }];
+  routes["GET /api/v1/me/recovery-codes"] = () => [200, { eligible: false, left: 0, madeAt: null }];
+  let answerWith: [number, unknown] = [200, {}];
+  routes["POST /api/v1/auth/change-password"] = () => answerWith;
+  show(<Account />);
+  const panel = await screen.findByRole("region", { name: "Password" });
+  const form = within(panel);
+  const change = form.getByRole("button", { name: "Change password" }) as HTMLButtonElement;
+  expect(change.disabled).toBe(true);
+  fireEvent.input(form.getByLabelText("Current password"), {
+    target: { value: "the old one 123" },
+  });
+  fireEvent.input(form.getByLabelText("New password"), { target: { value: "short" } });
+  fireEvent.input(form.getByLabelText("New password again"), { target: { value: "short" } });
+  // Twelve characters, as the server asks: said before anything is sent.
+  expect(change.disabled).toBe(true);
+  fireEvent.input(form.getByLabelText("New password"), {
+    target: { value: "a much longer one" },
+  });
+  expect(change.disabled).toBe(true);
+  expect(form.getByText("The two do not match.")).toBeTruthy();
+  fireEvent.input(form.getByLabelText("New password again"), {
+    target: { value: "a much longer one" },
+  });
+  answerWith = [400, { status: 400, detail: "Invalid password" }];
+  fireEvent.click(change);
+  await within(panel).findByText("The current password is not right.");
+  answerWith = [200, {}];
+  fireEvent.click(form.getByRole("button", { name: "Change password" }));
+  await within(panel).findByText("Your password is changed. Your other sessions were signed out.");
+  const sent = calls.filter((call) => call.url === "/api/v1/auth/change-password");
+  expect(sent[1]?.body).toEqual({
+    currentPassword: "the old one 123",
+    newPassword: "a much longer one",
+    revokeOtherSessions: true,
+  });
+  // What was typed is gone once it is used.
+  expect((form.getByLabelText("New password") as HTMLInputElement).value).toBe("");
+});
+
+const aSession = (id: string, userAgent: string, ipAddress: string) => ({
+  id,
+  token: `token-${id}`,
+  userAgent,
+  ipAddress,
+  createdAt: new Date(Date.now() - 3_600_000).toISOString(),
+  expiresAt: new Date(Date.now() + 6 * 86_400_000).toISOString(),
+});
+const FIREFOX = "Mozilla/5.0 (X11; Linux x86_64; rv:130.0) Gecko/20100101 Firefox/130.0";
+const SAFARI =
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15";
+
+function accountRoutes() {
+  routes["GET /api/v1/api-keys"] = () => [200, { items: [] }];
+  routes["GET /api/v1/me/recovery-codes"] = () => [200, { eligible: false, left: 0, madeAt: null }];
+  routes["GET /api/v1/me"] = () => [
+    200,
+    {
+      principal: { type: "member", id: "m1", name: "Ada Lovelace", email: "ada@acme.example" },
+      instancePermissions: [],
+      tenants: [],
+    },
+  ];
+}
+
+test("a person sees where they are signed in, ends one session, and ends the others (SHL-MP2)", async () => {
+  accountRoutes();
+  let listed = [aSession("s1", FIREFOX, "10.0.0.2"), aSession("s2", SAFARI, "10.0.0.9")];
+  routes["GET /api/v1/auth/list-sessions"] = () => [200, listed];
+  routes["GET /api/v1/auth/get-session"] = () => [200, { session: { id: "s1" }, user: {} }];
+  routes["POST /api/v1/auth/revoke-session"] = (body) => {
+    listed = listed.filter((one) => one.token !== (body as { token: string }).token);
+    return [200, { status: true }];
+  };
+  routes["POST /api/v1/auth/revoke-other-sessions"] = () => {
+    listed = listed.filter((one) => one.id === "s1");
+    return [200, { status: true }];
+  };
+  show(<Account />);
+  const panel = await screen.findByRole("region", { name: "Sessions" });
+  const inPanel = within(panel);
+  await inPanel.findByText("Firefox on Linux");
+  expect(inPanel.getByText("Safari on macOS")).toBeTruthy();
+  expect(inPanel.getByText("10.0.0.9")).toBeTruthy();
+  expect(inPanel.getByText("This session")).toBeTruthy();
+  // The one in use is ended by signing out, so it has no End of its own.
+  expect(inPanel.getAllByRole("button", { name: "End" })).toHaveLength(1);
+
+  fireEvent.click(inPanel.getByRole("button", { name: "End" }));
+  expect(await answer("Cancel")).toContain("Safari on macOS is signed out");
+  expect(calls.some((call) => call.url.endsWith("/revoke-session"))).toBe(false);
+  fireEvent.click(inPanel.getByRole("button", { name: "End" }));
+  await answer("End session");
+  await waitFor(() => expect(inPanel.queryByText("Safari on macOS")).toBeNull());
+  expect(calls.find((call) => call.url.endsWith("/revoke-session"))?.body).toEqual({
+    token: "token-s2",
+  });
+  // Nothing else is signed in: there is nothing left to end together.
+  expect(
+    (inPanel.getByRole("button", { name: "End other sessions" }) as HTMLButtonElement).disabled,
+  ).toBe(true);
+});
+
+test("a person ends every other session at once, after being asked (SHL-MP2)", async () => {
+  accountRoutes();
+  let listed = [aSession("s1", FIREFOX, "10.0.0.2"), aSession("s2", SAFARI, "10.0.0.9")];
+  routes["GET /api/v1/auth/list-sessions"] = () => [200, listed];
+  routes["GET /api/v1/auth/get-session"] = () => [200, { session: { id: "s1" }, user: {} }];
+  routes["POST /api/v1/auth/revoke-other-sessions"] = () => {
+    listed = listed.filter((one) => one.id === "s1");
+    return [200, { status: true }];
+  };
+  show(<Account />);
+  const panel = await screen.findByRole("region", { name: "Sessions" });
+  await within(panel).findByText("Safari on macOS");
+  fireEvent.click(within(panel).getByRole("button", { name: "End other sessions" }));
+  expect(await answer("Cancel")).toContain("The other session is signed out");
+  expect(calls.some((call) => call.url.endsWith("/revoke-other-sessions"))).toBe(false);
+  fireEvent.click(within(panel).getByRole("button", { name: "End other sessions" }));
+  await answer("End other sessions");
+  await waitFor(() => expect(within(panel).queryByText("Safari on macOS")).toBeNull());
+  expect(within(panel).getByText("Firefox on Linux")).toBeTruthy();
+  // NARROW-3: the button is off now, and the focus is not left on the page.
+  await waitFor(() => expect(document.activeElement).not.toBe(document.body));
+});
+
+test("a list of sessions that fills the library's page says it may be longer", async () => {
+  accountRoutes();
+  const many = Array.from({ length: 100 }, (_, n) => aSession(`s${n + 1}`, FIREFOX, "10.0.0.2"));
+  routes["GET /api/v1/auth/list-sessions"] = () => [200, many];
+  routes["GET /api/v1/auth/get-session"] = () => [200, { session: { id: "s1" }, user: {} }];
+  show(<Account />);
+  const panel = await screen.findByRole("region", { name: "Sessions" });
+  expect(await within(panel).findByText(/Showing the first 100 sessions/)).toBeTruthy();
+});
+
+test("sessions that cannot be read say so, and can be asked for again (SHL-MP2)", async () => {
+  accountRoutes();
+  let refuse = true;
+  routes["GET /api/v1/auth/list-sessions"] = () =>
+    refuse
+      ? [500, { status: 500, detail: "The sessions could not be read." }]
+      : [200, [aSession("s1", FIREFOX, "10.0.0.2")]];
+  routes["GET /api/v1/auth/get-session"] = () => [200, { session: { id: "s1" }, user: {} }];
+  show(<Account />);
+  const panel = await screen.findByRole("region", { name: "Sessions" });
+  await within(panel).findByText("The sessions could not be read.");
+  refuse = false;
+  fireEvent.click(within(panel).getByRole("button", { name: "Try again" }));
+  await within(panel).findByText("Firefox on Linux");
+});
+
+test("a person changes their name, and cannot where a directory sets it (SHL-MP3)", async () => {
+  accountRoutes();
+  routes["GET /api/v1/auth/list-sessions"] = () => [200, []];
+  routes["POST /api/v1/auth/update-user"] = () => [200, { status: true }];
+  show(<Account />);
+  const panel = await screen.findByRole("region", { name: "Profile" });
+  const form = within(panel);
+  const field = (await form.findByLabelText("Name")) as HTMLInputElement;
+  expect(field.value).toBe("Ada Lovelace");
+  expect(form.getByText("ada@acme.example")).toBeTruthy();
+  const save = form.getByRole("button", { name: "Save name" }) as HTMLButtonElement;
+  expect(save.disabled).toBe(true);
+  fireEvent.input(field, { target: { value: "Ada King" } });
+  expect(save.disabled).toBe(false);
+  fireEvent.click(save);
+  await form.findByText("Your name is saved.");
+  expect(calls.find((call) => call.url.endsWith("/update-user"))?.body).toEqual({
+    name: "Ada King",
+  });
+});
+
+test("a name a directory pushes is shown with whose it is, and is not offered for change (SHL-MP3)", async () => {
+  accountRoutes();
+  routes["GET /api/v1/me"] = () => [
+    200,
+    {
+      principal: {
+        type: "member",
+        id: "m1",
+        name: "Ada Lovelace",
+        email: "ada@acme.example",
+        nameFrom: "Acme Staff",
+      },
+      instancePermissions: [],
+      tenants: [],
+    },
+  ];
+  routes["GET /api/v1/auth/list-sessions"] = () => [200, []];
+  show(<Account />);
+  const panel = await screen.findByRole("region", { name: "Profile" });
+  const field = (await within(panel).findByLabelText("Name")) as HTMLInputElement;
+  expect(field.disabled).toBe(true);
+  expect(within(panel).getByText("Your name comes from Acme Staff. Change it there.")).toBeTruthy();
+  expect(within(panel).queryByRole("button", { name: "Save name" })).toBeNull();
+});
+
+test("an API key is made with an expiry, and the list says when each ends (SHL-MP4)", async () => {
+  accountRoutes();
+  const soon = new Date(Date.now() + 3 * 86_400_000).toISOString();
+  routes["GET /api/v1/auth/list-sessions"] = () => [200, []];
+  routes["GET /api/v1/api-keys"] = () => [
+    200,
+    {
+      items: [
+        {
+          id: "k1",
+          name: "Laptop",
+          prefix: "vx_abc",
+          suffix: "9f2e",
+          expiresAt: null,
+          lastUsedAt: null,
+          revokedAt: null,
+          createdAt: "2026-11-01T00:00:00.000Z",
+        },
+        {
+          id: "k2",
+          name: "Deploy",
+          prefix: "vx_dep",
+          suffix: "1a2b",
+          expiresAt: soon,
+          lastUsedAt: null,
+          revokedAt: null,
+          createdAt: "2026-11-01T00:00:00.000Z",
+        },
+      ],
+    },
+  ];
+  routes["POST /api/v1/api-keys"] = () => [201, { token: "vx_new", id: "k3" }];
+  show(<Account />);
+  await screen.findByText("vx_dep…1a2b");
+  expect(screen.getByRole("columnheader", { name: "Expires" })).toBeTruthy();
+  // The Laptop key was never used and never expires.
+  expect(screen.getAllByText("Never")).toHaveLength(3);
+  expect(screen.getByText("in 3d")).toBeTruthy();
+
+  fireEvent.click(screen.getByRole("button", { name: "Create API key" }));
+  const dialog = await screen.findByRole("dialog");
+  fireEvent.input(within(dialog).getByLabelText("Name"), { target: { value: "CI" } });
+  fireEvent.change(within(dialog).getByLabelText("Expires"), { target: { value: "30" } });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Create API key" }));
+  await waitFor(() => expect(calls.some((call) => call.method === "POST")).toBe(true));
+  const sent = calls.find((call) => call.method === "POST")?.body as {
+    name: string;
+    expiresAt: string;
+  };
+  expect(sent.name).toBe("CI");
+  const days = (new Date(sent.expiresAt).getTime() - Date.now()) / 86_400_000;
+  expect(days).toBeGreaterThan(29.9);
+  expect(days).toBeLessThan(30.1);
+});
+
+test("an operator who is disabled says so on the Operators list, and cannot be mistaken for one who can sign in (ACC)", async () => {
+  routes["GET /api/v1/bindings"] = () => [
+    200,
+    {
+      items: [
+        {
+          id: "b1",
+          memberEmail: "ada@ops.example",
+          roleName: "operator_admin",
+          createdAt: "2026-11-01T00:00:00Z",
+          memberDisabled: false,
+        },
+        {
+          id: "b2",
+          memberEmail: "bo@ops.example",
+          roleName: "operator_admin",
+          createdAt: "2026-11-01T00:00:00Z",
+          memberDisabled: true,
+        },
+      ],
+      nextCursor: null,
+    },
+  ];
+  show(<Operators />);
+  const row = (await screen.findByText("bo@ops.example")).closest("tr") as HTMLElement;
+  expect(within(row).getByText("Disabled")).toBeTruthy();
+  const other = screen.getByText("ada@ops.example").closest("tr") as HTMLElement;
+  expect(within(other).queryByText("Disabled")).toBeNull();
+});
+
+const me = (id: string, email: string) => ({
+  principal: { type: "member", id, name: "Ada", email },
+  instancePermissions: ["*:*"],
+  tenants: [],
+});
+
+test("your own row on All members offers no Disable and says why (INS-27)", async () => {
+  routes["GET /api/v1/me"] = () => [200, me("m1", "ada@ops.example")];
+  routes["GET /api/v1/members?limit=50"] = () => [
+    200,
+    {
+      items: [
+        { id: "m1", name: "Ada", email: "ada@ops.example", createdAt: "2026-11-11T00:00:00.000Z" },
+        { id: "m2", name: "Bob", email: "bob@acme.example", createdAt: "2026-11-11T00:00:00.000Z" },
+      ],
+    },
+  ];
+  show(<InstanceMembers />);
+  const mine = (await screen.findAllByText("ada@ops.example"))[0]?.closest("tr") as HTMLElement;
+  const theirs = screen.getAllByText("bob@acme.example")[0]?.closest("tr") as HTMLElement;
+  await within(theirs).findByRole("button", { name: "Disable" });
+  expect(within(mine).queryByRole("button", { name: "Disable" })).toBeNull();
+  expect(within(mine).getByText(/You cannot disable your own account/)).toBeTruthy();
+});
+
+test("removing yourself as an operator says it is you (INS-27)", async () => {
+  routes["GET /api/v1/me"] = () => [200, me("m1", "ada@ops.example")];
+  routes["GET /api/v1/bindings"] = () => [
+    200,
+    {
+      items: [
+        {
+          id: "b1",
+          memberEmail: "ada@ops.example",
+          roleName: "operator_admin",
+          createdAt: "2026-11-01T00:00:00Z",
+        },
+        {
+          id: "b2",
+          memberEmail: "bo@ops.example",
+          roleName: "operator_admin",
+          createdAt: "2026-11-01T00:00:00Z",
+        },
+      ],
+      nextCursor: null,
+    },
+  ];
+  show(<Operators />);
+  const mine = (await screen.findByText("ada@ops.example")).closest("tr") as HTMLElement;
+  const theirs = screen.getByText("bo@ops.example").closest("tr") as HTMLElement;
+  await waitFor(() =>
+    expect(within(mine).getByRole("button", { name: "Remove yourself" })).toBeTruthy(),
+  );
+  expect(within(theirs).getByRole("button", { name: "Remove" })).toBeTruthy();
+  fireEvent.click(within(mine).getByRole("button", { name: "Remove yourself" }));
+  expect(await screen.findByText(/Remove yourself as an operator\?/)).toBeTruthy();
+});
+
+test("Add operator with nobody chosen says so at the field and sends nothing (P31)", async () => {
+  routes["GET /api/v1/bindings"] = () => [200, { items: [], nextCursor: null }];
+  routes["GET /api/v1/me"] = () => [200, me("m1", "ada@ops.example")];
+  show(<Operators />);
+  fireEvent.click(
+    (await screen.findAllByRole("button", { name: "Add operator" }))[0] as HTMLElement,
+  );
+  const dialog = await screen.findByRole("dialog");
+  fireEvent.click(within(dialog).getByRole("button", { name: "Add operator" }));
+  expect(await within(dialog).findByText("Choose one.")).toBeTruthy();
+  expect(calls.filter((call) => call.method === "POST")).toEqual([]);
 });

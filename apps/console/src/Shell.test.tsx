@@ -6,6 +6,7 @@ import { monogram } from "./kit/brand.tsx";
 import { whereIs } from "./nav.ts";
 import { navigate } from "./router.tsx";
 import { Shell } from "./Shell.tsx";
+import { ACCESS_TABS } from "./screens/Members.tsx";
 import { show } from "./testing.tsx";
 import { applyThemeChoice } from "./theme.ts";
 
@@ -73,10 +74,16 @@ test("an address says which area and screen it is, and whether it is an editor",
     section: "flows",
     editor: true,
   });
+  // A dashboard looked at has its section's help, not the editor's.
+  expect(whereIs("/t/t1/workspaces/w1/dashboards/d1", false).help).toBe("data-dashboards");
   // A table's own screen fills the window; the list of tables is a page.
   expect(whereIs("/t/t1/workspaces/w1/tables/orders", false).workbench).toBe(true);
   expect(whereIs("/t/t1/workspaces/w1/tables", false).workbench).toBe(false);
   expect(whereIs("/t/t1/roles", false)).toMatchObject({ area: "tenant", section: "members" });
+  // Every tab of Members & access lays itself out edge to edge, or one of them is inset (r-narrow 3).
+  for (const tab of ACCESS_TABS) {
+    expect(whereIs(`/t/t1/${tab.slug}`, false).workbench, tab.slug).toBe(true);
+  }
   expect(whereIs("/t/t1", false)).toMatchObject({ area: "tenant", section: "overview" });
   expect(whereIs("/", true).area).toBe("instance");
   expect(whereIs("/", false).area).toBe("tenants");
@@ -319,4 +326,20 @@ test("inside anything an editor has open, the section before it is a link back t
     ).toBe(`/t/t1/workspaces/w2/${list}`);
     cleanup();
   }
+});
+
+test("the search box names the shortcut for this computer, not a Mac's (SHL-04)", () => {
+  const search = () => {
+    show(
+      <Shell me={me} path="/t/t1/roles" tenantId="t1" onSignOut={() => {}}>
+        <p>Screen</p>
+      </Shell>,
+    );
+    return screen.getByRole("button", { name: "Search or jump to" }).textContent;
+  };
+  vi.stubGlobal("navigator", { platform: "Linux x86_64", userAgent: "Linux" });
+  expect(search()).toContain("Ctrl+K");
+  cleanup();
+  vi.stubGlobal("navigator", { platform: "MacIntel", userAgent: "Mac" });
+  expect(search()).toContain("⌘K");
 });

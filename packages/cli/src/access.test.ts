@@ -16,6 +16,7 @@ let t: TestApp;
 let alice: Client;
 let home: string;
 let repo: string;
+let serverUrl: string;
 
 async function cli(args: string[]) {
   const out: string[] = [];
@@ -37,6 +38,7 @@ const write = async (path: string, content: string) => {
 beforeAll(async () => {
   t = await startTestApp({ version: "0.5.0" });
   const url = await t.app.listen({ host: "127.0.0.1", port: 0 });
+  serverUrl = url;
   home = await mkdtemp(join(tmpdir(), "cli-access-"));
   repo = await mkdtemp(join(tmpdir(), "tenant-repo-"));
   const roles = Object.fromEntries(
@@ -109,7 +111,7 @@ describe("a tenant's access, from its repository", () => {
     const released = await tenant("release", "--message", "Bring up the tenant");
     expect(released.err).toBe("");
     expect(released.out).toContain(
-      "Released lakeshore's access as release 1: 3 created, 0 updated, 0 deleted, 0 unchanged.",
+      "Changed lakeshore's access as access change 1: 3 created, 0 updated, 0 deleted, 0 unchanged.",
     );
     expect((await tenant("release")).out).toContain("0 created, 0 updated, 0 deleted, 3 unchanged");
     const listed = (await tenant("releases")).out.split("\n");
@@ -173,13 +175,66 @@ describe("a tenant's access, from its repository", () => {
   });
 
   test("an earlier release is gone back to", async () => {
-    const back = await tenant("rollback", "1");
+    // It says what it removes, and without a terminal to ask at, does nothing until told to.
+    const asked = await tenant("rollback", "1");
+    expect(asked.code).toBe(1);
+    expect(asked.out).toContain("Going back to access change 1 removes what was made since:");
+    expect(asked.out).toContain("deleted  group            night-shift");
+    expect(asked.err).toContain("Nothing was changed. Run it again with --yes");
+    const back = await tenant("rollback", "1", "--yes");
     expect(back.err).toBe("");
-    expect(back.out).toContain("lakeshore's access is what release 1 left, as release");
+    expect(back.out).toContain("lakeshore's access is what access change 1 left, as access change");
     expect(back.out).toContain("updated  group            tech-desk  (Tech Desk)");
     expect(back.out).toContain("created  service_account  helpdesk-assistant");
     expect(back.out).toContain("deleted  group            night-shift");
-    expect((await tenant("rollback", "99")).err).toContain("has no release 99");
+    expect((await tenant("rollback", "99", "--yes")).err).toContain("has no access change 99");
     expect((await cli(["tenant", "plan", "--dir", repo])).err).toContain("--tenant <slug>");
+  });
+
+  test("approval is turned on and off, and approve shows the changes it answers", async () => {
+    const tenantId = (await alice.get("/tenants?limit=200")).body.items[0].id;
+    const roles = Object.fromEntries(
+      (
+        await t.db.selectFrom("role").select(["id", "name"]).where("builtin", "=", true).execute()
+      ).map((role) => [role.name, role.id]),
+    );
+    expect((await tenant("approval")).out).toContain("does not ask for a second person");
+    // Two people must be able to release before it can be turned on.
+    const alone = await tenant("approval", "on");
+    expect(alone.code).toBe(1);
+    expect(alone.err).toContain("Approval needs two people");
+    const grant = await t.admin.post(`/tenants/${tenantId}/access-grants`, {
+      reason: "Second",
+      roleId: roles.tenant_admin,
+    });
+    const bob = await t.admin.post(`/tenants/${tenantId}/members`, {
+      email: "bob@lakeshore.example",
+      name: "Bob",
+      password: PASSWORD,
+    });
+    await t.admin.post(`/tenants/${tenantId}/bindings`, {
+      principalType: "member",
+      principalId: bob.body.id,
+      roleId: roles.tenant_admin,
+    });
+    await t.admin.delete(`/tenants/${tenantId}/access-grants/${grant.body.id}`);
+    const on = await tenant("approval", "on");
+    expect(on.err).toBe("");
+    expect(on.out).toContain("now asks for a second person");
+    expect((await tenant("approval")).out).toContain("asks for a second person");
+    await write("tenant/groups/weekend.group.yaml", "title: Weekend\nschemaVersion: 1\nbody: {}\n");
+    const waits = await tenant("release", "--allow-delete", "service_account/helpdesk-assistant");
+    expect(waits.err, waits.out).toBe("");
+    expect(waits.out).toContain("waits for a second person");
+    const number = /Access change (\d+) of/.exec(waits.out)?.[1] as string;
+    const bobKey = await t.signIn("bob@lakeshore.example", PASSWORD);
+    const token = (await bobKey.post("/api-keys", { name: "cli-bob" })).body.token;
+    expect((await cli(["login", "--url", serverUrl, "--token", token])).code).toBe(0);
+    const approved = await tenant("approve", number);
+    expect(approved.err).toBe("");
+    expect(approved.out).toContain(`Access change ${number} of lakeshore's access:`);
+    expect(approved.out).toContain("created  group            weekend  (Weekend)");
+    expect(approved.out).toContain(`Access change ${number} of lakeshore's access is applied.`);
+    expect((await tenant("approval", "off")).out).toContain("no longer asks");
   });
 });

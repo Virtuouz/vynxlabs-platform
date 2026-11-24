@@ -1,7 +1,7 @@
 import { Field } from "@base-ui/react/field";
 import { moneyText, parseMoney } from "@volvel/widgets";
 import { ChevronDown } from "lucide-react";
-import type { ChangeEvent, ReactNode } from "react";
+import type { ChangeEvent, KeyboardEvent, ReactNode } from "react";
 import {
   createContext,
   useCallback,
@@ -159,6 +159,51 @@ export function FieldFrame({
   );
 }
 
+/**
+ * A limit on length is said at the field and refused, never cut: the box takes what is typed or
+ * pasted, the count shows near the limit, and past it the field says how far over it is. The
+ * native `maxLength` is not set, since it drops the rest of a paste without a word.
+ */
+function lengthLimit(value: string | undefined, max: number | undefined, always: boolean) {
+  if (max === undefined) return { error: undefined, count: undefined };
+  const length = (value ?? "").length;
+  const over = length > max;
+  return {
+    error: over ? `Use at most ${max} characters. This is ${length}.` : undefined,
+    count: always || over || length >= max * 0.8 ? `${length} of ${max}` : undefined,
+  };
+}
+
+/** The count and the refusal of a limit, for a box that is not a `TextField`: said under or beside it. */
+export function LimitNote({
+  value,
+  max,
+  always = false,
+  className = "",
+}: {
+  value: string;
+  max: number;
+  always?: boolean;
+  className?: string;
+}) {
+  const limit = lengthLimit(value, max, always);
+  if (!limit.count) return null;
+  return (
+    <span
+      data-field-count=""
+      {...(limit.error ? { role: "alert" } : {})}
+      className={`${countClass} ${limit.error ? "text-danger" : ""} ${className}`}
+    >
+      {limit.error ?? limit.count}
+    </span>
+  );
+}
+
+/** Whether a text is past its limit: what a save of it refuses. */
+export const pastLimit = (value: string, max: number) => value.length > max;
+
+const countClass = "text-right text-meta text-ink-muted tabular-nums";
+
 export interface TextFieldProps extends Common {
   name: string;
   type?: "text" | "email" | "password" | "number" | "date";
@@ -167,9 +212,15 @@ export interface TextFieldProps extends Common {
   required?: boolean;
   minLength?: number;
   maxLength?: number;
+  /** With a `maxLength`: says how many letters are typed of how many, under the box. */
+  showCount?: boolean;
   autoComplete?: string;
   disabled?: boolean;
+  /** Shown and selectable, not editable. */
+  readOnly?: boolean;
   onChange?: (value: string) => void;
+  /** For a field whose Enter does something of its own, such as adding what is typed to a list. */
+  onKeyDown?: (event: KeyboardEvent<HTMLInputElement>) => void;
 }
 
 export function TextField({
@@ -179,8 +230,12 @@ export function TextField({
   onChange,
   labelHidden = false,
   inline = false,
+  showCount = false,
+  maxLength,
   ...input
 }: TextFieldProps) {
+  const limit = lengthLimit(input.value, maxLength, showCount);
+  error = error ?? limit.error;
   if (labelHidden && input.placeholder === undefined) input.placeholder = label;
   if (inline) {
     return (
@@ -206,6 +261,11 @@ export function TextField({
         className={control}
         onChange={(event: ChangeEvent<HTMLInputElement>) => onChange?.(event.currentTarget.value)}
       />
+      {limit.count ? (
+        <span data-field-count="" className={countClass}>
+          {limit.count}
+        </span>
+      ) : null}
     </FieldFrame>
   );
 }
@@ -302,6 +362,8 @@ export interface TextAreaFieldProps extends Common {
   maxLength?: number;
   disabled?: boolean;
   onChange?: (value: string) => void;
+  /** The field was left. */
+  onBlur?: () => void;
 }
 
 /** How tall a text area grows by itself, in lines. */
@@ -348,8 +410,11 @@ export function TextAreaField({
   rows = 4,
   maxRows = TEXT_AREA_MAX_ROWS,
   onChange,
+  maxLength,
   ...area
 }: TextAreaFieldProps) {
+  const limit = lengthLimit(area.value, maxLength, false);
+  error = error ?? limit.error;
   const growing = useGrowing(area.value, Math.max(rows, maxRows));
   return (
     <FieldFrame label={label} {...(hint ? { hint } : {})} error={error} required={area.required}>
@@ -365,6 +430,11 @@ export function TextAreaField({
           />
         }
       />
+      {limit.count ? (
+        <span data-field-count="" className={countClass}>
+          {limit.count}
+        </span>
+      ) : null}
     </FieldFrame>
   );
 }

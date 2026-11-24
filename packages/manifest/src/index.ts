@@ -1,6 +1,17 @@
 export * from "./action.js";
+export { APP_POLICY, appPolicy } from "./app-policy.js";
+export {
+  AUDIT_ACTIONS,
+  AUDIT_AREAS,
+  type AuditAction,
+  type AuditArea,
+  actionWords,
+  auditAreaOf,
+  targetTypeWords,
+} from "./audit.js";
 export {
   ASSET_PATH_PATTERN,
+  assetPathProblem,
   Bundle,
   BundleAsset,
   BundleManifest,
@@ -26,6 +37,10 @@ export {
   checkBundleManifests,
   keyMissing,
   PLATFORM_EVENT_PREFIX,
+  PLATFORM_EVENTS,
+  type PlatformEventDefinition,
+  type PlatformEventField,
+  type PlatformEventName,
 } from "./bundle-check.js";
 export {
   envelopeSchemas,
@@ -44,6 +59,7 @@ export {
   entryFor,
   fileOf,
   ignoredFolder,
+  isFolderResourceFile,
   isResourceFile,
   movedFile,
   ontoWritten,
@@ -57,10 +73,14 @@ export {
   type ResourceFile,
   renderRepositoryFiles,
   renderResourceFiles,
+  resourceFileName,
+  resourceOfFile,
   sameResourceFile,
 } from "./files.js";
 export {
+  addressedStarts,
   checkFlow,
+  EXPRESSION_ROOTS,
   type FlowBody,
   type FlowEdge,
   type FlowGrants,
@@ -75,6 +95,19 @@ export {
   type WebhookVerify,
 } from "./flow.js";
 export {
+  EXPRESSION_EXAMPLE_DATA,
+  EXPRESSION_FUNCTIONS,
+  EXPRESSION_LIMITS,
+  EXPRESSION_NAMES,
+  EXPRESSION_OPERATORS,
+  type ExpressionFunction,
+  type ExpressionName,
+  FLOW_STARTS,
+  FLOW_STEPS,
+  type FlowStartWords,
+  type FlowStepWords,
+} from "./flow-words.js";
+export {
   checkForm,
   FORM_FIELD_TYPES,
   FORM_RESERVED_NAMES,
@@ -86,7 +119,9 @@ export {
 export * from "./groups.js";
 export {
   appKind,
+  BUILTIN_CONNECTOR_LIST,
   BUILTIN_CONNECTORS,
+  type BuiltinConnector,
   bindingKind,
   COLUMN_TYPES,
   CONCURRENCY_KEY,
@@ -102,6 +137,7 @@ export {
   isThemeValue,
   MAX_SOURCE_LENGTH,
   PERMISSION_PATTERN,
+  parameterMisfit,
   platformKinds,
   QUERY_PARAMETER_TYPES,
   type QueryBody,
@@ -202,13 +238,17 @@ export {
 } from "./page.js";
 export {
   APP_FACING_KINDS,
+  grants,
   isExplicitKind,
   isGrantablePermission,
   isKnownPermission,
+  type KindOfPermission,
   PERMISSION_KINDS,
   type PermissionKind,
   type PermissionScope,
   type PermissionVerb,
+  setEveryone,
+  setPermission,
 } from "./permissions.js";
 export { resolveKeyReferences } from "./references.js";
 export {
@@ -219,13 +259,23 @@ export {
   validateJson,
 } from "./registry.js";
 export {
+  SSO_REFUSAL_REASONS,
+  SSO_REFUSAL_WORDS,
+  type SsoRefusalReason,
+} from "./sso-words.js";
+export {
+  COLUMN_WIDENINGS,
   checkTable,
   conditionColumn,
   displayGuess,
   type EnumValue,
   enumColor,
   enumValues,
+  hasNul,
+  isCalendarDate,
   isEnumType,
+  isIsoTime,
+  isUuid,
   MAX_ROW_RULES,
   type OnDelete,
   type RowCondition,
@@ -235,6 +285,7 @@ export {
   type TablePolicy,
 } from "./table.js";
 export {
+  ACCESS_DESCRIPTION_MAX,
   checkTenantResources,
   isTenantFile,
   isTenantKind,
@@ -245,6 +296,7 @@ export {
   TENANT_KEY_PATTERN,
   TENANT_KINDS,
   type TenantResource,
+  tenantFileName,
   tenantName,
   tenantOrder,
 } from "./tenant.js";

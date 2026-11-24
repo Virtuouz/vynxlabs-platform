@@ -11,6 +11,7 @@ COPY packages/compose/package.json packages/compose/
 COPY packages/db/package.json packages/db/
 COPY packages/docs/package.json packages/docs/
 COPY packages/docs-engine/package.json packages/docs-engine/
+COPY packages/docs-site/package.json packages/docs-site/
 COPY packages/manifest/package.json packages/manifest/
 COPY packages/markup/package.json packages/markup/
 COPY packages/nodes/package.json packages/nodes/
@@ -24,6 +25,8 @@ COPY packages/worker/package.json packages/worker/
 COPY examples/acme/package.json examples/acme/
 RUN pnpm install --frozen-lockfile
 COPY tsconfig.json tsconfig.base.json ./
+# The documentation's "What's new" is made from it (packages/docs/generators/changelog.mjs).
+COPY CHANGELOG.md ./
 COPY apps apps
 COPY packages packages
 # Compiles the services and builds the console's static files, and the app that draws interfaces.
@@ -39,7 +42,7 @@ FROM node:24-slim
 # worker and its scripts run on plain node and hold none, so they cannot switch back.
 # Without those capabilities in the container, node-cp cannot start at all, and
 # volvel-start runs the control plane on plain node instead: it then refuses managed
-# workers to tenants whose code is written outside the operator. See docs/self-hosting.md.
+# workers to tenants whose code is written outside the operator. See /docs/self-host/explanation/running/managed-workers-and-isolation on an instance.
 #
 # The same image runs the worker host (volvel-worker-host), which starts managed workers
 # in a container of its own; iptables lets it keep them from private addresses.

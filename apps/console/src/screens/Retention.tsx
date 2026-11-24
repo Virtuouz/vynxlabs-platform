@@ -2,6 +2,7 @@ import { TextField } from "@volvel/ui";
 import { useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
+import { Can } from "../kit/Can.tsx";
 import { count } from "../kit/format.ts";
 import { ErrorState, Pending } from "../kit/LoadState.tsx";
 import { SaveBar } from "../kit/SaveBar.tsx";
@@ -31,12 +32,12 @@ const KINDS: { key: Kind; label: string; about: string }[] = [
     key: "auditDays",
     label: "Audit log",
     about:
-      "Who changed what. Older entries are not shown here or exported with the tenant. The instance exports whole months to its object store before removing them.",
+      "Who changed what. Entries older than the period are hidden here and left out of the tenant's export at once. They leave with their month, which the instance exports whole to its object store before removing it, so they can be some time past the period. Until then, a longer period shows them again. Files that rows replaced or were deleted with are kept for this long too, and are deleted after it.",
   },
 ];
 
 /** How long this tenant's history is kept, kind by kind, with the instance's default beside each. */
-export function RetentionSettings({ base }: { base: string }) {
+export function RetentionSettings({ base, bare = false }: { base: string; bare?: boolean }) {
   const loaded = useLoad<Retention>(`${base}/retention`);
   const [draft, setDraft] = useState<Partial<Record<Kind, string>>>({});
   const [busy, setBusy] = useState(false);
@@ -81,9 +82,27 @@ export function RetentionSettings({ base }: { base: string }) {
                 </li>
               ))}
             </ul>
-            <p className="m-0">
-              Anything older is removed within minutes of saving, and cannot be brought back.
-            </p>
+            {shorter.some(({ key }) => key !== "auditDays") && (
+              <p className="m-0">
+                {shorter.some(({ key }) => key === "auditDays")
+                  ? `${shorter
+                      .filter(({ key }) => key !== "auditDays")
+                      .map(({ label }) => label)
+                      .join(
+                        ", ",
+                      )} older than that are removed within minutes of saving, and cannot be brought back.`
+                  : "Anything older is removed within minutes of saving, and cannot be brought back."}
+              </p>
+            )}
+            {shorter.some(({ key }) => key === "auditDays") && (
+              <p className="m-0">
+                Audit log: entries older than the new period stop showing at once, and are left out
+                of the tenant's export. They are removed with their month, some time after, and then
+                cannot be brought back. Until then, if you lengthen the period again, they show
+                again. Also, files that rows replaced, or were deleted with, longer ago than the new
+                period are deleted too.
+              </p>
+            )}
           </div>
         ),
         action: "Save and remove older history",
@@ -112,10 +131,12 @@ export function RetentionSettings({ base }: { base: string }) {
     }
   };
 
-  return (
-    <Page
-      title="Retention"
-      description="How long this tenant's history is kept. Anything older is removed within minutes of passing its period. Leave a field empty to use the instance's default."
+  const body = (
+    <Can
+      base={base}
+      permission="tenant:write"
+      orInstance
+      what="how long this tenant's history is kept"
     >
       <form
         className="flex max-w-xl flex-col gap-4"
@@ -145,6 +166,16 @@ export function RetentionSettings({ base }: { base: string }) {
         onDiscard={() => setDraft({})}
         what="retention"
       />
+    </Can>
+  );
+  // In a sheet beside a list, the title is the sheet's own.
+  if (bare) return body;
+  return (
+    <Page
+      title="Retention"
+      description="How long this tenant's history is kept. Runs, events and refused requests older than their period are removed within minutes; the audit log is different, as said under it. Leave a field empty to use the instance's default."
+    >
+      {body}
     </Page>
   );
 }

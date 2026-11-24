@@ -3,6 +3,7 @@ import { act, cleanup, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { useLoad } from "./api.ts";
 import { LiveIndicator } from "./kit/LiveIndicator.tsx";
+import { useLiveRun } from "./screens/Execution.tsx";
 import { RunsWorkbench } from "./screens/Runs.tsx";
 import { useStreamConnected, useTenantStream } from "./stream.ts";
 import { show } from "./testing.tsx";
@@ -167,6 +168,47 @@ test("the shell says Live, then Reconnecting after a few seconds down, then Offl
     expect(screen.getByRole("status").textContent).toMatch(/^Offline · last updated \d\d:\d\d/);
     act(() => FakeSource.last?.emit("ready", {}));
     expect(screen.getByRole("status").textContent).toBe("Live");
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+function Followed({ runId }: { runId: string }) {
+  const { run } = useLiveRun("/tenants/t1/workspaces/w1", runId);
+  return <p>{run ? `state ${run.status}` : "…"}</p>;
+}
+
+test("a run followed while the stream is up is read again now and then, so a missed event does not leave it running (P32)", async () => {
+  // The run ends on the server, and no event about it arrives (it ended before the page asked,
+  // or the event was lost): the page asks again on its own, more slowly than when the stream is down.
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  try {
+    let ended = false;
+    vi.stubGlobal("fetch", async (address: string) => {
+      asked.push(address);
+      if (address.endsWith("/runs/r1"))
+        return Response.json({ id: "r1", status: ended ? "succeeded" : "running" });
+      if (address.includes("/runs/r1/logs")) return Response.json({ items: [], done: ended });
+      return Response.json({ items: [] });
+    });
+    show(
+      <Tab>
+        <Followed runId="r1" />
+      </Tab>,
+    );
+    act(() => FakeSource.last?.emit("ready", {}));
+    expect(await screen.findByText("state running")).toBeTruthy();
+    ended = true;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(6_000);
+    });
+    expect(await screen.findByText("state succeeded")).toBeTruthy();
+    // Once it has ended, it is not asked for again.
+    const after = reads("/tenants/t1/workspaces/w1/runs/r1");
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(12_000);
+    });
+    expect(reads("/tenants/t1/workspaces/w1/runs/r1")).toBe(after);
   } finally {
     vi.useRealTimers();
   }

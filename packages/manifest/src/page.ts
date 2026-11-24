@@ -67,22 +67,29 @@ const TYPE = "^[a-z][a-z0-9-]{0,30}/[a-z][a-z0-9-]{0,40}$";
 
 const visualSchema = {
   type: "object",
+  description: "A query made by choosing a table, what to keep, how to group and what to work out.",
   properties: {
-    table: { type: "string", pattern: PATH, maxLength: 255 },
+    table: { type: "string", pattern: PATH, maxLength: 255, description: "The table it reads." },
     joins: {
       type: "array",
       maxItems: 6,
+      description:
+        "Reference columns of the table to follow, to read the columns of what they point to.",
       items: { type: "string", pattern: "^[a-z][a-z0-9_]{0,62}$" },
     },
     filters: {
       type: "array",
       maxItems: 20,
+      description: "What to keep: a row stays when all of them hold.",
       items: {
         type: "object",
         properties: {
-          column: { type: "string", pattern: COLUMN },
-          op: { enum: [...VISUAL_OPERATORS] },
-          value: {},
+          column: { type: "string", pattern: COLUMN, description: "The column compared." },
+          op: { enum: [...VISUAL_OPERATORS], description: "How it is compared." },
+          value: {
+            description:
+              "What it is compared with. Left out for `is_null` and `not_null`. For `last`, a count and a unit; for `between`, two dates.",
+          },
         },
         required: ["column", "op"],
         additionalProperties: false,
@@ -91,11 +98,15 @@ const visualSchema = {
     groupBy: {
       type: "array",
       maxItems: 4,
+      description: "What to break the values down by.",
       items: {
         type: "object",
         properties: {
-          column: { type: "string", pattern: COLUMN },
-          bucket: { enum: [...VISUAL_BUCKETS] },
+          column: { type: "string", pattern: COLUMN, description: "The column grouped by." },
+          bucket: {
+            enum: [...VISUAL_BUCKETS],
+            description: "For a date or a time: how long each group is.",
+          },
         },
         required: ["column"],
         additionalProperties: false,
@@ -104,32 +115,56 @@ const visualSchema = {
     measures: {
       type: "array",
       maxItems: 8,
+      description: "The values to work out for each group.",
       items: {
         type: "object",
         properties: {
-          fn: { enum: [...VISUAL_FUNCTIONS] },
-          column: { type: "string", pattern: COLUMN },
-          as: { type: "string", pattern: NAME },
+          fn: { enum: [...VISUAL_FUNCTIONS], description: "How the value is worked out." },
+          column: {
+            type: "string",
+            pattern: COLUMN,
+            description: "The column it is worked out of. A count of rows has none.",
+          },
+          as: {
+            type: "string",
+            pattern: NAME,
+            description: "What the value is called in the result.",
+          },
         },
         required: ["fn", "as"],
         additionalProperties: false,
       },
     },
-    columns: { type: "array", maxItems: 50, items: { type: "string", pattern: COLUMN } },
+    columns: {
+      type: "array",
+      maxItems: 50,
+      description: "For rows with nothing worked out: the columns to read. Left out, all of them.",
+      items: { type: "string", pattern: COLUMN },
+    },
     sort: {
       type: "array",
       maxItems: 4,
+      description: "The order of the result, the first sort being the main one.",
       items: {
         type: "object",
         properties: {
-          by: { type: "string", pattern: "^[a-z][a-z0-9_.]{0,130}$" },
-          descending: { type: "boolean" },
+          by: {
+            type: "string",
+            pattern: "^[a-z][a-z0-9_.]{0,130}$",
+            description: "A column, or the name of a value worked out.",
+          },
+          descending: { type: "boolean", description: "Biggest or newest first." },
         },
         required: ["by"],
         additionalProperties: false,
       },
     },
-    limit: { type: "integer", minimum: 1, maximum: 10000 },
+    limit: {
+      type: "integer",
+      minimum: 1,
+      maximum: 10000,
+      description: "At most this many rows of the result.",
+    },
   },
   required: ["table"],
   additionalProperties: false,
@@ -139,6 +174,7 @@ const sourceSchema = {
   oneOf: [
     {
       type: "object",
+      description: "A visual query.",
       properties: { visual: visualSchema },
       required: ["visual"],
       additionalProperties: false,
@@ -935,6 +971,10 @@ export function checkWidgets(
     say: (path: string, message: string) => void,
     /** What else is asked for: a form's fields, by their columns. */
     typed: readonly string[] = [],
+    /** Whether the event clicks a group (a point, a cell): `narrow` takes its value from one. */
+    eventGivesGroup = false,
+    /** Whether the widget reads a table, which is all that has rows behind a figure. */
+    readsTable = true,
   ) {
     checkConditions(action.when, `${path}/when`, eventGivesRecord, say);
     // An unfinished action is kept in a draft; it is said here, and publishing refuses it.
@@ -1014,6 +1054,18 @@ export function checkWidgets(
         context.page?.kind !== "modal"
       ) {
         say(at, "only a side sheet or a modal can be closed");
+      }
+      if (step.do === "rows" && !readsTable) {
+        say(
+          at,
+          "shows the rows behind a figure, and this widget reads a saved query or SQL: only a table has rows behind it",
+        );
+      }
+      if (step.do === "narrow" && !eventGivesGroup) {
+        say(
+          at,
+          "narrows the page by what was clicked, and this event clicks no group (a point or a cell does)",
+        );
       }
       if (step.do === "narrow" && !byName.has(step.filter)) {
         say(`${at}/filter`, `the page has no filter "${step.filter}"`);
@@ -1226,7 +1278,15 @@ export function checkWidgets(
         say(`/on/${event}`, `${definition.title} has no event "${event}"`);
         continue;
       }
-      checkAction(action, `/on/${event}`, declared.gives === "record", say);
+      checkAction(
+        action,
+        `/on/${event}`,
+        declared.gives === "record",
+        say,
+        [],
+        declared.gives === "group",
+        readsTables(widget.data),
+      );
     }
     for (const [property, schema] of Object.entries(definition.config.properties)) {
       const control = schema["x-volvel"]?.control;
@@ -1253,7 +1313,12 @@ export function checkWidgets(
               at,
               `the person filling it in goes in a text column, and "${one.column}" is ${type}`,
             );
-          else if (one.initial.kind === "value" && !startFits(type, one.initial.value))
+          // "A value" chosen and not yet typed starts a field with nothing: it is no refusal.
+          else if (
+            one.initial.kind === "value" &&
+            one.initial.value !== undefined &&
+            !startFits(type, one.initial.value)
+          )
             say(at, `the value does not fit the ${type} column "${one.column}"`);
         });
       }
@@ -1300,6 +1365,12 @@ export function checkWidgets(
     }
   });
   return issues;
+}
+
+/** Whether a widget's data comes from a table (or a data source's table): what has rows behind it. */
+function readsTables(data: Record<string, { source?: object }> | undefined): boolean {
+  const inputs = Object.values(data ?? {});
+  return inputs.length === 0 || inputs.some((one) => one.source && "visual" in one.source);
 }
 
 /** Whether a form field may start with this value in a column of this type. */

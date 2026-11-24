@@ -1,0 +1,33 @@
+# Run log: console/how-to/data/table-definition.md
+
+- Instance: http://localhost:8091, the throwaway instance seeded by `examples/fernhill/setup/setup.mjs`, commit `be324f78` (branch phase-31-write-the-docs).
+- Signed in as Maya Brooks (`maya.brooks@fernhill.example`, tenant admin), in Fernhill's Sandbox workspace, at 1440 px, light theme, with Playwright headless. No width or theme other than that was run.
+- Tables made for this run are named `thow-...`. Rows that the page does not ask the reader to type (the seed of 11 rows) were put in by the API (`POST rows/<table>`, as the same signed-in person) to save typing.
+- The steps were run in pieces, then the page was written from what was seen and corrected where it differed (listed under "The page got wrong"). A single end-to-end run of the finished text was not made.
+
+## The steps as followed (table `thow-visits`, then `thow-scratch`)
+1. **Definition** tab: "Rename table", "Describe the table", Undo, Redo, **Add column**, the **Columns** table with **Values**, **Rules**, **Change type**, **Describe**, **Rename**, **Retire** per line, then "What stands for a row", "Indexes", "Who sees rows", "Where it is stored", "Retire this table".
+2. **Add column** `status`, One of a list, Values `booked, seen, billed`, **Must every row have one?** Yes, no default: refused in a red notice, "The table "thow-visits" cannot be changed: column "status" is required and the table already has rows. Give it a default, so existing rows have a value." Chose **Value when none is given** `booked`: added; the line read "Required" and `booked` under **When not given**.
+3. **Rules** on `species`: Yes: no two rows alike, **Save**: refused inside the dialog, "... column "species" is now unique, and some rows share a value: "dog" is in 5 rows, "cat" is in 3 rows, "rabbit" is in 3 rows. Make the values distinct first." **Rules** on `pet`: required and unique: saved; the line read "Required, No two rows alike".
+4. **Add column** `visits` (Whole number); **Change type** offered Whole number, Number, Text; chose Number: the line read Number. **Change type** on `pet` (Text) offered Text and One of a list; with Values `Biscuit, Miso` it was refused: "... column "pet" cannot become an enum while rows hold other values: "Ziggy", "Bramble", "Olive", "Juno", "Moose" and more. Add them to its values, or change those rows first." `weight_kg` offered Number, Text; `status` offered One of a list, Text.
+5. **Values** on `status`: the dialog "Values of status" listed three values each with Value, Shown as, Color (None, gray, red, orange, amber, green, teal, blue, violet, pink, One of your own), arrows, **Remove**; renamed `seen` to `checked in`: "Rows that hold seen will hold checked in."; **Add a value** `paid`; **Save**. Then removed `billed`: "billed will no longer be offered. Rows that hold it keep it."; the line then said "No longer offered, kept on the rows that hold them: billed".
+6. **Add an index**: dialog with a Columns field listing the columns, `created_at`, `updated_at`, `id`; chose species and weight_kg; **Add index**; the section listed "species, weight_kg" with **Remove**. **The column that stands for a row**: chose `pet`.
+7. **Undo**: the button read "Undo the change to what stands for a row"; one press cleared it, Ctrl+Z took the index away ("No indexes. Only the ID is indexed."), **Redo** put it back.
+8. **Rename** `visits` to `pet`: "There is already a column called "pet". Choose another name, or change that one." on the field; to `visit_count`: done. **Describe** `pet`: dialog "What pet holds"; saved, the text showed under the name. **Retire** `visit_count`: "Retire visit_count? It is hidden and its data kept. You can bring it back."; it moved to **Retired columns**.
+9. **Add column** `note_ref`, Row of another table: fields Which table (combobox listing the active tables), When the row it points to is deleted; chose `thow-scratch`. **On delete** dialog "When a row note_ref points to is deleted"; chose **Empty this column**; the line read "Emptied when the row it points to is deleted". **Change table** opened "Which table note_ref points to" with "The table it points to".
+10. On `thow-scratch`: **Describe the table** (dialog "What thow-scratch is for"); **Rename table** (dialog "Name and path of thow-scratch", fields Key, Path, Title, button **Save as a draft**): path `thow-scratch-notes`. The screen stayed at `thow-scratch`; the rename is a draft. **I did not deploy it**: the Sandbox holds other writers' drafts, so the page's statement that the draft is deployed from **Deploy** and that the old path answers 90 days comes from the dialog's text and the code, not from a run.
+
+## The page got wrong (and was corrected)
+- The first text said every change on the tab saves at once; **Who sees rows** waits for its own button and the table rename is a draft. Corrected.
+- The first text said retiring a column that an index or the display names is refused. The code only refuses a column a rule names; indexes and display follow. Corrected.
+- It said "nothing has to be deployed". The Sandbox's "Draft N changes" counter rose with each console table change (2, then 3); what a deploy does with those was not run. The page says the changes apply at once (rows used the new column straight away) and only the rename waits.
+- The Rules dialog hint for unique says only "If some rows already share a value, the change is refused and names them." The page now quotes the real refusal.
+
+## Not run
+Rename table deployed; Undo of a retire or a rename; Add column with a date or yes/no default; the phone menu (**Actions for** a column); the "Someone else changed" message; the 20-index limit.
+
+## Second check (second agent, 2026-11-23)
+- Instance `http://localhost:8091`, Maya Brooks, 1440 px, light, table `chk-vn-a`.
+- Followed: **Add column** `status`, required, with no default (refused with the message the page quotes), then with a default `open` ("The column status was added."); **Rules** on `clinic`, unique (refused: "Northside" is in 2 rows ...); **Change type** on `minutes` (offered Number and Text; saved); **Values** dialog; **Add an index** dialog (cancelled); **Retire** on `status`, then the **Undo** button ("Undo retiring status") brought it back. All as the page says.
+- At 390 px the column buttons are in an "Actions for <column>" menu (see the tutorial's log). The page describes the wide screen.
+- Not run: **Rename**, **Rename table**, **Describe**, the display column, **Redo** on this page, the "Someone else changed" notice, dark, keyboard only.

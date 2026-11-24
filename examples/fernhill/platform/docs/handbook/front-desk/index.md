@@ -1,6 +1,7 @@
 ---
 title: Front desk
 icon: clipboard-list
+type: how-to
 description: Booking, checking in and billing.
 pages:
   - booking

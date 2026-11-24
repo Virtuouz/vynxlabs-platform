@@ -5,6 +5,7 @@ import type {
 import { newId, sql } from "@volvel/db";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import { Type } from "typebox";
+import { keepingAnAdmin, keepingAnOperator } from "../kernel/administer.js";
 import { type Audit, SYSTEM, type Trx, writeAudit } from "../kernel/audit.js";
 import { notFound } from "../kernel/errors.js";
 import { access } from "../kernel/http.js";
@@ -36,7 +37,8 @@ import {
   userFields,
   userResource,
 } from "../kernel/sso/scim.js";
-import { AnyObject, Id, iso, isoOrNull, NoContent, NullableTime } from "./shared.js";
+import { PageQuery } from "../pagination.js";
+import { AnyObject, Id, iso, isoOrNull, NoContent, NullableTime, pageArgs } from "./shared.js";
 
 const SCIM_TYPE = "application/scim+json";
 const MAX_PAGE = 200;
@@ -193,12 +195,16 @@ export function scimRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           schema: {
             summary: "The people a provider has pushed, and the pushes it was refused",
             description:
-              "Who arrived, whether each is active, and the newest refusals with their reason. " +
-              "Nothing a refused push carried is kept.",
+              "Who arrived, a page at a time, whether each is active, and the newest refusals " +
+              "with their reason. Nothing a refused push carried is kept.",
             tags,
             params: Params,
+            querystring: PageQuery,
             response: {
               200: Type.Object({
+                nextCursor: Type.Union([Type.String(), Type.Null()], {
+                  description: "Pass it back as `cursor` for the next people. Null at the end.",
+                }),
                 people: Type.Array(
                   Type.Object({
                     userName: Type.String(),
@@ -221,15 +227,23 @@ export function scimRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             },
           },
         },
-        async ({ params }) => {
+        async ({ params, query }) => {
           const found = await provider(params);
-          const people = await kernel.db
+          const args = pageArgs(query);
+          const fetched = await kernel.db
             .selectFrom("scim_user")
             .select(["user_name", "email", "display_name", "active", "updated_at"])
             .where("provider_id", "=", found.id)
+            .$if(args.after !== undefined, (q) => q.where("user_name", ">", args.after as string))
             .orderBy("user_name")
-            .limit(1000)
+            .limit(args.limit + 1)
             .execute();
+          const people = fetched.slice(0, args.limit);
+          const last = people.at(-1);
+          const nextCursor =
+            fetched.length > args.limit && last
+              ? Buffer.from(last.user_name, "utf8").toString("base64url")
+              : null;
           const refusals = await kernel.db
             .selectFrom("scim_refusal")
             .selectAll()
@@ -237,6 +251,7 @@ export function scimRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             .orderBy("occurred_at", "desc")
             .execute();
           return {
+            nextCursor,
             people: people.map((row) => ({
               userName: row.user_name,
               email: row.email,
@@ -261,6 +276,7 @@ export function scimRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           config: { access: write },
           schema: {
             summary: "Say how a provider's pushes are taken",
+            description: "How pushes from the provider's directory are applied here. Audited.",
             tags,
             params: Params,
             body: Settings,
@@ -432,19 +448,25 @@ export function scimRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           userAgent: request.headers["user-agent"],
           requestId: request.id,
         };
-        return db.transaction().execute((trx) =>
-          run(trx, (input) =>
-            writeAudit(trx, actor, {
-              ...input,
-              details: {
-                ...input.details,
-                via: "scim",
-                identityProvider: provider.name,
-                token: tokenPrefix,
-              },
-            }),
-          ),
-        );
+        return db.transaction().execute((trx) => {
+          const go = () =>
+            run(trx, (input) =>
+              writeAudit(trx, actor, {
+                ...input,
+                details: {
+                  ...input.details,
+                  via: "scim",
+                  identityProvider: provider.name,
+                  token: tokenPrefix,
+                },
+              }),
+            );
+          // A push that would take the tenant's last admin, or the instance's last operator, is
+          // refused as any other change is: 409, and it shows under the refused pushes.
+          return provider.tenantId === null
+            ? keepingAnOperator(trx, go)
+            : keepingAnAdmin(trx, provider.tenantId, go);
+        });
       };
 
       const page = (query: { startIndex?: number | undefined; count?: number | undefined }) => ({
@@ -468,6 +490,8 @@ export function scimRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           config,
           schema: {
             summary: "What this SCIM service supports",
+            description:
+              "The service provider configuration of RFC 7643: patch and filter are supported, bulk is not.",
             tags,
             params: ProviderParam,
             response: { 200: AnyObject },
@@ -476,7 +500,6 @@ export function scimRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         async (request, reply) =>
           send(reply, 200, {
             schemas: ["urn:ietf:params:scim:schemas:core:2.0:ServiceProviderConfig"],
-            documentationUri: `${kernel.config.publicUrl}/api/v1/docs`,
             patch: { supported: true },
             bulk: { supported: false, maxOperations: 0, maxPayloadSize: 0 },
             filter: { supported: true, maxResults: MAX_PAGE },
@@ -519,6 +542,7 @@ export function scimRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           config,
           schema: {
             summary: "The kinds of thing that can be pushed",
+            description: "Two resource types: User and Group.",
             tags,
             params: ProviderParam,
             response: { 200: AnyObject },
@@ -598,6 +622,7 @@ export function scimRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           config,
           schema: {
             summary: "The attributes of a user and a group that are kept",
+            description: "The schemas of both, as RFC 7643 describes them.",
             tags,
             params: ProviderParam,
             response: { 200: AnyObject },
@@ -686,6 +711,7 @@ export function scimRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           config,
           schema: {
             summary: "One pushed person",
+            description: "The person the id names, in SCIM's shape.",
             tags,
             params: ResourceParam,
             response: { 200: AnyObject },
@@ -881,6 +907,7 @@ export function scimRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           config,
           schema: {
             summary: "One pushed group",
+            description: "The group the id names, with its members, in SCIM's shape.",
             tags,
             params: ResourceParam,
             querystring: ListQuery,

@@ -4,23 +4,54 @@ import {
   EmptyState,
   HeadingSlot,
   hasHeadingControls,
+  LimitNote,
   Menu,
   Notice,
   Skeleton,
 } from "@volvel/ui";
 import { Download, PanelRight } from "@volvel/ui/icons";
 import type { WidgetDefinition, WidgetState } from "@volvel/widgets";
+import { countText, formatOfColumn } from "@volvel/widgets";
+import { type ColumnSpec, columnsToShow, headingOf } from "@volvel/widgets-core/views";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { download, type Result, toCsv, toXlsx } from "./export.ts";
 import type { WireData } from "./types.ts";
 import { DOWNLOAD_ROWS, type Reading } from "./useWidgetData.ts";
 
-/** What a widget read as a table to keep: the first input that has rows, as its view was given them. */
-function resultOf(read: Readonly<Record<string, WireData>> | undefined): Result | undefined {
+/**
+ * What a widget read as a table to keep: the first input that has rows, as its view was given them.
+ * A table keeps what it shows: its columns in its order, under the headings set, with money in
+ * units and numbers as numbers (a hidden column is left out, though rows are sent whole).
+ */
+export function resultOf(
+  read: Readonly<Record<string, WireData>> | undefined,
+  widget?: PageWidget,
+): Result | undefined {
   for (const wire of Object.values(read ?? {})) {
     // Rows are worth keeping; one number, or one record, is read off the page.
     if (wire.shape === "record" || wire.shape === "approvals" || wire.rows.length === 0) continue;
     if (wire.shape === "summary" && wire.breakdowns.length === 0) continue;
+    if (wire.shape === "rows" && widget?.type === "core/table") {
+      const specs = columnsToShow(widget.config?.columns as ColumnSpec[] | undefined, wire);
+      const names = wire.names ?? {};
+      return {
+        columns: specs.map(({ spec }) => ({ name: headingOf(spec, wire) })),
+        rows: wire.rows.map((row) =>
+          specs.map(({ spec, info }) => {
+            const value = row[spec.column];
+            if (typeof value === "string" && names[spec.column]?.[value] !== undefined) {
+              return names[spec.column]?.[value];
+            }
+            const format = formatOfColumn(spec.format, info);
+            return format?.style === "currency" &&
+              format.minorUnits === true &&
+              typeof value === "number"
+              ? Math.round(value) / 100
+              : value;
+          }),
+        ),
+      };
+    }
     const columns = wire.columns.map((column) => ({ name: column.label || column.name }));
     const names = wire.shape === "rows" ? (wire.names ?? {}) : {};
     const rows = wire.rows.map((row) =>
@@ -59,6 +90,7 @@ function Title({
   onRename: (title: string) => void;
 }) {
   const [renaming, setRenaming] = useState(false);
+  const [typed, setTyped] = useState(widget.title ?? "");
   const field = useRef<HTMLInputElement>(null);
   // Said once: Enter or Esc ends it, and the blur that follows must not say it again.
   const settled = useRef(false);
@@ -79,25 +111,30 @@ function Title({
   if (renaming) {
     const finish = (save: boolean) => {
       if (settled.current) return;
-      settled.current = true;
       const next = field.current?.value.trim() ?? title;
+      // A title past its limit is said at the field and kept for the person to shorten, not cut.
+      if (save && next.length > 100) return;
+      settled.current = true;
       setRenaming(false);
       if (save && next !== title) onRename(next);
     };
     return (
-      <input
-        ref={field}
-        aria-label="Widget title"
-        defaultValue={title}
-        maxLength={100}
-        className="min-w-0 flex-1 rounded-inner border border-action bg-surface px-1.5 py-0.5 text-body font-semibold text-ink"
-        onClick={(event) => event.stopPropagation()}
-        onKeyDown={(event) => {
-          if (event.key === "Enter") finish(true);
-          if (event.key === "Escape") finish(false);
-        }}
-        onBlur={() => finish(true)}
-      />
+      <>
+        <input
+          ref={field}
+          aria-label="Widget title"
+          defaultValue={title}
+          onChange={(event) => setTyped(event.currentTarget.value)}
+          className="min-w-0 flex-1 rounded-inner border border-action bg-surface px-1.5 py-0.5 text-body font-semibold text-ink"
+          onClick={(event) => event.stopPropagation()}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") finish(true);
+            if (event.key === "Escape") finish(false);
+          }}
+          onBlur={() => finish(true)}
+        />
+        <LimitNote value={typed} max={100} />
+      </>
     );
   }
   if (renamable) {
@@ -187,16 +224,15 @@ export function Frame({
     told.current?.(isEmpty);
     return () => told.current?.(false);
   }, [isEmpty]);
-  const kept = !building && state.status === "ready" ? resultOf(reading.read) : undefined;
+  const kept = !building && state.status === "ready" ? resultOf(reading.read, widget) : undefined;
   // A table read a page at a time is downloaded whole, as far as a download reads.
   const total = Object.values(reading.read ?? {}).reduce(
     (most, wire) => (wire.shape === "rows" && wire.total ? Math.max(most, wire.total) : most),
     0,
   );
-  const capped =
-    total > DOWNLOAD_ROWS ? ` (the first ${DOWNLOAD_ROWS.toLocaleString("en-US")} rows)` : "";
+  const capped = total > DOWNLOAD_ROWS ? ` (the first ${countText(DOWNLOAD_ROWS)} rows)` : "";
   const keep = async (save: (result: Result) => void) => {
-    const whole = resultOf(await reading.all()) ?? kept;
+    const whole = resultOf(await reading.all(), widget) ?? kept;
     if (whole) save(whole);
   };
   const followed = Object.values(reading.read ?? {}).find((wire) => wire.followed)?.followed;
@@ -278,11 +314,45 @@ export function Frame({
         return children;
     }
   })();
+  // Rows kept for a download: in the heading, or, with no heading, in a quiet corner (WID-29).
+  const downloads = kept ? (
+    <Menu
+      ariaLabel={`Download ${name}`}
+      align="end"
+      triggerClassName="flex items-center justify-center rounded-control p-1 text-ink-muted hover:bg-sunken hover:text-ink pointer-coarse:min-h-8 pointer-coarse:min-w-8"
+      label={<Download aria-hidden="true" size={16} />}
+      items={[
+        {
+          label: `Download as CSV${capped}`,
+          onSelect: () =>
+            void keep((whole) =>
+              download(`${fileName(name)}.csv`, toCsv(whole), "text/csv;charset=utf-8"),
+            ),
+        },
+        {
+          label: `Download as a spreadsheet${capped}`,
+          onSelect: () =>
+            void keep((whole) =>
+              download(
+                `${fileName(name)}.xlsx`,
+                toXlsx(whole, name.slice(0, 31)),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+              ),
+            ),
+        },
+      ]}
+    />
+  ) : null;
   return (
     <>
       {named ? (
         <div className="absolute -top-3 right-2 layer-sticky flex max-w-[45%] py-[3px] pl-[7px]">
           <Title widget={widget} renamable onRename={(title) => onRename(title)} />
+        </div>
+      ) : null}
+      {!heading && !bare && !container && downloads ? (
+        <div className="absolute top-1 right-1 layer-sticky opacity-60 transition-opacity hover:opacity-100 focus-within:opacity-100">
+          {downloads}
         </div>
       ) : null}
       {heading ? (
@@ -321,34 +391,7 @@ export function Frame({
                 data-heading-controls=""
                 className="flex items-center gap-2 empty:hidden"
               />
-              {kept ? (
-                <Menu
-                  ariaLabel={`Download ${name}`}
-                  align="end"
-                  triggerClassName="flex items-center justify-center rounded-control p-1 text-ink-muted hover:bg-sunken hover:text-ink pointer-coarse:min-h-8 pointer-coarse:min-w-8"
-                  label={<Download aria-hidden="true" size={16} />}
-                  items={[
-                    {
-                      label: `Download as CSV${capped}`,
-                      onSelect: () =>
-                        void keep((whole) =>
-                          download(`${fileName(name)}.csv`, toCsv(whole), "text/csv;charset=utf-8"),
-                        ),
-                    },
-                    {
-                      label: `Download as a spreadsheet${capped}`,
-                      onSelect: () =>
-                        void keep((whole) =>
-                          download(
-                            `${fileName(name)}.xlsx`,
-                            toXlsx(whole, name.slice(0, 31)),
-                            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                          ),
-                        ),
-                    },
-                  ]}
-                />
-              ) : null}
+              {downloads}
             </div>
           </div>
           {widget.subtitle ? (

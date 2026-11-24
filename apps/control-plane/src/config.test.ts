@@ -26,6 +26,13 @@ function problems(env: Record<string, string | undefined>) {
 }
 
 describe("configuration", () => {
+  test("a malformed OTEL_EXPORTER_OTLP_HEADERS is a problem, listed with the others (HOST-16)", () => {
+    expect(problems({ ...valid, OTEL_EXPORTER_OTLP_HEADERS: "a=50%", PORT: "x" })).toEqual([
+      "PORT must be a number from 1 to 65535.",
+      "OTEL_EXPORTER_OTLP_HEADERS must be pairs like name=value, with a value percent-encoded (write a literal % as %25).",
+    ]);
+  });
+
   test("applies defaults", () => {
     expect(loadConfig(valid)).toEqual({
       databaseUrl: valid.DATABASE_URL,
@@ -59,6 +66,8 @@ describe("configuration", () => {
       managedWorkerUser: { uid: 10001, gid: 10001 },
       retention: { runsDays: 30, eventsDays: 30, refusalsDays: 7, auditDays: 400 },
       egressAllow: { networks: [], hosts: [] },
+      trustedProxies: 1,
+      authLimits: true,
       consoleDir: undefined,
       appsUrl: undefined,
       appsOnConsoleAddress: false,

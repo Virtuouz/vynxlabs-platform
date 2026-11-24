@@ -9,10 +9,12 @@ import {
   ShieldAlert,
   Zap,
 } from "lucide-react";
-import { useState } from "react";
-import { api, useCacheEdit, useLoad } from "../api.ts";
+import { type ReactNode, useEffect, useState } from "react";
+import { api, askForAccess, useCacheEdit, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
-import { type BatchAnswer, useBatch } from "../kit/BatchResult.tsx";
+import { REJECTING } from "../kit/approvals.ts";
+import { type BatchAnswer, inSlices, useBatch } from "../kit/BatchResult.tsx";
+import { useMay } from "../kit/Can.tsx";
 import { type CollectionColumn, CollectionView } from "../kit/CollectionView.tsx";
 import { Current } from "../kit/current.ts";
 import { DeployMenu } from "../kit/DeployMenu.tsx";
@@ -25,7 +27,9 @@ import { Time } from "../kit/Time.tsx";
 import { Truncate } from "../kit/Truncate.tsx";
 import { ViewsMenu } from "../kit/views.tsx";
 import { CopyButton } from "../ListScreen.tsx";
+import { useRecordRecent } from "../recent.ts";
 import { Link, navigate, useQueryValue, useUrlParam } from "../router.tsx";
+import { PublishEventButton } from "./PublishEvent.tsx";
 import { NewScheduleSheet } from "./ScheduleForm.tsx";
 
 // ----- Triggers -----
@@ -47,7 +51,9 @@ export interface Trigger {
   nextFireAt: string | null;
   lastFiredAt: string | null;
   url: string | null;
-  paused: { at: string; by: string | null; reason: string } | null;
+  paused: { at: string; by: string | null; byName?: string | null; reason: string } | null;
+  /** What holds it, widest first: the instance, the workspace, or its own pause. */
+  pausedBy?: "instance" | "workspace" | "trigger" | null;
   lastRun: {
     kind: "script" | "flow";
     id: string;
@@ -78,6 +84,10 @@ const REFUSED: Record<string, string> = {
   signature: "the signature did not match",
   body: "the body could not be read",
   paused: "the trigger was paused",
+  input: "what it was given does not fit what it starts",
+  filter: "its filter could not be worked out",
+  busy: "its source was still looking",
+  error: "its source could not pass on what it gave",
 };
 
 /** The page of what a trigger starts. */
@@ -86,16 +96,48 @@ const targetLink = (link: string, row: Trigger) =>
 const runLink = (link: string, run: NonNullable<Trigger["lastRun"]>) => `${link}/runs/${run.id}`;
 
 /**
+ * When a trigger fires next, in one rule for every place that says so. One that is turned off or
+ * paused (its own, or its workspace's) does not fire at its next time: a paused schedule that
+ * came due while it was held fires once when it is resumed, and says so instead of a time that
+ * has passed.
+ */
+export function nextFireOf(
+  row: Pick<Trigger, "paused" | "enabled" | "nextFireAt" | "draft">,
+  workspacePaused: boolean,
+  now = Date.now(),
+):
+  | { kind: "next"; at: string }
+  | { kind: "resume" }
+  | { kind: "off" }
+  | { kind: "paused" }
+  | { kind: "none" } {
+  if (row.draft === "new")
+    return row.nextFireAt ? { kind: "next", at: row.nextFireAt } : { kind: "none" };
+  if (!row.enabled) return { kind: "off" };
+  if (row.paused || workspacePaused) {
+    return row.nextFireAt && Date.parse(row.nextFireAt) <= now
+      ? { kind: "resume" }
+      : { kind: "paused" };
+  }
+  return row.nextFireAt ? { kind: "next", at: row.nextFireAt } : { kind: "none" };
+}
+
+/**
  * What a trigger will do, in one rule for every place that lists triggers: a draft that was
  * never deployed starts nothing, a pause (its own or the workspace's) stops it, and an
  * enabled one says when it fires next.
  */
 export function TriggerState({
   row,
-  workspacePaused,
+  workspacePaused = false,
+  instancePaused = false,
 }: {
-  row: Pick<Trigger, "paused" | "enabled" | "nextFireAt" | "draft">;
-  workspacePaused: boolean;
+  row: Pick<Trigger, "paused" | "enabled" | "nextFireAt" | "draft"> &
+    Partial<Pick<Trigger, "pausedBy">>;
+  /** For a list that was not given what holds each trigger: the server says it as `pausedBy`. */
+  workspacePaused?: boolean;
+  /** An operator has paused every trigger in the instance. */
+  instancePaused?: boolean;
 }) {
   if (row.draft === "new") return <StatePill state="draft">Draft, never deployed</StatePill>;
   if (row.draft)
@@ -105,10 +147,26 @@ export function TriggerState({
         <Tag tone="draft">{row.draft === "removed" ? "Removing" : "Draft"}</Tag>
       </span>
     );
-  if (row.paused) return <StatePill state="paused" />;
+  const next = nextFireOf(row, workspacePaused);
+  const held =
+    next.kind === "resume" ? (
+      <span className="text-meta text-ink-subtle">Fires once when resumed</span>
+    ) : null;
+  const holding = (pill: ReactNode) => (
+    <span className="flex flex-wrap items-center gap-2">
+      {pill}
+      {held}
+    </span>
+  );
+  if (instancePaused || row.pausedBy === "instance")
+    return holding(<StatePill state="paused">Instance paused</StatePill>);
+  if (row.paused && row.pausedBy === "workspace")
+    return holding(<StatePill state="paused">Workspace paused</StatePill>);
+  if (row.paused) return holding(<StatePill state="paused" />);
   if (!row.enabled) return <StatePill state="off" />;
-  if (workspacePaused) return <StatePill state="paused">Workspace paused</StatePill>;
-  if (row.nextFireAt) return <span className="text-ink-muted">Next {ago(row.nextFireAt)}</span>;
+  if (workspacePaused || row.pausedBy === "workspace")
+    return holding(<StatePill state="paused">Workspace paused</StatePill>);
+  if (next.kind === "next") return <span className="text-ink-muted">Next {ago(next.at)}</span>;
   return <StatePill state="on" />;
 }
 
@@ -177,15 +235,25 @@ export function TriggersWorkbench({
   root,
   link,
   workspacePaused,
+  instancePaused = false,
   production,
 }: {
   root: string;
   link: string;
   workspacePaused: boolean;
+  /** An operator has paused every trigger in the instance. */
+  instancePaused?: boolean;
   production: boolean;
 }) {
   const list = useLoad<{ items: Trigger[] }>(`${root}/triggers`);
   const { pause, resume } = useTriggerPause({ root, production, listPath: `${root}/triggers` });
+  // What this person may do is asked before the controls are drawn (OPS-35).
+  const may = useMay(root, "trigger:write", "resource:write", "run:write");
+  const mayEdit = may("resource:write");
+  // Fire now is `POST /schedule-firings`, which asks run:write, not the permission to pause.
+  const mayFire = may("run:write");
+  const noEdit = `It needs resource:write. ${askForAccess()}`;
+  const mayPause = may("trigger:write");
   // The kind shown is in the address, so a reload or a link keeps it.
   const [type, setType] = useUrlParam("kind", "all");
   // The chosen trigger lives in the address, so a run can link straight to the trigger
@@ -195,6 +263,14 @@ export function TriggersWorkbench({
   const types = [...new Set(items.map((one) => one.type))];
   const rows = items.filter((one) => type === "all" || one.type === type);
   const open = items.find((one) => triggerKey(one) === chosen);
+  // One a resource holds (not a flow's own trigger) is remembered for the palette's Recent.
+  const ids = /^\/tenants\/([^/]+)\/workspaces\/([^/]+)/.exec(root);
+  useRecordRecent(
+    ids?.[1],
+    ids?.[2],
+    open && !open.node ? (open.type === "schedule" ? "schedule" : "trigger") : undefined,
+    open?.path,
+  );
   const pausedCount = items.filter((one) => one.paused).length;
   const [creating, setCreating] = useState(false);
   // Triggers checked, to pause or resume together.
@@ -226,14 +302,16 @@ export function TriggersWorkbench({
       if (reason === null) return;
     }
     const send = (subset: Trigger[]) =>
-      api.post<BatchAnswer>(`${root}/trigger-pauses/batch`, {
-        paused,
-        ...(reason ? { reason } : {}),
-        triggers: subset.map((one) => ({
-          path: one.path,
-          ...(one.node ? { node: one.node } : {}),
-        })),
-      });
+      inSlices(subset, (slice) =>
+        api.post<BatchAnswer>(`${root}/trigger-pauses/batch`, {
+          paused,
+          ...(reason ? { reason } : {}),
+          triggers: slice.map((one) => ({
+            path: one.path,
+            ...(one.node ? { node: one.node } : {}),
+          })),
+        }),
+      );
     await batch.run(() => send(chosen), {
       title: paused ? "Pausing triggers" : "Resuming triggers",
       done: (count) =>
@@ -284,6 +362,7 @@ export function TriggersWorkbench({
   const columns: CollectionColumn<Trigger>[] = [
     {
       header: "Trigger",
+      wide: true,
       cell: (row) => (
         <span className="flex min-w-0 flex-col">
           <span className="flex min-w-0 font-mono text-code">
@@ -314,7 +393,9 @@ export function TriggersWorkbench({
     },
     {
       header: "State",
-      cell: (row) => <TriggerState row={row} workspacePaused={workspacePaused} />,
+      cell: (row) => (
+        <TriggerState row={row} workspacePaused={workspacePaused} instancePaused={instancePaused} />
+      ),
     },
     {
       header: "Last fired",
@@ -328,10 +409,7 @@ export function TriggersWorkbench({
         ) : row.lastFiredAt ? (
           <span className="text-ink-muted">{ago(row.lastFiredAt)}</span>
         ) : (
-          <span
-            className="text-ink-subtle"
-            title="This trigger has not started anything yet. Runs started by hand are not counted."
-          >
+          <span className="text-ink-subtle" title="This trigger has not started anything yet.">
             Not fired yet
           </span>
         ),
@@ -355,10 +433,16 @@ export function TriggersWorkbench({
       </Closing>
       <CollectionView
         actions={newTrigger}
+        needs={{ base: root, permission: "resource:write", what: "the triggers" }}
         title="Triggers"
         description="What starts work here without anyone asking. Pause one to stop just it, in any workspace; the pause lasts through deploys until it is resumed."
         state={
-          workspacePaused ? (
+          instancePaused ? (
+            <HeadNote>
+              An operator has paused every trigger in this instance, so nothing here starts until
+              they resume them. Only an operator can.
+            </HeadNote>
+          ) : workspacePaused ? (
             <HeadNote>
               Every trigger here is paused. Resume them under{" "}
               <Link to={`${link}/settings`}>Workspace settings</Link>.
@@ -394,24 +478,25 @@ export function TriggersWorkbench({
         table={{
           checked,
           onCheck: setChecked,
-          batch: (keys) => (
-            <>
-              <Button
-                size="small"
-                disabled={batch.busy}
-                onClick={() => void pauseMany([...keys], true)}
-              >
-                <CirclePause aria-hidden="true" size={14} /> Pause
-              </Button>
-              <Button
-                size="small"
-                disabled={batch.busy}
-                onClick={() => void pauseMany([...keys], false)}
-              >
-                <CirclePlay aria-hidden="true" size={14} /> Resume
-              </Button>
-            </>
-          ),
+          batch: (keys) =>
+            !mayPause ? null : (
+              <>
+                <Button
+                  size="small"
+                  disabled={batch.busy}
+                  onClick={() => void pauseMany([...keys], true)}
+                >
+                  <CirclePause aria-hidden="true" size={14} /> Pause
+                </Button>
+                <Button
+                  size="small"
+                  disabled={batch.busy}
+                  onClick={() => void pauseMany([...keys], false)}
+                >
+                  <CirclePlay aria-hidden="true" size={14} /> Resume
+                </Button>
+              </>
+            ),
         }}
         error={list.error}
         onRetry={list.reload}
@@ -425,33 +510,41 @@ export function TriggersWorkbench({
               <Current
                 object={{
                   heading: "This trigger",
-                  commands: open.paused
-                    ? [
-                        {
-                          key: "resume",
-                          label: `Resume ${open.path}`,
-                          icon: CirclePlay,
-                          run: () => resume(open),
-                        },
-                      ]
-                    : [
-                        {
-                          key: "pause",
-                          label: `Pause ${open.path}…`,
-                          icon: CirclePause,
-                          run: () => pause(open),
-                        },
-                        ...(open.type === "schedule" && !open.node
-                          ? [
-                              {
-                                key: "fire",
-                                label: "Fire it now",
-                                icon: Zap,
-                                run: () => fireNow(open),
-                              },
-                            ]
-                          : []),
-                      ],
+                  commands: [
+                    ...(mayPause
+                      ? open.paused
+                        ? [
+                            {
+                              key: "resume",
+                              label: `Resume ${open.path}`,
+                              icon: CirclePlay,
+                              run: () => resume(open),
+                            },
+                          ]
+                        : [
+                            {
+                              key: "pause",
+                              label: `Pause ${open.path}…`,
+                              icon: CirclePause,
+                              run: () => pause(open),
+                            },
+                          ]
+                      : []),
+                    ...(mayFire &&
+                    !open.paused &&
+                    open.type === "schedule" &&
+                    !workspacePaused &&
+                    !open.pausedBy
+                      ? [
+                          {
+                            key: "fire",
+                            label: "Fire it now",
+                            icon: Zap,
+                            run: () => fireNow(open),
+                          },
+                        ]
+                      : []),
+                  ],
                   pin: {
                     kind: open.type === "schedule" ? "schedule" : "trigger",
                     ref: open.path,
@@ -470,7 +563,12 @@ export function TriggersWorkbench({
                 footer={
                   open.draft === "new" ? (
                     <span className="flex flex-wrap gap-2">
-                      <Button variant="primary" href={editLink(link, open)}>
+                      <Button
+                        variant="primary"
+                        {...(mayEdit
+                          ? { href: editLink(link, open) }
+                          : { disabled: true, tooltip: noEdit })}
+                      >
                         <Pencil aria-hidden="true" size={16} /> Edit
                       </Button>
                       <DeployMenu
@@ -482,11 +580,17 @@ export function TriggersWorkbench({
                     </span>
                   ) : open.paused ? (
                     <span className="flex flex-wrap gap-2">
-                      <Button variant="primary" onClick={() => void resume(open)}>
-                        <CirclePlay aria-hidden="true" size={16} /> Resume
-                      </Button>
+                      {mayPause ? (
+                        <Button variant="primary" onClick={() => void resume(open)}>
+                          <CirclePlay aria-hidden="true" size={16} /> Resume
+                        </Button>
+                      ) : null}
                       {production ? null : (
-                        <Button href={editLink(link, open)}>
+                        <Button
+                          {...(mayEdit
+                            ? { href: editLink(link, open) }
+                            : { disabled: true, tooltip: noEdit })}
+                        >
                           <Pencil aria-hidden="true" size={16} /> Edit
                         </Button>
                       )}
@@ -494,18 +598,24 @@ export function TriggersWorkbench({
                   ) : (
                     <span className="flex flex-wrap gap-2">
                       {production ? null : (
-                        <Button href={editLink(link, open)}>
+                        <Button
+                          {...(mayEdit
+                            ? { href: editLink(link, open) }
+                            : { disabled: true, tooltip: noEdit })}
+                        >
                           <Pencil aria-hidden="true" size={16} /> Edit
                         </Button>
                       )}
-                      {open.type === "schedule" && !open.node ? (
+                      {mayFire && open.type === "schedule" && !workspacePaused && !open.pausedBy ? (
                         <Button variant="primary" onClick={() => void fireNow(open)}>
                           <Zap aria-hidden="true" size={16} /> Fire now
                         </Button>
                       ) : null}
-                      <Button onClick={() => void pause(open)}>
-                        <CirclePause aria-hidden="true" size={16} /> Pause this trigger
-                      </Button>
+                      {mayPause ? (
+                        <Button onClick={() => void pause(open)}>
+                          <CirclePause aria-hidden="true" size={16} /> Pause this trigger
+                        </Button>
+                      ) : null}
                     </span>
                   )
                 }
@@ -533,8 +643,11 @@ export function TriggersWorkbench({
                   {open.paused ? (
                     <Notice tone="attention">
                       Paused {ago(open.paused.at)}
-                      {open.paused.reason ? `: ${open.paused.reason}` : "."} Nothing it would start
-                      is started until it is resumed.
+                      {open.paused.byName ? ` by ${open.paused.byName}` : ""}
+                      {open.paused.reason
+                        ? `: ${open.paused.reason.trim().replace(/[.!?]*$/, ".")}`
+                        : "."}{" "}
+                      Nothing it would start is started until it is resumed.
                     </Notice>
                   ) : null}
                   {open.lastRefusal ? (
@@ -589,14 +702,21 @@ export function TriggersWorkbench({
                         : []),
                       {
                         label: "Next",
-                        value: open.nextFireAt ? <Time value={open.nextFireAt} /> : "On request",
+                        value: (() => {
+                          const next = nextFireOf(open, workspacePaused);
+                          if (next.kind === "next") return <Time value={next.at} />;
+                          if (next.kind === "resume") return "Fires once when resumed";
+                          if (next.kind === "paused") return "Not while it is paused";
+                          if (next.kind === "off") return "Not while it is turned off";
+                          return "On request";
+                        })(),
                       },
                       {
                         label: "Last fired",
                         value: open.lastFiredAt ? (
                           <Time value={open.lastFiredAt} />
                         ) : (
-                          "Not fired yet. Runs started by hand are not counted."
+                          "Not fired yet."
                         ),
                       },
                     ]}
@@ -642,21 +762,50 @@ interface EventRow {
   source: { type: string; id: string | null };
   occurredAt: string;
   publishedBy: { run: string; script: string } | null;
-  started: { kind: "script" | "flow"; id: string; target: string; status: string }[];
+  started: {
+    kind: "script" | "flow";
+    id: string;
+    target: string;
+    status: string;
+    state: RunState;
+  }[];
+  /** Triggers that would start something now. */
   listeners: number;
+  /** Triggers that are on and held: paused, or in a paused workspace or instance. */
+  pausedListeners?: number;
+}
+
+/** What is said of the triggers that listen for an event, in one place for every list of events. */
+export function listening(row: Pick<EventRow, "listeners" | "pausedListeners">): string {
+  const held = row.pausedListeners ?? 0;
+  const some = (count: number) => `${count} trigger${count === 1 ? "" : "s"}`;
+  if (held === 0) return some(row.listeners);
+  return row.listeners === 0
+    ? `${some(held)}, all paused`
+    : `${some(row.listeners)}, and ${held} paused`;
 }
 
 const SOURCE: Record<string, string> = {
   script: "A script",
   api: "The API",
-  platform: "The platform",
+  platform: "Volvel",
 };
 
 /** What was published, newest first, with what each one started. */
-export function EventsWorkbench({ root, link }: { root: string; link: string }) {
+export function EventsWorkbench({
+  root,
+  link,
+  production = false,
+}: {
+  root: string;
+  link: string;
+  production?: boolean;
+}) {
   // The name searched for is in the address, so a reload, a link or a saved view keeps it.
   const [applied, setApplied] = useUrlParam("name", "");
   const [name, setName] = useState(applied);
+  // An address that changes from outside (Back, a saved view) is what the box says.
+  useEffect(() => setName(applied), [applied]);
   // Newest first, a page at a time: older ones are one "Load more" away.
   const list = usePagedList<EventRow>(
     `${root}/events${applied ? `?name=${encodeURIComponent(applied)}` : ""}`,
@@ -674,6 +823,8 @@ export function EventsWorkbench({ root, link }: { root: string; link: string }) 
     <CollectionView
       title="Events"
       description="What has been published here, newest first. Flows and scripts listen for an event by name."
+      actions={<PublishEventButton root={root} production={production} onPublished={list.reload} />}
+      needs={{ base: root, permission: "event:write", what: "the events" }}
       toolbar={
         <form
           className="flex flex-wrap items-end gap-2"
@@ -741,7 +892,9 @@ export function EventsWorkbench({ root, link }: { root: string; link: string }) 
                 {row.started.length} run{row.started.length === 1 ? "" : "s"}
               </span>
             ) : row.listeners === 0 ? (
-              <span className="text-attention">Nothing listens</span>
+              <span className="text-attention">
+                {(row.pausedListeners ?? 0) > 0 ? "Listeners are paused" : "Nothing listens"}
+              </span>
             ) : (
               <span className="text-ink-subtle">Nothing</span>
             ),
@@ -805,13 +958,17 @@ export function EventsWorkbench({ root, link }: { root: string; link: string }) 
                   },
                   {
                     label: "Listening",
-                    value: `${open.listeners} trigger${open.listeners === 1 ? "" : "s"}`,
+                    value: listening(open),
                   },
                   { label: "Event ID", value: open.id, mono: true },
                 ]}
               />
               {open.listeners === 0 ? (
-                <Notice tone="attention">No flow or script listens for {open.name} here.</Notice>
+                <Notice tone="attention">
+                  {(open.pausedListeners ?? 0) > 0
+                    ? `Every trigger that listens for ${open.name} here is paused, so none of them started anything.`
+                    : `No flow or script listens for ${open.name} here.`}
+                </Notice>
               ) : null}
               {open.started.length > 0 ? (
                 <div className="flex flex-col gap-1.5">
@@ -823,7 +980,7 @@ export function EventsWorkbench({ root, link }: { root: string; link: string }) 
                       className="flex items-center justify-between gap-2 no-underline"
                     >
                       <Mono className="text-ink">{one.target}</Mono>
-                      <StatePill state={stateOf(one.status)} />
+                      <StatePill state={one.state ?? stateOf(one.status)} />
                     </Link>
                   ))}
                 </div>
@@ -928,7 +1085,7 @@ export function ApprovalsQueue({
     state === "decided" ? `${from}/approvals/decided` : null,
   );
   const about = workspaceId
-    ? "Flows in this workspace that paused for a person's decision, the longest waiting first. Approving lets the flow go on; rejecting fails that step."
+    ? `Flows in this workspace that paused for a person's decision, the longest waiting first. Approving lets the flow go on. ${REJECTING}`
     : "Decisions that flows surface to the whole tenant, from every workspace, the longest waiting first. Each workspace lists all of its own under Operate.";
   const workspaces = useLoad<{ items: { id: string; name: string; type: string }[] }>(
     `${base}/workspaces`,
@@ -960,15 +1117,17 @@ export function ApprovalsQueue({
     });
     if (comment === null) return;
     const send = (subset: typeof rows) =>
-      api.post<BatchAnswer>(`/tenants/${tenantId}/approvals/batch`, {
-        decision,
-        ...(comment ? { comment } : {}),
-        approvals: subset.map((row) => ({
-          workspaceId: row.workspaceId,
-          flowRunId: row.flowRunId,
-          node: row.node,
-        })),
-      });
+      inSlices(subset, (slice) =>
+        api.post<BatchAnswer>(`/tenants/${tenantId}/approvals/batch`, {
+          decision,
+          ...(comment ? { comment } : {}),
+          approvals: slice.map((row) => ({
+            workspaceId: row.workspaceId,
+            flowRunId: row.flowRunId,
+            node: row.node,
+          })),
+        }),
+      );
     const titleOf = (id: string) =>
       rows.find((row) => `${row.flowRunId}/${row.node}` === id)?.title ?? id;
     await batch.run(() => send(rows), {
@@ -1004,7 +1163,7 @@ export function ApprovalsQueue({
       notify.success(
         decision === "approve"
           ? `Approved “${row.title}”. The flow goes on.`
-          : `Rejected “${row.title}”. The flow takes its rejected path.`,
+          : `Rejected “${row.title}”. ${REJECTING}`,
         {
           link: {
             label: "Open the run",

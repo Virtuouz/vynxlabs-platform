@@ -12,7 +12,9 @@ import { mutate } from "../audit.js";
 import { check } from "../authorize.js";
 import { forbidden, HttpError } from "../errors.js";
 import type { Kernel } from "../kernel.js";
+import { approvalDetail, approvalTitle } from "./approval-detail.js";
 import { approverMembers, approversOf, isApprover } from "./approvers.js";
+import { flowKnown } from "./known.js";
 
 /** How long a link works, unless the approval times out sooner. */
 export const LINK_HOURS = 48;
@@ -122,18 +124,20 @@ export async function mailApprovers(
       details: { node, members: members.map((member) => member.id), endsAt: ends.toISOString() },
     });
   });
-  const said = shown(detail.detail);
+  const known = await flowKnown(kernel, kernel.db, flowRunId);
+  const said = shown(approvalDetail(detail.detail, known));
+  const title = approvalTitle(detail.title, known);
   for (const { member, token } of links) {
     const url = new URL(`/approve/${token}`, kernel.hosts.mainOrigin).toString();
     await kernel.mail.send({
       to: member.email,
-      subject: `${test ? "[Test] " : ""}Approval needed: ${detail.title}`,
+      subject: `${test ? "[Test] " : ""}Approval needed: ${title}`,
       text: [
         `Hello ${member.name},`,
         "",
         `${test ? "A test run of the flow" : "The flow"} ${step.flow_path} in ${step.workspace_name} (${step.tenant_name}) waits for a decision:`,
         "",
-        `  ${detail.title}`,
+        `  ${title}`,
         ...(said ? ["", said] : []),
         "",
         `Approve or reject it here: ${url}`,

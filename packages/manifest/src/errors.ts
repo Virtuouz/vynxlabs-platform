@@ -32,7 +32,7 @@ export const ERROR_CODES = {
   validation_failed: code(
     400,
     "Something sent does not fit",
-    "The response lists each value that is wrong and why, under `issues`. Fix them and send it again.",
+    "The response lists each value that is wrong and why, under `errors`. Fix them and send it again.",
   ),
   unauthenticated: code(
     401,
@@ -109,7 +109,7 @@ export const ERROR_CODES = {
   egress_refused: code(
     400,
     "That address may not be reached",
-    "Scripts and connections may not reach private networks unless the operator allows them in `EGRESS_ALLOW`.",
+    "The control plane does not reach private networks for a tenant (an OAuth token address, an identity provider, a Git remote, a data source) unless the operator allows them in `EGRESS_ALLOW`.",
   ),
 
   // Deploying, promoting and drafts.
@@ -152,7 +152,7 @@ export const ERROR_CODES = {
   bindings_missing: code(
     409,
     "The workspace is missing something the bundle needs",
-    "The response lists each connection, secret or variable. Set each one in the workspace, then deploy again.",
+    "The response lists each connection, secret or variable. Set each one in the workspace, then deploy or promote again. A deploy to a dev workspace goes ahead with a warning instead.",
   ),
   bindings_invalid: code(
     409,
@@ -186,8 +186,8 @@ export const ERROR_CODES = {
   ),
   delete_not_allowed: code(
     409,
-    "This release would remove what the repository does not have",
-    "If it was made in the console, pull it into the repository first. To remove it, release again saying so.",
+    "This access change would remove what the repository does not have",
+    "If it was made in the console, pull it into the repository first. To remove it, ask again saying so.",
   ),
   principal_in_use: code(
     409,
@@ -209,7 +209,7 @@ export const ERROR_CODES = {
   own_release: code(
     409,
     "A change to access is approved by someone else",
-    "Whoever made the change cannot approve it. Ask a second person who may release the tenant's access.",
+    "Whoever made the change cannot approve it. Ask a second person who may change the tenant's access.",
   ),
   approval_needs_two: code(
     409,
@@ -218,8 +218,8 @@ export const ERROR_CODES = {
   ),
   release_stale: code(
     409,
-    "The tenant's access changed after this release was asked for",
-    "It is no longer the change that was shown. Withdraw it and release again.",
+    "The tenant's access changed after this access change was asked for",
+    "It is no longer the change that was shown. Withdraw it and ask again.",
   ),
   link_expired: code(410, "The link has been used or has run out", "Ask for a new one."),
 
@@ -273,6 +273,11 @@ export const ERROR_CODES = {
     503,
     "The workspace's triggers are paused",
     "The webhook started nothing. Try again once they are resumed.",
+  ),
+  trigger_paused: code(
+    503,
+    "The webhook is paused",
+    "It started nothing. Try again once it is resumed. It is paused on its own, or with every trigger in the instance.",
   ),
   signature_invalid: code(
     401,

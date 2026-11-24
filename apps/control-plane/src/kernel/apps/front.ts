@@ -3,20 +3,33 @@ import { existsSync, readFileSync } from "node:fs";
 import type { IncomingMessage } from "node:http";
 import { join } from "node:path";
 import {
-  buildApp,
   buildSearchIndex,
   type DocsApp,
   loadSearchIndex,
   type ResourceLike,
   urlOf,
 } from "@volvel/docs-engine";
-import { keyOf, readFormAnswer } from "@volvel/manifest";
+import {
+  changelogFeed,
+  DOCS_ASSET_PATH,
+  docPage,
+  docsAsset,
+  notFoundPage,
+  pageAt,
+  pageMarkdown,
+  type SiteView,
+  searchAnswer,
+  searchPage,
+} from "@volvel/docs-site";
+import { APP_POLICY, keyOf, readFormAnswer } from "@volvel/manifest";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { MIN_PASSWORD_LENGTH } from "../../config.js";
 import { ANONYMOUS, type Db, type Principal, writeAudit } from "../audit.js";
 import { check } from "../authorize.js";
 import { describeTable, insertRows, withData } from "../data/rows.js";
-import { consoleDirectory, productNames } from "../docs/product.js";
+import { describer } from "../docs/describe.js";
+import { buildDocs, consoleDirectory, PRODUCT_CLASHES, productNames } from "../docs/product.js";
+import { withWords, wordsFor } from "../docs/words.js";
 import { workingDocs } from "../docs/working.js";
 import {
   checkEndUserPassword,
@@ -46,21 +59,9 @@ import {
 import { samlMetadata } from "../sso/saml.js";
 import { appBasePath, portalPath, portalUrl } from "./address.js";
 import { appFiles, readAsset } from "./assets.js";
-import {
-  DOCS_CSS,
-  DOCS_POLICY,
-  DOCS_SCRIPT,
-  docPage,
-  docsKept,
-  docsOf,
-  notFoundPage,
-  pageAt,
-  pageMarkdown,
-  searchAnswer,
-  searchPage,
-} from "./docs.js";
-import type { Place } from "./hosts.js";
-import { Limiter } from "./limit.js";
+import { DOCS_POLICY, docsKept, docsOf } from "./docs.js";
+import { hostnameOf, type Place } from "./hosts.js";
+import { isStaticFile, Limiter, MemoryLimiter } from "./limit.js";
 import {
   forgotPage,
   formPage,
@@ -82,20 +83,6 @@ interface Tenant {
   name: string;
 }
 
-/** What an app's page may load and do. No inline script, and nothing from another site. */
-const APP_POLICY = [
-  "default-src 'self'",
-  "script-src 'self'",
-  // Components set styles on elements, which a policy without this would refuse.
-  "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob:",
-  "font-src 'self' data:",
-  "connect-src 'self'",
-  "object-src 'none'",
-  "base-uri 'self'",
-  "form-action 'self'",
-  "frame-ancestors 'self'",
-].join("; ");
 /** The platform's own pages have no script at all. */
 const PAGE_POLICY = [
   "default-src 'none'",
@@ -109,8 +96,20 @@ const PAGE_POLICY = [
 /** Which pages a reader said whether they helped: short marks of them, kept in their own browser. */
 const VOTE_COOKIE = "vd_said";
 
-/** A file whose name carries a hash of its content never changes, so a browser may keep it. */
-const HASHED_NAME = /[-.][A-Za-z0-9_-]{8,}\.[A-Za-z0-9]+$/;
+/**
+ * A file whose name carries a hash of its content never changes, so a browser may keep it.
+ * The platform knows the file's SHA-256, so a name is trusted when it holds the start of
+ * that digest, or has the shape a build tool gives (`-` or `.`, then exactly eight letters,
+ * digits, `-` or `_`, with at least one digit or capital, then the extension). A long word
+ * such as `logo-horizontal.svg` is not a hash: it can change at the next deploy.
+ */
+const BUILD_HASH = /[-.]([A-Za-z0-9_-]{8})\.[A-Za-z0-9]+$/;
+export function isHashedName(path: string, sha256: string): boolean {
+  const name = path.slice(path.lastIndexOf("/") + 1);
+  if (name.toLowerCase().includes(sha256.slice(0, 8).toLowerCase())) return true;
+  const hash = BUILD_HASH.exec(name)?.[1];
+  return hash !== undefined && /[0-9A-Z]/.test(hash);
+}
 const MAX_FORM_BYTES = 16 * 1024;
 /** A SAML answer is a signed document with certificates in it, in a form. */
 const MAX_SAML_BYTES = 512 * 1024;
@@ -151,13 +150,40 @@ function decodeSegments(path: string): string[] | null {
  * the request came to. At a hostname a tenant registered, every path belongs
  * to that tenant's app, including paths the console also has.
  */
+/** The bundles and apps whose clashes with the product's names were already said in the log. */
+const clashesSaid = new Set<string>();
+
+/**
+ * A page that took a name the product's help has since it was deployed drops it from the
+ * site without a word. Said once in the log for each bundle, so someone looking for the
+ * cause is told.
+ */
+function warnOfClashes(
+  kernel: Kernel,
+  bundleId: string,
+  app: string,
+  issues: readonly { path: string; code: string }[],
+) {
+  const clashes = issues.filter((issue) => PRODUCT_CLASHES.includes(issue.code));
+  const key = `${bundleId}:${app}`;
+  if (clashes.length === 0 || clashesSaid.has(key)) return;
+  clashesSaid.add(key);
+  if (clashesSaid.size > 500) clashesSaid.delete(clashesSaid.values().next().value as string);
+  kernel.log.warn(
+    { bundleId, app, pages: [...new Set(clashes.map((issue) => issue.path))] },
+    "pages of a docs app take names the product's help has, so the site leaves them out",
+  );
+}
+
 export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
   const { db } = kernel;
   /** How often someone who is not signed in may ask for pages and files, and send forms. */
-  const guestPages = new Limiter(600, 60);
-  const forms = new Limiter(20, 60);
+  const guestPages = new Limiter(db, "guest-pages", 600, 60);
+  /** Files that are only sent: counted here, in this process, not in the database. */
+  const guestFiles = new MemoryLimiter(1200, 60);
+  const forms = new Limiter(db, "forms", 20, 60);
   /** Readers' answers to whether a page helped: a reader answers a few at most in a minute. */
-  const votes = new Limiter(30, 60);
+  const votes = new Limiter(db, "votes", 30, 60);
 
   const tenantBy = (column: "slug" | "id", value: string) =>
     db
@@ -258,7 +284,7 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
     }
     if (isPost) {
       if (!ownForm(request)) return plain(reply, 403, "This form was sent from another site.");
-      if (!forms.allow(`${request.ip} ${tenant.id}`)) {
+      if (!(await forms.allow(`${request.ip} ${tenant.id}`))) {
         return plain(reply, 429, "Too many attempts. Wait a minute and try again.");
       }
     }
@@ -580,9 +606,9 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
 
   // ----- Single sign-on for end users -----
 
-  const starts = new Limiter(30, 60);
+  const starts = new Limiter(db, "sso-starts", 30, 60);
   /** Many people of one organization share an address, so this is generous. It is there to stop a flood. */
-  const answers = new Limiter(300, 60);
+  const answers = new Limiter(db, "sso-answers", 300, 60);
 
   /**
    * An end user's single sign-on. It begins and ends at the address the person
@@ -637,7 +663,7 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
       ].join("; ");
 
     if (at.step === "start" && !isPost) {
-      if (!starts.allow(`${request.ip} ${tenant.id}`)) {
+      if (!(await starts.allow(`${request.ip} ${tenant.id}`))) {
         return plain(reply, 429, "Too many attempts. Wait a minute and try again.");
       }
       try {
@@ -684,7 +710,7 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
     if ((at.step === "callback" && !isPost) || (at.step === "acs" && isPost)) {
       // The provider was given the instance's own address for apps, and answers nowhere else.
       if (place.kind === "domain") return missing();
-      if (!answers.allow(`${request.ip} ${tenant.id}`)) {
+      if (!(await answers.allow(`${request.ip} ${tenant.id}`))) {
         return plain(reply, 429, "Too many attempts. Wait a minute and try again.");
       }
       try {
@@ -778,8 +804,17 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
         resourceId: row.id,
       });
       if (!decision.allowed) continue;
-      const body = row.body as { title?: string; description?: string; published?: boolean };
+      const body = row.body as {
+        title?: string;
+        description?: string;
+        published?: boolean;
+        interface?: string;
+        docs?: string;
+      };
       if (body.published === false) continue;
+      // An app written as code answers 503 where this instance cannot run it: not offered.
+      const generated = typeof body.interface === "string" || typeof body.docs === "string";
+      if (!generated && !kernel.hosts.runsCodeApps(place)) continue;
       apps.push({
         href: appBasePath(place, {
           tenantSlug: tenant.slug,
@@ -907,7 +942,10 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
     const file = fixedApp !== undefined ? rest : rest.slice(manifest.path.length + 1);
 
     const principal = await resolvePrincipal(kernel, request, tenant.id);
-    if (principal.type === "anonymous" && !guestPages.allow(request.ip)) {
+    if (
+      principal.type === "anonymous" &&
+      !(await (isStaticFile(file) ? guestFiles : guestPages).allow(request.ip))
+    ) {
       return plain(reply, 429, "Too many requests. Wait a minute and try again.");
     }
     const resource = await db
@@ -942,6 +980,7 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
           look,
           tenantId: tenant.id,
           workspaceId: workspace.id,
+          principal,
           bundleId: stored.id,
           resources: bundle.manifests,
           app: {
@@ -974,8 +1013,12 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
       runtime ?? appFiles(bundle, manifest.path);
     let asset = file === "" ? undefined : files.get(file);
     // An address that names no file is a screen of the app, which the page itself draws.
+    // A last part with a dot, such as `users/j.smith`, is a screen too when the browser asks
+    // for a page and no file has that name.
+    const wantsPage = String(request.headers.accept ?? "").includes("text/html");
     const isPage =
-      !asset && (file === "" || (body.fallback !== false && !/\.[A-Za-z0-9]+$/.test(file)));
+      !asset &&
+      (file === "" || (body.fallback !== false && (wantsPage || !/\.[A-Za-z0-9]+$/.test(file))));
     if (isPage) asset = files.get(entry);
     if (!asset) return missing();
 
@@ -987,7 +1030,7 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
       runtime?.get(asset.path)?.content ?? (await readAsset(kernel, tenant.id, asset.sha256));
     if (isPage || asset.path === entry) {
       // The names of the app's pages: the page that draws before the app is read says them,
-      // so a slow first load shows where the person is going, not grey shapes.
+      // so a slow first load shows where the person is going, not gray shapes.
       const interfaceBody =
         generated && typeof body.interface === "string"
           ? (bundle.manifests.find(
@@ -1024,9 +1067,9 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
             name: principal.name ?? null,
             email: principal.email ?? null,
             ...(await endUserIdentity(db, tenant.id, principal)),
-            // A page made in the console shows some widgets only to some groups: a member's
-            // groups come too, named and keyed as an end user's are.
-            ...(generated && principal.type === "member" && principal.id
+            // A member's groups come too, named and keyed as an end user's are, to an app
+            // made in the console and to one written as code alike.
+            ...(principal.type === "member" && principal.id
               ? await memberGroups(db, tenant.id, principal.id)
               : {}),
           },
@@ -1042,7 +1085,9 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
     reply.header("etag", etag).header(
       "cache-control",
       // Private: the file was served to someone who may open the app, and to no cache for others.
-      HASHED_NAME.test(asset.path) ? "private, max-age=31536000, immutable" : "private, no-cache",
+      isHashedName(asset.path, asset.sha256)
+        ? "private, max-age=31536000, immutable"
+        : "private, no-cache",
     );
     if (request.headers["if-none-match"] === etag) return reply.code(304).send();
     // The platform's own files are kept compressed too: the best one the browser takes is sent.
@@ -1076,6 +1121,27 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
       .send(JSON.stringify(body));
   }
 
+  /** A docs app's changelog as RSS, with whole addresses, or nothing where it has no entries. */
+  function sendFeed(
+    request: FastifyRequest,
+    reply: FastifyReply,
+    drawn: SiteView,
+    preview = false,
+  ) {
+    const feed = changelogFeed(drawn.set, {
+      title: drawn.title,
+      base: drawn.base,
+      origin: kernel.hosts.originOf(request),
+    });
+    if (feed === undefined) return undefined;
+    return reply
+      .code(200)
+      .header("content-type", "application/rss+xml; charset=utf-8")
+      .header("x-content-type-options", "nosniff")
+      .header("cache-control", preview ? "no-store" : "private, no-cache")
+      .send(feed);
+  }
+
   /** A page's Markdown, for whoever may read the page. */
   function sendMarkdown(reply: FastifyReply, body: string, preview = false) {
     return reply
@@ -1098,6 +1164,8 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
       look: PageFrame;
       tenantId: string;
       workspaceId: string;
+      /** Who reads: what a resource's words say is told only to one who may use the resource. */
+      principal: Principal;
       bundleId: string;
       resources: readonly ResourceLike[];
       app: DocsApp;
@@ -1123,16 +1191,19 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
           ).map((row) => [row.path, row.updated_at] as const),
         );
     const docs = docsOf(at.bundleId, at.app, at.resources, productNames(kernel.config), updated);
+    warnOfClashes(kernel, at.bundleId, at.app.path, docs.built.issues);
     // The pages this reader said whether they helped, kept in their browser and nowhere else.
     const voted = new Set((readCookie(request, VOTE_COOKIE) ?? "").split(".").filter(Boolean));
     const voteOf = (page: string) =>
       createHash("sha256").update(`${at.app.path}:${page}`).digest("hex").slice(0, 10);
-    const drawn = {
-      frame: at.look,
-      app: at.app,
+    const drawn: SiteView = {
+      title: at.app.title,
+      look: at.look,
       base: at.base,
       set: docs.built.set,
-      asset: (file: string) => (at.pictures.has(file) ? `${at.base}${file}` : undefined),
+      resolve: {
+        asset: (file: string) => (at.pictures.has(file) ? `${at.base}${file}` : undefined),
+      },
       ...(at.app.feedback
         ? { feedback: { said: (page: string) => voted.has(voteOf(page)), recording: true } }
         : {}),
@@ -1151,7 +1222,7 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
     if (at.file === "_feedback") {
       if (request.method !== "POST" || !at.app.feedback) return send(404, notFoundPage(drawn));
       if (!ownForm(request)) return plain(reply, 403, "This form was sent from another site.");
-      if (!votes.allow(`${request.ip} ${at.workspaceId}`)) {
+      if (!(await votes.allow(`${request.ip} ${at.workspaceId}`))) {
         return plain(reply, 429, "Too many answers. Wait a minute and try again.");
       }
       const form = await readForm(request.raw, 2048);
@@ -1211,24 +1282,57 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
       }
       return redirect(reply, `${at.base}${urlOf(page)}#feedback`);
     }
-    const asked = request.query as { q?: unknown; in?: unknown } | undefined;
+    const asked = request.query as { q?: unknown; in?: unknown; type?: unknown } | undefined;
     const query = String(asked?.q ?? "").slice(0, 200);
     if (at.file === "_search") {
-      return send(200, searchPage(drawn, query, docs.search.search(query, 30)));
+      const type = typeof asked?.type === "string" ? asked.type.slice(0, 40) : undefined;
+      return send(
+        200,
+        searchPage(drawn, query, docs.search.search(query, 30, type ? { type } : {})),
+      );
     }
     if (at.file === "_search.json") {
       const collection = typeof asked?.in === "string" ? asked.in.slice(0, 255) : undefined;
       return sendJson(
         reply,
-        searchAnswer(drawn, docs.search.grouped(query, collection ? { collection } : {})),
+        searchAnswer(
+          drawn,
+          docs.search.grouped(query, {
+            ...(collection ? { collection } : {}),
+            ...(typeof asked?.type === "string" ? { type: asked.type.slice(0, 40) } : {}),
+          }),
+        ),
       );
+    }
+    if (at.file === "changelog.xml") {
+      const sent = sendFeed(request, reply, drawn);
+      if (sent) return sent;
     }
     const markdown = pageMarkdown(docs.built.set, at.file, (page) =>
       sourceIn(at.resources, `${at.app.docs}/${page}`),
     );
     if (markdown !== undefined) return sendMarkdown(reply, markdown);
     const path = pageAt(docs.built.set, at.file);
-    if (path !== undefined) return send(200, docPage(drawn, path));
+    if (path !== undefined) {
+      const words = await wordsFor({
+        config: kernel.config,
+        db,
+        workspaceId: at.workspaceId,
+        set: docs.built.set,
+        pages: [path],
+        mayKnow: describer(
+          async (permission, resourceId) =>
+            (
+              await check(db, at.principal, permission, {
+                tenantId: at.tenantId,
+                workspaceId: at.workspaceId,
+                ...(resourceId ? { resourceId } : {}),
+              })
+            ).allowed,
+        ),
+      });
+      return send(200, docPage(withWords(drawn, words), path));
+    }
 
     // A page that was renamed: its old address sends the browser to the new one, for good.
     const wanted = `${at.app.docs}/${at.file.replace(/\/+$/, "")}`;
@@ -1275,7 +1379,8 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
     const { resources, apps } = await workingDocs(db, workspace.id);
     const app = apps.find((one) => one.path === appPath);
     if (!app) return missing();
-    const { set } = buildApp(
+    const { set } = buildDocs(
+      kernel.config,
       app,
       resources.filter((one) => one.state !== "removed"),
     );
@@ -1295,12 +1400,14 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
       workspaceSlug: workspace.slug,
       path: app.path,
     });
-    const drawn = {
-      frame: look,
-      app,
+    const drawn: SiteView = {
+      title: app.title,
+      look,
       base: `${served}_draft/`,
       set,
-      asset: (picture: string) => (pictures.has(picture) ? `${served}${picture}` : undefined),
+      resolve: {
+        asset: (picture: string) => (pictures.has(picture) ? `${served}${picture}` : undefined),
+      },
       notice:
         "A preview, with the workspace's drafts. Only members who may read its documentation see this. Its readers see what is deployed.",
       // Readers are asked whether a page helped. Nothing said in a preview is kept.
@@ -1316,22 +1423,52 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
         .header("referrer-policy", "same-origin")
         .header("cache-control", "no-store")
         .send(body);
-    const asked = request.query as { q?: unknown; in?: unknown } | undefined;
+    const asked = request.query as { q?: unknown; in?: unknown; type?: unknown } | undefined;
     const query = String(asked?.q ?? "").slice(0, 200);
     if (file === "_search" || file === "_search.json") {
       const index = loadSearchIndex(buildSearchIndex(set));
-      if (file === "_search") return send(200, searchPage(drawn, query, index.search(query, 30)));
+      const type = typeof asked?.type === "string" ? asked.type.slice(0, 40) : undefined;
+      if (file === "_search") {
+        return send(200, searchPage(drawn, query, index.search(query, 30, type ? { type } : {})));
+      }
       const collection = typeof asked?.in === "string" ? asked.in.slice(0, 255) : undefined;
       return sendJson(
         reply,
-        searchAnswer(drawn, index.grouped(query, collection ? { collection } : {})),
+        searchAnswer(
+          drawn,
+          index.grouped(query, {
+            ...(collection ? { collection } : {}),
+            ...(type ? { type } : {}),
+          }),
+        ),
         true,
       );
+    }
+    if (file === "changelog.xml") {
+      const sent = sendFeed(request, reply, drawn, true);
+      if (sent) return sent;
     }
     const markdown = pageMarkdown(set, file, (page) => sourceIn(resources, `${app.docs}/${page}`));
     if (markdown !== undefined) return sendMarkdown(reply, markdown, true);
     const path = pageAt(set, file);
-    return path === undefined ? send(404, notFoundPage(drawn)) : send(200, docPage(drawn, path));
+    if (path === undefined) return send(404, notFoundPage(drawn));
+    const words = await wordsFor({
+      config: kernel.config,
+      db,
+      workspaceId: workspace.id,
+      set,
+      pages: [path],
+      mayKnow: describer(
+        async (permission, resourceId) =>
+          (
+            await check(db, principal, permission, {
+              ...at,
+              ...(resourceId ? { resourceId } : {}),
+            })
+          ).allowed,
+      ),
+    });
+    return send(200, docPage(withWords(drawn, words), path));
   }
 
   // ----- Which is which -----
@@ -1341,6 +1478,17 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
     const path = url.pathname;
     if (path === "/api" || path.startsWith("/api/")) return;
     const place = await kernel.hosts.place(request);
+    // A name a tenant holds and has turned off serves nothing, not the console either. Its check
+    // address, under /api, still answers.
+    if (place.kind === "main" && !kernel.hosts.isOwn(hostnameOf(request.host))) {
+      if (await kernel.hosts.turnedOff(hostnameOf(request.host))) {
+        return plain(
+          reply,
+          404,
+          "This hostname is not served here. Its registration is turned off.",
+        );
+      }
+    }
     const isPage = request.method === "GET" || request.method === "HEAD";
     if (!isPage && request.method !== "POST") {
       if (place.kind === "main" && !path.startsWith("/apps/") && !path.startsWith("/portal/"))
@@ -1348,14 +1496,21 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
       return plain(reply, 405, "Method not allowed.");
     }
 
-    if (path === "/_platform/docs.css" || path === "/_platform/docs.js") {
-      const script = path.endsWith(".js");
+    // The stylesheet and the script of a docs site. A name with a hash in it is the file of one
+    // release for ever; the names without are for a page an older release drew.
+    const platformFile = DOCS_ASSET_PATH.exec(path);
+    if (platformFile) {
+      const file = docsAsset(platformFile[1] as string);
+      if (!file) return plain(reply, 404, "There is no such file.");
       return reply
         .code(200)
-        .header("content-type", `${script ? "text/javascript" : "text/css"}; charset=utf-8`)
+        .header("content-type", `${file.type}; charset=utf-8`)
         .header("x-content-type-options", "nosniff")
-        .header("cache-control", "public, max-age=3600")
-        .send(script ? DOCS_SCRIPT : DOCS_CSS);
+        .header(
+          "cache-control",
+          file.immutable ? "public, max-age=31536000, immutable" : "public, max-age=3600",
+        )
+        .send(file.body);
     }
 
     // What draws a diagram on a page of documentation: Mermaid, and the instance's own pan and

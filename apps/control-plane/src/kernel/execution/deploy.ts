@@ -1,5 +1,6 @@
 import { newId, type ResourceMeta, sql } from "@volvel/db";
 import {
+  addressedStarts,
   type BundleManifest,
   bundleCompatibility,
   type FlowBody,
@@ -9,6 +10,7 @@ import {
   renderResourceFiles,
   toolNameOf,
 } from "@volvel/manifest";
+import { appFilesDue } from "../apps/assets.js";
 import type { Audit, Principal, Trx } from "../audit.js";
 import { recordWidgetQueries } from "../dashboard-queries.js";
 import { loadCatalog, reconcileReferences, workspaceSchema } from "../data/apply.js";
@@ -19,6 +21,7 @@ import type { Kernel } from "../kernel.js";
 import { renamePathState, swapPath } from "../rename.js";
 import { deleteResource, putResource } from "../resources.js";
 import { loadBundle } from "./bundles.js";
+import { exportChanged } from "./code-slices.js";
 import { unfitBindings } from "./connectors.js";
 
 interface ScriptBody {
@@ -42,6 +45,14 @@ async function missingBindings(trx: Trx, workspace: WorkspaceRef, manifests: Bun
     for (const path of body.uses.variables) need.variables.add(path);
     for (const path of body.uses.sources ?? []) need.sources.add(path);
     if (body.onFailure?.notify) need.connections.add(body.onFailure.notify);
+  }
+  // A trigger source reads what it names as a script does, on every request or tick.
+  for (const manifest of manifests) {
+    if (manifest.kind !== "trigger_source") continue;
+    const uses = (manifest.body as { uses?: Partial<ScriptBody["uses"]> }).uses;
+    for (const path of uses?.connections ?? []) need.connections.add(path);
+    for (const name of uses?.secrets ?? []) need.secrets.add(name);
+    for (const path of uses?.variables ?? []) need.variables.add(path);
   }
   // A webhook that checks signatures needs the secret it checks them against.
   for (const manifest of manifests) {
@@ -102,7 +113,7 @@ async function missingBindings(trx: Trx, workspace: WorkspaceRef, manifests: Bun
       .filter((path) => !connections.has(path))
       .map((path) => ({
         path: `/connections/${path}`,
-        message: `the connection "${path}" is not bound in this workspace`,
+        message: `the connection "${path}" is not set up in this workspace`,
       })),
     ...[...need.secrets]
       .sort()
@@ -123,7 +134,7 @@ async function missingBindings(trx: Trx, workspace: WorkspaceRef, manifests: Bun
       .filter((path) => !sources.has(path))
       .map((path) => ({
         path: `/sources/${path}`,
-        message: `the data source "${path}" is not bound in this workspace`,
+        message: `the data source "${path}" is not set up in this workspace`,
       })),
   ];
 }
@@ -243,6 +254,8 @@ export async function deployBundle(
     confirmBreaking?: boolean;
   } = {},
 ) {
+  // What the apps no longer name is swept soon after: a deploy is what stops naming it.
+  appFilesDue(workspace.tenantId);
   const current = await trx
     .selectFrom("workspace")
     .select(["active_bundle_id", "type"])
@@ -310,6 +323,8 @@ export async function deployBundle(
   // the bundle before it carried. A console-managed resource that no bundle carried,
   // such as a table made in the console, is left alone by every deploy.
   const carried = new Set<string>();
+  // The code the workspace runs now, to tell a script whose own code changed.
+  let codeBefore: string | undefined;
   if (current.active_bundle_id) {
     const before = await trx
       .selectFrom("bundle")
@@ -317,7 +332,9 @@ export async function deployBundle(
       .where("id", "=", current.active_bundle_id)
       .executeTakeFirst();
     if (before) {
-      const was = (await loadBundle(kernel, before)).manifests;
+      const loadedBefore = await loadBundle(kernel, before);
+      codeBefore = loadedBefore.code;
+      const was = loadedBefore.manifests;
       for (const [manifest, row] of matchByKey(was, existing)) {
         if (manifest.ownership === "ui") carried.add(row.id);
       }
@@ -400,7 +417,13 @@ export async function deployBundle(
     await renamePathState(trx, data, workspace.id, row, row.path, swapPath(row.id));
   }
 
-  for (const manifest of content.manifests) {
+  // What a resource refers to is applied before it, whatever the paths sort as: a trigger
+  // before the script it starts, a schedule before the flow. Within a kind, paths keep their order.
+  const inOrder = content.manifests
+    .map((manifest, index) => ({ manifest, index }))
+    .sort((a, b) => applyRank(a.manifest.kind) - applyRank(b.manifest.kind) || a.index - b.index)
+    .map(({ manifest }) => manifest);
+  for (const manifest of inOrder) {
     const stored = matched.get(manifest);
     // An app, an interface and a form have a title in their body: that is their title.
     const inBody = (manifest.body as { title?: unknown }).title;
@@ -415,7 +438,18 @@ export async function deployBundle(
       same(stored.meta, meta) &&
       same(stored.body, manifest.body)
     ) {
-      summary.unchanged += 1;
+      // A script's code is in the bundle's module, not in its manifest: a changed body is an update.
+      const entry = (manifest.body as { entry?: unknown }).entry;
+      if (
+        codeBefore !== undefined &&
+        typeof entry === "string" &&
+        exportChanged(codeBefore, content.code, entry)
+      ) {
+        summary.updated += 1;
+        note("updated", manifest.kind, manifest.path);
+      } else {
+        summary.unchanged += 1;
+      }
       continue;
     }
     // The name of the tool an agent calls is public. A change that leaves the old name
@@ -435,6 +469,20 @@ export async function deployBundle(
         message: `the tool ${toolBefore} is now called ${toolAfter}. An agent that calls it by the old name will fail.`,
       });
     }
+    // A webhook's address and a form's are what the world calls. One that no start of the new
+    // flow carries stops answering, and is said so: a rename keeps it only with a `key`.
+    if (stored && manifest.kind === "flow" && stored.kind === "flow") {
+      const before = addressedStarts(stored.body as unknown as FlowBody);
+      const after = addressedStarts(manifest.body as unknown as FlowBody);
+      for (const [name, start] of before) {
+        const kept = after.get(name);
+        if (kept?.type === start.type) continue;
+        summary.breaking.push({
+          path: manifest.path,
+          message: `the ${start.type} start "${start.node}" of ${manifest.path} is no longer in the flow under that name, so its address stops answering. A start keeps its address through a rename when it has a \`key\` equal to its old name.`,
+        });
+      }
+    }
     const result = await putResource(kernel, trx, audit, workspace, {
       path: manifest.path,
       kind: manifest.kind,
@@ -449,6 +497,19 @@ export async function deployBundle(
       // A resource taken over in the console, or handed back to the repository.
       switchOwnership: true,
     });
+    // Positions saved from the flow page are older than a layout this deploy brings: the
+    // newer one is read, by the flow page, the run's page and the editor alike.
+    if (
+      stored &&
+      manifest.kind === "flow" &&
+      stored.kind === "flow" &&
+      !same(
+        (stored.body as { layout?: unknown }).layout ?? {},
+        (manifest.body as { layout?: unknown }).layout ?? {},
+      )
+    ) {
+      await trx.deleteFrom("flow_layout").where("resource_id", "=", stored.id).execute();
+    }
     for (const message of result.warnings) {
       summary.warnings.push({ path: manifest.path, message });
     }
@@ -469,6 +530,18 @@ export async function deployBundle(
       summary.updated += 1;
       note("updated", manifest.kind, manifest.path);
     }
+  }
+
+  // A binding keeps the kind of connector its declaration gave it, for when the declaration goes.
+  for (const manifest of content.manifests) {
+    const connector = (manifest.body as { connector?: string }).connector;
+    if (manifest.kind !== "connection" || typeof connector !== "string") continue;
+    await trx
+      .updateTable("connection_binding")
+      .set({ connector })
+      .where("workspace_id", "=", workspace.id)
+      .where("path", "=", manifest.path)
+      .execute();
   }
 
   // What each dashboard widget names, by key: now that every query it may name is there.
@@ -577,11 +650,13 @@ export async function deployBundle(
   const warnOnly = current.type === "dev" && options.promotedFrom === undefined;
   summary.warnings.unshift(...(warnOnly ? needed : []));
   const missing = warnOnly ? [] : needed;
+  // What was promoted is promoted again; what was deployed, to production too, is deployed again.
+  const again = options.promotedFrom !== undefined ? "promote again" : "deploy again";
   if (missing.length > 0) {
     throw new HttpError(
       409,
       "bindings_missing",
-      "The workspace is missing something this bundle needs. Bind each one, then deploy again.",
+      `The workspace is missing something this bundle needs. Set up each one, then ${again}.`,
       missing,
     );
   }
@@ -603,7 +678,7 @@ export async function deployBundle(
     throw new HttpError(
       409,
       "bindings_invalid",
-      "Something bound in this workspace does not fit the connector this bundle gives it. Bind it again, then deploy again.",
+      `Something set up in this workspace does not fit the connector this bundle gives it. Set it up again, then ${again}.`,
       unfit,
     );
   }
@@ -823,3 +898,8 @@ const KIND_ORDER = [
 ];
 /** Where a kind comes when resources are applied: what others refer to goes first. */
 export const order = (kind: string) => KIND_ORDER.indexOf(kind);
+/** A kind this list does not name is applied after the ones it does. */
+const applyRank = (kind: string) => {
+  const at = order(kind);
+  return at === -1 ? KIND_ORDER.length : at;
+};

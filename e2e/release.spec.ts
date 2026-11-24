@@ -21,6 +21,18 @@ const DEV_PASSWORD = "a-developer-password-1";
 const call = (page: Page, method: string, path: string, body?: unknown): Promise<any> =>
   page.evaluate(
     async ([method, path, body]) => {
+      // A draft save names the draft it saw: its revision now, or none when there is none.
+      if (
+        method === "PUT" &&
+        String(path).includes("/drafts/") &&
+        body &&
+        typeof body === "object" &&
+        !("revision" in body) &&
+        !("create" in body)
+      ) {
+        const seen = await fetch(`/api/v1${path}`);
+        if (seen.ok) body = { ...body, revision: (await seen.json()).revision };
+      }
       const response = await fetch(`/api/v1${path}`, {
         method: method as string,
         headers: body ? { "content-type": "application/json" } : {},
@@ -45,7 +57,7 @@ async function signIn(browser: Browser, email: string, password: string): Promis
   return page;
 }
 
-test("a developer asks, a promoter decides from the overview, drift shows the change, access shows why", async ({
+test("a developer asks, a promoter decides from the overview, drift shows the change, access shows why @access @operate", async ({
   browser,
 }) => {
   const admin = await signIn(browser, ADMIN.email, ADMIN.password);
@@ -169,9 +181,12 @@ test("a developer asks, a promoter decides from the overview, drift shows the ch
       }[]
     ).find((one) => one.active)?.id;
   const before = await bundlesOf();
-  const back = admin.getByRole("button", { name: "Activate this version" }).first();
+  const back = admin.getByRole("button", { name: /^(Deploy|Roll back to) this version$/ }).first();
   await back.click();
-  await admin.getByRole("dialog").getByRole("button", { name: "Activate in production" }).click();
+  await admin
+    .getByRole("dialog")
+    .getByRole("button", { name: /^(Deploy|Roll back) in production$/ })
+    .click();
   await expect(admin.getByText(/is what runs here now/)).toBeVisible();
   expect(await bundlesOf()).not.toBe(before);
   expect(errors).toEqual([]);

@@ -48,6 +48,7 @@ export function ExpressionField({
   rows,
   condition,
   items,
+  required,
 }: {
   name: string;
   label: string;
@@ -61,6 +62,8 @@ export function ExpressionField({
   condition?: boolean | undefined;
   /** A foreach's items: this expression sees the first of them as `item`. */
   items?: string | undefined;
+  /** The step cannot work without it. A several-line field is marked optional unless it is. */
+  required?: boolean | undefined;
 }) {
   const source = useContext(ExpressionPreview);
   const [answer, setAnswer] = useState<Answer>();
@@ -100,7 +103,11 @@ export function ExpressionField({
   };
   return (
     <div className="flex min-w-0 flex-col gap-1">
-      {rows ? <TextAreaField {...props} rows={rows} required={false} /> : <TextField {...props} />}
+      {rows ? (
+        <TextAreaField {...props} rows={rows} required={required ?? false} />
+      ) : (
+        <TextField {...props} {...(required === undefined ? {} : { required })} />
+      )}
       <Preview answer={answer} condition={condition === true} />
     </div>
   );

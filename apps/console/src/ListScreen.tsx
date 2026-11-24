@@ -6,19 +6,25 @@ import {
   EmptyState,
   Notice,
   type Option,
+  pastLimit,
   SelectField,
   SideSheet,
   TextField,
 } from "@volvel/ui";
 import type { ReactNode } from "react";
-import { useId, useState } from "react";
-import { type ApiError, useLoad } from "./api.ts";
-import { ask, notify } from "./ask.tsx";
+import { useEffect, useId, useState } from "react";
+import { type ApiError, useLoad, withCode } from "./api.ts";
+import { ask, noteWaiting, notify } from "./ask.tsx";
+import { type Needs, useNeeds } from "./kit/Can.tsx";
 import { type DataColumn, DataTable } from "./kit/DataTable.tsx";
+import { keepPlace } from "./kit/focus.ts";
 import { clock } from "./kit/format.ts";
 import { Loading } from "./kit/LoadState.tsx";
 import { PageHeader } from "./kit/layout.tsx";
 import { usePagedList } from "./kit/paged.tsx";
+import { READ_ONLY_WORDS, useReadOnly } from "./kit/ReadOnly.tsx";
+import { useRowActionColumns } from "./kit/rowActions.tsx";
+import { useQueryValue } from "./router.tsx";
 export interface FormField {
   name: string;
   label: string;
@@ -28,6 +34,8 @@ export interface FormField {
   initial?: string;
   hint?: string;
   required?: boolean;
+  /** The most characters the field takes: said at the field, and a longer text is refused, never cut. */
+  maxLength?: number;
   options?: { value: string; label: string }[];
   /**
    * With `options`: nothing is chosen for the person, who has to pick one. For a
@@ -48,6 +56,16 @@ export interface FormField {
   /** Shows the field only while this holds for what has been entered so far. */
   when?: (values: Record<string, string>) => boolean;
   placeholder?: string;
+  /**
+   * Draws the field's own control, for a value no plain box says well: a choice that depends on
+   * the type just chosen. It holds its value as text, like every other field.
+   */
+  render?: (control: {
+    value: string;
+    values: Record<string, string>;
+    error: string | undefined;
+    onChange: (value: string) => void;
+  }) => ReactNode;
 }
 
 function ChoiceField({
@@ -121,10 +139,24 @@ export interface ListScreenProps<Row> {
   rowKey: (row: Row) => string;
   empty: { title: string; text?: string };
   create?: CreateConfig;
+  /**
+   * The create field that `?setup=<value>` fills: a refused deploy or promotion links to a list
+   * with the name of what it lacks, and the dialog that makes it opens with that name in.
+   */
+  setupField?: string;
   /** Adds a last column of actions per row. */
   rowActions?: (row: Row, reload: () => void) => ReactNode;
-  /** A button beside the title, for a screen whose way to add something is not a dialog. */
+  /**
+   * A button beside the title, for a screen whose way to add something is not a dialog. With
+   * `create`, it stands beside that button, for a second way in.
+   */
   action?: ReactNode;
+  /**
+   * What changing this list takes, and where it is held. Without it, the create button is greyed
+   * under a line that says what it takes, and the row actions are switched off, for someone who
+   * may only read it (GOV-37).
+   */
+  needs?: Needs;
 }
 
 export function Page({
@@ -156,7 +188,7 @@ export function Page({
   return (
     // A page that fills the window keeps its parts closer, so what it holds starts high (P4-1).
     <section
-      className={`flex flex-col ${fill ? "min-h-0 flex-1 gap-3 px-4 pt-3 pb-4 md:px-8" : "gap-5"} ${
+      className={`flex flex-1 flex-col ${fill ? "min-h-0 flex-1 gap-3 px-4 pt-3 pb-4 md:px-8" : "gap-5"} ${
         width === "form" ? "max-w-[52rem]" : ""
       }`}
     >
@@ -193,10 +225,27 @@ export function CreateDialog({
   const [unpicked, setUnpicked] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const formId = useId();
+  // Opened again, it starts from what exists now: a save in between changed it.
+  const [wasOpen, setWasOpen] = useState(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    if (open) setValues(initial ?? {});
+  }
+  // The first reason the server gave for something no field of the form shows: "The table's
+  // definition is not valid" alone would not say what to change.
+  const unplaced = (caught: ApiError) =>
+    caught.fields?.find((one) => !config.fields.some((field) => one.path === `/body/${field.name}`))
+      ?.message;
+  // A refusal every field of which is shown at its field is not said again in a banner.
+  const placed = (caught: ApiError) =>
+    (caught.fields ?? []).length > 0 &&
+    (caught.fields ?? []).every((one) =>
+      config.fields.some((field) => one.path === `/body/${field.name}`),
+    );
   const fieldError = (name: string) =>
     unpicked.includes(name)
       ? "Choose one."
-      : error?.fields.find((field) => field.path === `/body/${name}`)?.message;
+      : error?.fields?.find((field) => field.path === `/body/${name}`)?.message;
   // Cancelled means forgotten: what was typed, a password included, does not wait for the next time.
   const close = () => {
     setValues(initial ?? {});
@@ -208,10 +257,19 @@ export function CreateDialog({
   // A form of more than three fields is configuration, not a quick question: it opens as a
   // sheet beside the page, with its buttons kept in view, rather than over it.
   const roomy = config.fields.length > 3;
+  const readOnly = useReadOnly();
   const buttons = (
     <>
       <Button onClick={close}>Cancel</Button>
-      <Button type="submit" form={formId} variant="primary" loading={busy}>
+      {readOnly ? <span className="text-meta text-ink-muted">{READ_ONLY_WORDS}</span> : null}
+      <Button
+        type="submit"
+        form={formId}
+        variant="primary"
+        loading={busy}
+        disabled={readOnly}
+        {...(readOnly ? { tooltip: READ_ONLY_WORDS } : {})}
+      >
         {config.action}
       </Button>
     </>
@@ -223,10 +281,26 @@ export function CreateDialog({
       onSubmit={async (event) => {
         event.preventDefault();
         const missing = config.fields
-          .filter((f) => f.pick && !(f.when && !f.when(values)) && !values[f.name])
+          // A list to choose from is chosen from, unless the field says it is optional.
+          .filter(
+            (f) =>
+              (f.pick || (f.choose && f.required !== false)) &&
+              !(f.when && !f.when(values)) &&
+              !values[f.name],
+          )
           .map((f) => f.name);
         setUnpicked(missing);
         if (missing.length > 0) return;
+        // A text past its limit is said at its field (it shows how far over), and nothing is sent.
+        if (
+          config.fields.some(
+            (f) =>
+              f.maxLength !== undefined &&
+              !(f.when && !f.when(values)) &&
+              pastLimit(values[f.name] ?? "", f.maxLength),
+          )
+        )
+          return;
         setBusy(true);
         setError(undefined);
         try {
@@ -246,14 +320,27 @@ export function CreateDialog({
           setValues(initial ?? {});
           onCreated(result);
         } catch (caught) {
-          setError(caught as ApiError);
+          // A change that waits for a second person is asked, not failed: the form is done.
+          if (noteWaiting(caught)) {
+            setValues(initial ?? {});
+            onClose();
+          } else setError(caught as ApiError);
         } finally {
           setBusy(false);
         }
       }}
     >
       {config.fields.map((field) =>
-        field.when && !field.when(values) ? null : field.type === "checkbox" ? (
+        field.when && !field.when(values) ? null : field.render ? (
+          <div key={field.name}>
+            {field.render({
+              value: values[field.name] ?? field.initial ?? "",
+              values,
+              error: fieldError(field.name),
+              onChange: (value) => setValues((v) => ({ ...v, [field.name]: value })),
+            })}
+          </div>
+        ) : field.type === "checkbox" ? (
           <CheckboxField
             key={field.name}
             name={field.name}
@@ -293,6 +380,7 @@ export function CreateDialog({
             type={field.type ?? "text"}
             value={values[field.name] ?? ""}
             required={field.required ?? true}
+            {...(field.maxLength !== undefined ? { maxLength: field.maxLength } : {})}
             {...(field.placeholder ? { placeholder: field.placeholder } : {})}
             {...(field.hint ? { hint: field.hint } : {})}
             error={fieldError(field.name)}
@@ -300,7 +388,11 @@ export function CreateDialog({
           />
         ),
       )}
-      {error ? <Notice tone="danger">{error.message}</Notice> : null}
+      {error && !placed(error) ? (
+        <Notice tone="danger">
+          {withCode([error.message, unplaced(error)].filter(Boolean).join(" "), error)}
+        </Notice>
+      ) : null}
       {roomy ? null : <div className="mt-1 flex justify-end gap-2">{buttons}</div>}
     </form>
   );
@@ -321,18 +413,35 @@ export function ListScreen<Row>(props: ListScreenProps<Row>) {
   const list = useLoad<{ items: Row[] }>(props.path);
   const [creating, setCreating] = useState(false);
   const [created, setCreated] = useState<ReactNode>();
-  const { create } = props;
+  const { create, setupField } = props;
+  const [setup, setSetup] = useQueryValue("setup");
+  const [filling, setFilling] = useState<string>();
+  useEffect(() => {
+    // Only a list that makes things this way reads it: Connections reads its own.
+    if (!setup || !create || !setupField) return;
+    setFilling(setup);
+    setCreating(true);
+    setSetup(null);
+  }, [setup, create, setupField, setSetup]);
 
-  const columns: DataColumn<Row>[] = props.rowActions
-    ? [
-        ...props.columns,
-        { header: "", align: "end", cell: (row) => props.rowActions?.(row, list.reload) },
-      ]
-    : props.columns;
+  const { can, line, reason } = useNeeds(props.needs);
+  // The column of actions, as every list draws it (kit/rowActions.tsx).
+  const columns = useRowActionColumns<Row>(props.columns, props.rowActions, {
+    can,
+    reload: list.reload,
+  });
   const createButton = create ? (
-    <Button variant="primary" onClick={() => setCreating(true)}>
-      {create.action}
-    </Button>
+    <span className="inline-flex flex-wrap items-center gap-2">
+      {props.action}
+      <Button
+        variant="primary"
+        disabled={!can}
+        {...(reason ? { tooltip: reason } : {})}
+        onClick={() => setCreating(true)}
+      >
+        {create.action}
+      </Button>
+    </span>
   ) : (
     props.action
   );
@@ -345,6 +454,7 @@ export function ListScreen<Row>(props: ListScreenProps<Row>) {
       action={createButton}
     >
       {created ? <Notice tone="attention">{created}</Notice> : null}
+      {line}
       {list.error ? (
         <Notice tone="danger" action={<Button onClick={list.reload}>Try again</Button>}>
           {list.error.message}
@@ -366,10 +476,13 @@ export function ListScreen<Row>(props: ListScreenProps<Row>) {
       ) : (
         <Loading />
       )}
-      {create ? (
+      {create && can ? (
         <CreateDialog
+          // A name given by the address starts the form again, with the name in.
+          key={filling ?? ""}
           config={create}
           open={creating}
+          {...(filling && setupField ? { initial: { [setupField]: filling } } : {})}
           onClose={() => setCreating(false)}
           onCreated={(result) => {
             setCreating(false);
@@ -424,14 +537,20 @@ export function RemoveButton({
   run,
   onDone,
   affected,
+  usesUnread = false,
   typeToConfirm,
+  disabled,
 }: {
   label?: string;
+  /** Why it cannot be done now, shown as the button's title; the button is then off. */
+  disabled?: string | undefined;
   confirm: string;
   run: () => Promise<unknown>;
   onDone: () => void;
   /** What uses the thing and is affected, named in the confirmation so its reach is seen first. */
   affected?: string[] | undefined;
+  /** What uses it is not known (still loading, or could not be read): the confirmation says so. */
+  usesUnread?: boolean | undefined;
   /** For what cannot be undone: the name to type before the action is offered. */
   typeToConfirm?: string | undefined;
 }) {
@@ -439,10 +558,15 @@ export function RemoveButton({
     <Button
       variant="danger"
       size="small"
-      onClick={async () => {
-        const text = affected?.length
-          ? `${question} Used by ${affected.length}: ${listed(affected)}.`
-          : question;
+      disabled={disabled !== undefined}
+      {...(disabled !== undefined ? { title: disabled } : {})}
+      onClick={async (event) => {
+        const settle = keepPlace(event.currentTarget);
+        const text = usesUnread
+          ? `${question} What uses it could not be read, so what it affects is not listed here.`
+          : affected?.length
+            ? `${question} Used by ${affected.length}: ${listed(affected)}.`
+            : question;
         const options = { title: `${label}?`, text, action: label, danger: true };
         const sure = typeToConfirm
           ? await ask.typeToConfirm({ ...options, expected: typeToConfirm })
@@ -451,6 +575,7 @@ export function RemoveButton({
         try {
           await run();
           onDone();
+          settle();
         } catch (error) {
           notify.error(error);
         }
@@ -476,9 +601,12 @@ export function CopyButton({
   value,
   label = "Copy",
   onCopied,
+  focused = false,
 }: {
   value: string;
   label?: string;
+  /** Takes the focus when its dialog opens, so Enter copies. */
+  focused?: boolean;
   /** Called once the value is on the clipboard. */
   onCopied?: () => void;
 }) {
@@ -486,6 +614,7 @@ export function CopyButton({
   return (
     <Button
       size="small"
+      {...(focused ? { "data-autofocus": "" } : {})}
       onClick={async () => {
         try {
           await navigator.clipboard.writeText(value);

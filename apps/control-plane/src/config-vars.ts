@@ -29,6 +29,7 @@ export interface ConfigVar {
     | "Retention"
     | "Telemetry"
     | "Network"
+    | "Worker host"
     | "Files of the image";
 }
 
@@ -179,12 +180,19 @@ export const CONFIG_VARS = {
   MANAGED_WORKER_UID: {
     group: "Workers",
     default: "10001",
-    description: "The user workers run as.",
+    description:
+      "The first user workers run as. With a worker host each worker runs as a user of its own, from this one up, so that one tenant's script cannot read another's worker.",
   },
   MANAGED_WORKER_GID: {
     group: "Workers",
     default: "10001",
-    description: "The group workers run as.",
+    description: "The first group workers run as. Each worker's group follows its user.",
+  },
+  MANAGED_WORKER_USERS: {
+    group: "Workers",
+    default: "256",
+    description:
+      "How many users, counted from `MANAGED_WORKER_UID`, the worker host may use: it never runs more workers at once than this. Read by the worker host, and by its firewall rules.",
   },
   MANAGED_WORKERS_MAX: {
     group: "Workers",
@@ -284,7 +292,14 @@ export const CONFIG_VARS = {
   EGRESS_ALLOW: {
     group: "Network",
     description:
-      "Private networks and hosts that scripts and connections may reach, as a list with commas: `10.0.0.0/8,db.internal`. Everything else private is refused.",
+      "Private networks and host names that the instance itself may reach for a tenant, as a list with commas: `10.0.0.0/8,db.internal`. That is identity providers, Git remotes, data sources, OAuth token addresses and hostname checks. Everything else private is refused. A script is not held to this list: what a script reaches is `WORKER_EGRESS_ALLOW` on its worker host.",
+  },
+
+  TRUSTED_PROXIES: {
+    group: "Network",
+    default: "1",
+    description:
+      "Whose forwarding headers are believed when the instance learns who is calling: a number of proxies in front of it, or the networks they are on, as a list with commas (`10.0.0.0/8,172.16.0.0/12`). With `1`, the address your one proxy adds last is the caller's. `0` believes none, for an instance reached directly. Rate limits and the audit log use this address. The proxy must put the caller's address in `X-Forwarded-For` itself, never pass on what the caller sent.",
   },
 
   CONSOLE_DIR: {
@@ -294,6 +309,29 @@ export const CONFIG_VARS = {
   SCREENS_DIR: {
     group: "Files of the image",
     description: "Where the built files of the app that draws interfaces are. The image sets it.",
+  },
+} as const satisfies Record<string, ConfigVar>;
+
+/**
+ * What the worker host, the start script of its image and a standalone worker read, which the
+ * control plane does not. The page of settings draws these beside `CONFIG_VARS`.
+ */
+export const WORKER_VARS = {
+  VOLVEL_URL: {
+    group: "Worker host",
+    description:
+      "The control plane's address, for the worker host and a standalone worker. `--url` also sets it. The worker host's firewall lets workers reach this address, and the name servers, only.",
+  },
+  VOLVEL_WORKER_TOKEN: {
+    group: "Worker host",
+    secret: true,
+    description:
+      "A standalone worker's credential. Prefer `--token-file`: an environment is shown by `docker inspect`.",
+  },
+  WORKER_EGRESS_ALLOW: {
+    group: "Worker host",
+    description:
+      "Private networks and host names that a tenant's scripts may reach, as a list with commas, such as an API inside your network: `10.20.0.0/16,api.internal`. Set on the worker host. Without it, a script reaches no private, loopback or link-local address, and that is the whole firewall; the control plane's address and the name servers are always open. Names are looked up when the host starts. It does nothing without the `NET_ADMIN` capability. It is not `EGRESS_ALLOW`, which is what the instance itself may reach.",
   },
 } as const satisfies Record<string, ConfigVar>;
 

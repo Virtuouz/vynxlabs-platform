@@ -1,3 +1,4 @@
+/** What a script writes its log with. Each line is kept with the run, and the secrets the script uses are masked in it. */
 export interface Logger {
   debug(message: string, fields?: Record<string, unknown>): void;
   info(message: string, fields?: Record<string, unknown>): void;
@@ -5,6 +6,7 @@ export interface Logger {
   error(message: string, fields?: Record<string, unknown>): void;
 }
 
+/** What a script knows about the run it is in: its ID, which attempt it is, and a key that stays the same across attempts. */
 export interface RunInfo {
   id: string;
   /** 1 on the first attempt. A retry is a new attempt of the same run. */

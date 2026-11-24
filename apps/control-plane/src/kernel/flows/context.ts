@@ -19,6 +19,29 @@ export interface ContextStep {
   child_flow_run_id: string | null;
 }
 
+const isTooLarge = (value: unknown): boolean =>
+  typeof value === "object" &&
+  value !== null &&
+  typeof (value as { stored?: unknown }).stored === "string" &&
+  typeof (value as { note?: unknown }).note === "string";
+
+/**
+ * What an expression could not read because it was too large to be loaded: the flow's input, or
+ * a step's output. A missing key beside one of these is the large value's, not a typing mistake.
+ */
+export function tooLargeIn(context: Record<string, unknown>): string[] {
+  const found: string[] = [];
+  if (isTooLarge(context.trigger)) found.push("The input the flow was started with");
+  const steps = (context.steps ?? {}) as Record<string, { output?: unknown }>;
+  const own = (context.trigger as { stored?: string } | undefined)?.stored;
+  for (const [id, one] of Object.entries(steps)) {
+    // The trigger's own step holds the same input again.
+    if (isTooLarge(one?.output) && (one.output as { stored: string }).stored !== own)
+      found.push(`The output of ${id}`);
+  }
+  return found;
+}
+
 /** What a finished step produced. Something too large to hold in a row is not loaded. */
 export async function readOutput(db: Db | Trx, step: ContextStep): Promise<unknown> {
   const tooLarge = (ref: string) => ({
@@ -36,10 +59,10 @@ export async function readOutput(db: Db | Trx, step: ContextStep): Promise<unkno
   if (step.child_flow_run_id) {
     const child = await db
       .selectFrom("flow_run")
-      .select("output")
+      .select(["output", "output_ref"])
       .where("id", "=", step.child_flow_run_id)
       .executeTakeFirst();
-    return child?.output ?? null;
+    return child?.output_ref ? tooLarge(child.output_ref) : (child?.output ?? null);
   }
   return step.output_ref ? tooLarge(step.output_ref) : (step.output ?? null);
 }
@@ -77,6 +100,8 @@ export async function expressionContext(
   db: Db | Trx,
   flowRun: { id: string; trigger_node: string },
   extra: Record<string, unknown> = {},
+  /** Masks an output before an expression sees it, for a reader who may not see secrets. */
+  shield?: (step: ContextStep, output: unknown) => Promise<unknown>,
 ): Promise<Record<string, unknown>> {
   const steps = (await db
     .selectFrom("step_run")
@@ -92,5 +117,13 @@ export async function expressionContext(
     ])
     .where("flow_run_id", "=", flowRun.id)
     .execute()) as ContextStep[];
-  return buildContext(steps, flowRun.trigger_node, (step) => readOutput(db, step), extra);
+  return buildContext(
+    steps,
+    flowRun.trigger_node,
+    async (step) => {
+      const output = await readOutput(db, step);
+      return shield ? shield(step, output) : output;
+    },
+    extra,
+  );
 }

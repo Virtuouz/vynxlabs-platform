@@ -17,10 +17,14 @@ import {
   frontmatterOf,
   loadSearchIndex,
   manifestOf,
+  neighboursOf,
+  PRODUCT_PREFIX,
   packageOutput,
   pagePath,
   pagesInOrder,
   readPage,
+  redirectedPath,
+  redirectMap,
   resolveAsset,
   resolveLink,
   setFrontmatter,
@@ -236,6 +240,18 @@ describe("structure from folders", () => {
       "about",
       "faq",
     ]);
+  });
+
+  test("a page's neighbours stay in its collection, and the home goes on to the first page", () => {
+    const { set } = build(files);
+    const around = (path: string) => {
+      const { before, after } = neighboursOf(set.nav, path);
+      return [before?.path, after?.path];
+    };
+    expect(around("support/index")).toEqual([undefined, "support/returns"]);
+    expect(around("support/refunds")).toEqual(["support/escalations/tier-two", undefined]);
+    expect(around("ops/closing/checklist")).toEqual([undefined, "ops/opening"]);
+    expect(around("index")).toEqual([undefined, "support/index"]);
   });
 
   test("folders go as deep as they are written", () => {
@@ -593,5 +609,58 @@ describe("a page's frontmatter, written by a form", () => {
       setFrontmatter("---\ntitle: [unclosed\n---\n\nWords.\n", { title: "x" }),
     ).toBeUndefined();
     expect(frontmatterOf("---\ntitle: [unclosed\n---\n")).toBeUndefined();
+  });
+});
+
+describe("names the product keeps for itself", () => {
+  const taken =
+    "title: T\ntopic: volvel-tables\nterms:\n  - id: volvel-run\n    term: run\n    short: A run.";
+
+  test("a name that starts volvel- is the product's, even where this version's help does not have it yet (names.lock)", () => {
+    const { issues } = build({ "a.md": page(taken) }, { reservedPrefix: PRODUCT_PREFIX });
+    expect(codes(issues)).toEqual(["topic_reserved", "term_reserved"]);
+    // Without the prefix asked for, the product's own build can take such names.
+    expect(build({ "a.md": page(taken) }).issues).toEqual([]);
+    // The editor says the same as the deploy.
+    expect(
+      checkPageAmong("a", page(taken), [], { reservedPrefix: PRODUCT_PREFIX }).issues.map(
+        (issue) => issue.code,
+      ),
+    ).toEqual(["topic_reserved", "term_reserved"]);
+  });
+});
+
+describe("pages that moved", () => {
+  const pages = new Set(["console/how-to/runs", "console/how-to/flows"]);
+
+  test("an old path leads to the page that answers for it, through any number of moves", () => {
+    const { redirects, problems } = redirectMap(
+      pages,
+      [{ path: "console/how-to/runs", movedFrom: ["operate/runs", "runs"] }],
+      { "operate/old-runs": "operate/runs" },
+    );
+    expect(problems).toEqual([]);
+    expect(redirectedPath(redirects, "operate/old-runs")).toBe("console/how-to/runs");
+    expect(redirectedPath(redirects, "runs/")).toBe("console/how-to/runs");
+    expect(redirectedPath(redirects, "operate/runs/index")).toBe("console/how-to/runs");
+    expect(redirectedPath(redirects, "nowhere")).toBeUndefined();
+  });
+
+  test("says what cannot be followed", () => {
+    const { problems } = redirectMap(
+      pages,
+      [
+        { path: "console/how-to/runs", movedFrom: ["console/how-to/flows", "a"] },
+        { path: "console/how-to/flows", movedFrom: ["a"] },
+      ],
+      { gone: "deleted", x: "y", y: "x" },
+    );
+    expect(problems.map((one) => `${one.code} ${one.path}`).sort()).toEqual([
+      "redirect_duplicate console/how-to/flows",
+      "redirect_loop x",
+      "redirect_loop y",
+      "redirect_taken console/how-to/runs",
+      "redirect_unknown gone",
+    ]);
   });
 });

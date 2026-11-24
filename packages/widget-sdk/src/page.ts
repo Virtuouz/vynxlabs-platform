@@ -9,9 +9,13 @@ import type { Action, WidgetRules } from "./action.js";
 // The query a data input asks
 
 export const VISUAL_FUNCTIONS = ["count", "count_distinct", "sum", "avg", "min", "max"] as const;
+/** One of the functions a visual query works a value out with: count, sum, average and the rest. */
 export type VisualFunction = (typeof VISUAL_FUNCTIONS)[number];
+/** How long the periods are when a visual query groups by a date or a time. */
 export const VISUAL_BUCKETS = ["day", "week", "month", "quarter", "year"] as const;
+/** One of `VISUAL_BUCKETS`. */
 export type VisualBucket = (typeof VISUAL_BUCKETS)[number];
+/** The comparisons a visual query's filter may make. */
 export const VISUAL_OPERATORS = [
   "eq",
   "ne",
@@ -26,18 +30,22 @@ export const VISUAL_OPERATORS = [
   "last",
   "between",
 ] as const;
+/** The units a filter of the last so many days, weeks or months counts in. */
 export const LAST_UNITS = ["day", "week", "month", "quarter", "year"] as const;
+/** One of `LAST_UNITS`. */
 export type LastUnit = (typeof LAST_UNITS)[number];
 /** The value of `last`: "in the last 30 days", counted back from today, today included. */
 export interface LastValue {
   count: number;
   unit: LastUnit;
 }
+/** One of `VISUAL_OPERATORS`. */
 export type VisualOperator = (typeof VISUAL_OPERATORS)[number];
 
 /** A column of the query's table, or of a table it joins: `fee`, or `device.name`. */
 export type VisualColumn = string;
 
+/** One filter of a visual query: a column, a comparison and what it is compared with. */
 export interface VisualCondition {
   column: VisualColumn;
   op: VisualOperator;
@@ -67,6 +75,7 @@ export interface VisualQuery {
   limit?: number;
 }
 
+/** Where a widget's data comes from: a visual query, a saved query, SQL, or the record the page was opened on. */
 export type WidgetSource =
   | { visual: VisualQuery }
   | { query: string; values?: Record<string, unknown> }
@@ -119,6 +128,7 @@ export interface DataInput {
  * names; `text` is one column's value, as typed.
  */
 export const PAGE_FILTER_TYPES = ["date_range", "choice", "text", "number", "search"] as const;
+/** What kind of filter a page may have: a date range, a choice, text, a number or a search. */
 export type PageFilterType = (typeof PAGE_FILTER_TYPES)[number];
 
 /** The ranges a date filter offers by name, each counted back from today. */
@@ -133,6 +143,7 @@ export const RELATIVE_RANGES = [
   "this_year",
   "last_12_months",
 ] as const;
+/** A range of dates given in words, such as the last thirty days. */
 export type RelativeRange = (typeof RELATIVE_RANGES)[number];
 
 /**
@@ -159,6 +170,7 @@ export interface PageFilter {
 // ---------------------------------------------------------------------------
 // Widgets and pages
 
+/** How a number may be written: as a number, as money or as a percentage. */
 export const VALUE_FORMAT_STYLES = ["number", "currency", "percent"] as const;
 
 /** How a number is written. Money kept in cents is shown with `minorUnits`. */
@@ -178,11 +190,17 @@ export interface WidgetPlace {
   h: number;
 }
 
+/** How many columns the page's grid has. */
 export const PAGE_COLUMNS = 12;
+/** The most rows high a widget may be. */
 export const MAX_WIDGET_HEIGHT = 40;
+/** The most rows high a page may be. */
 export const MAX_PAGE_ROWS = 400;
+/** The most pages an interface may have. */
 export const MAX_PAGES = 20;
+/** The most widgets a page may hold. */
 export const MAX_PAGE_WIDGETS = 30;
+/** The most filters a page may have. */
 export const MAX_PAGE_FILTERS = 8;
 /** The rows a container's heading takes on the page's grid, above the grid of what it holds. */
 
@@ -200,6 +218,7 @@ export interface WidgetIn {
   tab?: string;
 }
 
+/** A widget as a page keeps it: its type, where it sits, what it reads and its settings. */
 export interface PageWidget {
   /** Unique on its page. */
   id: string;
@@ -239,9 +258,12 @@ export interface PageWidget {
 export const PAGE_KINDS = ["page", "record", "sheet", "modal"] as const;
 /** How big a side sheet or a modal opens: its width, and for a modal its most height too. */
 export const PAGE_SIZES = ["small", "medium", "large", "xlarge", "full"] as const;
+/** How wide a side sheet or a modal is. */
 export type PageSize = (typeof PAGE_SIZES)[number];
+/** What a page is: a page of its own, a record page, a side sheet or a modal. */
 export type PageKind = (typeof PAGE_KINDS)[number];
 
+/** One page of an interface or a dashboard: its widgets, its filters and where it is opened. */
 export interface Page {
   id: string;
   title: string;
@@ -269,8 +291,11 @@ export interface InterfaceBody {
   pages: Page[];
 }
 
+/** How often a dashboard may refresh itself, in minutes, or off. */
 export const DASHBOARD_REFRESH = ["off", 1, 5, 15, 60] as const;
+/** One of `DASHBOARD_REFRESH`. */
 export type DashboardRefresh = (typeof DASHBOARD_REFRESH)[number];
+/** How often a dashboard refreshes when nobody has said. */
 export const DEFAULT_DASHBOARD_REFRESH: DashboardRefresh = 5;
 
 /** The body of a `dashboard`, and what a member's own dashboard holds: one page that reads. */

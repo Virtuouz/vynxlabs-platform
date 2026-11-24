@@ -1,4 +1,4 @@
-import { signInWithPassword } from "./sign-in.ts";
+import { signInAs } from "./as.ts";
 import { expect, type Page, test } from "./test.ts";
 import { expectNoAxeViolations, readEveryList, snap } from "./visual.ts";
 
@@ -8,10 +8,6 @@ import { expectNoAxeViolations, readEveryList, snap } from "./visual.ts";
  * and an overview takes a third column. And a run page scrolls on a short window.
  */
 
-const ADMIN = {
-  email: process.env.E2E_ADMIN_EMAIL ?? "admin@example.com",
-  password: process.env.E2E_ADMIN_PASSWORD ?? "change-me-please",
-};
 const stamp = Date.now().toString(36);
 const WIDE = { width: 2200, height: 1100 };
 
@@ -19,6 +15,18 @@ const WIDE = { width: 2200, height: 1100 };
 const call = (page: Page, method: string, path: string, body?: unknown): Promise<any> =>
   page.evaluate(
     async ([method, path, body]) => {
+      // A draft save names the draft it saw: its revision now, or none when there is none.
+      if (
+        method === "PUT" &&
+        String(path).includes("/drafts/") &&
+        body &&
+        typeof body === "object" &&
+        !("revision" in body) &&
+        !("create" in body)
+      ) {
+        const seen = await fetch(`/api/v1${path}`);
+        if (seen.ok) body = { ...body, revision: (await seen.json()).revision };
+      }
       const response = await fetch(`/api/v1${path}`, {
         method: method as string,
         headers: body ? { "content-type": "application/json" } : {},
@@ -38,7 +46,7 @@ let failed: string;
 test.beforeAll(async ({ browser }) => {
   test.setTimeout(240_000);
   page = await (await browser.newContext({ viewport: WIDE })).newPage();
-  await signInWithPassword(page, ADMIN.email, ADMIN.password);
+  await signInAs(page, "operator");
   await readEveryList(page);
   const tenant = await call(page, "POST", "/tenants", {
     slug: `wide-${stamp}`,
@@ -84,7 +92,7 @@ test.beforeAll(async ({ browser }) => {
 });
 
 for (const theme of ["light", "dark"] as const) {
-  test(`at 2200 px the runs list, a run and the overview use the room, in ${theme}`, async () => {
+  test(`at 2200 px the runs list, a run and the overview use the room, in ${theme} @polish`, async () => {
     await page.setViewportSize(WIDE);
     await page.evaluate((choice) => localStorage.setItem("vx-theme", choice), theme);
 
@@ -148,7 +156,7 @@ for (const theme of ["light", "dark"] as const) {
   });
 }
 
-test("on a short window a run page scrolls to what is below the fold", async () => {
+test("on a short window a run page scrolls to what is below the fold @polish", async () => {
   await page.setViewportSize({ width: 1440, height: 640 });
   await page.goto(`${link}/runs/${failed}`);
   const given = page.getByRole("tablist", { name: "What it was given and what it gave" });

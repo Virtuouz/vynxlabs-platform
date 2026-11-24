@@ -49,6 +49,10 @@ export interface SupervisorOptions {
   maxWorkers?: number;
   /** Where memory is read from. Replaced in tests. */
   probe?: MachineProbe;
+  /** How a worker's process is started. Replaced in tests. */
+  spawn?: typeof spawn;
+  /** Which tenants have work waiting. Replaced in tests. */
+  waiting?: (kernel: Kernel) => Promise<{ tenant_id: string }[]>;
 }
 
 interface Managed {
@@ -269,7 +273,7 @@ export class WorkerSupervisor {
     if (this.#stopped) return;
     await this.mode();
     this.#guard.start();
-    const waiting = { rows: await tenantsNeedingWorkers(this.#kernel) };
+    const waiting = { rows: await (this.#options.waiting ?? tenantsNeedingWorkers)(this.#kernel) };
     for (const { tenant_id: tenantId } of waiting.rows) {
       if (this.#workers.has(tenantId)) continue;
       // Past the cap, or short of memory, the work waits for a worker to finish and leave.
@@ -309,13 +313,22 @@ export class WorkerSupervisor {
     const credential = await claimManagedSlot(this.#kernel, tenantId);
     if (!credential) return;
     const user = this.#options.user;
-    const child = spawn(this.#node, [this.#bin, "--token-stdin"], {
-      env: this.environment(),
-      stdio: ["pipe", "pipe", "pipe"],
-      ...((await this.mode()) === "isolated" && user && user !== "same"
-        ? { uid: user.uid, gid: user.gid }
-        : {}),
-    });
+    let child: ChildProcess;
+    try {
+      child = (this.#options.spawn ?? spawn)(this.#node, [this.#bin, "--token-stdin"], {
+        env: this.environment(),
+        stdio: ["pipe", "pipe", "pipe"],
+        ...((await this.mode()) === "isolated" && user && user !== "same"
+          ? { uid: user.uid, gid: user.gid }
+          : {}),
+      });
+    } catch (error) {
+      // Node throws at once when it may not switch users. The credential made for this worker
+      // is of no use, and the next tick is not stopped by it.
+      log.error({ err: error, tenantId }, "a managed worker could not be started");
+      await endManagedSlot(this.#kernel, credential.row.id).catch(() => {});
+      return;
+    }
     // Handed over once, on a pipe, and kept out of the worker's environment and command line.
     child.stdin?.end(`${credential.token}\n`);
     this.#workers.set(tenantId, { child, credentialId: credential.row.id });
@@ -338,14 +351,26 @@ export class WorkerSupervisor {
         .finally(() => this.#revoking.delete(revoking));
       this.#revoking.add(revoking);
     });
-    child.once("error", (error) => {
+    let spawned = false;
+    child.once("spawn", () => {
+      spawned = true;
+    });
+    child.on("error", (error) => {
+      // A signal that was refused (a worker of its own user, and no CAP_KILL) is reported the
+      // same way. The worker is still running and keeps its credential.
+      if (spawned) {
+        log.error({ err: error, tenantId }, "a signal to a managed worker was refused");
+        return;
+      }
       this.#workers.delete(tenantId);
       log.error({ err: error, tenantId }, "a managed worker could not be started");
+      // It never ran: its credential is of no use either.
+      void endManagedSlot(this.#kernel, credential.row.id).catch(() => {});
     });
   }
 
   /** Asks every managed worker to finish what it is doing and exit. */
-  async stop(graceSeconds = 10): Promise<void> {
+  async stop(graceSeconds = 10, giveUpSeconds = 10): Promise<void> {
     this.#stopped = true;
     this.#guard.stop();
     const exits = [...this.#workers.values()].map(
@@ -353,8 +378,20 @@ export class WorkerSupervisor {
         new Promise<void>((resolve) => {
           if (child.exitCode !== null) return resolve();
           const force = setTimeout(() => child.kill("SIGKILL"), graceSeconds * 1000);
+          // A worker that cannot be signalled is left; the control plane goes on stopping.
+          const giveUp = setTimeout(
+            () => {
+              this.#kernel.log.error(
+                { pid: child.pid },
+                "a managed worker could not be stopped and is left running",
+              );
+              resolve();
+            },
+            (graceSeconds + giveUpSeconds) * 1000,
+          );
           child.once("exit", () => {
             clearTimeout(force);
+            clearTimeout(giveUp);
             resolve();
           });
           child.kill("SIGTERM");

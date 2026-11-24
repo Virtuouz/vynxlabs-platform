@@ -1,6 +1,7 @@
 import { defineWidget, WidgetRegistry } from "@volvel/widgets";
 import { approvals, coreRegistry } from "@volvel/widgets-core";
 import { describe, expect, it } from "vitest";
+import { missingGroups } from "./groups.js";
 import { registerPlatformKinds } from "./kinds.js";
 import {
   checkDashboard,
@@ -81,6 +82,44 @@ describe("pages", () => {
     });
     expect(result.ok).toBe(true);
     expect(messages([chart])).toEqual([]);
+  });
+
+  it("holds who may edit a record in place, and a group named there that is gone is found (WID-19)", () => {
+    const detail: PageWidget = {
+      id: "info",
+      type: "core/detail",
+      at: { x: 0, y: 0, w: 6, h: 6 },
+      data: { record: { source: { record: "this" } } },
+      config: { edit: true, editBy: { groups: ["groups/billing"] } },
+    };
+    const record = (widget: PageWidget): InterfaceBody => ({
+      title: "Invoices",
+      pages: [
+        {
+          id: "inv",
+          title: "Invoice",
+          kind: "record",
+          record: { table: "invoices" },
+          widgets: [widget],
+        },
+      ],
+    });
+    const kinds = new KindRegistry();
+    registerPlatformKinds(kinds);
+    const result = kinds.validateManifest({
+      kind: "interface",
+      schemaVersion: 2,
+      path: "screens/invoices",
+      workspace: "sandbox",
+      ownership: "code",
+      body: record(detail),
+    });
+    expect(result.ok, JSON.stringify(result)).toBe(true);
+    expect(checkInterface(record(detail), tableOf)).toEqual([]);
+    expect(missingGroups(record(detail), ["groups/billing"])).toEqual([]);
+    expect(missingGroups(record(detail), ["groups/sales"])).toEqual([
+      expect.objectContaining({ at: "config/editBy" }),
+    ]);
   });
 
   it("refuses a type no pack declares, and draws nothing else of it", () => {
@@ -306,6 +345,34 @@ describe("records and actions (phase 26)", () => {
     ]);
   });
 
+  it("narrowing the page needs an event that gives a group", () => {
+    const narrowing = {
+      steps: [{ do: "narrow" as const, filter: "f", from: "clinic" }],
+    };
+    const board = checkDashboard({ widgets: [{ ...rows, on: { rowClick: narrowing } }] }, tableOf);
+    expect(board.map((one) => one.message)).toContain(
+      "narrows the page by what was clicked, and this event clicks no group (a point or a cell does)",
+    );
+  });
+
+  it("the rows behind a figure are asked for only of a widget that reads a table", () => {
+    const behind = { on: { pointClick: { steps: [{ do: "rows" as const }] } } };
+    const over = (source: object): PageWidget => ({
+      ...chart,
+      ...behind,
+      data: { rows: { source } } as never,
+    });
+    const said2 = (widget: PageWidget) =>
+      checkDashboard({ widgets: [widget] }, tableOf).map((one) => one.message);
+    const table = { visual: { table: "invoices", groupBy: [{ column: "status" }] } };
+    expect(said2(over(table)).filter((one) => /rows behind/.test(one))).toEqual([]);
+    for (const source of [{ query: "reports/open" }, { sql: "select 1" }]) {
+      expect(said2(over(source)).join("|")).toContain(
+        "this widget reads a saved query or SQL: only a table has rows behind it",
+      );
+    }
+  });
+
   it("a record page says the table of its record", () => {
     const body = app([rows]);
     const { record: _record, ...nameless } = detailPage;
@@ -519,6 +586,11 @@ describe("what a form's field starts with", () => {
     ]);
   });
 
+  it("w-builder 5: a value chosen but not yet typed is no refusal, and a wrong one still is", () => {
+    expect(said(form({ kind: "value" }))).toEqual([]);
+    expect(said(form({ kind: "value", value: "ten" }))).toHaveLength(1);
+  });
+
   it("refuses today on a column that is not a date, and the person on a number", () => {
     expect(said(form({ kind: "today" }))[0]).toContain('"today" starts a date or a timestamp');
     expect(said(form({ kind: "me" }))[0]).toContain(
@@ -624,5 +696,33 @@ describe("approvals (phase 28, decision 0007)", () => {
     expect(issues([{ ...added, config: { fields: [{ name: "total", label: "Sum" }] } }])).toEqual(
       [],
     );
+  });
+});
+
+describe("the name of an app and of its interface (BLD-06, D52)", () => {
+  it("is at most 100 characters in both, so one limit holds for a name typed once", () => {
+    const kinds = new KindRegistry();
+    registerPlatformKinds(kinds);
+    const long = "x".repeat(101);
+    const app = (title: string) =>
+      kinds.validateManifest({
+        kind: "app",
+        schemaVersion: 1,
+        path: "sales",
+        ownership: "ui",
+        body: { title, interface: "screens/sales" },
+      });
+    const screen = (title: string) =>
+      kinds.validateManifest({
+        kind: "interface",
+        schemaVersion: 2,
+        path: "screens/sales",
+        ownership: "ui",
+        body: { title, pages: [{ id: "main", title: "Main", widgets: [] }] },
+      });
+    expect(screen("x".repeat(100)).ok).toBe(true);
+    expect(app("x".repeat(100)).ok).toBe(true);
+    expect(screen(long).ok).toBe(false);
+    expect(app(long).ok).toBe(false);
   });
 });

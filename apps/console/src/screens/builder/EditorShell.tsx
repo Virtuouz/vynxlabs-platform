@@ -163,7 +163,8 @@ export function EditorShell({
             <span
               role="status"
               title={typeof saving === "object" ? savingWords(saving, savedWords) : undefined}
-              className={`min-w-0 max-w-[26rem] truncate text-body-sm max-xl:sr-only ${typeof saving === "object" ? "text-danger" : "text-ink-muted"}`}
+              // The words of Saving and Saved keep one width (12rem, the longest, "Saved. Not published yet."), so the bar does not change its height, and everything under it moves, when a save finishes. A refusal is the one status that is always seen, in up to two lines, and never left to squeeze the name; "Saved" and "Saving" are for the room there is.
+              className={`max-w-[26rem] text-body-sm ${typeof saving === "object" ? "min-w-0 line-clamp-2 break-words text-danger" : "min-w-[min(100%,12rem)] truncate text-ink-muted max-xl:sr-only"}`}
             >
               {savingWords(saving, savedWords)}
             </span>

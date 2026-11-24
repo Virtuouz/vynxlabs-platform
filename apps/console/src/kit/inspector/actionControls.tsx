@@ -1,7 +1,7 @@
 /**
  * The step editor (board 4): what a widget does when it is used, as steps that read as
  * sentences. A trigger line ("When clicked"), then the steps as a timeline: 1 Ask to confirm,
- * 2 Update the record, 3 Run a workflow, 4 Show a message; "+ Add a step"; "If it fails"; and,
+ * 2 Update the record, 3 Run a flow, 4 Show a message; "+ Add a step"; "If it fails"; and,
  * at the end, what the action changes and who may do it, said where it acts (POLISH-010).
  *
  * The same list serves buttons, row actions, buttons above a table, form submits and chart
@@ -48,7 +48,9 @@ import {
   type ActionContext,
   type ActionValue,
   type AskedField,
+  addedAt,
   grantWords,
+  inputType,
   inputWords,
   moved,
   newStep,
@@ -69,7 +71,15 @@ import {
 } from "./actionModel.ts";
 import { ConfirmPreview } from "./confirmPreview.tsx";
 import type { Env } from "./controls.tsx";
-import { type ConfigSetting, heading, resultNames, visualOf, withSystemColumns } from "./model.ts";
+import { useChosenGroups } from "./groupChoices.tsx";
+import {
+  type ConfigSetting,
+  heading,
+  readsTable,
+  resultNames,
+  visualOf,
+  withSystemColumns,
+} from "./model.ts";
 import { StepTimeline, type TimelineItem } from "./stepTimeline.tsx";
 import { TokenText } from "./TokenText.tsx";
 import { parseTokens, stepSummary, valueChipWords } from "./timelineModel.ts";
@@ -111,6 +121,10 @@ export function actionContext(env: Env): ActionContext {
     eventTable: raisesRecord ? own : undefined,
     defaultRef: raisesRecord || !thisTable ? "event" : "this",
     groupEvent: events.some((one) => one.gives === "group"),
+    // Only a table has rows behind a figure: a saved query or SQL does not.
+    rowsEvent:
+      (events.some((one) => one.gives === "group") || env.widget.type === "core/stat") &&
+      readsTable(env.widget.data),
     openAs: kind === "sheet" ? "sheet" : kind === "modal" ? "modal" : "page",
     columnsOf,
   };
@@ -127,10 +141,13 @@ function ValuePicker({
   asked,
   onChange,
   optional,
+  type,
 }: {
   id: string;
   label: string;
   value: ActionValue | undefined;
+  /** The type of the column the value goes into, when it goes into one: what is typed is stored as that. */
+  type?: string | undefined;
   ctx: ActionContext;
   asked: readonly AskedField[];
   /** `undefined` takes the value away: only offered where a value may be left out. */
@@ -164,7 +181,7 @@ function ValuePicker({
           placeholder="Value"
           required={false}
           value={value.value === undefined || value.value === null ? "" : String(value.value)}
-          onChange={(text) => onChange({ value: typedConstant(text) }, `${id}:value`)}
+          onChange={(text) => onChange({ value: typedConstant(text, type) }, `${id}:value`)}
         />
       ) : null}
     </div>
@@ -278,6 +295,7 @@ function FieldSetter({
               value={value}
               ctx={ctx}
               asked={asked}
+              type={columns.find((one) => one.name === name)?.type}
               onChange={(next, key) => next && onChange({ ...set, [name]: next }, key)}
             />
           </ChipEditor>
@@ -566,6 +584,7 @@ function InputMapper({
               id={`${id}-${name}`}
               label={`${heading(name)} gets`}
               value={input?.[name]}
+              type={inputType(schema?.properties?.[name])}
               ctx={ctx}
               asked={asked}
               optional
@@ -700,11 +719,11 @@ function stepParts({
           }));
       const chosen = list.find((one) => one.path === step.path);
       return card(
-        flow ? "Run a workflow" : "Run a script",
+        flow ? "Run a flow" : "Run a script",
         <>
           <SelectField
             name={`${id}-path`}
-            label={flow ? "Workflow" : "Script"}
+            label={flow ? "Flow" : "Script"}
             hint={
               list.length === 0
                 ? flow
@@ -714,7 +733,7 @@ function stepParts({
             }
             value={step.path}
             options={[
-              { value: "", label: flow ? "Choose a workflow" : "Choose a script" },
+              { value: "", label: flow ? "Choose a flow" : "Choose a script" },
               ...(step.path && !chosen ? [{ value: step.path, label: step.path }] : []),
               ...list.map((one) => ({
                 value: one.path,
@@ -969,7 +988,7 @@ function confirmFields(ctx: ActionContext) {
 
 /**
  * A step as one sentence (board 9). A record update already is chips ("[Status] becomes [Paid]").
- * A workflow, script, page or removal is one chip that opens its small editor. The rest is words,
+ * A flow, script, page or removal is one chip that opens its small editor. The rest is words,
  * and the card opens on a click to show what the words do not reach.
  */
 function sentenceOf(
@@ -1043,20 +1062,28 @@ export function ActionEditor({
   /** Left of the trigger line. Default: a bolt. */
   trigger?: ReactNode;
 }) {
+  const chosen = useChosenGroups();
   const ctx = actionContext(env);
   const current: Action = action ?? { steps: [] };
   const asked = current.confirm?.ask ?? [];
   const put = (next: Action, key?: string) =>
     onChange(
-      !next.confirm && next.steps.length === 0 && !next.when && !next.runBy ? undefined : next,
+      !next.confirm && next.steps.length === 0 && !next.when && !next.runBy && !next.done
+        ? undefined
+        : next,
       key,
     );
   const stepKeys = useStepKeys(current.steps.length);
   const kinds = stepKindsFor(ctx);
   const firstPage = env.pages[0]?.id;
   const addStep = (step: Step) => {
-    stepKeys.keys.current = [...stepKeys.keys.current, stepKeys.fresh()];
-    put(withSteps(current, [...current.steps, step]));
+    const at = addedAt(current.steps, step);
+    stepKeys.keys.current = [
+      ...stepKeys.keys.current.slice(0, at),
+      stepKeys.fresh(),
+      ...stepKeys.keys.current.slice(at),
+    ];
+    put(withSteps(current, [...current.steps.slice(0, at), step, ...current.steps.slice(at)]));
   };
   const items = [
     ...(!current.confirm && ctx.surface !== "dashboard"
@@ -1211,8 +1238,24 @@ export function ActionEditor({
           </span>
         </p>
       ) : null}
+      {count > 0 ? (
+        <TextField
+          name={`${id}-done`}
+          label="When it is done, say"
+          hint="A notice after every step has worked. Leave it empty to say nothing."
+          required={false}
+          value={current.done ?? ""}
+          maxLength={300}
+          onChange={(text) => {
+            const { done: _before, ...rest } = current;
+            put(text.trim() === "" ? rest : { ...rest, done: text }, `${id}-done`);
+          }}
+        />
+      ) : null}
       {current.steps.length > 0 ? (
-        <p className="m-0 text-body-sm text-ink-muted">{grantWords(current, ctx)}</p>
+        <p className="m-0 text-body-sm text-ink-muted">
+          {grantWords(current, ctx, Object.fromEntries(chosen.map((one) => [one.path, one.name])))}
+        </p>
       ) : null}
     </div>
   );

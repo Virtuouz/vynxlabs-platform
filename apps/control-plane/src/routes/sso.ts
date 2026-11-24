@@ -39,7 +39,18 @@ import {
   updateProvider,
 } from "../kernel/sso/providers.js";
 import { samlMetadata } from "../kernel/sso/saml.js";
-import { AnyObject, Id, iso, isoOrNull, NoContent, NullableId, NullableTime } from "./shared.js";
+import { listOf, PageQuery, pageOf } from "../pagination.js";
+import {
+  AnyObject,
+  Id,
+  iso,
+  isoOrNull,
+  NoContent,
+  NullableId,
+  NullableTime,
+  pageArgs,
+  toPage,
+} from "./shared.js";
 
 const NullableString = Type.Union([Type.String(), Type.Null()]);
 const ProviderView = Type.Object({
@@ -84,6 +95,10 @@ const DomainView = Type.Object({
   verifiedAt: NullableTime,
   checkedAt: NullableTime,
   problem: NullableString,
+  recordGoneAt: Type.Union([NullableTime], {
+    description:
+      "When a check first did not find the record of a domain that was proved. It stays proved, from `verifiedAt`; this says it may no longer be. Empty while the record is found.",
+  }),
   record: Type.Union([Type.Object({ name: Type.String(), value: Type.String() }), Type.Null()], {
     description: "The TXT record that proves the domain. Null for a provider of the instance.",
   }),
@@ -96,7 +111,15 @@ const GroupMap = Type.Object({
   }),
   groupId: Id,
 });
-const GroupMapView = Type.Object({ value: Type.String(), groupId: Id, groupName: Type.String() });
+const GroupMapView = Type.Object({
+  value: Type.String(),
+  groupId: Id,
+  groupName: Type.String(),
+  managedBy: Type.Union([Type.Literal("hand"), Type.Literal("release")], {
+    description:
+      "`release` for a mapping an access change made: it is changed by another access change, not here.",
+  }),
+});
 const LinkView = Type.Object({
   id: Id,
   subject: Type.String(),
@@ -111,7 +134,12 @@ const _ProviderParams = Type.Object({ t: Type.Optional(Id), p: Id });
 const Settings = {
   name: Type.Optional(Type.String({ minLength: 1, maxLength: 80 })),
   config: Type.Optional(AnyObject),
-  clientSecret: Type.Optional(Type.String({ minLength: 1, maxLength: 4000 })),
+  clientSecret: Type.Optional(
+    Type.Union([Type.String({ minLength: 1, maxLength: 4000 }), Type.Null()], {
+      description:
+        "OIDC. Leave out to keep the one stored. `null` removes it: the client is then a public one, and PKCE protects the exchange.",
+    }),
+  ),
   enabled: Type.Optional(Type.Boolean()),
   enforce: Type.Optional(Type.Boolean()),
   provision: Type.Optional(Type.Boolean()),
@@ -166,6 +194,7 @@ export function ssoRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         verified_at: Date | null;
         checked_at: Date | null;
         check_error: string | null;
+        record_gone_at: Date | null;
       },
     ) => ({
       id: row.id,
@@ -174,6 +203,7 @@ export function ssoRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       verifiedAt: isoOrNull(row.verified_at),
       checkedAt: isoOrNull(row.checked_at),
       problem: row.check_error,
+      recordGoneAt: isoOrNull(row.record_gone_at),
       record: provider.tenantId ? challengeOf(kernel, provider.tenantId, row.domain) : null,
     });
 
@@ -203,9 +233,10 @@ export function ssoRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           config: { access: read },
           schema: {
             summary: `The identity providers of ${of}`,
+            description: `The providers that people at ${of} may sign in through, with their settings and never their secrets.`,
             tags,
             params: ListParams,
-            response: { 200: Type.Object({ items: Type.Array(ProviderView) }) },
+            response: { 200: listOf(ProviderView) },
           },
         },
         async ({ params }) => ({
@@ -241,6 +272,11 @@ export function ssoRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         },
         async ({ ctx, params, body }, reply) => {
           const tenantId = tenantOf(params as { t?: string });
+          // Everyone the provider makes is given this role: whoever sets it needs the right
+          // to bind it, as `POST /bindings` asks.
+          if (body.defaultRoleId && tenantId !== null) {
+            await ctx.authorize("binding:write", { tenantId });
+          }
           const created = await ctx.mutate(async (trx, audit) => {
             const made = await createProvider(
               kernel,
@@ -249,7 +285,7 @@ export function ssoRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               { tenantId, audience: body.audience, protocol: body.protocol },
               body,
             );
-            if (isOidc(made)) await reachable(made, body.clientSecret);
+            if (isOidc(made)) await reachable(made, body.clientSecret ?? undefined);
             return made;
           });
           return reply.code(201).send(await view(created));
@@ -262,6 +298,7 @@ export function ssoRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           config: { access: read },
           schema: {
             summary: "One identity provider",
+            description: "The provider's settings, without its secret.",
             tags,
             params: Params,
             response: { 200: ProviderView },
@@ -279,8 +316,10 @@ export function ssoRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             description:
               `${CONFIG_DOC} Settings left out of \`config\` keep their values. Turning a ` +
               "provider of members on needs a proved domain. `enforce` refuses passwords for " +
-              "the people the provider covers; the people who run the instance keep theirs. " +
-              "Saving turns a paused provider back on.",
+              "the people the provider covers, and ends their open sessions at once, except the caller's; " +
+              "the people who run the instance keep their passwords and sessions. Turning a " +
+              "provider off does not stop a directory pushing people to it. " +
+              "Turning a paused provider on, or changing its settings, turns it back on; a rename does not.",
             tags,
             params: Params,
             body: Type.Object(Settings),
@@ -289,8 +328,15 @@ export function ssoRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         },
         async ({ ctx, params, body }) => {
           const current = await provider(params as { p: string });
+          if (
+            body.defaultRoleId &&
+            body.defaultRoleId !== current.defaultRoleId &&
+            current.tenantId !== null
+          ) {
+            await ctx.authorize("binding:write", { tenantId: current.tenantId });
+          }
           const updated = await ctx.mutate(async (trx, audit) => {
-            const saved = await updateProvider(kernel, trx, audit, current, body);
+            const saved = await updateProvider(kernel, trx, audit, current, body, ctx.principal);
             if (isOidc(saved) && (body.config !== undefined || body.clientSecret !== undefined)) {
               await reachable(
                 saved,
@@ -367,9 +413,10 @@ export function ssoRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           config: { access: read },
           schema: {
             summary: "The email domains a provider signs in",
+            description: "A person whose email is at one of these domains is sent to the provider.",
             tags,
             params: Params,
-            response: { 200: Type.Object({ items: Type.Array(DomainView) }) },
+            response: { 200: listOf(DomainView) },
           },
         },
         async ({ params }) => {
@@ -437,6 +484,12 @@ export function ssoRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                   ? null
                   : `No TXT record ${record?.name} with the value ${record?.value} was found.`,
                 ...(met && !domain.verified_at ? { verified_at: new Date() } : {}),
+                // A record not found after it was proved is said apart, from the first time it was missed.
+                record_gone_at: met
+                  ? null
+                  : domain.verified_at
+                    ? (domain.record_gone_at ?? new Date())
+                    : null,
               })
               .where("id", "=", domain.id)
               .returningAll()
@@ -452,6 +505,19 @@ export function ssoRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               tenantId: current.tenantId,
               details: { domain: domain.domain, provider: current.name, verified: met },
             });
+            if (!met && domain.verified_at && !domain.record_gone_at) {
+              await audit({
+                action: "identity_domain.record_gone",
+                targetType: "identity_domain",
+                targetId: domain.id,
+                tenantId: current.tenantId,
+                details: {
+                  domain: domain.domain,
+                  provider: current.name,
+                  verifiedAt: domain.verified_at.toISOString(),
+                },
+              });
+            }
             return updated;
           });
           return domainView(current, row);
@@ -517,13 +583,17 @@ export function ssoRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           config: { access: read },
           schema: {
             summary: "The people tied to a provider",
+            description:
+              "The people whose sign-in the provider has been used for, a page at a time.",
             tags,
             params: Params,
-            response: { 200: Type.Object({ items: Type.Array(LinkView) }) },
+            querystring: PageQuery,
+            response: { 200: pageOf(LinkView) },
           },
         },
-        async ({ params }) => {
+        async ({ params, query }) => {
           const current = await provider(params as { p: string });
+          const args = pageArgs(query);
           const rows = await db
             .selectFrom("identity_link")
             .leftJoin("member", (join) =>
@@ -548,11 +618,17 @@ export function ssoRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               "end_user.name as end_user_name",
             ])
             .where("identity_link.provider_id", "=", current.id)
+            .$if(args.after !== undefined, (q) =>
+              q.where("identity_link.id", ">", args.after as string),
+            )
             .orderBy("identity_link.id")
-            .limit(1000)
+            .limit(args.limit + 1)
             .execute();
-          return {
-            items: rows.map((row) => ({
+          return toPage(
+            rows,
+            args,
+            (row) => row.id,
+            (row) => ({
               id: row.id,
               subject: row.subject,
               principalType: row.principal_type,
@@ -561,8 +637,8 @@ export function ssoRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               name: row.member_name ?? row.end_user_name ?? null,
               createdAt: iso(row.created_at),
               lastSignedInAt: isoOrNull(row.last_signed_in_at),
-            })),
-          };
+            }),
+          );
         },
       );
 
@@ -615,6 +691,7 @@ export function ssoRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             "identity_group_map.claim_value",
             "identity_group_map.member_group_id",
             "identity_group_map.end_user_group_id",
+            "identity_group_map.managed_by",
             "principal_group.name as member_group",
             "end_user_group.name as end_user_group",
           ])
@@ -626,6 +703,7 @@ export function ssoRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           value: row.claim_value,
           groupId: (row.member_group_id ?? row.end_user_group_id) as string,
           groupName: row.member_group ?? row.end_user_group ?? "",
+          managedBy: row.managed_by,
         }));
       };
 
@@ -635,9 +713,10 @@ export function ssoRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           config: { access: read },
           schema: {
             summary: "Which of the provider's groups put people in which groups here",
+            description: "Each map from a group the provider sends to a group here.",
             tags,
             params: Params,
-            response: { 200: Type.Object({ items: Type.Array(GroupMapView) }) },
+            response: { 200: listOf(GroupMapView) },
           },
         },
         async ({ params }) => ({ items: await maps(await provider(params as { p: string })) }),
@@ -657,15 +736,28 @@ export function ssoRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             tags,
             params: Params,
             body: Type.Object({ items: Type.Array(GroupMap, { maxItems: 500 }) }),
-            response: { 200: Type.Object({ items: Type.Array(GroupMapView) }) },
+            response: { 200: listOf(GroupMapView) },
           },
         },
         async ({ ctx, params, body }) => {
           const current = await provider(params as { p: string });
           const tenantId = current.tenantId as string;
           const forMembers = current.audience === "members";
+          const wanted = [...new Set(body.items.map((item) => item.groupId))];
+          // The next sign-in puts people in these groups: that is changing the group, and
+          // what the group holds is given to them. Emptying the mapping asks for neither.
+          if (wanted.length > 0) {
+            await ctx.authorize(forMembers ? "group:write" : "end_user_group:write", { tenantId });
+            const holds = await db
+              .selectFrom("binding")
+              .select("id")
+              .where("tenant_id", "=", tenantId)
+              .where("principal_type", "=", forMembers ? "group" : "end_user_group")
+              .where("principal_id", "in", wanted)
+              .executeTakeFirst();
+            if (holds) await ctx.authorize("binding:write", { tenantId });
+          }
           await ctx.mutate(async (trx, audit) => {
-            const wanted = [...new Set(body.items.map((item) => item.groupId))];
             const known =
               wanted.length === 0
                 ? []
@@ -680,7 +772,7 @@ export function ssoRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                 `A group in the mapping is not a group of ${forMembers ? "members" : "end users"} of this tenant.`,
               );
             }
-            // What a release of the tenant's access mapped is that release's: it is neither
+            // What an access change mapped is that change's: it is neither
             // removed here nor written a second time. The list sent back includes it.
             await trx
               .deleteFrom("identity_group_map")
@@ -728,7 +820,7 @@ export function ssoRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     }
 
     /** Reads an OIDC provider's own description, so a wrong issuer is said when it is saved. */
-    async function reachable(provider: Provider, clientSecret: string | undefined) {
+    async function reachable(provider: Provider, clientSecret: string | null | undefined) {
       if (!isOidc(provider)) return;
       await checkOidc(provider, clientSecret ? { clientSecret } : {}).catch(asProblem);
     }
@@ -904,7 +996,12 @@ export function ssoRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       "/sso/:p/callback",
       {
-        config: { access: access.public, rateLimit: SSO_LIMIT },
+        config: {
+          access: access.publicWith(
+            "Needs the `state` of a sign-in that this instance began, which the provider sends back.",
+          ),
+          rateLimit: SSO_LIMIT,
+        },
         schema: {
           summary: "Where an OIDC provider sends a member back",
           description:
@@ -965,7 +1062,12 @@ export function ssoRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       posted.post(
         "/sso/:p/acs",
         {
-          config: { access: access.public, rateLimit: SSO_LIMIT },
+          config: {
+            access: access.publicWith(
+              "Needs a SAML response from the provider for a sign-in that this instance began.",
+            ),
+            rateLimit: SSO_LIMIT,
+          },
           schema: {
             summary: "Where a SAML provider posts a member's sign-in",
             description:

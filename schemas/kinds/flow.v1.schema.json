@@ -6,10 +6,12 @@
   "properties": {
     "description": {
       "type": "string",
-      "maxLength": 500
+      "maxLength": 500,
+      "description": "What it is for, in plain text."
     },
     "nodes": {
       "type": "object",
+      "description": "The steps of the flow, by name. Each is of one type, and what it may say depends on it.",
       "propertyNames": {
         "pattern": "^[a-z][a-z0-9_]*$",
         "maxLength": 63
@@ -20,17 +22,28 @@
         "oneOf": [
           {
             "type": "object",
+            "description": "Where a flow starts. A flow may have several, and a run begins at the one that fired. What starts it is its `trigger`, one of the starts listed on the starts page.",
             "properties": {
               "type": {
-                "const": "trigger"
+                "const": "trigger",
+                "description": "Always `trigger`."
+              },
+              "key": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]*$",
+                "maxLength": 63,
+                "description": "What names this start for as long as the flow lives. A webhook's address, a form's address, a pause and the time it last fired follow the key when the step is renamed. Left out, the step's own name is the key."
               },
               "trigger": {
+                "description": "How the flow starts, and what it is given.",
                 "oneOf": [
                   {
                     "type": "object",
+                    "description": "Started from the console, the API, the command line, an agent or another flow. Its `input` is a JSON Schema the input must match.",
                     "properties": {
                       "type": {
-                        "const": "manual"
+                        "const": "manual",
+                        "description": "Always `manual`."
                       },
                       "input": {
                         "type": "object",
@@ -44,9 +57,11 @@
                   },
                   {
                     "type": "object",
+                    "description": "Starts when its address is called. It may check a signature, answer at once or hold the request open for an Answer step.",
                     "properties": {
                       "type": {
-                        "const": "webhook"
+                        "const": "webhook",
+                        "description": "Always `webhook`."
                       },
                       "source": {
                         "type": "string",
@@ -69,7 +84,8 @@
                             "enum": [
                               "hmac-sha256",
                               "hmac-sha1"
-                            ]
+                            ],
+                            "description": "The way the signature is made: HMAC with SHA-256, or with SHA-1."
                           },
                           "header": {
                             "type": "string",
@@ -144,17 +160,21 @@
                   },
                   {
                     "type": "object",
+                    "description": "Starts at times given as a cron line, in a time zone. While the last run from it is still going, `overlap` says whether a time is passed over or starts another run.",
                     "properties": {
                       "type": {
-                        "const": "schedule"
+                        "const": "schedule",
+                        "description": "Always `schedule`."
                       },
                       "cron": {
                         "type": "string",
-                        "maxLength": 120
+                        "maxLength": 120,
+                        "description": "Five-field cron expression."
                       },
                       "timezone": {
                         "type": "string",
-                        "maxLength": 64
+                        "maxLength": 64,
+                        "description": "IANA time zone. Default UTC."
                       },
                       "source": {
                         "type": "string",
@@ -188,20 +208,23 @@
                   },
                   {
                     "type": "object",
+                    "description": "Starts when an event of the workspace, or one Volvel publishes, is published, and the optional `filter` gives true.",
                     "properties": {
                       "type": {
-                        "const": "event"
+                        "const": "event",
+                        "description": "Always `event`."
                       },
                       "event": {
                         "type": "string",
                         "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
-                        "maxLength": 255
+                        "maxLength": 255,
+                        "description": "The event to listen for."
                       },
                       "filter": {
                         "type": "string",
                         "minLength": 1,
                         "maxLength": 2000,
-                        "description": "A CEL expression."
+                        "description": "CEL over `event`. The flow starts only when it is true."
                       },
                       "tags": {
                         "type": "array",
@@ -222,21 +245,26 @@
                   },
                   {
                     "type": "object",
+                    "description": "Starts when someone fills in a page Volvel serves from the fields the start lists.",
                     "properties": {
                       "type": {
-                        "const": "form"
+                        "const": "form",
+                        "description": "Always `form`."
                       },
                       "title": {
                         "type": "string",
                         "minLength": 1,
-                        "maxLength": 120
+                        "maxLength": 120,
+                        "description": "The heading of the form's page."
                       },
                       "description": {
                         "type": "string",
-                        "maxLength": 1000
+                        "maxLength": 1000,
+                        "description": "What is said under the heading, to whoever fills the form in."
                       },
                       "fields": {
                         "type": "array",
+                        "description": "What the form asks, in order. Each answer is a field of the input.",
                         "minItems": 1,
                         "maxItems": 30,
                         "items": {
@@ -251,7 +279,8 @@
                             "label": {
                               "type": "string",
                               "minLength": 1,
-                              "maxLength": 120
+                              "maxLength": 120,
+                              "description": "What the field is called on the page."
                             },
                             "type": {
                               "enum": [
@@ -262,14 +291,17 @@
                                 "date",
                                 "select",
                                 "checkbox"
-                              ]
+                              ],
+                              "description": "What kind of answer it takes: a line of text, several lines, an email address, a number, a date, one of a list or a checkbox."
                             },
                             "required": {
-                              "type": "boolean"
+                              "type": "boolean",
+                              "description": "Whether the form can be sent with it empty."
                             },
                             "help": {
                               "type": "string",
-                              "maxLength": 300
+                              "maxLength": 300,
+                              "description": "A line under the field that says what to put in it."
                             },
                             "options": {
                               "type": "array",
@@ -295,7 +327,8 @@
                       "submitLabel": {
                         "type": "string",
                         "minLength": 1,
-                        "maxLength": 40
+                        "maxLength": 40,
+                        "description": "What the button that sends the form says."
                       },
                       "success": {
                         "type": "string",
@@ -328,20 +361,23 @@
           },
           {
             "type": "object",
+            "description": "Runs a script of the workspace, or a node, on a worker, with the input the step works out. The flow goes on when the script ends, and takes the error path when it fails.",
             "properties": {
               "type": {
-                "const": "script"
+                "const": "script",
+                "description": "Always `script`."
               },
               "script": {
                 "type": "string",
                 "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
-                "maxLength": 255
+                "maxLength": 255,
+                "description": "The script to run."
               },
               "input": {
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 2000,
-                "description": "A CEL expression."
+                "description": "One expression for the whole input of the script."
               },
               "inputs": {
                 "type": "object",
@@ -395,7 +431,8 @@
                     "description": "Events the script may reach in this step, beyond what it declares itself."
                   }
                 },
-                "additionalProperties": false
+                "additionalProperties": false,
+                "description": "What the script may reach in this step, beyond what it declares itself: a connection, a table or an event, as the script says it takes."
               }
             },
             "required": [
@@ -406,9 +443,11 @@
           },
           {
             "type": "object",
+            "description": "Works out values from expressions and names them, so that later steps read them in one place.",
             "properties": {
               "type": {
-                "const": "set"
+                "const": "set",
+                "description": "Always `set`."
               },
               "values": {
                 "type": "object",
@@ -419,7 +458,8 @@
                   "description": "A CEL expression."
                 },
                 "minProperties": 1,
-                "maxProperties": 50
+                "maxProperties": 50,
+                "description": "An expression for each value, by the name it is given."
               }
             },
             "required": [
@@ -430,12 +470,15 @@
           },
           {
             "type": "object",
+            "description": "Goes one way. The cases are tried in order, and the flow leaves by the first whose `when` is true, or by `otherwise` when none is.",
             "properties": {
               "type": {
-                "const": "branch"
+                "const": "branch",
+                "description": "Always `branch`."
               },
               "cases": {
                 "type": "array",
+                "description": "The ways the flow may go, tried in order. The flow leaves by the first whose `when` is true, or by `otherwise` when none is.",
                 "minItems": 1,
                 "maxItems": 20,
                 "items": {
@@ -444,13 +487,14 @@
                     "name": {
                       "type": "string",
                       "pattern": "^[a-z][a-z0-9_]*$",
-                      "maxLength": 63
+                      "maxLength": 63,
+                      "description": "What an edge names to leave by this case."
                     },
                     "when": {
                       "type": "string",
                       "minLength": 1,
                       "maxLength": 2000,
-                      "description": "A CEL expression."
+                      "description": "An expression that gives true when the flow goes this way."
                     }
                   },
                   "required": [
@@ -469,14 +513,17 @@
           },
           {
             "type": "object",
+            "description": "Answers the request of a webhook whose flow holds it open. Only a flow whose webhook says `respond: flow` may have one.",
             "properties": {
               "type": {
-                "const": "respond"
+                "const": "respond",
+                "description": "Always `respond`."
               },
               "status": {
                 "type": "integer",
                 "minimum": 200,
-                "maximum": 599
+                "maximum": 599,
+                "description": "The status the request is answered with. Default 200."
               },
               "headers": {
                 "type": "object",
@@ -507,25 +554,29 @@
           },
           {
             "type": "object",
+            "description": "Runs a script or a flow once for each item of a list, of at most 1000 items, with a limit on how many run at once. The flow goes on when every item has ended.",
             "properties": {
               "type": {
-                "const": "foreach"
+                "const": "foreach",
+                "description": "Always `foreach`."
               },
               "items": {
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 2000,
-                "description": "A CEL expression."
+                "description": "An expression that gives the list to go through."
               },
               "script": {
                 "type": "string",
                 "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
-                "maxLength": 255
+                "maxLength": 255,
+                "description": "The script to run for each item."
               },
               "flow": {
                 "type": "string",
                 "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
-                "maxLength": 255
+                "maxLength": 255,
+                "description": "The flow to run for each item."
               },
               "flowFrom": {
                 "type": "string",
@@ -549,12 +600,13 @@
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 2000,
-                "description": "A CEL expression."
+                "description": "An expression for what each run is given, worked out with `item` and `index`."
               },
               "concurrency": {
                 "type": "integer",
                 "minimum": 1,
-                "maximum": 20
+                "maximum": 20,
+                "description": "How many items run at once."
               },
               "continueOnError": {
                 "type": "boolean",
@@ -608,9 +660,11 @@
           },
           {
             "type": "object",
+            "description": "Waits for every path that leads into it before the flow goes on.",
             "properties": {
               "type": {
-                "const": "join"
+                "const": "join",
+                "description": "Always `join`."
               }
             },
             "required": [
@@ -620,14 +674,17 @@
           },
           {
             "type": "object",
+            "description": "Pauses the flow for a number of seconds. No worker is held while it waits.",
             "properties": {
               "type": {
-                "const": "delay"
+                "const": "delay",
+                "description": "Always `delay`."
               },
               "seconds": {
                 "type": "integer",
                 "minimum": 1,
-                "maximum": 2592000
+                "maximum": 2592000,
+                "description": "How long to wait, in seconds."
               }
             },
             "required": [
@@ -638,25 +695,29 @@
           },
           {
             "type": "object",
+            "description": "Pauses the flow until a person with permission decides. It goes on when the decision is to approve, and takes the error path, with the reason given, when it is to reject.",
             "properties": {
               "type": {
-                "const": "approval"
+                "const": "approval",
+                "description": "Always `approval`."
               },
               "title": {
                 "type": "string",
                 "minLength": 1,
-                "maxLength": 200
+                "maxLength": 200,
+                "description": "What is asked of the person who decides."
               },
               "detail": {
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 2000,
-                "description": "A CEL expression."
+                "description": "An expression for the details shown beside the question."
               },
               "timeoutSeconds": {
                 "type": "integer",
                 "minimum": 1,
-                "maximum": 2592000
+                "maximum": 2592000,
+                "description": "How long the approval waits, in seconds, before it fails."
               },
               "approvers": {
                 "type": "object",
@@ -665,6 +726,7 @@
                   "groups": {
                     "type": "array",
                     "maxItems": 20,
+                    "description": "Groups whose members may decide.",
                     "items": {
                       "type": "string",
                       "minLength": 1,
@@ -674,6 +736,7 @@
                   "roles": {
                     "type": "array",
                     "maxItems": 20,
+                    "description": "Roles whose holders may decide.",
                     "items": {
                       "type": "string",
                       "minLength": 1,
@@ -699,14 +762,17 @@
           },
           {
             "type": "object",
+            "description": "Starts another flow of the workspace, from its manual start, and waits for it to end.",
             "properties": {
               "type": {
-                "const": "subflow"
+                "const": "subflow",
+                "description": "Always `subflow`."
               },
               "flow": {
                 "type": "string",
                 "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
-                "maxLength": 255
+                "maxLength": 255,
+                "description": "The flow to run."
               },
               "flowFrom": {
                 "type": "string",
@@ -730,7 +796,7 @@
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 2000,
-                "description": "A CEL expression."
+                "description": "An expression for the input the other flow is started with."
               }
             },
             "required": [
@@ -740,15 +806,17 @@
           },
           {
             "type": "object",
+            "description": "Ends the flow as failed, with a message.",
             "properties": {
               "type": {
-                "const": "fail"
+                "const": "fail",
+                "description": "Always `fail`."
               },
               "message": {
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 2000,
-                "description": "A CEL expression."
+                "description": "An expression that gives the message the flow fails with."
               }
             },
             "required": [
@@ -763,23 +831,28 @@
     "edges": {
       "type": "array",
       "maxItems": 1000,
+      "description": "Which step goes on to which. A step with no edge out is the end of that path.",
       "items": {
         "type": "object",
         "properties": {
           "from": {
             "type": "string",
-            "pattern": "^[a-z][a-z0-9_]*$"
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "description": "The step it leaves."
           },
           "to": {
             "type": "string",
-            "pattern": "^[a-z][a-z0-9_]*$"
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "description": "The step it goes to."
           },
           "output": {
             "type": "string",
-            "pattern": "^[a-z][a-z0-9_]*$"
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "description": "For a branch: the case it leaves by, or `otherwise`."
           },
           "error": {
-            "type": "boolean"
+            "type": "boolean",
+            "description": "Taken when the step it leaves fails, and only then."
           }
         },
         "required": [
@@ -801,10 +874,12 @@
         "type": "object",
         "properties": {
           "x": {
-            "type": "integer"
+            "type": "integer",
+            "description": "Across, in pixels."
           },
           "y": {
-            "type": "integer"
+            "type": "integer",
+            "description": "Down, in pixels."
           }
         },
         "required": [

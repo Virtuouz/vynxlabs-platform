@@ -1,6 +1,6 @@
 import { type DocEntry, type DocIssue, readPage } from "./page.js";
 import { ABOUT_KINDS, type AboutKind } from "./schema.js";
-import { type BuildOptions, buildDocSet, type DocSet } from "./set.js";
+import { type BuildOptions, buildDocSet, type DocSet, PRODUCT_PREFIX } from "./set.js";
 import { clashes } from "./stack.js";
 
 /**
@@ -174,6 +174,7 @@ export function buildApp(
   }
   const built = buildDocSet(entries, {
     resource: resourceChecker(resources),
+    reservedPrefix: PRODUCT_PREFIX,
     ...(options.product
       ? { reservedTerms: options.product.terms, reservedTopics: options.product.topics }
       : {}),
@@ -189,6 +190,17 @@ export function buildApp(
       // One page's problems together, in the order they are met reading it.
       .sort((a, b) => a.path.localeCompare(b.path) || a.line - b.line || a.column - b.column),
   };
+}
+
+function definedTerms(resources: readonly ResourceLike[]): Set<string> {
+  const defined = new Set<string>();
+  for (const resource of resources) {
+    if (resource.kind !== "doc") continue;
+    for (const term of readPage(resource.path, sourceOf(resource)).entry.frontmatter.terms ?? []) {
+      defined.add(term.id);
+    }
+  }
+  return defined;
 }
 
 const said = (issue: DocIssue) =>
@@ -255,13 +267,7 @@ export function checkWorkspaceDocs(
   }
 
   // A term of one app can be used on a page of another: terms are the workspace's.
-  const defined = new Set<string>();
-  for (const resource of resources) {
-    if (resource.kind !== "doc") continue;
-    for (const term of readPage(resource.path, sourceOf(resource)).entry.frontmatter.terms ?? []) {
-      defined.add(term.id);
-    }
-  }
+  const defined = definedTerms(resources);
 
   const built: BuiltApp[] = [];
   for (const app of apps) {
@@ -290,6 +296,22 @@ export function checkWorkspaceDocs(
     );
   }
   return problems;
+}
+
+/**
+ * What is worth knowing about a workspace's documentation that stops nothing:
+ * each warning as a line that names its page. A deploy is never refused for one.
+ */
+export function workspaceDocsWarnings(
+  resources: readonly ResourceLike[],
+  options: WorkspaceOptions = {},
+): string[] {
+  const defined = definedTerms(resources);
+  return docsApps(resources).flatMap((app) =>
+    buildApp(app, resources, { ...options, knownTerms: defined })
+      .issues.filter((issue) => issue.severity === "warning")
+      .map(said),
+  );
 }
 
 export { ABOUT_KINDS, type AboutKind };

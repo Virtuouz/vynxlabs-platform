@@ -3,6 +3,7 @@ import { isErrorCode } from "@volvel/manifest";
 import {
   type Dialogs,
   DialogsProvider,
+  setFailureExplainer,
   type ToastOptions,
   ToastProvider,
   type Toasts,
@@ -11,7 +12,8 @@ import {
   useToast,
 } from "@volvel/ui";
 import { type ReactNode, useState } from "react";
-import { ApiError, makeQueryClient, setActiveClient } from "./api.ts";
+import { ApiError, codeOfWords, makeQueryClient, setActiveClient, withCode } from "./api.ts";
+import { ErrorMeans, errorDocsHref } from "./help/ErrorMeans.tsx";
 import { openHelp } from "./help/store.ts";
 import { navigate, setLeaveQuestion } from "./router.tsx";
 
@@ -77,6 +79,23 @@ export const ask: Dialogs = {
  * server's request ID, which whoever runs the instance can look up.
  */
 export function failureText(error: unknown): string {
+  return withCode(failureWords(error), error);
+}
+
+// A failure shown inside a dialog says the same as the one a toast would, and leads on in the same way.
+setFailureExplainer((words) => {
+  const code = codeOfWords(words);
+  return code
+    ? {
+        label: "What does this mean?",
+        onClick: () => openHelp(`errors#${code}`),
+        // Inside a dialog or sheet the panel would open behind it: the words are shown there instead.
+        inline: { body: () => <ErrorMeans code={code} />, href: errorDocsHref(code) },
+      }
+    : undefined;
+});
+
+function failureWords(error: unknown): string {
   // Whatever was thrown (a string, an object with no message, nothing at all), a person is told something.
   if (typeof error === "string" && error.trim()) return error.trim();
   const failure = (error ?? {}) as Partial<ApiError> & Error;
@@ -94,7 +113,7 @@ export function failureText(error: unknown): string {
  */
 export function takenText(error: unknown): string | undefined {
   return (error as Partial<ApiError> | undefined)?.code === "path_taken"
-    ? "Something already exists at this path. Choose another, or open that one."
+    ? withCode("Something already exists at this path. Choose another, or open that one.", error)
     : undefined;
 }
 
@@ -108,8 +127,28 @@ function explained(error: unknown): ToastOptions {
   if (!(error instanceof ApiError) || !isErrorCode(error.code)) return {};
   const code = error.code;
   return {
-    action: { label: "What does this mean?", onClick: () => openHelp(`reference/errors#${code}`) },
+    action: { label: "What does this mean?", onClick: () => openHelp(`errors#${code}`) },
   };
+}
+
+/** Whether a change was asked for and waits for a second person: nothing failed and nothing changed yet. */
+export function isWaiting(error: unknown): boolean {
+  return error instanceof ApiError && error.code === "awaiting_approval";
+}
+
+/**
+ * Says that a change waits, in a toast that leads to Access changes. For a dialog that asked for a
+ * change: when this returns true the dialog is done and closes, and asking again would only
+ * make a second waiting access change. Returns false for any other error, which the dialog shows.
+ */
+export function noteWaiting(error: unknown): boolean {
+  if (!isWaiting(error)) return false;
+  const tenant = /^\/t\/([^/]+)/.exec(window.location.pathname)?.[1];
+  need(toasts).info(failureText(error), {
+    title: "Waits for approval",
+    ...(tenant ? { link: { label: "Open Access changes", href: `/t/${tenant}/releases` } } : {}),
+  });
+  return true;
 }
 
 export const notify = {
@@ -117,7 +156,9 @@ export const notify = {
   success: (message: string, options?: ToastOptions) => need(toasts).success(message, options),
   info: (message: string, options?: ToastOptions) => need(toasts).info(message, options),
   error: (error: unknown, options?: ToastOptions) =>
-    need(toasts).danger(failureText(error), { ...explained(error), ...options }),
+    noteWaiting(error)
+      ? 0
+      : need(toasts).danger(failureText(error), { ...explained(error), ...options }),
 };
 
 /** Puts text on the clipboard and says so. */

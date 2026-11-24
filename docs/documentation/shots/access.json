@@ -1,0 +1,57 @@
+[
+  {
+    "name": "administer/access-groups",
+    "address": "groups",
+    "who": "Maya Brooks, tenant admin",
+    "setup": "handbook",
+    "viewport": "desktop",
+    "ready": "the Groups table is listed",
+    "mask": ["Created column"],
+    "steps": ["open Members & access, then Groups"],
+    "alt": "The Groups tab: the tabs of Members and access, the Create group button and a table of groups with their keys and row buttons."
+  },
+  {
+    "name": "administer/access-list",
+    "address": "access",
+    "who": "Maya Brooks, tenant admin",
+    "setup": "handbook",
+    "viewport": "desktop",
+    "ready": "the bindings table is listed",
+    "mask": [],
+    "steps": ["open Members & access, then Access"],
+    "alt": "The Access tab: filter buttons for Everyone, Members, Groups, Service accounts and End users, and a table of who holds which role and where."
+  },
+  {
+    "name": "administer/access-changes",
+    "address": "releases",
+    "who": "Maya Brooks, tenant admin",
+    "setup": "a tenant with two admins, approval on, and one access change that waits (a group made by one admin)",
+    "viewport": "desktop",
+    "ready": "the row with Waits for approval shows Approve and Decline",
+    "mask": ["When column"],
+    "steps": ["open Members & access, then Access changes"],
+    "alt": "The Access changes tab with one change waiting for approval, its Approve and Decline buttons, and the button to stop asking for a second person."
+  },
+  {
+    "name": "administer/access-end-users",
+    "address": "end-users",
+    "who": "Maya Brooks, tenant admin",
+    "setup": "handbook",
+    "viewport": "desktop",
+    "ready": "the end users table is listed",
+    "mask": ["Last signed in column"],
+    "steps": ["open End users"],
+    "alt": "The End users screen: search box, Invite an end user button, tabs End users and Groups, and a table with email, name, status, groups and last sign-in."
+  },
+  {
+    "name": "console/account-sessions",
+    "address": "/account/api-keys",
+    "who": "Maya Brooks, tenant admin",
+    "setup": "handbook",
+    "viewport": "desktop",
+    "ready": "the Sessions table is listed",
+    "mask": ["Address and Signed in columns"],
+    "steps": ["open the account menu, then Account", "scroll to Sessions"],
+    "alt": "The Account screen: API keys, Profile, Password and the Sessions table with the session in use marked This session."
+  }
+]

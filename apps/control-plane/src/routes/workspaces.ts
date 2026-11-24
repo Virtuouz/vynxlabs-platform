@@ -2,14 +2,19 @@ import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import { newId, sql } from "@volvel/db";
 import { PATH_PATTERN } from "@volvel/manifest";
 import { Type } from "typebox";
-import { check } from "../kernel/authorize.js";
-import { badRequest, conflict, notFound } from "../kernel/errors.js";
-import { access, type WorkspaceRef } from "../kernel/http.js";
+import { refuseDirectProductionWrite } from "../kernel/authoring.js";
+import { boundInside, check } from "../kernel/authorize.js";
+import { refuseMissingTargets, refuseRetiringReferred } from "../kernel/data/apply.js";
+import { badRequest, conflict, HttpError, notFound } from "../kernel/errors.js";
+import { instanceTriggersPaused } from "../kernel/execution/control.js";
+import { access, reachedFromInside, type WorkspaceRef } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
+import { requireStanding } from "../kernel/pages/standing.js";
 import { resolveResource } from "../kernel/resolve.js";
 import { deleteResource, putResource } from "../kernel/resources.js";
 import { setSecret } from "../kernel/secrets.js";
 import { isTimeZone } from "../kernel/zones.js";
+import { listOf } from "../pagination.js";
 import {
   AnyObject,
   Id,
@@ -36,6 +41,10 @@ const Workspace = Type.Object({
     description:
       "While true, no schedule, webhook or event starts anything here. Runs started by hand still work.",
   }),
+  pausedByInstance: Type.Boolean({
+    description:
+      "True while an operator has paused every trigger in the instance, whatever `triggersPaused` says. The operator's reason is not given here.",
+  }),
   concurrencyLimit: Type.Integer({ description: "How many runs may be in progress at once." }),
   timeZone: Type.String({
     description:
@@ -46,6 +55,12 @@ const Workspace = Type.Object({
     notify: Type.Optional(Type.String()),
   }),
   createdAt: Time,
+  onlyInside: Type.Optional(
+    Type.Boolean({
+      description:
+        "True when the caller holds a grant on something inside this workspace and none on the workspace: it is answered the name, slug and kind alone.",
+    }),
+  ),
 });
 interface WorkspaceRow {
   id: string;
@@ -60,7 +75,7 @@ interface WorkspaceRow {
   failure_alert: { script?: string; notify?: string };
   created_at: Date;
 }
-const toWorkspace = (row: WorkspaceRow) => ({
+const toWorkspace = (row: WorkspaceRow, pausedByInstance: boolean) => ({
   id: row.id,
   tenantId: row.tenant_id,
   slug: row.slug,
@@ -68,10 +83,20 @@ const toWorkspace = (row: WorkspaceRow) => ({
   type: row.type,
   linkedWorkspaceId: row.linked_workspace_id,
   triggersPaused: row.triggers_paused,
+  pausedByInstance,
   concurrencyLimit: row.concurrency_limit,
   timeZone: row.time_zone ?? "UTC",
   failureAlert: row.failure_alert,
   createdAt: iso(row.created_at),
+});
+
+/** What the shell draws a workspace from: no link, limit or alert, which are its settings. */
+const shellOf = (whole: ReturnType<typeof toWorkspace>) => ({
+  ...whole,
+  onlyInside: true,
+  linkedWorkspaceId: null,
+  concurrencyLimit: 0,
+  failureAlert: {},
 });
 
 const SecretName = Type.String({ pattern: "^[A-Za-z_][A-Za-z0-9_]*$", maxLength: 127 });
@@ -179,12 +204,17 @@ export function workspaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       "/tenants/:t/workspaces",
       {
-        config: { access: access.custom },
+        config: {
+          access: access.custom(
+            "Lists the workspaces the caller may read. A caller who may read none needs `workspace:read` in the tenant to be answered.",
+          ),
+        },
         schema: {
           summary: "Workspaces the caller can read in a tenant",
+          description: "Each workspace the caller may read, with its kind, dev or production.",
           tags: ["tenancy"],
           params: TenantParams,
-          response: { 200: Type.Object({ items: Type.Array(Workspace) }) },
+          response: { 200: listOf(Workspace) },
         },
       },
       async ({ ctx, params }) => {
@@ -194,21 +224,35 @@ export function workspaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           .where("tenant_id", "=", params.t)
           .orderBy("slug")
           .execute();
+        const byInstance = await instanceTriggersPaused(kernel);
         const whole = await check(db, ctx.principal, "workspace:read", { tenantId: params.t });
         if (whole.allowed) {
           // Goes through authorize so that operator access is recorded.
           await ctx.authorize("workspace:read", { tenantId: params.t });
-          return { items: rows.map(toWorkspace) };
+          return { items: rows.map((row) => toWorkspace(row, byInstance)) };
         }
-        const readable = [];
+        const readable: typeof rows = [];
+        // A workspace where the caller holds a grant on a resource is listed for its name alone.
+        const inside: typeof rows = [];
         for (const row of rows) {
           if (await ctx.allowed("workspace:read", { tenantId: params.t, workspaceId: row.id })) {
             readable.push(row);
+          } else if (await boundInside(db, ctx.principal, params.t, row.id)) {
+            inside.push(row);
           }
         }
         // Nothing readable here: answer exactly as the tenant-level check would.
-        if (readable.length === 0) await ctx.authorize("workspace:read", { tenantId: params.t });
-        return { items: readable.map(toWorkspace) };
+        if (readable.length === 0 && inside.length === 0) {
+          await ctx.authorize("workspace:read", { tenantId: params.t });
+        }
+        const listed = [...readable, ...inside].sort((a, b) => (a.slug < b.slug ? -1 : 1));
+        return {
+          items: listed.map((row) =>
+            inside.includes(row)
+              ? shellOf(toWorkspace(row, byInstance))
+              : toWorkspace(row, byInstance),
+          ),
+        };
       },
     );
 
@@ -268,28 +312,82 @@ export function workspaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           });
           return row;
         });
-        return reply.code(201).send(toWorkspace(workspace));
+        return reply.code(201).send(toWorkspace(workspace, await instanceTriggersPaused(kernel)));
+      },
+    );
+
+    app.get(
+      "/tenants/:t/workspaces/:w/allowed",
+      {
+        config: { access: access.signedIn },
+        schema: {
+          summary: "Which of some permissions the caller holds in a workspace",
+          description:
+            "Asks about the caller only, and answers only the permissions they hold, so a screen can leave out what the server would refuse. A name that is not a permission is not held. At most 20 are asked at once.",
+          tags: ["tenancy"],
+          params: WorkspaceParams,
+          querystring: Type.Object({
+            permissions: Type.String({
+              maxLength: 600,
+              description:
+                "Permission names, separated by commas: `connection:write,secret:write`.",
+            }),
+            kind: Type.Optional(
+              Type.String({
+                maxLength: 60,
+                description:
+                  "With `path`: the resource asked about. A grant given on it alone counts, as it does where the server checks.",
+              }),
+            ),
+            path: Type.Optional(Type.String({ maxLength: 400 })),
+          }),
+          response: { 200: Type.Object({ allowed: Type.Array(Type.String()) }) },
+        },
+      },
+      async ({ ctx, params, query }) => {
+        const asked = [...new Set(query.permissions.split(",").filter(Boolean))].slice(0, 20);
+        const allowed: string[] = [];
+        // A resource that is not there is asked about as the workspace: a grant on nothing is none.
+        const target =
+          query.kind && query.path
+            ? (await resolveResource(db, params.w, query.path, { kind: query.kind }))?.resource
+            : undefined;
+        for (const permission of asked) {
+          if (
+            await ctx.allowed(permission, {
+              tenantId: params.t,
+              workspaceId: params.w,
+              ...(target ? { resourceId: target.id } : {}),
+            })
+          ) {
+            allowed.push(permission);
+          }
+        }
+        return { allowed };
       },
     );
 
     app.get(
       "/tenants/:t/workspaces/:w",
       {
-        config: { access: access.workspace("workspace:read") },
+        config: { access: reachedFromInside(access.workspace("workspace:read")) },
         schema: {
           summary: "One workspace",
+          description:
+            "The workspace's name, its slug and its kind, dev or production. Someone whose only grant is on one resource inside it is answered the name, slug and kind alone: its link, limits and alert are left empty.",
           tags: ["tenancy"],
           params: WorkspaceParams,
           response: { 200: Workspace },
         },
       },
-      async ({ params }) => {
+      async ({ ctx, params }) => {
         const row = await db
           .selectFrom("workspace")
           .selectAll()
           .where("id", "=", params.w)
           .executeTakeFirstOrThrow();
-        return toWorkspace(row);
+        const whole = toWorkspace(row, await instanceTriggersPaused(kernel));
+        return ctx.insideOnly ? shellOf(whole) : whole;
       },
     );
 
@@ -344,6 +442,37 @@ export function workspaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           );
         }
         await checkLink(params.t, current.type, linked, params.w);
+        const notify = body.failureAlert?.notify;
+        if (notify) {
+          // A run's failure is posted over HTTP: say now what would only fail when a run does.
+          // Exact path on purpose: the connection a failure alert names is looked up as declared now.
+          const declared = await db
+            .selectFrom("resource")
+            .select("body")
+            .where("workspace_id", "=", params.w)
+            .where("kind", "=", "connection")
+            .where("path", "=", notify)
+            .executeTakeFirst();
+          const bound = await db
+            .selectFrom("connection_binding")
+            .select("id")
+            .where("workspace_id", "=", params.w)
+            .where("path", "=", notify)
+            .executeTakeFirst();
+          const connector = (declared?.body as { connector?: string } | undefined)?.connector;
+          if (!declared && !bound) {
+            throw badRequest(
+              `${notify} is not a connection of this workspace. Set it up under Connections first.`,
+              [{ path: "/failureAlert/notify", message: "Not a connection." }],
+            );
+          }
+          if (connector !== undefined && connector !== "http") {
+            throw badRequest(
+              `${notify} is a ${connector} connection. A failure is posted to an HTTP connection.`,
+              [{ path: "/failureAlert/notify", message: "Not an HTTP connection." }],
+            );
+          }
+        }
         const row = await ctx.mutate(async (trx, audit) => {
           const updated = await trx
             .updateTable("workspace")
@@ -385,7 +514,7 @@ export function workspaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           });
           return updated;
         });
-        return toWorkspace(row);
+        return toWorkspace(row, await instanceTriggersPaused(kernel));
       },
     );
 
@@ -400,7 +529,7 @@ export function workspaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           description: "Values are never returned by any route.",
           tags: ["secrets"],
           params: WorkspaceParams,
-          response: { 200: Type.Object({ items: Type.Array(Secret) }) },
+          response: { 200: listOf(Secret) },
         },
       },
       async ({ params }) => {
@@ -488,6 +617,8 @@ export function workspaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.workspace("secret:write") },
         schema: {
           summary: "Set a secret",
+          description:
+            "Replaces the secret's value. The value is never read back by this API, only that it is set. Audited.",
           tags: ["secrets"],
           params: Type.Object({ t: Id, w: Id, name: SecretName }),
           body: Type.Object({ value: Type.String({ minLength: 1, maxLength: 65536 }) }),
@@ -520,6 +651,7 @@ export function workspaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.workspace("secret:write") },
         schema: {
           summary: "Delete a secret",
+          description: "Removes the secret and its value. Audited.",
           tags: ["secrets"],
           params: Type.Object({ t: Id, w: Id, name: SecretName }),
           response: { 204: NoContent },
@@ -554,10 +686,12 @@ export function workspaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.workspace("resource:read") },
         schema: {
           summary: "Resources in a workspace",
+          description:
+            "What is deployed in the workspace, by path and kind, with whether the console or a repository manages each.",
           tags: ["resources"],
           params: WorkspaceParams,
           querystring: Type.Object({ kind: Type.Optional(Type.String()) }),
-          response: { 200: Type.Object({ items: Type.Array(Resource) }) },
+          response: { 200: listOf(Resource) },
         },
       },
       async ({ ctx, params, query }) => {
@@ -575,6 +709,7 @@ export function workspaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.workspace("resource:read") },
         schema: {
           summary: "One resource, by path",
+          description: "The resource as it is deployed: its kind, who manages it and its body.",
           tags: ["resources"],
           params: ResourceParams,
           response: { 200: Resource },
@@ -598,7 +733,8 @@ export function workspaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           summary: "Create or update the resource at a path",
           description:
             "The body is validated against the kind's schema. `renameFrom` moves an existing " +
-            "resource to this path and keeps its ID.",
+            "resource to this path and keeps its ID. `create` says this is a new resource: " +
+            "a path that already has one is refused with `path_taken`, and nothing is replaced.",
           tags: ["resources"],
           params: ResourceParams,
           body: Type.Object({
@@ -607,16 +743,69 @@ export function workspaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             ownership: Type.Union([Type.Literal("code"), Type.Literal("ui")]),
             body: AnyObject,
             renameFrom: Type.Optional(Type.String()),
+            version: Type.Optional(
+              Type.Integer({
+                minimum: 1,
+                description:
+                  "The version read. When someone has saved since, the save is refused with `draft_changed`.",
+              }),
+            ),
+            create: Type.Optional(
+              Type.Boolean({
+                description: "Refuse, with `path_taken`, to replace a resource that is there.",
+              }),
+            ),
           }),
           response: { 200: Resource, 201: Resource },
         },
       },
-      async ({ ctx, params, body }, reply) => {
+      async ({ ctx, params, body: { create, version, ...body } }, reply) => {
         const workspace = ctx.workspace as WorkspaceRef;
         const path = resourcePath(params);
-        const result = await ctx.mutate((trx, audit) =>
-          putResource(kernel, trx, audit, workspace, { ...body, path }),
-        );
+        await refuseDirectProductionWrite(db, workspace, {
+          mayDeploy: () =>
+            ctx.allowed("promotion:write", {
+              tenantId: workspace.tenantId,
+              workspaceId: workspace.id,
+            }),
+          paths: [path, ...(body.renameFrom ? [body.renameFrom] : [])],
+          ownership: body.ownership,
+        });
+        await requireStanding(kernel, ctx, workspace, [{ kind: body.kind, path, body: body.body }]);
+        const result = await ctx.mutate(async (trx, audit) => {
+          if (create) {
+            // Exact path on purpose: a create is refused only where something is at the path now.
+            const taken = await trx
+              .selectFrom("resource")
+              .select("id")
+              .where("workspace_id", "=", workspace.id)
+              .where("path", "=", path)
+              .executeTakeFirst();
+            if (taken)
+              throw new HttpError(
+                409,
+                "path_taken",
+                `Something is already at "${path}". Choose another name, or change what is there.`,
+              );
+          }
+          const saved = await putResource(kernel, trx, audit, workspace, {
+            ...body,
+            path,
+            ...(version !== undefined ? { expectedVersion: version } : {}),
+          });
+          // A deploy checks this once everything is in place; a table saved alone is checked now.
+          if (body.kind === "table") {
+            const { db: data } = await kernel.data.within(trx, workspace.tenantId);
+            await refuseMissingTargets(
+              data,
+              workspace.id,
+              path,
+              (body.body as { columns?: Record<string, { type?: string; references?: string }> })
+                .columns ?? {},
+            );
+          }
+          return saved;
+        });
         return reply
           .code(result.created ? 201 : 200)
           .send(toResource(result.resource as ResourceRow, workspace));
@@ -728,6 +917,7 @@ export function workspaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.workspace("resource:write") },
         schema: {
           summary: "Delete the resource at a path",
+          description: "Removes the resource from what the workspace deploys. Audited.",
           tags: ["resources"],
           params: ResourceParams,
           response: { 204: NoContent },
@@ -736,7 +926,29 @@ export function workspaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       async ({ ctx, params }, reply) => {
         const workspace = ctx.workspace as WorkspaceRef;
         const path = resourcePath(params);
-        await ctx.mutate((trx, audit) => deleteResource(trx, audit, workspace, path, kernel.hooks));
+        await refuseDirectProductionWrite(db, workspace, {
+          mayDeploy: () =>
+            ctx.allowed("promotion:write", {
+              tenantId: workspace.tenantId,
+              workspaceId: workspace.id,
+            }),
+          paths: [path],
+        });
+        await ctx.mutate(async (trx, audit) => {
+          // A table that others refer to would leave every later deploy refused.
+          // Exact path on purpose: the delete below removes the resource at this path, nothing else.
+          const kind = await trx
+            .selectFrom("resource")
+            .select("kind")
+            .where("workspace_id", "=", workspace.id)
+            .where("path", "=", path)
+            .executeTakeFirst();
+          if (kind?.kind === "table") {
+            const { db: data } = await kernel.data.within(trx, workspace.tenantId);
+            await refuseRetiringReferred(data, workspace.id, path);
+          }
+          await deleteResource(trx, audit, workspace, path, kernel.hooks);
+        });
         return reply.code(204).send(null);
       },
     );

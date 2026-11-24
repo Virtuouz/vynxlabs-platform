@@ -266,6 +266,19 @@ test("a trigger's state reads the same wherever it is drawn", async () => {
   ).toBeTruthy();
 });
 
+test("round 5: a trigger's name on the overview keeps room of its own and its state wraps under it", async () => {
+  routes[`GET ${root}/summary`] = () => [200, summary(0)];
+  routes[`GET ${root}/triggers`] = () => [200, { items: [trigger("inventory/half-hourly")] }];
+  show(<Overview root={root} link={link} workspace={{ ...workspace, triggersPaused: true }} />);
+  const row = await screen.findByRole("link", { name: /inventory\/half-hourly/ });
+  // The row wraps, and the name block asks for a minimum, so the state beside it cannot take it all.
+  expect(row.className).toContain("flex-wrap");
+  const name = row.querySelector("[data-trigger-name]") as HTMLElement;
+  expect(name.className).toMatch(/min-w-\[min\(100%,\d+rem\)\]/);
+  // The state is not a box that refuses to shrink: it gives way before the name does.
+  expect(row.lastElementChild?.className).not.toContain("shrink-0");
+});
+
 test("on a script or flow page, drafting is offered in dev and not in production", async () => {
   routes[`GET ${root}/triggers`] = () => [200, { items: [] }];
   show(<TriggersOf root={root} link={link} kind="script" path="reminders/send" />);
@@ -290,4 +303,62 @@ test("pausing a trigger from a script's page asks why, and sends the reason", as
       reason: "Supplier is down",
     }),
   );
+});
+
+test("a viewer who may not read the counts is not told nothing needs them, nor shown first steps (SHL-09)", async () => {
+  routes[`GET ${root}/summary`] = () => [
+    200,
+    {
+      drafts: null,
+      unboundConnections: null,
+      approvalsWaiting: null,
+      git: null,
+      version: 3,
+      linked: null,
+    },
+  ];
+  routes[`GET ${root}/triggers`] = () => [200, { items: [] }];
+  show(<Overview root={root} link={link} workspace={workspace} />);
+  expect(await screen.findByText("Nothing you can see needs you here")).toBeTruthy();
+  expect(
+    screen.getByText(/You cannot see failed runs, approvals, connections and drafts/),
+  ).toBeTruthy();
+  expect(screen.queryByText("Nothing needs you here")).toBeNull();
+  expect(screen.queryByText("A first run")).toBeNull();
+});
+
+const firstSteps = (): [number, unknown] => [
+  200,
+  { ...summary(0, 0), scripts: 0, flows: 0, everRan: false, version: null, workersOnline: 0 },
+];
+
+test("the first step does not say the instance starts workers where it starts none (GOV-23)", async () => {
+  routes[`GET ${root}/summary`] = firstSteps;
+  routes[`GET ${root}/triggers`] = () => [200, { items: [] }];
+  routes[`GET ${base}`] = () => [200, { name: "Acme", slug: "acme", managedWorkers: true }];
+  routes[`GET ${base}/managed-workers`] = () => [200, { state: "unavailable" }];
+  show(<Overview root={root} link={link} workspace={workspace} />);
+  await screen.findByText("A worker to run code");
+  await screen.findByText(/Start a worker with a credential/);
+  expect(screen.queryByText(/The instance starts workers for this tenant/)).toBeNull();
+  expect(screen.getByText(/0 of 4 done/)).toBeTruthy();
+});
+
+test("the first step says the instance starts workers where it does (GOV-23)", async () => {
+  routes[`GET ${root}/summary`] = firstSteps;
+  routes[`GET ${root}/triggers`] = () => [200, { items: [] }];
+  routes[`GET ${base}`] = () => [200, { name: "Acme", slug: "acme", managedWorkers: true }];
+  routes[`GET ${base}/managed-workers`] = () => [200, { state: "host" }];
+  show(<Overview root={root} link={link} workspace={workspace} />);
+  await screen.findByText(/1 of 4 done/);
+});
+
+test("p31 fc: the overview's one column can shrink below its widest line, so a phone does not scroll sideways", async () => {
+  routes[`GET ${root}/summary`] = () => [200, summary(2)];
+  routes[`GET ${root}/triggers`] = () => [200, { items: [] }];
+  show(<Overview root={root} link={link} workspace={workspace} />);
+  await screen.findByText("2 runs are waiting for you");
+  const grid = document.querySelector("#first-steps, [class*='xl:grid-cols']") as HTMLElement;
+  expect(grid.className).toContain("grid-cols-[minmax(0,1fr)]");
+  expect(grid.firstElementChild?.className).toContain("min-w-0");
 });

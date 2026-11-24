@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { ApiError, api } from "./api.ts";
 import { AccessReleases } from "./screens/AccessReleases.tsx";
@@ -11,6 +11,10 @@ let approval: boolean;
 let who: string;
 let mayChange: boolean;
 let removes: { kind: string; key: string; label: string }[];
+/** What a POST to a release's rollback answers, and what its decision answers. */
+let rollbackAnswer: { status: number; body: unknown };
+let decisionAnswer: { status: number; body: unknown };
+let warnings: string[];
 const release = (number: number, extra: object = {}) => ({
   id: `r${number}`,
   number,
@@ -39,6 +43,9 @@ beforeEach(() => {
   who = "bob";
   mayChange = true;
   removes = [{ kind: "group", key: "late", label: "Late shift" }];
+  rollbackAnswer = { status: 201, body: { id: "r9", number: 9, status: "applied" } };
+  decisionAnswer = { status: 200, body: { id: "r2", number: 2, status: "applied" } };
+  warnings = [];
   vi.stubGlobal("fetch", async (address: string, init: RequestInit = {}) => {
     const method = init.method ?? "GET";
     calls.push({
@@ -50,12 +57,28 @@ beforeEach(() => {
     if (method === "GET" && address.endsWith("/access/releases")) {
       return json({
         items: [
-          release(2, { status: "awaiting_approval", message: "Made the group Night shift" }),
+          release(2, {
+            status: "awaiting_approval",
+            message: "Made the group Night shift",
+            summary: {
+              created: 1,
+              updated: 0,
+              deleted: 0,
+              changes: [
+                { change: "created", kind: "group", key: "night-shift", label: "Night shift" },
+              ],
+              warnings,
+            },
+          }),
           release(1, { origin: "cli", message: "Bring up the tenant" }),
         ],
       });
     }
-    if (method === "GET" && address.endsWith("/rollback")) return json({ removes });
+    if (method === "GET" && address.endsWith("/rollback")) return json({ removes, warnings: [] });
+    if (method === "POST" && address.endsWith("/rollback"))
+      return json(rollbackAnswer.body, rollbackAnswer.status);
+    if (method === "POST" && address.endsWith("/decision"))
+      return json(decisionAnswer.body, decisionAnswer.status);
     if (method === "GET" && address.endsWith("/me"))
       return json({ principal: { type: "member", id: who, name: who, email: null } });
     if (method === "GET" && address.endsWith("/access")) return json({ approval, mayChange });
@@ -72,6 +95,11 @@ beforeEach(() => {
         },
         202,
       );
+    }
+    if (address.endsWith("/rollback")) {
+      return approval
+        ? json({ id: "r9", number: 9, status: "awaiting_approval" }, 202)
+        : json({ id: "r9", number: 9, status: "applied" }, 201);
     }
     return json({ id: "r2", number: 2, status: "applied" });
   });
@@ -102,12 +130,49 @@ test("a release that waits says what it would do, and is approved after asking",
   );
 });
 
+test("from a tablet up the answers have a column wide enough for their buttons (r-narrow 3)", async () => {
+  vi.stubGlobal("matchMedia", (query: string) => ({
+    matches: true,
+    media: query,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+  }));
+  show(<AccessReleases base={base} />);
+  const button = await screen.findByRole("button", { name: "Go back to this" });
+  const cell = button.closest("td") as HTMLElement;
+  const index = [...(cell.parentElement as HTMLElement).children].indexOf(cell);
+  const header = screen.getAllByRole("columnheader")[index];
+  expect(header?.className).toContain("w-44");
+});
+
+test("going back says it waits for a second person when it does, and that it applied when it did (REL-12)", async () => {
+  // The answer of a server that does not say `waiting` (ACC-14) is worded here.
+  rollbackAnswer = { status: 201, body: { id: "r9", number: 9, status: "awaiting_approval" } };
+  show(<AccessReleases base={base} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Go back to this" }));
+  await answer("Go back");
+  expect(
+    await screen.findByText(
+      /access change 9, and waits for a second person\. Nothing has changed yet\./,
+    ),
+  ).toBeTruthy();
+  cleanup();
+  approval = false;
+  rollbackAnswer = { status: 201, body: { id: "r9", number: 9, status: "applied" } };
+  show(<AccessReleases base={base} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Go back to this" }));
+  await answer("Go back");
+  expect(await screen.findByText("The tenant's access is what access change 1 left.")).toBeTruthy();
+});
+
 test("an applied release can be gone back to, and asking for a second person can be stopped", async () => {
   show(<AccessReleases base={base} />);
   fireEvent.click(await screen.findByRole("button", { name: "Go back to this" }));
   const sure = await answer("Go back");
   expect(sure).toContain("It waits for a second person.");
   expect(sure).toContain("groups an identity provider made are left alone");
+  // ACC-37: a service account made again has no keys: they are not part of a release.
+  expect(sure).toContain("A service account that is gone is made again with no API keys");
   expect(sure).toContain("Makes the group Night shift");
   expect(sure).toContain("These are removed:");
   expect(sure).toContain("the group Late shift");
@@ -119,7 +184,7 @@ test("an applied release can be gone back to, and asking for a second person can
   fireEvent.click(screen.getByRole("button", { name: "Stop asking for a second person" }));
   const said = await answer("Cancel");
   expect(said).toContain("applies as soon as it is made, with nobody else approving it");
-  expect(said).toContain("The 1 release that waits now stays waiting");
+  expect(said).toContain("The 1 access change that waits now stays waiting");
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   expect(calls.some((call) => call.method === "PUT")).toBe(false);
   fireEvent.click(screen.getByRole("button", { name: "Stop asking for a second person" }));
@@ -188,4 +253,122 @@ test("going back says when it removes nothing, and asks as a danger only when it
   expect(sure).toContain("Nothing is removed.");
   expect(sure).not.toContain("These are removed:");
   expect(calls.some((call) => call.method === "POST")).toBe(false);
+});
+
+test("going back that waits is said to wait, not to be done (ACC-14)", async () => {
+  rollbackAnswer = {
+    status: 202,
+    body: {
+      waiting: true,
+      id: "r9",
+      number: 9,
+      status: "awaiting_approval",
+      detail: "Access change 9 waits for a second person. Nothing changed yet.",
+    },
+  };
+  show(<AccessReleases base={base} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Go back to this" }));
+  await answer("Go back");
+  const said = await screen.findByText(
+    "Access change 9 waits for a second person. Nothing changed yet.",
+  );
+  // A notice among the changes, not a failure under the list.
+  expect(said.closest('[aria-live="polite"]')).not.toBeNull();
+  expect(screen.queryByText("The tenant's access is what access change 1 left.")).toBeNull();
+});
+
+test("whoever asked may withdraw it with no right to answer, and is not told they may only read (ACC-16)", async () => {
+  who = "alice";
+  mayChange = false;
+  show(<AccessReleases base={base} />);
+  expect(await screen.findByRole("button", { name: "Withdraw" })).toBeTruthy();
+  expect(screen.queryByText("You may read this, not answer it.")).toBeNull();
+});
+
+test("what a release warned of is in the row and in the dialog that approves it (ACC-36)", async () => {
+  warnings = ["the group night-shift was last changed in access change 1, outside the repository."];
+  show(<AccessReleases base={base} />);
+  expect(
+    (await screen.findAllByText(/was last changed in access change 1, outside the repository/))
+      .length,
+  ).toBeGreaterThan(0);
+  fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+  const said = await answer("Cancel");
+  expect(said).toContain("Read before you answer:");
+  expect(said).toContain("was last changed in access change 1");
+});
+
+test("a refusal names its cause, not only that the access is not valid (ACC-21)", async () => {
+  decisionAnswer = {
+    status: 400,
+    body: {
+      title: "Bad Request",
+      status: 400,
+      code: "validation_failed",
+      detail: "The tenant's access is not valid.",
+      errors: [
+        {
+          path: "group night-shift",
+          message: "/body/description must NOT have more than 500 characters",
+        },
+      ],
+    },
+  };
+  show(<AccessReleases base={base} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Approve" }));
+  await answer("Approve");
+  expect(await screen.findByText(/must NOT have more than 500 characters/)).toBeTruthy();
+});
+
+test("ACC-MP14: one release is opened from its address, with its changes and warnings, and closing leaves the address", async () => {
+  history.replaceState(null, "", "/t/t1/releases?release=r2");
+  show(<AccessReleases base={base} />);
+  const dialog = await screen.findByRole("dialog");
+  expect(dialog.textContent).toContain("Access change 2");
+  expect(dialog.textContent).toContain("Makes the group Night shift");
+  fireEvent.click(within(dialog).getByRole("button", { name: "Back" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(location.search).not.toContain("release=");
+  // A number in the list opens the same.
+  fireEvent.click(await screen.findByRole("button", { name: "Open access change 1" }));
+  expect((await screen.findByRole("dialog")).textContent).toContain("Access change 1");
+  expect(location.search).toContain("release=r1");
+});
+
+test("a role given to a group is worded as being given, not as making an access developer (w-people 2)", async () => {
+  release(1);
+  const items = [
+    release(7, {
+      message: null,
+      summary: {
+        created: 1,
+        updated: 0,
+        deleted: 0,
+        changes: [
+          {
+            change: "created",
+            kind: "tenant_binding",
+            key: "b",
+            label: "developer to group night-shift",
+          },
+        ],
+      },
+    }),
+  ];
+  const original = globalThis.fetch;
+  vi.stubGlobal("fetch", async (address: string, init?: RequestInit) =>
+    address.endsWith("/access/releases")
+      ? new Response(JSON.stringify({ items }), { status: 200 })
+      : original(address, init),
+  );
+  show(<AccessReleases base={base} />);
+  expect(await screen.findByText("Gives developer to group night-shift.")).toBeTruthy();
+  expect(document.body.textContent).not.toContain("Makes the access");
+  expect(document.body.textContent).not.toContain("may release access");
+});
+
+test("the list is the page's own box, with no wrapper that insets it from its sibling tabs (w-people 1)", async () => {
+  const view = show(<AccessReleases base={base} />);
+  await screen.findByText("Made the group Night shift");
+  expect(view.container.querySelector("div.contents")).toBeNull();
 });

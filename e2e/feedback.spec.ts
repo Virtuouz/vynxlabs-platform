@@ -1,4 +1,4 @@
-import { signInWithPassword } from "./sign-in.ts";
+import { signInAs } from "./as.ts";
 import { expect, type Page, test } from "./test.ts";
 import { expectNoAxeViolations } from "./visual.ts";
 
@@ -8,10 +8,6 @@ import { expectNoAxeViolations } from "./visual.ts";
  * with a way to it when something was made.
  */
 
-const ADMIN = {
-  email: process.env.E2E_ADMIN_EMAIL ?? "admin@example.com",
-  password: process.env.E2E_ADMIN_PASSWORD ?? "change-me-please",
-};
 const TENANT_ADMIN = "00000000-0000-7000-8000-000000000002";
 const stamp = Date.now().toString(36);
 
@@ -37,9 +33,9 @@ async function answered(page: Page, press: () => Promise<void>, said: RegExp) {
   await expect(page.getByText(said).first()).toBeVisible({ timeout: 1000 });
 }
 
-test("each write is answered within a second, naming what it did", async ({ browser }) => {
+test("each write is answered within a second, naming what it did @polish", async ({ browser }) => {
   const page = await (await browser.newContext()).newPage();
-  await signInWithPassword(page, ADMIN.email, ADMIN.password);
+  await signInAs(page, "operator");
   const tenant = await call(page, "POST", "/tenants", { slug: `say-${stamp}`, name: "Say" });
   await call(page, "POST", `/tenants/${tenant.id}/access-grants`, {
     reason: "The feedback e2e test",

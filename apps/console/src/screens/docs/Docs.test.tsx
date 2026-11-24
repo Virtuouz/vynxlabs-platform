@@ -256,6 +256,29 @@ describe("the Documentation screen", () => {
     expect(location.pathname).toBe(`${link}/docs/handbook/support/index`);
   });
 
+  test("says when a page takes a name the product's own help has", async () => {
+    docs();
+    expect(await row("Handbook")).toBeTruthy();
+    expect(screen.queryByText(/the product's own help has/)).toBeNull();
+    cleanup();
+    const clashing = {
+      ...list(),
+      issues: [
+        {
+          app: "help",
+          path: "handbook/faq",
+          code: "term_reserved",
+          message: 'The term "workspace" is one of the product\'s own.',
+        },
+      ],
+    };
+    routes[`GET /api/v1${root}/docs`] = () => [200, clashing];
+    docs();
+    expect((await screen.findByText(/the product's own help has/)).textContent).toContain(
+      "handbook/faq",
+    );
+  });
+
   test("a row says its file's name, under its title, and a draft says so right of it", async () => {
     docs();
     expect((await row("Refund an order")).textContent).toContain("refunds.md");
@@ -387,6 +410,15 @@ describe("the Documentation screen", () => {
     );
   });
 
+  test("F2 renames the page that is open when focus is not in the tree", async () => {
+    docs("handbook/support/refunds");
+    await screen.findByRole("heading", { name: "Refund an order" });
+    (document.activeElement as HTMLElement | null)?.blur();
+    fireEvent.keyDown(document.body, { key: "F2" });
+    expect(await screen.findByLabelText("Page title")).toBeTruthy();
+    expect((screen.getByLabelText("File name") as HTMLInputElement).value).toBe("refunds");
+  });
+
   test("Escape leaves a row as it was", async () => {
     docs();
     fireEvent.click(await screen.findByRole("button", { name: "Rename Questions" }));
@@ -408,6 +440,13 @@ describe("the Documentation screen", () => {
     expect(batches()[0]?.body).toEqual({
       changes: [{ path: "staff-guide/index", source: "---\ntitle: Staff guide\n---\n" }],
     });
+  });
+
+  test("someone who holds doc:write alone, as a doc writer does, is offered the page menus", async () => {
+    routes[`GET /api/v1${root}/allowed`] = () => [200, { allowed: ["doc:write"] }];
+    docs();
+    expect(await screen.findByRole("button", { name: "More for Customer support" })).toBeTruthy();
+    expect(screen.queryByText(/not change it/)).toBeNull();
   });
 
   test("a folder's menu makes pages and folders in it, and deletes it with everything in it", async () => {
@@ -985,6 +1024,39 @@ describe("what is taken out can be brought back", () => {
     await waitFor(() => expect(sent("DELETE")).toHaveLength(1));
   });
 
+  test("WLK-17d: a page drafted for removal opens in its editor as removed, read only, with Keep", async () => {
+    routes[`GET /api/v1${root}/docs/page/handbook/support/returns`] = () => [
+      200,
+      {
+        page: {
+          ...list().pages.find((one) => one.path === "handbook/support/returns"),
+          state: "removed",
+        },
+        source: sources["handbook/support/returns"],
+        revision: 2,
+        deployedSource: null,
+      },
+    ];
+    show(
+      <DocEditor
+        root={root}
+        link={link}
+        tenantId="acme"
+        workspaceId="dev"
+        path="handbook/support/returns"
+      />,
+    );
+    expect(await screen.findByText(/A draft removes this page/)).toBeTruthy();
+    expect(screen.getAllByText("To be removed").length).toBeGreaterThan(0);
+    expect(
+      ((await screen.findByLabelText("Source of handbook/support/returns")) as HTMLTextAreaElement)
+        .readOnly,
+    ).toBe(true);
+    fireEvent.click(await screen.findByRole("button", { name: "Keep this page" }));
+    await answer("Keep");
+    await waitFor(() => expect(sent("DELETE")).toHaveLength(1));
+  });
+
   test("the editor deletes a page as the tree does: the same words, the name typed, and Undo", async () => {
     show(
       <DocEditor
@@ -1081,5 +1153,293 @@ describe("what is taken out can be brought back", () => {
     expect(await answer("Remove")).toContain("The site stops being served once this is deployed");
     await waitFor(() => expect(sent("PUT")).toHaveLength(1));
     expect(sent("PUT")[0]?.body).toMatchObject({ kind: "app", deleted: true });
+  });
+});
+
+describe("DOC-03 types and subjects in the docs editor", () => {
+  /** The handbook with its support folder a how-to folder, and a reference page about refunds. */
+  const typed = () => {
+    const base = list();
+    const set = (path: string, source: string) => {
+      const found = base.pages.find((one) => one.path === path);
+      if (found) found.source = source;
+    };
+    set(
+      "handbook/support/index",
+      text("title: Customer support\ntype: how-to\npages: [returns, refunds]"),
+    );
+    set(
+      "handbook/support/refunds",
+      text(
+        "title: Refund an order\ntopic: support-refunds\nsubjects: [refunds]",
+        "## Goal\n\nGive the money back.\n\n:::steps\n1. Open the order.\n:::\n",
+      ),
+    );
+    set(
+      "handbook/support/returns",
+      text(
+        "title: Receive a return\nsubjects: [refunds, parcels]",
+        "## Goal\n\n:::steps\n1. Scan.\n:::\n",
+      ),
+    );
+    base.pages.push(
+      page("handbook/limits/index", "Limits", {
+        source: text("title: Limits\ntype: reference"),
+      }),
+      page("handbook/limits/refund-limits", "Refund limits", {
+        source: text("title: Refund limits\nsubjects: [refunds]", "Up to 500 a day.\n"),
+      }),
+    );
+    routes[`GET /api/v1${root}/docs`] = () => [200, base];
+    for (const one of base.pages) {
+      routes[`GET /api/v1${root}/docs/page/${one.path}`] = () => [
+        200,
+        { page: one, source: one.source, revision: null, deployedSource: null },
+      ];
+    }
+    return base;
+  };
+  const editor = (path: string) =>
+    show(<DocEditor root={root} link={link} tenantId="acme" workspaceId="dev" path={path} />);
+  const source = async (path = "handbook/support/refunds") =>
+    (await screen.findByLabelText(`Source of ${path}`)) as HTMLTextAreaElement;
+  const details = () => {
+    fireEvent.click(screen.getByRole("tab", { name: "Page details" }));
+    return within(screen.getByRole("region", { name: "Page details" }));
+  };
+
+  test("the index of the pages carries each page's type, subjects and moved_from, as written", () => {
+    const base = typed();
+    base.pages[3] = {
+      ...(base.pages[3] as (typeof base.pages)[number]),
+      source: text("title: Refund an order\ntype: reference\nsubjects: [a, b]\nmoved_from: [old]"),
+    };
+    const app = base.apps[0] as DocsApp;
+    expect(indexOf(base, app).find((one) => one.path === "support/refunds")).toMatchObject({
+      type: "reference",
+      subjects: ["a", "b"],
+      moved_from: ["old"],
+    });
+    expect(indexOf(base, app).find((one) => one.path === "support/index")?.type).toBe("how-to");
+  });
+
+  test("a page's type is shown as the folder's when it says none, and is changed or given back", async () => {
+    typed();
+    editor("handbook/support/refunds");
+    const box = await source();
+    const form = details();
+    const type = form.getByLabelText(/^Type/) as HTMLSelectElement;
+    expect(type.value).toBe("");
+    expect(
+      within(type).getByRole("option", { name: "Use the folder's (How-to guide)" }),
+    ).toBeTruthy();
+    fireEvent.change(type, { target: { value: "reference" } });
+    await waitFor(() => expect(box.value).toContain("type: reference\n"));
+    fireEvent.change(form.getByLabelText(/^Type/), { target: { value: "" } });
+    await waitFor(() => expect(box.value).not.toContain("type:"));
+    // What it did not touch is as it was.
+    expect(box.value).toContain("subjects:");
+  });
+
+  test("subjects are added, offered from the site's own, and stop at five", async () => {
+    typed();
+    editor("handbook/support/refunds");
+    const box = await source();
+    const form = details();
+    // Another page's subject is offered; this page's own is not offered again.
+    fireEvent.click(form.getByRole("button", { name: "Add parcels" }));
+    await waitFor(() => expect(box.value).toContain("subjects:\n  - refunds\n  - parcels\n"));
+    expect(form.queryByRole("button", { name: "Add refunds" })).toBeNull();
+    const add = form.getByLabelText("Add a subject");
+    fireEvent.change(add, { target: { value: "Gift cards" } });
+    fireEvent.keyDown(add, { key: "Enter" });
+    await waitFor(() => expect(box.value).toContain("  - gift-cards\n"));
+    for (const one of ["a", "b"]) {
+      fireEvent.change(form.getByLabelText("Add a subject"), { target: { value: one } });
+      fireEvent.keyDown(form.getByLabelText("Add a subject"), { key: "Enter" });
+    }
+    await waitFor(() => expect(box.value).toContain("  - b\n"));
+    expect(form.getByText(/Five is the most a page uses/)).toBeTruthy();
+    expect((form.getByLabelText("Add a subject") as HTMLInputElement).disabled).toBe(true);
+    fireEvent.click(form.getByRole("button", { name: "Remove gift-cards" }));
+    await waitFor(() => expect(box.value).not.toContain("gift-cards"));
+    expect((form.getByLabelText("Add a subject") as HTMLInputElement).disabled).toBe(false);
+  });
+
+  test("the lints of a page of a typed folder are among the problems, as warnings", async () => {
+    typed();
+    editor("handbook/support/refunds");
+    const box = await source();
+    fireEvent.change(box, {
+      target: { value: text("title: About refunds", "No steps and no heading.\n") },
+    });
+    const problems = within(await screen.findByRole("region", { name: "Problems" }));
+    expect(await problems.findByText(/has no numbered steps/)).toBeTruthy();
+    expect(problems.getByText(/title says what the reader will do/)).toBeTruthy();
+    // A warning does not stop it being saved or deployed.
+    expect(screen.queryByText("This page would deploy as it is.")).not.toBeNull();
+  });
+
+  test("the preview shows the page's type, and the pages of other types about the same things", async () => {
+    typed();
+    editor("handbook/support/refunds");
+    await source();
+    const shown = await screen.findByRole("region", { name: "The page as it will be served" });
+    await waitFor(() => expect(within(shown).getByText("How-to guide")).toBeTruthy());
+    expect(shown.querySelector(".eyebrow")?.textContent).toBe("How-to guide");
+    // The related pages are read with the site's other pages, and may come after the page itself.
+    const related = await within(shown).findByRole("complementary", { name: "Related" });
+    expect(within(related).getByRole("link", { name: "Refund limits" }).getAttribute("href")).toBe(
+      `${link}/docs/handbook/limits/refund-limits`,
+    );
+    // The same type is not related to itself: the other how-to page shares a subject and is left out.
+    expect(within(related).queryByRole("link", { name: "Receive a return" })).toBeNull();
+  });
+
+  test("a collection's own page shows a card for each type its pages have", async () => {
+    const base = typed();
+    base.pages.push(
+      page("handbook/support/faq-reference", "Support limits", {
+        source: text("title: Support limits\ntype: reference", "Facts.\n"),
+      }),
+    );
+    editor("handbook/support/index");
+    const shown = await screen.findByRole("region", { name: "The page as it will be served" });
+    await waitFor(() => expect(within(shown).getByText("What do you want to do?")).toBeTruthy());
+    expect(within(shown).getByRole("link", { name: "How-to guides" })).toBeTruthy();
+    expect(within(shown).getByRole("link", { name: "Reference" })).toBeTruthy();
+  });
+
+  test("the read view of a page draws its type and related pages as the served site does", async () => {
+    typed();
+    docs("handbook/support/refunds");
+    const related = await screen.findByRole("complementary", { name: "Related" });
+    expect(document.querySelector(".eyebrow")?.textContent).toBe("How-to guide");
+    expect(within(related).getByRole("link", { name: "Refund limits" }).getAttribute("href")).toBe(
+      `${link}/docs/handbook/limits/refund-limits`,
+    );
+  });
+
+  test("a new page offers a type, and starts from that type's template", async () => {
+    typed();
+    docs();
+    fireEvent.click(await screen.findByRole("button", { name: "More for Limits" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: /New page here/ }));
+    const title = await screen.findByLabelText("Page title");
+    fireEvent.change(title, { target: { value: "Check a limit" } });
+    const type = screen.getByLabelText("Type") as HTMLSelectElement;
+    // The folder says reference: leaving it be writes no type on the page.
+    expect(within(type).getByRole("option", { name: "Folder: Reference" })).toBeTruthy();
+    fireEvent.change(type, { target: { value: "how-to" } });
+    fireEvent.keyDown(title, { key: "Enter" });
+    await waitFor(() => expect(batches()).toHaveLength(1));
+    const made = (
+      batches()[0]?.body?.changes as { path: string; source: string }[] | undefined
+    )?.[0];
+    expect(made?.path).toBe("handbook/limits/check-a-limit");
+    expect(made?.source).toContain("type: how-to\n");
+    expect(made?.source).toContain(":::steps");
+  });
+
+  test("a new page that takes the folder's type writes none, and one without a choice is as it was", async () => {
+    typed();
+    docs();
+    fireEvent.click(await screen.findByRole("button", { name: "More for Limits" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: /New page here/ }));
+    const title = await screen.findByLabelText("Page title");
+    fireEvent.change(title, { target: { value: "Raise a limit" } });
+    fireEvent.change(screen.getByLabelText("Type"), { target: { value: "reference" } });
+    fireEvent.keyDown(title, { key: "Enter" });
+    await waitFor(() => expect(batches()).toHaveLength(1));
+    const made = (batches()[0]?.body?.changes as { source: string }[] | undefined)?.[0];
+    expect(made?.source).not.toContain("type:");
+    expect(made?.source).toContain("## Fields");
+  });
+
+  test("a new page left to the folder's type starts from that type's template, with no type line", async () => {
+    typed();
+    docs();
+    fireEvent.click(await screen.findByRole("button", { name: "More for Limits" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: /New page here/ }));
+    const title = await screen.findByLabelText("Page title");
+    fireEvent.change(title, { target: { value: "Count limits" } });
+    expect((screen.getByLabelText("Type") as HTMLSelectElement).value).toBe("");
+    fireEvent.keyDown(title, { key: "Enter" });
+    await waitFor(() => expect(batches()).toHaveLength(1));
+    const made = (batches()[0]?.body?.changes as { source: string }[] | undefined)?.[0];
+    expect(made?.source).not.toContain("type:");
+    expect(made?.source).toContain("## Fields");
+  });
+
+  test("a new page can be a changelog entry: named with today's date, kept in the site's changelog folder, from its template, and no type", async () => {
+    typed();
+    docs();
+    fireEvent.click(await screen.findByRole("button", { name: "More for Limits" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: /New page here/ }));
+    const title = await screen.findByLabelText("Page title");
+    fireEvent.change(title, { target: { value: "Open on Fridays" } });
+    fireEvent.change(screen.getByLabelText("Type"), { target: { value: "changelog-entry" } });
+    const now = new Date();
+    const two = (n: number) => String(n).padStart(2, "0");
+    const today = `${now.getFullYear()}-${two(now.getMonth() + 1)}-${two(now.getDate())}`;
+    expect((screen.getByLabelText("File name") as HTMLInputElement).value).toBe(
+      `${today}-open-on-fridays`,
+    );
+    // The name follows the title until it is typed in, and keeps its date.
+    fireEvent.change(title, { target: { value: "Open on Saturdays" } });
+    expect((screen.getByLabelText("File name") as HTMLInputElement).value).toBe(
+      `${today}-open-on-saturdays`,
+    );
+    fireEvent.keyDown(title, { key: "Enter" });
+    await waitFor(() => expect(batches()).toHaveLength(1));
+    const made = (
+      batches()[0]?.body?.changes as { path: string; source: string }[] | undefined
+    )?.[0];
+    expect(made?.path).toBe(`handbook/changelog/${today}-open-on-saturdays`);
+    expect(made?.source).toContain("title: Open on Saturdays");
+    expect(made?.source).toContain("## What is new");
+    expect(made?.source).not.toContain("type:");
+  });
+
+  test("Page details has a Date, written as `date:` and taken out when it is cleared", async () => {
+    typed();
+    editor("handbook/support/refunds");
+    const box = await source();
+    const form = details();
+    const date = form.getByLabelText(/^Date/) as HTMLInputElement;
+    expect(date.type).toBe("date");
+    expect(date.value).toBe("");
+    fireEvent.change(date, { target: { value: "2026-11-24" } });
+    await waitFor(() => expect(box.value).toContain("date: 2026-11-24\n"));
+    fireEvent.change(form.getByLabelText(/^Date/), { target: { value: "" } });
+    await waitFor(() => expect(box.value).not.toContain("date:"));
+  });
+
+  test("Page details lays the Date out as its neighbours are, and says what the place note is about", async () => {
+    typed();
+    editor("handbook/support/refunds");
+    await source();
+    const form = details();
+    const date = form.getByLabelText(/^Date/);
+    // As wide as its column, like Topic and Icon: no box of its own that is narrower.
+    expect(date.closest('[class*="max-w-"]')).toBeNull();
+    // The note about its place is labelled, and is not a bare line between two fields.
+    const note = form.getByText(/^Place among the others\./);
+    expect(note.parentElement?.tagName).toBe("P");
+    expect(form.queryByText(/^Its place among the others/)).toBeNull();
+  });
+
+  test("a new page with no type chosen is only its title", async () => {
+    docs();
+    fireEvent.click(await screen.findByRole("button", { name: "More for Customer support" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: /New page here/ }));
+    const title = await screen.findByLabelText("Page title");
+    fireEvent.change(title, { target: { value: "Gift cards" } });
+    expect((screen.getByLabelText("Type") as HTMLSelectElement).value).toBe("");
+    fireEvent.keyDown(title, { key: "Enter" });
+    await waitFor(() => expect(batches()).toHaveLength(1));
+    expect(batches()[0]?.body).toEqual({
+      changes: [{ path: "handbook/support/gift-cards", source: "---\ntitle: Gift cards\n---\n" }],
+    });
   });
 });

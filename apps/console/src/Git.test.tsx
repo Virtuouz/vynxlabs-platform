@@ -3,7 +3,7 @@ import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { GitPanel, RepositorySettings } from "./screens/Git.tsx";
 import { GitSync } from "./screens/GitSync.tsx";
-import { show } from "./testing.tsx";
+import { answer, show } from "./testing.tsx";
 
 const root = "/tenants/t1/workspaces/w1";
 const repository = {
@@ -63,6 +63,44 @@ test("a repository is connected with a token, which is sent once and not kept on
     defaultBranch: "main",
     folder: "platform",
   });
+});
+
+test("a folder volvel.yaml names is shown as read-only, and says where it is set (D65)", async () => {
+  const stored = {
+    ...repository,
+    folderInForce: "conf",
+    folderFrom: "volvel.yaml",
+    fileReadAt: "2026-11-22T10:00:00Z",
+  };
+  routes["GET /api/v1/tenants/t1/git-repository"] = () => [200, { repository: stored }];
+  routes["PUT /api/v1/tenants/t1/git-repository"] = () => [200, stored];
+  show(<RepositorySettings base="/tenants/t1" />);
+  const field = (await screen.findByLabelText("Folder")) as HTMLInputElement;
+  expect(field.value).toBe("conf");
+  expect(field.readOnly).toBe(true);
+  expect(screen.getByText(/Set in volvel\.yaml/)).toBeTruthy();
+  // Saving keeps the setting as it was: the file's folder is not copied into it.
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  await waitFor(() => expect(sent("PUT")).toHaveLength(1));
+  expect(sent("PUT")[0]?.body).toMatchObject({ folder: "platform" });
+});
+
+test("a folder is edited here until a volvel.yaml has been read, and says so", async () => {
+  routes["GET /api/v1/tenants/t1/git-repository"] = () => [
+    200,
+    {
+      repository: {
+        ...repository,
+        folderInForce: "platform",
+        folderFrom: "setting",
+        fileReadAt: null,
+      },
+    },
+  ];
+  show(<RepositorySettings base="/tenants/t1" />);
+  const field = (await screen.findByLabelText("Folder")) as HTMLInputElement;
+  expect(field.readOnly).toBe(false);
+  expect(screen.getByText(/volvel\.yaml has not been read yet/)).toBeTruthy();
 });
 
 test("a refused token is said, and a paused sync is explained", async () => {
@@ -181,4 +219,236 @@ test("a pull stays disabled until every conflict is chosen, and none is chosen f
   fireEvent.click(pull);
   await screen.findByText("Deployed what changed on the branch.");
   expect(sent("POST")[0]?.body).toEqual({ resolutions: { "orders/sync.script": "theirs" } });
+});
+
+const prodRepository = { ...repository, releaseBranch: "release" };
+
+test("production shows its release branch and its last result, not a form that follows a branch (REL-08)", async () => {
+  routes[`GET /api/v1${root}/git`] = () => [
+    200,
+    { repository: prodRepository, branch: null, state: null, syncedCommit: null },
+  ];
+  routes[`GET /api/v1${root}/git/operations`] = () => [
+    200,
+    {
+      items: [
+        {
+          id: "o2",
+          kind: "push",
+          status: "failed",
+          commit: null,
+          message: "The remote refused the push.",
+          detail: { release: "release/main" },
+          createdAt: "2026-11-20T10:00:00Z",
+        },
+      ],
+    },
+  ];
+  show(<GitSync root={root} link="/t/t1/workspaces/w1" production={{ slug: "main" }} />);
+  expect(await screen.findByText("release/main")).toBeTruthy();
+  expect(await screen.findByText(/failed .*The remote refused the push/)).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Follow this branch" })).toBeNull();
+  expect(screen.queryByLabelText("Branch")).toBeNull();
+});
+
+test("a failed release commit is tried again from Git sync (REL-06)", async () => {
+  routes[`GET /api/v1${root}/git`] = () => [
+    200,
+    { repository: prodRepository, branch: null, state: null, syncedCommit: null },
+  ];
+  routes[`GET /api/v1${root}/git/operations`] = () => [200, { items: [] }];
+  routes[`POST /api/v1${root}/git/release`] = () => [
+    200,
+    { status: "done", branch: "release/main" },
+  ];
+  show(<GitSync root={root} link="/t/t1/workspaces/w1" production={{ slug: "main" }} />);
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Commit to the release branch again" }),
+  );
+  await screen.findByText("Committed what runs here to release/main.");
+  expect(sent("POST")).toHaveLength(1);
+});
+
+test("a followed branch can be changed or let go (REL-09, D48)", async () => {
+  let branch: string | null = "console/dev";
+  routes[`GET /api/v1${root}/git`] = () => [
+    200,
+    {
+      repository,
+      branch,
+      state: branch ? "synced" : null,
+      syncedCommit: null,
+      updatedAt: null,
+    },
+  ];
+  routes[`GET /api/v1${root}/git/compare`] = () => [
+    200,
+    { ...compare(false), ahead: 0, behind: 0 },
+  ];
+  routes[`PUT /api/v1${root}/git`] = (body) => {
+    branch = (body as { branch: string }).branch;
+    return [200, {}];
+  };
+  routes[`DELETE /api/v1${root}/git`] = () => {
+    branch = null;
+    return [200, {}];
+  };
+  show(<GitSync root={root} link="/t/t1/workspaces/w1" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Change branch" }));
+  const said = await answer("Follow it", "console/other");
+  expect(said).toContain("Nothing on either branch is changed.");
+  await waitFor(() => expect(sent("PUT")[0]?.body).toEqual({ branch: "console/other" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Stop following" }));
+  await answer("Stop following");
+  await waitFor(() => expect(sent("DELETE")).toHaveLength(1));
+  // With no branch the form to follow one is back.
+  expect(await screen.findByRole("button", { name: "Follow this branch" })).toBeTruthy();
+});
+
+test("a pull that stopped at what looks like a rename offers to delete those paths, and asks again with them (REL-10)", async () => {
+  routes[`GET /api/v1${root}/git`] = () => [
+    200,
+    { repository, branch: "console/dev", state: "behind", syncedCommit: "abc1234def" },
+  ];
+  routes[`GET /api/v1${root}/git/compare`] = () => [
+    200,
+    { ...compare(false), ahead: 0, behind: 1 },
+  ];
+  let asked = 0;
+  routes[`POST /api/v1${root}/git/pull`] = () => {
+    asked += 1;
+    return asked === 1
+      ? [
+          200,
+          {
+            status: "failed",
+            state: "error",
+            conflicts: [],
+            applied: [],
+            suspected: ["orders/old"],
+            problem: "What is on the branch cannot be deployed. The script orders/old has runs.",
+          },
+        ]
+      : [200, { status: "done", state: "synced", conflicts: [], applied: ["orders/new"] }];
+  };
+  show(<GitSync root={root} link="/t/t1/workspaces/w1" />);
+  fireEvent.click(await screen.findByRole("button", { name: /^Pull 1 change/ }));
+  await screen.findByText(/The script orders\/old has runs\./);
+  fireEvent.click(await screen.findByRole("button", { name: "Delete them anyway" }));
+  expect(await answer("Delete them and look again")).toContain("Delete orders/old");
+  await screen.findByText("Deployed what changed on the branch.");
+  expect(sent("POST").map((call) => call.body)).toEqual([{}, { allowDelete: ["orders/old"] }]);
+});
+
+test("WLK-17h: the branch is shown as it is written, not in capitals", async () => {
+  routes[`GET /api/v1${root}/git`] = () => [
+    200,
+    { repository, branch: "console/dev", state: "synced", syncedCommit: "abc1234def" },
+  ];
+  routes[`GET /api/v1${root}/git/compare`] = () => [200, compare(false)];
+  show(<GitSync root={root} link="/t/t1/workspaces/w1" />);
+  const branch = await screen.findByText("console/dev", { selector: "span" });
+  expect(branch.className).not.toContain("uppercase");
+});
+
+test("REL-MP3: the repository form has the user name, the release and access branches, and a check that reaches it again", async () => {
+  const stored = {
+    ...repository,
+    releaseBranch: null,
+    tenantBranch: "volvel/access",
+    verifiedAt: "2026-11-20T10:00:00.000Z",
+  };
+  routes["GET /api/v1/tenants/t1/git-repository"] = () => [200, { repository: stored }];
+  routes["PUT /api/v1/tenants/t1/git-repository"] = () => [200, stored];
+  routes["POST /api/v1/tenants/t1/git-repository/check"] = () => [
+    200,
+    { ok: false, problem: "The repository refused the access token.", repository: stored },
+  ];
+  show(<RepositorySettings base="/tenants/t1" />);
+  expect(((await screen.findByLabelText("Access branch")) as HTMLInputElement).value).toBe(
+    "volvel/access",
+  );
+  fireEvent.change(screen.getByLabelText("Release branch"), { target: { value: "releases" } });
+  fireEvent.change(screen.getByLabelText("User name"), { target: { value: "ci-bot" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  await waitFor(() => expect(sent("PUT")).toHaveLength(1));
+  expect(sent("PUT")[0]?.body).toEqual({
+    url: repository.url,
+    defaultBranch: "main",
+    folder: "platform",
+    username: "ci-bot",
+    releaseBranch: "releases",
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Check the connection" }));
+  expect((await screen.findByText(/refused the access token/)).textContent).toBeTruthy();
+  expect(sent("POST")).toHaveLength(1);
+});
+
+test("REL-MP4: Git sync lists the workspace's pushes and pulls and every branch of the tenant", async () => {
+  routes[`GET /api/v1${root}/git`] = () => [
+    200,
+    { repository, branch: "console/dev", state: "synced", syncedCommit: "abc1234def" },
+  ];
+  routes[`GET /api/v1${root}/git/compare`] = () => [200, compare(false)];
+  routes[`GET /api/v1${root}/git/operations`] = () => [
+    200,
+    {
+      items: [
+        {
+          id: "o3",
+          kind: "pull",
+          status: "failed",
+          commit: null,
+          message: "The branch was not reachable.",
+          detail: {},
+          createdByType: "user",
+          createdById: "u1",
+          createdAt: "2026-11-21T10:00:00.000Z",
+        },
+        {
+          id: "o2",
+          kind: "push",
+          status: "done",
+          commit: "9f8e7d6c5b",
+          message: "Deploy from the console",
+          detail: {},
+          createdByType: "user",
+          createdById: "u1",
+          createdAt: "2026-11-20T10:00:00.000Z",
+        },
+      ],
+    },
+  ];
+  routes["GET /api/v1/tenants/t1/git-branches"] = () => [
+    200,
+    {
+      items: [
+        {
+          workspaceId: "w1",
+          workspace: "Dev",
+          type: "dev",
+          branch: "console/dev",
+          mode: "follows",
+          state: "synced",
+          lastError: null,
+        },
+        {
+          workspaceId: "w2",
+          workspace: "Main",
+          type: "production",
+          branch: "release/main",
+          mode: "release",
+          state: null,
+          lastError: null,
+        },
+      ],
+    },
+  ];
+  show(<GitSync root={root} link="/t/t1/workspaces/w1" />);
+  const history = await screen.findByRole("region", { name: "History" });
+  await waitFor(() => expect(history.textContent).toContain("The branch was not reachable."));
+  expect(history.textContent).toContain("9f8e7d6");
+  const branches = await screen.findByRole("region", { name: "Branches" });
+  await waitFor(() => expect(branches.textContent).toContain("release/main"));
+  expect(branches.textContent).toContain("Dev");
 });

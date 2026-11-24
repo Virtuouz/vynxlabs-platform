@@ -73,7 +73,7 @@ export const iconRoutes =
         schema: {
           summary: "The console's icon at one size",
           description:
-            "Made from the instance's logo. An instance with no logo answers with the platform's own icon.",
+            "Made from the instance's logo. An instance with no logo answers with Volvel's own icon.",
           tags: ["instance"],
           params: Type.Object({ size: SizeParam }),
           produces: ["image/png"],
@@ -92,7 +92,7 @@ export const iconRoutes =
         config: { access: access.instance("instance:write") },
         schema: {
           summary: "Remove the console's icons",
-          description: "The console goes back to the platform's own icon.",
+          description: "The console goes back to Volvel's own icon.",
           tags: ["instance"],
           response: { 204: NoContent },
         },
@@ -148,6 +148,7 @@ export const iconRoutes =
         config: { access: access.tenant("portal:write") },
         schema: {
           summary: "Remove a tenant's icons",
+          description: "The tenant's apps go back to the instance's icons. Audited.",
           tags: ["branding"],
           params: Type.Object({ t: Id }),
           response: { 204: NoContent },
@@ -197,6 +198,9 @@ export const iconRoutes =
               "The request body is a PNG of exactly that many pixels each way. The console " +
               "sends each size when a logo is set, drawn from the logo by the browser.",
             tags: ["instance"],
+            consumes: ["image/png"],
+            // Read as bytes, as sent: the schema says only that a body is taken.
+            body: Type.Unknown(),
             params: Type.Object({ size: SizeParam }),
             response: { 204: NoContent },
           },

@@ -36,7 +36,13 @@ const title = {
   pattern: "^\\S(.*\\S)?$",
   description: "What people read. It can change: nothing refers to it.",
 };
-const description = { type: "string", maxLength: 300 };
+/** The most a description of a group, a role or a service account may say, whichever way it is made. */
+export const ACCESS_DESCRIPTION_MAX = 500;
+const description = {
+  type: "string",
+  maxLength: ACCESS_DESCRIPTION_MAX,
+  description: "What it is for, in plain text.",
+};
 
 /** How a group is filled by the identity provider people sign in through. */
 const membership = {
@@ -51,6 +57,7 @@ const membership = {
       properties: {
         values: {
           type: "array",
+          description: "The values of the provider's groups claim.",
           items: { type: "string", minLength: 1, maxLength: 200 },
           minItems: 1,
           maxItems: 50,
@@ -81,9 +88,12 @@ export const TENANT_KINDS: { kind: string; schemaVersion: number; folder: string
       body: {
         type: "object",
         properties: {
+          title,
           description,
           permissions: {
             type: "array",
+            description:
+              "What the role allows, each as `kind:verb` such as `table:read`, with `*` for either half.",
             items: { type: "string", pattern: PERMISSION_PATTERN },
             maxItems: 200,
             uniqueItems: true,
@@ -113,6 +123,7 @@ export const TENANT_KINDS: { kind: string; schemaVersion: number; folder: string
       body: {
         type: "object",
         properties: {
+          title,
           role: {
             type: "string",
             pattern: ROLE_KEY_PATTERN,
@@ -123,8 +134,16 @@ export const TENANT_KINDS: { kind: string; schemaVersion: number; folder: string
             description:
               "Who is given the role: a group or a service account, by key. A person is never named here.",
             properties: {
-              type: { enum: ["group", "service_account", "end_user_group"] },
-              key: { type: "string", pattern: TENANT_KEY_PATTERN },
+              type: {
+                enum: ["group", "service_account", "end_user_group"],
+                description:
+                  "What kind of principal: a group of members, a service account or a group of end users.",
+              },
+              key: {
+                type: "string",
+                pattern: TENANT_KEY_PATTERN,
+                description: "Its key, which never changes. What it is called can change.",
+              },
             },
             required: ["type", "key"],
             additionalProperties: false,
@@ -158,10 +177,12 @@ export const tenantName = (resource: { kind: string; key: string }): string =>
  * Everything wrong with a set of tenant resources that can be seen without the
  * tenant: bodies, keys used twice, and bindings to what is not in the set.
  * `known` names what the tenant has beside the set, for a set that is one change.
+ * `held` is what the tenant has now: a role keeps a permission it holds even if retired.
  */
 export function checkTenantResources(
   resources: readonly TenantResource[],
   known: readonly { kind: string; key: string }[] = [],
+  held: readonly TenantResource[] = [],
 ): string[] {
   const problems: string[] = [];
   const seen = new Set<string>();
@@ -188,11 +209,22 @@ export function checkTenantResources(
     }
     seen.add(`${resource.kind} ${resource.key}`);
     for (const issue of validateJson(definition.body, resource.body, "/body")) {
-      problems.push(`${name}: ${issue.path} ${issue.message}`);
+      problems.push(
+        `${name} (${tenantFileName(definition, resource.key)}): ${issue.path} ${issue.message}`,
+      );
     }
     if (resource.kind === "tenant_role") {
+      // A permission the role already holds stays, even once it is retired: only what is added is checked.
+      const kept = new Set(
+        (held.find((one) => one.kind === "tenant_role" && one.key === resource.key)?.body
+          .permissions as string[] | undefined) ?? [],
+      );
       for (const permission of (resource.body.permissions as string[] | undefined) ?? []) {
-        if (typeof permission === "string" && !isGrantablePermission(permission)) {
+        if (
+          typeof permission === "string" &&
+          !kept.has(permission) &&
+          !isGrantablePermission(permission)
+        ) {
           problems.push(
             `${name}: /body/permissions "${permission}" is not a permission a role can give.`,
           );
@@ -211,6 +243,8 @@ export function checkTenantResources(
   return problems;
 }
 
+/** Kinds that are known by their key and what they give, and keep no title: a file's title for one is not kept. */
+const UNTITLED = new Set(["tenant_role", "tenant_binding"]);
 const FILE_NAME = /^(?:.*\/)?([^/]+)\.([a-z][a-z0-9_]*)\.yaml$/;
 const YAML_OPTIONS = { lineWidth: 0, version: "1.2" } as const;
 
@@ -219,6 +253,11 @@ export const isTenantFile = (path: string): boolean => {
   const match = FILE_NAME.exec(path);
   return match !== null && isTenantKind(match[2] as string);
 };
+
+/** The name of a tenant resource's file, relative to the tenant folder: `<folder>/<key>.<kind>.yaml`. */
+export function tenantFileName(definition: { kind: string; folder: string }, key: string): string {
+  return `${definition.folder}/${key}.${definition.kind}.yaml`;
+}
 
 /**
  * Writes tenant resources as files, one each: `<folder>/<key>.<kind>.yaml`,
@@ -236,7 +275,10 @@ export function renderTenantFiles(resources: readonly TenantResource[]): Resourc
         Object.entries(rest).sort(([a], [b]) => order.indexOf(a) - order.indexOf(b)),
       );
       return {
-        path: `${definition?.folder ?? resource.kind}/${resource.key}.${resource.kind}.yaml`,
+        path: tenantFileName(
+          { kind: resource.kind, folder: definition?.folder ?? resource.kind },
+          resource.key,
+        ),
         content: stringify(
           { ...(said !== undefined ? { title: said } : {}), schemaVersion: 1, body },
           YAML_OPTIONS,
@@ -303,7 +345,7 @@ export function parseTenantFiles(files: readonly ResourceFile[]): {
       kind,
       key: (key as string | undefined) ?? stem,
       body: {
-        ...(said !== undefined ? { title: said } : {}),
+        ...(said !== undefined && !UNTITLED.has(kind) ? { title: said } : {}),
         ...((body as Record<string, unknown> | undefined) ?? {}),
       },
     });

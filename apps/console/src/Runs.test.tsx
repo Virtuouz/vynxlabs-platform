@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { RunsWorkbench } from "./screens/Runs.tsx";
 import { answer, show } from "./testing.tsx";
@@ -172,6 +172,9 @@ test("cancelling queued runs names how many and cancels only what the list shows
   fireEvent.click(await screen.findByRole("button", { name: "Cancel 2 queued" }));
   const dialog = await screen.findByRole("dialog");
   expect(dialog.textContent).toContain('matching "reminders"');
+  // American spelling, as everywhere else (OPS-40).
+  expect(dialog.textContent).toContain("is canceled");
+  expect(dialog.textContent).not.toContain("cancelled");
   fireEvent.click(within(dialog).getByRole("button", { name: "Cancel queued runs" }));
   await waitFor(() => expect(sent).toHaveLength(1));
   expect(sent[0]?.body).toMatchObject({
@@ -199,4 +202,268 @@ test("Run again from a row asks first, as the run page does", async () => {
       { address: `/api/v1${root}/runs/r1/rerun`, body: { bundle: "original" } },
     ]),
   );
+});
+
+/** A list of runs, newest first, that a test can change under the screen. */
+function serveRuns(all: { id: string; state?: string }[], pageSize = 100) {
+  vi.stubGlobal("fetch", async (address: string) => {
+    asked.push(address);
+    const url = new URL(address, "http://x");
+    if (!url.pathname.endsWith("/activity")) {
+      return new Response(JSON.stringify({ items: [] }), { status: 200 });
+    }
+    const at = Number(url.searchParams.get("cursor")?.replace("after:", "") ?? 0);
+    const page = all.slice(at, at + pageSize);
+    const more = at + pageSize < all.length;
+    const rows = page.map((one) => ({
+      kind: "script",
+      id: one.id,
+      target: `job/${one.id}`,
+      status: one.state ?? "succeeded",
+      state: one.state ?? "succeeded",
+      trigger: "schedule",
+      attempt: 1,
+      maxAttempts: 1,
+      error: null,
+      errorSummary: null,
+      outputSummary: null,
+      tags: [],
+      bundleVersion: 1,
+      createdAt: new Date().toISOString(),
+      startedAt: new Date().toISOString(),
+      finishedAt: new Date().toISOString(),
+    }));
+    return new Response(
+      JSON.stringify({
+        items: rows,
+        nextCursor: more ? `after:${at + pageSize}` : null,
+        counts: {},
+        stateCounts: { succeeded: all.length },
+      }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    );
+  });
+}
+const many = (n: number, from = 1) =>
+  Array.from({ length: n }, (_, i) => ({ id: `r${String(from + i).padStart(3, "0")}` }));
+const shownRows = () =>
+  within(screen.getByRole("grid", { name: "Runs" })).getAllByRole("link", { name: /^job\// });
+
+test("Load more shows the older runs at once, not behind a count of new ones (OPS-10)", async () => {
+  history.replaceState(null, "", "/t/t1/workspaces/w1/runs?target=ten");
+  serveRuns(many(130));
+  show(<RunsWorkbench root={root} link="/t/t1/workspaces/w1" />);
+  await screen.findByRole("link", { name: "job/r001" });
+  expect(shownRows()).toHaveLength(100);
+  // The reader has a row checked, which holds what arrives, and goes for the older ones.
+  fireEvent.click(
+    within(screen.getByRole("grid", { name: "Runs" })).getAllByRole("checkbox")[1] as HTMLElement,
+  );
+  expect(screen.getByText("1 selected")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Load more" }));
+  await waitFor(() => expect(shownRows()).toHaveLength(130));
+  // Held rows are taken away a moment after they are drawn: wait for that to have happened.
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  expect(shownRows()).toHaveLength(130);
+  expect(screen.queryByText(/new runs?$/)).toBeNull();
+});
+
+test("a saved view's search stays in the address and the box (OPS-12)", async () => {
+  serveRuns(many(3));
+  show(<RunsWorkbench root={root} link="/t/t1/workspaces/w1" />);
+  await screen.findByRole("link", { name: "job/r001" });
+  act(() => {
+    history.pushState(null, "", "/t/t1/workspaces/w1/runs?q=alpha");
+    dispatchEvent(new PopStateEvent("popstate"));
+  });
+  await waitFor(() =>
+    expect((screen.getByRole("searchbox") as HTMLInputElement).value).toBe("alpha"),
+  );
+  await new Promise((resolve) => setTimeout(resolve, 700));
+  expect(location.search).toBe("?q=alpha");
+  expect((screen.getByRole("searchbox") as HTMLInputElement).value).toBe("alpha");
+});
+
+test("Cancel queued is offered where the list shows queued runs, not under Failed (OPS-15)", async () => {
+  history.replaceState(null, "", "/t/t1/workspaces/w1/runs?status=failed");
+  show(<RunsWorkbench root={root} link="/t/t1/workspaces/w1" />);
+  await screen.findByRole("link", { name: "reminders/send" });
+  expect(screen.queryByRole("button", { name: /^Cancel \d+ queued/ })).toBeNull();
+  cleanup();
+  history.replaceState(null, "", "/t/t1/workspaces/w1/runs?status=queued");
+  show(<RunsWorkbench root={root} link="/t/t1/workspaces/w1" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Cancel 2 queued" }));
+  const dialog = await screen.findByRole("dialog");
+  expect(dialog.textContent).toContain("Every queued script run");
+});
+
+test("rows checked and then filtered away are no longer checked or acted on (OPS-13)", async () => {
+  serveRuns(many(4));
+  show(<RunsWorkbench root={root} link="/t/t1/workspaces/w1" />);
+  await screen.findByRole("link", { name: "job/r001" });
+  const grid = screen.getByRole("grid", { name: "Runs" });
+  const boxes = within(grid).getAllByRole("checkbox");
+  fireEvent.click(boxes[1] as HTMLElement);
+  fireEvent.click(boxes[2] as HTMLElement);
+  expect(screen.getByText("2 selected")).toBeTruthy();
+  // A search that takes both away.
+  serveRuns(many(1, 4));
+  fireEvent.change(screen.getByRole("searchbox"), { target: { value: "r004" } });
+  await waitFor(() => expect(screen.queryByText("2 selected")).toBeNull(), { timeout: 3000 });
+});
+
+test("after Load more, new runs at the top do not push older ones out of the list (OPS-11)", async () => {
+  const older = many(130, 6).map((one, i) => (i === 0 ? { ...one, state: "running" } : one));
+  history.replaceState(null, "", "/t/t1/workspaces/w1/runs?target=eleven");
+  serveRuns(older);
+  show(<RunsWorkbench root={root} link="/t/t1/workspaces/w1" />);
+  await screen.findByRole("link", { name: "job/r006" });
+  fireEvent.click(screen.getByRole("button", { name: "Load more" }));
+  await waitFor(() => expect(shownRows()).toHaveLength(130));
+  // Five runs start. A running one keeps the list asking again, and the first page shifts.
+  serveRuns([...many(5), ...older]);
+  await waitFor(() => expect(shownRows()).toHaveLength(135), { timeout: 12_000 });
+  const names = shownRows().map((one) => one.textContent?.slice(0, 8));
+  // The ones that were at the end of the first page are still there, once.
+  expect(names).toContain("job/r101");
+  expect(new Set(names).size).toBe(135);
+}, 25_000);
+
+test("a run of a schedule from before the change, and an event's run, link to what started them (OPS-16)", async () => {
+  const detail = (trigger: object) => {
+    const before = globalThis.fetch;
+    vi.stubGlobal("fetch", async (address: string, init?: RequestInit) => {
+      const found = await before(address, init);
+      if (!address.endsWith("/runs/r1")) return found;
+      const body = await found.json();
+      return new Response(JSON.stringify({ ...body, trigger }), { status: 200 });
+    });
+  };
+  history.replaceState(null, "", "/t/t1/workspaces/w1/runs?run=r1");
+  detail({ type: "schedule", schedule: "reminders/hourly" });
+  show(<RunsWorkbench root={root} link="/t/t1/workspaces/w1" />);
+  await screen.findByText("The SMS gateway said no.");
+  fireEvent.click(screen.getByRole("tab", { name: "Details" }));
+  expect(screen.getByRole("link", { name: /reminders\/hourly/ }).getAttribute("href")).toBe(
+    "/t/t1/workspaces/w1/triggers?trigger=reminders%2Fhourly",
+  );
+  cleanup();
+  detail({ type: "event", trigger: "orders/on-placed", event: "orders/placed", eventId: "e9" });
+  show(<RunsWorkbench root={root} link="/t/t1/workspaces/w1" />);
+  await screen.findByText("The SMS gateway said no.");
+  fireEvent.click(screen.getByRole("tab", { name: "Details" }));
+  expect(screen.getByRole("link", { name: "The event" }).getAttribute("href")).toBe(
+    "/t/t1/workspaces/w1/events?item=e9",
+  );
+});
+
+test("flow runs and script runs that have been going too long are canceled by age (FLW-MP14)", async () => {
+  show(<RunsWorkbench root={root} link="/t/t1/workspaces/w1" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Cancel by age…" }));
+  const dialog = await screen.findByRole("dialog");
+  // Nothing can be canceled until a length is given.
+  expect(
+    (within(dialog).getByRole("button", { name: "Continue" }) as HTMLButtonElement).disabled,
+  ).toBe(true);
+  fireEvent.change(within(dialog).getByLabelText("Amount"), { target: { value: "2" } });
+  fireEvent.change(within(dialog).getByLabelText("Unit"), { target: { value: "86400" } });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Continue" }));
+  expect(dialog.textContent).toContain("It cannot be undone");
+  fireEvent.click(within(dialog).getByRole("button", { name: "Cancel runs older than 2 days" }));
+  await waitFor(() => expect(sent).toHaveLength(1));
+  expect(sent[0]).toEqual({
+    address: `/api/v1${root}/flow-runs/cancel`,
+    body: { olderThanSeconds: 172800 },
+  });
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+  fireEvent.click(await screen.findByRole("button", { name: "Cancel by age…" }));
+  const again = await screen.findByRole("dialog");
+  fireEvent.change(within(again).getByLabelText("Which runs"), { target: { value: "script" } });
+  fireEvent.change(within(again).getByLabelText("Amount"), { target: { value: "3" } });
+  fireEvent.click(within(again).getByRole("button", { name: "Continue" }));
+  fireEvent.click(within(again).getByRole("button", { name: "Cancel runs older than 3 seconds" }));
+  await waitFor(() => expect(sent).toHaveLength(2));
+  expect(sent[1]).toEqual({
+    address: `/api/v1${root}/runs/cancel`,
+    body: { include: "all", olderThanSeconds: 3 },
+  });
+});
+
+test("runs between two times: chosen under When, kept in the address, asked for and canceled by (OPS-MP7)", async () => {
+  show(<RunsWorkbench root={root} link="/t/t1/workspaces/w1" />);
+  await screen.findByText("reminders/send");
+  fireEvent.change(screen.getByLabelText("When"), { target: { value: "between" } });
+  const start = await screen.findByLabelText("From");
+  const end = screen.getByLabelText("To");
+  fireEvent.change(start, { target: { value: "2026-11-10T08:00" } });
+  fireEvent.change(end, { target: { value: "2026-11-11T09:30" } });
+  const from = new Date("2026-11-10T08:00").toISOString();
+  const to = new Date("2026-11-11T09:30").toISOString();
+  await waitFor(() => {
+    const params = new URLSearchParams(location.search);
+    expect(params.get("when")).toBe("between");
+    expect(params.get("from")).toBe(from);
+    expect(params.get("to")).toBe(to);
+  });
+  await waitFor(() => {
+    const last = new URLSearchParams(lists().at(-1)?.split("?")[1]);
+    expect(last.get("from")).toBe(from);
+    expect(last.get("to")).toBe(to);
+  });
+  fireEvent.click(await screen.findByRole("button", { name: "Cancel 2 queued" }));
+  const dialog = await screen.findByRole("dialog");
+  fireEvent.click(within(dialog).getByRole("button", { name: "Cancel queued runs" }));
+  await waitFor(() => expect(sent).toHaveLength(1));
+  expect(sent[0]?.body).toMatchObject({ filters: { from, to } });
+});
+
+test("a window that ends before it starts says so and asks for nothing (OPS-MP7)", async () => {
+  history.replaceState(
+    null,
+    "",
+    "/t/t1/workspaces/w1/runs?when=between&from=2026-11-11T08:00:00.000Z&to=2026-11-10T08:00:00.000Z",
+  );
+  show(<RunsWorkbench root={root} link="/t/t1/workspaces/w1" />);
+  expect(await screen.findByText("The end is before the start.")).toBeTruthy();
+  expect(lists()).toHaveLength(0);
+});
+
+test("a window changed to end before it starts drops the rows of the window before (OPS-MP7)", async () => {
+  show(<RunsWorkbench root={root} link="/t/t1/workspaces/w1" />);
+  await screen.findByText("reminders/send");
+  fireEvent.change(screen.getByLabelText("When"), { target: { value: "between" } });
+  fireEvent.change(await screen.findByLabelText("From"), { target: { value: "2026-11-10T08:00" } });
+  fireEvent.change(screen.getByLabelText("To"), { target: { value: "2026-11-11T09:30" } });
+  await screen.findByText("reminders/send");
+  fireEvent.change(screen.getByLabelText("To"), { target: { value: "2026-11-09T09:30" } });
+  expect(await screen.findByText("The end is before the start.")).toBeTruthy();
+  expect(screen.queryByText("reminders/send")).toBeNull();
+  // The chips and the bulk buttons count that window, which holds nothing.
+  expect(screen.queryByRole("button", { name: /Cancel 2 queued/ })).toBeNull();
+  expect(document.body.textContent).not.toMatch(/Queued\s*2/);
+});
+
+test("a viewer is offered no Cancel, Cancel by age or Run again, and an operator is (OPS-35)", async () => {
+  const served = globalThis.fetch;
+  let allowed: string[] = [];
+  vi.stubGlobal("fetch", async (address: string, init?: RequestInit) => {
+    if (!address.split("?")[0]?.endsWith("/allowed")) return served(address, init);
+    asked.push(address);
+    return new Response(JSON.stringify({ allowed }), { status: 200 });
+  });
+  show(<RunsWorkbench root={root} link="/t/t1/workspaces/w1" />);
+  await screen.findByRole("link", { name: "reminders/send" });
+  await waitFor(() => expect(asked.some((one) => one.includes("/allowed?"))).toBe(true));
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  expect(screen.queryByRole("button", { name: "Cancel 2 queued" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: /^Actions for/ }));
+  await screen.findByRole("menuitem", { name: "Open" });
+  expect(screen.queryByRole("menuitem", { name: "Run again…" })).toBeNull();
+  cleanup();
+  allowed = ["run:write", "flow_run:write"];
+  show(<RunsWorkbench root={root} link="/t/t1/workspaces/w1" />);
+  expect(await screen.findByRole("button", { name: "Cancel 2 queued" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: /^Actions for/ }));
+  expect(await screen.findByRole("menuitem", { name: "Run again…" })).toBeTruthy();
 });

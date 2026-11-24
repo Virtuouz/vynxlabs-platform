@@ -29,12 +29,13 @@ export function OldPaths({ root, canEnd }: { root: string; canEnd: boolean }) {
       columns={[
         { header: "Old path", cell: (row) => <Code>{row.path}</Code> },
         { header: "Now at", cell: (row) => <Code>{row.now}</Code> },
-        { header: "Kind", cell: (row) => row.kind.replaceAll("_", " ") },
+        { header: "Kind", priority: 3, cell: (row) => row.kind.replaceAll("_", " ") },
         {
           header: "Last called",
+          priority: 3,
           cell: (row) => (row.lastUsedAt ? <Time value={row.lastUsedAt} mode="ago" /> : "Never"),
         },
-        { header: "Answers until", cell: (row) => <Time value={row.expiresAt} /> },
+        { header: "Answers until", priority: 2, cell: (row) => <Time value={row.expiresAt} /> },
       ]}
       empty={{ title: "No old paths", text: "No renamed resource still answers at an old path." }}
       {...(canEnd

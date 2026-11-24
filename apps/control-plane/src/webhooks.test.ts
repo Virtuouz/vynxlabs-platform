@@ -165,6 +165,8 @@ describe("a webhook that checks signatures", () => {
       });
       expect(refused.statusCode).toBe(401);
       expect(refused.json().code).toBe("signature_invalid");
+      // The address holds the webhook's secret: it is never said back.
+      expect(refused.body).not.toContain(hooks.signed?.split("/").pop() ?? "no-token");
     }
     // The body is what was signed: one byte different and it does not match.
     const tampered = await send("signed", body.replace("7", "8"), {
@@ -174,7 +176,7 @@ describe("a webhook that checks signatures", () => {
     expect(tampered.statusCode).toBe(401);
     // Each refusal is counted, by why.
     expect((await t.admin.get("/metrics")).body).toMatch(
-      /^platform_webhook_refusals_total\{reason="signature"\} [1-9]\d*$/m,
+      /^volvel_webhook_refusals_total\{reason="signature"\} [1-9]\d*$/m,
     );
     expect((await alice.get(`${ws()}/runs?limit=200`)).body.items.length).toBe(before);
   });

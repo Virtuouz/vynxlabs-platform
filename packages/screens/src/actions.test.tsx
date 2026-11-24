@@ -88,6 +88,7 @@ function TableView(props: WidgetViewProps<Record<string, unknown>> & Extra) {
   return (
     <div data-close={props.close ? "yes" : "no"} data-selected={props.selectedRecord ?? ""}>
       <span data-testid="listens">{String(listens?.("rowClick"))}</span>
+      <span data-testid="columns">{JSON.stringify(props.config?.columns ?? null)}</span>
       {rows.map((row) => (
         <div key={String(row.id)}>
           <button type="button" onClick={() => emit("rowClick", { record: String(row.id) })}>
@@ -112,11 +113,15 @@ function TableView(props: WidgetViewProps<Record<string, unknown>> & Extra) {
     </div>
   );
 }
-function PointsView({ data, emit }: WidgetViewProps) {
+function PointsView({ data, emit, title }: WidgetViewProps) {
   return (
     <button
       type="button"
-      onClick={() => emit("pointClick", { group: { status: "open" } })}
+      onClick={() =>
+        emit("pointClick", {
+          group: { status: title === "empty" ? null : "open" },
+        })
+      }
       data-has={data.totals ? "yes" : "no"}
     >
       Point
@@ -226,6 +231,46 @@ describe("confirming an action", () => {
     await waitFor(() => expect(screen.getByTestId("outcome").textContent).toBe('{"ok":true}'));
   });
 
+  test("WLK-10: the confirmation starts on its main button, and on Go back when the action removes a record", async () => {
+    show([withAction(markPaid)], clientOf());
+    await screen.findByText("INV-1");
+    fireEvent.click(screen.getByLabelText("Act on INV-1"));
+    await screen.findByText("Mark paid?");
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole("button", { name: "Mark paid" })),
+    );
+    cleanup();
+    const removal: Action = {
+      confirm: { title: "Remove it?", button: "Remove" },
+      steps: [{ do: "delete", record: "event" }],
+    };
+    show([withAction(removal)], clientOf());
+    await screen.findByText("INV-1");
+    fireEvent.click(screen.getByLabelText("Act on INV-1"));
+    await screen.findByText("Remove it?");
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole("button", { name: "Cancel" })),
+    );
+  });
+
+  test("an action saved but not started says so, and the page is read again", async () => {
+    const client = clientOf({
+      client: [],
+      started: 0,
+      notStarted: [{ do: "flow", path: "flows/ping" }],
+    });
+    show([withAction(markPaid)], client);
+    await screen.findByText("INV-1");
+    const reads = client.read.mock.calls.length;
+    fireEvent.click(screen.getByLabelText("Act on INV-1"));
+    await screen.findByText("Mark paid?");
+    fireEvent.click(screen.getByRole("button", { name: "Mark paid" }));
+    expect(
+      await screen.findByText("Saved. The flow flows/ping could not be started."),
+    ).toBeTruthy();
+    await waitFor(() => expect(client.read.mock.calls.length).toBeGreaterThan(reads));
+  });
+
   test("Cancel runs nothing and says so to the view", async () => {
     const client = clientOf();
     show([withAction(markPaid)], client);
@@ -261,7 +306,9 @@ describe("confirming an action", () => {
     await screen.findByText("Mark paid?");
     fireEvent.click(screen.getByRole("button", { name: "Mark paid" }));
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Mark paid" }).hasAttribute("disabled")).toBe(true),
+      expect(screen.getByRole("button", { name: "Mark paid" }).getAttribute("aria-disabled")).toBe(
+        "true",
+      ),
     );
     fireEvent.click(screen.getByRole("button", { name: "Mark paid" }));
     expect(client.act).toHaveBeenCalledTimes(1);
@@ -403,6 +450,32 @@ describe("the browser's steps", () => {
     expect(client.act).toHaveBeenCalledWith("points", "on/pointClick", { records: {} });
   });
 
+  test("narrow on a group with no value leaves the page as it is, and says so", async () => {
+    const client = clientOf({ client: [{ do: "narrow", filter: "status", from: "status" }] });
+    const points: PageWidget = {
+      id: "points",
+      type: "test/points",
+      at,
+      title: "empty",
+      data: {
+        totals: {
+          source: {
+            visual: {
+              table: "invoices",
+              measures: [{ fn: "count" }],
+              groupBy: [{ column: "status" }],
+            },
+          },
+        } as never,
+      },
+      on: { pointClick: { steps: [{ do: "narrow", filter: "status", from: "status" }] } },
+    };
+    const { onFilterValues } = show([points], client, {}, { month: "2026-11" });
+    fireEvent.click(await screen.findByText("Point"));
+    expect(await screen.findByText("Those rows have no value to narrow the page by.")).toBeTruthy();
+    expect(onFilterValues).not.toHaveBeenCalled();
+  });
+
   test("rows opens a side sheet of the rows behind the group, drawn by the table", async () => {
     const client = clientOf({ client: [{ do: "rows" }] });
     const points: PageWidget = {
@@ -432,6 +505,44 @@ describe("the browser's steps", () => {
       { month: "2026-11" },
     );
     expect(screen.getByText("The rows behind it")).toBeTruthy();
+  });
+});
+
+describe("the rows behind a money number", () => {
+  test("WLK-11: the column the number was made of is written as the widget writes it", async () => {
+    const client = clientOf({ client: [{ do: "rows" }] });
+    client.behind.mockResolvedValue({
+      shape: "rows",
+      columns: [col("number"), col("total", "number")],
+      rows: [{ number: "BEHIND-1", total: 135795 }],
+    });
+    const points: PageWidget = {
+      id: "points",
+      type: "test/points",
+      at,
+      config: { format: { style: "currency", currency: "USD", minorUnits: true } },
+      data: {
+        totals: {
+          source: {
+            visual: {
+              table: "invoices",
+              measures: [{ fn: "sum", column: "total" }],
+              groupBy: [{ column: "status" }],
+            },
+          },
+        } as never,
+      },
+      on: { pointClick: { steps: [{ do: "rows" }] } },
+    };
+    show([points], client);
+    fireEvent.click(await screen.findByText("Point"));
+    expect(await screen.findByText("BEHIND-1")).toBeTruthy();
+    // The table draws a column with the format it is given: the number's, for the number's column.
+    const columns = JSON.parse(screen.getByTestId("columns").textContent ?? "null");
+    expect(columns).toEqual([
+      { column: "number" },
+      { column: "total", format: { style: "currency", currency: "USD", minorUnits: true } },
+    ]);
   });
 });
 

@@ -12,7 +12,20 @@ const MAX_SENTENCES = 8;
 const list = (names: string[]) =>
   names.length <= 1 ? (names[0] ?? "") : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;
 
-const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+// The database keeps a body's keys in an order of its own, so two bodies are the same when
+// their keys and values are, in whatever order they are written.
+const ordered = (value: unknown): unknown =>
+  Array.isArray(value)
+    ? value.map(ordered)
+    : value && typeof value === "object"
+      ? Object.fromEntries(
+          Object.entries(value as Record<string, unknown>)
+            .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+            .map(([key, one]) => [key, ordered(one)]),
+        )
+      : value;
+const same = (a: unknown, b: unknown) =>
+  JSON.stringify(ordered(a ?? null)) === JSON.stringify(ordered(b ?? null));
 
 const STEP: Record<string, string> = {
   trigger: "a trigger",
@@ -83,8 +96,9 @@ function describeScript(before: Body, after: Body): string[] {
   if (!same(code(before), code(after))) {
     const lines = (text: string | undefined) => (text ?? "").split("\n").length;
     const delta = lines(code(after)) - lines(code(before));
+    const line = (n: number) => (n === 1 ? "line" : "lines");
     out.push(
-      `Changes its code${delta === 0 ? "" : delta > 0 ? ` (${delta} more lines)` : ` (${-delta} fewer lines)`}.`,
+      `Changes its code${delta === 0 ? "" : delta > 0 ? ` (${delta} more ${line(delta)})` : ` (${-delta} fewer ${line(-delta)})`}.`,
     );
   }
   const uses = (body: Body, kind: string) =>
@@ -197,6 +211,8 @@ function describeGeneric(before: Body, after: Body): string[] {
  * resource; `after` is the draft, or nothing for a removal.
  */
 export function describeChange(kind: string, before: Body, after: Body): string[] {
+  // A kind is said as people say it: "trigger source", not "trigger_source".
+  const noun = kind.replaceAll("_", " ");
   if (!before && after) {
     if (kind === "flow") {
       const steps = Object.keys((after.nodes ?? {}) as object).length;
@@ -206,12 +222,12 @@ export function describeChange(kind: string, before: Body, after: Body): string[
       const columns = Object.keys((after.columns ?? {}) as object);
       return [`A new table with the columns ${list(columns)}.`];
     }
-    return [`A new ${kind}.`];
+    return [`A new ${noun}.`];
   }
   if (before && !after) {
     return kind === "table"
       ? ["Retires the table. Its rows are kept until someone deletes them for good."]
-      : [`Removes the ${kind}.`];
+      : [`Removes the ${noun}.`];
   }
   const said =
     kind === "flow"

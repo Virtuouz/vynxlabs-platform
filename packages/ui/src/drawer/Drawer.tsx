@@ -2,6 +2,7 @@ import { Popover } from "@base-ui/react/popover";
 import { ChevronRight, X } from "lucide-react";
 import {
   type ComponentType,
+  type FocusEvent,
   type KeyboardEvent,
   type ReactElement,
   type ReactNode,
@@ -392,6 +393,21 @@ export function DrawerEditor({
         >
           <Popover.Popup
             ref={popup}
+            // A single-line field that takes focus as the editor opens, holding a default text such as
+            // "Table", has it selected, so typing replaces it instead of continuing it.
+            onFocus={(event: FocusEvent<HTMLDivElement>) => {
+              const field = event.target;
+              const from = event.relatedTarget;
+              if (
+                field instanceof HTMLInputElement &&
+                /^(text|search|)$/.test(field.type) &&
+                !(from instanceof Node && event.currentTarget.contains(from)) &&
+                event.currentTarget.querySelector(
+                  "input:not([type=hidden]):not([type=radio]):not([type=checkbox])",
+                ) === field
+              )
+                field.select();
+            }}
             // Focus stays in it while it is open, as in a dialog: Tab from the last control goes to the first.
             onKeyDown={(event: KeyboardEvent) => {
               if (event.key !== "Tab") return;

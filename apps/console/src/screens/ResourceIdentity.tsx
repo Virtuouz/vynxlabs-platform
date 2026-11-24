@@ -2,6 +2,8 @@ import { Button, Dialog, Notice, TextField } from "@volvel/ui";
 import { useEffect, useRef, useState } from "react";
 import { ApiError, api } from "../api.ts";
 import { failureText, notify } from "../ask.tsx";
+import { putDraft } from "../kit/draftApi.ts";
+import { keepPlace } from "../kit/focus.ts";
 import { Loading } from "../kit/LoadState.tsx";
 import { navigate } from "../router.tsx";
 
@@ -87,6 +89,7 @@ interface Stored {
   body: Record<string, unknown>;
   key?: string;
   title?: string | null;
+  revision?: number;
 }
 
 /**
@@ -105,6 +108,7 @@ export function ResourceIdentity({
   onDone,
   label = "Rename",
   unsaved = false,
+  removing = false,
 }: {
   root: string;
   /** The workspace's address in the console, for the way to the Releases screen. */
@@ -116,15 +120,43 @@ export function ResourceIdentity({
   label?: string;
   /** An editor with changes it has not saved: the draft renamed would not have them. */
   unsaved?: boolean;
+  /** The resource is removed in the person's drafts: a name given to it would be given to nothing. */
+  removing?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   // A rename is told to the screen once the dialog has gone, so the screen it opens does not
   // take the dialog away mid-motion (found by the phase 23 walk, on Queries).
   const renamed = useRef<string | undefined>(undefined);
-  const why = cannotRename(row) ?? (unsaved ? "Save the draft first." : undefined);
+  const opener = useRef<HTMLElement | null>(null);
+  const told = useRef(onDone);
+  told.current = onDone;
+  // The list a screen draws this from can change at once on a rename, and take the screen's own
+  // button away before the dialog has gone: a rename that was saved is still told.
+  useEffect(
+    () => () => {
+      const path = renamed.current;
+      renamed.current = undefined;
+      if (path !== undefined) told.current(path);
+    },
+    [],
+  );
+  const why =
+    cannotRename(row) ??
+    (removing
+      ? `The ${row.kind.replaceAll("_", " ")} is removed in your drafts. Keep it to give it another name.`
+      : undefined) ??
+    (unsaved ? "Save the draft first." : undefined);
   return (
     <>
-      <Button size="small" disabled={why !== undefined} title={why} onClick={() => setOpen(true)}>
+      <Button
+        size="small"
+        disabled={why !== undefined}
+        {...(why ? { tooltip: why } : {})}
+        onClick={(event) => {
+          opener.current = event.currentTarget;
+          setOpen(true);
+        }}
+      >
         {label}
       </Button>
       <Dialog
@@ -133,7 +165,12 @@ export function ResourceIdentity({
         onClosed={() => {
           const path = renamed.current;
           renamed.current = undefined;
-          if (path !== undefined) onDone(path);
+          if (path !== undefined) {
+            // The screen may draw itself again at the new path: the keyboard stays where it was.
+            const settle = keepPlace(opener.current);
+            onDone(path);
+            settle();
+          }
         }}
         title={`Name and path of ${row.path}`}
         description={`It stays the same ${row.kind.replaceAll("_", " ")}: its history, its data and what is bound to it come along, and ${row.path} keeps answering for 90 days. Nothing changes until the draft is deployed.`}
@@ -168,6 +205,7 @@ function IdentityForm({
   onDone: (path: string) => void;
 }) {
   const [stored, setStored] = useState<Stored>();
+  const [draftRevision, setDraftRevision] = useState<number>();
   const [was, setWas] = useState("");
   const [path, setPath] = useState(row.path);
   const [title, setTitle] = useState("");
@@ -210,6 +248,7 @@ function IdentityForm({
       // A draft that does not speak of the title leaves the one the resource has.
       const now = (draft && draft.title !== null ? draft.title : deployed?.title) ?? "";
       setStored(found);
+      setDraftRevision(draft?.revision);
       setWas(now);
       setTitle(now);
     })().catch((error) => current && setProblem(failureText(error)));
@@ -225,13 +264,19 @@ function IdentityForm({
     setBusy(true);
     setProblem(undefined);
     try {
-      await api.put(`${root}/drafts/${row.path}`, {
-        kind: stored.kind,
-        schemaVersion: stored.schemaVersion,
-        body: stored.body,
-        ...(moved ? { path: path.trim() } : {}),
-        ...(retitled ? { title: title.trim() || null } : {}),
-      });
+      // Based on the draft this dialog read when it opened, or on none when there was none.
+      await putDraft(
+        root,
+        row.path,
+        {
+          kind: stored.kind,
+          schemaVersion: stored.schemaVersion,
+          body: stored.body,
+          ...(moved ? { path: path.trim() } : {}),
+          ...(retitled ? { title: title.trim() || null } : {}),
+        },
+        draftRevision !== undefined ? { revision: draftRevision } : { first: true },
+      );
       notify.success(
         moved
           ? `A draft renames ${row.path} to ${path.trim()}.`

@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { objectHref } from "./kit/objects.tsx";
+import { isEditedKind, objectHref } from "./kit/objects.tsx";
 import { ReferenceList } from "./kit/references.tsx";
 import {
   ConnectionPage,
@@ -16,18 +16,31 @@ import { show } from "./testing.tsx";
 const root = "/tenants/t1/workspaces/w1";
 const link = "/t/t1/workspaces/w1";
 let routes: Record<string, () => [number, unknown]>;
+/** What was sent with a method other than GET: "PUT /path" and its body. */
+let sent: { call: string; body: unknown }[];
 
 beforeEach(() => {
   routes = {};
+  sent = [];
   vi.stubGlobal("matchMedia", (query: string) => ({
     matches: true,
     media: query,
     addEventListener: () => {},
     removeEventListener: () => {},
   }));
-  vi.stubGlobal("fetch", async (address: string) => {
+  vi.stubGlobal("fetch", async (address: string, init?: RequestInit) => {
     const url = new URL(address, "http://console.test");
     const path = url.pathname.replace("/api/v1", "");
+    const method = init?.method ?? "GET";
+    if (method !== "GET") {
+      const call = `${method} ${path}`;
+      sent.push({ call, body: init?.body ? JSON.parse(String(init.body)) : undefined });
+      const [status, body] = routes[call] ? routes[call]() : [404, { status: 404 }];
+      return new Response(JSON.stringify(body), {
+        status,
+        headers: { "content-type": "application/json" },
+      });
+    }
     const answer = routes[`${path}${url.search}`] ?? routes[path];
     const [status, body] = answer ? answer() : [404, { status: 404, detail: "Not found" }];
     return new Response(JSON.stringify(body), {
@@ -64,6 +77,45 @@ test("every kind of thing has a home to link to", () => {
   expect(objectHref(link, "flow", "orders/reorder")).toBe(`${link}/flows/orders/reorder`);
   expect(objectHref(link, "schedule", "nightly")).toBe(`${link}/triggers?trigger=nightly`);
   expect(objectHref(link, "table", "orders")).toBe(`${link}/tables/orders`);
+  expect(objectHref(link, "dashboard", "ops/daily")).toBe(`${link}/dashboards/at/ops/daily`);
+  expect(objectHref(link, "connection_group", "crm/accounts")).toBe(`${link}/connections`);
+  expect(objectHref(link, "workspace", "settings")).toBe(`${link}/alerts`);
+});
+
+test("no kind is sent to an editor that does not exist for it (REL-07)", () => {
+  const kinds = [
+    "role",
+    "connector",
+    "connection",
+    "connection_group",
+    "variable",
+    "table",
+    "query",
+    "data_source",
+    "event",
+    "script",
+    "trigger_source",
+    "schedule",
+    "trigger",
+    "flow",
+    "theme",
+    "interface",
+    "dashboard",
+    "doc",
+    "app",
+    "binding",
+  ];
+  for (const kind of kinds) {
+    const to = objectHref(link, kind, "a/b");
+    if (!isEditedKind(kind)) expect(to, kind).not.toContain("/resources/edit/");
+  }
+  expect(objectHref(link, "query", "sales/by-day")).toBe(`${link}/queries?query=sales%2Fby-day`);
+  expect(objectHref(link, "data_source", "erp/db")).toBe(`${link}/sources/erp/db`);
+  expect(objectHref(link, "doc", "guide/intro")).toBe(`${link}/docs/guide/intro`);
+  expect(objectHref(link, "theme", "theme")).toBe(`${link}/resources`);
+  expect(objectHref(link, "variable", "a/b")).toBe(`${link}/variables/a/b`);
+  // A group's members are set on the Connections screen, where its groups are (CFG-10).
+  expect(objectHref(link, "connection_group", "a/b")).toBe(`${link}/connections`);
 });
 
 test("what uses a thing is a list of links, drafts marked, and a failed read says so", async () => {
@@ -193,4 +245,248 @@ test("a trigger inside a flow links to Triggers by its path and node, so it open
   expect(within(grid).getByRole("link", { name: "reminders/hourly" }).getAttribute("href")).toBe(
     `${link}/triggers?trigger=reminders%2Fhourly`,
   );
+});
+
+test("a bound connection's page has Unbind, which asks naming what uses it, then shows it not set up (CFG-MP1)", async () => {
+  let bound = true;
+  const calls: string[] = [];
+  vi.stubGlobal("fetch", async (address: string, init: RequestInit = {}) => {
+    const url = new URL(address, "http://console.test");
+    const path = url.pathname.replace("/api/v1", "");
+    calls.push(`${init.method ?? "GET"} ${path}`);
+    if (init.method === "DELETE") {
+      bound = false;
+      return new Response(null, { status: 204 });
+    }
+    const body = path.endsWith("/references")
+      ? { items: uses }
+      : {
+          path: "erp",
+          connector: "http",
+          description: "",
+          defined: true,
+          bound,
+          config: bound ? { baseUrl: "https://erp.example" } : null,
+          hasCredential: bound,
+          health: null,
+        };
+    return new Response(JSON.stringify(body), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  });
+  history.replaceState(null, "", `${link}/connections/erp`);
+  show(<ConnectionPage root={root} link={link} path="erp" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Remove from here" }));
+  const dialog = await screen.findByRole("dialog");
+  expect(dialog.textContent).toMatch(/Used by 2: orders\/sync and orders\/reorder/);
+  fireEvent.click(within(dialog).getByRole("button", { name: "Remove from here" }));
+  await screen.findByText("Not set up here");
+  expect(calls).toContain(`DELETE ${root}/connection-bindings/erp`);
+  expect(screen.queryByRole("button", { name: "Remove from here" })).toBeNull();
+  history.replaceState(null, "", "/");
+});
+
+test("a script's page shows the settings it runs with, as the editor sets them (SCR-08)", async () => {
+  routes[`${root}/scripts`] = () => [
+    200,
+    { items: [{ path: "orders/sync", description: "", ownership: "ui", lastRun: null }] },
+  ];
+  routes[`${root}/references`] = () => [200, { items: [] }];
+  routes[`${root}/resources/orders/sync`] = () => [
+    200,
+    {
+      kind: "script",
+      path: "orders/sync",
+      ownership: "ui",
+      version: 3,
+      body: {
+        timeoutSeconds: 90,
+        memoryMb: 512,
+        concurrency: { key: "/customer", limit: 2 },
+        worker: "heavy",
+        onFailure: { notify: "ops" },
+        retries: { limit: 3, delaySeconds: 10, backoff: true },
+        uses: {
+          connections: ["erp"],
+          secrets: [],
+          variables: [],
+          tables: ["orders"],
+          sources: ["warehouse"],
+          events: ["order/synced"],
+          connectionGroups: ["crm/accounts"],
+        },
+      },
+    },
+  ];
+  show(<ScriptPage root={root} link={link} path="orders/sync" />);
+  fireEvent.click(await screen.findByRole("tab", { name: "Settings" }));
+  const text = async (label: string) => (await screen.findByText(label)).nextElementSibling;
+  expect((await text("Memory"))?.textContent).toBe("512 MB");
+  expect((await text("Runs at once"))?.textContent).toBe("2 for each value of /customer");
+  expect((await text("Worker pool"))?.textContent).toBe("heavy");
+  expect((await text("Tables"))?.textContent).toBe("orders");
+  expect((await text("Data sources"))?.textContent).toBe("warehouse");
+  expect((await text("Events it may publish"))?.textContent).toBe("order/synced");
+  expect((await text("Connection groups"))?.textContent).toBe("crm/accounts");
+  expect(
+    (await text("Sends a summary through, when it fails for the last time"))?.textContent,
+  ).toBe("ops");
+  expect((await text("Tries again"))?.textContent).toBe(
+    "3 times, 10 seconds apart, waiting longer each time",
+  );
+  expect((await text("Stops after"))?.textContent).toBe("90 seconds");
+});
+
+test("w-builder 7: a script that is never tried again says so, not '0 times, waiting longer each time'", async () => {
+  routes[`${root}/scripts`] = () => [
+    200,
+    { items: [{ path: "orders/once", description: "", ownership: "ui", lastRun: null }] },
+  ];
+  routes[`${root}/references`] = () => [200, { items: [] }];
+  routes[`${root}/resources/orders/once`] = () => [
+    200,
+    {
+      kind: "script",
+      path: "orders/once",
+      ownership: "ui",
+      version: 1,
+      body: { retries: { limit: 0, delaySeconds: 30, backoff: true } },
+    },
+  ];
+  show(<ScriptPage root={root} link={link} path="orders/once" />);
+  fireEvent.click(await screen.findByRole("tab", { name: "Settings" }));
+  const row = (await screen.findByText("Tries again")).nextElementSibling;
+  expect(row?.textContent).toBe("Never: a failed run is not tried again");
+});
+
+test("MP-1: a script's settings are changed on its page, and saved as a draft", async () => {
+  routes[`${root}/scripts`] = () => [
+    200,
+    { items: [{ path: "orders/sync", description: "", ownership: "ui", lastRun: null }] },
+  ];
+  routes[`${root}/references`] = () => [200, { items: [] }];
+  routes[`${root}/resources/orders/sync`] = () => [
+    200,
+    {
+      kind: "script",
+      path: "orders/sync",
+      ownership: "ui",
+      version: 3,
+      body: { timeoutSeconds: 90, memoryMb: 512, source: { language: "typescript", code: "x" } },
+    },
+  ];
+  routes[`PUT ${root}/drafts/orders/sync`] = () => [200, { revision: 1, body: {} }];
+  show(<ScriptPage root={root} link={link} path="orders/sync" />);
+  fireEvent.click(await screen.findByRole("tab", { name: "Settings" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Change the settings" }));
+  const memory = (await screen.findByLabelText(/^Memory/)) as HTMLInputElement;
+  expect(memory.value).toBe("512");
+  fireEvent.change(memory, { target: { value: "1024" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save as a draft" }));
+  await screen.findByText(/Saved as a draft/);
+  const put = sent.find((one) => one.call === `PUT ${root}/drafts/orders/sync`);
+  expect(put?.body).toMatchObject({
+    kind: "script",
+    body: { timeoutSeconds: 90, memoryMb: 1024, source: { code: "x" } },
+  });
+  // The first draft over what is deployed names no revision.
+  expect(put?.body).not.toHaveProperty("revision");
+});
+
+test("MP-1: in production, or for a script a repository holds, the settings are read only", async () => {
+  routes[`${root}/scripts`] = () => [
+    200,
+    { items: [{ path: "orders/sync", description: "", ownership: "ui", lastRun: null }] },
+  ];
+  routes[`${root}/references`] = () => [200, { items: [] }];
+  routes[`${root}/resources/orders/sync`] = () => [
+    200,
+    { kind: "script", path: "orders/sync", ownership: "ui", version: 3, body: {} },
+  ];
+  show(<ScriptPage root={root} link={link} path="orders/sync" production />);
+  fireEvent.click(await screen.findByRole("tab", { name: "Settings" }));
+  await screen.findByText(/reach production by promotion/);
+  expect(screen.queryByRole("button", { name: "Change the settings" })).toBeNull();
+});
+
+test("a script the repository holds offers no way to change its settings (P31)", async () => {
+  routes[`${root}/scripts`] = () => [
+    200,
+    { items: [{ path: "orders/sync", description: "", ownership: "code", lastRun: null }] },
+  ];
+  routes[`${root}/references`] = () => [200, { items: [] }];
+  routes[`${root}/resources/orders/sync`] = () => [
+    200,
+    { kind: "script", path: "orders/sync", ownership: "code", version: 3, body: {} },
+  ];
+  show(<ScriptPage root={root} link={link} path="orders/sync" />);
+  fireEvent.click(await screen.findByRole("tab", { name: "Settings" }));
+  await screen.findByText(/repository/);
+  expect(screen.queryByRole("button", { name: "Change the settings" })).toBeNull();
+});
+
+const scriptList = (path: string, extra = {}) => {
+  routes[`${root}/scripts`] = () => [
+    200,
+    { items: [{ path, description: "", ownership: "ui", lastRun: null, ...extra }] },
+  ];
+  routes[`${root}/references`] = () => [200, { items: [] }];
+};
+
+test("R-last: a script that has only a draft shows the draft's settings, and says it is a draft", async () => {
+  scriptList("orders/new", { draft: "new" });
+  routes[`${root}/drafts/orders/new`] = () => [
+    200,
+    {
+      path: "orders/new",
+      kind: "script",
+      schemaVersion: 1,
+      revision: 2,
+      deleted: false,
+      body: { timeoutSeconds: 45, source: { language: "typescript", code: "x" } },
+    },
+  ];
+  show(<ScriptPage root={root} link={link} path="orders/new" />);
+  fireEvent.click(await screen.findByRole("tab", { name: "Settings" }));
+  await screen.findByText("45 seconds");
+  expect(screen.queryByText(/Could not load the settings/)).toBeNull();
+  expect(screen.getByText(/only a draft and is not deployed yet/)).toBeTruthy();
+});
+
+test("R-last: a script with a draft over a deployed version reads the draft and says so, also after a reload", async () => {
+  scriptList("orders/sync");
+  routes[`${root}/resources/orders/sync`] = () => [
+    200,
+    {
+      kind: "script",
+      path: "orders/sync",
+      ownership: "ui",
+      version: 3,
+      body: { timeoutSeconds: 90 },
+    },
+  ];
+  routes[`${root}/drafts/orders/sync`] = () => [
+    200,
+    {
+      path: "orders/sync",
+      kind: "script",
+      schemaVersion: 1,
+      revision: 1,
+      deleted: false,
+      body: { timeoutSeconds: 120 },
+    },
+  ];
+  show(<ScriptPage root={root} link={link} path="orders/sync" />);
+  fireEvent.click(await screen.findByRole("tab", { name: "Settings" }));
+  await screen.findByText("120 seconds");
+  expect(screen.queryByText("90 seconds")).toBeNull();
+  expect(screen.getByText(/This script has a draft\. These are the draft's settings/)).toBeTruthy();
+});
+
+test("R-last: a script with neither a deployed version nor a draft still says it could not be loaded", async () => {
+  scriptList("orders/none");
+  show(<ScriptPage root={root} link={link} path="orders/none" />);
+  fireEvent.click(await screen.findByRole("tab", { name: "Settings" }));
+  await screen.findByText(/Could not load the settings/);
 });

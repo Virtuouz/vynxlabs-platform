@@ -4,6 +4,7 @@ import { Type } from "typebox";
 import { badRequest, forbidden, notFound } from "../kernel/errors.js";
 import { loadBundle } from "../kernel/execution/bundles.js";
 import { diagnose } from "../kernel/execution/diagnose.js";
+import { runnable } from "../kernel/execution/runs.js";
 import { bundleFrames, originalPosition } from "../kernel/execution/sourcemap.js";
 import {
   flowStateSql,
@@ -42,6 +43,11 @@ const Activity = Type.Object({
   status: ActivityStatus,
   state: RunStateSchema,
   trigger: Type.String({ description: "What started it: manual, schedule, webhook, event, form…" }),
+  source: Type.Boolean({
+    description:
+      "True for a run of a trigger source: its target is the source's path, which is not a " +
+      "script, so it has no script page and cannot be run again by hand.",
+  }),
   attempt: Type.Integer(),
   maxAttempts: Type.Integer(),
   error: NullableString,
@@ -76,6 +82,7 @@ interface ActivityRow {
   status: ActivityStatus;
   state: RunState;
   trigger_type: string;
+  source: boolean;
   attempt: number;
   max_attempts: number;
   error: string | null;
@@ -160,9 +167,11 @@ export function operationsRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       if (may.scripts)
         parts.push(sql`
           select 'script' as kind, r.id, r.script_path as target, r.status::text as status,
-            ${runStateSql("r.status")} as state, r.trigger_type, r.attempt, r.max_attempts, r.error->>'message' as error,
+            ${runStateSql("r.status", "r.scheduled_for")} as state, r.trigger_type, (r.trigger_detail ? 'relay') as source, r.attempt, r.max_attempts, r.error->>'message' as error,
             r.error_summary, r.output_summary, r.tags,
-            b.version, r.created_at, r.scheduled_for, null::timestamptz as wake_at, r.started_at,
+            b.version, r.created_at, r.scheduled_for,
+            case when r.status = 'queued' and r.scheduled_for > now() then r.scheduled_for end as wake_at,
+            r.started_at,
             r.finished_at
           from run r join bundle b on b.id = r.bundle_id
           where r.workspace_id = ${w} and r.flow_run_id is null and ${window("r.created_at")}
@@ -175,7 +184,7 @@ export function operationsRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             case when f.status = 'running' and exists (
               select 1 from step_run s where s.flow_run_id = f.id and s.status = 'waiting'
             ) then 'waiting' else f.status::text end as status,
-            ${flowStateSql("f")} as state, f.trigger_type, 1 as attempt, 1 as max_attempts, f.error->>'message' as error,
+            ${flowStateSql("f")} as state, f.trigger_type, false as source, 1 as attempt, 1 as max_attempts, f.error->>'message' as error,
             f.error_summary, f.output_summary, f.tags,
             b.version, f.created_at, null::timestamptz as scheduled_for,
             (select min(s.wake_at) from step_run s
@@ -278,7 +287,8 @@ export function operationsRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           query.sort === "started"
             ? sql`extract(epoch from coalesce(started_at, scheduled_for, created_at))::float8`
             : query.sort === "duration"
-              ? sql`coalesce(extract(epoch from finished_at - started_at)::float8, -1)`
+              ? // A run that has not finished has no length: it goes last, whichever way the list runs.
+                sql`coalesce(extract(epoch from finished_at - started_at)::float8, ${descending ? -1 : 1e18}::float8)`
               : sql`null::float8`;
         let afterValue: number | undefined;
         let afterId = args.after;
@@ -335,6 +345,7 @@ export function operationsRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               status: row.status,
               state: row.state,
               trigger: row.trigger_type,
+              source: Boolean(row.source),
               attempt: Number(row.attempt),
               maxAttempts: Number(row.max_attempts),
               error: row.error,
@@ -455,10 +466,14 @@ export function operationsRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               attempts: Type.Array(
                 Type.Object({
                   attempt: Type.Integer(),
-                  startedAt: Time,
-                  endedAt: Time,
+                  startedAt: NullableTime,
+                  endedAt: NullableTime,
                   failed: Type.Boolean({
-                    description: "Whether it logged an error, or the run failed on it.",
+                    description:
+                      "Whether it was followed by another attempt, or the run failed on it.",
+                  }),
+                  errorsLogged: Type.Integer({
+                    description: "Lines it logged as errors. A count, not a verdict.",
                   }),
                 }),
               ),
@@ -512,7 +527,7 @@ export function operationsRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             "attempt",
             eb.fn.min("logged_at").as("started"),
             eb.fn.max("logged_at").as("ended"),
-            sql<boolean>`bool_or(level = 'error')`.as("failed"),
+            sql<string>`count(*) filter (where level = 'error')`.as("errors"),
           ])
           .where("run_id", "=", run.id)
           .groupBy("attempt")
@@ -526,18 +541,21 @@ export function operationsRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               .where("worker.id", "=", run.worker_id)
               .executeTakeFirst()
           : undefined;
-        const script = run.resource_id
-          ? await db
-              .selectFrom("resource")
-              .select("body")
-              .where("id", "=", run.resource_id)
-              .executeTakeFirst()
+        // What the script was when the run ran: the bundle's own manifest, as a worker reads it,
+        // not the resource as deployed now, which may have changed or be gone.
+        const ranOn = await db
+          .selectFrom("bundle")
+          .select(["id", "storage_key"])
+          .where("id", "=", run.bundle_id)
+          .executeTakeFirst();
+        const ran = ranOn
+          ? await runnable(kernel, ranOn, run.script_path).catch(() => undefined)
           : undefined;
-        const body = (script?.body ?? {}) as {
-          timeoutSeconds?: number;
-          uses?: { connections?: string[] };
+        const body = {
+          timeoutSeconds: ran?.timeoutSeconds,
+          uses: { connections: ran?.uses.connections ?? [] },
         };
-        const connections = body.uses?.connections ?? [];
+        const connections = body.uses.connections;
         const bound = new Set(
           connections.length === 0
             ? []
@@ -596,14 +614,20 @@ export function operationsRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         }
         return {
           location,
-          attempts: attempts.map((row) => ({
-            attempt: row.attempt,
-            startedAt: iso(new Date(row.started as unknown as string)),
-            endedAt: iso(new Date(row.ended as unknown as string)),
-            // An error logged in it, or the run's own failure on its last attempt: a script that
-            // throws without logging failed all the same.
-            failed: Boolean(row.failed) || (run.status === "failed" && row.attempt === run.attempt),
-          })),
+          // Every attempt the run made, from 1 to the one it is on, with times where the log has
+          // them: one that logged nothing is still an attempt. One failed when it was followed by
+          // another, or when the run failed on it; lines logged as errors are counted, not judged.
+          attempts: Array.from({ length: Math.max(run.attempt, 0) }, (_, at) => {
+            const attempt = at + 1;
+            const logged = attempts.find((row) => row.attempt === attempt);
+            return {
+              attempt,
+              startedAt: logged ? iso(new Date(logged.started as unknown as string)) : null,
+              endedAt: logged ? iso(new Date(logged.ended as unknown as string)) : null,
+              failed: attempt < run.attempt || (run.status === "failed" && attempt === run.attempt),
+              errorsLogged: Number(logged?.errors ?? 0),
+            };
+          }),
           worker: worker ? { id: worker.id, name: worker.name, pool: worker.pool } : null,
           timeoutSeconds: body.timeoutSeconds ?? null,
           uses,

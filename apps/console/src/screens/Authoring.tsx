@@ -1,10 +1,9 @@
 import {
   Button,
+  CheckboxField,
   EmptyState,
   MultiSelectField,
   Notice,
-  NumberField,
-  type Option,
   Panel,
   SelectField,
   Tabs,
@@ -18,10 +17,12 @@ import { CodeEditor, type Marker } from "../editor/CodeEditor.tsx";
 import { InputForm, withoutMasked } from "../InputDialog.tsx";
 import { DataTable } from "../kit/DataTable.tsx";
 import { DeployMenu } from "../kit/DeployMenu.tsx";
+import { DraftClash } from "../kit/DraftClash.tsx";
+import { putDraft } from "../kit/draftApi.ts";
 import { useDraftSave } from "../kit/draftSave.ts";
 import { Elapsed } from "../kit/Elapsed.tsx";
 import { ago } from "../kit/format.ts";
-import { useShortcut } from "../kit/keys.ts";
+import { formatCombo, useShortcut } from "../kit/keys.ts";
 import { ErrorState, Loading } from "../kit/LoadState.tsx";
 import { ProductionNotice } from "../kit/objects.tsx";
 import { PageHeader } from "../kit/PageHeader.tsx";
@@ -33,6 +34,8 @@ import { Page } from "../ListScreen.tsx";
 import { usePreference } from "../prefs.ts";
 import { Link, navigate, useNavigationGuard, useUrlParam } from "../router.tsx";
 import { useTaskEnd } from "../tasks.ts";
+import { STEP_ICONS } from "./builder/widgetIcons.ts";
+import { LimitsFields, NO_USES, type Uses, useCodeChoices } from "./CodeSettings.tsx";
 import { OfferButton } from "./OfferToAgent.tsx";
 import { ResourceIdentity } from "./ResourceIdentity.tsx";
 import { ScriptRunPanel } from "./Runs.tsx";
@@ -71,6 +74,24 @@ export default (
     return response.json();
   },
 });
+
+/**
+ * Optional. What the Test button on a connection of this kind runs: reach the
+ * outside system without doing anything with it, and say what was found.
+ * Without it, Test only builds the client above.
+ */
+export async function test(
+  config: { baseUrl: string },
+  credential: string | undefined,
+  signal: AbortSignal,
+) {
+  const response = await fetch(config.baseUrl, {
+    method: "HEAD",
+    signal,
+    headers: credential ? { authorization: \`Bearer \${credential}\` } : {},
+  });
+  return { status: response.status };
+}
 `;
 
 const WEBHOOK_SOURCE_STARTER = `import type { ScriptContext, WebhookRequest, WebhookSourceResult } from "@volvel/sdk";
@@ -118,22 +139,25 @@ interface ScriptBody {
   /** `code` when the input and output were read from the script's own exports. */
   schemaSource?: "code";
   timeoutSeconds?: number;
+  /** A script's: the most memory a run may use, in MB. */
+  memoryMb?: number | undefined;
+  /** A script's: runs at once, or runs at once for each value found at `key` in the input. */
+  concurrency?: number | { key: string; limit: number } | undefined;
+  /** The worker pool it runs on. Without one, the default pool. */
+  worker?: string | undefined;
+  /** A script's: what to do when a run fails for the last time. */
+  onFailure?: { script?: string; notify?: string } | undefined;
   retries?: { limit: number; delaySeconds: number; backoff: boolean };
-  uses?: {
-    connections: string[];
-    secrets: string[];
-    variables: string[];
-    [more: string]: string[];
-  };
+  uses?: Uses;
   /** A connector's: what a connection's configuration must fit. */
   configSchema?: unknown;
+  /** A script's: set, it is a step people pick in the flow editor, under this label. */
+  node?: { label: string; icon?: string; category?: string; takes?: string[] };
   /** A trigger source's: whether it takes a webhook's requests or a schedule's ticks. */
   mode?: "webhook" | "poll";
   source?: { language: "typescript"; code: string };
   [more: string]: unknown;
 }
-
-const NO_USES = { connections: [], secrets: [], variables: [] };
 
 const CODE_KINDS: Record<
   CodeKind,
@@ -200,7 +224,7 @@ const NEW_BODY: ScriptBody = {
   input: { type: "object", properties: { name: { type: "string" } } },
   output: { type: "object" },
   timeoutSeconds: 60,
-  retries: { limit: 0, delaySeconds: 0, backoff: false },
+  retries: { limit: 0, delaySeconds: 30, backoff: true },
   uses: { connections: [], secrets: [], variables: [] },
   source: { language: "typescript", code: SCRIPT_STARTERS[0]?.code ?? STARTER },
 };
@@ -228,16 +252,6 @@ interface DraftRow extends Omit<DraftDetail, "body"> {
 
 const PATH = /^[a-z0-9][a-z0-9_-]*(\/[a-z0-9][a-z0-9_-]*)*$/;
 
-/** Reads the names a workspace offers for a script's `uses`. */
-function useChoices(root: string, list: string, key: string): Option[] {
-  const loaded = useLoad<{ items: Record<string, string>[] }>(`${root}/${list}`);
-  return (loaded.data?.items ?? []).map((item) => ({
-    value: item[key] as string,
-    label: item[key] as string,
-    ...(item.description ? { hint: item.description } : {}),
-  }));
-}
-
 /**
  * Code written in the console: its source, its settings, and for a script a
  * way to try it. Saving makes a draft. Nothing that runs changes until the
@@ -259,14 +273,17 @@ export function ScriptEditor({
   kind?: CodeKind;
 }) {
   const about = CODE_KINDS[kind];
-  const uses = (of: ScriptBody) => of.uses ?? NO_USES;
   const [path, setPath] = useState(opened ?? "");
   const [body, setBody] = useState<ScriptBody>();
-  const [state, setState] = useState<"new" | "draft" | "deployed" | "repository">("new");
+  const [state, setState] = useState<"new" | "draft" | "deployed" | "repository" | "removed">(
+    "new",
+  );
   const [problem, setProblem] = useState<string>();
   const [pathTaken, setPathTaken] = useState<string>();
   const [fields, setFields] = useState<ApiError["fields"]>([]);
   const [busy, setBusy] = useState(false);
+  // Bumped to read the resource again, as when a removal is taken back.
+  const [again, setAgain] = useState(0);
   const [schemaText, setSchemaText] = useState("");
   // What is saved and what is on screen go through one hook: a save sends the newest text, and
   // what is typed while one is in flight is saved after it.
@@ -283,17 +300,21 @@ export function ScriptEditor({
       } catch {
         throw new Error("The schema is not valid JSON.");
       }
-      return api.put<DraftDetail>(`${root}/drafts/${snap.path}`, {
-        kind,
-        schemaVersion: 1,
-        // A schema read from the code is the code's: what was read is sent back as it is.
-        body:
-          about.schema && snap.body.schemaSource !== "code"
-            ? { ...snap.body, [about.schema.field]: schema }
-            : snap.body,
+      return putDraft<DraftDetail>(
+        root,
+        snap.path,
+        {
+          kind,
+          schemaVersion: 1,
+          // A schema read from the code is the code's: what was read is sent back as it is.
+          body:
+            about.schema && snap.body.schemaSource !== "code"
+              ? { ...snap.body, [about.schema.field]: schema }
+              : snap.body,
+        },
         // A new one is a create: a path that is taken is refused, never overwritten.
-        ...(at ? { revision: at } : opened ? {} : { create: true }),
-      });
+        at ? { revision: at } : opened ? { first: true } : { create: true },
+      );
     },
     applied: (saved, sent, current) => {
       // What the server sends back replaces the screen only if nothing was typed since.
@@ -321,7 +342,13 @@ export function ScriptEditor({
   const { dirty } = draft;
   // The last input it was tried with, kept while the editor is open.
   const [testInput, setTestInput] = useState<unknown>({});
+  const [testAll, setTestAll] = useState(false);
   const [testRun, setTestRun] = useState<string>();
+  // The test pane holds the input form above the result: a new run brings its result into view.
+  const resultTop = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (testRun) resultTop.current?.scrollIntoView?.({ block: "start", behavior: "smooth" });
+  }, [testRun]);
   // The test pane's tab, and the run's own tab, stay as chosen from one run to the next.
   const [paneTab, setPaneTab] = useKeptChoice("editor.pane", "result");
   const [runTab, setRunTab] = useKeptChoice("editor.run", "logs");
@@ -332,9 +359,7 @@ export function ScriptEditor({
   const [reveal, setReveal] = useState<{ line: number; column?: number; at: number }>();
   const [reading, setReading] = useState<string>();
   const [readingFailed, setReadingFailed] = useState<string>();
-  const connections = useChoices(root, "connection-bindings", "path");
-  const secrets = useChoices(root, "secrets", "name");
-  const variables = useChoices(root, "variable-values", "path");
+  const choices = useCodeChoices(root);
   const schemaReading = useTaskEnd(root, reading, (task) => {
     setReading(undefined);
     if (task.status === "failed") {
@@ -353,6 +378,9 @@ export function ScriptEditor({
   });
   // The path this editor saved a new one as. Opening it again would reload what is already on screen.
   const savedAs = useRef<string>(undefined);
+  // The icon and group of a step whose name was cleared to be typed again: the manifest wants a
+  // name of at least one character, so the step is dropped while it is empty, and given back.
+  const clearedStep = useRef<ScriptBody["node"]>(undefined);
   // Where the code lives in the editor, fixed for the editor's life, so a first save keeps its undo history.
   const [modelPath] = useState(() => `${about.list}/${kind}/${opened ?? "new"}.ts`);
 
@@ -371,11 +399,16 @@ export function ScriptEditor({
       open(about.fresh(), "new");
       return;
     }
-    if (opened === savedAs.current) return;
+    if (opened === savedAs.current && again === 0) return;
     (async () => {
       try {
         const found = await api.get<DraftDetail>(`${root}/drafts/${opened}`);
-        open(found.body, "draft", found.revision);
+        if (found.deleted) {
+          // A draft that removes it holds no code: what is shown is what is deployed. Nothing is
+          // saved from here, so a removal decided earlier is never undone by an autosave.
+          const resource = await api.get<{ body: ScriptBody }>(`${root}/resources/${opened}`);
+          open(resource.body, "removed", found.revision);
+        } else open(found.body, "draft", found.revision);
       } catch (error) {
         if ((error as ApiError).status !== 404) throw error;
         const resource = await api.get<{ ownership: string; body: ScriptBody }>(
@@ -387,7 +420,7 @@ export function ScriptEditor({
     return () => {
       current = false;
     };
-  }, [root, opened, about, draft.reset]);
+  }, [root, opened, about, draft.reset, again]);
 
   // ⌘S or Ctrl+S saves the draft, from anywhere on the page. It saves what was typed a moment
   // ago too: the text is read from the hook, not from the last render.
@@ -395,6 +428,7 @@ export function ScriptEditor({
   useShortcut("save", () => saveShortcut.current());
   // ⌘↵ or Ctrl+Enter runs the draft, from anywhere in the editor.
   const runShortcut = useRef<() => void>(() => {});
+  const inputPane = useRef<HTMLDivElement>(null);
   useShortcut("run", () => runShortcut.current(), { enabled: kind === "script" });
 
   // Changes not saved are not lost by a click elsewhere, Back, or closing the tab.
@@ -470,11 +504,31 @@ export function ScriptEditor({
   const fromRepository = state === "repository" && !body.source;
   /** A step that comes with the platform. It is the platform's to change. */
   const core = (opened ?? "").startsWith("core/");
-  const readOnly = !editable || fromRepository || core;
+  const removed = state === "removed";
+  const readOnly = !editable || fromRepository || core || removed;
   const change = (next: Partial<ScriptBody>) => {
     // On top of the newest, not of this render's: two changes before a render both stay.
     const now = draft.value();
     const merged = { ...(now?.body ?? body), ...next };
+    setBody(merged);
+    draft.edit({
+      path: now?.path ?? path,
+      schemaText: now?.schemaText ?? schemaText,
+      body: merged,
+    });
+  };
+  /** Sets what a failing run does, and drops `onFailure` when nothing is left in it. */
+  const changeFailure = (next: { script?: string | undefined; notify?: string | undefined }) => {
+    const now = draft.value();
+    const merged = { ...((now?.body ?? body).onFailure ?? {}), ...next };
+    const kept = Object.fromEntries(Object.entries(merged).filter(([, value]) => value));
+    change({ onFailure: Object.keys(kept).length > 0 ? kept : undefined });
+  };
+  /** Sets or, given nothing, clears the script's place among the flow editor's steps. */
+  const changeNode = (node: ScriptBody["node"]) => {
+    const now = draft.value();
+    const { node: _was, ...rest } = now?.body ?? body;
+    const merged: ScriptBody = node ? { ...rest, node } : rest;
     setBody(merged);
     draft.edit({
       path: now?.path ?? path,
@@ -515,6 +569,7 @@ export function ScriptEditor({
       const started = await api.post<{ runId: string }>(`${root}/test-runs`, {
         script: path,
         input,
+        ...(testAll ? { withAllDrafts: true } : {}),
       });
       setBuildIssues([]);
       setTestRun(started.runId);
@@ -531,10 +586,16 @@ export function ScriptEditor({
     }
   };
 
-  // The shortcut runs it again with the last input.
+  // The shortcut is the Run button: one path, with what the test pane holds now, validated and
+  // saved first as the button does. Where the form is not drawn there is nothing to press, and the
+  // last input is used.
   runShortcut.current = readOnly
     ? () => {}
-    : () => void test(testInput).catch((error) => setProblem(failureText(error)));
+    : () => {
+        const press = inputPane.current?.querySelector<HTMLButtonElement>('button[type="submit"]');
+        if (press) press.click();
+        else void test(testInput).catch((error) => setProblem(failureText(error)));
+      };
 
   /** The schema the input form is drawn from: the one read from the code, or the one written. */
   const inputSchema = (() => {
@@ -585,69 +646,86 @@ export function ScriptEditor({
           }}
         />
       ) : null}
-      {kind === "connector" ? null : (
-        <div className="grid grid-cols-2 gap-3">
-          <NumberField
-            name="timeout"
-            label="Give up after (seconds)"
-            value={body.timeoutSeconds}
-            min={1}
-            max={kind === "script" ? 3600 : 300}
+      <LimitsFields
+        kind={kind}
+        noun={about.noun}
+        body={body}
+        change={change}
+        changeFailure={changeFailure}
+        readOnly={readOnly}
+        fieldError={fieldError}
+        choices={choices}
+      />
+      {kind === "script" ? (
+        <fieldset className="m-0 flex flex-col gap-3 border-0 p-0">
+          <legend className="mb-1 text-body-sm font-medium">Use as a flow step</legend>
+          <TextField
+            name="stepLabel"
+            label="Step name"
+            value={body.node?.label ?? ""}
+            required={false}
+            maxLength={60}
             disabled={readOnly}
-            error={fieldError("/body/timeoutSeconds")}
-            onChange={(value) => change({ timeoutSeconds: value ?? (kind === "script" ? 60 : 30) })}
-          />
-          {body.retries ? (
-            <NumberField
-              name="retries"
-              label="Try again (times)"
-              value={body.retries.limit}
-              min={0}
-              max={10}
-              disabled={readOnly}
-              onChange={(value) =>
-                change({
-                  retries: {
-                    delaySeconds: 0,
-                    backoff: false,
-                    ...body.retries,
-                    limit: value ?? 0,
-                  },
-                })
+            hint="Give the script a name and it joins the flow editor's steps under it. Leave it empty to keep the script out of them."
+            onChange={(label) => {
+              if (label === "") {
+                clearedStep.current = body.node ?? clearedStep.current;
+                return changeNode(undefined);
               }
-            />
+              changeNode({ ...(body.node ?? clearedStep.current), label });
+            }}
+          />
+          {body.node ? (
+            <>
+              <div className="grid grid-cols-2 gap-3">
+                <SelectField
+                  name="stepIcon"
+                  label="Icon"
+                  value={body.node.icon ?? ""}
+                  disabled={readOnly}
+                  options={[{ value: "", label: "None" }, ...STEP_ICONS]}
+                  onChange={(icon) => {
+                    const { icon: _gone, ...rest } = body.node as NonNullable<ScriptBody["node"]>;
+                    changeNode(icon === "" ? rest : { ...rest, icon });
+                  }}
+                />
+                <TextField
+                  name="stepCategory"
+                  label="Group"
+                  value={body.node.category ?? ""}
+                  placeholder="This workspace's"
+                  required={false}
+                  maxLength={40}
+                  disabled={readOnly}
+                  hint="The heading it is listed under."
+                  onChange={(category) => {
+                    const { category: _gone, ...rest } = body.node as NonNullable<
+                      ScriptBody["node"]
+                    >;
+                    changeNode(category === "" ? rest : { ...rest, category });
+                  }}
+                />
+              </div>
+              <MultiSelectField
+                label="A step may hand it"
+                options={[
+                  { value: "connection", label: "A connection" },
+                  { value: "table", label: "A table" },
+                  { value: "event", label: "An event" },
+                ]}
+                value={body.node.takes ?? []}
+                disabled={readOnly}
+                placeholder="None"
+                hint="What a flow may give the script that it does not name itself."
+                onChange={(takes) => {
+                  const { takes: _gone, ...rest } = body.node as NonNullable<ScriptBody["node"]>;
+                  changeNode(takes.length === 0 ? rest : { ...rest, takes });
+                }}
+              />
+            </>
           ) : null}
-        </div>
-      )}
-      {kind === "connector" ? null : (
-        <>
-          <MultiSelectField
-            label="Connections it uses"
-            options={connections}
-            value={uses(body).connections}
-            disabled={readOnly}
-            placeholder="None"
-            hint={`A ${about.noun} reaches only what it names here.`}
-            onChange={(value) => change({ uses: { ...uses(body), connections: value } })}
-          />
-          <MultiSelectField
-            label="Secrets it reads"
-            options={secrets}
-            value={uses(body).secrets}
-            disabled={readOnly}
-            placeholder="None"
-            onChange={(value) => change({ uses: { ...uses(body), secrets: value } })}
-          />
-          <MultiSelectField
-            label="Variables it reads"
-            options={variables}
-            value={uses(body).variables}
-            disabled={readOnly}
-            placeholder="None"
-            onChange={(value) => change({ uses: { ...uses(body), variables: value } })}
-          />
-        </>
-      )}
+        </fieldset>
+      ) : null}
       {kind === "script" && body.schemaSource === "code" ? (
         <div className="flex flex-col gap-1">
           <TextAreaField
@@ -696,8 +774,9 @@ export function ScriptEditor({
       ) : null}
       {kind === "connector" ? (
         <p className="m-0 text-body-sm text-ink-muted">
-          A connection names this connector by its path. To try it, deploy it, set up a connection
-          of this kind, and use the connection from a script.
+          A connection names this connector by its path. To try it, deploy it and set up a
+          connection of this kind: Test on the connection runs the code's <code>test</code> export,
+          or only builds its client when there is none.
         </p>
       ) : null}
     </div>
@@ -711,7 +790,7 @@ export function ScriptEditor({
           <Link to={`${link}/scripts/${path}`}>its page</Link>, or edit it in the dev workspace.
         </p>
       ) : (
-        <>
+        <div ref={inputPane} className="flex flex-col gap-3">
           <InputForm
             // Drawn again when the schema changes, starting from the last input.
             key={`${JSON.stringify(inputSchema ?? null)}:${formKey}`}
@@ -720,18 +799,28 @@ export function ScriptEditor({
             action={dirty || state === "new" ? "Save and run" : "Run the draft"}
             onSubmit={test}
           />
+          <CheckboxField
+            name="with-all-drafts"
+            label="Build with all drafts"
+            checked={testAll}
+            onChange={setTestAll}
+            hint="Off: this script's draft and the drafts it names. On: every draft of the workspace, so another draft that does not build stops the test."
+          />
           <p className="m-0 text-body-sm text-ink-muted">
             Runs the script as its draft has it, on a worker, without deploying anything.{" "}
-            <kbd className="rounded-inner border border-line px-1 font-mono text-tag">⌘↵</kbd>
+            <kbd className="rounded-inner border border-line px-1 font-mono text-tag">
+              {formatCombo("Mod+Enter")}
+            </kbd>
           </p>
-        </>
+        </div>
       )}
     </div>
   );
 
+  // The server names a build error by the file the code is in: `<path>.<kind>.ts`.
+  const ownIssues = buildIssues.filter((issue) => issue.file === `${path}.${kind}.ts`);
   const problemCount =
-    markers.filter((marker) => marker.severity === "error").length +
-    buildIssues.filter((issue) => issue.file === `${path}.script.ts`).length;
+    markers.filter((marker) => marker.severity === "error").length + ownIssues.length;
   const codeArea = (height: string) =>
     fromRepository ? (
       <RepositorySource root={root} path={path} />
@@ -762,15 +851,31 @@ export function ScriptEditor({
         title={opened ? path : `New ${about.noun}`}
         state={
           <>
-            <StatePill state={state} />
+            {removed ? <StatePill state="draft">Removing</StatePill> : <StatePill state={state} />}
             {dirty ? <StatePill state="unsaved" /> : null}
           </>
         }
         actions={
           <>
             {/* Something deployed can be given to an agent; a draft cannot, until it is. */}
-            {kind === "script" && opened && (state === "deployed" || state === "repository") ? (
-              <OfferButton root={root} kind="script" path={opened} />
+            {kind === "script" && opened ? (
+              <OfferButton
+                root={root}
+                kind="script"
+                path={opened}
+                deployed={state === "deployed" || state === "repository"}
+              />
+            ) : null}
+            {removed && editable && opened ? (
+              <RemoveDraftButton
+                root={root}
+                kind={kind}
+                path={opened}
+                noun={about.noun}
+                state="removed"
+                disabled={working}
+                onDone={() => setAgain((n) => n + 1)}
+              />
             ) : null}
             {readOnly ? null : (
               <div className="flex items-center gap-2">
@@ -880,16 +985,21 @@ export function ScriptEditor({
           )
         }
       />
-      {core ? (
+      {removed ? (
+        <Notice tone="attention">
+          This {about.noun} is removed in your drafts. Nothing changes until that draft is deployed.
+          The code shown is what is deployed now. Keep this {about.noun} to take the removal back.
+        </Notice>
+      ) : core ? (
         <Notice tone="plain">
-          This step comes with the platform, and is added to the workspace because a flow uses it.
-          It can be read here and not changed. To do something else, write a script of your own and
-          give it a label, and it joins the flow editor's steps.
+          This step comes with Volvel, and is added to the workspace because a flow uses it. It can
+          be read here and not changed. To do something else, write a script of your own and give it
+          a label, and it joins the flow editor's steps.
         </Notice>
       ) : !editable ? (
         <ProductionNotice
           root={root}
-          noun="Code"
+          noun={`${about.noun.charAt(0).toUpperCase()}${about.noun.slice(1)}`}
           edit={opened ? `${about.edit}/${opened}` : undefined}
         />
       ) : fromRepository ? (
@@ -904,6 +1014,13 @@ export function ScriptEditor({
         <Notice tone="attention">
           Saving a draft of this {about.noun} takes it over from the repository.
         </Notice>
+      ) : null}
+      {draft.clashed ? (
+        <DraftClash
+          what={about.noun}
+          mine={() => draft.value()?.body.source?.code}
+          onTake={() => setAgain((n) => n + 1)}
+        />
       ) : null}
       {kept && state === "new" && !dirty ? (
         <Notice
@@ -952,7 +1069,9 @@ export function ScriptEditor({
         <summary className="cursor-pointer px-4 py-2 font-medium">
           Settings
           <span className="ml-2 font-normal text-meta text-ink-muted">
-            {kind === "script" ? "What it does, its limits, what it uses and its input" : ""}
+            {kind === "script"
+              ? "What it does, its limits, what it uses, its input and whether flows can pick it"
+              : ""}
           </span>
         </summary>
         <div className="border-line border-t p-4">{settings}</div>
@@ -970,64 +1089,80 @@ export function ScriptEditor({
               className="flex min-h-0 flex-1 flex-col gap-3 overflow-auto  p-4"
             >
               {trying}
-              <Tabs
-                label="What the test run gave"
-                value={paneTab}
-                onChange={setPaneTab}
-                tabs={[
-                  {
-                    id: "result",
-                    label: "Result",
-                    content: testRun ? (
-                      <div className="flex flex-col gap-4">
-                        <ScriptRunPanel
-                          key={testRun}
-                          root={root}
-                          link={link}
-                          runId={testRun}
-                          tab={runTab}
-                          onTab={setRunTab}
-                          onLocation={(at) =>
-                            setReveal({ line: at.line, column: at.column, at: Date.now() })
-                          }
+              <div ref={resultTop} className="scroll-mt-2">
+                <Tabs
+                  label="What the test run gave"
+                  value={paneTab}
+                  onChange={setPaneTab}
+                  tabs={[
+                    {
+                      id: "result",
+                      label: "Result",
+                      content: testRun ? (
+                        <div className="flex flex-col gap-4">
+                          <ScriptRunPanel
+                            key={testRun}
+                            root={root}
+                            link={link}
+                            runId={testRun}
+                            tab={runTab}
+                            onTab={setRunTab}
+                            onLocation={(at) =>
+                              setReveal({ line: at.line, column: at.column, at: Date.now() })
+                            }
+                          />
+                          <PublishedEvents root={root} runId={testRun} />
+                        </div>
+                      ) : (
+                        <p className="m-0 text-ink-muted">
+                          Run the draft to see what it returns, and its log, here.
+                        </p>
+                      ),
+                    },
+                    {
+                      id: "problems",
+                      label: problemCount > 0 ? `Problems (${problemCount})` : "Problems",
+                      content: (
+                        <ProblemList
+                          markers={markers}
+                          build={ownIssues}
+                          onShow={(line, column) => setReveal({ line, column, at: Date.now() })}
                         />
-                        <PublishedEvents root={root} runId={testRun} />
-                      </div>
-                    ) : (
-                      <p className="m-0 text-ink-muted">
-                        Run the draft to see what it returns, and its log, here.
-                      </p>
-                    ),
-                  },
-                  {
-                    id: "problems",
-                    label: problemCount > 0 ? `Problems (${problemCount})` : "Problems",
-                    content: (
-                      <ProblemList
-                        markers={markers}
-                        build={buildIssues.filter((issue) => issue.file === `${path}.script.ts`)}
-                        onShow={(line, column) => setReveal({ line, column, at: Date.now() })}
-                      />
-                    ),
-                  },
-                  {
-                    id: "runs",
-                    label: "Runs",
-                    content: opened ? (
-                      <RecentRuns root={root} link={link} path={opened} />
-                    ) : (
-                      <p className="m-0 text-ink-muted">
-                        A script that is saved lists its runs here.
-                      </p>
-                    ),
-                  },
-                ]}
-              />
+                      ),
+                    },
+                    {
+                      id: "runs",
+                      label: "Runs",
+                      content: opened ? (
+                        <RecentRuns root={root} link={link} path={opened} />
+                      ) : (
+                        <p className="m-0 text-ink-muted">
+                          A script that is saved lists its runs here.
+                        </p>
+                      ),
+                    },
+                  ]}
+                />
+              </div>
             </Panel>
           }
         />
       ) : (
-        codeArea("34rem")
+        <>
+          {codeArea("34rem")}
+          {fromRepository ? null : (
+            <section aria-label="Problems" className="flex flex-col gap-2">
+              <h2 className="m-0 text-label text-ink-subtle uppercase">
+                {problemCount > 0 ? `Problems (${problemCount})` : "Problems"}
+              </h2>
+              <ProblemList
+                markers={markers}
+                build={ownIssues}
+                onShow={(line, column) => setReveal({ line, column, at: Date.now() })}
+              />
+            </section>
+          )}
+        </>
       )}
     </section>
   );
@@ -1145,6 +1280,38 @@ interface ExtensionRow {
   state: "deployed" | "draft" | "repository";
 }
 
+/** What kind of extension it is, in a word or a few. */
+function extensionDetail(kind: "connector" | "trigger_source", mode: string | undefined): string {
+  return kind === "connector"
+    ? "Connector"
+    : `Trigger source for ${mode === "poll" ? "a schedule" : "a webhook"}`;
+}
+
+/**
+ * A row's text. A draft's is read from the draft itself: what is deployed under the
+ * same path may be older, or absent, and says nothing of what a draft is now.
+ */
+function DraftText({
+  root,
+  row,
+  part,
+}: {
+  root: string;
+  row: ExtensionRow;
+  part: "detail" | "description";
+}) {
+  const draft = useLoad<DraftDetail>(row.state === "draft" ? `${root}/drafts/${row.path}` : null);
+  const body = row.state === "draft" ? draft.data?.body : undefined;
+  if (!body) return <>{row[part]}</>;
+  return (
+    <>
+      {part === "detail"
+        ? extensionDetail(row.kind as "connector" | "trigger_source", body.mode)
+        : (body.description ?? "")}
+    </>
+  );
+}
+
 /**
  * The workspace's own connectors and trigger sources: the code that lets
  * connections and triggers reach outside systems the platform does not know.
@@ -1177,10 +1344,7 @@ export function Extensions({
       path: one.path,
       kind: one.kind,
       description: one.body.description ?? "",
-      detail:
-        one.kind === "connector"
-          ? "Connector"
-          : `Trigger source for ${one.body.mode === "poll" ? "a schedule" : "a webhook"}`,
+      detail: extensionDetail(one.kind, one.body.mode),
       state: one.ownership === "ui" ? "deployed" : "repository",
     });
   }
@@ -1240,10 +1404,19 @@ export function Extensions({
                 </Link>
               ),
             },
-            { header: "What it is", cell: (row) => row.detail },
+            {
+              header: "What it is",
+              priority: 3,
+              cell: (row) => <DraftText root={root} row={row} part="detail" />,
+            },
             {
               header: "What it does",
-              cell: (row) => <span className="text-ink-muted">{row.description}</span>,
+              priority: 2,
+              cell: (row) => (
+                <span className="text-ink-muted">
+                  <DraftText root={root} row={row} part="description" />
+                </span>
+              ),
             },
             {
               header: "State",

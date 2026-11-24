@@ -1,12 +1,14 @@
 import { randomBytes } from "node:crypto";
 import { newId, sql } from "@volvel/db";
 import type { FastifyRequest } from "fastify";
+import { endEndUserSignIns, endSessions } from "../administer.js";
 import type { Audit, Db, Trx } from "../audit.js";
-import { cleanEmail, createEndUser } from "../endusers.js";
+import { cleanEmail, createEndUser, endUnusedTokens } from "../endusers.js";
 import { HttpError } from "../errors.js";
 import type { Kernel } from "../kernel.js";
+import { setMemberDisabled } from "../members.js";
 import { hashApiKey } from "../principal.js";
-import { giveRole, syncGroups } from "./people.js";
+import { giveRole, holdsInstanceAccess, syncGroups } from "./people.js";
 import { domainOfEmail, findProvider, type Provider, provedDomains } from "./providers.js";
 
 /**
@@ -476,7 +478,10 @@ async function applyGroups(
   });
 }
 
-/** Turns a person on or off here, in the way that fits who they are. Changes nothing that already holds. */
+/**
+ * Turns a person on or off here, in the way that fits who they are. Changes nothing that already
+ * holds, and turns on only what a push turned off: a person who was turned off by hand stays so.
+ */
 async function setActive(
   trx: Trx,
   audit: Audit,
@@ -489,21 +494,24 @@ async function setActive(
   if (person.principal_type === "end_user") {
     const user = await trx
       .selectFrom("end_user")
-      .select(["disabled_at", "email"])
+      .select(["disabled_at", "disabled_by", "email"])
       .where("id", "=", id)
       .executeTakeFirst();
     if (!user || (user.disabled_at === null) === active) return;
+    // What a person here turned off stays off until a person here turns it on.
+    if (active && user.disabled_by !== "provider") return;
     await trx
       .updateTable("end_user")
-      .set({ disabled_at: active ? null : now, updated_at: now })
+      .set({
+        disabled_at: active ? null : now,
+        disabled_by: active ? null : "provider",
+        updated_at: now,
+      })
       .where("id", "=", id)
       .execute();
     if (!active) {
-      await trx
-        .deleteFrom("app_session")
-        .where("principal_type", "=", "end_user")
-        .where("principal_id", "=", id)
-        .execute();
+      await endUnusedTokens(trx, id);
+      await endEndUserSignIns(trx, id);
     }
     await audit({
       action: active ? "end_user.enabled" : "end_user.disabled",
@@ -517,25 +525,19 @@ async function setActive(
   if (provider.tenantId !== null) {
     const belongs = await trx
       .selectFrom("tenant_member")
-      .select("suspended_at")
+      .select(["suspended_at", "suspended_by"])
       .where("tenant_id", "=", provider.tenantId)
       .where("member_id", "=", id)
       .executeTakeFirst();
     if (!belongs || (belongs.suspended_at === null) === active) return;
+    if (active && belongs.suspended_by !== "provider") return;
     await trx
       .updateTable("tenant_member")
-      .set({ suspended_at: active ? null : now })
+      .set({ suspended_at: active ? null : now, suspended_by: active ? null : "provider" })
       .where("tenant_id", "=", provider.tenantId)
       .where("member_id", "=", id)
       .execute();
-    if (!active) {
-      await trx
-        .deleteFrom("app_session")
-        .where("tenant_id", "=", provider.tenantId)
-        .where("principal_type", "=", "member")
-        .where("principal_id", "=", id)
-        .execute();
-    }
+    if (!active) await endSessions(trx, id, { tenantId: provider.tenantId });
     await audit({
       action: active ? "tenant_member.resumed" : "tenant_member.suspended",
       targetType: "member",
@@ -546,23 +548,15 @@ async function setActive(
   }
   const member = await trx
     .selectFrom("member")
-    .select(["disabled_at", "email"])
+    .select(["disabled_at", "disabled_by"])
     .where("id", "=", id)
     .executeTakeFirst();
   if (!member || (member.disabled_at === null) === active) return;
-  await trx
-    .updateTable("member")
-    .set({ disabled_at: active ? null : now })
-    .where("id", "=", id)
-    .execute();
-  // Every sign-in the person has ends now, on every device.
-  if (!active) await trx.deleteFrom("member_session").where("member_id", "=", id).execute();
-  await audit({
-    action: active ? "member.enabled" : "member.disabled",
-    targetType: "member",
-    targetId: id,
-    details: { email: member.email },
-  });
+  // Someone disabled here by hand stays so until that is lifted by hand (D6).
+  if (active && member.disabled_by !== "provider") return;
+  // The account's sign-ins, and an operator's open grants, end with it, and it is refused
+  // when it would take the last operator.
+  await setMemberDisabled(trx, audit, id, !active, null, "provider");
 }
 
 /** Ties the person to the provider by the field the provider signs them in by, when one is named. */
@@ -696,6 +690,12 @@ export async function createScimUser(
       .where("email", "=", email)
       .executeTakeFirst();
     let created = false;
+    if (existing && provider.tenantId !== null && (await holdsInstanceAccess(trx, existing.id))) {
+      throw new ScimError(
+        403,
+        `${email} runs the instance, and a tenant's directory cannot push them. They sign in with a password or the instance's provider.`,
+      );
+    }
     if (existing) principalId = existing.id;
     else {
       principalId = newId();
@@ -739,7 +739,7 @@ export async function createScimUser(
         });
         await giveRole(trx, audit, provider, provider.tenantId, principalId);
       }
-    } else if (created) await giveRole(trx, audit, provider, null, principalId);
+    }
   } else {
     const tenantId = provider.tenantId as string;
     const existing = await trx
@@ -939,6 +939,30 @@ export const groupSlug = (name: string) =>
     .replace(/^[^a-z0-9]+|-+$/g, "")
     .slice(0, 63);
 
+async function refuseTakeover(trx: Trx, provider: Provider, displayName: string, name: string) {
+  const reason = `The group ${displayName} was not mapped: a group named ${name} was made by hand here, and a pushed group only fills groups the provider made. Map it in the console, or rename one of them.`;
+  const latest = await trx
+    .selectFrom("scim_refusal")
+    .select("reason")
+    .where("provider_id", "=", provider.id)
+    .orderBy("occurred_at", "desc")
+    .limit(1)
+    .executeTakeFirst();
+  if (latest?.reason === reason) return;
+  await trx
+    .insertInto("scim_refusal")
+    .values({
+      id: newId(),
+      provider_id: provider.id,
+      tenant_id: provider.tenantId,
+      method: "PUSH",
+      resource: "Groups",
+      status: 409,
+      reason,
+    })
+    .execute();
+}
+
 /**
  * Makes sure a pushed group has a group here to stand for, when the provider
  * says pushed groups make their own. A group somebody already mapped is left
@@ -965,12 +989,20 @@ async function ensureLocalGroup(
   const name = forMembers ? displayName.slice(0, 200) : groupSlug(displayName);
   if (name === "") return false;
   const table = forMembers ? "principal_group" : "end_user_group";
-  let group = await trx
+  const found = await trx
     .selectFrom(table)
-    .select("id")
+    .select(["id", "managed_by"])
     .where("tenant_id", "=", tenantId)
     .where("name", "=", name)
     .executeTakeFirst();
+  // Only a group the provider made is the provider's to fill. One made by hand, or released
+  // with the tenant's access, may hold bindings: a pushed group of the same name must not
+  // put people in it. The push is kept and the refusal is shown with the others.
+  if (found && found.managed_by !== "provider") {
+    await refuseTakeover(trx, provider, displayName, name);
+    return false;
+  }
+  let group: { id: string } | undefined = found;
   if (!group) {
     group = { id: newId() };
     if (forMembers) {

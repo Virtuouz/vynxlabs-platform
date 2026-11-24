@@ -2,10 +2,13 @@ import { Button, EmptyState, Notice, SelectField, SideSheet, TextField } from "@
 import { useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask } from "../ask.tsx";
+import { NotAllowed, useCan } from "../kit/Can.tsx";
 import { DataTable } from "../kit/DataTable.tsx";
 import { Loading } from "../kit/LoadState.tsx";
 import { SectionLabel } from "../kit/layout.tsx";
 import { Code, StatePill } from "../kit/status.tsx";
+import { Breakable } from "../kit/Truncate.tsx";
+import { useOpenRow } from "../kit/useOpenRow.ts";
 import { CopyButton, Page, when } from "../ListScreen.tsx";
 import { useUrlParam } from "../router.tsx";
 import type { AppSummary } from "./Apps.tsx";
@@ -20,6 +23,8 @@ interface Domain {
   verifiedAt: string | null;
   checkedAt: string | null;
   checkError: string | null;
+  /** When a check first missed the record of a verified name: it stays verified, and this says so. */
+  recordGoneAt: string | null;
   /** The DNS TXT record that shows whoever controls the name agrees. */
   challenge: { name: string; value: string };
   createdAt: string;
@@ -41,9 +46,83 @@ function State({ domain }: { domain: Domain }) {
   return (
     <span className="flex flex-wrap gap-3">
       <StatePill state={domain.enabled ? "on" : "off"} />
-      <StatePill state={domain.verifiedAt ? "verified" : "unverified"} />
+      {domain.verifiedAt && domain.recordGoneAt ? (
+        <StatePill state="warning">Verified, record gone</StatePill>
+      ) : (
+        <StatePill state={domain.verifiedAt ? "verified" : "unverified"} />
+      )}
     </span>
   );
+}
+
+/**
+ * What a hostname serves: one app at its root, or the portal and every app by path. The choice
+ * is made when a hostname is added and again when it is changed, so both ask it here.
+ */
+function useServes(
+  base: string,
+  workspaceId: string,
+  active: boolean,
+  start: { serves: "app" | "portal"; app: string },
+) {
+  const [serves, setServes] = useState(start.serves);
+  const [app, setApp] = useState(start.app);
+  const apps = useLoad<{ items: AppSummary[] }>(
+    active && workspaceId ? `${base}/workspaces/${workspaceId}/apps` : null,
+  );
+  const choices = apps.data?.items ?? [];
+  const appPath = choices.some((candidate) => candidate.path === app)
+    ? app
+    : (choices[0]?.path ?? "");
+  const options = choices.map((candidate) => ({
+    value: candidate.path,
+    label: `${candidate.title} (${candidate.path})`,
+  }));
+  const fields = (
+    <>
+      <SelectField
+        label="Serves"
+        name="serves"
+        value={serves}
+        options={[
+          { value: "app", label: "One app, at the hostname's root" },
+          { value: "portal", label: "The portal, and every app by its path" },
+        ]}
+        {...(serves === "portal"
+          ? {
+              hint: "The sign-in pages and the list of apps are at the root, and each app of the workspace is at /its-path/.",
+            }
+          : {})}
+        onChange={(value) => setServes(value === "portal" ? "portal" : "app")}
+      />
+      {serves === "app" ? (
+        <SelectField
+          label="App"
+          name="app"
+          value={appPath}
+          disabled={choices.length === 0}
+          options={options}
+          {...(apps.data && choices.length === 0
+            ? {
+                hint: "This workspace has no apps. Deploy one first, or choose another workspace.",
+              }
+            : {})}
+          error={apps.error?.message}
+          onChange={setApp}
+        />
+      ) : null}
+    </>
+  );
+  return {
+    fields,
+    /** What the API takes for `app`: the empty path is the portal. */
+    chosen: serves === "portal" ? "" : appPath,
+    ready: serves === "portal" || (!apps.loading && appPath !== ""),
+    reset: (to: { serves: "app" | "portal"; app: string }) => {
+      setServes(to.serves);
+      setApp(to.app);
+    },
+  };
 }
 
 function AddDialog({
@@ -60,19 +139,11 @@ function AddDialog({
   onAdded: (domain: Domain) => void;
 }) {
   const [chosen, setChosen] = useState("");
-  const [serves, setServes] = useState<"app" | "portal">("app");
-  const [app, setApp] = useState("");
   const [hostname, setHostname] = useState("");
   const [error, setError] = useState<ApiError>();
   const [busy, setBusy] = useState(false);
   const workspaceId = chosen || (workspaces[0]?.id ?? "");
-  const apps = useLoad<{ items: AppSummary[] }>(
-    open && workspaceId ? `${base}/workspaces/${workspaceId}/apps` : null,
-  );
-  const choices = apps.data?.items ?? [];
-  const appPath = choices.some((candidate) => candidate.path === app)
-    ? app
-    : (choices[0]?.path ?? "");
+  const serving = useServes(base, workspaceId, open, { serves: "app", app: "" });
 
   return (
     <SideSheet
@@ -90,7 +161,7 @@ function AddDialog({
           try {
             const domain = await api.post<Domain>(`${base}/domains`, {
               workspaceId,
-              app: serves === "portal" ? "" : appPath,
+              app: serving.chosen,
               hostname: hostname.trim(),
             });
             setHostname("");
@@ -109,61 +180,23 @@ function AddDialog({
           options={workspaces.map((workspace) => ({ value: workspace.id, label: workspace.name }))}
           onChange={(value) => {
             setChosen(value);
-            setApp("");
+            serving.reset({ serves: "app", app: "" });
           }}
         />
-        <SelectField
-          label="Serves"
-          name="serves"
-          value={serves}
-          options={[
-            { value: "app", label: "One app, at the hostname's root" },
-            { value: "portal", label: "The portal, and every app by its path" },
-          ]}
-          {...(serves === "portal"
-            ? {
-                hint: "The sign-in pages and the list of apps are at the root, and each app of the workspace is at /its-path/.",
-              }
-            : {})}
-          onChange={(value) => setServes(value === "portal" ? "portal" : "app")}
-        />
-        {serves === "app" ? (
-          <SelectField
-            label="App"
-            name="app"
-            value={appPath}
-            disabled={choices.length === 0}
-            options={choices.map((candidate) => ({
-              value: candidate.path,
-              label: `${candidate.title} (${candidate.path})`,
-            }))}
-            {...(apps.data && choices.length === 0
-              ? {
-                  hint: "This workspace has no apps. Deploy one first, or choose another workspace.",
-                }
-              : {})}
-            error={apps.error?.message}
-            onChange={setApp}
-          />
-        ) : null}
+        {serving.fields}
         <TextField
           label="Hostname"
           name="hostname"
           value={hostname}
           placeholder="portal.example.com"
           hint="The name alone, without https:// or a path."
-          error={error?.fields.find((field) => field.path.endsWith("/hostname"))?.message}
+          error={error?.fields?.find((field) => field.path.endsWith("/hostname"))?.message}
           onChange={setHostname}
         />
         {error ? <Notice tone="danger">{error.message}</Notice> : null}
         <div className="mt-1 flex justify-end gap-2">
           <Button onClick={onClose}>Cancel</Button>
-          <Button
-            type="submit"
-            variant="primary"
-            loading={busy}
-            disabled={serves === "app" && (apps.loading || appPath === "")}
-          >
+          <Button type="submit" variant="primary" loading={busy} disabled={!serving.ready}>
             Add hostname
           </Button>
         </div>
@@ -185,6 +218,55 @@ function RecordLine({ label, value }: { label: string; value: string }) {
   );
 }
 
+/** Points a hostname at another app, or at the portal, without removing it and adding it again. */
+function ChangeServes({
+  base,
+  domain,
+  onChanged,
+}: {
+  base: string;
+  domain: Domain;
+  onChanged: (domain: Domain) => void;
+}) {
+  const serving = useServes(base, domain.workspaceId, true, {
+    serves: domain.app === "" ? "portal" : "app",
+    app: domain.app,
+  });
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<string>();
+  const changed = serving.chosen !== domain.app;
+  return (
+    <section className="flex flex-col gap-2">
+      <SectionLabel>What it serves</SectionLabel>
+      <form
+        className="flex flex-col gap-3"
+        onSubmit={async (event) => {
+          event.preventDefault();
+          setBusy(true);
+          setProblem(undefined);
+          try {
+            onChanged(
+              await api.patch<Domain>(`${base}/domains/${domain.id}`, { app: serving.chosen }),
+            );
+          } catch (error) {
+            setProblem(failed(error));
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        {serving.fields}
+        {problem ? <Notice tone="danger">{problem}</Notice> : null}
+        <div>
+          <Button type="submit" loading={busy} disabled={!changed || !serving.ready}>
+            Change what it serves
+          </Button>
+        </div>
+      </form>
+    </section>
+  );
+}
+
 function DetailsDialog({
   base,
   domain,
@@ -200,6 +282,7 @@ function DetailsDialog({
 }) {
   const [problem, setProblem] = useState<string>();
   const [busy, setBusy] = useState(false);
+  const can = useCan(base, "domain:write");
   const close = () => {
     setProblem(undefined);
     onClose();
@@ -219,14 +302,20 @@ function DetailsDialog({
   const steps = domain
     ? [
         {
-          label: "Record created and found",
-          state: domain.verifiedAt
-            ? ("ok" as const)
-            : domain.checkError
-              ? ("failed" as const)
-              : ("queued" as const),
+          label:
+            domain.verifiedAt && domain.recordGoneAt
+              ? "Record found when verified, and not since"
+              : "Record created and found",
+          state:
+            domain.verifiedAt && !domain.recordGoneAt
+              ? ("ok" as const)
+              : domain.checkError
+                ? ("failed" as const)
+                : ("queued" as const),
           detail: domain.verifiedAt
-            ? `Verified ${when(domain.verifiedAt)}.`
+            ? domain.recordGoneAt
+              ? `Verified ${when(domain.verifiedAt)}. The record has not been found since ${when(domain.recordGoneAt)}. The name stays verified: create the record again and check.`
+              : `Verified ${when(domain.verifiedAt)}.`
             : domain.checkedAt
               ? `Not verified. Last checked ${when(domain.checkedAt)}.`
               : "Not checked yet.",
@@ -234,7 +323,13 @@ function DetailsDialog({
         {
           label: "Enabled",
           state: domain.enabled ? ("ok" as const) : ("queued" as const),
-          detail: domain.enabled ? "Serving." : "Serves nothing until enabled.",
+          detail: domain.enabled
+            ? domain.verifiedAt
+              ? "Serving."
+              : "Serving, though the name is not verified. An operator of this instance enabled it without proof, so the name opens this app for whoever points it here."
+            : domain.verifiedAt
+              ? "Serves nothing: the name answers “not served here” until it is enabled."
+              : "Not enabled. Until it is verified, the name opens this instance's own address, as any name the instance does not know does.",
         },
       ]
     : [];
@@ -256,7 +351,7 @@ function DetailsDialog({
           <div className="flex w-full flex-wrap justify-between gap-2">
             <Button
               variant="danger"
-              disabled={busy}
+              disabled={busy || !can}
               onClick={async () => {
                 const sure = await ask.confirm({
                   title: `Remove ${domain.hostname}?`,
@@ -275,22 +370,33 @@ function DetailsDialog({
             </Button>
             <span className="flex flex-wrap gap-2">
               <Button
-                disabled={busy}
-                onClick={() =>
-                  run(async () =>
+                disabled={busy || !can}
+                onClick={async () => {
+                  // Turning a hostname off stops it answering on one press: said first.
+                  if (domain.enabled) {
+                    const sure = await ask.confirm({
+                      title: `Turn off ${domain.hostname}?`,
+                      text: "The hostname stops answering, so the app is no longer served there and sign-ins made at that hostname end. The record stays; turn it on again to serve it.",
+                      action: "Turn off",
+                      danger: true,
+                    });
+                    if (!sure) return;
+                  }
+                  return run(async () =>
                     onChanged(
                       await api.patch<Domain>(`${base}/domains/${domain.id}`, {
                         enabled: !domain.enabled,
                       }),
                     ),
-                  )
-                }
+                  );
+                }}
               >
                 {domain.enabled ? "Disable" : "Enable"}
               </Button>
               <Button
                 variant="primary"
                 loading={busy}
+                disabled={!can}
                 onClick={() =>
                   run(async () =>
                     onChanged(await api.post<Domain>(`${base}/domains/${domain.id}/checks`)),
@@ -307,6 +413,12 @@ function DetailsDialog({
       {domain ? (
         <div className="flex flex-col gap-5">
           <State domain={domain} />
+          <ChangeServes
+            key={`${domain.id}:${domain.app}`}
+            base={base}
+            domain={domain}
+            onChanged={onChanged}
+          />
           <section className="flex flex-col gap-2">
             <SectionLabel>1 · Point the name here</SectionLabel>
             <p className="m-0 text-ink-muted">
@@ -350,9 +462,7 @@ export function Domains({ base }: { base: string }) {
   const [adding, setAdding] = useState(false);
   // The hostname open is in the address, so a link opens it and Back closes it.
   const [open, setOpen] = useUrlParam("hostname", undefined, { push: true });
-  const [fresh, setFresh] = useState<Domain>();
-  const shown =
-    (fresh?.id === open ? fresh : undefined) ?? list.data?.items.find((one) => one.id === open);
+  const [shown, setFresh] = useOpenRow(list, open);
   const setShown = (domain: Domain | undefined) => {
     setFresh(domain);
     setOpen(domain?.id);
@@ -360,20 +470,22 @@ export function Domains({ base }: { base: string }) {
   const workspaceName = (id: string) =>
     workspaces.data?.items.find((workspace) => workspace.id === id)?.name ?? "";
 
+  const can = useCan(base, "domain:write");
   const addButton = (
-    <Button variant="primary" onClick={() => setAdding(true)}>
+    <Button variant="primary" disabled={!can} onClick={() => setAdding(true)}>
       Add a hostname
     </Button>
   );
 
   return (
     <Page title="Domains" action={addButton}>
+      {can ? null : <NotAllowed permission="domain:write" what="this tenant's hostnames" />}
       <div className="flex max-w-measure flex-col gap-2 text-ink-muted">
         <p className="m-0">
           A hostname of the client's own, public or internal to their network, serves one app at its
           root, or the portal with every app of a workspace by its path. Point the name at this
           instance with a CNAME or an address record. Whatever terminates TLS in front of the
-          instance must hold the certificate for it: the platform issues none.
+          instance must hold the certificate for it: Volvel issues none.
         </p>
         <p className="m-0">
           Then create the TXT record shown for the hostname and run a check. Once the check finds
@@ -400,16 +512,19 @@ export function Domains({ base }: { base: string }) {
                     href={row.url}
                     target="_blank"
                     rel="noreferrer"
-                    className="font-medium break-all text-action"
+                    className="font-medium text-action"
                   >
-                    {row.hostname}
+                    <Breakable>{row.hostname}</Breakable>
                   </a>
                 ) : (
-                  <span className="font-medium break-all">{row.hostname}</span>
+                  <span className="font-medium">
+                    <Breakable>{row.hostname}</Breakable>
+                  </span>
                 ),
             },
             {
               header: "Serves",
+              priority: 2,
               cell: (row) => (
                 <span>
                   {row.app === "" ? "The portal and every app" : <Code wrap>{row.app}</Code>}{" "}
@@ -420,8 +535,13 @@ export function Domains({ base }: { base: string }) {
             { header: "State", cell: (row) => <State domain={row} /> },
             {
               header: "Last check",
+              priority: 3,
               cell: (row) =>
-                row.checkError ? (
+                row.verifiedAt && row.recordGoneAt ? (
+                  <span className="text-danger">
+                    Verified {when(row.verifiedAt)}; record gone since {when(row.recordGoneAt)}
+                  </span>
+                ) : row.checkError ? (
                   <span className="text-danger">{row.checkError}</span>
                 ) : row.checkedAt ? (
                   <span className="whitespace-nowrap text-ink-muted">

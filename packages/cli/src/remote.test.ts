@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { type Client, startTestApp, type TestApp } from "@volvel/control-plane/testing";
+import { type Client, putSeen, startTestApp, type TestApp } from "@volvel/control-plane/testing";
 import { Worker } from "@volvel/worker";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { run } from "./cli.js";
@@ -271,7 +271,7 @@ describe("pulling the console's resources", () => {
   const read = (path: string) => readFile(join(folder(), path), "utf8");
 
   test("writes them, and a second pull changes nothing", async () => {
-    await alice.put(`${base}/drafts/notes/hello`, {
+    await putSeen(alice, `${base}/drafts/notes/hello`, {
       kind: "flow",
       schemaVersion: 1,
       body: {
@@ -299,7 +299,7 @@ describe("pulling the console's resources", () => {
       },
       edges: [{ from: "start", to: "note" }],
     });
-    await alice.put(`${base}/drafts/notes/hello`, {
+    await putSeen(alice, `${base}/drafts/notes/hello`, {
       kind: "flow",
       schemaVersion: 1,
       body: body("'changed in the console'"),
@@ -309,7 +309,7 @@ describe("pulling the console's resources", () => {
 
     const mine = (await read("notes/hello.flow.yaml")).replace("in the console", "here");
     await writeFile(join(folder(), "notes/hello.flow.yaml"), mine);
-    await alice.put(`${base}/drafts/notes/hello`, {
+    await putSeen(alice, `${base}/drafts/notes/hello`, {
       kind: "flow",
       schemaVersion: 1,
       body: body("'and again in the console'"),
@@ -340,7 +340,7 @@ describe("pulling the console's resources", () => {
     expect(again.out).toMatch(/0 new, 0 updated, 0 removed, 1 unchanged/);
 
     // Removed in the console: removed here, as it was not changed since.
-    await alice.put(`${base}/drafts/notes/hello`, {
+    await putSeen(alice, `${base}/drafts/notes/hello`, {
       kind: "flow",
       schemaVersion: 1,
       body: {},
@@ -349,5 +349,34 @@ describe("pulling the console's resources", () => {
     const removed = await cli(["pull", ...target, "--dir", repo]);
     expect(removed.out).toContain("removed  platform/notes/hello.flow.yaml");
     await expect(readFile(file, "utf8")).rejects.toThrow();
+  }, 120_000);
+
+  test("a deploy that would delete console resources says so and changes nothing, until each is allowed (CLI-13)", async () => {
+    const flow = {
+      kind: "flow",
+      schemaVersion: 1,
+      body: {
+        nodes: { start: { type: "trigger", trigger: { type: "manual" } } },
+        edges: [],
+      },
+    };
+    await alice.put(`${base}/drafts/notes/keep`, flow);
+    await alice.put(`${base}/drafts/notes/stay`, flow);
+    expect((await cli(["pull", ...target, "--dir", repo])).code).toBe(0);
+    expect((await cli(["deploy", ...target, "--dir", repo])).code).toBe(0);
+    const bundles = async () => (await alice.get(`${base}/bundles`)).body.items.length;
+    const before = await bundles();
+
+    // The file is gone here by hand, and the console's resource is deployed.
+    await rm(join(folder(), "notes/keep.flow.yaml"));
+    const refused = await cli(["deploy", ...target, "--dir", repo]);
+    expect(refused.code).toBe(1);
+    expect(refused.err).toContain("would delete 1 resource made in the console");
+    expect(refused.err).toContain("  - notes/keep");
+    expect(await bundles()).toBe(before);
+    expect((await alice.get(`${base}/resources/notes/keep`)).status).toBe(200);
+
+    const allowed = await cli(["deploy", ...target, "--dir", repo, "--allow-delete", "notes/keep"]);
+    expect(allowed.code, allowed.err).toBe(0);
   }, 120_000);
 });

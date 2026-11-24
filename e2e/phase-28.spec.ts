@@ -1,4 +1,5 @@
-import { signInWithPassword } from "./sign-in.ts";
+import { signInAs } from "./as.ts";
+import { fernhillTenant } from "./fernhill.ts";
 import { expect, type Locator, type Page, test } from "./test.ts";
 import { expectNoAxeViolations } from "./visual.ts";
 
@@ -20,7 +21,7 @@ import { expectNoAxeViolations } from "./visual.ts";
  */
 
 const PASSWORD = process.env.E2E_FERNHILL_PASSWORD ?? "fernhill-demo-2026";
-const TENANT = process.env.E2E_FERNHILL_TENANT ?? "fernhill";
+const TENANT = fernhillTenant();
 const SANDBOX = process.env.E2E_FERNHILL_SANDBOX ?? "sandbox";
 const OWNER = "maya.brooks@fernhill.example";
 /** In Practice managers and in Billing. */
@@ -29,13 +30,26 @@ const BOTH = "rowan.ellis@fernhill.example";
 const OUTSIDE = "devi.shah@fernhill.example";
 const stamp = Date.now().toString(36);
 const PREFIX = `P28-${stamp.toUpperCase()}`;
-const day = (ago: number) => new Date(Date.now() - ago * 86_400_000).toISOString().slice(0, 10);
+// The browser's "last 30 days" ends on its own local date, so a row issued "today" is dated there, not in UTC.
+const day = (ago: number) => new Date(Date.now() - ago * 86_400_000).toLocaleDateString("en-CA");
 
 // biome-ignore lint/suspicious/noExplicitAny: answers are inspected freely
 type Answer = { status: number; body: any };
 const call = (page: Page, method: string, path: string, body?: unknown): Promise<Answer> =>
   page.evaluate(
     async ([method, path, body]) => {
+      // A draft save names the draft it saw: its revision now, or none when there is none.
+      if (
+        method === "PUT" &&
+        String(path).includes("/drafts/") &&
+        body &&
+        typeof body === "object" &&
+        !("revision" in body) &&
+        !("create" in body)
+      ) {
+        const seen = await fetch(`/api/v1${path}`);
+        if (seen.ok) body = { ...body, revision: (await seen.json()).revision };
+      }
       const response = await fetch(`/api/v1${path}`, {
         method: method as string,
         headers: body ? { "content-type": "application/json" } : {},
@@ -236,8 +250,8 @@ async function openRow(label: string) {
 test.beforeAll(async ({ browser }) => {
   test.setTimeout(300_000);
   owner = await (await browser.newContext({ viewport: { width: 1440, height: 900 } })).newPage();
-  await signInWithPassword(owner, OWNER, PASSWORD);
-  const tenants = await ok(owner, "GET", "/tenants?limit=200");
+  await signInAs(owner, OWNER);
+  const tenants = await ok(owner, "GET", `/tenants?search=${TENANT}&limit=200`);
   const tenant = tenants.items.find((one: { slug: string }) => one.slug === TENANT);
   test.skip(!tenant, `No tenant ${TENANT}: set up the Fernhill example first.`);
   const workspaces = (await ok(owner, "GET", `/tenants/${tenant.id}/workspaces`)).items;
@@ -397,7 +411,7 @@ test.afterAll(async () => {
 
 // ----- 1. The builder's frame -----
 
-test("POLISH-001: the frame is one header, a pages and outline pane, the canvas and the settings, edge to edge at 1440", async () => {
+test("POLISH-001: the frame is one header, a pages and outline pane, the canvas and the settings, edge to edge at 1440 @fernhill @builder", async () => {
   await openBuilder("frame", /^Tall/);
   const header = owner.getByRole("heading", { name: `Frame ${stamp}`, level: 1 });
   await expect(header).toBeVisible();
@@ -434,7 +448,7 @@ test("POLISH-001: the frame is one header, a pages and outline pane, the canvas 
   await expectNoAxeViolations(owner, "the builder");
 });
 
-test("POLISH-005: the builder does not scroll sideways at 768 or at 390, and its panes stay reachable", async () => {
+test("POLISH-005: the builder does not scroll sideways at 768 or at 390, and its panes stay reachable @fernhill @builder", async () => {
   for (const width of [768, 390]) {
     await openBuilder("frame", /^Tall/, { width, height: 900 });
     await expect(owner.getByRole("heading", { name: `Frame ${stamp}`, level: 1 })).toBeVisible();
@@ -452,7 +466,7 @@ test("POLISH-005: the builder does not scroll sideways at 768 or at 390, and its
   await owner.setViewportSize({ width: 1440, height: 1000 });
 });
 
-test("POLISH-007: the device switch is a radio group the arrow keys move, and the canvas follows it", async () => {
+test("POLISH-007: the device switch is a radio group the arrow keys move, and the canvas follows it @fernhill @builder", async () => {
   await openBuilder("frame", /^Tall/);
   const group = owner.getByRole("radiogroup", { name: "Screen size" });
   const desktop = group.getByRole("radio", { name: "Desktop" });
@@ -477,7 +491,7 @@ test("POLISH-007: the device switch is a radio group the arrow keys move, and th
   await expect(desktop).toBeChecked();
 });
 
-test("POLISH-011: a widget chosen in the outline is scrolled into view on the canvas and selected", async () => {
+test("POLISH-011: a widget chosen in the outline is scrolled into view on the canvas and selected @fernhill @builder", async () => {
   await openBuilder("frame", /^Tall/, { width: 1440, height: 700 });
   await expect(widget("Stat 1")).toBeVisible();
   await expect(widget("Stat 8")).not.toBeInViewport();
@@ -493,7 +507,7 @@ test("POLISH-011: a widget chosen in the outline is scrolled into view on the ca
   await owner.setViewportSize({ width: 1440, height: 1000 });
 });
 
-test("POLISH-003: a page's icon, its size and its title are chosen in the settings, saved, and kept after a reload", async () => {
+test("POLISH-003: a page's icon, its size and its title are chosen in the settings, saved, and kept after a reload @fernhill @builder", async () => {
   await openBuilder("frame", /^Welcome/);
   const form = settings().getByRole("region", { name: "Page settings" });
   await expect(form).toBeVisible();
@@ -541,7 +555,7 @@ const selectorSearch = () =>
     name: "Find something to add, or describe what people should do",
   });
 
-test("POLISH-007: Add to page opens with the cursor in its search, and Escape closes it and gives the focus back", async () => {
+test("POLISH-007: Add to page opens with the cursor in its search, and Escape closes it and gives the focus back @fernhill @builder", async () => {
   await openBuilder("frame", /^Blank/);
   const opener = owner.getByRole("button", { name: /^Add to page/ }).first();
   await opener.focus();
@@ -599,7 +613,7 @@ test('POLISH-009: typing what people should do, "take payments", finds Button; t
   await expect(selector()).toHaveCount(0);
 });
 
-test("POLISH-009: a page that shows Invoices is offered next steps, and one applied adds what it says", async () => {
+test("POLISH-009: a page that shows Invoices is offered next steps, and one applied adds what it says @fernhill @builder", async () => {
   await openBuilder("tables", /^Invoices/);
   await owner
     .getByRole("button", { name: /^Add to page/ })
@@ -681,7 +695,7 @@ async function chooseSource(table: string) {
   await expect(rowOf("Source")).toContainText(table);
 }
 
-test("POLISH-004: Chart: Measure, For each, the chart type and its colours are written, drawn, and kept after a reload", async () => {
+test("POLISH-004: Chart: Measure, For each, the chart type and its colours are written, drawn, and kept after a reload @fernhill @builder", async () => {
   await openBuilder("charts", /^Blank/);
   const added = await addAndSave("charts", "blank", "Chart", "core/chart");
   await chooseSource("Invoices");
@@ -777,7 +791,7 @@ async function addCondition(field: string, test: string, fill: (editor: Locator)
 const chip = (words: string | RegExp) =>
   settings().getByRole("group", { name: "Conditions rows must meet" }).getByText(words);
 
-test("POLISH-004: Stat: a value, a condition, a title and a money format are written, shown on the canvas as the number, and kept after a reload", async () => {
+test("POLISH-004: Stat: a value, a condition, a title and a money format are written, shown on the canvas as the number, and kept after a reload @fernhill @builder", async () => {
   await openBuilder("charts", /^Blank/);
   const added = await addAndSave("charts", "blank", "Stat", "core/stat");
   await chooseSource("Invoices");
@@ -815,9 +829,9 @@ const onlyTheWalks = () =>
     open.getByRole("textbox", { name: "Value" }).fill(PREFIX),
   );
 
-test("POLISH-004: Goal: a value, a goal and when it is reached are written, drawn as progress, and kept after a reload", async () => {
+test("POLISH-004: Goal: a value, a goal and when it is reached are written, drawn as progress, and kept after a reload @fernhill @builder", async () => {
   await openBuilder("charts", /^Blank/);
-  const added = await addAndSave("charts", "blank", "Goal", "labs/goal");
+  const added = await addAndSave("charts", "blank", "Goal", "core/goal");
   await chooseSource("Invoices");
   await onlyTheWalks();
   // The value is the count of the walk's invoices: six. The goal is ten: sixty per cent.
@@ -843,7 +857,7 @@ test("POLISH-004: Goal: a value, a goal and when it is reached are written, draw
   await expect(widget(/^Goal/)).not.toContainText("60%");
 });
 
-test("POLISH-004: Pivot: a measure, rows and columns are written, drawn as a grid with the right counts, and kept after a reload", async () => {
+test("POLISH-004: Pivot: a measure, rows and columns are written, drawn as a grid with the right counts, and kept after a reload @fernhill @builder", async () => {
   await openBuilder("charts", /^Blank/);
   const added = await addAndSave("charts", "blank", "Pivot", "core/pivot");
   await chooseSource("Invoices");
@@ -884,7 +898,7 @@ test("POLISH-004: Pivot: a measure, rows and columns are written, drawn as a gri
   await expect(widget(/^Pivot/).getByRole("row", { name: /northside/ })).toBeVisible();
 });
 
-test("POLISH-004: List: a column is put in each named place, drawn in the rows, and Cards changes the look; kept after a reload", async () => {
+test("POLISH-004: List: a column is put in each named place, drawn in the rows, and Cards changes the look; kept after a reload @fernhill @builder", async () => {
   await openBuilder("records", /^Blank/);
   const added = await addAndSave("records", "blank", "List", "core/list");
   await chooseSource("Invoices");
@@ -916,7 +930,7 @@ test("POLISH-004: List: a column is put in each named place, drawn in the rows, 
   await expect(widget(/^List/)).toContainText(made.a?.number ?? "");
 });
 
-test("POLISH-004: List: the Badge place offers the Status column, as Conditions offers its values", async () => {
+test("POLISH-004: List: the Badge place offers the Status column, as Conditions offers its values @fernhill @builder", async () => {
   await openBuilder("layout", /^Blank/);
   await addAndSave("layout", "blank", "List", "core/list");
   await chooseSource("Invoices");
@@ -929,7 +943,7 @@ test("POLISH-004: List: the Badge place offers the Status column, as Conditions 
   await owner.keyboard.press("Escape");
 });
 
-test("POLISH-004: Record detail: the record, its fields in sections and edit in place are written, drawn on the sheet, and kept after a reload", async () => {
+test("POLISH-004: Record detail: the record, its fields in sections and edit in place are written, drawn on the sheet, and kept after a reload @fernhill @builder", async () => {
   await openBuilder("records", /^Invoice sheet/);
   const added = await addAndSave("records", "invoice", "Record detail", "core/detail");
   // On a sheet the record to show is the one the sheet was opened with.
@@ -967,7 +981,7 @@ test("POLISH-004: Record detail: the record, its fields in sections and edit in 
   await expect(widget(/^Record detail/)).toContainText("Number");
 });
 
-test("POLISH-004: Form: made in its dialog on a table of choice, fields unchecked, previewed live, and the form is a modal page that writes that table", async () => {
+test("POLISH-004: Form: made in its dialog on a table of choice, fields unchecked, previewed live, and the form is a modal page that writes that table @fernhill @builder", async () => {
   await openBuilder("records", /^Blank/);
   await owner
     .getByRole("button", { name: /^Add to page/ })
@@ -1005,7 +1019,7 @@ test("POLISH-004: Form: made in its dialog on a table of choice, fields unchecke
   await expect(pages().getByRole("button", { name: /^New invoice/ })).toBeVisible();
 });
 
-test("POLISH-004: Button: its words, tone, icon and place in its cell (3 by 3) are written, drawn in that corner, and kept after a reload", async () => {
+test("POLISH-004: Button: its words, tone, icon and place in its cell (3 by 3) are written, drawn in that corner, and kept after a reload @fernhill @builder", async () => {
   await openBuilder("layout", /^Blank/);
   const added = await addAndSave("layout", "blank", "Button", "core/button");
   await tabOf("Display").click();
@@ -1055,7 +1069,7 @@ test("POLISH-004: Button: its words, tone, icon and place in its cell (3 by 3) a
   ).toBeChecked();
 });
 
-test("POLISH-004: Action group: its buttons are rows with their own settings, lined up and shown up to a number; kept after a reload", async () => {
+test("POLISH-004: Action group: its buttons are rows with their own settings, lined up and shown up to a number; kept after a reload @fernhill @builder", async () => {
   await openBuilder("layout", /^Blank/);
   const added = await addAndSave("layout", "blank", "Action group", "core/actions");
   await tabOf("Display").click();
@@ -1097,7 +1111,7 @@ test("POLISH-004: Action group: its buttons are rows with their own settings, li
   await expect(widget(/^Action group/).getByRole("button", { name: /More/ })).toBeVisible();
 });
 
-test("POLISH-004: Section: plain or a card, and can be collapsed; kept after a reload", async () => {
+test("POLISH-004: Section: plain or a card, and can be collapsed; kept after a reload @fernhill @builder", async () => {
   await openBuilder("layout", /^Blank/);
   const section = await addAndSave("layout", "blank", "Section", "core/section");
   await tabOf("Display").click();
@@ -1118,7 +1132,7 @@ test("POLISH-004: Section: plain or a card, and can be collapsed; kept after a r
   await expect(flip("Can be collapsed")).toBeChecked();
 });
 
-test("POLISH-004: Tabs: the tab that opens first is chosen, the style is pills and the last tab is remembered; kept after a reload", async () => {
+test("POLISH-004: Tabs: the tab that opens first is chosen, the style is pills and the last tab is remembered; kept after a reload @fernhill @builder", async () => {
   await openBuilder("layout", /^Blank/);
   const tabs = await addAndSave("layout", "blank", "Tabs", "core/tabs");
   await tabOf("Display").click();
@@ -1146,7 +1160,7 @@ test("POLISH-004: Tabs: the tab that opens first is chosen, the style is pills a
   ).toHaveAttribute("aria-selected", "true");
 });
 
-test("POLISH-004: Search and filter: a filter is added, sits behind a button, and the page's table follows it; kept after a reload", async () => {
+test("POLISH-004: Search and filter: a filter is added, sits behind a button, and the page's table follows it; kept after a reload @fernhill @builder", async () => {
   await openBuilder("layout", /^Blank/);
   const filter = await addAndSave("layout", "blank", "Search and filter", "core/filter");
   await tabOf("Display").click();
@@ -1182,7 +1196,7 @@ test("POLISH-004: Search and filter: a filter is added, sits behind a button, an
   ).toBeChecked();
 });
 
-test("POLISH-004: Text: the style is chosen by looking, the words are written on the page in the Markdown editor, and what readers see is drawn; kept after a reload", async () => {
+test("POLISH-004: Text: the style is chosen by looking, the words are written on the page in the Markdown editor, and what readers see is drawn; kept after a reload @fernhill @builder", async () => {
   await openBuilder("layout", /^Blank/);
   const text = await addAndSave("layout", "blank", "Text", "core/text");
   await choose(settings().getByRole("group", { name: "Style" }), "Warning").click();
@@ -1226,7 +1240,7 @@ const headingsOf = async (name: string) =>
 /** A column's own editor: opened from the inspector's list or from its heading on the page. */
 const columnEditor = (name: string) => owner.getByRole("dialog", { name: `Column · ${name}` });
 
-test("POLISH-004: Table: a column is renamed, hidden, reordered and formatted, and a heading on the page opens the same column", async () => {
+test("POLISH-004: Table: a column is renamed, hidden, reordered and formatted, and a heading on the page opens the same column @fernhill @builder", async () => {
   await openBuilder("tables", /^Invoices/);
   await outline().getByRole("button", { name: "Invoices", exact: true }).click();
   await tabOf("Display").click();
@@ -1295,7 +1309,7 @@ test("POLISH-004: Table: a column is renamed, hidden, reordered and formatted, a
   ).toContainText("$123.45");
 });
 
-test("POLISH-004: Table: a column shown as a badge is offered each of its values to give a colour, and the chips on the page wear them", async () => {
+test("POLISH-004: Table: a column shown as a badge is offered each of its values to give a colour, and the chips on the page wear them @fernhill @builder", async () => {
   await openBuilder("tables", /^Invoices/);
   await outline().getByRole("button", { name: "Invoices", exact: true }).click();
   await tabOf("Display").click();
@@ -1346,7 +1360,7 @@ const doneWith = (says: string) =>
     .getByRole("button", { name: "Done" })
     .or(settings().getByRole("button", { name: /^Back/ }));
 
-test("POLISH-004: Table: a row action is made in the inspector, run on the rows chosen in the published app, and who may run it is picked from the groups", async () => {
+test("POLISH-004: Table: a row action is made in the inspector, run on the rows chosen in the published app, and who may run it is picked from the groups @fernhill @builder", async () => {
   await openBuilder("tables", /^To pay/);
   await outline().getByRole("button", { name: "To pay", exact: true }).click();
   await tabOf("Actions").click();
@@ -1404,7 +1418,7 @@ async function openCheck() {
   await expect(readyToPublish().getByText("Checking what publishing does…")).toHaveCount(0);
 }
 
-test("POLISH-010: the publish check blocks what cannot work, says why, passes once it is fixed, lists the changes, and publishing clears the pill", async () => {
+test("POLISH-010: the publish check blocks what cannot work, says why, passes once it is fixed, lists the changes, and publishing clears the pill @fernhill @builder", async () => {
   await openBuilder("publish", /^Blank/);
   await expect(owner.getByRole("status").filter({ hasText: "Published." })).toBeVisible();
   await expect(draftPill()).toHaveCount(0);
@@ -1474,11 +1488,11 @@ async function signedInAs(
   size = { width: 1440, height: 1000 },
 ): Promise<Page> {
   const person = await (await browser.newContext({ viewport: size })).newPage();
-  await signInWithPassword(person, email, PASSWORD);
+  await signInAs(person, email, PASSWORD);
   return person;
 }
 
-test("POLISH-010: someone who may not publish sees the builder read only, with the reason and no Publish, and the API refuses them", async ({
+test("POLISH-010: someone who may not publish sees the builder read only, with the reason and no Publish, and the API refuses them @fernhill @builder", async ({
   browser,
 }) => {
   // Amara Okafor is Fernhill's clinical director, a viewer of the workspace: she may look at the
@@ -1679,7 +1693,7 @@ const statusOf = async (key: string): Promise<string> =>
 const setStatus = (key: string, status: string) =>
   ok(owner, "PATCH", `${W}/row/${made[key]?.id}/invoices`, { status });
 
-test("POLISH-012: a row action limited to a group is greyed with the reason for someone outside, run by someone inside, and refused by the API when called directly", async ({
+test("POLISH-012: a row action limited to a group is greyed with the reason for someone outside, run by someone inside, and refused by the API when called directly @fernhill @builder", async ({
   browser,
 }) => {
   await giveRowAction("tables", "bulk", "pay", ["groups/practice-managers"]);
@@ -1729,7 +1743,7 @@ test("POLISH-012: a row action limited to a group is greyed with the reason for 
   }
 });
 
-test("POLISH-012: a group whose name is not its key: the reason greyed and the refusal both use the name people know it by", async ({
+test("POLISH-012: a group whose name is not its key: the reason greyed and the refusal both use the name people know it by @fernhill @builder", async ({
   browser,
 }) => {
   // A group is made as "Zed <stamp>", then renamed: its key stays what it was made as.
@@ -1768,7 +1782,7 @@ test("POLISH-012: a group whose name is not its key: the reason greyed and the r
   }
 });
 
-test("POLISH-004: Table: with several rows selectable, an action runs on every row chosen and on no other, in one go", async ({
+test("POLISH-004: Table: with several rows selectable, an action runs on every row chosen and on no other, in one go @fernhill @builder", async ({
   browser,
 }) => {
   await giveRowAction("tables", "bulk", "pay", ["groups/practice-managers"]);
@@ -1809,7 +1823,7 @@ async function publishThroughTheCheck() {
     .click();
   await expect(owner.getByText(/^Published\./).first()).toBeVisible();
 }
-test("POLISH-012: a widget limited to a group carries its tag, View as shows it as that group sees it, and a person of that group and one outside see the same in the served app", async ({
+test("POLISH-012: a widget limited to a group carries its tag, View as shows it as that group sees it, and a person of that group and one outside see the same in the served app @fernhill @builder", async ({
   browser,
 }) => {
   await openBuilder("rules", /^Blank/);
@@ -1880,7 +1894,7 @@ test("POLISH-012: a widget limited to a group carries its tag, View as shows it 
 /** The widths a side sheet or modal is made at, by size name (pageKinds.ts). */
 const SIZE_PX = { small: 480, medium: 720, large: 960, xlarge: 1200 } as const;
 
-test("POLISH-013: a sheet is sized by dragging its edge and a modal by the select, each snaps to a named size, and both open at that size in the published app after a reload", async () => {
+test("POLISH-013: a sheet is sized by dragging its edge and a modal by the select, each snaps to a named size, and both open at that size in the published app after a reload @fernhill @builder", async () => {
   await openBuilder("sizes", /^A sheet/);
   const handle = owner.getByRole("slider", { name: "Size" });
   await expect(handle).toBeVisible();
@@ -1982,7 +1996,7 @@ async function setNarrow(
   await settings().getByRole("button", { name: "Back to settings" }).click();
 }
 
-test("POLISH-005: on a phone each widget is automatic or set by hand (hide, full width, keep, stack below); the preview draws it, the publish check warns of what is hidden, and the served page at 390 is the preview", async () => {
+test("POLISH-005: on a phone each widget is automatic or set by hand (hide, full width, keep, stack below); the preview draws it, the publish check warns of what is hidden, and the served page at 390 is the preview @fernhill @builder", async () => {
   await openBuilder("phone", /^Blank/);
   await setNarrow("Alpha", "Hide");
   await setNarrow("Beta", "Full width");
@@ -2149,11 +2163,11 @@ async function browserPage(): Promise<Page> {
     ?.newContext({ viewport: { width: 1440, height: 900 } });
   if (!next) throw new Error("no browser");
   const page = await next.newPage();
-  await signInWithPassword(page, OWNER, PASSWORD);
+  await signInAs(page, OWNER);
   return page;
 }
 
-test("POLISH-008: a drag on the phone preview asks once, and writes only the phone layout, never the desktop's", async () => {
+test("POLISH-008: a drag on the phone preview asks once, and writes only the phone layout, never the desktop's @fernhill @builder", async () => {
   await openBuilder("phone", /^Blank/, { width: 1440, height: 1900 });
   const before = structuredClone(await draftPage("phone", "blank")) as Wid;
   await owner
@@ -2178,6 +2192,15 @@ test("POLISH-008: a drag on the phone preview asks once, and writes only the pho
   await expect(sure).toContainText("made from the desktop one");
   await sure.getByRole("button", { name: "Change the phone layout" }).click();
   await expect(sure).toHaveCount(0);
+  // The builder says when it has saved, as a person sees it: once "Saving…" is gone the draft
+  // holds the move (on a loaded machine the save can land well after the drop), and a save that
+  // failed says why here rather than as a draft that never changes.
+  const saving = owner
+    .getByRole("status")
+    .filter({ hasText: /Saving…|Saved|Not saved/ })
+    .first();
+  await expect(saving).not.toHaveText(/Saving…/, { timeout: 60_000 });
+  await expect(saving).not.toHaveText(/Not saved/);
   const gamma = (await settle("phone", "blank", "gamma", (one) =>
     one.layout?.phone?.at ? one : undefined,
   )) as Wid;
@@ -2212,7 +2235,7 @@ test("POLISH-008: a drag on the phone preview asks once, and writes only the pho
 
 // ----- 9. Draft history -----
 
-test("POLISH-014: an earlier draft is picked from what each save kept, previewed, restored as one step, and one Undo takes it back whole", async () => {
+test("POLISH-014: an earlier draft is picked from what each save kept, previewed, restored as one step, and one Undo takes it back whole @fernhill @builder", async () => {
   await openBuilder("appointments", /^Blank/);
   await addAndSave("appointments", "blank", "Stat", "core/stat");
   await chooseSource("Invoices");
@@ -2266,7 +2289,7 @@ const servedRow = (person: Page, table: string, key: string) =>
     .getByRole("region", { name: table, exact: true })
     .getByRole("row", { name: new RegExp(made[key]?.number ?? "") });
 
-test("Acceptance, invoices: a table of invoices, a click that opens the record, editing it in place, a form for a new one, and a row action, made in the builder and used in the published app", async () => {
+test("Acceptance, invoices: a table of invoices, a click that opens the record, editing it in place, a form for a new one, and a row action, made in the builder and used in the published app @fernhill @builder", async () => {
   await openBuilder("invoices", /^Blank/, { width: 1440, height: 1100 });
   const table = await addAndSave("invoices", "blank", "Table", "core/table");
   await chooseSource("Invoices");
@@ -2395,7 +2418,7 @@ test("Acceptance, invoices: a table of invoices, a click that opens the record, 
   await setStatus("c", "unpaid");
 });
 
-test("Acceptance, appointments: a page started from the appointments table, its search, published and searched by a person", async () => {
+test("Acceptance, appointments: a page started from the appointments table, its search, published and searched by a person @fernhill @builder", async () => {
   await openBuilder("appointments", /^Blank/, { width: 1440, height: 1100 });
   await owner.getByRole("button", { name: "Add a page" }).click();
   const start = owner.getByRole("dialog", { name: "Add a page" });
@@ -2494,7 +2517,7 @@ async function endUserOnAPhone(browser: import("./test.ts").Browser, email: stri
   return page;
 }
 
-test("Acceptance, the pet owners' portal: an owner signs in on a phone and sees their own details and their own pets, nobody else's, asks for a visit, and nothing scrolls sideways", async ({
+test("Acceptance, the pet owners' portal: an owner signs in on a phone and sees their own details and their own pets, nobody else's, asks for a visit, and nothing scrolls sideways @fernhill @builder", async ({
   browser,
 }) => {
   const OWNER_EMAIL = "george.lewis@example.net";
@@ -2513,7 +2536,7 @@ test("Acceptance, the pet owners' portal: an owner signs in on a phone and sees 
   const person = await endUserOnAPhone(browser, OWNER_EMAIL);
   const requested: string[] = [];
   try {
-    await person.goto("/apps/fernhill/sandbox/my-account/");
+    await person.goto(`/apps/${TENANT}/sandbox/my-account/`);
     // Their own details: found by their email, on a phone.
     await expect(person.getByRole("region", { name: "Your details" })).toContainText(me?.code, {
       timeout: 30_000,
@@ -2555,7 +2578,7 @@ test("Acceptance, the pet owners' portal: an owner signs in on a phone and sees 
   }
 });
 
-test("Acceptance, an analytics dashboard: a number, a chart by clinic and a date filter every widget follows, built from menus, drawing the right figures", async () => {
+test("Acceptance, an analytics dashboard: a number, a chart by clinic and a date filter every widget follows, built from menus, drawing the right figures @fernhill @builder", async () => {
   const made1 = await ok(owner, "POST", `${W}/dashboards`, { title: `Analytics ${stamp}` });
   try {
     await owner.setViewportSize({ width: 1440, height: 1100 });
@@ -2613,7 +2636,7 @@ test("Acceptance, an analytics dashboard: a number, a chart by clinic and a date
 // ----- 11. Accessibility, in light and dark -----
 
 for (const scheme of ["light", "dark"] as const) {
-  test(`POLISH-015: the builder, an open drawer, the selector, the publish popover and a served phone page have no serious accessibility violation, in ${scheme}`, async () => {
+  test(`POLISH-015: the builder, an open drawer, the selector, the publish popover and a served phone page have no serious accessibility violation, in ${scheme} @fernhill @builder`, async () => {
     await owner.emulateMedia({ colorScheme: scheme });
     try {
       await openBuilder("tables", /^Invoices/);

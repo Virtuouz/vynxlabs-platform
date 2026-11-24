@@ -1,9 +1,11 @@
+import { AUDIT_AREAS } from "@volvel/manifest";
 import { Button, JsonView, Notice } from "@volvel/ui";
 import { Download } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { copyText } from "../ask.tsx";
-import { actionWords } from "../audit-words.ts";
+import { actionWords, targetTypeWords } from "../audit-words.ts";
+import { useAddressBox } from "../kit/addressBox.ts";
 import { type CollectionColumn, CollectionView } from "../kit/CollectionView.tsx";
 import { stamp } from "../kit/format.ts";
 import { Inspector, KeyValues, SectionLabel, useWide, WIDE } from "../kit/layout.tsx";
@@ -25,44 +27,31 @@ interface Entry {
   targetId: string | null;
   targetLabel?: string | null;
   workspaceId?: string | null;
+  /** Set on an entry of the instance's log that belongs to a tenant that has been deleted. */
+  tenantId?: string | null;
   details: Record<string, unknown>;
   ipAddress: string | null;
   userAgent: string | null;
   requestId: string | null;
 }
 
-/** The areas of the log a person can narrow to. Each is the word an action starts with. */
-const AREAS: [string, string][] = [
+/**
+ * The areas of a log a person can narrow to, first "Everything". Each is the word an action
+ * starts with. They are the manifest package's list, which the reference is drawn from.
+ */
+const areasOf = (tenantLog: boolean): [string, string][] => [
   ["", "Everything"],
-  ["member", "Members and sign-ins"],
-  ["tenant_member", "Tenant membership"],
-  ["group", "Groups"],
-  ["service_account", "Service accounts"],
-  ["api_key", "API keys"],
-  ["role", "Roles"],
-  ["binding", "Access"],
-  ["access_grant", "Operator access"],
-  ["end_user", "End users"],
-  ["app_session", "Sign-ins to apps"],
-  ["workspace", "Workspaces"],
-  ["resource", "Resources"],
-  ["secret", "Secrets"],
-  ["connection", "Connections"],
-  ["variable", "Variables"],
-  ["data_source", "Data sources"],
-  ["bundle", "Bundles"],
-  ["deployment", "Deployments"],
-  ["run", "Runs"],
-  ["flow", "Flows"],
-  ["flow_run", "Flow runs"],
-  ["event", "Events"],
-  ["table", "Tables"],
-  ["file", "Files"],
-  ["portal", "Branding and portal"],
-  ["app_domain", "Hostnames"],
-  ["worker_credential", "Worker credentials"],
-  ["tenant", "Tenant"],
+  ...AUDIT_AREAS.flatMap((one): [string, string][] => {
+    const words = tenantLog ? one.tenant : one.instance;
+    return words === undefined ? [] : [[one.area, words]];
+  }),
 ];
+
+/** The words an area can be, for the log of a tenant or of the instance. */
+export const auditAreas = (tenantLog: boolean) =>
+  areasOf(tenantLog)
+    .map(([value]) => value)
+    .filter(Boolean);
 
 type Verb = "Create" | "Update" | "Delete" | "Execute" | "Read" | "Other";
 const VERB_TONE: Record<Verb, TagTone> = {
@@ -74,14 +63,17 @@ const VERB_TONE: Record<Verb, TagTone> = {
   Other: "neutral",
 };
 const VERBS: [Verb, RegExp][] = [
-  ["Delete", /(deleted|removed|revoked|ended|purged|retired|unbound|cleared|disabled)$/],
+  ["Delete", /(deleted|removed|revoked|ended|purged|retired|unbound|cleared)$/],
   ["Create", /(created|added|invited|issued|registered|uploaded|imported|opened|bound|cloned)$/],
   [
     "Execute",
     /(started|cancelled|decided|approved|rejected|deployed|activated|promoted|published|exported|signed_in|signed_out|handed_off|checked|requested|finished)$/,
   ],
   ["Read", /(read|viewed|listed|downloaded|access)$/],
-  ["Update", /(updated|changed|saved|set|renamed|enabled|paused|resumed|verified|replaced)$/],
+  [
+    "Update",
+    /(updated|changed|saved|set|renamed|enabled|disabled|paused|resumed|verified|replaced)$/,
+  ],
 ];
 
 /** What kind of thing an action did, read from how its name ends. */
@@ -99,7 +91,12 @@ const SINCE: { value: string; label: string; hours: number | null }[] = [
   { value: "24h", label: "Last 24 hours", hours: 24 },
   { value: "7d", label: "Last 7 days", hours: 24 * 7 },
   { value: "30d", label: "Last 30 days", hours: 24 * 30 },
+  { value: "custom", label: "Between dates", hours: null },
 ];
+
+/** A day typed in a date field, as the start or the end of that day where the reader is. */
+const startOfDay = (day: string) => new Date(`${day}T00:00:00`);
+const endOfDay = (day: string) => new Date(`${day}T23:59:59.999`);
 
 /** What the log holds in the range shown, to narrow it by. */
 interface Facets {
@@ -149,6 +146,10 @@ const AUDIT_URL = {
   actor: { type: "string" },
   action: { type: "string" },
   kind: { type: "string" },
+  from: { type: "string" },
+  to: { type: "string" },
+  workspace: { type: "string" },
+  about: { type: "string" },
   q: { type: "string" },
   cols: { type: "list" },
   entry: { type: "string", push: true },
@@ -175,22 +176,21 @@ export function AuditTable({
   const [cursor, setCursor] = useState<string | null>(null);
   const [error, setError] = useState<ApiError>();
   const [loaded, setLoaded] = useState(false);
-  const [typed, setTyped] = useState(url.q ?? "");
   const [closed, setClosed] = useState(false);
+  const [moreOpen, setMoreOpen] = useState<boolean>();
   const [linked, setLinked] = useState<Entry>();
   const wide = useWide(WIDE.inspector);
   const tenantId = /^\/tenants\/([^/]+)/.exec(path)?.[1];
-  // Only a tenant's log can be narrowed by what it holds, and exported.
+  // Only a tenant's log has workspaces and saved views.
   const tenantLog = tenantId !== undefined;
 
   // The text searched reaches the address, and the server, once typing pauses.
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      const next = typed.trim() || undefined;
-      if (next !== url.q) setUrl({ q: next });
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [typed, url.q, setUrl]);
+  const [typed, setTyped] = useAddressBox(
+    url.q,
+    (text) => text ?? "",
+    (text) => text.trim() || undefined,
+    (next) => setUrl({ q: next }),
+  );
 
   const filters = new URLSearchParams();
   if (url.area) filters.set("area", url.area);
@@ -201,23 +201,39 @@ export function AuditTable({
     from.setMinutes(0, 0, 0);
     filters.set("from", from.toISOString());
   }
+  if (url.since === "custom") {
+    if (url.from) filters.set("from", startOfDay(url.from).toISOString());
+    if (url.to) filters.set("to", endOfDay(url.to).toISOString());
+  }
+  if (url.workspace && tenantLog) filters.set("workspaceId", url.workspace);
+  if (url.about) filters.set("target", url.about);
   if (url.actor) filters.set("actorId", url.actor);
   if (url.action) filters.set("action", url.action);
   if (url.kind) filters.set("targetType", url.kind);
   if (url.q) filters.set("q", url.q);
   const asked = filters.toString();
-  const facets = useLoad<Facets>(tenantLog ? `${path}-facets?${asked}` : null);
+  const facets = useLoad<Facets>(`${path}-facets?${asked}`);
+  const workspaces = useLoad<{ items: { id: string; name?: string }[] }>(
+    tenantLog ? `/tenants/${tenantId}/workspaces` : null,
+  );
 
+  // Each first page asked for is the newest; an answer to an earlier one, or to one before the
+  // filters changed, is not shown.
+  const latest = useRef(0);
   const load = async (from: string | null) => {
+    if (!from) latest.current += 1;
+    const mine = latest.current;
     try {
       const query = new URLSearchParams(asked);
       query.set("limit", "50");
       if (from) query.set("cursor", from);
       const page = await api.get<{ items: Entry[]; nextCursor: string | null }>(`${path}?${query}`);
+      if (mine !== latest.current) return;
       setEntries((current) => (from ? [...current, ...page.items] : page.items));
       setCursor(page.nextCursor);
       setError(undefined);
     } catch (caught) {
+      if (mine !== latest.current) return;
       setError(caught as ApiError);
     }
     setLoaded(true);
@@ -229,7 +245,7 @@ export function AuditTable({
 
   // An entry linked to that is not among those loaded is fetched by itself.
   useEffect(() => {
-    if (!url.entry || !tenantLog || entries.some((entry) => entry.id === url.entry)) return;
+    if (!url.entry || entries.some((entry) => entry.id === url.entry)) return;
     let current = true;
     api.get<Entry>(`${path}/${url.entry}`).then(
       (entry) => current && setLinked(entry),
@@ -238,7 +254,7 @@ export function AuditTable({
     return () => {
       current = false;
     };
-  }, [url.entry, entries, path, tenantLog]);
+  }, [url.entry, entries, path]);
 
   const chosen = closed
     ? undefined
@@ -249,7 +265,25 @@ export function AuditTable({
     setUrl({ entry: entry.id });
     setClosed(false);
   };
-  const filtered = Boolean(url.area || url.actor || url.action || url.kind || url.q || hours);
+  const custom = url.since === "custom";
+  const backwards = custom && url.from && url.to && url.to < url.from;
+  const filtered = Boolean(
+    url.area ||
+      url.actor ||
+      url.action ||
+      url.kind ||
+      url.q ||
+      url.about ||
+      url.workspace ||
+      hours ||
+      (custom && (url.from || url.to)),
+  );
+  const aboutName =
+    entries.find((entry) => entry.targetId === url.about)?.targetLabel ?? url.about ?? "";
+  // The filters that are used less sit behind one control that says how many are set, so the first
+  // row holds the same few whatever the labels are. All are in the address (GOV-P8).
+  const moreSet = [url.actor, url.action, url.kind].filter(Boolean).length;
+  const moreShown = moreOpen ?? moreSet > 0;
   const select = "h-8 rounded-control border border-line bg-surface px-2 text-ink";
 
   const columns: CollectionColumn<Entry>[] = [
@@ -286,6 +320,11 @@ export function AuditTable({
               {entry.action}
             </code>
             {entry.accessGrantId ? <Tag tone="attention">Operator</Tag> : null}
+            {entry.tenantId && !tenantLog ? (
+              <span title={`Tenant ${entry.tenantId}, which has been deleted`}>
+                <Tag>Deleted tenant</Tag>
+              </span>
+            ) : null}
           </span>
         );
       },
@@ -333,16 +372,29 @@ export function AuditTable({
             onChange={(next) => setUrl({ cols: next ?? [] })}
           />
           {tenantId ? <ViewsMenu tenantId={tenantId} list="audit" omit={["entry"]} /> : null}
-          {tenantLog ? (
-            <Button size="small" href={`/api/v1${path}-export?${asked}`} download>
-              <Download aria-hidden="true" size={14} /> CSV
-            </Button>
-          ) : null}
+          <Button
+            size="small"
+            href={`/api/v1${path}-export?${asked}`}
+            download
+            tooltip="The file's times are in UTC, ending in Z. The list shows yours."
+          >
+            <Download aria-hidden="true" size={14} /> CSV
+          </Button>
         </span>
       }
       toolbar={
         <div className="flex flex-col gap-3">
           <div className="flex flex-wrap items-end gap-2">
+            <label className="flex w-full flex-col text-meta text-ink-muted sm:w-64">
+              <span className="sr-only">Search</span>
+              <input
+                type="search"
+                value={typed}
+                placeholder="An action, name, email or host"
+                onChange={(event) => setTyped(event.currentTarget.value)}
+                className={select}
+              />
+            </label>
             <label className="flex flex-col text-meta text-ink-muted">
               <span className="sr-only">Area</span>
               <select
@@ -350,7 +402,7 @@ export function AuditTable({
                 onChange={(event) => setUrl({ area: event.currentTarget.value || undefined })}
                 className={select}
               >
-                {AREAS.map(([value, label]) => (
+                {areasOf(tenantLog).map(([value, label]) => (
                   <option key={value} value={value}>
                     {label}
                   </option>
@@ -371,68 +423,124 @@ export function AuditTable({
                 ))}
               </select>
             </label>
-            {tenantLog ? (
+            {custom ? (
               <>
                 <label className="flex flex-col text-meta text-ink-muted">
-                  <span className="sr-only">Who</span>
-                  <select
-                    value={url.actor ?? ""}
-                    onChange={(event) => setUrl({ actor: event.currentTarget.value || undefined })}
-                    className={`${select} max-w-56`}
-                  >
-                    <option value="">Anyone</option>
-                    {(facets.data?.actors ?? [])
-                      .filter((one) => one.id)
-                      .map((one) => (
-                        <option key={one.id} value={one.id ?? ""}>
-                          {one.label ?? `${one.type} ${one.id?.slice(-8)}`} ({one.count})
-                        </option>
-                      ))}
-                  </select>
+                  <span className="sr-only">From date</span>
+                  <input
+                    type="date"
+                    value={url.from ?? ""}
+                    max={url.to}
+                    onChange={(event) => setUrl({ from: event.currentTarget.value || undefined })}
+                    className={select}
+                  />
                 </label>
                 <label className="flex flex-col text-meta text-ink-muted">
-                  <span className="sr-only">Action</span>
-                  <select
-                    value={url.action ?? ""}
-                    onChange={(event) => setUrl({ action: event.currentTarget.value || undefined })}
-                    className={`${select} max-w-56`}
-                  >
-                    <option value="">Any action</option>
-                    {(facets.data?.actions ?? []).map((one) => (
-                      <option key={one.value} value={one.value}>
-                        {actionWords(one.value)} ({one.count})
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="flex flex-col text-meta text-ink-muted">
-                  <span className="sr-only">Done to</span>
-                  <select
-                    value={url.kind ?? ""}
-                    onChange={(event) => setUrl({ kind: event.currentTarget.value || undefined })}
-                    className={`${select} max-w-48`}
-                  >
-                    <option value="">Anything</option>
-                    {(facets.data?.targetTypes ?? []).map((one) => (
-                      <option key={one.value} value={one.value}>
-                        {one.value.replace(/_/g, " ")} ({one.count})
-                      </option>
-                    ))}
-                  </select>
+                  <span className="sr-only">To date</span>
+                  <input
+                    type="date"
+                    value={url.to ?? ""}
+                    min={url.from}
+                    onChange={(event) => setUrl({ to: event.currentTarget.value || undefined })}
+                    className={select}
+                  />
                 </label>
               </>
             ) : null}
-            <label className="flex min-w-48 flex-1 flex-col text-meta text-ink-muted sm:max-w-64">
-              <span className="sr-only">Search</span>
-              <input
-                type="search"
-                value={typed}
-                placeholder="An action, an ID or a kind"
-                onChange={(event) => setTyped(event.currentTarget.value)}
-                className={select}
-              />
-            </label>
+            {tenantLog ? (
+              <label className="flex flex-col text-meta text-ink-muted">
+                <span className="sr-only">Workspace</span>
+                <select
+                  value={url.workspace ?? ""}
+                  onChange={(event) =>
+                    setUrl({ workspace: event.currentTarget.value || undefined })
+                  }
+                  className={`${select} max-w-48`}
+                >
+                  <option value="">Every workspace</option>
+                  {(workspaces.data?.items ?? [])
+                    .filter((one) => one.name)
+                    .map((one) => (
+                      <option key={one.id} value={one.id}>
+                        {one.name}
+                      </option>
+                    ))}
+                </select>
+              </label>
+            ) : null}
+            <Button
+              size="small"
+              aria-expanded={moreShown}
+              aria-controls="audit-more-filters"
+              onClick={() => setMoreOpen(!moreShown)}
+            >
+              More filters{moreSet > 0 ? ` (${moreSet})` : ""}
+            </Button>
           </div>
+          {moreShown ? (
+            <div id="audit-more-filters" className="flex flex-wrap items-end gap-2">
+              <label className="flex flex-col text-meta text-ink-muted">
+                <span className="sr-only">Who</span>
+                <select
+                  value={url.actor ?? ""}
+                  onChange={(event) => setUrl({ actor: event.currentTarget.value || undefined })}
+                  className={`${select} max-w-40`}
+                >
+                  <option value="">Anyone</option>
+                  {(facets.data?.actors ?? [])
+                    .filter((one) => one.id)
+                    .map((one) => (
+                      <option key={one.id} value={one.id ?? ""}>
+                        {one.label ?? `${one.type} ${one.id?.slice(-8)}`} ({one.count})
+                      </option>
+                    ))}
+                </select>
+              </label>
+              <label className="flex flex-col text-meta text-ink-muted">
+                <span className="sr-only">Action</span>
+                <select
+                  value={url.action ?? ""}
+                  onChange={(event) => setUrl({ action: event.currentTarget.value || undefined })}
+                  className={`${select} max-w-40`}
+                >
+                  <option value="">Any action</option>
+                  {(facets.data?.actions ?? []).map((one) => (
+                    <option key={one.value} value={one.value}>
+                      {actionWords(one.value)} ({one.count})
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex flex-col text-meta text-ink-muted">
+                <span className="sr-only">Done to</span>
+                <select
+                  value={url.kind ?? ""}
+                  onChange={(event) => setUrl({ kind: event.currentTarget.value || undefined })}
+                  className={`${select} max-w-48`}
+                >
+                  <option value="">Anything</option>
+                  {(facets.data?.targetTypes ?? []).map((one) => (
+                    <option key={one.value} value={one.value}>
+                      {targetTypeWords(one.value)} ({one.count})
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          ) : null}
+          {backwards ? (
+            <p className="m-0 text-meta text-danger">The end date is before the start date.</p>
+          ) : null}
+          {url.about ? (
+            <div className="flex flex-wrap items-center gap-2 text-ink-muted">
+              <span>
+                Everything about <span className="font-medium text-ink">{aboutName}</span>
+              </span>
+              <Button size="small" onClick={() => setUrl({ about: undefined })}>
+                Show everything
+              </Button>
+            </div>
+          ) : null}
         </div>
       }
       columns={columns}
@@ -453,6 +561,10 @@ export function AuditTable({
                   setUrl({
                     area: undefined,
                     since: "all",
+                    from: undefined,
+                    to: undefined,
+                    workspace: undefined,
+                    about: undefined,
                     actor: undefined,
                     action: undefined,
                     kind: undefined,
@@ -475,17 +587,32 @@ export function AuditTable({
             setUrl({ entry: undefined });
           }}
           footer={
-            chosen && tenantLog ? (
-              <Button
-                size="small"
-                onClick={() => {
-                  const link = new URL(location.href);
-                  link.searchParams.set("entry", chosen.id);
-                  void copyText(link.toString(), "Link to the entry copied.");
-                }}
-              >
-                Copy a link to it
-              </Button>
+            chosen ? (
+              <div className="flex flex-wrap gap-2">
+                {chosen.targetId ? (
+                  <Button
+                    size="small"
+                    onClick={() => {
+                      setClosed(false);
+                      setUrl({ about: chosen.targetId ?? undefined, entry: undefined });
+                    }}
+                  >
+                    Everything about this
+                  </Button>
+                ) : null}
+                {tenantLog ? (
+                  <Button
+                    size="small"
+                    onClick={() => {
+                      const link = new URL(location.href);
+                      link.searchParams.set("entry", chosen.id);
+                      void copyText(link.toString(), "Link to the entry copied.");
+                    }}
+                  >
+                    Copy a link to it
+                  </Button>
+                ) : null}
+              </div>
             ) : undefined
           }
         >
@@ -496,7 +623,7 @@ export function AuditTable({
                   { label: "When", value: <Time value={chosen.occurredAt} />, mono: true },
                   { label: "Who", value: who(chosen) },
                   { label: "Action", value: chosen.action, mono: true },
-                  { label: "Kind", value: chosen.targetType },
+                  { label: "Kind", value: targetTypeWords(chosen.targetType) },
                   ...(chosen.targetLabel ? [{ label: "Name", value: chosen.targetLabel }] : []),
                   { label: "ID", value: chosen.targetId ?? "", mono: true },
                   { label: "From", value: chosen.ipAddress ?? "", mono: true },

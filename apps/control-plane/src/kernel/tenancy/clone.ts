@@ -2,8 +2,13 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { newId, sql } from "@volvel/db";
 import { type Actor, type Audit, mutate, type Trx } from "../audit.js";
 import { loadCatalog, reconcileReferences, workspaceSchema } from "../data/apply.js";
-import { bindSource, credentialName as sourceCredentialName } from "../data/sources.js";
-import { bindConnection, decryptFor, readConnection } from "../execution/bindings.js";
+import { bindSource, readSourcePassword } from "../data/sources.js";
+import {
+  bindConnection,
+  bindGroupMember,
+  readConnection,
+  readGroupMember,
+} from "../execution/bindings.js";
 import { deployBundle, order } from "../execution/deploy.js";
 import { adoptBundle } from "../execution/promote.js";
 import type { WorkspaceRef } from "../http.js";
@@ -23,6 +28,8 @@ export interface CloneReport {
   /** Zero when safety is on. */
   connections: number;
   dataSources: number;
+  /** Members of connection groups. Zero when safety is on. */
+  connectionGroupMembers: number;
   secrets: number;
   tables: number;
   rows: number;
@@ -78,10 +85,10 @@ async function copyBindings(
 
   const connections = await trx
     .selectFrom("connection_binding")
-    .select("path")
+    .select(["path", "connector"])
     .where("workspace_id", "=", source.id)
     .execute();
-  for (const { path } of connections) {
+  for (const { path, connector } of connections) {
     const at = { tenantId: source.tenantId, workspaceId: source.id, path };
     const bound = await readConnection(kernel, trx, at);
     if (!bound) continue;
@@ -91,26 +98,43 @@ async function copyBindings(
       { ...at, workspaceId: target.id },
       bound.config as Record<string, unknown>,
       bound.credential ?? null,
+      connector,
     );
   }
   report.connections = connections.length;
 
+  // The members of connection groups: added per workspace, so a clone has none unless they are copied.
+  const members = await trx
+    .selectFrom("connection_group_member")
+    .select(["group_path", "key"])
+    .where("workspace_id", "=", source.id)
+    .execute();
+  for (const { group_path, key } of members) {
+    const at = { tenantId: source.tenantId, workspaceId: source.id, group: group_path, key };
+    const bound = await readGroupMember(kernel, trx, at);
+    if (!bound) continue;
+    await bindGroupMember(
+      kernel,
+      trx,
+      { ...at, workspaceId: target.id },
+      { label: bound.label, config: bound.config as Record<string, unknown> },
+      bound.credential ?? null,
+    );
+  }
+  report.connectionGroupMembers = members.length;
+
   const sources = await trx
     .selectFrom("data_source_binding")
-    .select(["path", "config", "credential"])
+    .select(["id", "path", "config", "credential"])
     .where("workspace_id", "=", source.id)
     .execute();
   for (const bound of sources) {
-    const password = bound.credential
-      ? await decryptFor(
-          kernel,
-          trx,
-          source.tenantId,
-          source.id,
-          sourceCredentialName(bound.path),
-          bound.credential,
-        )
-      : null;
+    const password = await readSourcePassword(
+      kernel,
+      trx,
+      { tenantId: source.tenantId, workspaceId: source.id, path: bound.path },
+      bound,
+    );
     await bindSource(
       kernel,
       trx,
@@ -295,6 +319,7 @@ async function copyWorkspace(
     variables: 0,
     connections: 0,
     dataSources: 0,
+    connectionGroupMembers: 0,
     secrets: 0,
     tables: 0,
     rows: 0,
@@ -328,7 +353,7 @@ async function copyWorkspace(
   const made = (
     await trx
       .selectFrom("resource")
-      .select(["path", "kind", "schema_version", "body"])
+      .select(["path", "kind", "key", "title", "meta", "schema_version", "body"])
       .where("workspace_id", "=", source.id)
       .where("ownership", "=", "ui")
       .execute()
@@ -337,6 +362,10 @@ async function copyWorkspace(
     await putResource(kernel, trx, audit, target, {
       path: resource.path,
       kind: resource.kind,
+      // Its identity and what people read come along: a later deploy or promotion matches by key.
+      key: resource.key,
+      title: resource.title,
+      meta: resource.meta,
       schemaVersion: resource.schema_version,
       ownership: "ui",
       body: resource.body,

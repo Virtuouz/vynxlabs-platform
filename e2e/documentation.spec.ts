@@ -1,5 +1,5 @@
 import { mkdirSync } from "node:fs";
-import { signInWithPassword } from "./sign-in.ts";
+import { signInAs } from "./as.ts";
 import { type Browser, expect, type Page, test } from "./test.ts";
 import { expectNoAxeViolations } from "./visual.ts";
 
@@ -13,10 +13,6 @@ import { expectNoAxeViolations } from "./visual.ts";
  * looked at. They are not compared with reviewed ones.
  */
 
-const ADMIN = {
-  email: process.env.E2E_ADMIN_EMAIL ?? "admin@example.com",
-  password: process.env.E2E_ADMIN_PASSWORD ?? "change-me-please",
-};
 const stamp = Date.now().toString(36);
 const SHOTS = new URL("./results/documentation/", import.meta.url).pathname;
 mkdirSync(SHOTS, { recursive: true });
@@ -27,6 +23,18 @@ const shot = (page: Page, name: string, fullPage = false) =>
 const call = (page: Page, method: string, path: string, body?: unknown): Promise<any> =>
   page.evaluate(
     async ([method, path, body]) => {
+      // A draft save names the draft it saw: its revision now, or none when there is none.
+      if (
+        method === "PUT" &&
+        String(path).includes("/drafts/") &&
+        body &&
+        typeof body === "object" &&
+        !("revision" in body) &&
+        !("create" in body)
+      ) {
+        const seen = await fetch(`/api/v1${path}`);
+        if (seen.ok) body = { ...body, revision: (await seen.json()).revision };
+      }
       const response = await fetch(`/api/v1${path}`, {
         method: method as string,
         headers: body ? { "content-type": "application/json" } : {},
@@ -102,7 +110,7 @@ interface Setup {
 
 async function signedIn(browser: Browser, width = 1440, height = 900): Promise<Page> {
   const page = await (await browser.newContext({ viewport: { width, height } })).newPage();
-  await signInWithPassword(page, ADMIN.email, ADMIN.password);
+  await signInAs(page, "operator");
   return page;
 }
 
@@ -110,7 +118,7 @@ let made: Setup;
 
 test.describe.configure({ mode: "serial" });
 
-test("a workspace is given a table that says what its columns hold, and a handbook about it", async ({
+test("a workspace is given a table that says what its columns hold, and a handbook about it @docs", async ({
   browser,
 }) => {
   test.setTimeout(180_000);
@@ -166,7 +174,7 @@ test("a workspace is given a table that says what its columns hold, and a handbo
   await page.context().close();
 });
 
-test("a screen has help beside it on F1, with the team's own notes, and nothing is fetched from outside", async ({
+test("a screen has help beside it on F1, with the team's own notes, and nothing is fetched from outside @docs", async ({
   browser,
 }) => {
   test.setTimeout(180_000);
@@ -198,7 +206,7 @@ test("a screen has help beside it on F1, with the team's own notes, and nothing 
   // Help, from the keyboard.
   await page.keyboard.press("F1");
   const help = page.getByRole("complementary", { name: "Help" });
-  await expect(help.getByRole("heading", { name: "Tables" })).toBeVisible();
+  await expect(help.getByRole("heading", { name: "Tables", exact: true })).toBeVisible();
   await expect(help).toHaveAttribute("data-help-panel", "docked");
   await expect(help.getByText(/A table holds rows the workspace owns/)).toBeVisible();
   const team = help.getByRole("region", { name: "From your team" });
@@ -212,19 +220,19 @@ test("a screen has help beside it on F1, with the team's own notes, and nothing 
   await help.getByRole("searchbox", { name: "Search the help" }).fill("approval");
   await help
     .getByRole("list", { name: "Pages found" })
-    .getByRole("button", { name: /^Approvals\s*Flows waiting/ })
+    .getByRole("button", { name: /^Approvals Console ›/ })
     .click();
   await expect(help.getByRole("heading", { name: /Approvals/ })).toBeVisible();
   await help.getByRole("button", { name: "Back to the help for this page" }).click();
-  await expect(help.getByRole("heading", { name: "Tables" })).toBeVisible();
+  await expect(help.getByRole("heading", { name: "Tables", exact: true })).toBeVisible();
 
   // It follows to another screen, and Escape closes it from inside.
   await page.goto(`/t/${made.tenant}/workspaces/${made.dev}/runs`);
   await expect(page.getByRole("button", { name: "Help for this page" })).toBeVisible();
   await page.locator("#main").focus();
   await page.keyboard.press("F1");
-  await expect(help.getByRole("heading", { name: "Runs" })).toBeVisible();
-  await help.getByRole("heading", { name: "Runs" }).press("Escape");
+  await expect(help.getByRole("heading", { name: "Runs", exact: true })).toBeVisible();
+  await help.getByRole("heading", { name: "Runs", exact: true }).press("Escape");
   await expect(help).toHaveCount(0);
 
   // Narrower, it lies over the edge. On a phone it takes the screen.
@@ -234,15 +242,13 @@ test("a screen has help beside it on F1, with the team's own notes, and nothing 
   await shot(page, "03-help-over");
   await page.setViewportSize({ width: 390, height: 780 });
   await expect(help).toHaveAttribute("data-help-panel", "full");
-  await expect(help.getByRole("heading", { name: "Runs" })).toBeVisible();
+  await expect(help.getByRole("heading", { name: "Runs", exact: true })).toBeVisible();
   await shot(page, "04-help-phone");
   await help.getByRole("button", { name: "Close help" }).click();
 
   // The reference is in the help too, written from the code.
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto(
-    `/t/${made.tenant}/workspaces/${made.dev}/runs?help=reference/errors%23draft_changed`,
-  );
+  await page.goto(`/t/${made.tenant}/workspaces/${made.dev}/runs?help=errors%23draft_changed`);
   await expect(help.getByRole("heading", { name: "Error codes" })).toBeVisible();
   await expect(help.getByText(/Nothing was overwritten/)).toBeVisible();
   await expect(page).toHaveURL(/\/runs$/);
@@ -253,7 +259,7 @@ test("a screen has help beside it on F1, with the team's own notes, and nothing 
   await page.context().close();
 });
 
-test("a page is read, written with a live preview, checked as it is typed, and deployed from the console", async ({
+test("a page is read, written with a live preview, checked as it is typed, and deployed from the console @docs", async ({
   browser,
 }) => {
   test.setTimeout(240_000);
@@ -373,7 +379,7 @@ test("a page is read, written with a live preview, checked as it is typed, and d
   await page.context().close();
 });
 
-test("the docs app is read by someone who is not signed in, with scripts and without", async ({
+test("the docs app is read by someone who is not signed in, with scripts and without @docs", async ({
   browser,
 }) => {
   test.setTimeout(120_000);
@@ -477,7 +483,7 @@ test("the docs app is read by someone who is not signed in, with scripts and wit
   await plain.close();
 });
 
-test("a page of an app names its help, and the app shows that page of the handbook", async ({
+test("a page of an app names its help, and the app shows that page of the handbook @docs", async ({
   browser,
 }) => {
   test.setTimeout(120_000);
@@ -530,7 +536,7 @@ test("a page of an app names its help, and the app shows that page of the handbo
   await page.context().close();
 });
 
-test("a page is dragged to another folder, its details are a form, and a trigger says what it is for", async ({
+test("a page is dragged to another folder, its details are a form, and a trigger says what it is for @docs", async ({
   browser,
 }) => {
   test.setTimeout(120_000);
@@ -592,7 +598,7 @@ test("a page is dragged to another folder, its details are a form, and a trigger
   await page.context().close();
 });
 
-test("the kit's new pieces are on the kit sheet, and pass the accessibility check", async ({
+test("the kit's new pieces are on the kit sheet, and pass the accessibility check @docs", async ({
   browser,
 }) => {
   const page = await signedIn(browser, 1440, 1000);

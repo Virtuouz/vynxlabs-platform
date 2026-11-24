@@ -9,13 +9,15 @@ import {
   Workflow,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { ask, copyText, notify } from "../ask.tsx";
 import { StateAnnouncer } from "../kit/Announce.tsx";
+import { useAddressBox } from "../kit/addressBox.ts";
 import { useArrivals } from "../kit/arrivals.ts";
-import { type BatchAnswer, useBatch } from "../kit/BatchResult.tsx";
-import { CopyIcon, curlFor, Identifier } from "../kit/copy.tsx";
+import { type BatchAnswer, inSlices, leftAlone, useBatch } from "../kit/BatchResult.tsx";
+import { useMay, useMayEach } from "../kit/Can.tsx";
+import { CopyIcon, Identifier } from "../kit/copy.tsx";
 import {
   type DataColumn,
   DataTable,
@@ -24,21 +26,30 @@ import {
   useDensity,
 } from "../kit/DataTable.tsx";
 import { Elapsed, WaitedAndRan } from "../kit/Elapsed.tsx";
-import { hm } from "../kit/format.ts";
+import { hm, stamp } from "../kit/format.ts";
 import { ErrorState, Loading } from "../kit/LoadState.tsx";
 import { FilterChips, Inspector, KeyValues, MasterDetail, NextStep } from "../kit/layout.tsx";
 import { Junction } from "../kit/motifs.tsx";
 import { PageHeader } from "../kit/PageHeader.tsx";
 import { Reconnecting } from "../kit/Reconnecting.tsx";
-import { Mono, type RunState, StatePill, Tag } from "../kit/status.tsx";
+import { LIVE_STATES, Mono, type RunState, StatePill, Tag } from "../kit/status.tsx";
 import { Time } from "../kit/Time.tsx";
 import { Truncate } from "../kit/Truncate.tsx";
 import { useTitleObject } from "../kit/title.ts";
 import { ColumnsMenu, ViewsMenu } from "../kit/views.tsx";
-import { Link, navigate, useUrlState } from "../router.tsx";
+import { Link, navigate, TEXT_LINK, useUrlState } from "../router.tsx";
 import { useStreamConnected } from "../stream.ts";
-import { LogWindowNote, TRIGGER, useLiveRun, wholeLogDownload } from "./Execution.tsx";
-import { flowFromFailed, flowFromStart, scriptAgain } from "./runAgain.ts";
+import { CancelOlder } from "./CancelOlder.tsx";
+import { LogWindowNote, startedBy, TRIGGER, useLiveRun, wholeLogDownload } from "./Execution.tsx";
+import { RetryOnVersion } from "./RetryOnVersion.tsx";
+import {
+  flowFromFailed,
+  flowFromStart,
+  isSourceRun,
+  scriptAgain,
+  scriptAgainCurl,
+  sourceLink,
+} from "./runAgain.ts";
 
 /** What the list can be narrowed to: a state. `waiting`, from older addresses, is either kind. */
 type Filter =
@@ -57,6 +68,8 @@ interface Activity {
   target: string;
   state: RunState;
   trigger: string;
+  /** A run of a trigger source: its target is a source, which is not run again by hand. */
+  source?: boolean;
   attempt: number;
   maxAttempts: number;
   error: string | null;
@@ -72,7 +85,13 @@ interface Activity {
 }
 
 export interface Insight {
-  attempts: { attempt: number; startedAt: string; endedAt: string; failed: boolean }[];
+  attempts: {
+    attempt: number;
+    startedAt: string | null;
+    endedAt: string | null;
+    failed: boolean;
+    errorsLogged: number;
+  }[];
   worker: { id: string; name: string; pool: string | null } | null;
   timeoutSeconds: number | null;
   uses: { connection: string; bound: boolean }[];
@@ -85,8 +104,22 @@ const WINDOWS = [
   { value: "1", label: "Last hour" },
   { value: "24", label: "Last 24 hours" },
   { value: "168", label: "Last 7 days" },
+  { value: "between", label: "Between…" },
   { value: "all", label: "Everything kept" },
 ];
+
+/** A time as a date-time field holds it, in the reader's own zone. */
+const toField = (iso: string | undefined): string => {
+  const at = iso ? new Date(iso) : undefined;
+  if (!at || Number.isNaN(at.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}T${pad(at.getHours())}:${pad(at.getMinutes())}`;
+};
+/** What a date-time field holds, as the address and the API keep it: one instant. */
+const fromField = (value: string): string | undefined => {
+  const at = value ? new Date(value) : undefined;
+  return at && !Number.isNaN(at.getTime()) ? at.toISOString() : undefined;
+};
 
 const FILTERS: { value: "all" | Filter; label: string; states: RunState[] }[] = [
   { value: "all", label: "All", states: [] },
@@ -99,7 +132,7 @@ const FILTERS: { value: "all" | Filter; label: string; states: RunState[] }[] = 
   { value: "canceled", label: "Canceled", states: ["canceled"] },
 ];
 /** States in which a run may still change. */
-const LIVE: RunState[] = ["queued", "running", "waiting_approval", "waiting_time"];
+const LIVE = LIVE_STATES;
 
 interface Page {
   items: Activity[];
@@ -134,6 +167,8 @@ const RUNS_URL = {
   status: { type: "string" },
   kind: { type: "string" },
   when: { type: "string", default: "24" },
+  from: { type: "string" },
+  to: { type: "string" },
   q: { type: "string" },
   tag: { type: "list" },
   target: { type: "string" },
@@ -187,24 +222,29 @@ export function RunsWorkbench({
       ? { key: url.sort, dir: url.dir === "asc" ? "asc" : "desc" }
       : undefined;
   const selected = url.run;
-  const [typed, setTyped] = useState(search ?? "");
   const [tick, setTick] = useState(0);
   // Compact by default: a run is one line, and twenty fit a laptop's screen.
   const [density, setDensity] = useDensity("runs", "compact");
 
   // What is typed reaches the address, and the list, once typing pauses.
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      if ((search ?? "") !== typed.trim()) setUrl({ q: typed.trim() || undefined });
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [typed, search, setUrl]);
+  const [typed, setTyped] = useAddressBox(
+    search,
+    (text) => text ?? "",
+    (text) => text.trim() || undefined,
+    (next) => setUrl({ q: next }),
+  );
 
-  const from = windowStart(hours, tick);
+  const between = hours === "between";
+  const validTime = (value: string | undefined) =>
+    value !== undefined && !Number.isNaN(Date.parse(value)) ? value : undefined;
+  const from = between ? validTime(url.from) : windowStart(hours, tick);
+  const until = between ? validTime(url.to) : undefined;
+  const backwards = Boolean(from && until && Date.parse(until) < Date.parse(from));
   const query = new URLSearchParams({ limit: "100" });
   if (status !== "all") query.set("state", status);
   if (kind !== "all") query.set("kind", kind);
   if (from) query.set("from", from);
+  if (until) query.set("to", until);
   if (search) query.set("q", search);
   for (const one of tags) query.append("tag", one);
   if (url.target) query.set("target", url.target);
@@ -213,7 +253,8 @@ export function RunsWorkbench({
     query.set("dir", sort.dir);
   }
   const base = `${root}/activity?${query}`;
-  const list = useLoad<Page>(base);
+  // A window that ends before it starts asks for nothing: the page says so instead.
+  const list = useLoad<Page>(backwards ? null : base);
   const [later, setLater] = useState(() => laterPages.get(base));
   const [loadingMore, setLoadingMore] = useState(false);
   const [moreError, setMoreError] = useState<string>();
@@ -222,10 +263,13 @@ export function RunsWorkbench({
     setLater(laterPages.get(base));
     setMoreError(undefined);
   }, [base]);
-  const items = useMemo(
-    () => [...(list.data?.items ?? []), ...(later?.items ?? [])],
-    [list.data, later],
-  );
+  const items = useMemo(() => {
+    if (backwards) return [];
+    const head = list.data?.items ?? [];
+    // While the later pages are read again behind a first page that moved, a row may be in both.
+    const have = new Set(head.map((one) => one.id));
+    return [...head, ...(later?.items ?? []).filter((one) => !have.has(one.id))];
+  }, [list.data, later, backwards]);
   const next = later ? later.next : (list.data?.nextCursor ?? null);
   const loadMore = async () => {
     if (!next) return;
@@ -242,6 +286,45 @@ export function RunsWorkbench({
       setLoadingMore(false);
     }
   };
+  // When the first page is read again, so that new runs and changed states show, the pages the
+  // reader loaded are read again from it: its rows have shifted, and pages that kept the cursor
+  // of the old first page would leave a gap, and states that went stale.
+  const lastHead = useRef(list.data);
+  const laterRef = useRef(later);
+  laterRef.current = later;
+  useEffect(() => {
+    const head = list.data;
+    if (!head || head === lastHead.current) return;
+    lastHead.current = head;
+    const kept = laterRef.current;
+    if (!kept || kept.items.length === 0) return;
+    const wanted = head.items.length + kept.items.length;
+    let cancelled = false;
+    void (async () => {
+      let rows = head.items.length;
+      let cursor = head.nextCursor;
+      const pages: Activity[] = [];
+      try {
+        while (cursor && rows < wanted) {
+          const page = await api.get<Page>(`${base}&cursor=${encodeURIComponent(cursor)}`);
+          pages.push(...page.items);
+          rows += page.items.length;
+          cursor = page.nextCursor;
+        }
+      } catch {
+        // The first page shows; the others are asked for again by "Load more".
+        pages.length = 0;
+        cursor = head.nextCursor;
+      }
+      if (cancelled) return;
+      const again = { items: pages, next: cursor };
+      laterPages.set(base, again);
+      setLater(again);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [list.data, base]);
   const refresh = () => {
     laterPages.delete(base);
     setLater(undefined);
@@ -270,17 +353,54 @@ export function RunsWorkbench({
       : null,
   );
   const picked = listed ?? looked.data?.items.find((one) => one.id === selected);
-  const missing = Boolean(selected && !listed && looked.data && !picked);
+  // The list leaves a flow's own steps out, so an ID the list does not know may be one of
+  // them: it is read as the run page reads it, before it is said that no run has it.
+  const notListed = Boolean(selected && !listed && looked.data && !picked);
+  const stepRun = useLoad<{ trigger: { type: string; flowRunId?: string; node?: string } }>(
+    notListed ? `${root}/runs/${selected}` : null,
+  );
+  // A child flow's run, and one older than the list's window, are no row here but are runs.
+  const flowRun = useLoad<{ flow?: string }>(
+    notListed && stepRun.error ? `${root}/flow-runs/${selected}` : null,
+  );
+  const missing = notListed && Boolean(stepRun.error) && Boolean(flowRun.error);
   useTitleObject(selected ? (picked ? `Run of ${picked.target}` : "Run") : undefined);
-  const counts = list.data?.stateCounts ?? {};
+  // A window that ends before it starts holds no run: the counts of the one before it are not its own.
+  const counts = backwards ? {} : (list.data?.stateCounts ?? {});
   const total = Object.values(counts).reduce((a, b) => a + b, 0);
   const filtered = status !== "all" || Boolean(search) || tags.length > 0 || Boolean(url.target);
   const queued = counts.queued ?? 0;
-  const scope = [
+  const inProgress = LIVE.reduce((sum, state) => sum + (counts[state] ?? 0), 0);
+  const [cancelOlder, setCancelOlder] = useState(false);
+  // What this person may do is asked before the controls are drawn (OPS-35).
+  const may = useMay(root, "run:write", "flow_run:write");
+  // Cancel and Run again count a grant on the run's own script or flow, as the server does.
+  const mayOn = useMayEach(
+    root,
+    items.map((one) => ({
+      kind: one.kind,
+      path: one.target,
+      permission: one.kind === "flow" ? "flow_run:write" : "run:write",
+    })),
+  );
+  const mayAct = (one: { kind: string; target: string }) =>
+    mayOn(one.kind, one.target, one.kind === "flow" ? "flow_run:write" : "run:write");
+  const mayAnyRun = may("run:write") || may("flow_run:write");
+  const [retryOn, setRetryOn] = useState<Activity>();
+  const narrowedBy = [
     url.target ? `of ${url.target}` : "",
     search ? `matching "${search}"` : "",
     tags.length > 0 ? `tagged ${tags.join(" and ")}` : "",
-    from ? `from the ${WINDOWS.find((one) => one.value === hours)?.label.toLowerCase()}` : "",
+  ];
+  const scope = [
+    ...narrowedBy,
+    between
+      ? [from ? `from ${stamp(from)}` : "", until ? `until ${stamp(until)}` : ""]
+          .filter(Boolean)
+          .join(" ")
+      : from
+        ? `from the ${WINDOWS.find((one) => one.value === hours)?.label.toLowerCase()}`
+        : "",
   ]
     .filter(Boolean)
     .join(", ");
@@ -288,7 +408,7 @@ export function RunsWorkbench({
   const cancelQueued = async () => {
     const sure = await ask.confirm({
       title: `Cancel ${queued} queued run${queued === 1 ? "" : "s"}?`,
-      text: `Every queued run this list shows${scope ? ` (${scope})` : ""} is cancelled. Runs already going carry on, and a flow's steps are left to their flow.`,
+      text: `Every queued script run${scope ? ` ${scope}` : ""} is canceled, whether or not this page has loaded it. Runs already going carry on, and a flow's steps are left to their flow.`,
       action: "Cancel queued runs",
       cancel: "Keep them",
       danger: true,
@@ -302,10 +422,11 @@ export function RunsWorkbench({
           ...(search ? { q: search } : {}),
           ...(tags.length > 0 ? { tags } : {}),
           ...(from ? { from } : {}),
+          ...(until ? { to: until } : {}),
         },
       });
       notify.success(
-        `${done.cancelled} queued run${done.cancelled === 1 ? "" : "s"} cancelled${done.more ? ". More are left: cancel again." : "."}`,
+        `${done.cancelled} queued run${done.cancelled === 1 ? "" : "s"} canceled${done.more ? ". More are left: cancel again." : "."}`,
       );
       refresh();
     } catch (error) {
@@ -316,7 +437,7 @@ export function RunsWorkbench({
   const [checked, setChecked] = useState<Set<string>>(new Set());
   // Runs that start while the reader is down the list, or has some checked, wait at the top.
   const arrivals = useArrivals(
-    list.data ? items : undefined,
+    list.data || backwards ? items : undefined,
     (one) => one.id,
     base,
     () => {
@@ -339,17 +460,23 @@ export function RunsWorkbench({
     const answers: BatchAnswer[] = [];
     if (script && scripts.length > 0)
       answers.push(
-        await api.post<BatchAnswer>(`${root}/runs/batch`, { action: script, ids: scripts }),
+        await inSlices(scripts, (ids) =>
+          api.post<BatchAnswer>(`${root}/runs/batch`, { action: script, ids }),
+        ),
       );
     if (flow && flows.length > 0)
       answers.push(
-        await api.post<BatchAnswer>(`${root}/flow-runs/batch`, { action: flow, ids: flows }),
+        await inSlices(flows, (ids) =>
+          api.post<BatchAnswer>(`${root}/flow-runs/batch`, { action: flow, ids }),
+        ),
       );
-    return {
+    const total = {
       results: answers.flatMap((one) => one.results),
       done: answers.reduce((sum, one) => sum + one.done, 0),
       failed: answers.reduce((sum, one) => sum + one.failed, 0),
     };
+    // Cancel: a run that had finished is left as it is, which the question said.
+    return script === "cancel" || flow === "cancel" ? leftAlone(total) : total;
   };
   const plural = (count: number, one: string) => `${count} ${one}${count === 1 ? "" : "s"}`;
   const sample = (ids: string[]) => {
@@ -367,7 +494,8 @@ export function RunsWorkbench({
     if (!sure) return;
     await batch.run(() => runBatch(ids, "cancel", "cancel"), {
       title: "Canceling runs",
-      done: (count) => `${plural(count, "run")} canceled.`,
+      done: (count, left) =>
+        `${plural(count, "run")} canceled${left ? `, ${left} left alone because ${left === 1 ? "it had" : "they had"} finished` : ""}.`,
       name: nameOf,
       retry: (again) => runBatch(again, "cancel", "cancel"),
     });
@@ -377,7 +505,7 @@ export function RunsWorkbench({
   const againChecked = async (ids: string[]) => {
     const sure = await ask.confirm({
       title: `Run ${plural(ids.length, "run")} again?`,
-      text: `${sample(ids)}. Scripts run again with the same input, on the version they ran; flows retry from their failed step, or from the start if none failed.`,
+      text: `${sample(ids)}. Scripts run again with the same input, on the version they ran; flows retry from their failed step, or from the start if none failed.${ids.some((id) => kindOf(id)?.source) ? " A trigger source's runs are left out: its trigger starts it." : ""}`,
       action: "Run again",
     });
     if (!sure) return;
@@ -387,7 +515,7 @@ export function RunsWorkbench({
     const otherFlows = ids.filter(
       (id) => kindOf(id)?.kind === "flow" && kindOf(id)?.state !== "failed",
     );
-    const scripts = ids.filter((id) => kindOf(id)?.kind === "script");
+    const scripts = ids.filter((id) => kindOf(id)?.kind === "script" && !kindOf(id)?.source);
     const send = async (subset: string[]) => {
       const parts = await Promise.all([
         runBatch(
@@ -439,9 +567,10 @@ export function RunsWorkbench({
         refresh();
       },
     };
+    const mine = mayAct(one);
     return [
       { label: "Open", onSelect: () => navigate(page) },
-      ...(one.kind === "script" && !going
+      ...(mine && one.kind === "script" && !going && !one.source
         ? [
             {
               label: "Run again…",
@@ -453,10 +582,10 @@ export function RunsWorkbench({
             },
           ]
         : []),
-      ...(one.kind === "flow" && one.state === "failed"
+      ...(mine && one.kind === "flow" && one.state === "failed"
         ? [{ label: "Retry from the failed step…", onSelect: () => void flowFromFailed(again) }]
         : []),
-      ...(one.kind === "flow" && !going
+      ...(mine && one.kind === "flow" && !going
         ? [
             {
               label: "Again from the start…",
@@ -468,7 +597,10 @@ export function RunsWorkbench({
             },
           ]
         : []),
-      ...(going
+      ...(mine && one.kind === "flow" && !going && !one.source
+        ? [{ label: "On another version…", onSelect: () => setRetryOn(one) }]
+        : []),
+      ...(mine && going
         ? [
             {
               label: "Cancel",
@@ -570,6 +702,9 @@ export function RunsWorkbench({
     },
     {
       header: "Started",
+      // A phone keeps the state and the target, which gets the room: with a checkbox and a menu
+      // beside them a third column left the target 70 px.
+      priority: 2,
       width: "w-32",
       sort: "started",
       cell: (one) => {
@@ -657,7 +792,18 @@ export function RunsWorkbench({
               <select
                 aria-label="When"
                 value={hours}
-                onChange={(event) => setUrl({ when: event.currentTarget.value })}
+                onChange={(event) => {
+                  const value = event.currentTarget.value;
+                  // Between starts from the last day, so there is a window to change at once.
+                  setUrl(
+                    value === "between"
+                      ? {
+                          when: value,
+                          from: url.from ?? new Date(Date.now() - 24 * 3_600_000).toISOString(),
+                        }
+                      : { when: value, from: undefined, to: undefined },
+                  );
+                }}
                 className="h-8 rounded-control border border-line-control bg-surface px-2 text-body-sm"
               >
                 {WINDOWS.map((one) => (
@@ -666,9 +812,32 @@ export function RunsWorkbench({
                   </option>
                 ))}
               </select>
+              {between ? (
+                <>
+                  <label className="flex items-center gap-1.5 text-meta text-ink-muted">
+                    From
+                    <input
+                      type="datetime-local"
+                      value={toField(from ?? undefined)}
+                      onChange={(event) => setUrl({ from: fromField(event.currentTarget.value) })}
+                      className="h-8 rounded-control border border-line-control bg-surface px-2 text-body-sm"
+                    />
+                  </label>
+                  <label className="flex items-center gap-1.5 text-meta text-ink-muted">
+                    To
+                    <input
+                      type="datetime-local"
+                      value={toField(until)}
+                      onChange={(event) => setUrl({ to: fromField(event.currentTarget.value) })}
+                      className="h-8 rounded-control border border-line-control bg-surface px-2 text-body-sm"
+                    />
+                  </label>
+                </>
+              ) : null}
             </div>
           }
         />
+        {backwards ? <Notice tone="danger">The end is before the start.</Notice> : null}
         <div className="flex flex-wrap items-center gap-3">
           <FilterChips
             label="Status"
@@ -703,9 +872,18 @@ export function RunsWorkbench({
             </button>
           ))}
           <span className="ml-auto flex items-center gap-2">
-            {queued > 0 ? (
+            {/* It cancels queued script runs: under another state or kind it would act on rows not shown. */}
+            {queued > 0 &&
+            (status === "all" || status === "queued") &&
+            kind !== "flow" &&
+            may("run:write") ? (
               <Button size="small" onClick={cancelQueued}>
                 Cancel {queued} queued
+              </Button>
+            ) : null}
+            {inProgress > 0 && mayAnyRun ? (
+              <Button size="small" onClick={() => setCancelOlder(true)}>
+                Cancel by age…
               </Button>
             ) : null}
             <ColumnsMenu
@@ -728,6 +906,33 @@ export function RunsWorkbench({
         </div>
       </div>
 
+      <CancelOlder
+        open={cancelOlder}
+        onClose={() => setCancelOlder(false)}
+        root={root}
+        // The window of time is left out: the runs asked for are those older than a length, however old.
+        scope={narrowedBy.filter(Boolean).join(", ")}
+        filters={{
+          ...(url.target ? { target: url.target } : {}),
+          ...(search ? { q: search } : {}),
+          ...(tags.length > 0 ? { tags } : {}),
+        }}
+        done={refresh}
+      />
+      <RetryOnVersion
+        open={retryOn !== undefined}
+        onClose={() => setRetryOn(undefined)}
+        root={root}
+        id={retryOn?.id ?? ""}
+        flow={retryOn?.target ?? ""}
+        failed={retryOn?.state === "failed"}
+        started={(next) => {
+          notify.success("Started again.", {
+            action: { label: "Open it", onClick: () => navigate(`${link}/runs/${next}`) },
+          });
+          refresh();
+        }}
+      />
       <MasterDetail
         fill
         inspector={
@@ -753,6 +958,26 @@ export function RunsWorkbench({
                 </p>
               ) : looked.error && !picked ? (
                 <ErrorState error={looked.error} onRetry={looked.reload} />
+              ) : !picked && flowRun.data ? (
+                <Notice tone="info">
+                  This flow run is not in the list: it may have started before the time shown, or be
+                  one that another flow started.{" "}
+                  <Link to={`${link}/runs/${selected}`}>Open the flow run</Link>
+                </Notice>
+              ) : !picked && stepRun.data ? (
+                <div className="flex flex-col gap-3">
+                  {stepRun.data.trigger.type === "flow" && stepRun.data.trigger.flowRunId ? (
+                    <Notice tone="info">
+                      A step of a flow run.{" "}
+                      <Link
+                        to={`${link}/runs/${stepRun.data.trigger.flowRunId}${stepRun.data.trigger.node ? `?step=${encodeURIComponent(stepRun.data.trigger.node)}` : ""}`}
+                      >
+                        Open the flow run
+                      </Link>
+                    </Notice>
+                  ) : null}
+                  <ScriptRunPanel root={root} link={link} runId={selected as string} />
+                </div>
               ) : !picked ? (
                 <Loading />
               ) : picked.kind === "flow" ? (
@@ -797,25 +1022,27 @@ export function RunsWorkbench({
           href={(one) => `${link}/runs/${one.id}`}
           checked={checked}
           onCheck={setChecked}
-          batch={(keys) => (
-            <>
-              <Button
-                size="small"
-                variant="danger"
-                disabled={batch.busy}
-                onClick={() => void cancelChecked([...keys])}
-              >
-                Cancel
-              </Button>
-              <Button
-                size="small"
-                disabled={batch.busy}
-                onClick={() => void againChecked([...keys])}
-              >
-                <RotateCcw aria-hidden="true" size={14} /> Run again
-              </Button>
-            </>
-          )}
+          batch={(keys) =>
+            !mayAnyRun ? null : (
+              <>
+                <Button
+                  size="small"
+                  variant="danger"
+                  disabled={batch.busy}
+                  onClick={() => void cancelChecked([...keys])}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  size="small"
+                  disabled={batch.busy}
+                  onClick={() => void againChecked([...keys])}
+                >
+                  <RotateCcw aria-hidden="true" size={14} /> Run again
+                </Button>
+              </>
+            )
+          }
           sort={sort}
           onSort={(next) => setUrl({ sort: next?.key, dir: next?.dir })}
           actions={actionsOf}
@@ -901,6 +1128,7 @@ export function ScriptRunPanel({
   onLocation?: ((location: { file: string; line: number; column: number }) => void) | undefined;
 }) {
   const { run, lines, earlier, error, reconnecting } = useLiveRun(root, runId);
+  const may = useMay(root, "run:write");
   const insight = useLoad<Insight>(
     run && !["queued", "running"].includes(run.status) ? `${root}/runs/${runId}/insight` : null,
   );
@@ -908,6 +1136,7 @@ export function ScriptRunPanel({
   if (!run) return <Loading />;
   const active = run.status === "queued" || run.status === "running";
   const failed = run.status === "failed";
+  const fromSource = isSourceRun(run.trigger);
   const logFile = `${run.script.replaceAll("/", "-")}-${run.id.slice(-12)}.log`;
   const wholeLog = wholeLogDownload(root, run.id, logFile, earlier);
   const diagnosis = insight.data?.diagnosis;
@@ -922,7 +1151,7 @@ export function ScriptRunPanel({
         <StateAnnouncer state={run.state} label={`Run of ${run.script}`} />
         <Reconnecting show={reconnecting} />
         <div className="flex gap-2">
-          {active ? (
+          {active && may("run:write") ? (
             <Button
               size="small"
               variant="danger"
@@ -942,10 +1171,12 @@ export function ScriptRunPanel({
           <Button size="small" onClick={() => navigate(`${link}/runs/${runId}`)}>
             Open full view <ArrowUpRight aria-hidden="true" size={14} />
           </Button>
-          <CopyIcon
-            value={curlFor("POST", `${root}/runs`, { script: run.script, input: run.input })}
-            label="Copy as curl: start this script again with the same input"
-          />
+          {fromSource ? null : (
+            <CopyIcon
+              value={scriptAgainCurl(root, run.id)}
+              label="Copy as curl: run this again with the same input"
+            />
+          )}
         </div>
       </div>
 
@@ -1001,7 +1232,12 @@ export function ScriptRunPanel({
                 {index > 0 ? <span aria-hidden="true" className="h-px w-3 bg-line-strong" /> : null}
                 <Junction kind={one.failed ? "danger" : "here"} size={5} />
                 <span className={one.failed ? "text-danger" : "text-ink-muted"}>
-                  #{one.attempt} <Time value={one.startedAt} className="font-mono text-code" />
+                  #{one.attempt}{" "}
+                  {one.startedAt ? (
+                    <Time value={one.startedAt} className="font-mono text-code" />
+                  ) : (
+                    <span className="text-ink-subtle">logged nothing</span>
+                  )}
                 </span>
               </span>
             ))}
@@ -1069,22 +1305,26 @@ export function ScriptRunPanel({
                       mono: true,
                     },
                     {
-                      label: "Script",
-                      value: <Link to={`${link}/scripts/edit/${run.script}`}>{run.script}</Link>,
+                      label: fromSource ? "Trigger source" : "Script",
+                      value: (
+                        <Link
+                          to={
+                            fromSource
+                              ? sourceLink(link, run.script)
+                              : `${link}/scripts/edit/${run.script}`
+                          }
+                        >
+                          {run.script}
+                        </Link>
+                      ),
                       mono: true,
                     },
                     {
                       label: "Started by",
                       value:
-                        typeof run.trigger.trigger === "string" ? (
-                          <Link
-                            to={`${link}/triggers?trigger=${encodeURIComponent(run.trigger.trigger)}`}
-                          >
-                            {TRIGGER[run.trigger.type] ?? run.trigger.type} {run.trigger.trigger}
-                          </Link>
-                        ) : (
-                          (TRIGGER[run.trigger.type] ?? run.trigger.type)
-                        ),
+                        startedBy(link, run.trigger) ??
+                        TRIGGER[run.trigger.type] ??
+                        run.trigger.type,
                     },
                     {
                       label: "Version",
@@ -1117,13 +1357,20 @@ export function ScriptRunPanel({
                         className="flex items-center justify-between gap-2"
                       >
                         <Mono>{one.connection}</Mono>
-                        {one.bound ? <Tag tone="live">Bound</Tag> : <StatePill state="unbound" />}
+                        {one.bound ? (
+                          <Tag tone="live">Set up here</Tag>
+                        ) : (
+                          <StatePill state="unbound" />
+                        )}
                       </span>
                     ))}
                   </div>
                 ) : null}
                 {run.alert?.handlerRunId ? (
-                  <Link to={`${link}/runs/${String(run.alert.handlerRunId)}`} className="text-meta">
+                  <Link
+                    to={`${link}/runs/${String(run.alert.handlerRunId)}`}
+                    className={`text-meta ${TEXT_LINK}`}
+                  >
                     The failure handler's run
                   </Link>
                 ) : null}

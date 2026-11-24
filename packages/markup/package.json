@@ -4,7 +4,11 @@
   "type": "module",
   "description": "One page of documentation: Markdown to a checked tree, drawn as React, HTML or plain text. Nothing in it runs as code.",
   "license": "Apache-2.0",
-  "sideEffects": false,
+  "sideEffects": [
+    "./dist/prism.js",
+    "./dist/prism-manual.js",
+    "./dist/prism-global.js"
+  ],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -24,7 +28,8 @@
     "access": "public"
   },
   "dependencies": {
-    "markdown-it": "^14.3.3"
+    "markdown-it": "^14.3.3",
+    "prismjs": "1.30.0"
   },
   "peerDependencies": {
     "react": "^19.0.0"
@@ -36,6 +41,7 @@
   },
   "devDependencies": {
     "@types/markdown-it": "^14.2.0",
+    "@types/prismjs": "^1.26.6",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "react": "^19.3.1",

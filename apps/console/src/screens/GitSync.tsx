@@ -1,14 +1,16 @@
 import { Button, Notice, TextField } from "@volvel/ui";
 import { ArrowDownToLine, ArrowUpFromLine, GitBranch, GitCommitHorizontal } from "lucide-react";
 import { useState } from "react";
-import { api, useLoad } from "../api.ts";
-import { failureText } from "../ask.tsx";
+import { api, type Loaded, useLoad } from "../api.ts";
+import { ask, failureText, notify } from "../ask.tsx";
 import { ago } from "../kit/format.ts";
 import { ErrorState } from "../kit/LoadState.tsx";
 import { EmptyCanvas, KeyValues, PageHeader, Panel, SectionLabel } from "../kit/layout.tsx";
 import { Junction, Wire } from "../kit/motifs.tsx";
 import { Mono, Tag } from "../kit/status.tsx";
+import { Link } from "../router.tsx";
 import { GitPanel } from "./Git.tsx";
+import { askToDelete } from "./PromotionConfirm.tsx";
 
 interface Compare {
   branch: string;
@@ -33,7 +35,7 @@ interface Compare {
 }
 
 interface Status {
-  repository: { url: string; paused?: boolean } | null;
+  repository: { url: string; paused?: boolean; releaseBranch?: string | null } | null;
   branch: string | null;
   state: string | null;
   updatedAt: string | null;
@@ -62,7 +64,16 @@ const DEFAULT_MESSAGE = "Deploy from the console";
  * agreed, and every file changed on both, set side by side to choose from.
  * Nothing is overwritten without a choice. Push and pull are here and only here.
  */
-export function GitSync({ root, link }: { root: string; link: string }) {
+export function GitSync({
+  root,
+  link,
+  production,
+}: {
+  root: string;
+  link: string;
+  /** Given for a production workspace, which follows no branch: it commits to a release branch after a promotion. */
+  production?: { slug: string } | undefined;
+}) {
   const status = useLoad<Status>(`${root}/git`);
   const following = Boolean(status.data?.repository && status.data.branch);
   const compare = useLoad<Compare>(following ? `${root}/git/compare` : null);
@@ -70,13 +81,26 @@ export function GitSync({ root, link }: { root: string; link: string }) {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState(DEFAULT_MESSAGE);
   const [said, setSaid] = useState<{ tone: "success" | "danger" | "attention"; text: string }>();
+  // Paths a pull stopped at because it took their deletion for a rename.
+  const [suspected, setSuspected] = useState<string[]>([]);
   const tenantLink = link.split("/workspaces/")[0] as string;
 
-  const act = async (work: () => Promise<{ status: string; problem?: string }>, done: string) => {
+  if (production) {
+    return (
+      <ReleaseBranch root={root} slug={production.slug} tenantLink={tenantLink} status={status} />
+    );
+  }
+
+  const act = async (
+    work: () => Promise<{ status: string; problem?: string; suspected?: string[] }>,
+    done: string,
+  ) => {
     setBusy(true);
     setSaid(undefined);
+    setSuspected([]);
     try {
       const result = await work();
+      setSuspected(result.suspected ?? []);
       setSaid(
         result.status === "failed" || result.status === "refused"
           ? {
@@ -113,6 +137,16 @@ export function GitSync({ root, link }: { root: string; link: string }) {
         description="This workspace beside the branch it follows. A push commits what is deployed here; a pull deploys what developers changed there."
       />
       {status.error ? <ErrorState error={status.error} onRetry={status.reload} /> : null}
+      {status.data?.branch ? (
+        <FollowedBranch
+          root={root}
+          branch={status.data.branch}
+          reload={() => {
+            status.reload();
+            compare.reload();
+          }}
+        />
+      ) : null}
       {status.data && !following ? (
         <EmptyCanvas
           title={
@@ -154,7 +188,8 @@ export function GitSync({ root, link }: { root: string; link: string }) {
               <Wire width={20} />
             </span>
             <Panel className="flex flex-col gap-2 p-4">
-              <span className="flex items-center gap-2 text-label text-ink-subtle uppercase">
+              {/* A branch is named as it is written: `main`, never MAIN. */}
+              <span className="flex items-center gap-2 text-label text-ink-subtle">
                 <GitBranch aria-hidden="true" size={14} /> {compare.data.branch}
               </span>
               <span className="text-title">
@@ -237,7 +272,7 @@ export function GitSync({ root, link }: { root: string; link: string }) {
                           ? "Drafts from the console"
                           : commitMessage,
                     }),
-                  "Committed what is deployed and what is drafted, for a developer to pick up.",
+                  "Committed what is deployed and what is drafted, for a developer to pick up. A plain push leaves these files on the branch while their drafts are saved.",
                 )
               }
             >
@@ -245,6 +280,27 @@ export function GitSync({ root, link }: { root: string; link: string }) {
             </Button>
           </div>
           {said ? <Notice tone={said.tone}>{said.text}</Notice> : null}
+          {suspected.length > 0 ? (
+            <div className="flex flex-wrap items-center gap-3">
+              <Button
+                variant="danger"
+                disabled={busy}
+                onClick={async () => {
+                  if (!(await askToDelete(suspected, "this workspace"))) return;
+                  await act(
+                    () =>
+                      api.post(`${root}/git/pull`, {
+                        ...(Object.keys(choices).length > 0 ? { resolutions: choices } : {}),
+                        allowDelete: suspected,
+                      }),
+                    "Deployed what changed on the branch.",
+                  );
+                }}
+              >
+                Delete them anyway
+              </Button>
+            </div>
+          ) : null}
 
           {stems.length > 0 ? (
             <section className="flex flex-col gap-3">
@@ -339,6 +395,296 @@ export function GitSync({ root, link }: { root: string; link: string }) {
       {following ? null : (
         <GitPanel root={root} tenantLink={tenantLink} onFollowed={status.reload} />
       )}
+      {status.data?.repository ? (
+        <>
+          <GitHistory root={root} />
+          <GitBranches tenantRoot={root.split("/workspaces/")[0] as string} />
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+/** The branch this workspace follows, and the two things to do about it: follow another, or follow none. */
+function FollowedBranch({
+  root,
+  branch,
+  reload,
+}: {
+  root: string;
+  branch: string;
+  reload: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const change = async () => {
+    const next = await ask.prompt({
+      title: "Follow another branch?",
+      text: `This workspace follows ${branch}. It will compare against the branch you name instead, as if it had never synced: files that differ show as changes on one side or both. Nothing on either branch is changed.`,
+      label: "Branch",
+      action: "Follow it",
+      placeholder: branch,
+    });
+    const named = next?.trim();
+    if (!named || named === branch) return;
+    setBusy(true);
+    await api.put(`${root}/git`, { branch: named }).then(() => {
+      notify.success(`This workspace now syncs with ${named}.`);
+      reload();
+    }, notify.error);
+    setBusy(false);
+  };
+  const stop = async () => {
+    const sure = await ask.confirm({
+      title: "Stop following this branch?",
+      text: `This workspace stops syncing with ${branch}. The branch and what is on it stay as they are, and the workspace can follow it again.`,
+      action: "Stop following",
+      danger: true,
+    });
+    if (!sure) return;
+    setBusy(true);
+    await api.delete(`${root}/git`).then(() => {
+      notify.success("This workspace follows no branch now.");
+      reload();
+    }, notify.error);
+    setBusy(false);
+  };
+  return (
+    <div className="flex flex-wrap items-center gap-3">
+      <span className="flex items-center gap-2 text-meta text-ink-muted">
+        <GitBranch aria-hidden="true" size={14} /> Follows <Mono>{branch}</Mono>
+      </span>
+      <Button size="small" variant="secondary" disabled={busy} onClick={change}>
+        Change branch
+      </Button>
+      <Button size="small" variant="quiet" disabled={busy} onClick={stop}>
+        Stop following
+      </Button>
+    </div>
+  );
+}
+
+interface Operation {
+  id: string;
+  kind: string;
+  status: string;
+  commit: string | null;
+  message: string | null;
+  detail: { release?: string };
+  createdAt: string;
+}
+
+const KIND_WORDS: Record<string, string> = { push: "Push", pull: "Pull", release: "Release" };
+const STATUS_TONE: Record<string, "live" | "neutral"> = { done: "live" };
+
+/** The last pushes and pulls of the workspace, each with what it did and what it said. */
+function GitHistory({ root, hold }: { root: string; hold?: Loaded<{ items: Operation[] }> }) {
+  const own = useLoad<{ items: Operation[] }>(hold ? null : `${root}/git/operations`);
+  const operations = hold ?? own;
+  return (
+    <section aria-labelledby="git-history" className="flex flex-col gap-2">
+      <h2 id="git-history" className="m-0 text-label text-ink-subtle uppercase">
+        History
+      </h2>
+      {operations.error ? (
+        <ErrorState error={operations.error} onRetry={operations.reload} />
+      ) : !operations.data ? (
+        <p className="m-0 text-ink-muted">Reading the history…</p>
+      ) : operations.data.items.length === 0 ? (
+        <p className="m-0 text-ink-muted">Nothing has been pushed or pulled here yet.</p>
+      ) : (
+        <Panel as="div" className="divide-y divide-line">
+          {operations.data.items.map((one) => (
+            <div key={one.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2">
+              <span className="w-16 shrink-0 font-medium">{KIND_WORDS[one.kind] ?? one.kind}</span>
+              <Tag tone={STATUS_TONE[one.status] ?? "neutral"}>{one.status}</Tag>
+              {one.commit ? <Mono>{one.commit.slice(0, 7)}</Mono> : null}
+              <span className="min-w-0 flex-1 truncate text-ink-muted" title={one.message ?? ""}>
+                {one.message ?? ""}
+              </span>
+              <span className="text-meta text-ink-muted">{ago(one.createdAt)}</span>
+            </div>
+          ))}
+        </Panel>
+      )}
+    </section>
+  );
+}
+
+/** Every branch the tenant's workspaces use: what each follows, or releases to, and how it stands. */
+function GitBranches({ tenantRoot }: { tenantRoot: string }) {
+  const branches = useLoad<{
+    items: {
+      workspaceId: string;
+      workspace: string;
+      type: string;
+      branch: string | null;
+      mode: string;
+      state: string | null;
+      lastError: string | null;
+    }[];
+  }>(`${tenantRoot}/git-branches`);
+  return (
+    <section aria-labelledby="git-branches" className="flex flex-col gap-2">
+      <h2 id="git-branches" className="m-0 text-label text-ink-subtle uppercase">
+        Branches
+      </h2>
+      {branches.error ? (
+        <ErrorState error={branches.error} onRetry={branches.reload} />
+      ) : !branches.data ? (
+        <p className="m-0 text-ink-muted">Reading the branches…</p>
+      ) : (
+        <Panel as="div" className="divide-y divide-line">
+          {branches.data.items.map((one) => (
+            <div
+              key={one.workspaceId}
+              className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2"
+            >
+              <span className="min-w-0 flex-1 truncate font-medium">{one.workspace}</span>
+              {one.branch ? (
+                <Mono>{one.branch}</Mono>
+              ) : (
+                <span className="text-ink-muted">
+                  {one.mode === "release" ? "No release branch" : "Follows none"}
+                </span>
+              )}
+              <Tag tone="neutral">{one.mode === "release" ? "Release" : "Follows"}</Tag>
+              {one.state ? <Tag tone="neutral">{one.state}</Tag> : null}
+              {one.lastError ? (
+                <span className="basis-full text-meta text-danger">{one.lastError}</span>
+              ) : null}
+            </div>
+          ))}
+        </Panel>
+      )}
+    </section>
+  );
+}
+
+/**
+ * What a production workspace does in place of following a branch: after each promotion it commits
+ * what it now runs to its release branch. Its last result is here, with a way to try again.
+ */
+function ReleaseBranch({
+  root,
+  slug,
+  tenantLink,
+  status,
+}: {
+  root: string;
+  slug: string;
+  tenantLink: string;
+  status: Loaded<Status>;
+}) {
+  const operations = useLoad<{ items: Operation[] }>(
+    status.data?.repository?.releaseBranch ? `${root}/git/operations` : null,
+  );
+  const [busy, setBusy] = useState(false);
+  const [said, setSaid] = useState<{ tone: "success" | "danger" | "attention"; text: string }>();
+  const repository = status.data?.repository;
+  const branch = repository?.releaseBranch;
+  const last = operations.data?.items.find((one) => one.detail?.release);
+
+  const again = async () => {
+    setBusy(true);
+    setSaid(undefined);
+    try {
+      const result = await api.post<{ status: string; branch: string | null; problem?: string }>(
+        `${root}/git/release`,
+        {},
+      );
+      setSaid(
+        result.status === "failed"
+          ? {
+              tone: "attention",
+              text: `It did not reach ${result.branch ?? "the release branch"}: ${result.problem ?? "no reason was given"}`,
+            }
+          : result.status === "off"
+            ? {
+                tone: "attention",
+                text: "Sync is paused, or the repository has no release branch, so nothing was written.",
+              }
+            : {
+                tone: "success",
+                text:
+                  result.status === "nothing"
+                    ? `${result.branch} already has what runs here: nothing to write.`
+                    : `Committed what runs here to ${result.branch}.`,
+              },
+      );
+      operations.reload();
+    } catch (caught) {
+      setSaid({ tone: "danger", text: failureText(caught) });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        eyebrow="Operate"
+        title="Git sync"
+        description="A production workspace changes by promotion, so it follows no branch. After each promotion, what it runs is committed to its release branch."
+      />
+      {status.error ? <ErrorState error={status.error} onRetry={status.reload} /> : null}
+      {status.data && !repository ? (
+        <EmptyCanvas
+          title="No repository is connected"
+          text="Connect the tenant's repository to commit what runs here after each promotion."
+          action={<Link to={`${tenantLink}/repository`}>Connect the tenant's repository</Link>}
+        />
+      ) : null}
+      {repository && !branch ? (
+        <EmptyCanvas
+          title="The repository has no release branch"
+          text="Without one, nothing is committed after a promotion. A release branch is set on the tenant's repository."
+        />
+      ) : null}
+      {repository && branch ? (
+        <Panel className="flex flex-col gap-3 p-4">
+          <span className="flex items-center gap-2 text-label text-ink-subtle uppercase">
+            <GitBranch aria-hidden="true" size={14} /> Release branch
+          </span>
+          <span className="text-title">
+            <Mono className="text-title">{`${branch}/${slug}`}</Mono>
+          </span>
+          {last ? (
+            <span className="text-meta text-ink-muted">
+              Last commit to it:{" "}
+              {last.status === "failed"
+                ? `failed ${ago(last.createdAt)}${last.message ? `: ${last.message}` : ""}`
+                : last.status === "nothing"
+                  ? `nothing to write, ${ago(last.createdAt)}`
+                  : `done ${ago(last.createdAt)}${last.commit ? ` at ${last.commit.slice(0, 7)}` : ""}`}
+            </span>
+          ) : (
+            <span className="text-meta text-ink-muted">Nothing has been committed to it yet.</span>
+          )}
+          {repository.paused ? (
+            <Notice tone="attention">
+              Sync is paused for this tenant. Save its repository settings to turn it on.
+            </Notice>
+          ) : null}
+          {last?.status === "failed" ? (
+            <Notice tone="attention">
+              The last promotion is live, but its commit did not reach the release branch. Commit it
+              again below.
+            </Notice>
+          ) : null}
+          <div>
+            <Button variant="primary" loading={busy} disabled={repository.paused} onClick={again}>
+              <ArrowUpFromLine aria-hidden="true" size={14} /> Commit to the release branch again
+            </Button>
+          </div>
+          {said ? <Notice tone={said.tone}>{said.text}</Notice> : null}
+        </Panel>
+      ) : null}
+      {repository ? (
+        <>
+          <GitHistory root={root} />
+          <GitBranches tenantRoot={root.split("/workspaces/")[0] as string} />
+        </>
+      ) : null}
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { signInWithPassword } from "./sign-in.ts";
+import { signInAs } from "./as.ts";
 import { expect, type Page, test } from "./test.ts";
 import { expectNoAxeViolations } from "./visual.ts";
 
@@ -9,10 +9,6 @@ import { expectNoAxeViolations } from "./visual.ts";
  * a removed step comes back with ⌘Z, kept by autosave.
  */
 
-const ADMIN = {
-  email: process.env.E2E_ADMIN_EMAIL ?? "admin@example.com",
-  password: process.env.E2E_ADMIN_PASSWORD ?? "change-me-please",
-};
 const TENANT_ADMIN = "00000000-0000-7000-8000-000000000002";
 const stamp = Date.now().toString(36);
 
@@ -20,6 +16,18 @@ const stamp = Date.now().toString(36);
 const call = (page: Page, method: string, path: string, body?: unknown): Promise<any> =>
   page.evaluate(
     async ([method, path, body]) => {
+      // A draft save names the draft it saw: its revision now, or none when there is none.
+      if (
+        method === "PUT" &&
+        String(path).includes("/drafts/") &&
+        body &&
+        typeof body === "object" &&
+        !("revision" in body) &&
+        !("create" in body)
+      ) {
+        const seen = await fetch(`/api/v1${path}`);
+        if (seen.ok) body = { ...body, revision: (await seen.json()).revision };
+      }
       const response = await fetch(`/api/v1${path}`, {
         method: method as string,
         headers: body ? { "content-type": "application/json" } : {},
@@ -55,7 +63,7 @@ const flow = {
   ],
 };
 
-test("a draft flow is tested, read, previewed and undone without leaving its editor", async ({
+test("a draft flow is tested, read, previewed and undone without leaving its editor @builder", async ({
   browser,
 }) => {
   const page = await (await browser.newContext()).newPage();
@@ -65,7 +73,7 @@ test("a draft flow is tested, read, previewed and undone without leaving its edi
     errors.push(`a browser dialog: ${dialog.message()}`);
     void dialog.dismiss();
   });
-  await signInWithPassword(page, ADMIN.email, ADMIN.password);
+  await signInAs(page, "operator");
 
   const tenant = await call(page, "POST", "/tenants", {
     slug: `fe-${stamp}`,
@@ -125,7 +133,8 @@ test("a draft flow is tested, read, previewed and undone without leaving its edi
   // A step removed by mistake comes back with ⌘Z, and the draft keeps it.
   await steps.getByRole("button", { name: /^check/ }).click();
   await aside.getByRole("button", { name: "Remove this step" }).click();
-  await page.getByRole("dialog").getByRole("button", { name: "Remove" }).click();
+  // Removing never asks (D34): the message offers Undo, and ⌘Z does the same.
+  await expect(page.getByText(/^Removed check\./)).toBeVisible();
   await expect(canvas.getByText("check", { exact: true })).toHaveCount(0);
   await expect(page.getByRole("status").filter({ hasText: /Draft saved/ })).toBeVisible({
     timeout: 10_000,
@@ -169,7 +178,7 @@ test("a draft flow is tested, read, previewed and undone without leaving its edi
   expect(errors).toEqual([]);
 });
 
-test("a flow is built, saved and tested from the keyboard, without dragging", async ({
+test("a flow is built, saved and tested from the keyboard, without dragging @builder", async ({
   browser,
 }) => {
   const page = await (await browser.newContext()).newPage();
@@ -179,7 +188,7 @@ test("a flow is built, saved and tested from the keyboard, without dragging", as
     errors.push(`a browser dialog: ${dialog.message()}`);
     void dialog.dismiss();
   });
-  await signInWithPassword(page, ADMIN.email, ADMIN.password);
+  await signInAs(page, "operator");
   const tenant = await call(page, "POST", "/tenants", {
     slug: `fk-${stamp}`,
     name: "Flow by keyboard",
@@ -257,7 +266,7 @@ test("a flow is built, saved and tested from the keyboard, without dragging", as
   expect(errors).toEqual([]);
 });
 
-test("steps are duplicated, copied into another flow, and a renamed case keeps its connection", async ({
+test("steps are duplicated, copied into another flow, and a renamed case keeps its connection @builder", async ({
   browser,
 }) => {
   test.setTimeout(180_000);
@@ -266,7 +275,7 @@ test("steps are duplicated, copied into another flow, and a renamed case keeps i
     permissions: ["clipboard-read", "clipboard-write"],
   });
   const page = await context.newPage();
-  await signInWithPassword(page, ADMIN.email, ADMIN.password);
+  await signInAs(page, "operator");
   const tenant = await call(page, "POST", "/tenants", {
     slug: `canvas-${stamp}`,
     name: "Canvas",
@@ -344,6 +353,8 @@ test("steps are duplicated, copied into another flow, and a renamed case keeps i
   const settings = page.getByRole("complementary", { name: "The chosen step" });
   const name = settings.getByRole("group", { name: "Cases, tried in order" }).getByLabel("Name");
   await name.fill("huge");
+  // A case is renamed on Enter or when the field is left, not on each key (FLW).
+  await name.press("Enter");
   await saved("orders/other", (flow) => {
     const edges = (flow as unknown as { edges: { from: string; to: string; output?: string }[] })
       .edges;

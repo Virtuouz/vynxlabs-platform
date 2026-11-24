@@ -39,24 +39,61 @@ export const oauth2Connector: Connector<OAuth2Config, HttpClient> = {
   configSchema: {
     type: "object",
     properties: {
-      baseUrl: { ...url, title: "API address" },
-      authorizeUrl: { ...url, title: "Authorization address" },
-      tokenUrl: { ...url, title: "Token address" },
-      clientId: { type: "string", minLength: 1, maxLength: 150, title: "Client ID" },
+      baseUrl: {
+        ...url,
+        title: "API address",
+        description: "Where the API is. Every request goes under it, as with an `http` connection.",
+      },
+      authorizeUrl: {
+        ...url,
+        title: "Authorization address",
+        description: "The provider's authorization endpoint, where a member is sent to agree.",
+      },
+      tokenUrl: {
+        ...url,
+        title: "Token address",
+        description: "The provider's token endpoint. Only the control plane calls it.",
+      },
+      clientId: {
+        type: "string",
+        minLength: 1,
+        maxLength: 150,
+        title: "Client ID",
+        description:
+          "The client ID the provider gave. The client's secret is the connection's secret.",
+      },
       scopes: {
         type: "array",
         items: { type: "string", minLength: 1, maxLength: 150 },
         maxItems: 50,
         title: "Scopes",
+        description: "What the member is asked to agree to, in the provider's words.",
       },
       authorizeParams: {
         type: "object",
         additionalProperties: { type: "string", maxLength: 150 },
         title: "Extra authorization parameters",
+        description:
+          "Added to the authorization request, such as `access_type: offline` for Google.",
       },
-      clientAuth: { enum: ["body", "basic"], title: "Client authentication" },
-      headers: { type: "object", additionalProperties: { type: "string" } },
-      testPath: { type: "string", maxLength: 150, title: "What Test asks for" },
+      clientAuth: {
+        enum: ["body", "basic"],
+        title: "Client authentication",
+        description:
+          "How the client proves itself to the token endpoint: in the request body, or with HTTP Basic.",
+      },
+      headers: {
+        type: "object",
+        additionalProperties: { type: "string" },
+        description: "Sent with every request. Not for credentials.",
+      },
+      testPath: {
+        type: "string",
+        maxLength: 150,
+        title: "What Test asks for",
+        description:
+          "What the Test button asks for, below the API address. The address itself when left out.",
+      },
     },
     required: ["baseUrl", "authorizeUrl", "tokenUrl", "clientId"],
     additionalProperties: false,

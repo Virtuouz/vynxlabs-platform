@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 
-import { cleanup, fireEvent, screen, within } from "@testing-library/react";
-import type { PageWidget } from "@volvel/manifest";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import type { Page, PageWidget } from "@volvel/manifest";
 import { sampleOf } from "@volvel/ui";
 import { formatValue } from "@volvel/widgets";
 import { chart as coreChart, list } from "@volvel/widgets-core";
@@ -21,7 +21,7 @@ import {
 import { columnsByGrouping, groupability, sampleValue } from "./kit/inspector/grouping.ts";
 import { Inspector } from "./kit/inspector/Inspector.tsx";
 import { FormatRow } from "./kit/inspector/measureControls.tsx";
-import type { Catalog } from "./kit/inspector/model.ts";
+import { type Catalog, columnsNamed } from "./kit/inspector/model.ts";
 import { show } from "./testing.tsx";
 
 const catalog: Catalog = {
@@ -83,7 +83,17 @@ const listWidget = (): PageWidget => ({
 });
 
 let written: PageWidget[];
-function Harness({ start, definition }: { start: PageWidget; definition: typeof chart }) {
+function Harness({
+  start,
+  definition,
+  page,
+  using = catalog,
+}: {
+  start: PageWidget;
+  definition: typeof chart;
+  page?: Page;
+  using?: Catalog;
+}) {
   const [widget, setWidget] = useState(start);
   return (
     <Inspector
@@ -91,7 +101,8 @@ function Harness({ start, definition }: { start: PageWidget; definition: typeof 
       definition={definition}
       surface="app"
       filters={[]}
-      catalog={catalog}
+      catalog={using}
+      {...(page ? { page, pages: [page] } : {})}
       onChange={(next) => {
         written.push(next);
         setWidget(next);
@@ -135,6 +146,110 @@ test("a choice column's values are chosen, several make an array, and the chip s
   fireEvent.click(editor.getByLabelText(/^Paid/));
   expect(last().filters).toEqual([{ column: "status", op: "in", value: ["void", "paid"] }]);
   expect(panel().getByRole("button", { name: "Status is Void, Paid" })).toBeTruthy();
+});
+
+test("a condition on a record page can be about that record's column or the current user (WID-M9)", async () => {
+  const page: Page = {
+    id: "invoice",
+    title: "Invoice",
+    kind: "record",
+    record: { table: "invoices" },
+    widgets: [],
+  };
+  show(<Harness start={listWidget()} definition={list as never} page={page} />);
+  fireEvent.click(panel().getByRole("button", { name: "Condition" }));
+  let editor = await dialog();
+  fireEvent.change(editor.getByLabelText("Field"), { target: { value: "number" } });
+  fireEvent.click(editor.getByRole("radio", { name: "This record's" }));
+  fireEvent.change(editor.getByLabelText("Column of this record"), { target: { value: "number" } });
+  fireEvent.click(editor.getByRole("button", { name: "Add" }));
+  expect(last().filters).toEqual([{ column: "number", op: "eq", value: { record: "number" } }]);
+  expect(panel().getByRole("button", { name: "Number is this record's number" })).toBeTruthy();
+
+  fireEvent.click(panel().getByRole("button", { name: "Number is this record's number" }));
+  editor = await dialog();
+  fireEvent.click(editor.getByRole("radio", { name: "The current user" }));
+  expect(last().filters).toEqual([{ column: "number", op: "eq", value: { user: "id" } }]);
+  expect(panel().getByRole("button", { name: "Number is the current user" })).toBeTruthy();
+});
+
+test("a money column's condition is typed in dollars and kept in cents (WID-26)", async () => {
+  const money: Catalog = {
+    ...catalog,
+    tables: [
+      {
+        name: "invoices",
+        columns: [
+          {
+            name: "total",
+            type: "integer",
+            references: null,
+            description: "What is owed, in cents.",
+          },
+        ],
+      },
+    ],
+  };
+  const start = listWidget();
+  render(
+    <Inspector
+      widget={start}
+      definition={list as never}
+      surface="app"
+      filters={[]}
+      catalog={money}
+      onChange={(next) => written.push(next)}
+      onDuplicate={() => {}}
+      onRemove={() => {}}
+      rowRules={() => "/rules"}
+    />,
+  );
+  fireEvent.click(panel().getByRole("button", { name: "Condition" }));
+  const editor = await dialog();
+  fireEvent.click(editor.getByRole("radio", { name: "is more than" }));
+  fireEvent.change(editor.getByLabelText("Value"), { target: { value: "12.50" } });
+  fireEvent.click(editor.getByRole("button", { name: "Add" }));
+  expect(last().filters).toEqual([{ column: "total", op: "gt", value: 1250 }]);
+});
+
+test('a money column\'s "is between" is typed in dollars and kept in cents (WID-26)', async () => {
+  const money: Catalog = {
+    ...catalog,
+    tables: [
+      {
+        name: "invoices",
+        columns: [
+          {
+            name: "total",
+            type: "integer",
+            references: null,
+            description: "What is owed, in cents.",
+          },
+        ],
+      },
+    ],
+  };
+  const start = listWidget();
+  render(
+    <Inspector
+      widget={start}
+      definition={list as never}
+      surface="app"
+      filters={[]}
+      catalog={money}
+      onChange={(next) => written.push(next)}
+      onDuplicate={() => {}}
+      onRemove={() => {}}
+      rowRules={() => "/rules"}
+    />,
+  );
+  fireEvent.click(panel().getByRole("button", { name: "Condition" }));
+  const editor = await dialog();
+  fireEvent.click(editor.getByRole("radio", { name: "is between" }));
+  fireEvent.change(editor.getByLabelText("From"), { target: { value: "12.50" } });
+  fireEvent.change(editor.getByLabelText("To"), { target: { value: "20" } });
+  fireEvent.click(editor.getByRole("button", { name: "Add" }));
+  expect(last().filters).toEqual([{ column: "total", op: "between", value: [1250, 2000] }]);
 });
 
 test("a condition is removed by its ×", async () => {
@@ -312,4 +427,171 @@ test("there is one formatter: the kit's samples are the widget SDK's formatValue
     expect(sampleOf(43120.5, format)).toBe(formatValue(43120.5, format));
   }
   expect(sampleOf(43120, { style: "currency", notation: "compact" })).toBe("$43.1k");
+});
+
+test("WID-M11: a saved query is given values of its own, and SQL its numbered values", async () => {
+  const start = listWidget();
+  start.data = { rows: { source: { query: "reports/late" } } };
+  show(<Harness start={start} definition={list as never} />);
+  fireEvent.click(panel().getByRole("button", { name: "Add a value" }));
+  fireEvent.change(panel().getByLabelText("Name of parameter 1"), { target: { value: "days" } });
+  fireEvent.change(panel().getByLabelText("Value of days"), { target: { value: "30" } });
+  const source = () => written.at(-1)?.data?.rows?.source;
+  expect(source()).toEqual({ query: "reports/late", values: { days: 30 } });
+  fireEvent.click(panel().getByRole("button", { name: "Remove the value of days" }));
+  expect(source()).toEqual({ query: "reports/late" });
+});
+
+test("WID-M11: SQL written here keeps its numbered values, and shows them", async () => {
+  const start = listWidget();
+  start.data = { rows: { source: { sql: "select $1::int", values: [7] } } };
+  show(<Harness start={start} definition={list as never} />);
+  expect((panel().getByLabelText("Value of $1") as HTMLInputElement).value).toBe("7");
+  fireEvent.change(panel().getByLabelText("Value of $1"), { target: { value: "9" } });
+  expect(written.at(-1)?.data?.rows?.source).toEqual({ sql: "select $1::int", values: [9] });
+});
+
+// ----- WID-M10: Also from -----
+
+const withCustomers: Catalog = {
+  ...catalog,
+  tables: [
+    {
+      ...catalog.tables[0],
+      columns: [
+        ...(catalog.tables[0]?.columns ?? []),
+        { name: "customer", type: "reference", references: "customers" },
+      ],
+    } as Catalog["tables"][number],
+    {
+      name: "customers",
+      columns: [
+        { name: "name", type: "text", references: null },
+        { name: "city", type: "text", references: null },
+      ],
+    },
+  ],
+};
+
+test("WID-M10: a table the chosen one points to is offered as Also from, and its columns are chosen", async () => {
+  show(<Harness start={listWidget()} definition={list as never} using={withCustomers} />);
+  expect(panel().getByText("Also from")).toBeTruthy();
+  fireEvent.click(panel().getByRole("button", { name: /Customers/ }));
+  expect(last().joins).toEqual(["customer"]);
+  const city = within(panel().getByRole("group", { name: "Columns from Customers" })).getByRole(
+    "button",
+    { name: "City" },
+  );
+  fireEvent.click(city);
+  expect(last().columns).toEqual([
+    "id",
+    "number",
+    "total",
+    "status",
+    "issued_at",
+    "customer",
+    "customer.city",
+  ]);
+  fireEvent.click(city);
+  expect(last().columns).not.toContain("customer.city");
+});
+
+test("w-builder 4: a column of a followed table that would be named as one the table has is not offered, and says why", () => {
+  const clash: Catalog = {
+    ...withCustomers,
+    tables: [
+      {
+        ...(withCustomers.tables[0] as Catalog["tables"][number]),
+        columns: [
+          ...(withCustomers.tables[0]?.columns ?? []),
+          { name: "customer_name", type: "text", references: null },
+        ],
+      },
+      withCustomers.tables[1] as Catalog["tables"][number],
+    ],
+  };
+  show(<Harness start={listWidget()} definition={list as never} using={clash} />);
+  fireEvent.click(panel().getByRole("button", { name: /Customers/ }));
+  const group = within(panel().getByRole("group", { name: "Columns from Customers" }));
+  expect((group.getByRole("button", { name: "Name" }) as HTMLButtonElement).disabled).toBe(true);
+  expect((group.getByRole("button", { name: "City" }) as HTMLButtonElement).disabled).toBe(false);
+  panel().getByText(/Name is not offered: Invoices already has a column called customer_name/);
+});
+
+test("WID-M10: the columns of a followed table are columns every other control can name", () => {
+  const names = columnsNamed(withCustomers, "invoices", ["customer"]).map((one) => one.name);
+  expect(names).toContain("customer.name");
+  expect(columnsNamed(withCustomers, "invoices").map((one) => one.name)).not.toContain(
+    "customer.name",
+  );
+});
+
+test("WID-M10: switching a joined table off takes its columns out, and a table with no reference offers nothing", async () => {
+  const start = listWidget();
+  start.data = {
+    rows: {
+      source: {
+        visual: { table: "invoices", joins: ["customer"], columns: ["number", "customer.name"] },
+      },
+    },
+  };
+  show(<Harness start={start} definition={list as never} using={withCustomers} />);
+  fireEvent.click(panel().getByRole("button", { name: /Customers/ }));
+  expect(last().joins).toBeUndefined();
+  expect(last().columns).toEqual(["number"]);
+  cleanup();
+  show(<Harness start={listWidget()} definition={list as never} />);
+  expect(panel().queryByText("Also from")).toBeNull();
+});
+
+test("p31 fc: switching a followed table off also takes its columns out of Display", async () => {
+  const start = listWidget();
+  start.config = {
+    ...(start.config ?? {}),
+    columns: [{ column: "number" }, { column: "customer.name" }, { column: "customer_city" }],
+  };
+  start.data = {
+    rows: {
+      source: {
+        visual: { table: "invoices", joins: ["customer"], columns: ["number", "customer.name"] },
+      },
+    },
+  };
+  show(<Harness start={start} definition={list as never} using={withCustomers} />);
+  fireEvent.click(panel().getByRole("button", { name: /Customers/ }));
+  expect(last().joins).toBeUndefined();
+  expect((written.at(-1) as { config?: { columns?: unknown } }).config?.columns).toEqual([
+    { column: "number" },
+  ]);
+});
+
+test("p31 fe: switching a followed table off takes out every setting that names its columns", async () => {
+  const start = listWidget();
+  start.config = {
+    ...(start.config ?? {}),
+    title: "number",
+    subtitle: "customer_name",
+    right: "customer.city",
+    columns: [{ column: "number" }, { column: "customer_city" }],
+  };
+  start.data = {
+    rows: {
+      source: { visual: { table: "invoices", joins: ["customer"] } },
+      filters: [
+        { filter: "q", columns: ["number", "customer.name"] },
+        { filter: "town", column: "customer.city" },
+        { filter: "paid", column: "status" },
+      ],
+    },
+  };
+  show(<Harness start={start} definition={list as never} using={withCustomers} />);
+  fireEvent.click(panel().getByRole("button", { name: /Customers/ }));
+  const widget = written.at(-1) as PageWidget;
+  expect(widget.config).toMatchObject({ title: "number", columns: [{ column: "number" }] });
+  expect(widget.config).not.toHaveProperty("subtitle");
+  expect(widget.config).not.toHaveProperty("right");
+  expect(widget.data?.rows?.filters).toEqual([
+    { filter: "q", columns: ["number"] },
+    { filter: "paid", column: "status" },
+  ]);
 });

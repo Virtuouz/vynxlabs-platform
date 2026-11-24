@@ -136,13 +136,14 @@ export async function appPrincipal(
   }
   const member = await kernel.db
     .selectFrom("member")
-    .select(["id", "name", "email"])
+    .select(["id", "name", "email", "disabled_at"])
     .where("id", "=", session.principal_id)
     .executeTakeFirst();
-  if (!member) return null;
+  if (!member || member.disabled_at) return null;
+  const { disabled_at: _enabled, ...who } = member;
   return {
     type: "member",
-    ...member,
+    ...who,
     appTenantId: tenantId,
     appSessionId: session.id,
     viaCookie: true,

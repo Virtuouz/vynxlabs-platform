@@ -2,13 +2,16 @@ import { Button, Dialog, EmptyState, Notice, TextField } from "@volvel/ui";
 import { useEffect, useState } from "react";
 import { ApiError, api, useLoad } from "../api.ts";
 import { failureText, notify, takenText } from "../ask.tsx";
+import { useNeeds } from "../kit/Can.tsx";
 import { DataTable } from "../kit/DataTable.tsx";
+import { putDraft } from "../kit/draftApi.ts";
 import { ago } from "../kit/format.ts";
 import { RemoveDraftButton } from "../kit/RemoveDraftButton.tsx";
 import { Mono, StatePill, Tag } from "../kit/status.tsx";
 import { Page } from "../ListScreen.tsx";
 import { Link, navigate } from "../router.tsx";
 import { type Listed, slug, slugTyping } from "./builder/data.ts";
+import { NAME_MAX } from "./builder/names.ts";
 import { cannotRename } from "./ResourceIdentity.tsx";
 
 /** The apps made in the console: each an interface, and the app that serves it. */
@@ -33,8 +36,19 @@ export function Interfaces({
   const [renaming, setRenaming] = useState<Listed>();
   const where = address || slug(title);
 
+  const may = useNeeds({
+    base: root,
+    permission: "resource:write",
+    alone: ["interface:write"],
+    what: "this workspace's apps",
+  });
   const create = editable ? (
-    <Button variant="primary" onClick={() => setCreating(true)}>
+    <Button
+      variant="primary"
+      disabled={!may.can}
+      {...(may.reason ? { tooltip: may.reason } : {})}
+      onClick={() => setCreating(true)}
+    >
       Make an app
     </Button>
   ) : undefined;
@@ -45,6 +59,7 @@ export function Interfaces({
       description="Apps over this workspace's tables, built without code: tables, cards, charts and forms, where choosing a row in one decides what another shows. A change is saved as you make it, and reaches people only when it is published."
       action={create}
     >
+      {editable ? may.line : null}
       {editable ? null : (
         <Notice tone="plain">
           Apps are built in a dev workspace and promoted. Here they can be opened.
@@ -81,6 +96,7 @@ export function Interfaces({
           },
           {
             header: "Pages",
+            priority: 2,
             cell: (row) => (
               <span className="flex flex-col">
                 <Mono>{row.pages ?? "—"}</Mono>
@@ -97,9 +113,13 @@ export function Interfaces({
             cell: (row) => (
               <span className="flex flex-wrap items-center gap-1.5">
                 {row.deployed ? (
-                  <Tag tone="live">Published{row.version ? ` v${row.version}` : ""}</Tag>
+                  <span title="Published means deployed here">
+                    <Tag tone="live">Published{row.version ? ` v${row.version}` : ""}</Tag>
+                  </span>
                 ) : (
-                  <Tag tone="draft">Not published</Tag>
+                  <span title="Not published means not deployed here yet">
+                    <Tag tone="draft">Not published</Tag>
+                  </span>
                 )}
                 {row.removing ? (
                   <Tag tone="danger">Being removed</Tag>
@@ -114,6 +134,7 @@ export function Interfaces({
           },
           {
             header: "Address",
+            priority: 3,
             cell: (row) => {
               const url = apps.data?.items.find((app) => app.path === row.app)?.url;
               return url ? (
@@ -141,14 +162,33 @@ export function Interfaces({
                             path: row.path,
                           }) !== undefined
                         }
-                        title={cannotRename({
+                        {...(cannotRename({
                           ownership: row.ownership ?? "console",
                           path: row.path,
-                        })}
+                        })
+                          ? {
+                              tooltip: cannotRename({
+                                ownership: row.ownership ?? "console",
+                                path: row.path,
+                              }) as string,
+                            }
+                          : {})}
                         onClick={() => setRenaming(row)}
                       >
                         Rename
                       </Button>
+                      {row.draft && row.deployed && !row.removing && row.ownership !== "code" ? (
+                        <RemoveDraftButton
+                          root={root}
+                          kind="interface"
+                          path={row.path}
+                          noun="app"
+                          size="small"
+                          state="draft"
+                          also={row.app ? [{ kind: "app", path: row.app }] : []}
+                          onDone={() => list.reload()}
+                        />
+                      ) : null}
                       <RemoveDraftButton
                         root={root}
                         kind="interface"
@@ -165,7 +205,7 @@ export function Interfaces({
                                 : "draft"
                         }
                         also={row.app ? [{ kind: "app", path: row.app }] : []}
-                        then="The app's address stops serving it once that is deployed."
+                        then={`The app's address stops serving it once that is deployed.${row.draft && row.deployed ? " The edits not published are replaced by the removal; to drop only them, use Discard draft." : ""}`}
                         onDone={() => list.reload()}
                       />
                     </span>
@@ -186,7 +226,7 @@ export function Interfaces({
         open={creating}
         onClose={() => setCreating(false)}
         title="Make an app"
-        description="It starts with one empty page. Nobody else sees it until you publish it."
+        description="It starts with one empty page. Other builders of this workspace see the draft; people who use the app see nothing until you publish it."
       >
         <form
           className="flex flex-col gap-3"
@@ -198,22 +238,26 @@ export function Interfaces({
             let screenMade = false;
             const path = `screens/${slug(where)}`;
             try {
-              await api.put(`${root}/drafts/${path}`, {
-                kind: "interface",
-                schemaVersion: 2,
-                body: {
-                  title: title.trim(),
-                  pages: [{ id: "main", title: title.trim(), widgets: [] }],
+              await putDraft(
+                root,
+                path,
+                {
+                  kind: "interface",
+                  schemaVersion: 2,
+                  body: {
+                    title: title.trim(),
+                    pages: [{ id: "main", title: title.trim(), widgets: [] }],
+                  },
                 },
-                create: true,
-              });
+                { create: true },
+              );
               screenMade = true;
-              await api.put(`${root}/drafts/${slug(where)}`, {
-                kind: "app",
-                schemaVersion: 1,
-                body: { title: title.trim(), interface: path },
-                create: true,
-              });
+              await putDraft(
+                root,
+                slug(where),
+                { kind: "app", schemaVersion: 1, body: { title: title.trim(), interface: path } },
+                { create: true },
+              );
               setCreating(false);
               setTitle("");
               setAddress("");
@@ -234,7 +278,8 @@ export function Interfaces({
             name="title"
             value={title}
             required
-            maxLength={200}
+            maxLength={NAME_MAX}
+            showCount
             onChange={(value) => {
               setTaken(undefined);
               setTitle(value);
@@ -370,7 +415,8 @@ function RenameApp({
           name="title"
           value={title}
           required
-          maxLength={200}
+          maxLength={NAME_MAX}
+          showCount
           onChange={setTitle}
         />
         {row ? (

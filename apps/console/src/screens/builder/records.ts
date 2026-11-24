@@ -281,14 +281,16 @@ export function detailWidget(
     const at = [...carried.keys()].indexOf(column.name);
     return at === -1 ? carried.size : at;
   };
+  // The heading and the status are drawn above the fields, so as fields they start hidden: every
+  // column is in the list, to show again, and none is drawn twice.
   const fields = shown
-    .filter((column) => column.name !== heading_ && column.name !== status)
     .map((column, at) => ({ column, at }))
     .sort((a, b) => order(a.column) - order(b.column) || a.at - b.at)
     .map(({ column }) => {
       const spec = carried.get(column.name);
       return {
         column: column.name,
+        ...(column.name === heading_ || column.name === status ? { hidden: true } : {}),
         ...(spec?.label ? { label: spec.label } : {}),
         ...(spec?.format ? { format: spec.format } : startingFormat(column)),
         ...(spec?.as === "badge" ? { as: "badge" } : {}),

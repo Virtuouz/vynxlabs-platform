@@ -17,8 +17,9 @@ export type PageSource =
  * `widget-data` endpoint, which reads the stored page, compiles the widget's
  * data inputs and runs them as whoever is asking (contract §1).
  *
- * `draft` reads the page as it is being built, before it is published: only
- * for interfaces in the builder. A dashboard is read plainly.
+ * `draft` reads the page as it is being built, before it is published: an
+ * interface in the builder, or a dashboard the workspace keeps as a resource.
+ * A member's dashboard is read plainly.
  */
 export function pageClient(
   root: string,
@@ -37,6 +38,8 @@ export function pageClient(
       if (record) params.set("record", record);
     } else {
       params.set("path", source.id);
+      // A dashboard the workspace keeps is read as its draft while it has one.
+      if (draft) params.set("draft", "1");
     }
     return params;
   };
@@ -83,6 +86,8 @@ export function pageClient(
           records: { ...(record ? { this: record } : {}), ...given.records },
           ...(given.inputs ? { inputs: given.inputs } : {}),
           ...(draft ? { draft: true } : {}),
+          // "Today" is the reader's day (D21).
+          zone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         });
       } catch (error) {
         // A refusal says what was wrong with what was typed, by field, as the served app's does.

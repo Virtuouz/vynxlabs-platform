@@ -1,28 +1,36 @@
 import {
   asDirectory,
   type Change,
+  changelogEntryName,
+  DOC_TYPE_LABELS,
+  DOC_TYPES,
+  type DocType,
   FEEDBACK_COLUMNS,
   FEEDBACK_TABLE,
+  folderType,
+  frontmatterOf,
   inverseOf,
+  isDocType,
   type Manifest,
   nameProblem,
   type Plan,
   planDelete,
   planDuplicate,
   planMove,
+  planNewChangelogEntry,
   planNewFolder,
   planNewPage,
   planRename,
   readPage,
   slugOf,
 } from "@volvel/docs-engine";
-
 import {
   Button,
   Dialog,
   Doc,
   type DropPosition,
   EmptyState,
+  LimitNote,
   Menu,
   Notice,
   Panel,
@@ -54,7 +62,10 @@ import { Diagram } from "../../diagrams/Diagram.tsx";
 import { loadManifest } from "../../help/content.ts";
 import { useWorkspaceTerms } from "../../help/glossary.tsx";
 import { useBrand } from "../../kit/brand.tsx";
+import { useNeeds } from "../../kit/Can.tsx";
+import { putOnDraftNow, readDraft } from "../../kit/draftApi.ts";
 import { listOf } from "../../kit/format.ts";
+import { useShortcut } from "../../kit/keys.ts";
 import { ErrorState, Pending } from "../../kit/LoadState.tsx";
 import { PageHeader } from "../../kit/PageHeader.tsx";
 import { removeWords } from "../../kit/RemoveDraftButton.tsx";
@@ -63,10 +74,12 @@ import { useTitleObject } from "../../kit/title.ts";
 import { navigate } from "../../router.tsx";
 import {
   appFor,
+  changelogFor,
   type DocPage,
   type DocRow,
   type DocsApp,
   type DocsList,
+  entriesOf,
   filterRows,
   findRow,
   folderId,
@@ -79,8 +92,10 @@ import {
   pendingOf,
   resolvers,
   rowsOf,
+  setOf,
   sourcesOf,
 } from "./model.ts";
+import { ServedAfter, ServedEyebrow } from "./Served.tsx";
 
 /** The product's own help, for the terms a tenant's page may use. Loaded once. */
 export function useProduct(): Manifest | undefined {
@@ -138,7 +153,7 @@ export function Docs({
   tenantId,
   workspaceId,
   path,
-  editable,
+  editable: editableHere,
 }: {
   root: string;
   link: string;
@@ -149,6 +164,14 @@ export function Docs({
   /** Whether pages can be changed here: only in a dev workspace. */
   editable: boolean;
 }) {
+  // A doc writer holds `doc:write` alone, which is enough for pages and the docs apps.
+  const may = useNeeds({
+    base: root,
+    permission: "resource:write",
+    alone: ["doc:write"],
+    what: "this workspace's pages",
+  });
+  const editable = editableHere && may.can;
   const list = useLoad<DocsList>(`${root}/docs`);
   // Tree changes go out one after another, each with the revisions the one before left.
   const ordered = useRef<Promise<unknown>>(Promise.resolve());
@@ -301,7 +324,7 @@ export function Docs({
   /** Saves the app of a site with one setting changed, and offers to put it back. */
   const changeSite = async (site: DocsApp, body: Record<string, unknown>, done: string) => {
     const put = (to: Record<string, unknown>) =>
-      api.put(`${root}/drafts/${site.path}`, { kind: "app", schemaVersion: 1, body: to });
+      putOnDraftNow(root, site.path, { kind: "app", schemaVersion: 1, body: to });
     try {
       await put(body);
       list.reload();
@@ -369,7 +392,7 @@ export function Docs({
     if (!sure) return;
     try {
       if (site.deployed)
-        await api.put(`${root}/drafts/${site.path}`, {
+        await putOnDraftNow(root, site.path, {
           kind: "app",
           schemaVersion: 1,
           body: {},
@@ -428,11 +451,22 @@ export function Docs({
         after: follow,
         follows: true,
       }),
+    folderTypeOf: (folder) =>
+      folderType(
+        `${folder}/page`,
+        (at) => frontmatterOf(data.pages.find((one) => one.path === at)?.source ?? "")?.type,
+      ),
     commitNew: async (kind, parent, next) => {
       const plan =
         kind === "new-folder"
           ? planNewFolder(sourcesOf(data), parent, next)
-          : planNewPage(sourcesOf(data), parent, next);
+          : next.changelog
+            ? planNewChangelogEntry(sourcesOf(data), parent, {
+                title: next.title,
+                name: next.name,
+                today: today(),
+              })
+            : planNewPage(sourcesOf(data), parent, next);
       return apply(
         plan,
         kind === "new-folder" ? `Made the folder ${next.title}.` : `Made ${next.title}.`,
@@ -548,6 +582,8 @@ export function Docs({
 
   return (
     <section className="flex flex-col gap-5">
+      <RenameKey onRename={() => selected !== undefined && rename(selected)} />
+      {editableHere ? may.line : null}
       <PageHeader
         title="Documentation"
         description="Pages your team writes. Any top-level folder can be published as its own docs site."
@@ -583,6 +619,14 @@ export function Docs({
           ) : null
         }
       />
+      {data.issues?.length ? (
+        <Notice tone="attention">
+          {data.issues.length === 1 ? "A page takes" : `${data.issues.length} pages take`} a term or
+          a topic that the product's own help has, so a site leaves it out and a deploy is refused:{" "}
+          {[...new Set(data.issues.map((issue) => issue.path))].join(", ")}. Give it another id in
+          the page.
+        </Notice>
+      ) : null}
       {data.pages.length === 0 && data.apps.length === 0 && !editing ? (
         <EmptyState
           title="No documentation yet"
@@ -692,6 +736,7 @@ export function Docs({
           if (!site) return undefined;
           const table = FEEDBACK_TABLE;
           try {
+            const seen = await readDraft(root, site.path);
             await api.post(`${root}/drafts/batch`, {
               changes: [
                 // The workspace's one table of answers: made once, by whichever site is first.
@@ -701,6 +746,8 @@ export function Docs({
                   kind: "app",
                   schemaVersion: 1,
                   body: { ...site.body, feedback: { table } },
+                  // Based on the draft there is now, or none.
+                  ...(seen ? { revision: seen.revision } : {}),
                 },
               ],
             });
@@ -711,7 +758,7 @@ export function Docs({
                 onClick: async () => {
                   try {
                     if (makeTable) await api.delete(`${root}/drafts/${table}`);
-                    await api.put(`${root}/drafts/${site.path}`, {
+                    await putOnDraftNow(root, site.path, {
                       kind: "app",
                       schemaVersion: 1,
                       body: site.body,
@@ -751,7 +798,7 @@ export function Docs({
             });
             list.reload();
             const made = publishing;
-            notify.success(`${made.title} will be published as a site when you deploy.`, {
+            notify.success(`${made.title} will be a site once deployed.`, {
               action: {
                 label: "Undo",
                 onClick: async () => {
@@ -931,8 +978,10 @@ function toNodes(options: {
   commitNew: (
     kind: "new-page" | "new-folder",
     parent: string,
-    next: { title: string; name: string },
+    next: { title: string; name: string; type?: DocType; changelog?: boolean },
   ) => Promise<string | undefined>;
+  /** The type a folder gives the pages in it that say none. */
+  folderTypeOf: (folder: string) => DocType | undefined;
   menu: (row: DocRow) => Parameters<typeof Menu>[0]["items"];
   /** Throws away the draft that removes a page. */
   onKeep: (page: DocPage) => void;
@@ -954,6 +1003,7 @@ function toNodes(options: {
             suffix={folder ? "/" : ".md"}
             titleLabel={folder ? "Folder title" : "Page title"}
             follows
+            {...(folder ? {} : { types: { inherited: options.folderTypeOf(parent) } })}
             onCancel={options.onCancel}
             onSubmit={async (next) => {
               const problem = await options.commitNew(editing.kind, parent, next);
@@ -1081,6 +1131,15 @@ const NAME_FIELD_KEYS = new Set([
   "F2",
 ]);
 
+/** What New page's type choice says for a changelog entry, which is no type of page. */
+const CHANGELOG_ENTRY = "changelog-entry";
+/** Today as the reader's own calendar says it, `YYYY-MM-DD`. */
+const today = () => {
+  const now = new Date();
+  const two = (n: number) => String(n).padStart(2, "0");
+  return `${now.getFullYear()}-${two(now.getMonth() + 1)}-${two(now.getDate())}`;
+};
+
 /**
  * A title and a file name, edited together in a row of the tree. Enter saves
  * and Escape cancels. A name made from a title follows it until it is typed
@@ -1094,6 +1153,7 @@ export function NameEditor({
   nameLocked = false,
   follows = false,
   hint,
+  types,
   onSubmit,
   onCancel,
 }: {
@@ -1105,10 +1165,19 @@ export function NameEditor({
   /** Whether the name is made from the title until it is typed in. */
   follows?: boolean;
   hint?: string | undefined;
-  onSubmit: (next: { title: string; name: string }) => Promise<string | undefined>;
+  /** For a new page: offers its type, and says what the folder gives one that is left without. */
+  types?: { inherited: DocType | undefined };
+  onSubmit: (next: {
+    title: string;
+    name: string;
+    type?: DocType;
+    /** A changelog entry: named with today's day, kept in the site's changelog folder. */
+    changelog?: boolean;
+  }) => Promise<string | undefined>;
   onCancel: () => void;
 }) {
   const [title, setTitle] = useState(initialTitle);
+  const [type, setType] = useState("");
   const [name, setName] = useState(initialName);
   const [own, setOwn] = useState(!follows);
   const [problem, setProblem] = useState<string>();
@@ -1118,6 +1187,9 @@ export function NameEditor({
     first.current?.focus();
     first.current?.select();
   }, []);
+  const entry = type === CHANGELOG_ENTRY;
+  const named = (from: string, asEntry: boolean) =>
+    asEntry ? changelogEntryName(from, today()) : slugOf(from);
   const wrong = name === "" ? undefined : nameProblem(name);
   const fixed = wrong ? slugOf(name) : undefined;
   const submit = async () => {
@@ -1126,12 +1198,21 @@ export function NameEditor({
       setProblem("A title is needed.");
       return;
     }
+    if (title.length > 120 || name.length > 80) {
+      setProblem("Shorten what is past its limit first.");
+      return;
+    }
     if (name === "" || wrong) {
       setProblem(name === "" ? "A file name is needed." : wrong);
       return;
     }
     setBusy(true);
-    const answer = await onSubmit({ title: title.trim(), name });
+    const answer = await onSubmit({
+      title: title.trim(),
+      name,
+      ...(isDocType(type) ? { type } : {}),
+      ...(entry ? { changelog: true } : {}),
+    });
     setBusy(false);
     setProblem(answer);
   };
@@ -1156,14 +1237,14 @@ export function NameEditor({
         aria-label={titleLabel}
         placeholder={titleLabel}
         value={title}
-        maxLength={120}
         onChange={(event) => {
           const next = event.currentTarget.value;
           setTitle(next);
-          if (!own) setName(slugOf(next));
+          if (!own) setName(named(next, entry));
         }}
         className="h-7 w-full rounded-inner border border-action bg-surface px-2 text-ink outline-none"
       />
+      <LimitNote value={title} max={120} />
       <div
         className={`flex h-7 items-center rounded-inner border bg-surface px-2 font-mono text-code-sm ${
           wrong ? "border-danger" : "border-line"
@@ -1174,7 +1255,6 @@ export function NameEditor({
           placeholder="made from the title"
           value={name}
           disabled={nameLocked}
-          maxLength={80}
           onChange={(event) => {
             setOwn(true);
             setName(event.currentTarget.value);
@@ -1183,6 +1263,32 @@ export function NameEditor({
         />
         <span className="text-ink-subtle">{suffix}</span>
       </div>
+      <LimitNote value={name} max={80} />
+      {types ? (
+        <SelectField
+          name="new-page-type"
+          label="Type"
+          required={false}
+          value={type}
+          options={[
+            {
+              value: "",
+              label: types.inherited ? `Folder: ${DOC_TYPE_LABELS[types.inherited]}` : "None",
+            },
+            ...DOC_TYPES.map((one) => ({ value: one, label: DOC_TYPE_LABELS[one] })),
+            { value: CHANGELOG_ENTRY, label: "Changelog entry" },
+          ]}
+          {...(entry
+            ? {
+                hint: "Goes in the site's changelog folder, named with today's date. A ::changelog on any page lists it.",
+              }
+            : {})}
+          onChange={(next) => {
+            setType(next);
+            if (!own) setName(named(title, next === CHANGELOG_ENTRY));
+          }}
+        />
+      ) : null}
       {wrong ? (
         <p className="m-0 text-meta text-danger">
           Use lowercase letters, numbers, - and _.
@@ -1502,6 +1608,8 @@ function Reader({
     () => readPage(inApp(app, page.path), page.source),
     [app, page.path, page.source],
   );
+  const site = useMemo(() => setOf(entriesOf(list, app), read.entry), [list, app, read.entry]);
+  const here = inApp(app, page.path);
   const drawn = useMemo(
     () =>
       resolvers({
@@ -1547,6 +1655,7 @@ function Reader({
             <p className="m-0 text-meta text-ink-muted">{trail.join(" › ")}</p>
           ) : null}
           <div className="flex flex-wrap items-center gap-2">
+            <ServedEyebrow set={site} path={here} />
             <h2 className="m-0 text-display">{page.title}</h2>
             {state ? (
               <span className="inline-flex items-center gap-1 rounded-full border border-attention/60 bg-attention-soft px-2 py-0.5 text-meta text-attention">
@@ -1638,11 +1747,12 @@ function Reader({
           <Doc
             tree={asDirectory(inApp(app, page.path), read.entry.tree)}
             profile="docs"
-            headingShift={2}
+            headingTop={2}
             productName={brand.productName}
             asServed
             folder={() => folderItems(rows, page, link)}
             glossary={(scope) => glossaryFor(list, page, scope, (to) => `${link}/docs/${to}`)}
+            changelog={(query) => changelogFor(list, page, query, (to) => `${link}/docs/${to}`)}
             {...drawn}
             components={{
               code: ({ value, lang }) =>
@@ -1666,6 +1776,11 @@ function Reader({
                 ),
             }}
           />
+          <ServedAfter
+            set={site}
+            path={here}
+            address={(to) => `${link}/docs/${app ? `${app.docs}/` : ""}${to}`}
+          />
         </div>
       </div>
     </Panel>
@@ -1683,4 +1798,13 @@ export function folderItems(rows: readonly DocRow[], page: Pick<DocPage, "path">
     ...(row.page?.description ? { description: row.page.description } : {}),
     ...(row.kind === "folder" ? { folder: true } : {}),
   }));
+}
+
+/**
+ * F2 renames the page that is open, wherever focus is on the screen. The tree's own rows handle
+ * the key when they have focus, but a page chosen in the tree moves focus to the page's heading.
+ */
+function RenameKey({ onRename }: { onRename: () => void }) {
+  useShortcut("rename", () => onRename());
+  return null;
 }

@@ -26,18 +26,19 @@ const WHITE = "#ffffff";
 
 /**
  * Black or white, whichever is easier to read on `color`. One of the two
- * always reaches 4.5 to 1, the contrast text needs, whatever the colour is.
+ * always reaches 4.5 to 1, the contrast text needs, whatever the color is.
  */
 export function readableOn(color: string): string {
-  const onBlack = contrastRatio(color, BLACK) ?? 0;
-  const onWhite = contrastRatio(color, WHITE) ?? 0;
+  // The color is the ground; one with some transparency is laid over a white page first.
+  const onBlack = contrastRatio(BLACK, color) ?? 0;
+  const onWhite = contrastRatio(WHITE, color) ?? 0;
   return onBlack >= onWhite ? BLACK : WHITE;
 }
 
 /**
- * One value of a column that holds a choice, on the colour its table gives it.
- * The text is black or white, worked out from the colour, so any colour a
- * table's author picks can be read. A value with no colour is a plain badge.
+ * One value of a column that holds a choice, on the color its table gives it.
+ * The text is black or white, worked out from the color, so any color a
+ * table's author picks can be read. A value with no color is a plain badge.
  */
 export function ValueChip({
   color,

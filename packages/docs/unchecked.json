@@ -1,0 +1,9 @@
+{
+  "pages": [
+    "administer/reference/screens/approvals",
+    "administer/reference/screens/overview",
+    "console/reference/screens/build/resource-editor",
+    "console/reference/screens/build/resources"
+  ],
+  "words": ["administer/reference/screens/index", "console/reference/screens/build/index", "index"]
+}

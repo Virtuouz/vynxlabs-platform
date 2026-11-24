@@ -43,6 +43,9 @@ const EXPORT_SHAPE: Record<string, string> = {
   trigger_source: "execute",
 };
 
+/** Where a connector's own `test` is kept beside its `create` while the section is built. */
+const testKey = (entry: string) => `${entry}:test`;
+
 /** The kinds whose console-managed manifests carry source. */
 export const SOURCE_KINDS: readonly string[] = Object.keys(EXPORT_SHAPE);
 
@@ -118,7 +121,24 @@ function describer(sources: Source[]): string {
     )
     .filter(Boolean)
     .join(", ");
-  return `import { z as __vx_z } from "@volvel/sdk";
+  return `import { z as __vx_z, SchemaError as __vx_SchemaError } from "@volvel/sdk";
+// As defineScript does: the \`input\` and \`output\` exports are parsed, so defaults and transforms apply.
+exports.__vx_wrap = (run, declared) => {
+  const parses = (value) => value && typeof value === "object" && typeof value.safeParse === "function";
+  return async (input, ctx) => {
+    let value = input;
+    if (parses(declared?.input)) {
+      const parsed = declared.input.safeParse(input);
+      if (!parsed.success) throw new __vx_SchemaError("input", parsed.error);
+      value = parsed.data;
+    }
+    const result = await run(value, ctx);
+    if (!parses(declared?.output)) return result;
+    const output = declared.output.safeParse(result);
+    if (!output.success) throw new __vx_SchemaError("output", output.error);
+    return output.data;
+  };
+};
 const __vx_declared = { ${declared} };
 exports.__vx_describe = (entry) => {
   const declared = Object.hasOwn(__vx_declared, entry) ? __vx_declared[entry] : undefined;
@@ -144,7 +164,13 @@ function lockdown(sources: Source[], sdkEntry: string): Plugin {
       .map(
         (source, index) =>
           `import s${index}, * as m${index} from ${JSON.stringify(`vx-source:${source.file}`)};\n` +
-          `exports[${JSON.stringify(source.entry)}] = s${index};`,
+          (source.kind === "script"
+            ? `exports[${JSON.stringify(source.entry)}] = (...args) => exports.__vx_wrap(s${index}, m${index})(...args);`
+            : `exports[${JSON.stringify(source.entry)}] = s${index};`) +
+          // A connector may also export `test`: what its connections' Test button runs.
+          (source.kind === "connector"
+            ? `\nexports[${JSON.stringify(testKey(source.entry))}] = typeof m${index}.test === "function" ? m${index}.test : undefined;`
+            : ""),
       )
       .join("\n") + (scripts.length > 0 ? `\n${describer(sources)}` : "");
   // Files the SDK itself is made of, found by following its own imports.
@@ -275,7 +301,11 @@ export async function composeWithSources(
     sources
       .map(
         (source) =>
-          `export const ${source.entry} = { ${EXPORT_SHAPE[source.kind]}: __vx_console[${JSON.stringify(source.entry)}] };\n`,
+          `export const ${source.entry} = { ${EXPORT_SHAPE[source.kind]}: __vx_console[${JSON.stringify(source.entry)}]${
+            source.kind === "connector"
+              ? `, ...(__vx_console[${JSON.stringify(testKey(source.entry))}] ? { test: __vx_console[${JSON.stringify(testKey(source.entry))}] } : {})`
+              : ""
+          } };\n`,
       )
       .join("") +
     (sources.some((source) => source.kind === "script")

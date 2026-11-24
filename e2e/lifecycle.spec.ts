@@ -1,4 +1,4 @@
-import { signInWithPassword } from "./sign-in.ts";
+import { signInAs } from "./as.ts";
 import { expect, type Page, test } from "./test.ts";
 
 /**
@@ -8,16 +8,24 @@ import { expect, type Page, test } from "./test.ts";
  * which keeps its pages and its app.
  */
 
-const ADMIN = {
-  email: process.env.E2E_ADMIN_EMAIL ?? "admin@example.com",
-  password: process.env.E2E_ADMIN_PASSWORD ?? "change-me-please",
-};
 const stamp = Date.now().toString(36);
 
 // biome-ignore lint/suspicious/noExplicitAny: answers are inspected freely
 const call = (page: Page, method: string, path: string, body?: unknown): Promise<any> =>
   page.evaluate(
     async ([method, path, body]) => {
+      // A draft save names the draft it saw: its revision now, or none when there is none.
+      if (
+        method === "PUT" &&
+        String(path).includes("/drafts/") &&
+        body &&
+        typeof body === "object" &&
+        !("revision" in body) &&
+        !("create" in body)
+      ) {
+        const seen = await fetch(`/api/v1${path}`);
+        if (seen.ok) body = { ...body, revision: (await seen.json()).revision };
+      }
       const response = await fetch(`/api/v1${path}`, {
         method: method as string,
         headers: body ? { "content-type": "application/json" } : {},
@@ -42,14 +50,14 @@ async function say(page: Page, action: string) {
   await page.getByRole("dialog").getByRole("button", { name: action, exact: true }).click();
 }
 
-test("a script, a flow, a query and a docs site are removed, taken back, removed and deployed", async ({
+test("a script, a flow, a query and a docs site are removed, taken back, removed and deployed @builder @operate", async ({
   browser,
 }) => {
   test.setTimeout(240_000);
   const page = await (
     await browser.newContext({ viewport: { width: 1440, height: 900 } })
   ).newPage();
-  await signInWithPassword(page, ADMIN.email, ADMIN.password);
+  await signInAs(page, "operator");
   const tenant = await call(page, "POST", "/tenants", {
     slug: `life-${stamp}`,
     name: "Lifecycle",
@@ -123,6 +131,8 @@ test("a script, a flow, a query and a docs site are removed, taken back, removed
   await expect(page.getByRole("button", { name: "Keep this query" })).toBeVisible();
   await page.getByRole("button", { name: "Keep this query" }).click();
   await say(page, "Keep");
+  // Kept once the screen says so, as for the flow above: only then is the draft gone.
+  await expect(page.getByRole("button", { name: "Remove", exact: true })).toBeVisible();
   expect(await draftOf(page, W, "life/query")).toBe("none");
   await page.getByRole("button", { name: "Remove", exact: true }).click();
   await say(page, "Remove");
@@ -144,7 +154,8 @@ test("a script, a flow, a query and a docs site are removed, taken back, removed
   await page.getByRole("menuitem", { name: /Remove the site's app/ }).click();
   await expect(page.getByRole("dialog")).toContainText("The site stops being served");
   await say(page, "Remove");
-  expect(await draftOf(page, W, "handbook-site")).toBe("removed");
+  // The save reads the draft it is based on first, so it lands a moment after the click.
+  await expect.poll(() => draftOf(page, W, "handbook-site")).toBe("removed");
   await expect(page.getByText("Words.").first()).toBeVisible();
 
   // The removals are deployed: what was removed is gone, and the pages of the site are not.

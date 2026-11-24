@@ -1,16 +1,20 @@
-import { Button, TextField } from "@volvel/ui";
+import { Button, SelectField, TextField } from "@volvel/ui";
 import { type ReactNode, useEffect, useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
+import { useNeeds } from "../kit/Can.tsx";
 import { CollectionView } from "../kit/CollectionView.tsx";
 import { FilterChips, Inspector, KeyValues, SectionLabel } from "../kit/layout.tsx";
+import { MemberResetLink } from "../kit/MemberResetLink.tsx";
+import { consoleLink, kindName, objectHref } from "../kit/objects.tsx";
 import { LoadMore, usePagedList } from "../kit/paged.tsx";
 import { Mono, StatePill, Tag } from "../kit/status.tsx";
 import { Time } from "../kit/Time.tsx";
+import { Breakable } from "../kit/Truncate.tsx";
 import { CreateDialog, RemoveButton } from "../ListScreen.tsx";
 import { Link, navigate, useQueryValue, useUrlParam } from "../router.tsx";
 import { AccessReleases } from "./AccessReleases.tsx";
-import { GiveAccess } from "./GiveAccess.tsx";
+import { DirectGrantNote, GiveAccess } from "./GiveAccess.tsx";
 import { Groups } from "./Groups.tsx";
 import { type Role, Roles } from "./Roles.tsx";
 
@@ -19,8 +23,8 @@ export const ACCESS_TABS = [
   { slug: "members", label: "Members" },
   { slug: "groups", label: "Groups" },
   { slug: "roles", label: "Roles" },
-  { slug: "access", label: "Access grants" },
-  { slug: "releases", label: "Releases" },
+  { slug: "access", label: "Access" },
+  { slug: "releases", label: "Access changes" },
 ] as const;
 export type AccessTab = (typeof ACCESS_TABS)[number]["slug"];
 
@@ -51,7 +55,7 @@ export function endUsersFramed(tenantId: string, current: EndUserTab): Framed {
 }
 
 /** A screen's tabs, each a link to its own address under the tenant. */
-function SectionTabs({
+export function SectionTabs({
   label,
   tenantId,
   tabs,
@@ -63,7 +67,7 @@ function SectionTabs({
   current: string;
 }) {
   return (
-    <nav aria-label={label} className="-mb-4 flex gap-1 overflow-x-auto">
+    <nav aria-label={label} className="-mb-4 flex flex-wrap gap-x-1">
       {tabs.map((tab) => {
         const on = tab.slug === current;
         return (
@@ -71,7 +75,7 @@ function SectionTabs({
             key={tab.slug}
             to={`/t/${tenantId}/${tab.slug}`}
             current={on}
-            className={`shrink-0 border-b-2 px-3 py-2 text-body-sm ${
+            className={`shrink-0 border-b-2 px-2 py-2 text-body-sm sm:px-3 ${
               on
                 ? "border-action font-medium text-ink"
                 : "border-transparent text-ink-muted hover:text-ink"
@@ -130,12 +134,18 @@ interface Member {
   email: string;
   createdAt: string;
   suspended?: boolean;
+  /** How many roles they are given directly, and how many groups they are in. */
+  directRoles?: number;
+  groups?: number;
 }
 
 interface Binding {
   id: string;
   scopeType: "tenant" | "workspace" | "resource";
   workspaceId: string | null;
+  resourceId?: string | null;
+  resourceKind?: string | null;
+  resourcePath?: string | null;
   principalType: string;
   principalId: string | null;
   principalLabel: string;
@@ -148,12 +158,46 @@ interface WorkspaceRef {
   name: string;
 }
 
-const whereOf = (binding: Binding, workspaces: WorkspaceRef[]) =>
-  binding.scopeType === "tenant"
-    ? "Whole tenant"
-    : `${workspaces.find((w) => w.id === binding.workspaceId)?.name ?? "A workspace"}${
-        binding.scopeType === "resource" ? " (one resource)" : ""
-      }`;
+/**
+ * Where a binding applies, said so that two are told apart: the whole tenant, a workspace, or the
+ * one script, flow or app in it, by kind and path, and a link to it.
+ */
+function WhereOf({
+  binding,
+  workspaces,
+  base,
+}: {
+  binding: Binding;
+  workspaces: WorkspaceRef[];
+  base: string;
+}) {
+  if (binding.scopeType === "tenant") return <>Whole tenant</>;
+  const workspace = workspaces.find((w) => w.id === binding.workspaceId)?.name ?? "A workspace";
+  if (binding.scopeType !== "resource") return <>{workspace}</>;
+  if (!binding.resourceKind || !binding.resourcePath) return <>{workspace} (one resource)</>;
+  return (
+    <>
+      <Link
+        to={objectHref(
+          consoleLink(`${base}/workspaces/${binding.workspaceId}`),
+          binding.resourceKind,
+          binding.resourcePath,
+        )}
+      >
+        {kindName(binding.resourceKind)} <Mono>{binding.resourcePath}</Mono>
+      </Link>{" "}
+      in {workspace}
+    </>
+  );
+}
+
+/** What a member holds in words, from the counts the server gave: nothing when they are not known. */
+export function rolesHeld(member: Pick<Member, "directRoles" | "groups">): string {
+  const { directRoles: direct, groups } = member;
+  if (direct === undefined || groups === undefined) return "";
+  if (direct === 0) return groups === 0 ? "No access" : "Through groups only";
+  return `${direct} given directly`;
+}
 
 export function MemberList({ base, framed }: { base: string; framed?: Framed }) {
   const [search, setSearch] = useUrlParam("q", "");
@@ -164,9 +208,15 @@ export function MemberList({ base, framed }: { base: string; framed?: Framed }) 
   const workspaces = useLoad<{ items: WorkspaceRef[] }>(`${base}/workspaces`);
   const [selected, setSelected] = useUrlParam("member", undefined, { push: true });
   const [adding, setAdding] = useState(false);
+  const may = useNeeds({ base, permission: "member:write", what: "this tenant's members" });
   const needle = search.trim().toLowerCase();
   const rows = members.items;
-  const chosen = members.items?.find((row) => row.id === selected);
+  const listed = members.items?.find((row) => row.id === selected);
+  // A link to someone past the pages loaded opens them all the same: they are read by themselves.
+  const alone = useLoad<Member>(
+    selected && members.items && !listed ? `${base}/members/${selected}` : null,
+  );
+  const chosen = listed ?? alone.data;
   const held = (bindings.data?.items ?? []).filter(
     (binding) => binding.principalType === "member" && binding.principalId === selected,
   );
@@ -190,7 +240,8 @@ export function MemberList({ base, framed }: { base: string; framed?: Framed }) 
     <>
       <CollectionView<Member>
         title={framed?.title ?? "Members"}
-        description="People who belong to this tenant. Belonging grants nothing by itself: give access under Access grants."
+        helpKey="members"
+        description="People who belong to this tenant. Belonging grants nothing by itself: give access under Access."
         actions={
           <Button variant="primary" onClick={() => setAdding(true)}>
             Add member
@@ -208,6 +259,7 @@ export function MemberList({ base, framed }: { base: string; framed?: Framed }) 
             />
           </div>,
         )}
+        needs={{ base: base, permission: "member:write", what: "this tenant's members" }}
         label="Members"
         rows={rows}
         error={members.error}
@@ -232,8 +284,12 @@ export function MemberList({ base, framed }: { base: string; framed?: Framed }) 
             header: "Name",
             cell: (row) => (
               <span className="flex min-w-0 flex-col">
-                <span className="font-medium">{row.name || row.email}</span>
-                <span className="text-meta text-ink-muted sm:hidden">{row.email}</span>
+                <span className="font-medium">
+                  <Breakable>{row.name || row.email}</Breakable>
+                </span>
+                <span className="text-meta text-ink-muted sm:hidden">
+                  <Breakable>{row.email}</Breakable>
+                </span>
               </span>
             ),
           },
@@ -246,16 +302,8 @@ export function MemberList({ base, framed }: { base: string; framed?: Framed }) 
           {
             header: "Roles",
             priority: 3,
-            cell: (row) => {
-              const count = (bindings.data?.items ?? []).filter(
-                (binding) => binding.principalType === "member" && binding.principalId === row.id,
-              ).length;
-              return (
-                <span className="text-ink-muted">
-                  {count === 0 ? "Through groups only" : `${count} given directly`}
-                </span>
-              );
-            },
+            // What the server counted, so that nothing is said while it is not known.
+            cell: (row) => <span className="text-ink-muted">{rolesHeld(row)}</span>,
           },
           {
             header: "Added",
@@ -285,17 +333,24 @@ export function MemberList({ base, framed }: { base: string; framed?: Framed }) 
                   >
                     View access
                   </Button>
-                  <Button size="small" onClick={() => suspend(chosen)}>
-                    {chosen.suspended ? "Resume" : "Suspend"}
-                  </Button>
-                  <RemoveButton
-                    confirm={`Remove ${chosen.email} from this tenant? Their access here is removed too.`}
-                    run={() => api.delete(`${base}/members/${chosen.id}`)}
-                    onDone={() => {
-                      setSelected(undefined);
-                      members.reload();
-                    }}
+                  <MemberResetLink
+                    path={`${base}/members/${chosen.id}/password-link`}
+                    email={chosen.email}
+                    needs={{ base, permission: "member:write", what: "this tenant's members" }}
                   />
+                  <fieldset disabled={!may.can} className="contents">
+                    <Button size="small" onClick={() => suspend(chosen)}>
+                      {chosen.suspended ? "Resume" : "Suspend"}
+                    </Button>
+                    <RemoveButton
+                      confirm={`Remove ${chosen.email} from this tenant? Their access here is removed too.`}
+                      run={() => api.delete(`${base}/members/${chosen.id}`)}
+                      onDone={() => {
+                        setSelected(undefined);
+                        members.reload();
+                      }}
+                    />
+                  </fieldset>
                 </>
               ) : null
             }
@@ -306,7 +361,7 @@ export function MemberList({ base, framed }: { base: string; framed?: Framed }) 
                   rows={[
                     { label: "Email", value: chosen.email },
                     { label: "Status", value: chosen.suspended ? "Suspended" : "Active" },
-                    { label: "Added", value: <Time value={chosen.createdAt} /> },
+                    { label: "Added", value: <Time value={chosen.createdAt} mode="stamp" /> },
                   ]}
                 />
                 <div className="flex flex-col gap-2">
@@ -321,7 +376,11 @@ export function MemberList({ base, framed }: { base: string; framed?: Framed }) 
                         <li key={binding.id} className="flex flex-wrap items-center gap-2">
                           <Mono>{binding.roleName}</Mono>
                           <span className="text-meta text-ink-muted">
-                            {whereOf(binding, workspaces.data?.items ?? [])}
+                            <WhereOf
+                              binding={binding}
+                              workspaces={workspaces.data?.items ?? []}
+                              base={base}
+                            />
                           </span>
                         </li>
                       ))}
@@ -352,44 +411,162 @@ export function MemberList({ base, framed }: { base: string; framed?: Framed }) 
               label: "Initial password",
               type: "password",
               required: false,
-              hint: "Only for a new account. At least 12 characters.",
+              hint: "Only for a new account. At least 12 characters. They can change it on their Account screen after signing in.",
             },
             {
-              name: "workspaceId",
-              label: "Where they work",
-              options: [
-                { value: "", label: "The whole tenant" },
-                ...(workspaces.data?.items ?? []).map((w) => ({ value: w.id, label: w.name })),
-              ],
-            },
-            {
-              name: "roleId",
-              label: "Role",
-              options: [
-                { value: "", label: "No access yet" },
-                ...(roles.data?.items ?? [])
-                  .filter((role) => !role.workspaceId)
-                  .map((role) => ({ value: role.id, label: role.name })),
-              ],
-              hint: "Given with the membership, in the same change.",
+              name: "grants",
+              label: "Roles",
+              render: ({ value, onChange, error }) => (
+                <div className="flex flex-col gap-3">
+                  <RolePairs
+                    value={value || undefined}
+                    onChange={onChange}
+                    error={error}
+                    roles={(roles.data?.items ?? []).filter((role) => !role.workspaceId)}
+                    workspaces={workspaces.data?.items ?? []}
+                  />
+                  <DirectGrantNote base={base} active={adding} />
+                </div>
+              ),
             },
           ],
-          submit: ({ email, name, password, roleId, workspaceId }) =>
-            api.post(`${base}/members`, {
+          submit: ({ email, name, password, grants }) => {
+            const given = readPairs(grants);
+            return api.post(`${base}/members`, {
               email,
               ...(name ? { name } : {}),
               ...(password ? { password } : {}),
-              ...(roleId
-                ? { bindings: [{ roleId, ...(workspaceId ? { workspaceId } : {}) }] }
-                : {}),
-            }),
-          done: (_made, values) =>
-            values.roleId
-              ? `${values.email} is a member, with ${roles.data?.items.find((one) => one.id === values.roleId)?.name ?? "their role"}.`
-              : `${values.email} is a member. They hold no role yet.`,
+              ...(given.length > 0 ? { bindings: given } : {}),
+            });
+          },
+          done: (_made, values) => {
+            const names = readPairs(values.grants).map(
+              (one) => roles.data?.items.find((role) => role.id === one.roleId)?.name ?? "a role",
+            );
+            return names.length > 0
+              ? `${values.email} is a member, with ${names.join(", ")}.`
+              : `${values.email} is a member. They hold no role yet.`;
+          },
         }}
       />
     </>
+  );
+}
+
+const MOST_ROLES = 20;
+interface Pair {
+  roleId: string;
+  workspaceId?: string;
+}
+
+/** What the roles field holds, kept as text by the form: the pairs with a role chosen. */
+function readPairs(value: string | undefined): Pair[] {
+  try {
+    const found = JSON.parse(value ?? "[]") as Pair[];
+    return found
+      .filter((one) => one.roleId)
+      .map((one) => ({
+        roleId: one.roleId,
+        ...(one.workspaceId ? { workspaceId: one.workspaceId } : {}),
+      }));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Roles to give with the membership, each in the whole tenant or in one workspace. Where a role
+ * applies is asked only once there is a role, so a workspace is never chosen without one.
+ */
+function RolePairs({
+  value,
+  onChange,
+  error,
+  roles,
+  workspaces,
+}: {
+  value: string | undefined;
+  onChange: (value: string) => void;
+  error: string | undefined;
+  roles: Role[];
+  workspaces: WorkspaceRef[];
+}) {
+  const rows: Pair[] = (() => {
+    try {
+      const found = JSON.parse(value ?? "[]") as Pair[];
+      return found.length > 0 ? found : [{ roleId: "" }];
+    } catch {
+      return [{ roleId: "" }];
+    }
+  })();
+  const set = (next: Pair[]) => onChange(JSON.stringify(next));
+  return (
+    <fieldset className="m-0 flex min-w-0 flex-col gap-2 border-0 p-0">
+      <legend className="mb-1 font-medium text-ink">Roles</legend>
+      {rows.map((row, index) => (
+        // biome-ignore lint/suspicious/noArrayIndexKey: a row has no identity but its place
+        <div key={index} className="flex flex-wrap items-end gap-2">
+          <div className="min-w-40 flex-1">
+            <SelectField
+              name={`role-${index}`}
+              label={index === 0 ? "Role" : `Role ${index + 1}`}
+              options={[
+                { value: "", label: index === 0 ? "No access yet" : "Choose a role" },
+                ...roles.map((role) => ({ value: role.id, label: role.name })),
+              ]}
+              value={row.roleId}
+              {...(index === 0 ? { hint: "Given with the membership, in the same change." } : {})}
+              onChange={(roleId) =>
+                set(
+                  rows.map((one, at) =>
+                    at === index ? (roleId ? { ...one, roleId } : { roleId: "" }) : one,
+                  ),
+                )
+              }
+            />
+          </div>
+          {row.roleId ? (
+            <div className="min-w-40 flex-1">
+              <SelectField
+                name={`where-${index}`}
+                label="Where they work"
+                options={[
+                  { value: "", label: "The whole tenant" },
+                  ...workspaces.map((w) => ({ value: w.id, label: w.name })),
+                ]}
+                value={row.workspaceId ?? ""}
+                onChange={(workspaceId) =>
+                  set(
+                    rows.map((one, at) =>
+                      at === index
+                        ? { roleId: one.roleId, ...(workspaceId ? { workspaceId } : {}) }
+                        : one,
+                    ),
+                  )
+                }
+              />
+            </div>
+          ) : null}
+          {rows.length > 1 ? (
+            <Button
+              size="small"
+              aria-label={`Remove role ${index + 1}`}
+              onClick={() => set(rows.filter((_, at) => at !== index))}
+            >
+              Remove
+            </Button>
+          ) : null}
+        </div>
+      ))}
+      {error ? <p className="m-0 text-danger text-meta">{error}</p> : null}
+      {rows.length < MOST_ROLES && rows.at(-1)?.roleId ? (
+        <div>
+          <Button size="small" onClick={() => set([...rows, { roleId: "" }])}>
+            Add another role
+          </Button>
+        </div>
+      ) : null}
+    </fieldset>
   );
 }
 
@@ -438,6 +615,7 @@ export function AccessList({ base, framed }: { base: string; framed?: Framed }) 
     <>
       <CollectionView<Binding>
         title={framed?.title ?? "Access"}
+        helpKey="access"
         description="Who holds which role, and where. Access given at the tenant applies to every workspace in it."
         actions={
           <Button variant="primary" onClick={() => setGiving(true)}>
@@ -463,7 +641,8 @@ export function AccessList({ base, framed }: { base: string; framed?: Framed }) 
             ]}
           />,
         )}
-        label="Access grants"
+        needs={{ base: base, permission: "binding:write", what: "who holds which role" }}
+        label="Access"
         rows={rows}
         selected={linked ?? undefined}
         error={bindings.error}
@@ -485,7 +664,9 @@ export function AccessList({ base, framed }: { base: string; framed?: Framed }) 
           {
             header: "Where",
             priority: 2,
-            cell: (row) => whereOf(row, workspaces.data?.items ?? []),
+            cell: (row) => (
+              <WhereOf binding={row} workspaces={workspaces.data?.items ?? []} base={base} />
+            ),
           },
           {
             header: "",

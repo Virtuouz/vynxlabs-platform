@@ -6,7 +6,14 @@
     "useIgnoreFile": true
   },
   "files": {
-    "includes": ["**", "!schemas", "!**/migrations.lock.json", "!**/*.md", "!**/fixtures"]
+    "includes": [
+      "**",
+      "!schemas",
+      "!**/migrations.lock.json",
+      "!**/*.md",
+      "!**/fixtures",
+      "!**/golden"
+    ]
   },
   "formatter": {
     "indentStyle": "space",

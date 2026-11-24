@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { gzipSync } from "node:zlib";
 import { sql } from "@volvel/db";
 import type { RetentionDays } from "../config.js";
+import { namedFiles } from "./data/files.js";
 import type { Kernel } from "./kernel.js";
 
 /** How long one tenant's history is kept, in days, each kind already resolved. */
@@ -272,8 +273,15 @@ async function pruneFileHistory(
     `.execute(kernel.db);
     if (notes.rows.length === 0) break;
     const ids = [...new Set(notes.rows.map((row) => row.file_id))];
-    const gone = await sql<{ storage_key: string }>`
-      delete from file where id in (${sql.join(ids)})
+    // A file a row names stays, whatever its notes say: its notes are gone, and a row that
+    // lets go of it notes it again.
+    const named = await namedFiles(kernel, tenantId, ids);
+    const free = ids.filter((id) => !named.has(id));
+    const gone =
+      free.length === 0
+        ? { rows: [] as { storage_key: string }[] }
+        : await sql<{ storage_key: string }>`
+      delete from file where id in (${sql.join(free)})
         and not exists (select 1 from row_file_history h where h.file_id = file.id)
       returning storage_key
     `.execute(kernel.db);

@@ -5,23 +5,27 @@ import { displayGuess, PATH_PATTERN } from "@volvel/manifest";
 import { Type } from "typebox";
 import { loadCatalog, purgeRetired, workspaceSchema } from "../kernel/data/apply.js";
 import { columnCounts, columnValues, refuseColumn } from "../kernel/data/column-values.js";
-import { updateRowKeepingFiles } from "../kernel/data/files.js";
+import {
+  deleteRowKeepingFiles,
+  deleteRowsKeepingFiles,
+  filesOfPurge,
+  insertRowsKeepingFiles,
+  noteDroppedFiles,
+  updateRowKeepingFiles,
+} from "../kernel/data/files.js";
 import {
   aggregateQueryFrom,
   aggregateRows,
   type DataScope,
-  deleteRow,
-  deleteRows,
   describeTable,
   findRows,
   getRow,
   groupValues,
-  insertRows,
   type Row,
   scopeFor,
   withData,
 } from "../kernel/data/rows.js";
-import { badRequest, forbidden, forbiddenBecause } from "../kernel/errors.js";
+import { badRequest, forbiddenBecause } from "../kernel/errors.js";
 import { publishPlatformEvent } from "../kernel/flows/events.js";
 import { access, findWorkspace, guestLimit, type RequestContext } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
@@ -160,6 +164,7 @@ export const toRowsPage = (found: {
 });
 
 const Column = Type.Object({
+  id: Type.String({ description: "Tells apart two retired columns that had one name." }),
   name: Type.String(),
   description: Type.Optional(
     Type.String({ description: "What the column holds, when its definition says." }),
@@ -203,25 +208,94 @@ export async function announceRows(
   table: string,
   change: string,
   ids: string[],
+  /** How many events led to this change: a script's run passes its own, so that a chain stops. */
+  depth = 0,
 ) {
+  // Only a change to a row that has an id is announced; anything else would store an event naming no row.
+  if (!["inserted", "updated", "deleted"].includes(change)) return;
   for (const id of ids) {
+    if (typeof id !== "string" || id.length === 0) continue;
     await publishPlatformEvent(kernel, {
       tenantId,
       workspaceId,
       name: "platform/row-changed",
       payload: { table, change, id },
       sourceId: id,
-      depth: 0,
+      depth,
     }).catch((error) =>
       kernel.log.error({ err: error }, "a platform event could not be published"),
     );
   }
 }
 
+/**
+ * Announces what a script's row operation changed: only an insert, update or
+ * delete is a change, and only a row with an id can be named.
+ */
+export async function announceScriptRows(
+  kernel: Kernel,
+  run: { tenant_id: string; workspace_id: string; trigger_detail: Record<string, unknown> },
+  table: string,
+  op: string,
+  result: unknown,
+  id: unknown,
+) {
+  const change = { insert: "inserted", update: "updated", delete: "deleted" }[op];
+  if (!change) return;
+  const ids =
+    op === "insert" ? ((result as { id?: unknown }[] | null) ?? []).map((row) => row?.id) : [id];
+  await announceRows(
+    kernel,
+    run.tenant_id,
+    run.workspace_id,
+    table,
+    change,
+    ids.filter((one): one is string => typeof one === "string" && one.length > 0),
+    Number(run.trigger_detail.depth ?? 0),
+  );
+}
+
 export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
   return async (app) => {
     const { db } = kernel;
     const base = "/tenants/:t/workspaces/:w";
+
+    /**
+     * A table asked for by a path it had before it was renamed still answers, and says so.
+     * One place for every route that finds a table by its name.
+     */
+    async function currentName(
+      ctx: RequestContext,
+      params: { t: string; w: string },
+      table: string,
+    ): Promise<string> {
+      const data = (await kernel.data.forTenant(params.t)).owner;
+      const active = await data
+        .selectFrom("data_table")
+        .select("id")
+        .where("workspace_id", "=", params.w)
+        .where("tenant_id", "=", params.t)
+        .where("name", "=", table)
+        .where("status", "=", "active")
+        .executeTakeFirst();
+      if (active) return table;
+      const alias = await findAlias(kernel.db, params.w, table, ["table"]);
+      const now = alias
+        ? await kernel.db
+            .selectFrom("resource")
+            .select("path")
+            .where("id", "=", alias.resource_id)
+            .executeTakeFirst()
+        : undefined;
+      if (!alias || !now) return table;
+      ctx.moved = {
+        path: table,
+        now: now.path,
+        createdAt: alias.created_at,
+        expiresAt: alias.expires_at,
+      };
+      return now.path;
+    }
 
     /** Checks the caller may touch this table's rows, and says how much of it they may see. */
     async function enter(
@@ -242,28 +316,8 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           .where("name", "=", name)
           .where("status", "=", "active")
           .executeTakeFirst();
-      let known = await lookUp(table);
-      if (!known) {
-        // A table asked for by a path it had before it was renamed still answers, and says so.
-        const alias = await findAlias(kernel.db, params.w, table, ["table"]);
-        const now = alias
-          ? await kernel.db
-              .selectFrom("resource")
-              .select("path")
-              .where("id", "=", alias.resource_id)
-              .executeTakeFirst()
-          : undefined;
-        if (alias && now) {
-          ctx.moved = {
-            path: table,
-            now: now.path,
-            createdAt: alias.created_at,
-            expiresAt: alias.expires_at,
-          };
-          table = now.path;
-          known = await lookUp(table);
-        }
-      }
+      table = await currentName(ctx, params, table);
+      const known = await lookUp(table);
       const at = {
         tenantId: params.t,
         workspaceId: params.w,
@@ -337,12 +391,17 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.workspace("table:read") },
         schema: {
           summary: "Custom tables in a workspace",
+          description:
+            "Each table with its columns, who manages it, how many rows it holds and its policy.",
           tags: ["data"],
           params: WorkspaceParams,
           response: {
             200: Type.Object({
               items: Type.Array(
                 Type.Object({
+                  id: Type.String({
+                    description: "Tells apart two retired tables that had one name.",
+                  }),
                   name: Type.String(),
                   description: Type.String(),
                   status: Type.String(),
@@ -378,11 +437,12 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             n: string;
           }>`select count(*) as n from ${sql.id(schema, table.physicalName)}`.execute(data);
           items.push({
+            id: table.id,
             name: table.name,
             description:
               (resource?.body as { description?: string } | undefined)?.description ?? "",
             status: table.status,
-            managedIn: resource?.ownership ?? "code",
+            managedIn: resource?.ownership ?? table.managedIn ?? "code",
             columnCount: table.columns.filter((column) => column.status === "active").length,
             rowCount: Number(count.rows[0]?.n ?? 0),
             policy: table.policy as Record<string, unknown>,
@@ -398,10 +458,18 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.workspace("table:read") },
         schema: {
           summary: "One table: its columns, including retired ones, and where it is stored",
+          description:
+            "The table, with its columns, the ones retired included, and where its rows are kept.",
           tags: ["data"],
           params: WildParams,
+          querystring: Type.Object({
+            id: Type.Optional(
+              Type.String({ description: "Which table, when two retired ones had the name." }),
+            ),
+          }),
           response: {
             200: Type.Object({
+              id: Type.Optional(Type.String()),
               name: Type.String(),
               description: Type.Optional(
                 Type.String({ description: "What the table is for, when its definition says." }),
@@ -414,6 +482,11 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                   description: "The column that stands for a row where another table refers to it.",
                 }),
               ),
+              indexes: Type.Optional(
+                Type.Array(Type.Array(Type.String()), {
+                  description: "The indexes its definition lists, each a list of column names.",
+                }),
+              ),
               rowCount: Type.Integer(),
               stored: Type.Object(
                 { schema: Type.String(), table: Type.String() },
@@ -424,13 +497,15 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           },
         },
       },
-      async ({ params }) => {
-        const name = wildPath(params);
+      async ({ ctx, params, query }) => {
+        const name = await currentName(ctx, params, wildPath(params));
         const data = (await kernel.data.forTenant(params.t)).owner;
         const catalog = await loadCatalog(data, params.w);
-        const table =
-          catalog.find((candidate) => candidate.name === name && candidate.status === "active") ??
-          catalog.find((candidate) => candidate.name === name);
+        const table = query.id
+          ? catalog.find((candidate) => candidate.name === name && candidate.id === query.id)
+          : (catalog.find(
+              (candidate) => candidate.name === name && candidate.status === "active",
+            ) ?? catalog.find((candidate) => candidate.name === name));
         if (!table) return describeTable(data, params.w, name) as never;
         const resource = await db
           .selectFrom("resource")
@@ -443,8 +518,32 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         const defined = (resource?.body ?? {}) as {
           description?: string;
           columns?: Record<string, { description?: string }>;
+          indexes?: string[][];
         };
         const schema = workspaceSchema(params.w);
+        // A retired table has no definition, but the indexes the platform made on it are still
+        // there. They are read from where they are, so that bringing the table back keeps them.
+        if (!resource && table.status === "retired") {
+          const kept = await sql<{ columns: string[] }>`
+            select array_agg(a.attname::text order by k.ord) as columns
+            from pg_index i
+            join pg_class c on c.oid = i.indrelid
+            join pg_class ic on ic.oid = i.indexrelid
+            join pg_namespace n on n.oid = c.relnamespace
+            cross join lateral unnest(i.indkey) with ordinality as k(attnum, ord)
+            join pg_attribute a on a.attrelid = c.oid and a.attnum = k.attnum
+            where n.nspname = ${schema} and c.relname = ${table.physicalName}
+              and ic.relname like 'ix\\_%'
+            group by ic.relname
+            order by ic.relname
+          `.execute(data);
+          const names = new Map(table.columns.map((column) => [column.physicalName, column]));
+          const found = kept.rows
+            .map((row) => row.columns.map((physical) => names.get(physical)))
+            .filter((list) => list.every((column) => column?.status === "active"))
+            .map((list) => list.map((column) => (column as { name: string }).name));
+          if (found.length > 0) defined.indexes = found;
+        }
         const count = await sql<{
           n: string;
         }>`select count(*) as n from ${sql.id(schema, table.physicalName)}`.execute(data);
@@ -458,15 +557,18 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           held.set(column.id, Number(kept.rows[0]?.n ?? 0));
         }
         return {
+          id: table.id,
           name,
           ...(defined.description ? { description: defined.description } : {}),
           status: table.status,
-          managedIn: resource?.ownership ?? "code",
+          managedIn: (table.status === "active" ? resource?.ownership : table.managedIn) ?? "code",
           policy: table.policy as Record<string, unknown>,
           display: table.display ?? null,
+          ...(defined.indexes && defined.indexes.length > 0 ? { indexes: defined.indexes } : {}),
           rowCount: Number(count.rows[0]?.n ?? 0),
           stored: { schema, table: table.physicalName },
           columns: table.columns.map((column) => ({
+            id: column.id,
             name: column.name,
             ...(defined.columns?.[column.name]?.description
               ? { description: defined.columns[column.name]?.description as string }
@@ -501,6 +603,12 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           body: Type.Object({
             table: Type.String({ pattern: PATH_PATTERN }),
             column: Type.Optional(Type.String()),
+            columnId: Type.Optional(
+              Type.String({ description: "Which retired column, when two had the name." }),
+            ),
+            tableId: Type.Optional(
+              Type.String({ description: "Which retired table, when two had the name." }),
+            ),
           }),
           response: { 200: Type.Object({ dropped: Type.String() }) },
         },
@@ -508,7 +616,15 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       async ({ ctx, params, body }) =>
         ctx.mutate(async (trx, audit) => {
           const data = (await kernel.data.within(trx, params.t)).db;
+          // The files its rows name are read first, and kept for the audit period once it is gone.
+          const files = await filesOfPurge(kernel, { tenantId: params.t, id: params.w }, body);
           const result = await purgeRetired(data, params.w, body);
+          await noteDroppedFiles(
+            kernel,
+            { tenantId: params.t, id: params.w },
+            ctx.principal,
+            files,
+          );
           await audit({
             action: "table.purged",
             targetType: "table",
@@ -526,7 +642,12 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       `${base}/rows/*`,
       {
-        config: { access: access.custom, rateLimit: guestLimit },
+        config: {
+          access: access.custom(
+            "Needs `data:read` at the workspace or at the table, and the table's row policy then decides which rows the caller sees. An app may call it for someone who is not signed in only where the table is open to anyone.",
+          ),
+          rateLimit: guestLimit,
+        },
         schema: {
           summary: "Rows of a table",
           description:
@@ -628,7 +749,12 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       `${base}/column-values`,
       {
-        config: { access: access.custom, rateLimit: guestLimit },
+        config: {
+          access: access.custom(
+            "Needs `data:read` at the workspace or at the table, and the table's row policy then decides which rows the caller sees. An app may call it for someone who is not signed in only where the table is open to anyone.",
+          ),
+          rateLimit: guestLimit,
+        },
         schema: {
           summary: "The values a column holds, with how many rows have each",
           description:
@@ -666,7 +792,12 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       `${base}/column-counts`,
       {
-        config: { access: access.custom, rateLimit: guestLimit },
+        config: {
+          access: access.custom(
+            "Needs `data:read` at the workspace or at the table, and the table's row policy then decides which rows the caller sees. An app may call it for someone who is not signed in only where the table is open to anyone.",
+          ),
+          rateLimit: guestLimit,
+        },
         schema: {
           summary: "How many different values each column of a table has",
           description:
@@ -696,7 +827,12 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       `${base}/aggregate/*`,
       {
-        config: { access: access.custom, rateLimit: guestLimit },
+        config: {
+          access: access.custom(
+            "Needs `data:read` at the workspace or at the table, and the table's row policy then decides which rows the caller sees. An app may call it for someone who is not signed in only where the table is open to anyone.",
+          ),
+          rateLimit: guestLimit,
+        },
         schema: {
           summary: "Totals over a table's rows",
           description:
@@ -755,10 +891,18 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.post(
       `${base}/rows/*`,
       {
-        config: { access: access.custom, rateLimit: guestLimit },
+        config: {
+          access: access.custom(
+            "Needs `data:write` at the workspace or at the table, and the table's row policy decides which rows the caller may change. An app may call it for someone who is not signed in only where the table is open to anyone.",
+          ),
+          rateLimit: guestLimit,
+        },
         schema: {
           summary: "Insert one row, or up to 1,000",
-          description: 'Send a row, or `{ "rows": [...] }`. Either all are inserted or none.',
+          description:
+            'Send a row, or `{ "rows": [...] }`. Either all are inserted or none. A body with ' +
+            "`rows` alone is read as a batch: a row that has only a column named `rows` is sent " +
+            "as `{ rows: [row] }`.",
           tags: ["data"],
           params: WildParams,
           body: AnyObject,
@@ -774,7 +918,15 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         if (rows.length === 0 || rows.length > 1000)
           throw badRequest("Send between 1 and 1,000 rows.");
         const items = await withData(kernel, params.t, scope, (data) =>
-          insertRows(data, target, rows, scope),
+          insertRowsKeepingFiles(
+            kernel,
+            data,
+            { tenantId: params.t, id: params.w },
+            target,
+            rows,
+            scope,
+            ctx,
+          ),
         );
         // Rows are business data, not configuration: they are not written to the audit log one by one.
         ctx.mutated = true;
@@ -800,9 +952,16 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       `${base}/row/:id/*`,
       {
-        config: { access: access.custom, rateLimit: guestLimit },
+        config: {
+          access: access.custom(
+            "Needs `data:read` at the workspace or at the table, and the table's row policy then decides which rows the caller sees. An app may call it for someone who is not signed in only where the table is open to anyone.",
+          ),
+          rateLimit: guestLimit,
+        },
         schema: {
           summary: "One row",
+          description:
+            "The row with the given key, as the table's row policy lets the caller see it.",
           tags: ["data"],
           params: RowParams,
           response: { 200: AnyObject },
@@ -817,9 +976,16 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.patch(
       `${base}/row/:id/*`,
       {
-        config: { access: access.custom, rateLimit: guestLimit },
+        config: {
+          access: access.custom(
+            "Needs `data:write` at the workspace or at the table, and the table's row policy decides which rows the caller may change. An app may call it for someone who is not signed in only where the table is open to anyone.",
+          ),
+          rateLimit: guestLimit,
+        },
         schema: {
           summary: "Change some of a row's values",
+          description:
+            "Only the columns sent change. The values are checked against the table's columns and its policy. Not written to the audit log: rows are business data, and each change is announced as a `platform/row-changed` event.",
           tags: ["data"],
           params: RowParams,
           body: AnyObject,
@@ -837,6 +1003,7 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             target,
             params.id,
             body,
+            ctx,
           ),
         );
         ctx.mutated = true;
@@ -848,7 +1015,12 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       `${base}/rows-export/*`,
       {
-        config: { access: access.custom, rateLimit: guestLimit },
+        config: {
+          access: access.custom(
+            "Needs `data:read` at the workspace or at the table, and the table's row policy then decides which rows the caller sees. An app may call it for someone who is not signed in only where the table is open to anyone.",
+          ),
+          rateLimit: guestLimit,
+        },
         schema: {
           summary: "Rows of a table, as CSV",
           description:
@@ -869,25 +1041,32 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         const { target, scope } = await enter(ctx, params, wildPath(params), "read");
         const asked = parseRowsQuery(query);
         const names = target.columns.map((column) => column.name);
+        const pageOf = (after: unknown[] | undefined, offset: number, sent: number) =>
+          withData(kernel, params.t, scope, (data) =>
+            findRows(data, target, {
+              ...asked,
+              limit: Math.min(1000, CSV_CAP - sent),
+              ...(after ? { after } : { offset }),
+            }),
+          );
+        // The first page is read before anything is sent, so that a sort or filter that is
+        // refused, or a query that is too slow, is answered as such and not as a file that breaks.
+        const first = await pageOf(undefined, 0, 0);
         async function* lines() {
           yield `${names.map(csvCell).join(",")}\r\n`;
           let after: unknown[] | undefined;
           let offset = 0;
           let sent = 0;
-          while (sent < CSV_CAP) {
-            const page = await withData(kernel, params.t, scope, (data) =>
-              findRows(data, target, {
-                ...asked,
-                limit: Math.min(1000, CSV_CAP - sent),
-                ...(after ? { after } : { offset }),
-              }),
-            );
+          let page = first;
+          while (true) {
             for (const row of page.items)
               yield `${names.map((name) => csvCell(row[name])).join(",")}\r\n`;
             sent += page.items.length;
             if (page.nextAfter) after = page.nextAfter;
             else if (page.nextOffset !== null) offset = page.nextOffset;
             else return;
+            if (sent >= CSV_CAP) break;
+            page = await pageOf(after, offset, sent);
           }
           yield `"There were more than ${CSV_CAP} rows. Narrow the filter to export the rest."\r\n`;
         }
@@ -902,12 +1081,19 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.post(
       `${base}/row-deletions/*`,
       {
-        config: { access: access.custom, rateLimit: guestLimit },
+        config: {
+          access: access.custom(
+            "Needs `data:write` at the workspace or at the table, and the table's row policy decides which rows the caller may change. An app may call it for someone who is not signed in only where the table is open to anyone.",
+          ),
+          rateLimit: guestLimit,
+        },
         schema: {
           summary: "Delete several rows",
           description:
             "Deletes the rows with these keys that the table's policy lets the caller delete, in " +
-            "one statement. Keys that name no such row come back in `missing`.",
+            "one statement. Keys that name no such row, or cannot be a row's key, come back in `missing`. Rows that a " +
+            "reference's `cascade` or `set_null` rule deletes or empties with them are not " +
+            "announced as changes; only the rows named here are.",
           tags: ["data"],
           params: WildParams,
           body: Type.Object({
@@ -928,7 +1114,14 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       async ({ ctx, params, body }) => {
         const { target, scope } = await enter(ctx, params, wildPath(params), "write");
         const done = await withData(kernel, params.t, scope, (data) =>
-          deleteRows(data, target, body.ids),
+          deleteRowsKeepingFiles(
+            kernel,
+            data,
+            { tenantId: params.t, id: params.w },
+            ctx.principal,
+            target,
+            body.ids,
+          ),
         );
         ctx.mutated = true;
         if (done.deleted.length > 0) {
@@ -941,9 +1134,18 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.delete(
       `${base}/row/:id/*`,
       {
-        config: { access: access.custom, rateLimit: guestLimit },
+        config: {
+          access: access.custom(
+            "Needs `data:write` at the workspace or at the table, and the table's row policy decides which rows the caller may change. An app may call it for someone who is not signed in only where the table is open to anyone.",
+          ),
+          rateLimit: guestLimit,
+        },
         schema: {
           summary: "Delete a row",
+          description:
+            "Deletes the row with the given key, where the table's policy lets the caller. Not written to the audit log: rows are business data, and each change is announced as a `platform/row-changed` event. " +
+            "Rows that a reference's `cascade` or `set_null` rule deletes or empties with it are " +
+            "not announced as changes; only this row is.",
           tags: ["data"],
           params: RowParams,
           response: { 204: NoContent },
@@ -951,7 +1153,16 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       },
       async ({ ctx, params }, reply) => {
         const { target, scope } = await enter(ctx, params, wildPath(params), "write");
-        await withData(kernel, params.t, scope, (data) => deleteRow(data, target, params.id));
+        await withData(kernel, params.t, scope, (data) =>
+          deleteRowKeepingFiles(
+            kernel,
+            data,
+            { tenantId: params.t, id: params.w },
+            ctx.principal,
+            target,
+            params.id,
+          ),
+        );
         ctx.mutated = true;
         await announceRows(kernel, params.t, params.w, target.name, "deleted", [params.id]);
         return reply.code(204).send(null);

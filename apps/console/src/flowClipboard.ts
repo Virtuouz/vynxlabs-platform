@@ -37,24 +37,70 @@ export function copySteps(steps: ClipStep[], edges: ClipEdge[], chosen: Set<stri
   };
 }
 
+/** A step's name, as the flow's schema takes it. */
+const STEP_NAME = /^[a-z][a-z0-9_]*$/;
+/** The kinds of step a flow has. */
+const STEP_TYPES = new Set([
+  "trigger",
+  "script",
+  "subflow",
+  "set",
+  "respond",
+  "branch",
+  "foreach",
+  "join",
+  "delay",
+  "approval",
+  "fail",
+]);
+
+/** What reading the clipboard's text found: steps to paste, and what it could not take. */
+export interface ClipReading {
+  clip?: Clip;
+  /** The steps left out, each with why, in words. */
+  skipped: { id: string; why: string }[];
+  /** Set when there are no steps to paste at all: why. */
+  nothing?: string;
+}
+
+const NOT_STEPS = "What is on the clipboard is not steps copied from a flow.";
+
+function whyNot(step: Partial<ClipStep> | undefined): string | undefined {
+  if (typeof step?.id !== "string") return "it has no name";
+  if (step.id.length > 63 || !STEP_NAME.test(step.id))
+    return "its name must start with a lowercase letter and use only lowercase letters, digits and underscores, up to 63";
+  if (typeof step.node?.type !== "string" || !STEP_TYPES.has(step.node.type))
+    return `${typeof step.node?.type === "string" ? `"${step.node.type}"` : "it"} is not a kind of step`;
+  if (!Number.isFinite(step.position?.x) || !Number.isFinite(step.position?.y))
+    return "it has no position";
+  return undefined;
+}
+
+/** Steps from the clipboard's text, with what was left out and why. */
+export function readClipReport(text: string): ClipReading {
+  let value: Partial<Clip> | undefined;
+  try {
+    value = JSON.parse(text) as Partial<Clip>;
+  } catch {
+    return { skipped: [], nothing: NOT_STEPS };
+  }
+  if (value?.volvelFlowSteps !== 1 || !Array.isArray(value.steps) || !Array.isArray(value.edges))
+    return { skipped: [], nothing: NOT_STEPS };
+  const steps: ClipStep[] = [];
+  const skipped: { id: string; why: string }[] = [];
+  for (const step of value.steps) {
+    const why = whyNot(step);
+    if (why) skipped.push({ id: typeof step?.id === "string" ? step.id : "A step", why });
+    else steps.push(step);
+  }
+  if (steps.length === 0)
+    return { skipped, nothing: "Nothing was pasted: no step on the clipboard can be used." };
+  return { clip: { volvelFlowSteps: 1, steps, edges: value.edges as ClipEdge[] }, skipped };
+}
+
 /** Steps from the clipboard's text, or nothing when the text is something else. */
 export function readClip(text: string): Clip | undefined {
-  try {
-    const value = JSON.parse(text) as Partial<Clip>;
-    if (value?.volvelFlowSteps !== 1 || !Array.isArray(value.steps) || !Array.isArray(value.edges))
-      return undefined;
-    const steps = value.steps.filter(
-      (step): step is ClipStep =>
-        typeof step?.id === "string" &&
-        typeof step.node?.type === "string" &&
-        Number.isFinite(step.position?.x) &&
-        Number.isFinite(step.position?.y),
-    );
-    if (steps.length === 0) return undefined;
-    return { volvelFlowSteps: 1, steps, edges: value.edges as ClipEdge[] };
-  } catch {
-    return undefined;
-  }
+  return readClipReport(text).clip;
 }
 
 /** A step name not yet taken: the name itself, or with `_2`, `_3` and on. */

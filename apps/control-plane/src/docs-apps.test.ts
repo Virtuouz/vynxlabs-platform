@@ -1,8 +1,11 @@
 import { createHash } from "node:crypto";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { FEEDBACK_COLUMNS, FEEDBACK_TABLE } from "@volvel/docs-engine";
-import { type Bundle, type BundleManifest, bundleDigest } from "@volvel/manifest";
+import { type Bundle, type BundleManifest, bundleDigest, fileSchemas } from "@volvel/manifest";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { type Client, startTestApp, type TestApp } from "./testing.js";
+import { type Client, putSeen, startTestApp, type TestApp } from "./testing.js";
 
 // biome-ignore lint/suspicious/noExplicitAny: test responses are inspected freely
 type Any = any;
@@ -83,7 +86,7 @@ const handbook = (): BundleManifest[] => [
   ),
   page(
     "handbook/support/returns",
-    "title: Returns",
+    'title: Returns\nsince: "0.4"',
     "## By post\n\nParcels come back on Tuesdays. An :term[RMA]{id=rma} is needed.\n",
   ),
   page("handbook/ops/closing/checklist", "title: Closing checklist"),
@@ -154,8 +157,32 @@ function browser() {
   return { get, form };
 }
 
+// The names the product's own help holds, as the console's build leaves them, so that no test
+// depends on a console having been built.
+let consoleDir: string;
+
 beforeAll(async () => {
-  t = await startTestApp();
+  consoleDir = mkdtempSync(join(tmpdir(), "vx-help-"));
+  mkdirSync(join(consoleDir, "help"));
+  writeFileSync(
+    join(consoleDir, "help", "manifest.json"),
+    JSON.stringify({
+      terms: {
+        workspace: {
+          id: "workspace",
+          term: "Workspace",
+          short: "Where a tenant's tables, flows and apps live.",
+          path: "concepts/workspace",
+        },
+      },
+      topics: { "data-tables": {} },
+    }),
+  );
+  writeFileSync(
+    join(consoleDir, "help", "fields.json"),
+    JSON.stringify({ "table.description": "What the table is for, in a sentence." }),
+  );
+  t = await startTestApp({ config: { consoleDir } });
   const roles = Object.fromEntries(
     (
       await t.db.selectFrom("role").select(["id", "name"]).where("builtin", "=", true).execute()
@@ -189,9 +216,32 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await t?.stop();
+  if (consoleDir) rmSync(consoleDir, { recursive: true, force: true });
 });
 
 const HELP = "/apps/acme/main/help/";
+
+describe("what the app kind says of its feedback table", () => {
+  test("it names every column a deploy requires", () => {
+    const schema = fileSchemas().find((one) => one.kind === "app")?.schema;
+    const find = (node: unknown): string | undefined => {
+      if (!node || typeof node !== "object") return undefined;
+      const record = node as Record<string, unknown>;
+      const feedback = record.feedback as { description?: string } | undefined;
+      if (feedback?.description) return feedback.description;
+      for (const value of Object.values(record)) {
+        const found = find(value);
+        if (found) return found;
+      }
+      return undefined;
+    };
+    const said = find(schema);
+    expect(said).toBeDefined();
+    for (const column of Object.keys(FEEDBACK_COLUMNS)) {
+      expect(said, `the text names ${column}`).toContain(`\`${column}\``);
+    }
+  });
+});
 
 describe("a folder of pages served as a docs app", () => {
   test("it deploys, and is listed with the workspace's apps as documentation", async () => {
@@ -219,10 +269,12 @@ describe("a folder of pages served as a docs app", () => {
     expect(home.body).toContain("<title>Handbook · Shop handbook</title>");
     // A link is written from where its file is, and drawn as the app's own address.
     expect(home.body).toContain(`<a href="${HELP}support/refunds">refunds</a>`);
-    // The one script is the platform's own, served as a file. Nothing is written into the page
-    // but what the script reads, as data that is never run.
-    expect(home.body.match(/<script/g)).toHaveLength(2);
-    expect(home.body).toContain('<script src="/_platform/docs.js" defer></script>');
+    // The scripts are the platform's own, served as files: the one that sets light or dark before
+    // the page is painted, and the site's. Nothing is written into the page but what the script
+    // reads, as data that is never run.
+    expect(home.body.match(/<script/g)).toHaveLength(3);
+    expect(home.body).toMatch(/<script src="\/_platform\/docs-theme\.[0-9a-f]{10}\.js"><\/script>/);
+    expect(home.body).toMatch(/<script src="\/_platform\/docs\.[0-9a-f]{10}\.js" defer><\/script>/);
     expect(home.body).toMatch(/<script type="application\/json" id="docs-data">\{"base":/);
     // The home page lists the collections, each with its first pages.
     expect(home.body).toContain(`<a href="${HELP}support">Customer support</a>`);
@@ -270,16 +322,21 @@ describe("a folder of pages served as a docs app", () => {
 
   test("a page is drawn from its tree: terms, links, tabs and tables, and nothing its author wrote as markup", async () => {
     const refunds = (await browser().get(`${HELP}support/refunds`)).body;
-    expect(refunds).toContain("<title>Refund an order · Shop handbook</title>");
+    expect(refunds).toContain("<title>Refund an order · Customer support · Shop handbook</title>");
     expect(refunds).toContain("<p>Full and partial refunds.</p>");
     // The page's own title is its first heading. What its author wrote as # comes under it.
-    expect(refunds).toContain('<h2 id="before-you-start">Before you start</h2>');
+    expect(refunds).toContain(
+      '<h2 id="before-you-start">Before you start<a class="anchor" href="#before-you-start" data-copy="#before-you-start" aria-label="Link to this section">#</a></h2>',
+    );
     // A term defined on this page says what it means. One defined elsewhere leads there too.
     expect(refunds).toMatch(
       /<button type="button" class="vd-term-word"[^>]*>RMA<\/button><span class="vd-term-tip"[^>]*>A return authorisation\.<\/span>/,
     );
     const returns = (await browser().get(`${HELP}support/returns`)).body;
     expect(returns).toContain(`<a href="${HELP}support/refunds">More about RMA</a>`);
+    // The version that brought what a page describes is said, by the pages that say it (DOC-MP2).
+    expect(returns).toContain('<p class="since">New in version 0.4</p>');
+    expect(refunds).not.toContain("New in version");
     // A term that names a column is the word alone here: what it means is told to those who
     // may read the table, by the console and by the table's own apps.
     expect(refunds).toContain("<p>The status column says where it is.</p>");
@@ -290,7 +347,8 @@ describe("a folder of pages served as a docs app", () => {
     expect(refunds).toContain('<div class="vd-tabs" data-vd-tabs="1">');
     expect(refunds).toContain('<h4 class="vd-tab-label">Cash</h4>');
     expect(refunds).toContain('<th class="vd-align-right">Amount</th>');
-    expect(refunds).toContain(`<a class="next" href="${HELP}ops/closing/checklist">`);
+    // The last page of a collection has no Next into the one after it.
+    expect(refunds).not.toContain('class="next"');
   });
 
   test("it is searched with a form, and the answer is a page", async () => {
@@ -341,6 +399,13 @@ describe("a folder of pages served as a docs app", () => {
       {
         pages: [],
       },
+    );
+    // Narrowed to a type that a site with none does not have, nothing, in the dialog and the page.
+    expect(
+      JSON.parse((await browser().get(`${HELP}_search.json?q=tuesdays&type=how-to`)).body),
+    ).toEqual({ pages: [] });
+    expect((await browser().get(`${HELP}_search?q=tuesdays&type=how-to`)).body).toContain(
+      "Nothing here matches",
     );
     // An app the caller may not open answers nothing of itself.
     expect((await browser().get("/apps/acme/main/staff/_search.json?q=staff")).status).toBe(303);
@@ -395,6 +460,22 @@ describe("a folder of pages served as a docs app", () => {
     expect(script.body).toContain("data-vd-tabs");
   });
 
+  test("the files a page loads are named by their hash, kept for ever; the old names still answer, for an hour", async () => {
+    const home = await browser().get(HELP);
+    const css = /href="(\/_platform\/docs\.[0-9a-f]{10}\.css)"/.exec(home.body)?.[1] as string;
+    const js = /src="(\/_platform\/docs\.[0-9a-f]{10}\.js)"/.exec(home.body)?.[1] as string;
+    for (const name of [css, js]) {
+      const file = await browser().get(name);
+      expect(file.status).toBe(200);
+      expect(file.headers["cache-control"]).toBe("public, max-age=31536000, immutable");
+    }
+    expect((await browser().get("/_platform/docs.css")).headers["cache-control"]).toBe(
+      "public, max-age=3600",
+    );
+    // A hash that is not the file's is not served as if it were.
+    expect((await browser().get("/_platform/docs.0000000000.js")).status).toBe(404);
+  });
+
   test("an app bound to nobody is for members, and one bound to end users asks them to sign in", async () => {
     const guest = await browser().get("/apps/acme/main/staff/");
     expect(guest.status).toBe(303);
@@ -424,6 +505,49 @@ describe("a folder of pages served as a docs app", () => {
     expect(manual.body).toContain("For staff only.");
     // The portal lists it among her apps.
     expect((await ivy.get("/portal/acme/")).body).toContain("/apps/acme/main/staff/");
+  });
+
+  test("a changelog is entries drawn where ::changelog is, and an RSS feed with whole addresses that the head names", async () => {
+    // A site with no entries has no feed, and no head names one.
+    expect((await browser().get(`${HELP}changelog.xml`)).status).toBe(404);
+    expect((await browser().get(HELP)).body).not.toContain('rel="alternate"');
+    const deployed = await deploy([
+      ...handbook(),
+      page(
+        "handbook/changelog/2026-11-24-new-intake",
+        "title: New intake",
+        "Intake takes a photo.\n\n## Details\n\nMore.\n",
+      ),
+      page("handbook/changelog/older", "title: Older & <odd>\ndate: 2026-10-02", "Before.\n"),
+      page("handbook/news", "title: News", "Lately.\n\n::changelog{limit=1}\n"),
+    ]);
+    expect(deployed.status, JSON.stringify(deployed.body)).toBe(201);
+    const news = await browser().get(`${HELP}news`);
+    expect(news.status).toBe(200);
+    expect(news.body).toContain(
+      '<time class="vd-changelog-date" datetime="2026-11-24">24 November 2026</time>',
+    );
+    expect(news.body).toContain("Intake takes a photo.");
+    expect(news.body).not.toContain("Before.");
+    expect(news.body).toContain("1 older entry, from Older &amp; &lt;odd&gt;");
+    expect(news.body).toContain(
+      `<link rel="alternate" type="application/rss+xml" title="Shop handbook: changelog" href="${HELP}changelog.xml">`,
+    );
+    const feed = await browser().get(`${HELP}changelog.xml`);
+    expect(feed.status).toBe(200);
+    expect(feed.headers["content-type"]).toContain("application/rss+xml");
+    expect(feed.headers["x-content-type-options"]).toBe("nosniff");
+    expect(feed.body.startsWith('<?xml version="1.0" encoding="UTF-8"?>')).toBe(true);
+    // Whole addresses, newest first, and what is in a title does not break the document.
+    expect(feed.body).toContain(
+      `<link>http://${MAIN}${HELP}changelog/2026-11-24-new-intake/</link>`,
+    );
+    expect(feed.body.indexOf("New intake")).toBeLessThan(
+      feed.body.indexOf("Older &amp; &lt;odd&gt;"),
+    );
+    expect(feed.body).toContain("<pubDate>Fri, 02 Oct 2026 00:00:00 GMT</pubDate>");
+    // An app that is not for the caller answers nothing of itself.
+    expect((await browser().get("/apps/acme/main/staff/changelog.xml")).status).toBe(303);
   });
 
   test("a page that is renamed keeps answering at its old address, which leads to the new one", async () => {
@@ -754,7 +878,13 @@ describe("someone who writes documentation in the console, and is not a develope
         })
       ).status,
     ).toBe(200);
-    expect((await wren.get(`${devWs()}/docs`)).body).toEqual({ apps: [], pages: [], tables: [] });
+    expect((await wren.get(`${devWs()}/docs`)).body).toEqual({
+      apps: [],
+      removedApps: [],
+      pages: [],
+      issues: [],
+      tables: [],
+    });
     // Someone bound to nothing is refused, by the name of what they lack.
     const refused = await nell.get(`${devWs()}/docs`);
     expect(refused.status).toBe(403);
@@ -811,6 +941,20 @@ describe("someone who writes documentation in the console, and is not a develope
       ["guide/support/refunds", "Refunds", "guide-site", "support/refunds", "new"],
     ]);
     expect(listed.pages[1].topic).toBe("guide-refunds");
+  });
+
+  test("a page that takes a name the product's help has is said to, as a deploy would refuse it", async () => {
+    const clash = text(
+      "title: Words\nterms:\n  - id: workspace\n    term: workspace\n    short: Ours.",
+    );
+    expect((await save(wren, "guide/words", clash)).status).toBe(200);
+    const issues = (await wren.get(`${devWs()}/docs`)).body.issues;
+    expect(issues).toEqual([
+      expect.objectContaining({ app: "guide-site", path: "guide/words", code: "term_reserved" }),
+    ]);
+    // What the preview and the terms read agree with the list: the name is not a tenant's.
+    expect((await wren.delete(`${devWs()}/drafts/guide/words`)).status).toBeLessThan(300);
+    expect((await wren.get(`${devWs()}/docs`)).body.issues).toEqual([]);
   });
 
   test("the list says of each page what another page's links are checked against", async () => {
@@ -905,6 +1049,57 @@ describe("someone who writes documentation in the console, and is not a develope
     expect([200, 303]).toContain(page.statusCode);
   });
 
+  test("a page renamed in the console and deployed leaves its old address leading to the new one for 90 days", async () => {
+    // The words of the console's rename dialog are held here: a draft move is no redirect until
+    // it is deployed, and then it is one at the app's own address.
+    const member = {
+      host: MAIN,
+      cookie: Object.entries(wren.headers)
+        .map(([, value]) => value)
+        .join("; "),
+    };
+    const at = (file: string) =>
+      t.app.inject({ url: `/apps/acme/dev/guide-site/${file}`, headers: member });
+    // A page nothing links to, so that moving it breaks no other.
+    expect(
+      (await save(wren, "guide/support/trade-ins", text("title: Trade-ins", "Words.\n"))).status,
+    ).toBe(200);
+    const first = await wren.post(`${devWs()}/changes/deploy`, {
+      paths: ["guide/support/trade-ins"],
+    });
+    expect(first.status, JSON.stringify(first.body)).toBe(201);
+    const opened = (await wren.get(`${devWs()}/docs/page/guide/support/trade-ins`)).body;
+    const moved = await wren.post(`${devWs()}/drafts/batch`, {
+      changes: [
+        {
+          path: "guide/support/trade-ins",
+          to: "guide/support/swaps",
+          source: opened.source,
+          ...(opened.revision ? { revision: opened.revision } : {}),
+        },
+      ],
+    });
+    expect(moved.status, JSON.stringify(moved.body)).toBe(200);
+    const deployed = await wren.post(`${devWs()}/changes/deploy`, {
+      paths: ["guide/support/swaps"],
+    });
+    expect(deployed.status, JSON.stringify(deployed.body)).toBe(201);
+    expect((await at("support/swaps")).statusCode).toBe(200);
+    const old = await at("support/trade-ins");
+    expect(old.statusCode).toBe(308);
+    expect(old.headers.location).toBe("/apps/acme/dev/guide-site/support/swaps");
+    const alias = await t.db
+      .selectFrom("resource_alias")
+      .select(["kind", "expires_at"])
+      .where("workspace_id", "=", dev)
+      .where("path", "=", "guide/support/trade-ins")
+      .executeTakeFirstOrThrow();
+    expect(alias.kind).toBe("doc");
+    const days = (alias.expires_at.getTime() - Date.now()) / 86_400_000;
+    expect(days).toBeGreaterThan(89);
+    expect(days).toBeLessThanOrEqual(90);
+  });
+
   test("a change is a draft over what is deployed, shown beside it, and found by the console's search", async () => {
     const opened = (await wren.get(`${devWs()}/docs/page/guide/index`)).body;
     expect(opened.revision).toBeNull();
@@ -969,6 +1164,28 @@ describe("someone who writes documentation in the console, and is not a develope
       preview: `http://${MAIN}/apps/acme/dev/guide-site/_draft/`,
     });
     expect((await wren.delete(`${devWs()}/drafts/guide/support/exchanges`)).status).toBe(204);
+  });
+
+  test("DOC-08 a draft preview, the terms and the search leave out what a deploy would refuse: a term the product owns", async () => {
+    const at = (url: string) => t.app.inject({ url, headers: { host: MAIN, ...wren.headers } });
+    expect(
+      (
+        await save(
+          wren,
+          "guide/clash",
+          text(
+            "title: Clash\nterms:\n  - id: workspace\n    term: workspace\n    short: Ours alone.",
+            "::glossary\n",
+          ),
+        )
+      ).status,
+    ).toBe(200);
+    const preview = await at("/apps/acme/dev/guide-site/_draft/clash");
+    expect(preview.statusCode).toBe(200);
+    expect(preview.body).not.toContain("Ours alone.");
+    const known = (await wren.get(`${devWs()}/terms`)).body.terms as Any[];
+    expect(known.map((one) => one.id)).not.toContain("workspace");
+    expect((await wren.delete(`${devWs()}/drafts/guide/clash`)).status).toBe(204);
   });
 
   test("a change to the tree of pages is saved whole, or not at all", async () => {
@@ -1102,7 +1319,7 @@ describe("someone who writes documentation in the console, and is not a develope
 
   test("they draft and deploy the workspace's table of answers, and no other table, nor that table with other columns", async () => {
     const table = (client: Client, path: string, columns: object, description = "Answers.") =>
-      client.put(`${devWs()}/drafts/${path}`, {
+      putSeen(client, `${devWs()}/drafts/${path}`, {
         kind: "table",
         schemaVersion: 1,
         body: { description, columns },
@@ -1172,6 +1389,67 @@ describe("someone who writes documentation in the console, and is not a develope
     });
     expect(answer.status).toBe(409);
     expect(answer.body.code).toBe("production_workspace");
+  });
+
+  test("an app a draft removes is listed, so that a deploy of the removal carries it", async () => {
+    expect((await save(wren, "solo/index", text("title: Solo"))).status).toBe(200);
+    const site = await wren.put(`${devWs()}/drafts/solo-site`, {
+      kind: "app",
+      schemaVersion: 1,
+      body: { title: "Solo", docs: "solo" },
+    });
+    expect(site.status, JSON.stringify(site.body)).toBe(200);
+    const deployed = await wren.post(`${devWs()}/changes/deploy`, {
+      paths: ["solo/index", "solo-site"],
+      message: "Documentation",
+    });
+    expect(deployed.status, JSON.stringify(deployed.body)).toBeLessThan(300);
+    const gone = await wren.put(`${devWs()}/drafts/solo-site`, {
+      kind: "app",
+      schemaVersion: 1,
+      body: {},
+      deleted: true,
+    });
+    expect(gone.status, JSON.stringify(gone.body)).toBe(200);
+    const listed = (await wren.get(`${devWs()}/docs`)).body;
+    expect(listed.apps.map((one: Any) => one.path)).not.toContain("solo-site");
+    expect(listed.removedApps).toEqual(["solo-site"]);
+    // Deploying the removal alone stops the site being served.
+    const stopped = await wren.post(`${devWs()}/changes/deploy`, { paths: ["solo-site"] });
+    expect(stopped.status, JSON.stringify(stopped.body)).toBeLessThan(300);
+    const after = (await wren.get(`${devWs()}/docs`)).body;
+    expect(after.removedApps).toEqual([]);
+    expect(after.apps.map((one: Any) => one.path)).not.toContain("solo-site");
+  });
+
+  test("an app that is not a docs site, removed in a draft, is not the documentation's to deploy (P31)", async () => {
+    // A developer removes an app that is not a docs site; the doc writer's Deploy must not carry it,
+    // since that removal asks deployment:write, which a doc writer does not hold.
+    const screens = await alice.put(`${devWs()}/drafts/screens/solo-board`, {
+      kind: "interface",
+      schemaVersion: 2,
+      body: { title: "Board", pages: [{ id: "main", title: "Board", widgets: [] }] },
+    });
+    expect(screens.status, JSON.stringify(screens.body)).toBeLessThan(300);
+    const board = await alice.put(`${devWs()}/drafts/solo-board`, {
+      kind: "app",
+      schemaVersion: 1,
+      body: { title: "Board", interface: "screens/solo-board" },
+    });
+    expect(board.status, JSON.stringify(board.body)).toBe(200);
+    const deployed = await alice.post(`${devWs()}/changes/deploy`, {
+      paths: ["screens/solo-board", "solo-board"],
+    });
+    expect(deployed.status, JSON.stringify(deployed.body)).toBeLessThan(300);
+    const gone = await alice.put(`${devWs()}/drafts/solo-board`, {
+      kind: "app",
+      schemaVersion: 1,
+      body: {},
+      deleted: true,
+    });
+    expect(gone.status, JSON.stringify(gone.body)).toBe(200);
+    const listed = (await wren.get(`${devWs()}/docs`)).body;
+    expect(listed.removedApps).toEqual([]);
   });
 });
 
@@ -1366,6 +1644,8 @@ describe("a docs site that is switched off", () => {
     // Its pages and its app are kept: the workspace still lists the app.
     const apps = (await alice.get(`${ws()}/apps`)).body.items;
     expect(apps.map((app: Any) => app.path)).toContain("help");
+    // ... and says it is not published, so the console shows no live link (APP-08).
+    expect(apps.find((app: Any) => app.path === "help").published).toBe(false);
     // The staff manual, which is not switched off, is still there for members.
     expect((await alice.get(`${ws()}/docs`)).body.apps.map((app: Any) => app.path)).toContain(
       "help",
@@ -1375,6 +1655,65 @@ describe("a docs site that is switched off", () => {
   test("is served again at the next deploy once it is switched on", async () => {
     const deployed = await deploy(withHelp({ published: true }));
     expect(deployed.status, JSON.stringify(deployed.body)).toBe(201);
+    expect(
+      (await alice.get(`${ws()}/apps`)).body.items.find((app: Any) => app.path === "help")
+        .published,
+    ).toBe(true);
     expect((await browser().get(HELP)).status).toBe(200);
+  });
+});
+
+describe("DOC-03 what the words on a served page mean", () => {
+  const words = "handbook/support/words";
+  const deployWords = (body: string) => deploy([...handbook(), page(words, "title: Words", body)]);
+  const read = (who: Client | undefined, url = `${HELP}support/words`) =>
+    t.app.inject({ url, headers: { host: MAIN, ...(who ? who.headers : {}) } });
+  const ORDERS = "What customers bought.";
+  const COLUMN = "Where the order is in its life.";
+
+  test("a term of the product's own, and a field of a kind, say what they mean, to anyone", async () => {
+    const deployed = await deployWords(
+      ["A :term[workspace]{id=workspace} holds it.", "", "::field{path=table.description}"].join(
+        "\n",
+      ),
+    );
+    expect(deployed.status, JSON.stringify(deployed.body)).toBe(201);
+    const seen = (await read(undefined)).body;
+    expect(seen).toContain("Where a tenant&#x27;s tables, flows and apps live.");
+    // Read more is the product's own page, on the instance's main address.
+    expect(seen).toContain('<a href="http://localhost:8080/docs/concepts/workspace">');
+    expect(seen).toContain("What the table is for, in a sentence.");
+  });
+
+  test("a resource's description is told to whoever may read the resource, and to nobody else", async () => {
+    const deployed = await deployWords(
+      [
+        "The :term[orders]{table=orders} table, its :term[status]{table=orders column=status} column.",
+      ].join("\n"),
+    );
+    expect(deployed.status, JSON.stringify(deployed.body)).toBe(201);
+    const member = (await read(alice)).body;
+    expect(member).toContain(ORDERS);
+    expect(member).toContain(COLUMN);
+    // The site is open to anyone, the table is not: a reader who is not signed in learns nothing.
+    const guest = (await read(undefined)).body;
+    expect(guest).not.toContain(ORDERS);
+    expect(guest).not.toContain(COLUMN);
+    expect(guest).not.toContain("vd-term-tip");
+  });
+
+  test("a table that may not be read looks, to a reader, as one that says nothing", async () => {
+    const one = async (table: string) => {
+      await deployWords(`The :term[thing]{table=${table}} table.`);
+      return (await read(undefined)).body;
+    };
+    expect(await one("orders")).toBe(await one("plain"));
+  });
+
+  test("a draft preview tells a writer who may read the resource what it is", async () => {
+    await deployWords("The :term[orders]{table=orders} table.");
+    const preview = (await read(alice, `${HELP}_draft/support/words`)).body;
+    expect(preview).toContain(ORDERS);
+    expect((await read(undefined, `${HELP}_draft/support/words`)).statusCode).toBe(404);
   });
 });

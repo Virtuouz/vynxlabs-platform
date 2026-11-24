@@ -26,8 +26,16 @@ const scriptBody = (code: string, extra: Record<string, unknown> = {}) => ({
   source: { language: "typescript", code },
   ...extra,
 });
-const draft = (path: string, body: Record<string, unknown>, kind = "script", as = alice) =>
-  as.put(`${ws()}/drafts/${path}`, { kind, schemaVersion: 1, body });
+// A save says which draft it saw: the helper reads the revision there is, as a client does.
+const draft = async (path: string, body: Record<string, unknown>, kind = "script", as = alice) => {
+  const seen = await as.get(`${ws()}/drafts/${path}`);
+  return as.put(`${ws()}/drafts/${path}`, {
+    kind,
+    schemaVersion: 1,
+    body,
+    ...(seen.status === 200 ? { revision: seen.body.revision } : {}),
+  });
+};
 
 // A bundle as a CLI that predates console-managed resources would build it.
 function fromRepository(version: number): Bundle {
@@ -163,6 +171,28 @@ describe("drafts", () => {
     );
   });
 
+  test("the list of drafts says how a trigger source's draft is asked, to offer it where one of that mode is chosen", async () => {
+    const saved = await draft(
+      "sources/inbox-draft",
+      {
+        entry: "inbox",
+        mode: "poll",
+        timeoutSeconds: 30,
+        source: {
+          language: "typescript",
+          code: "export const inbox = async () => ({ items: [] });\n",
+        },
+      },
+      "trigger_source",
+    );
+    expect(saved.status, JSON.stringify(saved.body)).toBe(200);
+    const listed = (await alice.get(`${ws()}/drafts`)).body.items.find(
+      (item: { path: string }) => item.path === "sources/inbox-draft",
+    );
+    expect(listed).toMatchObject({ kind: "trigger_source", mode: "poll" });
+    await alice.delete(`${ws()}/drafts/sources/inbox-draft`);
+  });
+
   test("the keys of the tenant's groups, members' and end users', are listed for the publish check", async () => {
     const managers = await alice.post(`/tenants/${tenant}/groups`, { name: "Billing team" });
     expect(managers.status, JSON.stringify(managers.body)).toBe(201);
@@ -223,6 +253,55 @@ describe("drafts", () => {
     expect((await alice.delete(`${ws()}/drafts/orders/shared`)).status).toBe(404);
   });
 
+  test("a save without a revision never replaces a draft, of any kind (BLD-01, DAT-08)", async () => {
+    const put = (path: string, kind: string, body: Record<string, unknown>, more = {}) =>
+      alice.put(`${ws()}/drafts/${path}`, { kind, schemaVersion: 1, body, ...more });
+    const code = scriptBody("export default async () => 1;\n");
+    // A first draft over nothing needs no revision; a second save with none is refused, and the
+    // first person's text stays.
+    expect((await put("lock/script", "script", code)).status).toBe(200);
+    const bare = await put("lock/script", "script", scriptBody("export default async () => 2;\n"));
+    expect(bare.status).toBe(409);
+    expect(bare.body.code).toBe("draft_changed");
+    expect(bare.body.detail).toContain("Someone else saved this draft");
+    expect((await alice.get(`${ws()}/drafts/lock/script`)).body.revision).toBe(1);
+    // A create over a draft is still refused as taken.
+    expect((await put("lock/script", "script", code, { create: true })).body.code).toBe(
+      "path_taken",
+    );
+    // A revision for a draft that is gone (discarded) is refused, not made a draft again.
+    expect((await alice.delete(`${ws()}/drafts/lock/script`)).status).toBe(204);
+    const gone = await put("lock/script", "script", code, { revision: 1 });
+    expect(gone.status).toBe(409);
+    expect(gone.body.code).toBe("draft_changed");
+    expect((await alice.get(`${ws()}/drafts/lock/script`)).status).toBe(404);
+  });
+
+  test("a flow draft holds a step not yet finished, and a deploy refuses it (FLW-09)", async () => {
+    const flow = (script: string) => ({
+      nodes: {
+        start: { type: "trigger", trigger: { type: "manual" } },
+        run: { type: "script", script },
+      },
+      edges: [{ from: "start", to: "run" }],
+    });
+    const saved = await draft("flows/unfinished", flow(""), "flow");
+    expect(saved.status, JSON.stringify(saved.body)).toBe(200);
+    // Not a flow at all: still refused.
+    expect((await draft("flows/notaflow", { nodes: [] }, "flow")).status).toBe(400);
+    const deploy = await alice.post(`${ws()}/changes/deploy`, { paths: ["flows/unfinished"] });
+    expect(deploy.status).toBe(400);
+    // It names the step and the field, and none of the shapes the step is not.
+    expect(deploy.body.errors).toEqual([
+      {
+        path: "flows/unfinished (flow)",
+        message: expect.stringContaining("/body/nodes/run/script "),
+      },
+    ]);
+    expect((await alice.get(`${ws()}/drafts/flows/unfinished`)).status).toBe(200);
+    expect((await alice.delete(`${ws()}/drafts/flows/unfinished`)).status).toBe(204);
+  });
+
   test("a production workspace has no drafts", async () => {
     const refused = await alice.put(`${ws(prod)}/drafts/orders/hello`, {
       kind: "script",
@@ -255,6 +334,28 @@ describe("drafts", () => {
     expect(off.status).toBe(403);
     expect(off.body.code).toBe("console_code_off");
     await t.db.updateTable("tenant").set({ console_code: true }).where("id", "=", tenant).execute();
+  });
+
+  test("a tenant admin and an operator switch writing code in the console, audited (D17)", async () => {
+    const body = scriptBody("export default () => ({})");
+    expect((await alice.get(`/tenants/${tenant}`)).body.consoleCode).toBe(true);
+    const off = await alice.patch(`/tenants/${tenant}`, { consoleCode: false });
+    expect(off.status, JSON.stringify(off.body)).toBe(200);
+    expect(off.body.consoleCode).toBe(false);
+    expect((await alice.get(`/tenants/${tenant}`)).body.consoleCode).toBe(false);
+    expect((await draft("orders/switched", body)).body.code).toBe("console_code_off");
+    // An operator turns it on again: it is the same switch.
+    const on = await t.admin.patch(`/tenants/${tenant}`, { consoleCode: true });
+    expect(on.body.consoleCode).toBe(true);
+    expect((await draft("orders/switched", body)).status).toBe(200);
+    await alice.delete(`${ws()}/drafts/orders/switched`);
+    const entries = (await alice.get(`/tenants/${tenant}/audit?limit=50`)).body.items;
+    expect(
+      entries.filter(
+        (entry: { action: string; details: { consoleCode?: boolean } }) =>
+          entry.action === "tenant.updated" && entry.details.consoleCode === false,
+      ),
+    ).toHaveLength(1);
   });
 });
 
@@ -322,16 +423,8 @@ describe("trying a draft out", () => {
     });
 
     // Two saves in a row: only the newer one's reading is written.
-    const first = await alice.put(`${ws()}/drafts/orders/typed`, {
-      kind: "script",
-      schemaVersion: 1,
-      body: scriptBody(typed.replace("min(1)", "min(2)")),
-    });
-    const second = await alice.put(`${ws()}/drafts/orders/typed`, {
-      kind: "script",
-      schemaVersion: 1,
-      body: scriptBody(typed.replace("min(1)", "min(3)")),
-    });
+    const first = await draft("orders/typed", scriptBody(typed.replace("min(1)", "min(2)")));
+    const second = await draft("orders/typed", scriptBody(typed.replace("min(1)", "min(3)")));
     await ended(first.body.schemaTaskId);
     await ended(second.body.schemaTaskId);
     expect(
@@ -563,6 +656,13 @@ describe("deploying drafts", () => {
       change: "rename",
       renamedFrom: "orders/hello",
     });
+    // A renamed resource is described against what runs under its key, not as a new one (REL-15).
+    const listed = (await alice.get(`${ws()}/drafts`)).body.items as {
+      path: string;
+      about: string[];
+    }[];
+    const about = listed.find((one) => one.path === "greetings/hello")?.about ?? [];
+    expect(about.join(" ")).not.toContain("A new");
     // The draft is at the path the resource is to have. What runs has not moved yet.
     expect((await alice.get(`${ws()}/drafts/orders/hello`)).status).toBe(404);
     expect((await alice.get(`${ws()}/drafts/greetings/hello`)).body.change).toBe("rename");
@@ -828,6 +928,148 @@ describe("testing a flow", () => {
     expect(refused.body.detail).toContain("(a)");
   });
 
+  test("a test uses its own draft and the drafts it uses, not someone else's broken one (D32)", async () => {
+    await draft("solo/ok", scriptBody("export default async () => ({ ok: true });\n"));
+    await draft(
+      "solo/flow",
+      {
+        description: "",
+        nodes: {
+          start: { type: "trigger", trigger: { type: "manual" } },
+          a: { type: "script", script: "solo/ok" },
+        },
+        edges: [{ from: "start", to: "a" }],
+      },
+      "flow",
+    );
+    // Another person's draft, which does not build and which nothing here names.
+    await draft("elsewhere/broken", scriptBody("export default async ( => {{{\n"));
+    const started = await alice.post(`${ws()}/test-runs`, { flow: "solo/flow" });
+    expect(started.status, JSON.stringify(started.body)).toBe(201);
+    expect((await flowRun(started.body.runId)).status).toBe("succeeded");
+    const script = await alice.post(`${ws()}/test-runs`, { script: "solo/ok" });
+    expect(script.status, JSON.stringify(script.body)).toBe(201);
+    // As a choice, the test takes every draft, as a deploy of all would, and that one blocks it.
+    const all = await alice.post(`${ws()}/test-runs`, { flow: "solo/flow", withAllDrafts: true });
+    expect(all.status).toBe(400);
+    expect(JSON.stringify(all.body)).toContain("elsewhere/broken");
+    for (const path of ["solo/flow", "solo/ok", "elsewhere/broken"]) {
+      await alice.delete(`${ws()}/drafts/${path}`);
+    }
+  });
+
+  test("an unrelated flow draft that does not build does not stop a test of another flow (FLW-36)", async () => {
+    await draft("solo2/ok", scriptBody("export default async () => ({ ok: true });\n"));
+    await draft(
+      "solo2/flow",
+      {
+        description: "",
+        nodes: {
+          start: { type: "trigger", trigger: { type: "manual" } },
+          a: { type: "script", script: "solo2/ok" },
+        },
+        edges: [{ from: "start", to: "a" }],
+      },
+      "flow",
+    );
+    // A join with one way in, which a deploy refuses, in a flow nothing here names.
+    await draft(
+      "elsewhere2/join",
+      {
+        description: "",
+        nodes: {
+          start: { type: "trigger", trigger: { type: "manual" } },
+          j: { type: "join" },
+        },
+        edges: [{ from: "start", to: "j" }],
+      },
+      "flow",
+    );
+    const started = await alice.post(`${ws()}/test-runs`, { flow: "solo2/flow" });
+    expect(started.status, JSON.stringify(started.body)).toBe(201);
+    expect((await flowRun(started.body.runId)).status).toBe("succeeded");
+    for (const path of ["solo2/flow", "solo2/ok", "elsewhere2/join"]) {
+      await alice.delete(`${ws()}/drafts/${path}`);
+    }
+  });
+
+  test("every starter flow runs, on an input that fits it (FLW-11)", async () => {
+    const { FLOW_STARTERS } = (await import(
+      /* @vite-ignore */ new URL("../../console/src/screens/starters.ts", import.meta.url).href
+    )) as { FLOW_STARTERS: { id: string; body: Record<string, unknown> }[] };
+    for (const starter of FLOW_STARTERS) {
+      const path = `starter/${starter.id}`;
+      await draft(path, { description: "", ...starter.body }, "flow");
+      for (const amount of [500, 5]) {
+        const started = await alice.post(`${ws()}/test-runs`, { flow: path, input: { amount } });
+        expect(started.status, JSON.stringify(started.body)).toBe(201);
+        const done = await flowRun(started.body.runId);
+        expect(done.status, `${starter.id} with ${amount}`).toBe("succeeded");
+      }
+      await alice.delete(`${ws()}/drafts/${path}`);
+    }
+  });
+
+  test("a last step with an error path still gives the flow its output (FLW-25)", async () => {
+    await draft(
+      "err/flow",
+      {
+        description: "",
+        nodes: {
+          start: { type: "trigger", trigger: { type: "manual" } },
+          last: { type: "set", values: { done: "true" } },
+          oops: { type: "set", values: { failed: "true" } },
+        },
+        edges: [
+          { from: "start", to: "last" },
+          { from: "last", to: "oops", error: true },
+        ],
+      },
+      "flow",
+    );
+    const started = await alice.post(`${ws()}/test-runs`, { flow: "err/flow" });
+    expect(started.status, JSON.stringify(started.body)).toBe(201);
+    const ended = (await flowRun(started.body.runId)) as unknown as Record<string, unknown>;
+    expect(ended.status).toBe("succeeded");
+    expect(ended.output).toEqual({ last: { done: true } });
+    await alice.delete(`${ws()}/drafts/err/flow`);
+  });
+
+  test("a flow is drawn where the newer of the two arrangements says, on every screen (FLW-15)", async () => {
+    const at = (x: number) => ({ a: { x, y: 0 }, start: { x: 0, y: 0 } });
+    const body = (x: number) => ({
+      description: "",
+      nodes: {
+        start: { type: "trigger", trigger: { type: "manual" } },
+        a: { type: "set", values: { n: "1" } },
+      },
+      edges: [{ from: "start", to: "a" }],
+      layout: at(x),
+    });
+    await draft("lay/flow", body(0), "flow");
+    expect((await alice.post(`${ws()}/changes/deploy`, { paths: ["lay/flow"] })).status).toBe(201);
+    expect((await alice.put(`${ws()}/flow-layouts/lay/flow`, { positions: at(777) })).status).toBe(
+      204,
+    );
+    const started = await alice.post(`${ws()}/flow-runs`, { flow: "lay/flow" });
+    expect(started.status, JSON.stringify(started.body)).toBe(201);
+    const page = async () => (await alice.get(`${ws()}/flows/lay/flow`)).body.layout.a.x;
+    const defined = async () =>
+      (await alice.get(`${ws()}/flow-runs/${started.body.id}/definition`)).body.layout.a.x;
+    // What was arranged on the flow page is what the flow page and the run's page draw.
+    expect(await page()).toBe(777);
+    expect(await defined()).toBe(777);
+    // A deploy that brings a layout of its own is the newer: the saved arrangement is cleared.
+    await draft("lay/flow", body(5000), "flow");
+    expect((await alice.post(`${ws()}/changes/deploy`, { paths: ["lay/flow"] })).status).toBe(201);
+    expect(await page()).toBe(5000);
+    const later = await alice.post(`${ws()}/flow-runs`, { flow: "lay/flow" });
+    expect((await alice.get(`${ws()}/flow-runs/${later.body.id}/definition`)).body.layout.a.x).toBe(
+      5000,
+    );
+    await alice.delete(`${ws()}/drafts/lay/flow`);
+  });
+
   test("a flow is tested from any of its triggers, with what that trigger would receive", async () => {
     await draft("pipe/flow", pipe("{'n': 3}"), "flow");
     const started = await alice.post(`${ws()}/test-runs`, {
@@ -912,6 +1154,32 @@ describe("what is drafted is listed where it will be", () => {
     ]);
   });
 
+  test("drafts deployed together apply what a resource depends on first, whatever the paths (WOP-order)", async () => {
+    const target = await draft("wop/ok", scriptBody("export default async () => ({});\n"));
+    expect(target.status, JSON.stringify(target.body)).toBe(200);
+    // Each of these sorts before what it depends on.
+    await draft("wop/hook", { type: "webhook", script: "wop/ok" }, "trigger");
+    await draft("wop/clock", { script: "wop/ok", cron: "0 3 * * *", timezone: "UTC" }, "schedule");
+    const flowBody = {
+      description: "",
+      nodes: {
+        start: { type: "trigger", trigger: { type: "manual" } },
+        run: { type: "script", script: "wop/ok", input: "{}" },
+      },
+      edges: [{ from: "start", to: "run" }],
+    };
+    expect((await draft("wop/a-flow", flowBody, "flow")).status).toBe(200);
+    await draft(
+      "wop/a-clock",
+      { flow: "wop/a-flow", cron: "0 4 * * *", timezone: "UTC" },
+      "schedule",
+    );
+    const paths = ["wop/hook", "wop/ok", "wop/clock", "wop/a-flow", "wop/a-clock"];
+    const deployed = await alice.post(`${ws()}/changes/deploy`, { paths });
+    expect(deployed.status, JSON.stringify(deployed.body)).toBe(201);
+    expect(deployed.body.applied).toHaveLength(paths.length);
+  });
+
   test("deployed, it is a trigger like any other; changed or removed by a draft, it says so", async () => {
     await alice.post(`${ws()}/changes/deploy`, {});
     let listed = await triggers();
@@ -974,5 +1242,109 @@ describe("what is drafted is listed where it will be", () => {
     expect(await find()).toMatchObject({ draft: "new", connector: "http", members: [] });
     await alice.post(`${ws()}/changes/deploy`, {});
     expect((await find()).draft).toBeNull();
+  });
+});
+
+describe("schemas read from code", () => {
+  test("after a rename, a script's schemas are still read from its code", async () => {
+    const typed =
+      'import { z } from "@volvel/sdk";\n' +
+      "export const input = z.object({ name: z.string() });\n" +
+      "export default async (input: { name: string }) => ({ hello: input.name });\n";
+    // biome-ignore lint/suspicious/noExplicitAny: task bodies are inspected freely
+    const ended = async (id: string): Promise<any> => {
+      for (let i = 0; i < 150; i++) {
+        const task = (await alice.get(`${ws()}/tasks/${id}`)).body;
+        if (task.status === "succeeded" || task.status === "failed") return task;
+        await sleep(100);
+      }
+      throw new Error(`Task ${id} did not end.`);
+    };
+    expect((await draft("orders/renamer", scriptBody(typed))).status).toBe(200);
+    expect((await alice.post(`${ws()}/changes/deploy`, { paths: ["orders/renamer"] })).status).toBe(
+      201,
+    );
+    const renamed = await alice.put(`${ws()}/drafts/orders/renamer`, {
+      kind: "script",
+      schemaVersion: 1,
+      body: scriptBody(typed),
+      path: "greetings/renamer",
+    });
+    expect(renamed.status, JSON.stringify(renamed.body)).toBe(200);
+    expect(renamed.body.key).toBe("orders/renamer");
+    expect((await ended(renamed.body.schemaTaskId)).status).toBe("succeeded");
+    const read = (await alice.get(`${ws()}/drafts/greetings/renamer`)).body;
+    expect(read.body).toMatchObject({
+      schemaSource: "code",
+      input: { type: "object", properties: { name: { type: "string" } } },
+    });
+    await alice.delete(`${ws()}/drafts/greetings/renamer`);
+  });
+
+  test("a schema is read in the pool of the script that has it", async () => {
+    const saved = await draft(
+      "orders/on-site",
+      scriptBody("export default async () => ({});\n", { worker: "plant-floor" }),
+    );
+    expect(saved.status, JSON.stringify(saved.body)).toBe(200);
+    const task = await t.db
+      .selectFrom("task")
+      .select("pool")
+      .where("id", "=", saved.body.schemaTaskId)
+      .executeTakeFirstOrThrow();
+    expect(task.pool).toBe("plant-floor");
+    await alice.delete(`${ws()}/drafts/orders/on-site`);
+  });
+});
+
+describe("the title of a kept dashboard's draft (P31)", () => {
+  test("the list of drafts gives the title the dashboard's body has, until one is set", async () => {
+    const body = { title: "Lending", widgets: [] };
+    const made = await alice.put(`${ws()}/drafts/boards/lending`, {
+      kind: "dashboard",
+      schemaVersion: 3,
+      body,
+      first: true,
+    });
+    expect(made.status, JSON.stringify(made.body)).toBe(200);
+    const listed = await alice.get(`${ws()}/drafts`);
+    const one = listed.body.items.find((item: { path: string }) => item.path === "boards/lending");
+    expect(one.title).toBe("Lending");
+    await alice.delete(`${ws()}/drafts/boards/lending`);
+  });
+});
+
+describe("a one-line script edit (P31 fe)", () => {
+  test("says it changes its code and not the input it takes", async () => {
+    const waitFor = async (id: string) => {
+      for (let i = 0; i < 150; i++) {
+        const task = (await alice.get(`${ws()}/tasks/${id}`)).body;
+        if (task.status === "succeeded" || task.status === "failed") return task;
+        await sleep(100);
+      }
+      throw new Error(`Task ${id} did not end.`);
+    };
+    const typed =
+      'import { z } from "@volvel/sdk";\n' +
+      "export const input = z.object({ name: z.string().min(1) });\n" +
+      "export default async (input: { name: string }) => ({ hello: input.name });\n";
+    const first = await draft("orders/oneline", scriptBody(typed));
+    await waitFor(first.body.schemaTaskId);
+    const deployed = await alice.post(`${ws()}/changes/deploy`, { paths: ["orders/oneline"] });
+    expect(deployed.status, JSON.stringify(deployed.body)).toBe(201);
+    // The console saves what it read: the body with the schema the worker found.
+    const live = (await alice.get(`${ws()}/resources/orders/oneline`)).body;
+    const edited = await draft(
+      "orders/oneline",
+      scriptBody(`${typed}// one more line\n`, {
+        input: (live.body ?? live).input,
+        output: (live.body ?? live).output,
+      }),
+    );
+    await waitFor(edited.body.schemaTaskId);
+    const listed = (await alice.get(`${ws()}/drafts`)).body.items.find(
+      (item: { path: string }) => item.path === "orders/oneline",
+    );
+    expect(listed.about).toEqual(["Changes its code (1 more line)."]);
   });
 });

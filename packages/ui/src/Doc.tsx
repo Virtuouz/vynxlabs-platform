@@ -1,14 +1,15 @@
-import { DOC_CSS, type Root } from "@volvel/markup";
+import { DOC_CSS, DOC_DARK_CSS, highlightCode, type Root } from "@volvel/markup";
 import { type Components, type ReactOptions, renderReact } from "@volvel/markup/react";
 import { CircleCheck, Info, OctagonAlert, TriangleAlert } from "lucide-react";
-import { type ReactNode, useMemo, useState } from "react";
+import { type ReactNode, useMemo, useRef, useState } from "react";
 import { Details } from "./Details.tsx";
 import { servedComponents } from "./DocServed.tsx";
+import { DocZoom, zoomButton } from "./DocZoom.tsx";
 import { Tabs } from "./Tabs.tsx";
 import { Term } from "./Term.tsx";
 import { Kbd } from "./Tooltip.tsx";
 
-/** The documentation stylesheet's colours, taken from the theme's tokens. */
+/** The documentation stylesheet's colors, taken from the theme's tokens. */
 const THEMED = `
 .vd-doc {
   --vd-ink: var(--vx-ink);
@@ -29,13 +30,11 @@ const THEMED = `
   --vd-font-code: var(--vx-font-code);
   --vd-radius: var(--vx-radius-control);
 }
-/* Inline code gets an edge, so its padding reads as part of the code, not as a space before the comma after it. */
-.vd-doc :not(pre) > code { box-shadow: inset 0 0 0 1px var(--vx-line); }
 /* As a served site sets its pages: a size of its own, whatever is around it. */
 .vd-doc.vd-served { font-size: 16px; line-height: 1.6; }
 `;
 
-/** An alert's type, as its rail, icon and words are coloured. */
+/** An alert's type, as its rail, icon and words are colored. */
 const ALERT = {
   // Neutral, never the theme's accent: a green accent would make a note read as success.
   info: { rail: "bg-ink-subtle", ink: "text-ink-muted", Icon: Info, label: "Note" },
@@ -45,10 +44,20 @@ const ALERT = {
 } as const;
 
 /** A picture in the text; where it cannot be loaded, its description in its place. */
-function Picture({ src, alt, title }: { src: string; alt: string; title?: string | undefined }) {
+function Picture({
+  src,
+  alt,
+  title,
+  zoom,
+}: {
+  src: string;
+  alt: string;
+  title?: string | undefined;
+  zoom: boolean;
+}) {
   const [failed, setFailed] = useState(false);
   if (failed) return <span className="text-ink-muted italic">{alt}</span>;
-  return (
+  const picture = (
     <img
       src={src}
       alt={alt}
@@ -57,12 +66,20 @@ function Picture({ src, alt, title }: { src: string; alt: string; title?: string
       onError={() => setFailed(true)}
     />
   );
+  // Pressed, it opens larger: the page's `Doc` listens for the press, as the site's script does.
+  return zoom ? (
+    <button type="button" className="vd-zoom" data-vd-zoom="" aria-haspopup="dialog">
+      {picture}
+    </button>
+  ) : (
+    picture
+  );
 }
 
 /** The kit's own components, for the parts of a page that are more than text. */
 const KIT: Components = {
-  image: ({ src, alt, title }) => <Picture src={src} alt={alt} title={title} />,
-  // A callout, as the documentation site draws one: a coloured rail and an icon for its type,
+  image: ({ src, alt, title, zoom }) => <Picture src={src} alt={alt} title={title} zoom={zoom} />,
+  // A callout, as the documentation site draws one: a colored rail and an icon for its type,
   // its border kept wherever it sits (inside a widget's card too, where a notice drops its own).
   alert: ({ type, title, children }) => {
     const tone = ALERT[type] ?? ALERT.info;
@@ -130,46 +147,31 @@ export interface DocProps extends Omit<ReactOptions, "components"> {
   components?: Components;
 }
 
+/** The last object given, for as long as each of its values is the one it had. */
+function useShallowStable<T extends object>(next: T): T {
+  const last = useRef(next);
+  const a = last.current as Record<string, unknown>;
+  const b = next as Record<string, unknown>;
+  const keys = Object.keys(b);
+  const same =
+    Object.keys(a).length === keys.length && keys.every((key) => Object.is(a[key], b[key]));
+  if (!same) last.current = next;
+  return last.current;
+}
+
 /**
  * A page of documentation, from its tree. Text and its layout come from the
  * same stylesheet a served site uses. Alerts, tabs, folded sections, keys and
  * terms are the kit's own, so they look and behave as they do everywhere else.
  */
-export function Doc({
-  tree,
-  more,
-  asServed,
-  components,
-  profile,
-  productName,
-  link,
-  image,
-  term,
-  field,
-  screenshot,
-  headingShift,
-  idPrefix,
-  learnMore,
-  folder,
-  lines,
-}: DocProps) {
+export function Doc({ tree, more, asServed, components, ...rest }: DocProps) {
+  // Every other prop is an option of the drawing, passed on as it is, so that an option the
+  // renderer gains is never dropped here. Held to the last object that is the same by value.
+  const options: ReactOptions = useShallowStable(rest);
   const drawn = useMemo(() => {
-    const options: ReactOptions = {
-      ...(profile === undefined ? {} : { profile }),
-      ...(productName === undefined ? {} : { productName }),
-      ...(link === undefined ? {} : { link }),
-      ...(image === undefined ? {} : { image }),
-      ...(term === undefined ? {} : { term }),
-      ...(field === undefined ? {} : { field }),
-      ...(screenshot === undefined ? {} : { screenshot }),
-      ...(headingShift === undefined ? {} : { headingShift }),
-      ...(idPrefix === undefined ? {} : { idPrefix }),
-      ...(learnMore === undefined ? {} : { learnMore }),
-      ...(folder === undefined ? {} : { folder }),
-      ...(lines === undefined ? {} : { lines }),
-    };
     if (asServed) {
       return renderReact(tree, {
+        highlight: highlightCode,
         ...options,
         components: { ...servedComponents(more), ...components },
       });
@@ -196,33 +198,30 @@ export function Doc({
       );
     };
     return renderReact(tree, {
+      highlight: highlightCode,
       ...options,
       components: { ...KIT, term: drawTerm, ...components },
     });
-  }, [
-    tree,
-    more,
-    asServed,
-    components,
-    profile,
-    productName,
-    link,
-    image,
-    term,
-    field,
-    screenshot,
-    headingShift,
-    idPrefix,
-    learnMore,
-    folder,
-    lines,
-  ]);
+  }, [tree, more, asServed, components, options]);
+  const [zoomed, setZoomed] = useState<HTMLElement | null>(null);
   return (
-    <div className={asServed ? "vd-doc vd-served" : "vd-doc"}>
+    // biome-ignore lint/a11y/useKeyWithClickEvents: the press is on a button inside, which the keyboard presses.
+    // biome-ignore lint/a11y/noStaticElementInteractions: it only listens for presses of the pictures' own buttons.
+    <div
+      className={asServed ? "vd-doc vd-served" : "vd-doc"}
+      onClick={(event) => {
+        const button = zoomButton(event.target);
+        if (button) {
+          event.preventDefault();
+          setZoomed(button);
+        }
+      }}
+    >
       <style href="volvel-doc" precedence="default">
-        {DOC_CSS + THEMED}
+        {DOC_CSS + DOC_DARK_CSS + THEMED}
       </style>
       {drawn}
+      {zoomed ? <DocZoom opener={zoomed} onClose={() => setZoomed(null)} /> : null}
     </div>
   );
 }

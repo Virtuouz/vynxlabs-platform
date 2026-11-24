@@ -7,8 +7,12 @@
   "exports": {
     "./manifest.json": "./dist/manifest.json",
     "./search.json": "./dist/search.json",
+    "./fields.json": "./dist/fields.json",
+    "./redirects.json": "./dist/redirects.json",
     "./pages/*": "./dist/pages/*",
     "./content/*": "./content/*",
+    "./assets/*": "./dist/assets/*",
+    "./openapi.json": "./generated/openapi.json",
     "./package.json": "./package.json"
   },
   "files": [
@@ -28,6 +32,7 @@
   "devDependencies": {
     "@volvel/control-plane": "workspace:*",
     "@volvel/docs-engine": "workspace:*",
+    "@volvel/docs-site": "workspace:*",
     "@volvel/manifest": "workspace:*",
     "@volvel/markup": "workspace:*"
   }

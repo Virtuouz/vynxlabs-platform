@@ -39,6 +39,8 @@ export interface Known {
   queries: ReadonlySet<string> | undefined;
   flows: ReadonlySet<string>;
   scripts: ReadonlySet<string>;
+  /** What each flow's manual trigger and each script's input must be given: the server refuses a start without it. */
+  inputsNeeded?: ReadonlyMap<string, readonly string[]> | undefined;
   /** The keys of the tenant's groups, members' and end users'. */
   groups: readonly string[] | undefined;
   /** Each flow, with whether it asks for an approval: `undefined` while it is read. */
@@ -75,6 +77,19 @@ export function actionsOf(widget: PageWidget): { at: string; action: Action }[] 
   return found;
 }
 
+/** What each flow's manual trigger and each script's input requires, keyed `flow:<path>` and `script:<path>`. */
+export function inputsNeededOf(
+  flows: readonly { path: string; manualInput?: { required?: string[] } | null }[] | undefined,
+  scripts: readonly { path: string; inputSchema?: { required?: string[] } | null }[] | undefined,
+): ReadonlyMap<string, readonly string[]> {
+  return new Map([
+    ...(flows ?? []).map((one) => [`flow:${one.path}`, one.manualInput?.required ?? []] as const),
+    ...(scripts ?? []).map(
+      (one) => [`script:${one.path}`, one.inputSchema?.required ?? []] as const,
+    ),
+  ]);
+}
+
 const NO_STEPS = "has no steps yet";
 
 /** What is wrong with an action, in words; nothing when it is complete. */
@@ -90,10 +105,20 @@ export function actionProblem(
       return "it opens a page that is gone";
     if (step.do === "create" && known.tables && !known.tables.has(step.table))
       return `it adds to ${step.table}, which does not exist`;
+    if (step.do === "flow" && !step.path) return "it has no flow chosen";
+    if (step.do === "script" && !step.path) return "it has no script chosen";
     if (step.do === "flow" && known.flows.size > 0 && !known.flows.has(step.path))
       return `it starts ${step.path}, which can't be started by hand`;
     if (step.do === "script" && known.scripts.size > 0 && !known.scripts.has(step.path))
       return `it runs ${step.path}, which does not exist`;
+    if (step.do === "flow" || step.do === "script") {
+      // A start the server would refuse is found only after the data is saved, so it is told here.
+      const missing = (known.inputsNeeded?.get(`${step.do}:${step.path}`) ?? []).filter(
+        (name) => !(name in (step.input ?? {})),
+      );
+      if (missing.length > 0)
+        return `it ${step.do === "flow" ? "starts" : "runs"} ${step.path} without ${missing.join(", ")}, which it needs`;
+    }
   }
   return undefined;
 }
@@ -316,7 +341,7 @@ export function checksFor(input: {
           id: `approvals:${path}`,
           state: "warn",
           text: `Approvals lists ${title}, which asks for no approval`,
-          detail: "Nothing will wait there until the workflow has an approval step.",
+          detail: "Nothing will wait there until the flow has an approval step.",
         });
       }
     }
@@ -377,17 +402,22 @@ export function checksFor(input: {
 
   // What saving and deploying refuse, in the server's words. The same refusal said by both, or by
   // the same place twice, is listed once.
-  const said = new Set<string>();
+  // By its words: said once with a place and once without is one line, which keeps the place.
+  const said = new Map<string, CheckItem>();
   for (const one of [...input.problems, ...input.refusal]) {
-    const key = `${one.at?.widget ?? ""}|${one.text}`;
-    if (said.has(key)) continue;
-    said.add(key);
-    items.push({
-      id: `refused:${key}`,
+    const have = said.get(one.text);
+    if (have) {
+      if (!have.at && one.at) have.at = one.at;
+      continue;
+    }
+    const item: CheckItem = {
+      id: `refused:${one.text}`,
       state: "fail",
       text: one.text,
       ...(one.at ? { at: one.at } : {}),
-    });
+    };
+    said.set(one.text, item);
+    items.push(item);
   }
   for (const message of input.warnings) {
     items.push({ id: `warned:${message}`, state: "warn", text: message });
@@ -431,6 +461,40 @@ const thing = (key: string, count: number): string => {
   const one = THINGS[key] ?? singularOf(wordsOfKey(key));
   return count === 1 ? one : one.endsWith("y") ? `${one.slice(0, -1)}ies` : `${one}s`;
 };
+
+/**
+ * What opens a page: each button or row click, on another page, with a step that opens it, named
+ * as the check names them ("Mark paid, on Money"). Removing the page leaves these opening nothing.
+ */
+export function openersOf(
+  body: InterfaceBody,
+  pageId: string,
+  definitionOf: (type: string) => WidgetDefinition | undefined,
+): string[] {
+  return openerPlaces(body, pageId, definitionOf).map((one) => one.name);
+}
+
+/** The same, each with the page and widget it is on, so a person can be taken to it. */
+export function openerPlaces(
+  body: InterfaceBody,
+  pageId: string,
+  definitionOf: (type: string) => WidgetDefinition | undefined,
+): { name: string; page: string; widget: string }[] {
+  const names: { name: string; page: string; widget: string }[] = [];
+  for (const page of body.pages) {
+    if (page.id === pageId) continue;
+    for (const widget of page.widgets) {
+      for (const one of actionsOf(widget)) {
+        if (!one.action.steps.some((step) => step.do === "open" && step.page === pageId)) continue;
+        const own = nameAlong(widget, one.at.split("/").slice(1));
+        const name = `${own ?? nameOf(widget, definitionOf(widget.type))}, on ${page.title}`;
+        if (!names.some((one) => one.name === name))
+          names.push({ name, page: page.id, widget: widget.id });
+      }
+    }
+  }
+  return names;
+}
 
 /**
  * The nearest thing with a name on the way down a path into a widget: the button or the column
@@ -485,6 +549,28 @@ export function problemWords(problem: { path: string; message: string }, body: I
     what = `has ${last ? wordsOfKey(last) : "a value"} that is not one of the choices`;
   else what = problem.message;
   return place ? `${place}: ${what}` : what;
+}
+
+/**
+ * What a deploy refused, said for this app's publish check. A deploy checks the whole workspace,
+ * so it also refuses for a dashboard or an app that is not this one: the server names it as
+ * "boards/sales (dashboard)". That is said with its name, and is never read as a widget of
+ * this app (it has no Goal because another page does).
+ */
+export function refusalWords(
+  problem: { path: string; message: string },
+  body: InterfaceBody,
+  own: readonly (string | null)[],
+): string {
+  const other = /^(.+) \((\w+)\)$/.exec(problem.path);
+  if (other && !own.includes(other[1] ?? null)) {
+    const said = problem.message.replace(/^\/body\S*\s+/, "");
+    return `${other[1]} (${other[2]}), which this deploy also carries: ${said}.`.replace(
+      /\.\.$/,
+      ".",
+    );
+  }
+  return `${problemWords(problem, body)}.`.replace(/\.\.$/, ".");
 }
 
 /** `problemWords` for a message that carries its place: "/body/pages/0/widgets/9/config/x must NOT …". */

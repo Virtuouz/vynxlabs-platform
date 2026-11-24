@@ -1,7 +1,13 @@
 import type { InterfaceBody, PageWidget } from "@volvel/manifest";
 import { expect, test } from "vitest";
 import { draftChanges } from "./screens/builder/changes.ts";
-import { checksFor, plainly, problemAt, problemWords } from "./screens/builder/publishCheck.ts";
+import {
+  checksFor,
+  plainly,
+  problemAt,
+  problemWords,
+  refusalWords,
+} from "./screens/builder/publishCheck.ts";
 
 const form = (data: PageWidget["data"]): PageWidget => ({
   id: "form",
@@ -185,6 +191,22 @@ test("one refusal said by the save and by the deploy is one line, and it links t
   expect(refused[0]?.at).toEqual({ page: "edit", widget: "form" });
 });
 
+test("p31 fc: a refusal said with a place by one and without by the other is one line, counted once", () => {
+  const made = body(form(undefined));
+  const text = "form on Edit invoice: needs a source to show.";
+  const items = checksFor({
+    body: made,
+    known,
+    definitionOf: () => undefined,
+    problems: [{ text }],
+    refusal: [{ text, at: { page: "edit", widget: "form" } }],
+    warnings: [],
+  });
+  const refused = items.filter((one) => one.id.startsWith("refused:"));
+  expect(refused).toHaveLength(1);
+  expect(refused[0]?.at).toEqual({ page: "edit", widget: "form" });
+});
+
 test("a row action with no words and no icon is refused, and named in the check", () => {
   const table: PageWidget = {
     id: "t",
@@ -224,4 +246,59 @@ test("a page whose Help topic no document has is a warning; a known topic, or do
   });
   expect(check(new Set(["billing-help"]))).toBeUndefined();
   expect(check(undefined)).toBeUndefined();
+});
+
+test("a Run a flow step with no flow chosen says so, not an empty path (FLW-publish)", async () => {
+  const { actionProblem } = await import("./screens/builder/publishCheck.ts");
+  const known = {
+    tables: undefined,
+    queries: undefined,
+    flows: new Set(["orders/refund"]),
+    scripts: new Set(["orders/size"]),
+    groups: undefined,
+  } as never;
+  const body = { pages: [] } as never;
+  const problem = (step: object) => actionProblem({ steps: [step] } as never, body, known, false);
+  expect(problem({ do: "flow", path: "" })).toBe("it has no flow chosen");
+  expect(problem({ do: "script", path: "" })).toBe("it has no script chosen");
+  expect(problem({ do: "flow", path: "orders/other" })).toBe(
+    "it starts orders/other, which can't be started by hand",
+  );
+});
+
+test("w-builder 6: a deploy's refusal about another dashboard or app is said with its name, not as this app's", () => {
+  const made = body(form(undefined));
+  const own = ["clinic/app", null];
+  // A widget the server no longer knows, on a dashboard that is not this app.
+  const other = {
+    path: "boards/w-builder-board (dashboard)",
+    message: '/body/widgets/2/type there is no widget called "labs/goal"',
+  };
+  const said = refusalWords(other, made, own);
+  expect(said).toBe(
+    'boards/w-builder-board (dashboard), which this deploy also carries: there is no widget called "labs/goal".',
+  );
+  // Two such dashboards are two lines, each its own.
+  const second = refusalWords({ ...other, path: "boards/old (dashboard)" }, made, own);
+  expect(second).not.toBe(said);
+  const items = checksFor({
+    body: made,
+    known,
+    definitionOf: () => undefined,
+    problems: [],
+    refusal: [{ text: said }, { text: second }, { text: said }],
+    warnings: [],
+  });
+  expect(items.filter((one) => one.text.includes("labs/goal"))).toHaveLength(2);
+  // This app's own refusal is in its page's words.
+  expect(
+    refusalWords(
+      {
+        path: "clinic/app (interface)",
+        message: "/body/pages/0/widgets/0/config/fields must NOT have fewer than 1 items",
+      },
+      made,
+      own,
+    ),
+  ).toBe("form on Edit invoice: needs at least 1 field.");
 });

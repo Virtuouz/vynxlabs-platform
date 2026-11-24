@@ -64,7 +64,16 @@ export interface DraftInput {
   renameDashboards?: boolean | undefined;
   /** A create: refused, as `path_taken`, when the path holds a draft or a deployed resource. */
   create?: boolean | undefined;
+  /**
+   * For the platform's own writes that replace a draft on purpose, and keep what it held in the
+   * history: restoring an earlier version, and the dashboards a query rename drafts. Never given
+   * by a route's caller.
+   */
+  replace?: boolean | undefined;
 }
+
+const PRODUCTION_REFUSAL =
+  "Resources are edited in a dev workspace and reach production by promotion.";
 
 /** Drafts are for dev workspaces: production changes by deploy and promotion only. */
 async function devWorkspace(db: Db | Trx, workspace: WorkspaceRef) {
@@ -74,13 +83,51 @@ async function devWorkspace(db: Db | Trx, workspace: WorkspaceRef) {
     .where("id", "=", workspace.id)
     .executeTakeFirstOrThrow();
   if (row.type !== "dev") {
+    throw new HttpError(409, "production_workspace", PRODUCTION_REFUSAL);
+  }
+  return row;
+}
+
+/**
+ * The guard for a direct write to a resource (`PUT` and `DELETE` on a path). A production
+ * workspace changes by a deploy or a promotion, which write through the kernel and not through
+ * this. A code-managed resource is kept in the repository, so no one writes or deletes it
+ * directly, nor makes one. A console-managed one may be written directly by a person whose role
+ * may promote to the workspace (`mayDeploy`, from `promotion:write`). The same rule as
+ * `devWorkspace`, so they answer alike.
+ */
+export async function refuseDirectProductionWrite(
+  db: Db | Trx,
+  workspace: WorkspaceRef,
+  write: {
+    mayDeploy: () => Promise<boolean>;
+    /** The paths the write touches: where it puts the resource, and where it moves it from. */
+    paths: string[];
+    /** The ownership the write gives. None for a delete. */
+    ownership?: "code" | "ui" | undefined;
+  },
+) {
+  const row = await db
+    .selectFrom("workspace")
+    .select("type")
+    .where("id", "=", workspace.id)
+    .executeTakeFirstOrThrow();
+  if (row.type === "dev") return;
+  const held = await db
+    .selectFrom("resource")
+    .select("ownership")
+    .where("workspace_id", "=", workspace.id)
+    .where("path", "in", write.paths)
+    .execute();
+  if (write.ownership === "code" || held.some((one) => one.ownership === "code")) {
     throw new HttpError(
       409,
       "production_workspace",
-      "Resources are edited in a dev workspace and reach production by promotion.",
+      "A code-managed resource is kept in the repository and changes in production by a deploy.",
     );
   }
-  return row;
+  if (!(await write.mayDeploy()))
+    throw new HttpError(409, "production_workspace", PRODUCTION_REFUSAL);
 }
 
 /** The bundle a workspace is running, or nothing for a workspace never deployed to. */
@@ -132,7 +179,7 @@ export async function saveDraft(
     throw badRequest("The manifest is not valid.", [
       {
         path: "/path",
-        message: `paths under ${CORE_PREFIX} are kept for the platform's own nodes. Choose another path`,
+        message: `paths under ${CORE_PREFIX} are kept for Volvel's own nodes. Choose another path`,
       },
     ]);
   }
@@ -167,7 +214,7 @@ export async function saveDraft(
       throw badRequest("The manifest is not valid.", [
         {
           path: "/path",
-          message: `paths under ${CORE_PREFIX} are kept for the platform's own nodes`,
+          message: `paths under ${CORE_PREFIX} are kept for Volvel's own nodes`,
         },
       ]);
     }
@@ -214,11 +261,17 @@ export async function saveDraft(
     // other unfinished things. The checks of the page say it, and publishing refuses it.
     const unfinished = (issue: { path: string; message: string }) =>
       /\/steps$/.test(issue.path) && issue.message === "must NOT have fewer than 1 items";
+    // A flow is built a step at a time as well: one step with a field not yet chosen (the script
+    // it runs, the event it waits for) is held in the draft, and a deploy refuses it. What is
+    // refused here is a body that is not a flow at all, or a fault outside its steps.
+    const unfinishedFlow = (issue: { path: string }) =>
+      /^\/(body\/)?nodes\/[^/]+(\/|$)/.test(issue.path);
     if (
       !validation.ok &&
       !(
-        (input.kind === "interface" || input.kind === "dashboard") &&
-        validation.issues.every(unfinished)
+        ((input.kind === "interface" || input.kind === "dashboard") &&
+          validation.issues.every(unfinished)) ||
+        (input.kind === "flow" && isFlowShaped(body) && validation.issues.every(unfinishedFlow))
       )
     ) {
       throw badRequest("The manifest is not valid.", validation.issues);
@@ -235,14 +288,17 @@ export async function saveDraft(
     );
   }
 
-  // A page of documentation is written by people who do not share a repository to settle
-  // their differences in. Whoever saves one says which draft they were looking at, and a
-  // save that says nothing, over a draft someone else has made since, is that same conflict.
-  if (existing && input.kind === "doc" && input.revision === undefined) {
+  // A draft is shared by everyone who may write the workspace. Whoever saves says which draft
+  // they were looking at (its revision), or that they make a new one (`create`, or a first draft
+  // over a deployed resource, which has none yet). A save that says nothing over a draft someone
+  // has made since, or one that names a draft that is gone, is a conflict, never an overwrite.
+  if (existing && input.revision === undefined && !input.replace) {
     throw new HttpError(
       409,
       "draft_changed",
-      "Someone else saved this page after you opened it. Reload it, then make your change again.",
+      input.kind === "doc"
+        ? "Someone else saved this page after you opened it. Reload it, then make your change again."
+        : "Someone else saved this draft after you opened it. Reload it, then make your change again.",
     );
   }
   if (existing && input.revision !== undefined && input.revision !== existing.revision) {
@@ -250,6 +306,13 @@ export async function saveDraft(
       409,
       "draft_changed",
       "Someone else saved this draft after you opened it. Reload it, then make your change again.",
+    );
+  }
+  if (!existing && input.revision !== undefined) {
+    throw new HttpError(
+      409,
+      "draft_changed",
+      "This draft was discarded or deployed after you opened it. Reload it, then make your change again.",
     );
   }
   const values = {
@@ -304,6 +367,7 @@ export async function saveDraft(
     for (const dashboard of await dashboardsNaming(trx, workspace.id, input.path)) {
       if (dashboard.ownership === "code") continue;
       await saveDraft(kernel, trx, audit, workspace, principal, {
+        replace: true,
         path: dashboard.path,
         kind: dashboard.kind,
         schemaVersion: dashboard.schemaVersion,
@@ -315,6 +379,17 @@ export async function saveDraft(
     }
   }
   return { draft: row, takesOver: resource?.ownership === "code" };
+}
+
+/** A body that is a flow's graph: steps by name, and the edges between them. */
+function isFlowShaped(body: Record<string, unknown>) {
+  const nodes = body.nodes;
+  return (
+    typeof nodes === "object" &&
+    nodes !== null &&
+    !Array.isArray(nodes) &&
+    Array.isArray(body.edges)
+  );
 }
 
 /** How many earlier versions are kept of one draft. */
@@ -424,6 +499,59 @@ async function setAside(trx: Trx, audit: Audit, workspace: WorkspaceRef, path: s
     details: { kind: removed.kind },
   });
   return removed;
+}
+
+/** Every string in a value, however deep. */
+function stringsOf(value: unknown, into: string[] = []): string[] {
+  if (typeof value === "string") into.push(value);
+  else if (Array.isArray(value)) for (const one of value) stringsOf(one, into);
+  else if (value && typeof value === "object") {
+    for (const one of Object.values(value)) stringsOf(one, into);
+  }
+  return into;
+}
+
+/**
+ * The drafts a test of one draft needs: itself, and every draft it names, however far
+ * (a flow's scripts and flows, the connectors and variables a script says it uses, a
+ * name written in a script's code). Another person's draft that nothing here names is
+ * not among them, so its fault does not stop this test. [] when the test is of
+ * something that has no draft, which then runs as it is deployed.
+ */
+export async function draftsUsedBy(
+  db: Db | Trx,
+  workspace: WorkspaceRef,
+  path: string,
+): Promise<string[]> {
+  const drafts = await db
+    .selectFrom("resource_draft")
+    .select(["path", "key", "body"])
+    .where("workspace_id", "=", workspace.id)
+    .execute();
+  const start = drafts.find((draft) => draft.path === path);
+  if (!start) return [];
+  const used = new Set<string>([start.path]);
+  const queue = [start];
+  while (queue.length > 0) {
+    const strings = stringsOf(queue.pop()?.body);
+    for (const other of drafts) {
+      if (used.has(other.path)) continue;
+      const named = strings.some(
+        (text) =>
+          text === other.path ||
+          text === other.key ||
+          (text.length > other.path.length &&
+            (text.includes(`"${other.path}"`) ||
+              text.includes(`'${other.path}'`) ||
+              text.includes(`\`${other.path}\``))),
+      );
+      if (named) {
+        used.add(other.path);
+        queue.push(other);
+      }
+    }
+  }
+  return [...used];
 }
 
 /**
@@ -635,13 +763,20 @@ export async function deriveSchemas(
   kernel: Kernel,
   workspace: WorkspaceRef,
   principal: Principal,
-  draft: { path: string; revision: number },
+  draft: { path: string; key: string; revision: number; body?: Record<string, unknown> },
 ): Promise<string | undefined> {
   // A draft that does not build, or names what the workspace does not have yet, is
   // saved all the same. It is read once it is whole.
   try {
     const { bundle } = await composeDrafts(kernel, kernel.db, workspace, [draft.path]);
-    return await describeIn(kernel, workspace, principal, draft, bundle);
+    const worker = draft.body?.worker;
+    return await describeIn(
+      kernel,
+      workspace,
+      principal,
+      { ...draft, pool: typeof worker === "string" ? worker : null },
+      bundle,
+    );
   } catch (error) {
     if (error instanceof HttpError) return undefined;
     throw error;
@@ -652,7 +787,7 @@ async function describeIn(
   kernel: Kernel,
   workspace: WorkspaceRef,
   principal: Principal,
-  draft: { path: string; revision: number },
+  draft: { path: string; key: string; revision: number; pool?: string | null },
   bundle: Bundle,
 ): Promise<string> {
   return mutate(kernel.db, { principal }, async (trx, audit) => {
@@ -660,11 +795,14 @@ async function describeIn(
     const task = await queueTask(trx, {
       tenantId: workspace.tenantId,
       workspaceId: workspace.id,
+      // Where the script runs: a worker of another pool may not be there to read it.
+      pool: typeof draft.pool === "string" ? draft.pool : null,
       kind: "describe",
       subject: `${draft.revision}:${draft.path}`,
       request: {
         bundle: { id: stored.bundle.id, digest: stored.bundle.digest },
-        entry: entryFor("script", draft.path),
+        // By the key: after a rename the path is not what the entry is made from.
+        entry: entryFor("script", draft.key),
       },
     });
     return task.id;

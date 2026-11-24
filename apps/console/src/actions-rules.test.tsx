@@ -2,7 +2,7 @@
 
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import type { Page, PageWidget } from "@volvel/manifest";
-import { button, chart } from "@volvel/widgets-core";
+import { button, chart, detail } from "@volvel/widgets-core";
 import { useState } from "react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { ActionsTab } from "./kit/inspector/ActionsTab.tsx";
@@ -98,8 +98,14 @@ function Actions({
   return <ActionsTab env={env} groupChoices={groupChoices} onOpenRules={onOpenRules} />;
 }
 
-function Rules({ start = pressMe }: { start?: PageWidget }) {
-  const env = useEnv(start, button, "app");
+function Rules({
+  start = pressMe,
+  definition = button,
+}: {
+  start?: PageWidget;
+  definition?: typeof button;
+}) {
+  const env = useEnv(start, definition, "app");
   return <RulesTab env={env} groupChoices={groupChoices} />;
 }
 
@@ -147,10 +153,10 @@ test("the trigger line, then steps on a rail, built as board 4 draws them", asyn
   fireEvent.click(screen.getByRole("button", { name: "Set another field" }));
   fireEvent.click(await screen.findByRole("menuitem", { name: "Paid on" }));
 
-  add("Run a workflow");
-  // A workflow is one chip in the card; it opens its small editor.
+  add("Run a flow");
+  // A flow is one chip in the card; it opens its small editor.
   fireEvent.click(screen.getByRole("button", { name: /^Change step 3/ }));
-  fireEvent.change(await screen.findByLabelText("Workflow"), { target: { value: "send-receipt" } });
+  fireEvent.change(await screen.findByLabelText("Flow"), { target: { value: "send-receipt" } });
   fireEvent.change(screen.getByLabelText("What it is given"), { target: { value: "this" } });
   expect(screen.getByText("Gets this invoice as its input")).toBeTruthy();
   fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
@@ -316,6 +322,10 @@ test("Rules: who can see it limits to groups, and says hiding is not security", 
   show(<Rules />);
   expect(screen.getByText("Everyone who can open the app")).toBeTruthy();
   expect(screen.getByText(/Hiding a widget isn’t security/)).toBeTruthy();
+  // WID-22: a condition can read the user and the open record; there is no condition on the page's filters.
+  expect(
+    screen.getByText(/Conditions can use the current user or the record that is open\./),
+  ).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Limit to a group" }));
   fireEvent.click(await screen.findByRole("checkbox", { name: /Managers/ }));
   expect(last().rules).toEqual({ seenBy: { groups: ["groups/managers"] } });
@@ -324,11 +334,32 @@ test("Rules: who can see it limits to groups, and says hiding is not security", 
   expect(last().rules).toBeUndefined();
 });
 
+test("Rules: who can edit a record in place is its own question, there only when editing in place is on (WID-19)", async () => {
+  const record: PageWidget = {
+    id: "info",
+    type: "core/detail",
+    at: place,
+    data: { record: { source: { record: "this" } } },
+    config: { edit: true },
+  };
+  show(<Rules start={record} definition={detail as never} />);
+  expect(screen.getByText("Who can edit")).toBeTruthy();
+  // The first "Limit to a group" is who can see it; the second is who can edit.
+  fireEvent.click(screen.getAllByRole("button", { name: "Limit to a group" })[1] as HTMLElement);
+  fireEvent.click(await screen.findByRole("checkbox", { name: /Billing/ }));
+  expect(last().config).toEqual({ edit: true, editBy: { groups: ["groups/billing"] } });
+  fireEvent.click(screen.getByRole("button", { name: "Remove Billing" }));
+  expect(last().config).toEqual({ edit: true });
+  cleanup();
+  show(<Rules start={{ ...record, config: {} }} definition={detail as never} />);
+  expect(screen.queryByText("Who can edit")).toBeNull();
+});
+
 test("Rules: a button's can be pressed when and who can run it write the action", async () => {
   const start: PageWidget = { ...pressMe, on: { click: { steps: [{ do: "close" }] } } };
   show(<Rules start={start} />);
   expect(
-    screen.getByText("Shown but greyed out otherwise, with the reason as a tooltip."),
+    screen.getByText("Shown but grayed out otherwise, with the reason as a tooltip."),
   ).toBeTruthy();
   expect(
     screen.getByText(
@@ -395,4 +426,16 @@ test("an action at a config path has its own Actions and Rules editors", () => {
   add("Close");
   expect(changes.at(-1)).toEqual({ steps: [{ do: "close" }] });
   expect(screen.getByText("Who can run it")).toBeTruthy();
+});
+
+test("an action can say something when it is done, and drops it when it is emptied (WID-M2)", () => {
+  show(<Actions />);
+  expect(screen.queryByLabelText("When it is done, say")).toBeNull();
+  add("Show a message");
+  fireEvent.change(screen.getByLabelText("When it is done, say"), {
+    target: { value: "All paid" },
+  });
+  expect(last().on?.click?.done).toBe("All paid");
+  fireEvent.change(screen.getByLabelText("When it is done, say"), { target: { value: "" } });
+  expect(last().on?.click).not.toHaveProperty("done");
 });

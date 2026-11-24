@@ -288,10 +288,10 @@ describe("deploying", () => {
     expect(refused.status).toBe(409);
     expect(refused.body.code).toBe("bindings_missing");
     expect(refused.body.errors).toEqual([
-      { path: "/connections/api", message: 'the connection "api" is not bound in this workspace' },
+      { path: "/connections/api", message: 'the connection "api" is not set up in this workspace' },
       {
         path: "/connections/chat",
-        message: 'the connection "chat" is not bound in this workspace',
+        message: 'the connection "chat" is not set up in this workspace',
       },
       { path: "/secrets/TOKEN", message: 'the secret "TOKEN" is not set in this workspace' },
     ]);
@@ -575,6 +575,7 @@ describe("running", () => {
         default: "5",
         value: "80",
         updatedAt: expect.any(String),
+        arrives: false,
         draft: null,
       },
     ]);
@@ -817,7 +818,9 @@ describe("running", () => {
       state: "canceled",
     });
     expect((await alice.post(`${ws()}/runs/${running}/cancel`)).body.status).toBe("cancelled");
-    expect((await alice.post(`${ws()}/runs/${running}/cancel`)).status).toBe(409);
+    const again = await alice.post(`${ws()}/runs/${running}/cancel`);
+    expect(again.status).toBe(409);
+    expect(again.body.detail).toBe("This run was already canceled.");
     expect((await bob.client.post(`${ws()}/runs/${running}/cancel`)).status).toBe(409);
 
     // The slot is free again: a new run of the same script starts.
@@ -845,7 +848,8 @@ describe("deploys and runs in progress", () => {
     );
     expect(second.body).toMatchObject({
       bundleVersion: 3,
-      summary: { created: 0, updated: 0, unchanged: 11, deleted: 1 },
+      // greet and slow carry the version in their code: a changed body is an update.
+      summary: { created: 0, updated: 2, unchanged: 9, deleted: 1 },
     });
     expect((await alice.get(`${ws()}/resources/sneaky`)).status).toBe(404);
 
@@ -865,13 +869,13 @@ describe("deploys and runs in progress", () => {
     const rolledBack = await alice.post(`${ws()}/deployments`, { bundleId: first.id });
     expect(rolledBack.body.summary).toMatchObject({
       created: 1,
-      updated: 0,
-      unchanged: 11,
+      updated: 2,
+      unchanged: 9,
       deleted: 0,
       // This bundle has no tables, so the deploy did nothing to the data.
       data: [],
     });
-    expect(rolledBack.body.summary.changes).toHaveLength(1);
+    expect(rolledBack.body.summary.changes).toHaveLength(3);
     expect(await finished(await start("slow", { ms: 10 }), 20)).toMatchObject({
       bundleVersion: 1,
       output: { version: 1 },
@@ -948,7 +952,7 @@ describe("triggers", () => {
     expect(await finished(runs[0].id)).toMatchObject({
       status: "succeeded",
       output: { greeting: "Hello schedule" },
-      trigger: { type: "schedule", schedule: "greet-hourly", scheduledFor: due.toISOString() },
+      trigger: { type: "schedule", trigger: "greet-hourly", scheduledFor: due.toISOString() },
       startedBy: { type: "trigger" },
     });
     const after = (await alice.get(`${ws()}/triggers`)).body.items.find(
@@ -1471,8 +1475,8 @@ describe("operator health and guards", () => {
     const metrics = await t.admin.get("/metrics");
     expect(metrics.status).toBe(200);
     expect(metrics.headers["content-type"]).toMatch(/^text\/plain/);
-    expect(metrics.body).toMatch(/^platform_runs_queued \d+$/m);
-    expect(metrics.body).toMatch(/^platform_workers\{kind="standalone"\} \d+$/m);
+    expect(metrics.body).toMatch(/^volvel_runs_queued \d+$/m);
+    expect(metrics.body).toMatch(/^volvel_workers\{kind="standalone"\} \d+$/m);
   });
 
   test("a backlog shows by workspace and pool on the queue and in the metrics, with what ran before", async () => {
@@ -1492,36 +1496,36 @@ describe("operator health and guards", () => {
 
       const metrics = (await t.admin.get("/metrics")).body as string;
       const queued =
-        /^platform_workspace_runs_queued\{tenant="acme",workspace="main-dev",pool="default"\} (\d+)$/m.exec(
+        /^volvel_workspace_runs_queued\{tenant="acme",workspace="main-dev",pool="default"\} (\d+)$/m.exec(
           metrics,
         );
       expect(Number(queued?.[1])).toBeGreaterThanOrEqual(2);
       expect(metrics).toMatch(
-        /^platform_workspace_queue_oldest_seconds\{tenant="acme",workspace="main-dev"\} \d+$/m,
+        /^volvel_workspace_queue_oldest_seconds\{tenant="acme",workspace="main-dev"\} \d+$/m,
       );
       // Runs that ended earlier in this file were counted, with their workspace named.
       expect(metrics).toMatch(
-        /^platform_runs_finished_total\{tenant="acme",workspace="main-dev",state="succeeded"\} \d+$/m,
+        /^volvel_runs_finished_total\{tenant="acme",workspace="main-dev",state="succeeded"\} \d+$/m,
       );
       expect(metrics).toMatch(
-        /^platform_run_duration_seconds_bucket\{tenant="acme",workspace="main-dev",le="\+Inf"\} \d+$/m,
+        /^volvel_run_duration_seconds_bucket\{tenant="acme",workspace="main-dev",le="\+Inf"\} \d+$/m,
       );
       expect(metrics).toMatch(
-        /^platform_run_queue_wait_seconds_count\{tenant="acme",workspace="main-dev"\} \d+$/m,
+        /^volvel_run_queue_wait_seconds_count\{tenant="acme",workspace="main-dev"\} \d+$/m,
       );
-      expect(metrics).toMatch(/^platform_alerts_total\{outcome="delivered"\} \d+$/m);
+      expect(metrics).toMatch(/^volvel_alerts_total\{outcome="delivered"\} \d+$/m);
       // What the instance holds itself to under load: its pools and its database.
-      expect(metrics).toMatch(/^platform_db_pool\{pool="platform",state="waiting"\} \d+$/m);
-      expect(metrics).toMatch(/^platform_db_pool\{pool="rows",state="total"\} \d+$/m);
-      expect(metrics).toMatch(/^platform_database_size_bytes \d+$/m);
-      expect(metrics).toMatch(/^platform_database_read_only 0$/m);
+      expect(metrics).toMatch(/^volvel_db_pool\{pool="platform",state="waiting"\} \d+$/m);
+      expect(metrics).toMatch(/^volvel_db_pool\{pool="rows",state="total"\} \d+$/m);
+      expect(metrics).toMatch(/^volvel_database_size_bytes \d+$/m);
+      expect(metrics).toMatch(/^volvel_database_read_only 0$/m);
 
       // Without workspace labels, the counted series carry none.
       t.kernel.config.metricsWorkspaceLabels = false;
       try {
         const plain = (await t.admin.get("/metrics")).body as string;
-        expect(plain).not.toContain("platform_workspace_runs_queued");
-        expect(plain).toMatch(/^platform_runs_finished_total\{state="succeeded"\} \d+$/m);
+        expect(plain).not.toContain("volvel_workspace_runs_queued");
+        expect(plain).toMatch(/^volvel_runs_finished_total\{state="succeeded"\} \d+$/m);
       } finally {
         t.kernel.config.metricsWorkspaceLabels = true;
       }
@@ -1762,5 +1766,137 @@ describe("managed workers", () => {
       Object.assign(config, { managedWorkers: before.mode, workerHostToken: before.token });
       setWorkerUserMode("off");
     }
+  });
+});
+
+describe("what a run was given stays out of what is shown", () => {
+  /** A claimed `use-all` run: it declares the secret TOKEN and the connection `api`. */
+  async function held(scriptPath = "use-all") {
+    const token = (await alice.post(`/tenants/${tenant}/worker-credentials`, { name: "masking" }))
+      .body.token;
+    const worker = protocol(token);
+    const id = await start(scriptPath);
+    const job = await until(
+      async () => (await worker.claim()).body.job,
+      (found) => found?.runId === id,
+      10,
+    );
+    return { worker, id, attempt: job.attempt as number };
+  }
+
+  test("a log line, an error and the run read back hold the values the run was given, never as written", async () => {
+    const { worker, id, attempt } = await held();
+    const credential = "api-credential-123";
+    const logged = await worker.post(`/runs/${id}/logs`, {
+      attempt,
+      entries: [
+        {
+          time: new Date().toISOString(),
+          level: "info",
+          message: `token ${SECRET_VALUE} and ${credential}`,
+          fields: { note: `x ${SECRET_VALUE} y`, deep: { list: [credential] }, token: "other" },
+        },
+      ],
+    });
+    expect(logged.status).toBe(204);
+    const failed = await worker.post(`/runs/${id}/fail`, {
+      attempt,
+      error: {
+        message: `GET http://api.example/x?api_key=${SECRET_VALUE} answered 401.`,
+        stack: `Error\n  at ${encodeURIComponent(SECRET_VALUE)} ${credential}`,
+      },
+    });
+    expect(failed.status).toBe(200);
+    const run = (await alice.get(`${ws()}/runs/${id}`)).body;
+    const logs = (await alice.get(`${ws()}/runs/${id}/logs`)).body;
+    const stored = await t.db
+      .selectFrom("run")
+      .select(["error", "error_summary"])
+      .where("id", "=", id)
+      .executeTakeFirstOrThrow();
+    const shown = JSON.stringify([run, logs, stored, (await alice.get(`${ws()}/runs`)).body]);
+    expect(shown).not.toContain(SECRET_VALUE);
+    expect(shown).not.toContain(encodeURIComponent(SECRET_VALUE));
+    expect(shown).not.toContain(credential);
+    expect(logs.items[0].message).toBe("token [redacted] and [redacted]");
+    expect(logs.items[0].fields).toEqual({
+      note: "x [redacted] y",
+      deep: { list: ["[redacted]"] },
+      token: "[redacted]",
+    });
+    expect(run.error.message).toBe("GET http://api.example/x?api_key=[redacted] answered 401.");
+  });
+
+  test("a batch over 1 MiB is taken, and one line's huge fields are cut to a note", async () => {
+    const { worker, id, attempt } = await held();
+    const line = (extra: object = {}) => ({
+      time: new Date().toISOString(),
+      level: "info",
+      message: "x".repeat(3000),
+      ...extra,
+    });
+    // 500 lines of 3,000 characters is about 1.5 MB: the worker of before this sent it whole.
+    const batch = await worker.post(`/runs/${id}/logs`, {
+      attempt,
+      entries: Array.from({ length: 500 }, () => line()),
+    });
+    expect(batch.status).toBe(204);
+    const big = await worker.post(`/runs/${id}/logs`, {
+      attempt,
+      entries: [line({ fields: { blob: "y".repeat(1_100_000) } })],
+    });
+    expect(big.status).toBe(204);
+    const logs = (await alice.get(`${ws()}/runs/${id}/logs?limit=1000`)).body.items;
+    expect(logs).toHaveLength(501);
+    expect(logs[500].fields.truncated).toMatch(/only 32 KB are kept/);
+  });
+
+  test("an output of 2 MB is kept, and one over the limit is refused with a word the worker can act on", async () => {
+    const { worker, id, attempt } = await held();
+    const output = { blob: "z".repeat(2 * 1024 * 1024) };
+    expect((await worker.post(`/runs/${id}/complete`, { attempt, output })).status).toBe(204);
+    const run = (await alice.get(`${ws()}/runs/${id}`)).body;
+    expect(run.status).toBe("succeeded");
+    expect(run.output.blob).toHaveLength(2 * 1024 * 1024);
+    const row = await t.db
+      .selectFrom("run")
+      .select("output_ref")
+      .where("id", "=", id)
+      .executeTakeFirstOrThrow();
+    expect(row.output_ref).not.toBeNull();
+
+    const second = await held();
+    const huge = { blob: "z".repeat(11 * 1024 * 1024) };
+    expect(
+      (
+        await second.worker.post(`/runs/${second.id}/complete`, {
+          attempt: second.attempt,
+          output: huge,
+        })
+      ).status,
+    ).toBe(413);
+  });
+
+  test("an output refused for its size is not retried: the work was done", async () => {
+    // `flaky` has two retries.
+    const { worker, id, attempt } = await held("flaky");
+    const failed = await worker.post(`/runs/${id}/fail`, {
+      attempt,
+      retry: false,
+      error: { message: "The output is larger than 10 MB. The script's work was done." },
+    });
+    expect(failed.body).toEqual({ final: true });
+    const run = (await alice.get(`${ws()}/runs/${id}`)).body;
+    expect(run).toMatchObject({ status: "failed", attempt: 1 });
+    // Without the field, as an older worker reports, it is retried as before.
+    const again = await held("flaky");
+    expect(
+      (
+        await again.worker.post(`/runs/${again.id}/fail`, {
+          attempt: again.attempt,
+          error: { message: "x" },
+        })
+      ).body,
+    ).toEqual({ final: false });
   });
 });

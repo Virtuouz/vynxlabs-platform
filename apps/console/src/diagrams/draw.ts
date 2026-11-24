@@ -2,7 +2,7 @@ import type { Mermaid } from "mermaid";
 
 /**
  * Diagrams on a page of documentation: a block of code written as `mermaid`,
- * drawn by Mermaid in the page's own colours, and moved and zoomed by the
+ * drawn by Mermaid in the page's own colors, and moved and zoomed by the
  * reader. The same code draws them on a served site and in the console's
  * preview. Nothing here fetches anything: Mermaid is given by whoever calls.
  *
@@ -13,6 +13,8 @@ import type { Mermaid } from "mermaid";
 const EASE = "cubic-bezier(0.2, 0, 0, 1)";
 const SVG = "http://www.w3.org/2000/svg";
 const MIN_ZOOM = 0.25;
+/** The least a diagram is fitted at: a very wide one is still shown whole, in a phone's box. */
+const MIN_FIT = 0.02;
 const MAX_ZOOM = 8;
 /** The height a diagram's box may take, in pixels: never a sliver, never more than a screen's worth. */
 const MIN_HEIGHT = 160;
@@ -25,7 +27,7 @@ const isMac = () => typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(n
 
 let canvas: CanvasRenderingContext2D | null | undefined;
 /**
- * A colour as Mermaid reads it. A theme may give a colour in any form CSS
+ * A color as Mermaid reads it. A theme may give a color in any form CSS
  * knows, and Mermaid's own reader knows only a few, so each is put into sRGB
  * first by the browser itself.
  */
@@ -179,6 +181,8 @@ export class PanZoom {
   private readonly left: number;
   private readonly top: number;
   private scale = 1;
+  /** What fitting gave: zooming out may go as far as that, however small. */
+  private fitted = 1;
   private x = 0;
   private y = 0;
   /** Whether the reader moved it. A box that changes size refits a diagram nobody touched. */
@@ -228,10 +232,13 @@ export class PanZoom {
       (height - PADDING * 2) / this.height,
     );
     this.moved = false;
+    // The scale drawn is the one the middle is worked out from, so it is in the middle.
+    const fitted = Math.max(MIN_FIT, scale);
+    this.fitted = fitted;
     this.place(
-      Math.max(MIN_ZOOM, scale),
-      (width - this.width * scale) / 2 - this.left * scale,
-      (height - this.height * scale) / 2 - this.top * scale,
+      fitted,
+      (width - this.width * fitted) / 2 - this.left * fitted,
+      (height - this.height * fitted) / 2 - this.top * fitted,
       animate,
     );
   }
@@ -239,7 +246,10 @@ export class PanZoom {
   zoomBy(factor: number, at?: { x: number; y: number }): void {
     const shown = this.svg.getBoundingClientRect();
     const point = at ?? { x: shown.width / 2, y: shown.height / 2 };
-    const scale = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, this.scale * factor));
+    const scale = Math.min(
+      MAX_ZOOM,
+      Math.max(Math.min(MIN_ZOOM, this.fitted), this.scale * factor),
+    );
     if (scale === this.scale) return;
     const ratio = scale / this.scale;
     this.moved = true;
@@ -421,7 +431,7 @@ export function undraw(figure: HTMLElement): void {
   figure.replaceChildren(pre);
 }
 
-/** Draws one figure, in the colours of the page it is on. */
+/** Draws one figure, in the colors of the page it is on. */
 export async function drawFigure(figure: HTMLElement, mermaid: Mermaid): Promise<void> {
   const source = drawn.get(figure)?.source ?? figure.querySelector("code")?.textContent ?? "";
   undraw(figure);
@@ -494,7 +504,7 @@ let watching = false;
 
 /**
  * Draws every diagram in a part of a page, and draws them again when the
- * page's theme changes, so they are always in its colours.
+ * page's theme changes, so they are always in its colors.
  */
 export async function drawAll(root: ParentNode, load: () => Promise<Mermaid>): Promise<void> {
   const figures = () => [...root.querySelectorAll<HTMLElement>("[data-vd-mermaid]")];

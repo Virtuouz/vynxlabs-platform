@@ -194,6 +194,27 @@ test("a run held back by its concurrency key says by what, and shows the key", a
   expect(screen.getByText("c-17 · one at a time")).toBeTruthy();
 });
 
+test("a run set for later says when it starts, as the list does (OPS-25)", async () => {
+  const at = new Date(Date.now() + 3_600_000).toISOString();
+  routes[`GET ${root}/runs/r1`] = () => [
+    200,
+    {
+      ...scriptRun,
+      status: "queued",
+      state: "waiting_time",
+      error: null,
+      errorSummary: null,
+      finishedAt: null,
+      startedAt: null,
+      scheduledFor: at,
+    },
+  ];
+  show(<RunPage root={root} link={link} id="r1" />);
+  expect(await screen.findByText(/^Waiting until /)).toBeTruthy();
+  // It can be canceled, as the Runs row menu offers (P31).
+  expect(screen.getByRole("button", { name: "Cancel run" })).toBeTruthy();
+});
+
 test("a script run is run again with the same input, and the page moves to the new run", async () => {
   show(<RunPage root={root} link={link} id="r1" />);
   fireEvent.click(await screen.findByRole("button", { name: /Re-run/ }));
@@ -218,6 +239,31 @@ test("a flow run is retried from its failed step after saying what runs again an
   expect(said).toContain("gate (approved by Ana)");
   await waitFor(() => expect(location.pathname).toBe(`${link}/runs/f3`));
   expect(calls.find((call) => call.method === "POST")?.body).toEqual({ from: "failed" });
+});
+
+test("a flow run started by another flow is retried through that one, and has no Re-run (FLW-16)", async () => {
+  routes[`GET ${root}/flow-runs/f2`] = () => [
+    200,
+    { ...flowRun, parentFlowRunId: "parent1", retryOf: null },
+  ];
+  show(<RunPage root={root} link={link} id="f2" />);
+  const retryThrough = await screen.findByRole("link", { name: /Retry the flow that started it/ });
+  expect(retryThrough.getAttribute("href")).toBe(`${link}/runs/parent1`);
+  expect(screen.queryByRole("button", { name: /Re-run/ })).toBeNull();
+  expect(screen.queryByRole("button", { name: /Copy as curl/ })).toBeNull();
+});
+
+test("a flow run's curl starts it again by the retry route, which needs no manual start (FLW-26)", async () => {
+  const copied: string[] = [];
+  vi.stubGlobal("navigator", {
+    clipboard: { writeText: async (text: string) => void copied.push(text) },
+  });
+  show(<RunPage root={root} link={link} id="f2" />);
+  fireEvent.click(await screen.findByRole("button", { name: /Copy as curl/ }));
+  await waitFor(() => expect(copied).toHaveLength(1));
+  expect(copied[0]).toContain(`/flow-runs/f2/retry`);
+  expect(copied[0]).toContain('"from":"start"');
+  expect(copied[0]).not.toContain("sku");
 });
 
 test("a step a retry kept says where it was done", async () => {
@@ -607,4 +653,198 @@ test("a step's own run links to its flow run, opened on the step, and is not run
   expect(await screen.findByRole("link", { name: "Step b of a flow run" })).toBeTruthy();
   expect(href("Step b of a flow run")).toContain(`${link}/runs/f2?step=b`);
   expect(screen.queryByRole("button", { name: /Re-run/ })).toBeNull();
+});
+
+const copying = () => {
+  const copied: string[] = [];
+  vi.stubGlobal("navigator", {
+    ...navigator,
+    clipboard: { writeText: async (text: string) => void copied.push(text) },
+  });
+  return copied;
+};
+
+test("a run of a trigger source opens the source, and is not offered a re-run that cannot work (OPS-22)", async () => {
+  routes[`GET ${root}/runs/r1`] = () => [
+    200,
+    {
+      ...scriptRun,
+      script: "sources/inbox",
+      trigger: {
+        type: "schedule",
+        schedule: "every-minute",
+        relay: { resourceId: "x", node: "", mode: "poll" },
+      },
+    },
+  ];
+  show(<RunPage root={root} link={link} id="r1" />);
+  await screen.findByText("The SMS gateway said no.", { selector: "p" });
+  // The source is edited where sources are; no page of a script of that name is linked.
+  expect(href("sources/inbox")).toContain(`${link}/extensions/trigger_source/edit/sources/inbox`);
+  expect(href("sources/inbox")).not.toContain(`${link}/scripts/sources/inbox`);
+  expect(screen.queryByRole("button", { name: /Re-run/ })).toBeNull();
+  expect(screen.queryByRole("button", { name: /^Copy as curl/ })).toBeNull();
+});
+
+test("a copied command runs the run again on the server, with its input as it was stored (OPS-29)", async () => {
+  const copied = copying();
+  show(<RunPage root={root} link={link} id="r1" />);
+  fireEvent.click(await screen.findByRole("button", { name: /^Copy as curl/ }));
+  await waitFor(() => expect(copied).toHaveLength(1));
+  expect(copied[0]).toContain(`${root}/runs/r1/rerun`);
+  // Not the input shown here, which is masked.
+  expect(copied[0]).not.toContain("north");
+  expect(copied[0]).not.toContain("[redacted]");
+  cleanup();
+
+  copied.length = 0;
+  show(<RunPage root={root} link={link} id="f2" />);
+  fireEvent.click(await screen.findByRole("button", { name: /^Copy as curl/ }));
+  await waitFor(() => expect(copied).toHaveLength(1));
+  expect(copied[0]).toContain(`${root}/flow-runs/f2/retry`);
+  expect(copied[0]).toContain("start");
+});
+
+test("an attempt that logged nothing is listed, and says so (OPS-31)", async () => {
+  routes[`GET ${root}/runs/r1/insight`] = () => [
+    200,
+    {
+      attempts: [
+        { attempt: 1, startedAt: null, endedAt: null, failed: true, errorsLogged: 0 },
+        {
+          attempt: 2,
+          startedAt: "2026-11-14T10:00:01.000Z",
+          endedAt: "2026-11-14T10:00:02.000Z",
+          failed: false,
+          errorsLogged: 1,
+        },
+      ],
+      worker: null,
+      timeoutSeconds: 30,
+      uses: [],
+      diagnosis: null,
+    },
+  ];
+  show(<RunPage root={root} link={link} id="r1" />);
+  expect(await screen.findByText(/#1 failed/)).toBeTruthy();
+  expect(screen.getByText("nothing logged")).toBeTruthy();
+  // One error line does not make the attempt a failure: it is counted.
+  expect(screen.getByText(/#2 succeeded/)).toBeTruthy();
+  expect(screen.getByText("1 error line")).toBeTruthy();
+});
+
+test("a step's run, opened by its ID in the list, opens as a step of a flow run (OPS-33)", async () => {
+  routes[`GET ${root}/activity`] = () => [200, { items: [], nextCursor: null, stateCounts: {} }];
+  routes[`GET ${root}/runs/s1`] = () => [
+    200,
+    {
+      ...scriptRun,
+      id: "s1",
+      trigger: { type: "flow", flowRunId: "f2", node: "b", flow: "orders/reorder" },
+    },
+  ];
+  routes[`GET ${root}/runs/s1/logs`] = () => [200, { items: [], done: true }];
+  routes[`GET ${root}/runs/s1/insight`] = () => [
+    200,
+    { attempts: [], worker: null, timeoutSeconds: 30, uses: [], diagnosis: null },
+  ];
+  history.replaceState(null, "", `${link}/runs?run=s1`);
+  show(<RunsWorkbench root={root} link={link} />);
+  expect(await screen.findByText(/A step of a flow run/)).toBeTruthy();
+  expect(href("Open the flow run")).toContain(`${link}/runs/f2?step=b`);
+  expect(screen.queryByText(/No run has this ID/)).toBeNull();
+});
+
+test("WLK-16: a flow run the list does not hold (a child's, or an older one) opens from its ID instead of saying no run has it", async () => {
+  routes[`GET ${root}/activity`] = () => [200, { items: [], nextCursor: null, stateCounts: {} }];
+  routes[`GET ${root}/runs/c1`] = () => [404, { status: 404, detail: "No such run." }];
+  routes[`GET ${root}/flow-runs/c1`] = () => [200, { id: "c1", flow: "orders/child" }];
+  history.replaceState(null, "", `${link}/runs?run=c1`);
+  show(<RunsWorkbench root={root} link={link} />);
+  expect(await screen.findByText(/This flow run is not in the list/)).toBeTruthy();
+  expect(href("Open the flow run")).toContain(`${link}/runs/c1`);
+  expect(screen.queryByText(/No run has this ID/)).toBeNull();
+});
+
+test("a flow run is retried on a version chosen from the list, not only its own or the newest (FLW-MP13)", async () => {
+  routes[`GET ${root}/bundles`] = () => [
+    200,
+    {
+      items: [
+        { id: "b5", version: 5, active: true, createdAt: "2026-11-15T10:00:00.000Z" },
+        { id: "b4", version: 4, active: false, createdAt: "2026-11-14T09:00:00.000Z" },
+        { id: "b3", version: 3, active: false, createdAt: "2026-11-13T09:00:00.000Z" },
+      ],
+    },
+  ];
+  show(<RunPage root={root} link={link} id="f2" />);
+  fireEvent.click(await screen.findByRole("button", { name: /Re-run/ }));
+  fireEvent.click(await screen.findByRole("menuitem", { name: "On another version…" }));
+  const dialog = await screen.findByRole("dialog");
+  fireEvent.change(await within(dialog).findByLabelText("Version"), { target: { value: "b3" } });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Continue" }));
+  // The version dialog steps aside, and the usual question is asked.
+  await waitFor(() => expect(screen.queryByLabelText("Version")).toBeNull());
+  expect(await answer("Retry")).toContain("On version 4");
+  await waitFor(() => expect(location.pathname).toBe(`${link}/runs/f3`));
+  expect(calls.find((call) => call.method === "POST")?.body).toEqual({
+    from: "failed",
+    bundleId: "b3",
+  });
+});
+
+test("a script run says what its failure alert did, and what it published (OPS-MP9, OPS-MP10)", async () => {
+  routes[`GET ${root}/runs/r1`] = () => [
+    200,
+    {
+      ...scriptRun,
+      alert: {
+        handlerRunId: "h1",
+        handlerError: null,
+        notified: false,
+        notifyError: 'The connection "ops-chat" is not set up in this workspace.',
+        repeats: 2,
+      },
+    },
+  ];
+  routes[`GET ${root}/events`] = (_body, url) => {
+    calls.push({ method: "EVENTS", url, body: undefined });
+    return [
+      200,
+      {
+        items: [{ id: "e9", name: "orders/placed", occurredAt: "2026-11-14T10:00:02.000Z" }],
+        next: null,
+      },
+    ];
+  };
+  show(<RunPage root={root} link={link} id="r1" />);
+  expect(await screen.findByText(/The failure notification was not sent/)).toBeTruthy();
+  expect(screen.getByText(/ops-chat/)).toBeTruthy();
+  expect(screen.getByText(/2 later failures were counted on this alert/)).toBeTruthy();
+  expect(href("The failure handler's run")).toContain(`${link}/runs/h1`);
+  const published = await screen.findByRole("link", { name: "orders/placed" });
+  expect(published.getAttribute("href")).toBe(`${link}/events?item=e9`);
+  // NARROW-4: links read as links, in the action color, not as plain text.
+  expect(published.className).toContain("text-action");
+  expect(screen.getByRole("link", { name: "The failure handler's run" }).className).toContain(
+    "text-action",
+  );
+  expect(calls.some((one) => one.url.includes("/events?run=r1"))).toBe(true);
+});
+
+test("a script run that published nothing says so only once it has ended", async () => {
+  routes[`GET ${root}/events`] = () => [200, { items: [], next: null }];
+  show(<RunPage root={root} link={link} id="r1" />);
+  expect(await screen.findByText("It published no events.")).toBeTruthy();
+});
+
+test("a flow run says that its failure handler failed to start, and that a notification is waiting", async () => {
+  routes[`GET ${root}/flow-runs/f2`] = () => [
+    200,
+    { ...flowRun, alert: { handlerError: "The script is not deployed.", notified: null } },
+  ];
+  show(<RunPage root={root} link={link} id="f2" />);
+  expect(await screen.findByText(/The failure handler did not start/)).toBeTruthy();
+  expect(screen.getByText(/The script is not deployed\./)).toBeTruthy();
+  expect(screen.getByText(/waiting for a worker to post it/)).toBeTruthy();
 });

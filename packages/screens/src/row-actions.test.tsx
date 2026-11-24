@@ -1,10 +1,14 @@
 // @vitest-environment happy-dom
 
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { Button, TooltipProvider } from "@volvel/ui";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import type { PageWidget } from "@volvel/manifest";
+import { Button, ToastProvider, TooltipProvider } from "@volvel/ui";
+import { corePack } from "@volvel/widgets-core/views";
 import type { ComponentProps } from "react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { RowActionButtons } from "../../widgets-core/views/press.tsx";
+import { PageView } from "./PageView.tsx";
+import { type PageDataClient, viewRegistry, type WireData } from "./types.ts";
 
 afterEach(cleanup);
 
@@ -115,5 +119,84 @@ describe("a greyed button gives its reason", () => {
     const wrapper = screen.getByRole("button", { name: "Mark paid" }).parentElement as HTMLElement;
     fireEvent.pointerUp(wrapper, { pointerType: "touch" });
     expect(await screen.findByText("Only Billing can do this.")).toBeTruthy();
+  });
+});
+
+describe("confirming an action on several rows", () => {
+  const rowsWire = {
+    shape: "rows",
+    columns: [
+      { name: "id", type: "uuid", label: "id" },
+      { name: "number", type: "text", label: "Number" },
+    ],
+    rows: [
+      { id: "1", number: "INV-1" },
+      { id: "2", number: "INV-2" },
+    ],
+  } as unknown as WireData;
+
+  function chooseTwo(confirm: object) {
+    const client: PageDataClient = {
+      read: async () => ({ inputs: { rows: rowsWire } }),
+      act: vi.fn(async () => ({ client: [] })),
+    };
+    render(
+      <ToastProvider>
+        <PageView
+          widgets={[
+            {
+              id: "invoices",
+              type: "core/table",
+              at: { x: 0, y: 0, w: 12, h: 8 },
+              data: { rows: { source: { visual: { table: "invoices" } } } },
+              config: {
+                columns: [{ column: "number" }],
+                select: true,
+                rowActions: [
+                  {
+                    id: "remove",
+                    label: "Remove",
+                    action: { confirm, steps: [{ do: "delete", record: "event" }] },
+                  },
+                ],
+              },
+            } as PageWidget,
+          ]}
+          filters={[]}
+          registry={viewRegistry(corePack)}
+          client={client}
+          filterValues={{}}
+          onFilterValues={() => {}}
+        />
+      </ToastProvider>,
+    );
+    return client;
+  }
+
+  test("names how many, not the first of them", async () => {
+    const client = chooseTwo({});
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Choose INV-1" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Choose INV-2" }));
+    fireEvent.click(
+      within(screen.getByRole("region", { name: "Rows chosen" })).getByRole("button", {
+        name: "Remove",
+      }),
+    );
+    expect(await screen.findByText("Remove 2 invoices?")).toBeTruthy();
+    expect(screen.queryByText(/INV-1/, { selector: "[role=dialog] *" })).toBeNull();
+    expect(client.act).not.toHaveBeenCalled();
+  });
+
+  test("the author's {column} is left out when several are named", async () => {
+    chooseTwo({ title: "Remove {number}?", text: "Gone: {number}." });
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Choose INV-1" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Choose INV-2" }));
+    fireEvent.click(
+      within(screen.getByRole("region", { name: "Rows chosen" })).getByRole("button", {
+        name: "Remove",
+      }),
+    );
+    expect(await screen.findByText("Remove (2 chosen)?")).toBeTruthy();
+    expect(screen.queryByText(/INV-1/, { selector: "[role=dialog] *" })).toBeNull();
   });
 });

@@ -179,6 +179,32 @@ describe("pausing one trigger", () => {
     expect((await alice.put(`${ws()}/trigger-pauses/nothing/here`, {})).status).toBe(404);
   });
 
+  test("a webhook paused on its own says it is the webhook, not the workspace (OPS-37)", async () => {
+    expect((await alice.put(`${ws()}/trigger-pauses/orders/hook`, { reason: "Hold" })).status).toBe(
+      204,
+    );
+    const refused = await send("orders/hook");
+    expect(refused.statusCode).toBe(503);
+    expect(refused.json().code).toBe("trigger_paused");
+    expect(refused.json().detail).toContain("This webhook is paused");
+    expect(refused.json().detail).not.toContain("workspace");
+    expect((await alice.delete(`${ws()}/trigger-pauses/orders/hook`)).status).toBe(204);
+  });
+
+  test("a trigger paused again by another person names that person, and the reason is theirs (OPS-36)", async () => {
+    expect((await alice.put(`${ws()}/trigger-pauses/orders/hook`, { reason: "A" })).status).toBe(
+      204,
+    );
+    expect((await carl.put(`${ws()}/trigger-pauses/orders/hook`, { reason: "B" })).status).toBe(
+      204,
+    );
+    const hook = (await alice.get(`${ws()}/triggers`)).body.items.find(
+      (one: { path: string }) => one.path === "orders/hook",
+    );
+    expect(hook.paused).toMatchObject({ reason: "B", byName: "carl@acme.example" });
+    expect((await alice.delete(`${ws()}/trigger-pauses/orders/hook`)).status).toBe(204);
+  });
+
   test("a request with a bad signature is refused and its reason kept, never its body", async () => {
     expect((await send("orders/signed", '{"card":"4111"}', { "x-sig": "nope" })).statusCode).toBe(
       401,
@@ -222,7 +248,8 @@ describe("runs of every kind, together", () => {
       values (${run.id}, 1, now() - interval '2 minutes', 'error', 'refused', '{}'),
              (${run.id}, 2, now() - interval '1 minute', 'error', 'refused', '{}')`.execute(t.db);
     const insight = (await alice.get(`${ws()}/runs/${run.id}/insight`)).body;
-    expect(insight.attempts.map((one: { attempt: number }) => one.attempt)).toEqual([1, 2]);
+    // Every attempt the run made: the third logged nothing, and is listed all the same.
+    expect(insight.attempts.map((one: { attempt: number }) => one.attempt)).toEqual([1, 2, 3]);
     expect(insight.uses).toEqual([{ connection: "erp", bound: true }]);
     expect(insight.diagnosis).toMatchObject({ section: "connections" });
     expect(insight.diagnosis.cause).toContain("all 3 attempts");
@@ -240,9 +267,23 @@ describe("runs of every kind, together", () => {
     expect(insight.attempts).toEqual([expect.objectContaining({ attempt: 1, failed: true })]);
   });
 
+  test("a diagnosis says Volvel, never the platform, and says set up, never bind (p31 fc)", () => {
+    const at = { attempt: 1, maxAttempts: 1 };
+    const texts = [
+      diagnose({ ...at, message: "worker did not report for 60s" }),
+      diagnose({ ...at, message: "POST /runs/1/log answered 413 too large" }),
+      diagnose({ ...at, message: "A connection is not bound" }),
+      diagnose({ ...at, message: "The connection erp is not bound", unbound: ["erp"] }),
+    ].map((one) => `${one?.cause} ${one?.next}`);
+    expect(texts.join("\n")).not.toMatch(/platform|\bbind\b|\bbound\b|\bunbound\b/i);
+    expect(texts.join("\n")).toContain("Volvel");
+  });
+
   test("diagnosis knows the common shapes, and stays quiet about the rest", () => {
     const at = { attempt: 1, maxAttempts: 1 };
-    expect(diagnose({ ...at, message: "x", unbound: ["erp"] })?.section).toBe("connections");
+    expect(
+      diagnose({ ...at, message: "The connection erp is not bound", unbound: ["erp"] })?.section,
+    ).toBe("connections");
     expect(
       diagnose({ ...at, message: "Timed out after 30s", timeoutSeconds: 30 })?.cause,
     ).toContain("30s");
@@ -251,6 +292,53 @@ describe("runs of every kind, together", () => {
     );
     expect(diagnose({ ...at, message: "status 422 Unprocessable" })?.cause).toContain("422");
     expect(diagnose({ ...at, message: "Something odd happened" })).toBeUndefined();
+  });
+
+  test("diagnosis reads the texts the platform itself writes", () => {
+    const at = { attempt: 1, maxAttempts: 1 };
+    const cause = (message: string) => diagnose({ ...at, message })?.cause ?? "";
+    expect(cause("GET https://api.example.com/v1/x?key=1 answered 401.")).toContain("credential");
+    expect(cause("GET https://api.example.com/v1/x answered 404.")).toContain("404");
+    expect(cause("POST https://api.example.com/v1/x answered 429.")).toContain("limiting");
+    expect(cause("GET https://api.example.com/v1/x answered 503.")).toContain("503");
+    expect(cause("POST https://api.example.com/v1/x answered 413.")).toContain("too large");
+    expect(cause("The run took longer than its limit of 60 seconds.")).toContain("60 seconds");
+    expect(cause("The script ran out of memory (512 MB).")).toContain("512 MB");
+    expect(cause("The script was stopped: the machine ran low on memory.")).toContain("machine");
+    const secret = diagnose({
+      ...at,
+      message: "GET /runs/r1/secrets/TOKEN?attempt=1 answered 404: The secret TOKEN was not found.",
+    });
+    expect(secret).toMatchObject({ section: "secrets" });
+    expect(secret?.cause).toContain("TOKEN");
+    expect(
+      diagnose({
+        ...at,
+        message: "GET /runs/r1/variables/x answered 404: The variable x was not found.",
+      })?.section,
+    ).toBe("variables");
+    expect(
+      diagnose({
+        ...at,
+        message: "GET /runs/r1/connections/erp answered 404: The connection erp was not found.",
+      })?.section,
+    ).toBe("connections");
+    expect(
+      cause(
+        'GET /runs/r1/connections/erp answered 403: This needs a declared use of the connection "erp".',
+      ),
+    ).toContain("without naming it");
+    expect(cause("The worker did not report for 30 seconds.")).toContain("stopped reporting");
+    expect(cause("POST /runs/r1/logs?attempt=1 answered 413: Request body is too large")).toContain(
+      "larger than a request may be",
+    );
+    // A word in the failure is not the failure.
+    expect(
+      diagnose({ ...at, message: 'relation "schema_migrations" does not exist' }),
+    ).toBeUndefined();
+    expect(
+      diagnose({ ...at, message: "GET https://timeout.example.com/ answered 503." })?.cause,
+    ).toContain("503");
   });
 });
 
@@ -299,6 +387,245 @@ describe("events", () => {
     const event = (await alice.get(`${ws()}/events`)).body.items[0];
     expect(event).toMatchObject({ name: "orders/nobody-listens", listeners: 0, started: [] });
     expect(event.publishedBy).toBeNull();
+  });
+});
+
+describe("a trigger that cannot start what it is for", () => {
+  const strict = manifest("script", "orders/strict", {
+    entry: "sync",
+    input: { type: "object", required: ["n"] },
+    output: {},
+    timeoutSeconds: 30,
+    retries: { limit: 0, delaySeconds: 0, backoff: false },
+    uses: { connections: [], secrets: [], variables: [] },
+  });
+  const nightly = (note: string, script = "orders/sync") =>
+    manifest("schedule", "orders/nightly", { script, cron: "0 3 * * *", input: { note } });
+
+  async function deployWith(extra: BundleManifest[]) {
+    const base = bundle();
+    const unsigned = { ...base, manifests: [...base.manifests, ...extra] } as Omit<
+      Bundle,
+      "digest"
+    >;
+    const content = { ...unsigned, digest: bundleDigest(unsigned) } as Bundle;
+    const uploaded = await alice.post(`${ws()}/bundles`, content);
+    expect(uploaded.status, JSON.stringify(uploaded.body)).toBe(201);
+    const deployed = await alice.post(`${ws()}/deployments`, { bundleId: uploaded.body.id });
+    expect(deployed.status, JSON.stringify(deployed.body)).toBe(201);
+  }
+  const listed = async (path: string) =>
+    ((await alice.get(`${ws()}/triggers`)).body.items as Record<string, any>[]).find(
+      (one) => one.path === path,
+    ) as Record<string, any>;
+
+  test("a paused schedule keeps the firing it was holding through an edit that leaves its time alone", async () => {
+    await deployWith([nightly("Nightly")]);
+    const due = new Date(Date.now() - 3_600_000);
+    await t.db
+      .updateTable("trigger_state")
+      .set({
+        next_fire_at: due,
+        config: sql`config || '{"lastSkippedAt": "2026-01-01T03:00:00.000Z", "lastSkipReason": "backlog"}'::jsonb`,
+      })
+      .where("type", "=", "schedule")
+      .execute();
+    expect((await alice.put(`${ws()}/trigger-pauses/orders/nightly`, {})).status).toBe(204);
+
+    await deployWith([nightly("Edited")]);
+    const kept = await listed("orders/nightly");
+    expect(new Date(kept.nextFireAt).getTime()).toBe(due.getTime());
+    expect(kept.lastSkipReason).toBe("backlog");
+    expect(kept.lastSkippedAt).toEqual(expect.any(String));
+    expect(kept.paused).not.toBeNull();
+
+    // Changing the time is a new schedule, and starts from the next time it names.
+    const moved = nightly("Nightly");
+    moved.body.cron = "0 4 * * *";
+    await deployWith([moved]);
+    expect(new Date((await listed("orders/nightly")).nextFireAt).getTime()).toBeGreaterThan(
+      Date.now(),
+    );
+    expect((await alice.delete(`${ws()}/trigger-pauses/orders/nightly`)).status).toBe(204);
+  });
+
+  test("a schedule whose input no longer fits says so, and is not shown as fired", async () => {
+    await deployWith([strict, nightly("Nightly", "orders/strict")]);
+    await t.db
+      .updateTable("trigger_state")
+      .set({ next_fire_at: new Date(Date.now() - 60_000), last_fired_at: null })
+      .where("type", "=", "schedule")
+      .execute();
+    const { fireDueSchedules } = await import("./kernel/execution/triggers.js");
+    await fireDueSchedules(t.kernel);
+    const shown = await listed("orders/nightly");
+    expect(shown.lastRefusal).toMatchObject({ reason: "input" });
+    expect(shown.lastRefusal.problem).toContain("does not match");
+    expect(shown.lastFiredAt).toBeNull();
+    expect(shown.lastRun).toBeNull();
+    expect(new Date(shown.nextFireAt).getTime()).toBeGreaterThan(Date.now());
+  });
+
+  test("a filter's failure that quotes a secret in the event is kept without it (mask2)", async () => {
+    await deployWith([
+      manifest("event", "orders/paid", { payload: { type: "object" } }),
+      manifest("trigger", "orders/on-paid", {
+        type: "event",
+        script: "orders/sync",
+        event: "orders/paid",
+        filter: "duration(event.payload.apiKey) > duration('1s')",
+      }),
+    ]);
+    const published = await alice.post(`${ws()}/events`, {
+      name: "orders/paid",
+      payload: { apiKey: "k-live-98765" },
+    });
+    expect(published.status, JSON.stringify(published.body)).toBe(201);
+    const refusal = (await listed("orders/on-paid")).lastRefusal;
+    expect(refusal).toMatchObject({ reason: "filter" });
+    expect(refusal.problem).toContain("could not be worked out");
+    expect(JSON.stringify(refusal)).not.toContain("k-live-98765");
+  });
+
+  test("a webhook answered 400 for its input, and an event that does not fit, are kept where refusals are", async () => {
+    await deployWith([
+      strict,
+      manifest("event", "orders/placed", { payload: { type: "object" } }),
+      manifest("trigger", "orders/on-placed", {
+        type: "event",
+        script: "orders/strict",
+        event: "orders/placed",
+      }),
+      manifest("trigger", "orders/on-placed-filtered", {
+        type: "event",
+        script: "orders/sync",
+        event: "orders/placed",
+        filter: "event.payload.nothing.deeper == 1",
+      }),
+      manifest("trigger", "orders/strict-hook", { type: "webhook", script: "orders/strict" }),
+    ]);
+    const hook = new URL((await listed("orders/strict-hook")).url).pathname;
+    const answered = await t.app.inject({
+      method: "POST",
+      url: hook,
+      headers: { "content-type": "application/json" },
+      payload: "{}",
+    });
+    expect(answered.statusCode).toBe(400);
+    expect((await listed("orders/strict-hook")).lastRefusal).toMatchObject({ reason: "input" });
+
+    const published = await alice.post(`${ws()}/events`, { name: "orders/placed", payload: {} });
+    expect(published.status, JSON.stringify(published.body)).toBe(201);
+    expect((await listed("orders/on-placed")).lastRefusal).toMatchObject({ reason: "input" });
+    expect((await listed("orders/on-placed-filtered")).lastRefusal).toMatchObject({
+      reason: "filter",
+    });
+  });
+});
+
+describe("what a schedule shows of itself and of the runs it started", () => {
+  const nightly = (enabled = true) =>
+    manifest("schedule", "orders/shown", {
+      script: "orders/sync",
+      cron: "0 9 * * *",
+      timezone: "America/New_York",
+      enabled,
+    });
+  const ofFlow = manifest("flow", "orders/morning", {
+    nodes: {
+      start: {
+        type: "trigger",
+        trigger: { type: "schedule", cron: "0 9 * * *", timezone: "America/New_York" },
+      },
+      done: { type: "set", values: { ok: "true" } },
+    },
+    edges: [{ from: "start", to: "done" }],
+  });
+  async function deployWith(extra: BundleManifest[]) {
+    const base = bundle();
+    const unsigned = { ...base, manifests: [...base.manifests, ...extra] } as Omit<
+      Bundle,
+      "digest"
+    >;
+    const content = { ...unsigned, digest: bundleDigest(unsigned) } as Bundle;
+    const uploaded = await alice.post(`${ws()}/bundles`, content);
+    expect([200, 201], JSON.stringify(uploaded.body)).toContain(uploaded.status);
+    const deployed = await alice.post(`${ws()}/deployments`, { bundleId: uploaded.body.id });
+    expect(deployed.status, JSON.stringify(deployed.body)).toBe(201);
+  }
+  const listed = async (path: string) =>
+    ((await alice.get(`${ws()}/triggers`)).body.items as Record<string, any>[]).find(
+      (one) => one.path === path,
+    ) as Record<string, any>;
+
+  test("a flow's schedule says its cron and its zone (OPS-17)", async () => {
+    await deployWith([nightly(), ofFlow]);
+    expect(await listed("orders/shown")).toMatchObject({
+      cron: "0 9 * * *",
+      timezone: "America/New_York",
+    });
+    expect(await listed("orders/morning")).toMatchObject({
+      type: "schedule",
+      cron: "0 9 * * *",
+      timezone: "America/New_York",
+    });
+  });
+
+  test("a run says which schedule started it, and Fire now is a firing: it is the last run and sets Last fired (OPS-16, OPS-19, p31 fc)", async () => {
+    await deployWith([nightly(), ofFlow]);
+    expect((await listed("orders/shown")).lastRun).toBeNull();
+    const byHand = await alice.post(`${ws()}/schedule-firings`, { path: "orders/shown" });
+    expect(byHand.status, JSON.stringify(byHand.body)).toBe(201);
+    const run = (await alice.get(`${ws()}/runs/${byHand.body.id}`)).body;
+    expect(run.trigger).toMatchObject({ type: "schedule", trigger: "orders/shown", manual: true });
+    const shown = await listed("orders/shown");
+    expect(shown.lastRun?.id).toBe(byHand.body.id);
+    expect(shown.lastFiredAt).not.toBeNull();
+    // Its own time starts a run that is counted, and says the same.
+    await t.db
+      .updateTable("trigger_state")
+      .set({ next_fire_at: new Date(Date.now() - 60_000) })
+      .where("type", "=", "schedule")
+      .execute();
+    const { fireDueSchedules } = await import("./kernel/execution/triggers.js");
+    await fireDueSchedules(t.kernel);
+    const after = await listed("orders/shown");
+    expect(after.lastRun).not.toBeNull();
+    expect(after.lastRun.id).not.toBe(byHand.body.id);
+    expect(after.lastFiredAt).not.toBeNull();
+    expect(Date.parse(after.lastFiredAt)).toBeGreaterThanOrEqual(Date.parse(shown.lastFiredAt));
+    const own = (await alice.get(`${ws()}/runs/${after.lastRun.id}`)).body;
+    expect(own.trigger).toMatchObject({ type: "schedule", trigger: "orders/shown" });
+  });
+
+  test("an event's run says the trigger it came through (OPS-16)", async () => {
+    await deployWith([
+      manifest("event", "orders/seen", { payload: { type: "object" } }),
+      manifest("trigger", "orders/on-seen", {
+        type: "event",
+        script: "orders/sync",
+        event: "orders/seen",
+      }),
+    ]);
+    const published = await alice.post(`${ws()}/events`, { name: "orders/seen", payload: {} });
+    expect(published.status, JSON.stringify(published.body)).toBe(201);
+    expect(published.body.started).toBe(1);
+    const found = (await alice.get(`${ws()}/runs?script=orders/sync`)).body.items.find(
+      (item: { trigger: { type: string } }) => item.trigger.type === "event",
+    );
+    const run = (await alice.get(`${ws()}/runs/${found.id}`)).body;
+    expect(run.trigger).toMatchObject({ type: "event", trigger: "orders/on-seen" });
+  });
+
+  test("a schedule that is turned off has no next time (OPS-20)", async () => {
+    await deployWith([nightly(false)]);
+    const off = await listed("orders/shown");
+    expect(off.enabled).toBe(false);
+    expect(off.nextFireAt).toBeNull();
+    await deployWith([nightly(true)]);
+    expect(new Date((await listed("orders/shown")).nextFireAt).getTime()).toBeGreaterThan(
+      Date.now(),
+    );
   });
 });
 

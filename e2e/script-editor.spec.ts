@@ -1,4 +1,4 @@
-import { signInWithPassword } from "./sign-in.ts";
+import { signInAs } from "./as.ts";
 import { expect, type Page, test } from "./test.ts";
 import { expectNoAxeViolations } from "./visual.ts";
 
@@ -9,10 +9,6 @@ import { expectNoAxeViolations } from "./visual.ts";
  * tab's title says what is open, and the first Tab on a page skips to its content.
  */
 
-const ADMIN = {
-  email: process.env.E2E_ADMIN_EMAIL ?? "admin@example.com",
-  password: process.env.E2E_ADMIN_PASSWORD ?? "change-me-please",
-};
 const TENANT_ADMIN = "00000000-0000-7000-8000-000000000002";
 const stamp = Date.now().toString(36);
 
@@ -20,6 +16,18 @@ const stamp = Date.now().toString(36);
 const call = (page: Page, method: string, path: string, body?: unknown): Promise<any> =>
   page.evaluate(
     async ([method, path, body]) => {
+      // A draft save names the draft it saw: its revision now, or none when there is none.
+      if (
+        method === "PUT" &&
+        String(path).includes("/drafts/") &&
+        body &&
+        typeof body === "object" &&
+        !("revision" in body) &&
+        !("create" in body)
+      ) {
+        const seen = await fetch(`/api/v1${path}`);
+        if (seen.ok) body = { ...body, revision: (await seen.json()).revision };
+      }
       const response = await fetch(`/api/v1${path}`, {
         method: method as string,
         headers: body ? { "content-type": "application/json" } : {},
@@ -32,7 +40,7 @@ const call = (page: Page, method: string, path: string, body?: unknown): Promise
     [method, path, body] as const,
   );
 
-test("a new script has no errors, keeps its undo history, and runs with ⌘↵ from the code", async ({
+test("a new script has no errors, keeps its undo history, and runs with ⌘↵ from the code @builder", async ({
   browser,
 }) => {
   const page = await (await browser.newContext()).newPage();
@@ -42,7 +50,7 @@ test("a new script has no errors, keeps its undo history, and runs with ⌘↵ f
     errors.push(`a browser dialog: ${dialog.message()}`);
     void dialog.dismiss();
   });
-  await signInWithPassword(page, ADMIN.email, ADMIN.password);
+  await signInAs(page, "operator");
 
   const tenant = await call(page, "POST", "/tenants", {
     slug: `se-${stamp}`,
@@ -77,11 +85,35 @@ test("a new script has no errors, keeps its undo history, and runs with ⌘↵ f
   await page.keyboard.press("Control+z");
   await expect(editor.getByText("//note")).toHaveCount(0);
 
-  // ⌘↵ with the code focused saves the draft and runs it, and the run shows beside the code.
-  const lines = await editor.locator(".view-line").count();
-  await page.keyboard.press("Control+Enter");
+  // A run's input is checked against the script's schema (SCR-05), so the starter's required name is
+  // given, and sent with the form's own button: ⌘↵ runs again with the last input sent (the first
+  // run also saves the draft).
   const run = page.getByRole("region", { name: "Test pane" });
+  await run.getByLabel("Name").fill("Ada");
+  await run.getByRole("button", { name: "Save and run" }).click();
   await run.getByRole("tablist", { name: "About this run" }).waitFor();
+  await expect(run.getByText("Succeeded").first()).toBeVisible({ timeout: 60_000 });
+  // ⌘↵ with the code focused saves the draft and runs it, and the run shows beside the code.
+  await editor.locator(".view-lines").click();
+  await page.keyboard.press("Control+End");
+  await page.keyboard.type("//again");
+  const lines = await editor.locator(".view-line").count();
+  const started = page.waitForResponse(
+    (response) => response.url().endsWith("/test-runs") && response.request().method() === "POST",
+  );
+  await page.keyboard.press("Control+Enter");
+  // ⌘↵ starts a second run, with the input remembered, and it succeeds.
+  const second = (await (await started).json()).runId as string;
+  expect(second).toBeTruthy();
+  await expect(page.getByText("Unsaved changes")).toHaveCount(0, { timeout: 15_000 });
+  await expect
+    .poll(
+      async () =>
+        (await call(page, "GET", `/tenants/${tenant.id}/workspaces/${dev.id}/runs/${second}`))
+          .status,
+      { timeout: 60_000 },
+    )
+    .toBe("succeeded");
   await expectNoAxeViolations(page, "the script editor with a run");
   await expect(page).toHaveURL(/\/scripts\/edit\/hello\/greet$/);
   await expect(run.getByText("Succeeded").first()).toBeVisible({ timeout: 60_000 });

@@ -14,17 +14,29 @@ export interface Manifest {
     description?: string;
     topic?: string;
     since?: string;
+    date?: string;
     updated?: string;
+    /** For a typed page: its type, and what it is about. */
+    docType?: string;
+    subjects?: string[];
   }[];
   topics: Record<string, string>;
   terms: Record<string, Term>;
   attachments: Record<string, string[]>;
   extensions: Record<string, string[]>;
+  /** For a site with pages that moved: an old path to the page's path now. */
+  redirects?: Record<string, string>;
   /**
    * The names of the screenshots that were taken for this version. A page that
    * shows one that is not here shows what the picture would have been of.
    */
   screenshots?: string[];
+  /**
+   * The file of each of those, by look: `{ "console/table-help": { light: "…png", dark: "…png" } }`,
+   * under `assets/screenshots/`. The names carry a hash of the picture, so a file never changes.
+   * A build before these were kept has none, and a page then shows its words.
+   */
+  screenshotFiles?: Record<string, Record<string, string>>;
 }
 
 /** What is written for one page: its tree, and what its frontmatter said. */
@@ -44,7 +56,7 @@ export function manifestOf(set: DocSet, version: string): Manifest {
     pages: [...order, ...rest].flatMap((path) => {
       const entry = set.pages.get(path);
       if (!entry) return [];
-      const { title, description, topic, since } = entry.frontmatter;
+      const { title, description, topic, since, date } = entry.frontmatter;
       return [
         {
           path,
@@ -53,7 +65,10 @@ export function manifestOf(set: DocSet, version: string): Manifest {
           ...(description ? { description } : {}),
           ...(topic ? { topic } : {}),
           ...(since ? { since } : {}),
+          ...(date ? { date } : {}),
           ...(entry.updated ? { updated: entry.updated } : {}),
+          ...(set.types[path] ? { docType: set.types[path] } : {}),
+          ...(entry.frontmatter.subjects?.length ? { subjects: entry.frontmatter.subjects } : {}),
         },
       ];
     }),
@@ -61,6 +76,7 @@ export function manifestOf(set: DocSet, version: string): Manifest {
     terms: set.terms,
     attachments: set.attachments,
     extensions: set.extensions,
+    ...(Object.keys(set.redirects).length > 0 ? { redirects: set.redirects } : {}),
   };
 }
 
@@ -71,7 +87,7 @@ export function manifestOf(set: DocSet, version: string): Manifest {
  */
 export function packageOutput(
   set: DocSet,
-  options: { version: string; productName?: string },
+  options: { version: string; productName?: string; generated?: ReadonlySet<string> },
 ): Map<string, string> {
   const files = new Map<string, string>();
   files.set("manifest.json", `${JSON.stringify(manifestOf(set, options.version))}\n`);
@@ -82,7 +98,10 @@ export function packageOutput(
   }
   files.set(
     "search.json",
-    buildSearchIndex(set, options.productName ? { productName: options.productName } : {}),
+    buildSearchIndex(set, {
+      ...(options.productName ? { productName: options.productName } : {}),
+      ...(options.generated ? { generated: options.generated } : {}),
+    }),
   );
   return files;
 }

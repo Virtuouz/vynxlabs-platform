@@ -10,7 +10,8 @@ import type { FastifyReply } from "fastify";
 import { Type } from "typebox";
 import { keepConsoleManaged } from "../kernel/authoring.js";
 import { forgetHealth } from "../kernel/data/health.js";
-import { badRequest, HttpError, notFound } from "../kernel/errors.js";
+import { badRequest, guestStart, HttpError, notFound } from "../kernel/errors.js";
+import { arrivingManifests } from "../kernel/execution/arriving.js";
 import { bindConnection, bindGroupMember } from "../kernel/execution/bindings.js";
 import {
   AuthorizationRefused,
@@ -32,10 +33,24 @@ import {
   storeBundle,
 } from "../kernel/execution/bundles.js";
 import { BUILTIN_CONFIG_SCHEMAS, connectorSchema } from "../kernel/execution/connectors.js";
+import { instanceTriggersPaused } from "../kernel/execution/control.js";
 import { deployBundle } from "../kernel/execution/deploy.js";
-import { previewPromotion, promote, promotionOf } from "../kernel/execution/promote.js";
-import { redact } from "../kernel/execution/redact.js";
-import { cancelRun, readPayload, type ScriptBody, startRun } from "../kernel/execution/runs.js";
+import {
+  previewDeployment,
+  previewPromotion,
+  promote,
+  promotionOf,
+} from "../kernel/execution/promote.js";
+import { redact, redactError, redactText } from "../kernel/execution/redact.js";
+import {
+  announceCanceled,
+  cancelRun,
+  readPayload,
+  type ScriptBody,
+  startRun,
+  takeCanceled,
+} from "../kernel/execution/runs.js";
+import { servedValues } from "../kernel/execution/served.js";
 import {
   flowStateSql,
   type RunState,
@@ -43,7 +58,7 @@ import {
   runState,
   runStateSql,
 } from "../kernel/execution/state.js";
-import { queueTask, type TaskRow, toTask } from "../kernel/execution/tasks.js";
+import { poolOfConnection, queueTask, type TaskRow, toTask } from "../kernel/execution/tasks.js";
 import {
   fireScheduleNow,
   fireWebhook,
@@ -51,15 +66,20 @@ import {
   nextFireTimes,
   webhookToken,
 } from "../kernel/execution/triggers.js";
-import { createWorkerCredential, WORKER_STALE_SECONDS } from "../kernel/execution/workers.js";
+import {
+  assertPoolNameFree,
+  createWorkerCredential,
+  WORKER_STALE_SECONDS,
+} from "../kernel/execution/workers.js";
 import { awaitResponse } from "../kernel/flows/engine.js";
-import { publishPlatformEvent } from "../kernel/flows/events.js";
+import { eventSchema, publishPlatformEvent } from "../kernel/flows/events.js";
 import { pushRelease } from "../kernel/git.js";
 import { access, findWorkspace, guestLimit, type WorkspaceRef } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
+import { METRICS, metricHeader } from "../kernel/metric-list.js";
 import { labelText } from "../kernel/metrics.js";
-import { PageQuery, pageOf } from "../pagination.js";
-import { describeRequests, PromotionRequest } from "./promotion-requests.js";
+import { listOf, PageQuery, pageOf } from "../pagination.js";
+import { describeRequests, PromotionRequest, visibleRequests } from "./promotion-requests.js";
 import {
   AnyObject,
   Id,
@@ -81,6 +101,13 @@ const pathPattern = new RegExp(PATH_PATTERN);
 
 /** The worker version that first takes tasks. An older one is shown as needing an update. */
 const TASKS_SINCE = "0.6.0";
+/**
+ * The oldest worker that is up to date: the one that takes tasks, but never newer than this
+ * control plane, so that a worker of the release's own version is not called older.
+ */
+function oldestCurrentWorker(controlPlane: string): string {
+  return olderThan(controlPlane, TASKS_SINCE) ? controlPlane : TASKS_SINCE;
+}
 /** Whether a version is older than another, or unknown. */
 function olderThan(version: string | null, than: string): boolean {
   if (!version) return true;
@@ -216,7 +243,7 @@ const Deployment = Type.Object({
   message: Type.Optional(NullableString),
   createdBy: Type.Optional(
     Type.String({
-      description: "Who deployed it: an email, a service account's name, or the platform.",
+      description: "Who deployed it: an email, a service account's name, or Volvel.",
     }),
   ),
   digest: Type.Optional(Type.String()),
@@ -234,6 +261,30 @@ const RunStatus = Type.Union([
   Type.Literal("failed"),
   Type.Literal("cancelled"),
 ]);
+/** What started a run: its kind, the details of that kind, and for a trigger source's run, which one. */
+const RunTrigger = Type.Unsafe<{
+  type: string;
+  relay?: { resourceId: string; node: string; mode: "webhook" | "poll" };
+  [detail: string]: unknown;
+}>({
+  type: "object",
+  additionalProperties: true,
+  properties: {
+    type: { type: "string" },
+    relay: {
+      type: "object",
+      description: "Set when the run is of a trigger source: the source and the node it starts.",
+      properties: {
+        resourceId: { type: "string", format: "uuid" },
+        node: { type: "string" },
+        mode: { enum: ["webhook", "poll"] },
+      },
+      required: ["resourceId", "node", "mode"],
+    },
+  },
+  required: ["type"],
+});
+
 const Run = Type.Object({
   id: Id,
   script: Type.String(),
@@ -241,7 +292,7 @@ const Run = Type.Object({
   state: RunStateSchema,
   attempt: Type.Integer(),
   maxAttempts: Type.Integer(),
-  trigger: AnyObject,
+  trigger: RunTrigger,
   startedBy: Type.Object({ type: Type.String(), id: NullableId }),
   bundleId: Id,
   bundleVersion: Type.Integer(),
@@ -316,7 +367,7 @@ const toRun = (row: RunRow, bundleVersion: number) => ({
   id: row.id,
   script: row.script_path,
   status: row.status,
-  state: runState(row.status),
+  state: runState(row.status, row.scheduled_for),
   attempt: row.attempt,
   maxAttempts: row.max_attempts,
   trigger: { type: row.trigger_type, ...row.trigger_detail },
@@ -382,7 +433,8 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
      *
      * A connection is bound before the bundle that declares it is deployed, so
      * what it is declared as is looked for where it may be: among what is
-     * deployed, then among the drafts, then in the bundles uploaded to the
+     * deployed, then among the drafts, then in the bundles that arrive with the
+     * next promotion, then in the bundles uploaded to the
      * workspace, newest first. One that nothing declares is taken to be HTTP,
      * which is what a connection is unless it says otherwise. A deploy checks
      * every binding again against the bundle it activates.
@@ -396,11 +448,27 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         .where("kind", "=", "connector")
         .execute();
 
-    const configSchemaOf = async (
+    /**
+     * The manifests of the workspace's uploaded bundles, newest first, deployed or not, read one
+     * at a time: a caller stops reading when it has what it wanted. A connection bound long ago
+     * still finds its declaration, though many bundles were uploaded since.
+     */
+    async function* uploadedManifests(workspaceId: string) {
+      const uploaded = await db
+        .selectFrom("bundle")
+        .select(["id", "storage_key"])
+        .where("workspace_id", "=", workspaceId)
+        .orderBy("id", "desc")
+        .limit(200)
+        .execute();
+      for (const stored of uploaded) yield (await loadBundle(kernel, stored)).manifests;
+    }
+
+    const declarationOf = async (
       workspaceId: string,
       kind: "connection" | "connection_group",
       path: string,
-    ): Promise<object> => {
+    ) => {
       const named = (body: unknown) => (body as { connector?: string } | undefined)?.connector;
       const [deployed, drafted] = await Promise.all([
         db
@@ -425,18 +493,24 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       };
       let found = from(deployed) ?? from([...drafted, ...deployed]);
       if (!found) {
-        const uploaded = await db
-          .selectFrom("bundle")
-          .select(["id", "storage_key"])
-          .where("workspace_id", "=", workspaceId)
-          .orderBy("id", "desc")
-          .limit(5)
-          .execute();
-        for (const stored of uploaded) {
-          found = from((await loadBundle(kernel, stored)).manifests);
+        // What the next promotion brings: production is set up for it before it arrives.
+        const arriving = await arrivingManifests(kernel, db, workspaceId);
+        found = from([...arriving, ...deployed]);
+      }
+      if (!found) {
+        for await (const manifests of uploadedManifests(workspaceId)) {
+          found = from(manifests);
           if (found) break;
         }
       }
+      return found;
+    };
+    const configSchemaOf = async (
+      workspaceId: string,
+      kind: "connection" | "connection_group",
+      path: string,
+    ): Promise<object> => {
+      const found = await declarationOf(workspaceId, kind, path);
       if (!found) return BUILTIN_CONFIG_SCHEMAS.http as object;
       const schema = connectorSchema(found.name, found.connectors);
       if (!schema) {
@@ -465,9 +539,11 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.workspace("bundle:read") },
         schema: {
           summary: "Bundles uploaded to a workspace, newest first",
+          description:
+            "A bundle is a set of manifests and code. Each is listed with who uploaded it and when.",
           tags: ["deploys"],
           params: WorkspaceParams,
-          response: { 200: Type.Object({ items: Type.Array(Bundle) }) },
+          response: { 200: listOf(Bundle, 100) },
         },
       },
       async ({ params }) => {
@@ -546,10 +622,12 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       {
         config: { access: access.workspace("deployment:read") },
         schema: {
-          summary: "Deployments to a workspace, newest first",
+          summary: "Versions deployed to a workspace, newest first",
+          description:
+            "Each time a version was deployed or rolled back to: by whom, and which bundle.",
           tags: ["deploys"],
           params: WorkspaceParams,
-          response: { 200: Type.Object({ items: Type.Array(Deployment) }) },
+          response: { 200: listOf(Deployment, 100) },
         },
       },
       async ({ params }) => {
@@ -614,7 +692,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                 ? (members.get(row.created_by_id) ?? "A member")
                 : row.created_by_type === "service_account" && row.created_by_id
                   ? (accounts.get(row.created_by_id) ?? "A service account")
-                  : "The platform",
+                  : "Volvel",
             digest: row.digest,
             runningIn: running
               .filter((one) => one.digest === row.digest)
@@ -633,15 +711,63 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       },
     );
 
+    app.get(
+      `${base}/deployment-preview`,
+      {
+        config: { access: access.workspace("deployment:write") },
+        schema: {
+          summary: "What deploying a bundle here would do",
+          description:
+            "Found by carrying the deploy out and taking it all back, so it is exactly what " +
+            "the deploy would do: the resources and tables it would change, or why it would be refused. " +
+            "Nothing is changed.",
+          tags: ["deploys"],
+          params: WorkspaceParams,
+          querystring: Type.Object({
+            bundleId: Id,
+            allowDelete: Type.Optional(
+              Type.String({
+                maxLength: 4000,
+                description:
+                  "Paths the deploy may delete although it looks like a rename, separated by commas.",
+              }),
+            ),
+          }),
+          response: {
+            200: Type.Object({
+              possible: Type.Boolean(),
+              refusal: Type.Union([
+                Type.Object({
+                  code: Type.String(),
+                  detail: Type.String(),
+                  errors: Type.Array(Type.Object({ path: Type.String(), message: Type.String() })),
+                }),
+                Type.Null(),
+              ]),
+              summary: Type.Union([Summary, Type.Null()]),
+            }),
+          },
+        },
+      },
+      async ({ ctx, query }) =>
+        previewDeployment(
+          kernel,
+          ctx.actor,
+          ctx.workspace as WorkspaceRef,
+          query.bundleId,
+          query.allowDelete?.split(",").filter(Boolean),
+        ),
+    );
+
     app.post(
       `${base}/deployments`,
       {
         config: { access: access.workspace("deployment:write") },
         schema: {
-          summary: "Activate a bundle",
+          summary: "Deploy a version, or roll back to an earlier one",
           description:
-            "Atomic. Runs in progress finish on the bundle they started with. To roll back, " +
-            "deploy an earlier bundle.",
+            "Atomic. Runs in progress finish on the version they started with. To roll back, " +
+            "deploy an earlier version: the one a bundle's number names.",
           tags: ["deploys"],
           params: WorkspaceParams,
           body: Type.Object({
@@ -848,7 +974,8 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               .orderBy("created_at", "desc")
               .limit(1)
               .execute();
-            return (await describeRequests(kernel, ctx, latest))[0] ?? null;
+            const [mine] = await describeRequests(kernel, ctx, await visibleRequests(ctx, latest));
+            return mine ?? null;
           })(),
         };
       },
@@ -878,6 +1005,9 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                   "or remove the name of a tool an agent calls. Promoting to production without " +
                   "it, when there is one, is refused with `breaking_changes`.",
               }),
+            ),
+            message: Type.Optional(
+              Type.String({ maxLength: 500, description: "What changed, in a few words." }),
             ),
             allowDelete: Type.Optional(
               Type.Array(Type.String({ maxLength: 255 }), {
@@ -922,6 +1052,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           promote(kernel, trx, audit, workspace, ctx.principal, {
             ...(body?.allowDelete ? { allowDelete: body.allowDelete } : {}),
             ...(body?.confirmBreaking ? { confirmBreaking: true } : {}),
+            ...(body?.message ? { message: body.message } : {}),
           }),
         );
         await publishPlatformEvent(kernel, {
@@ -1111,9 +1242,15 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       `${base}/runs`,
       {
-        config: { access: access.workspace("run:read") },
+        config: {
+          access: access.custom(
+            "Needs `run:read` at the workspace, or at the script itself when `script` names it.",
+          ),
+        },
         schema: {
           summary: "Runs in a workspace, newest first",
+          description:
+            "Each run with its script, its status and how it started. Page through it with `cursor`.",
           tags: ["runs"],
           params: WorkspaceParams,
           querystring: Type.Object({
@@ -1124,7 +1261,8 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           response: { 200: pageOf(Run) },
         },
       },
-      async ({ params, query }) => {
+      async ({ ctx, params, query }) => {
+        await findWorkspace(kernel, params.t, params.w);
         const args = pageArgs(query);
         let select = db
           .selectFrom("run")
@@ -1132,17 +1270,18 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           .selectAll("run")
           .select("bundle.version as bundle_version")
           .where("run.workspace_id", "=", params.w);
+        const script = query.script
+          ? (await resolveResource(db, params.w, query.script, { kind: "script" }))?.resource
+          : undefined;
+        await ctx.authorize("run:read", {
+          tenantId: params.t,
+          workspaceId: params.w,
+          ...(script ? { resourceId: script.id } : {}),
+        });
         if (query.script) {
           // The runs of the script that has this path now, under whatever path it had then,
           // beside any run that was started under this path.
           const path = query.script;
-          const script = await db
-            .selectFrom("resource")
-            .select("id")
-            .where("workspace_id", "=", params.w)
-            .where("kind", "=", "script")
-            .where("path", "=", path)
-            .executeTakeFirst();
           select = select.where((eb) =>
             script
               ? eb.or([eb("run.resource_id", "=", script.id), eb("run.script_path", "=", path)])
@@ -1167,7 +1306,12 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.post(
       `${base}/runs`,
       {
-        config: { access: access.custom, rateLimit: guestLimit },
+        config: {
+          access: access.custom(
+            "Needs `run:write` at the workspace or at the script itself, which is how an app's users are let start one script and no other.",
+          ),
+          rateLimit: guestLimit,
+        },
         schema: {
           summary: "Start a run of a script",
           description:
@@ -1196,6 +1340,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           workspaceId: params.w,
           resourceId: target?.id,
         });
+        if (ctx.principal.type === "anonymous") throw guestStart("script");
         const result = await ctx.mutate(async (trx, audit) => {
           const started = await startRun(kernel, trx, {
             tenantId: params.t,
@@ -1231,7 +1376,9 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.post(
       `${base}/runs/:id/rerun`,
       {
-        config: { access: access.custom },
+        config: {
+          access: access.custom("Needs `run:write` at the workspace or at the script itself."),
+        },
         schema: {
           summary: "Run a script run again, with the same input or another",
           description:
@@ -1263,6 +1410,13 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             409,
             "conflict",
             "This run is a step of a flow run. Retry the flow run instead.",
+          );
+        }
+        if (original.trigger_detail?.relay) {
+          throw new HttpError(
+            409,
+            "conflict",
+            `This run is of the trigger source ${original.script_path}, which starts nothing by hand. Its trigger runs it on its own.`,
           );
         }
         const input =
@@ -1407,7 +1561,12 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       `${base}/runs/:id`,
       {
-        config: { access: access.custom, rateLimit: guestLimit },
+        config: {
+          access: access.custom(
+            "Needs `run:read` in the workspace. Whoever started a run may always read it.",
+          ),
+          rateLimit: guestLimit,
+        },
         schema: {
           summary: "One run, with its input and output",
           description:
@@ -1419,10 +1578,14 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       },
       async ({ ctx, params }) => {
         await findWorkspace(kernel, params.t, params.w);
-        const mayReadAll = await ctx.allowed("run:read", {
+        const found = await findRun(params.w, params.id).catch(() => undefined);
+        // At the workspace, or on the run's script.
+        const at = {
           tenantId: params.t,
           workspaceId: params.w,
-        });
+          ...(found?.resource_id ? { resourceId: found.resource_id } : {}),
+        };
+        const mayReadAll = await ctx.allowed("run:read", at);
         const row = mayReadAll
           ? await findRun(params.w, params.id)
           : await findRun(params.w, params.id).catch(() => undefined);
@@ -1432,19 +1595,31 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           row.started_by_id === ctx.principal.id &&
           row.started_by_type === ctx.principal.type;
         // To someone who may not read runs, a run that is not theirs does not exist.
-        if (!mayReadAll && !own)
-          await ctx.authorize("run:read", { tenantId: params.t, workspaceId: params.w });
+        if (!mayReadAll && !own) await ctx.authorize("run:read", at);
         if (!row) throw notFound("The run");
+        // Values the run was given are masked wherever they turn up, as well as secret-named keys.
+        const known = await servedValues(kernel, db, row);
         return {
           ...toRun(row, row.bundle_version),
+          ...(row.error ? { error: redactError({ message: row.error.message }, known) } : {}),
           pool: row.pool,
           ...(await keyed(params.t, params.w, row)),
           // What is shown masks secret-looking values; workers and re-runs read the real ones.
           ...(await (async () => {
             const schemas = await payloadSchemas(kernel, row.bundle_id, row.script_path);
             return {
-              input: redact(await readPayload(kernel, row.input, row.input_ref), schemas.input),
-              output: redact(await readPayload(kernel, row.output, row.output_ref), schemas.output),
+              input: redact(
+                redact(await readPayload(kernel, row.input, row.input_ref), schemas.input, known),
+                // An event's input is held to the event's schema too: it is its payload.
+                typeof row.trigger_detail?.event === "string"
+                  ? await eventSchema(db, row.workspace_id, row.trigger_detail.event)
+                  : undefined,
+              ),
+              output: redact(
+                await readPayload(kernel, row.output, row.output_ref),
+                schemas.output,
+                known,
+              ),
             };
           })()),
           alert: row.alert,
@@ -1468,10 +1643,36 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       },
     );
 
+    /**
+     * What a run's other routes need is what starting its script needs: the permission in the
+     * workspace or on the script itself. Asked before the run is looked for, so a run that is
+     * not there and one that is not allowed answer the same.
+     */
+    const authorizeRun = async (
+      ctx: RequestContext,
+      params: { t: string; w: string; id: string },
+      permission: string,
+    ) => {
+      await findWorkspace(kernel, params.t, params.w);
+      const found = await db
+        .selectFrom("run")
+        .select("resource_id")
+        .where("id", "=", params.id)
+        .where("workspace_id", "=", params.w)
+        .executeTakeFirst();
+      await ctx.authorize(permission, {
+        tenantId: params.t,
+        workspaceId: params.w,
+        ...(found?.resource_id ? { resourceId: found.resource_id } : {}),
+      });
+    };
+
     app.get(
       `${base}/runs/:id/logs`,
       {
-        config: { access: access.workspace("run:read") },
+        config: {
+          access: access.custom("Needs `run:read` at the workspace or at the run's script itself."),
+        },
         schema: {
           summary: "A run's log lines, oldest first",
           description: "Pass the last `seq` you have as `after` to read only what is new.",
@@ -1500,7 +1701,8 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           },
         },
       },
-      async ({ params, query }) => {
+      async ({ ctx, params, query }) => {
+        await authorizeRun(ctx, params, "run:read");
         const run = await findRun(params.w, params.id);
         const rows = await db
           .selectFrom("run_log")
@@ -1510,14 +1712,16 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           .orderBy("seq")
           .limit(query.limit ?? 500)
           .execute();
+        // Lines are stored masked; a value the run was given since is masked on the way out too.
+        const known = rows.length > 0 ? await servedValues(kernel, db, run) : [];
         return {
           items: rows.map((row) => ({
             seq: Number(row.seq),
             attempt: row.attempt,
             time: iso(row.logged_at),
             level: row.level,
-            message: row.message,
-            fields: row.fields,
+            message: redactText(row.message, known),
+            fields: redact(row.fields, undefined, known) as Record<string, unknown>,
           })),
           done:
             run.status !== "queued" &&
@@ -1530,17 +1734,26 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.post(
       `${base}/runs/:id/cancel`,
       {
-        config: { access: access.workspace("run:write") },
+        config: {
+          access: access.custom(
+            "Needs `run:write` at the workspace or at the run's script itself.",
+          ),
+        },
         schema: {
           summary: "Cancel a run that is waiting or in progress",
+          description:
+            "A running script hears of it on its next heartbeat. A run that has already ended answers 409. Volvel then publishes `platform/run-finished` with the status `cancelled`. Audited.",
           tags: ["runs"],
           params: Type.Object({ t: Id, w: Id, id: Id }),
           response: { 200: Run },
         },
       },
       async ({ ctx, params }) => {
+        await authorizeRun(ctx, params, "run:write");
+        let ended: ReturnType<typeof takeCanceled> = [];
         const run = await ctx.mutate(async (trx, audit) => {
           const cancelled = await cancelRun(kernel, trx, params.w, params.id);
+          ended = takeCanceled(trx);
           await audit({
             action: "run.cancelled",
             targetType: "run",
@@ -1551,6 +1764,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           });
           return cancelled;
         });
+        await announceCanceled(kernel, ended);
         return toRun(run, (await findRun(params.w, params.id)).bundle_version);
       },
     );
@@ -1671,9 +1885,27 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                   lastFiredAt: NullableTime,
                   url: NullableString,
                   paused: Type.Union([
-                    Type.Object({ at: Time, by: NullableId, reason: Type.String() }),
+                    Type.Object({
+                      at: Time,
+                      by: NullableId,
+                      byName: NullableString,
+                      reason: Type.String(),
+                    }),
                     Type.Null(),
                   ]),
+                  pausedBy: Type.Union(
+                    [
+                      Type.Literal("instance"),
+                      Type.Literal("workspace"),
+                      Type.Literal("trigger"),
+                      Type.Null(),
+                    ],
+                    {
+                      description:
+                        "What holds it, widest first: the whole instance, this workspace, or the " +
+                        "trigger's own pause. Null when nothing does.",
+                    },
+                  ),
                   lastRun: Type.Union([
                     Type.Object({
                       kind: Type.Union([Type.Literal("script"), Type.Literal("flow")]),
@@ -1747,6 +1979,27 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           .selectAll()
           .where("workspace_id", "=", params.w)
           .execute();
+        const pausers = pauses.flatMap((one) => (one.paused_by ? [one.paused_by] : []));
+        const pauserNames = new Map(
+          pausers.length === 0
+            ? []
+            : (
+                await db
+                  .selectFrom("member")
+                  .select(["id", "name", "email"])
+                  .where("id", "in", pausers)
+                  .execute()
+              ).map((one) => [one.id, one.name || one.email] as const),
+        );
+        const instancePaused = await instanceTriggersPaused(kernel);
+        const workspacePaused =
+          (
+            await db
+              .selectFrom("workspace")
+              .select("triggers_paused")
+              .where("id", "=", params.w)
+              .executeTakeFirst()
+          )?.triggers_paused ?? false;
         const refusals = await sql<{
           path: string;
           node_id: string;
@@ -1764,7 +2017,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           const match =
             row.type === "event"
               ? sql`trigger_type = 'event' and trigger_detail->>'event' = ${row.event_name}`
-              : // A schedule names itself under `schedule`, every other trigger under `trigger`.
+              : // Runs of schedules before phase 29 name them under `schedule`, every other under `trigger`.
                 sql`coalesce(trigger_detail->>'trigger', trigger_detail->>'schedule') = ${label}`;
           const found = await sql<{
             kind: "script" | "flow";
@@ -1803,7 +2056,10 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             const refusal = refusals.rows.find(
               (one) => one.path === row.path && one.node_id === row.node_id,
             );
-            const body = row.body as { cron?: string; timezone?: string };
+            // A flow's schedule keeps its cron and zone in its trigger's state, not in the flow's body.
+            const body = (
+              typeof (row.config as { cron?: unknown }).cron === "string" ? row.config : row.body
+            ) as { cron?: string; timezone?: string };
             const token =
               mayAddress && (row.type === "webhook" || row.type === "form")
                 ? await webhookToken(kernel, row)
@@ -1821,8 +2077,20 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               event: row.event_name,
               enabled: row.enabled,
               paused: pause
-                ? { at: iso(pause.paused_at), by: pause.paused_by, reason: pause.reason }
+                ? {
+                    at: iso(pause.paused_at),
+                    by: pause.paused_by,
+                    byName: pause.paused_by ? (pauserNames.get(pause.paused_by) ?? null) : null,
+                    reason: pause.reason,
+                  }
                 : null,
+              pausedBy: instancePaused
+                ? ("instance" as const)
+                : workspacePaused
+                  ? ("workspace" as const)
+                  : pause
+                    ? ("trigger" as const)
+                    : null,
               lastRun: await lastRunOf(row),
               lastRefusal: refusal
                 ? {
@@ -1841,7 +2109,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               lastSkipReason:
                 (row.config as { lastSkipReason?: "overlap" | "backlog" }).lastSkipReason ??
                 ((row.config as { lastSkippedAt?: string }).lastSkippedAt ? "overlap" : null),
-              nextFireAt: isoOrNull(row.next_fire_at),
+              nextFireAt: row.enabled ? isoOrNull(row.next_fire_at) : null,
               lastFiredAt: isoOrNull(row.last_fired_at),
               url: token ? address : null,
               resourceKind: row.kind,
@@ -1885,6 +2153,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             event: body.event ?? null,
             enabled: body.enabled ?? true,
             paused: null,
+            pausedBy: null,
             lastRun: null,
             lastRefusal: null,
             cron: body.cron ?? null,
@@ -2034,6 +2303,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               c.columns(["workspace_id", "path", "node_id"]).doUpdateSet({
                 reason: body.reason ?? "",
                 paused_at: new Date(),
+                paused_by: ctx.principal.type === "member" ? ctx.principal.id : null,
               }),
             )
             .execute();
@@ -2056,6 +2326,8 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.workspace("trigger:write") },
         schema: {
           summary: "Resume one trigger",
+          description:
+            "Takes away the pause put on this trigger alone. A pause on the workspace or the instance stays.",
           tags: ["runs"],
           params: PauseParams,
           querystring: PauseQuery,
@@ -2094,6 +2366,19 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       description: Type.String(),
       defined: Type.Boolean({
         description: "Whether a deployed resource declares this connection.",
+      }),
+      draft: Type.Union(
+        [Type.Literal("new"), Type.Literal("changed"), Type.Literal("removed"), Type.Null()],
+        {
+          description:
+            "A change made in the console that waits to be deployed. `new` is a connection " +
+            "that has never been deployed: a script cannot use it yet.",
+        },
+      ),
+      arrives: Type.Boolean({
+        description:
+          "Declared by a workspace linked to this one, and not deployed here yet: it arrives " +
+          "with the next promotion, and can be set up here before.",
       }),
       bound: Type.Boolean(),
       config: Type.Union([AnyObject, Type.Null()]),
@@ -2146,13 +2431,27 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         .where("kind", "=", "connection")
         .execute();
       // A connection declared in a draft is shown as what the draft says it is, until it is deployed.
-      const drafted = await db
+      const draftRows = await db
         .selectFrom("resource_draft")
-        .select(["path", "body"])
+        .select(["path", "body", "deleted"])
         .where("workspace_id", "=", params.w)
         .where("kind", "=", "connection")
-        .where("deleted", "=", false)
         .execute();
+      const drafted = draftRows.filter((row) => !row.deleted);
+      // A change made in the console that waits to be deployed, as groups say theirs.
+      const draftedState = new Map(
+        draftRows.flatMap((row) => {
+          const deployed = definitions.some((one) => one.path === row.path);
+          const state = !deployed
+            ? row.deleted
+              ? null
+              : "new"
+            : row.deleted
+              ? "removed"
+              : "changed";
+          return state ? [[row.path, state] as const] : [];
+        }),
+      );
       const bindings = await db
         .selectFrom("connection_binding")
         .select([
@@ -2160,6 +2459,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           "config",
           "credential",
           "oauth",
+          "connector",
           "updated_at",
           "credential_set_at",
           "credential_set_by_type",
@@ -2174,22 +2474,81 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         .where("workspace_id", "=", params.w)
         .where("kind", "=", "connection")
         .execute();
-      const paths = [...new Set([...definitions, ...bindings].map((row) => row.path))].sort();
-      const connectors = await deployedConnectors(params.w);
+      // What the next promotion brings, which production is set up for before it arrives.
+      const arriving = await arrivingManifests(kernel, db, params.w);
+      const arrives = arriving.filter((one) => one.kind === "connection");
+      const paths = [
+        ...new Set([...definitions, ...bindings, ...arrives, ...drafted].map((row) => row.path)),
+      ].sort();
+      const draftedConnectors = await db
+        .selectFrom("resource_draft")
+        .select(["path", "body"])
+        .where("workspace_id", "=", params.w)
+        .where("kind", "=", "connector")
+        .where("deleted", "=", false)
+        .execute();
+      const connectors = [
+        ...(await deployedConnectors(params.w)),
+        ...draftedConnectors.map((one) => ({ path: one.path, body: one.body })),
+        ...arriving
+          .filter((one) => one.kind === "connector")
+          .map((one) => ({ path: one.path, body: one.body })),
+      ];
       type Declared = { connector?: string; description?: string } | undefined;
+      // A binding no deployed, drafted or arriving declaration speaks for is what the bundles
+      // uploaded here say it is: it was bound, or its declaration deployed away, as that.
+      const orphans = bindings.filter(
+        (one) =>
+          !definitions.some((row) => row.path === one.path) &&
+          !drafted.some((row) => row.path === one.path) &&
+          !arrives.some((row) => row.path === one.path),
+      );
+      const uploaded = new Map<string, Declared>();
+      if (orphans.length > 0) {
+        for await (const manifests of uploadedManifests(params.w)) {
+          for (const manifest of manifests) {
+            if (
+              manifest.kind === "connector" &&
+              !connectors.some((one) => one.path === manifest.path)
+            )
+              connectors.push({
+                path: manifest.path,
+                body: manifest.body as Record<string, unknown>,
+              });
+            if (
+              manifest.kind === "connection" &&
+              orphans.some((one) => one.path === manifest.path) &&
+              !uploaded.has(manifest.path)
+            )
+              uploaded.set(manifest.path, manifest.body as Declared);
+          }
+          // Every one that nothing else declares is found: older bundles need not be read.
+          if (orphans.every((one) => uploaded.has(one.path))) break;
+        }
+      }
       return {
         items: paths.map((path) => {
           const deployed = definitions.find((row) => row.path === path)?.body as Declared;
-          const definition =
-            deployed ?? (drafted.find((row) => row.path === path)?.body as Declared);
+          const coming = arrives.find((row) => row.path === path)?.body as Declared;
+          const draftBody = drafted.find((row) => row.path === path)?.body as Declared;
+          const definition = deployed ?? draftBody ?? coming ?? uploaded.get(path);
           const binding = bindings.find((row) => row.path === path);
           const checked = health.find((row) => row.path === path);
-          const connector = definition?.connector ?? "http";
+          // Nothing declares it: it is as HTTP only when its settings fit HTTP's, else unknown.
+          const connector =
+            definition?.connector ??
+            binding?.connector ??
+            (binding &&
+            validateJson(BUILTIN_CONFIG_SCHEMAS.http as object, binding.config ?? {}).length > 0
+              ? "unknown"
+              : "http");
           return {
             path,
             connector,
             description: definition?.description ?? "",
             defined: deployed !== undefined,
+            draft: draftedState.get(path) ?? null,
+            arrives: deployed === undefined && coming !== undefined,
             bound: binding !== undefined,
             config: binding?.config ?? null,
             configSchema: (connectorSchema(connector, connectors) ??
@@ -2231,7 +2590,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           description: "A credential is never returned, only whether one is set.",
           tags: ["bindings"],
           params: WorkspaceParams,
-          response: { 200: Type.Object({ items: Type.Array(ConnectionBinding) }) },
+          response: { 200: listOf(ConnectionBinding) },
         },
       },
       async ({ params }) => {
@@ -2341,6 +2700,11 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                       },
                     ),
                   ),
+                  declared: Type.Boolean({
+                    description:
+                      "False for a group no deployed resource or draft declares any more, whose " +
+                      "members were left. Each can be removed.",
+                  }),
                   configSchema: AnyObject,
                   members: Type.Array(
                     Type.Object({
@@ -2379,12 +2743,12 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           if (!deployed.some((one) => one.path === path)) return "new";
           return draft.deleted ? "removed" : "changed";
         };
-        const groups = [
+        const declared = [
           ...deployed,
           ...drafts
             .filter((one) => !one.deleted && !deployed.some((row) => row.path === one.path))
             .map((one) => ({ path: one.path, body: one.body })),
-        ].sort((a, b) => a.path.localeCompare(b.path));
+        ];
         const members = await db
           .selectFrom("connection_group_member")
           .select([
@@ -2401,6 +2765,24 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           .where("workspace_id", "=", params.w)
           .orderBy("key")
           .execute();
+        // Members of a group nothing declares any more stay, with their credentials: listed as
+        // left over, so that each can be seen and removed.
+        const leftover = [...new Set(members.map((member) => member.group_path))].filter(
+          (path) => !declared.some((row) => row.path === path),
+        );
+        const left: { path: string; body: unknown }[] = [];
+        if (leftover.length > 0) {
+          const named = new Map<string, unknown>();
+          for await (const manifests of uploadedManifests(params.w)) {
+            for (const manifest of manifests) {
+              if (manifest.kind === "connection_group" && !named.has(manifest.path))
+                named.set(manifest.path, manifest.body);
+            }
+            if (leftover.every((path) => named.has(path))) break;
+          }
+          for (const path of leftover) left.push({ path, body: named.get(path) ?? {} });
+        }
+        const groups = [...declared, ...left].sort((a, b) => a.path.localeCompare(b.path));
         const setBy = await credentialSetters(db, members);
         const connectors = await deployedConnectors(params.w);
         return {
@@ -2408,6 +2790,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             const body = group.body as { description?: string; connector?: string };
             return {
               path: group.path,
+              declared: !leftover.includes(group.path),
               draft: stateOf(group.path),
               description: body.description ?? "",
               connector: body.connector ?? "http",
@@ -2551,6 +2934,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       },
       async ({ ctx, params, body }, reply) => {
         const path = wildPath(params);
+        const declared = await declarationOf(params.w, "connection", path);
         const issues = validateJson(
           await configSchemaOf(params.w, "connection", path),
           body.config,
@@ -2565,6 +2949,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             { tenantId: params.t, workspaceId: params.w, path },
             body.config,
             body.credential,
+            declared?.name,
           );
           // What a Test found says nothing about settings it did not try.
           if (changed) await forgetHealth(trx, params.w, path);
@@ -2592,6 +2977,8 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.workspace("connection:write") },
         schema: {
           summary: "Remove a connection's binding",
+          description:
+            "The connection no longer has the settings the binding gave it in this workspace. Audited.",
           tags: ["bindings"],
           params: WildParams,
           response: { 204: NoContent },
@@ -2656,6 +3043,8 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           const queued = await queueTask(trx, {
             tenantId: params.t,
             workspaceId: params.w,
+            // From where a script that uses it runs: another pool may reach what the default cannot.
+            pool: await poolOfConnection(trx, params.w, path),
             kind: "test-connection",
             subject: path,
             request: {
@@ -2725,7 +3114,12 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       "/oauth/connections/callback",
       {
         // Anyone may arrive here; who they are is read, to check they began it.
-        config: { access: access.custom, rateLimit: { max: 60, timeWindow: "1 minute" } },
+        config: {
+          access: access.custom(
+            "Needs the sign-in of the member who began the connection, and the one-time `state` they were given. The answer is taken once.",
+          ),
+          rateLimit: { max: 60, timeWindow: "1 minute" },
+        },
         schema: {
           summary: "Where an OAuth provider sends a member back",
           description:
@@ -2751,7 +3145,13 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           const done = await finishAuthorization(kernel, query, request.ctx.actor);
           return back(done.returnTo, { oauth: "connected", connection: done.connection.path });
         } catch (error) {
-          if (!(error instanceof AuthorizationRefused)) throw error;
+          if (!(error instanceof AuthorizationRefused)) {
+            // A browser is sent back to the console with a word, never left on a page of JSON.
+            request.log.warn({ err: error }, "an OAuth authorization failed");
+            return back(null, {
+              oauth_error: "The authorization could not be finished. Press Connect again.",
+            });
+          }
           request.log.info({ reason: error.message }, "an OAuth connection was not authorized");
           return back(error.returnTo, {
             oauth_error: error.message,
@@ -2766,7 +3166,8 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       {
         config: { access: access.workspace("run:read") },
         schema: {
-          summary: "A task a worker does for the platform",
+          summary: "A task a worker does for Volvel",
+          description: "Work Volvel handed to a worker besides a run, and how it went.",
           tags: ["runs"],
           params: Type.Object({ t: Id, w: Id, id: Id }),
           response: { 200: Task },
@@ -2809,15 +3210,25 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       const fresh = drafts.filter(
         (draft) => !draft.deleted && !definitions.some((row) => row.path === draft.path),
       );
+      // A variable the next promotion brings, which production gives a value before it arrives.
+      const arrives = (await arrivingManifests(kernel, db, params.w)).filter(
+        (one) =>
+          one.kind === "variable" &&
+          !definitions.some((row) => row.path === one.path) &&
+          !drafts.some((row) => row.path === one.path),
+      );
       const paths = [
-        ...new Set([...definitions, ...values, ...fresh].map((row) => row.path)),
+        ...new Set([...definitions, ...values, ...fresh, ...arrives].map((row) => row.path)),
       ].sort();
       return {
         items: paths.map((path) => {
           const drafted = drafts.find((row) => row.path === path);
           const isNew = fresh.some((row) => row.path === path);
+          const coming = arrives.find((row) => row.path === path);
           const definition = (
-            isNew ? drafted?.body : definitions.find((row) => row.path === path)?.body
+            isNew
+              ? drafted?.body
+              : (definitions.find((row) => row.path === path)?.body ?? coming?.body)
           ) as { description?: string; default?: string } | undefined;
           const draft: "new" | "changed" | "removed" | null = isNew
             ? "new"
@@ -2828,6 +3239,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               : null;
           return {
             draft,
+            arrives: coming !== undefined,
             path,
             description: definition?.description ?? "",
             default: definition?.default ?? null,
@@ -2844,6 +3256,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.workspace("variable:read") },
         schema: {
           summary: "Variables in a workspace and their values",
+          description: "Each variable the workspace declares, with the value set here.",
           tags: ["bindings"],
           params: WorkspaceParams,
           response: {
@@ -2855,6 +3268,13 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                   default: NullableString,
                   value: NullableString,
                   updatedAt: Type.Optional(NullableTime),
+                  arrives: Type.Optional(
+                    Type.Boolean({
+                      description:
+                        "Declared by a workspace linked to this one, and not deployed here yet: " +
+                        "it arrives with the next promotion, and takes a value here before.",
+                    }),
+                  ),
                   draft: Type.Optional(
                     Type.Union(
                       [
@@ -2887,6 +3307,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.workspace("variable:read") },
         schema: {
           summary: "One variable and its value",
+          description: "The variable and the value set in this workspace.",
           tags: ["bindings"],
           params: WildParams,
           response: {
@@ -2914,6 +3335,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.workspace("variable:write") },
         schema: {
           summary: "Set a variable's value in this workspace",
+          description: "The value is checked against the variable's declared type. Audited.",
           tags: ["bindings"],
           params: WildParams,
           body: Type.Object({ value: Type.String({ maxLength: 65536 }) }),
@@ -2958,6 +3380,8 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.workspace("variable:write") },
         schema: {
           summary: "Clear a variable's value, so its default applies",
+          description:
+            "Takes away the value set in this workspace, so the variable's default applies. Audited.",
           tags: ["bindings"],
           params: WildParams,
           response: { 204: NoContent },
@@ -2993,9 +3417,11 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.tenant("worker:read") },
         schema: {
           summary: "Credentials for standalone workers",
+          description:
+            "The credentials made for workers that run outside the instance. A credential's value is shown once, when it is made, and is not in this list.",
           tags: ["workers"],
           params: TenantParams,
-          response: { 200: Type.Object({ items: Type.Array(WorkerCredential) }) },
+          response: { 200: listOf(WorkerCredential) },
         },
       },
       async ({ params }) => {
@@ -3044,6 +3470,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         },
       },
       async ({ ctx, params, body }, reply) => {
+        if (body.pool) assertPoolNameFree(body.pool);
         const created = await ctx.mutate(async (trx, audit) => {
           if (body.workspaceId) {
             const workspace = await trx
@@ -3087,6 +3514,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.tenant("worker:write") },
         schema: {
           summary: "Revoke a worker credential",
+          description: "A worker that holds it is refused from then on. Audited.",
           tags: ["workers"],
           params: Type.Object({ t: Id, id: Id }),
           response: { 204: NoContent },
@@ -3120,6 +3548,8 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.tenant("worker:read") },
         schema: {
           summary: "Workers heard from recently",
+          description:
+            "The workers that asked for work or reported lately, with when each was last heard from.",
           tags: ["workers"],
           params: TenantParams,
           response: {
@@ -3181,7 +3611,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             credentialName: row.name,
             managed: row.managed,
             version: row.version,
-            outdated: olderThan(row.version, TASKS_SINCE),
+            outdated: olderThan(row.version, oldestCurrentWorker(kernel.version)),
             startedAt: iso(row.started_at),
             lastSeenAt: iso(row.last_seen_at),
             running: holding
@@ -3287,7 +3717,9 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         "/hooks/:token",
         {
           config: {
-            access: access.public,
+            access: access.publicWith(
+              "Needs the webhook's token, which is in the address. Whoever holds the token may call it.",
+            ),
             rateLimit: { max: 120, timeWindow: "1 minute" },
           },
           schema: {
@@ -3303,6 +3735,9 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               "held open for up to 25 seconds, and answered 202 if the flow has said nothing by " +
               "then. Such an answer carries the flow run's ID in `x-flow-run`.",
             tags: ["runs"],
+            consumes: ["application/json", "application/x-www-form-urlencoded", "text/plain"],
+            // Read as bytes, as sent: the schema says only that a body is taken.
+            body: Type.Unknown(),
             params: Type.Object({ token: Type.String({ maxLength: 200 }) }),
             response: { 202: Type.Object({ runId: Id }) },
           },
@@ -3332,11 +3767,20 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           if (!outcome) throw notFound("The webhook");
           if ("refused" in outcome) {
             if (outcome.refused === "paused") {
-              // A sender that retries will get through once the workspace is resumed.
+              // A sender that retries will get through once what holds it is resumed.
+              if (outcome.heldBy === "workspace") {
+                throw new HttpError(
+                  503,
+                  "workspace_paused",
+                  "This workspace's triggers are paused, so the webhook started nothing. Try again later.",
+                );
+              }
               throw new HttpError(
                 503,
-                "workspace_paused",
-                "This workspace's triggers are paused, so the webhook started nothing. Try again later.",
+                "trigger_paused",
+                outcome.heldBy === "instance"
+                  ? "Every trigger in this instance is paused, so the webhook started nothing. Try again later."
+                  : "This webhook is paused, so it started nothing. Try again later.",
               );
             }
             if (outcome.refused === "signature") {
@@ -3396,19 +3840,15 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       const workerCount = (managed: boolean) =>
         Number(workers.rows.find((row) => row.managed === managed)?.n ?? 0);
       const lines = [
-        "# HELP platform_runs_queued Runs waiting for a worker.",
-        "# TYPE platform_runs_queued gauge",
-        `platform_runs_queued ${count("queued")}`,
-        "# HELP platform_runs_running Runs in progress.",
-        "# TYPE platform_runs_running gauge",
-        `platform_runs_running ${count("running")}`,
-        "# HELP platform_queue_oldest_seconds Age of the oldest run that is due and still waiting.",
-        "# TYPE platform_queue_oldest_seconds gauge",
-        `platform_queue_oldest_seconds ${Math.max(0, Math.round(Number(oldest.rows[0]?.seconds ?? 0)))}`,
-        "# HELP platform_workers Workers heard from recently.",
-        "# TYPE platform_workers gauge",
-        `platform_workers{kind="managed"} ${workerCount(true)}`,
-        `platform_workers{kind="standalone"} ${workerCount(false)}`,
+        ...metricHeader(METRICS.runsQueued),
+        `${METRICS.runsQueued.name} ${count("queued")}`,
+        ...metricHeader(METRICS.runsRunning),
+        `${METRICS.runsRunning.name} ${count("running")}`,
+        ...metricHeader(METRICS.queueOldest),
+        `${METRICS.queueOldest.name} ${Math.max(0, Math.round(Number(oldest.rows[0]?.seconds ?? 0)))}`,
+        ...metricHeader(METRICS.workers),
+        `${METRICS.workers.name}{kind="managed"} ${workerCount(true)}`,
+        `${METRICS.workers.name}{kind="standalone"} ${workerCount(false)}`,
       ];
 
       // Where the work waits, by workspace and pool: from the database, so every replica agrees.
@@ -3430,14 +3870,12 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     `.execute(db);
       if (byPlace) {
         lines.push(
-          "# HELP platform_workspace_runs_queued Runs due and waiting for a worker, by workspace and pool.",
-          "# TYPE platform_workspace_runs_queued gauge",
+          ...metricHeader(METRICS.workspaceRunsQueued),
           ...waiting.rows.map(
             (row) =>
-              `platform_workspace_runs_queued${labelText({ tenant: row.tenant, workspace: row.workspace, pool: row.pool ?? "default" })} ${Number(row.n)}`,
+              `${METRICS.workspaceRunsQueued.name}${labelText({ tenant: row.tenant, workspace: row.workspace, pool: row.pool ?? "default" })} ${Number(row.n)}`,
           ),
-          "# HELP platform_workspace_queue_oldest_seconds How long the oldest due run of a workspace has waited.",
-          "# TYPE platform_workspace_queue_oldest_seconds gauge",
+          ...metricHeader(METRICS.workspaceQueueOldest),
         );
         const oldestBy = new Map<string, { tenant: string; workspace: string; seconds: number }>();
         for (const row of waiting.rows) {
@@ -3449,7 +3887,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         }
         for (const one of oldestBy.values()) {
           lines.push(
-            `platform_workspace_queue_oldest_seconds${labelText({ tenant: one.tenant, workspace: one.workspace })} ${one.seconds}`,
+            `${METRICS.workspaceQueueOldest.name}${labelText({ tenant: one.tenant, workspace: one.workspace })} ${one.seconds}`,
           );
         }
       }
@@ -3458,20 +3896,18 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       where f.status = 'running' group by 1
     `.execute(db);
       lines.push(
-        "# HELP platform_flow_runs Flow runs in progress, by state.",
-        "# TYPE platform_flow_runs gauge",
+        ...metricHeader(METRICS.flowRuns),
         ...flows.rows.map(
-          (row) => `platform_flow_runs${labelText({ state: row.state })} ${Number(row.n)}`,
+          (row) => `${METRICS.flowRuns.name}${labelText({ state: row.state })} ${Number(row.n)}`,
         ),
       );
       const tasks = await sql<{ kind: string; n: string }>`
       select kind, count(*) as n from task where status = 'queued' group by kind
     `.execute(db);
       lines.push(
-        "# HELP platform_tasks_queued Tasks waiting for a worker, by kind.",
-        "# TYPE platform_tasks_queued gauge",
+        ...metricHeader(METRICS.tasksQueued),
         ...tasks.rows.map(
-          (row) => `platform_tasks_queued${labelText({ kind: row.kind })} ${Number(row.n)}`,
+          (row) => `${METRICS.tasksQueued.name}${labelText({ kind: row.kind })} ${Number(row.n)}`,
         ),
       );
       // What each machine that shares its slots is running: the gauge to set an alert on
@@ -3488,19 +3924,17 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       group by w.machine
     `.execute(db);
       lines.push(
-        "# HELP platform_machine_running Scripts running on each machine whose workers share its run slots.",
-        "# TYPE platform_machine_running gauge",
+        ...metricHeader(METRICS.machineRunning),
         ...machines.rows.map(
-          (row) => `platform_machine_running${labelText({ machine: row.machine })} ${row.n}`,
+          (row) => `${METRICS.machineRunning.name}${labelText({ machine: row.machine })} ${row.n}`,
         ),
       );
       const pools = await kernel.data.poolStats();
       lines.push(
-        "# HELP platform_db_pool Connections of this replica's pools to the platform database: open, idle, and requests waiting for one.",
-        "# TYPE platform_db_pool gauge",
+        ...metricHeader(METRICS.dbPool),
         ...Object.entries(pools).flatMap(([pool, stats]) =>
           (["total", "idle", "waiting"] as const).map(
-            (state) => `platform_db_pool${labelText({ pool, state })} ${stats[state]}`,
+            (state) => `${METRICS.dbPool.name}${labelText({ pool, state })} ${stats[state]}`,
           ),
         ),
       );
@@ -3509,22 +3943,18 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     `.execute(db);
       const readOnly = await kernel.readOnly().catch(() => false);
       lines.push(
-        "# HELP platform_database_size_bytes The platform database's size on disk. Alert well before its volume is full.",
-        "# TYPE platform_database_size_bytes gauge",
-        `platform_database_size_bytes ${Number(size.rows[0]?.bytes ?? 0)}`,
-        "# HELP platform_database_read_only 1 while the platform database takes no writes, such as when its disk is full.",
-        "# TYPE platform_database_read_only gauge",
-        `platform_database_read_only ${readOnly ? 1 : 0}`,
+        ...metricHeader(METRICS.databaseSize),
+        `${METRICS.databaseSize.name} ${Number(size.rows[0]?.bytes ?? 0)}`,
+        ...metricHeader(METRICS.databaseReadOnly),
+        `${METRICS.databaseReadOnly.name} ${readOnly ? 1 : 0}`,
       );
       const memory = procProbe.memory();
       if (memory) {
         lines.push(
-          "# HELP platform_memory_available_bytes Memory this replica's machine can still give out.",
-          "# TYPE platform_memory_available_bytes gauge",
-          `platform_memory_available_bytes ${Math.round(memory.availableMb * 1024 * 1024)}`,
-          "# HELP platform_memory_total_bytes All of this replica's machine's memory.",
-          "# TYPE platform_memory_total_bytes gauge",
-          `platform_memory_total_bytes ${Math.round(memory.totalMb * 1024 * 1024)}`,
+          ...metricHeader(METRICS.memoryAvailable),
+          `${METRICS.memoryAvailable.name} ${Math.round(memory.availableMb * 1024 * 1024)}`,
+          ...metricHeader(METRICS.memoryTotal),
+          `${METRICS.memoryTotal.name} ${Math.round(memory.totalMb * 1024 * 1024)}`,
         );
       }
 
@@ -3559,7 +3989,12 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       {
         // Read by a member who holds `instance:read`, or by a scraper that presents the
         // instance's metrics token: the handler checks which.
-        config: { access: access.public },
+        config: {
+          access: access.publicWith(
+            "Needs `instance:read` for a member or key, or the instance's metrics token as a bearer token for a scraper.",
+          ),
+          traced: false,
+        },
         schema: {
           summary: "Instance metrics in Prometheus text format",
           description:

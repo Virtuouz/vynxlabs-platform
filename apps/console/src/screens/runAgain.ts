@@ -1,5 +1,6 @@
 import { api } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
+import { curlFor } from "../kit/copy.tsx";
 
 /**
  * Running a run again, from wherever it is offered: the run page and the
@@ -10,6 +11,13 @@ import { ask, notify } from "../ask.tsx";
 
 /** Which version a run is run again on: the one it ran, or the one deployed now. */
 export type Version = "original" | "active";
+
+/** A flow run can also be retried on any version of the workspace, named by its bundle. */
+export type FlowVersion = Version | { bundleId: string; version: number };
+
+/** What the retry routes are told: the word for the run's own or the active version, or the bundle. */
+const versionBody = (bundle: FlowVersion) =>
+  typeof bundle === "string" ? { bundle } : { bundleId: bundle.bundleId };
 
 export interface RetryPlan {
   bundleVersion: number;
@@ -46,10 +54,11 @@ export async function scriptAgain(
 }
 
 /** A flow run, from its failed step: what runs again and what is kept are said first. */
-export async function flowFromFailed(run: Again, bundle: Version = "original"): Promise<void> {
+export async function flowFromFailed(run: Again, bundle: FlowVersion = "original"): Promise<void> {
   let plan: RetryPlan;
   try {
-    plan = await api.get(`${run.root}/flow-runs/${run.id}/retry-plan?bundle=${bundle}`);
+    const named = typeof bundle === "string" ? bundle : bundle.bundleId;
+    plan = await api.get(`${run.root}/flow-runs/${run.id}/retry-plan?bundle=${named}`);
   } catch (caught) {
     notify.error(caught);
     return;
@@ -63,14 +72,17 @@ export async function flowFromFailed(run: Again, bundle: Version = "original"): 
       `Runs again: ${plan.again.join(", ") || "nothing"}. ` +
       `Kept as it was: ${plan.kept.join(", ") || "nothing"}. ` +
       (approvals ? `Approvals kept, not asked again: ${approvals}. ` : "") +
-      `On version ${plan.bundleVersion}${bundle === "active" ? ", the one deployed now" : ""}, with the same input.`,
+      `On version ${plan.bundleVersion}${bundle === "active" ? ", the one deployed now" : ""}, with the same input.` +
+      (plan.changed.length > 0
+        ? ` That version draws ${plan.changed.join(", ")} differently, so this retry would be refused: retry from the start instead.`
+        : ""),
     action: "Retry",
   });
   if (!sure) return;
   await api
     .post<{ id: string }>(`${run.root}/flow-runs/${run.id}/retry`, {
       from: "failed",
-      ...(bundle === "active" ? { bundle } : {}),
+      ...(bundle === "active" || typeof bundle !== "string" ? versionBody(bundle) : {}),
     })
     .then((one) => run.started(one.id), notify.error);
 }
@@ -78,18 +90,46 @@ export async function flowFromFailed(run: Again, bundle: Version = "original"): 
 /** A flow run, every step again from the start. */
 export async function flowFromStart(
   run: Again & { flow: string; bundleVersion: number },
-  bundle: Version,
+  bundle: FlowVersion,
 ): Promise<void> {
   const sure = await ask.confirm({
     title: `Run ${run.flow} again from the start?`,
     text:
       bundle === "original"
         ? `Every step runs again, with the same input, on version ${run.bundleVersion}.`
-        : "Every step runs again, with the same input, on the version deployed now.",
+        : typeof bundle !== "string"
+          ? `Every step runs again, with the same input, on version ${bundle.version}.`
+          : "Every step runs again, with the same input, on the version deployed now.",
     action: "Run again",
   });
   if (!sure) return;
   await api
-    .post<{ id: string }>(`${run.root}/flow-runs/${run.id}/retry`, { from: "start", bundle })
+    .post<{ id: string }>(`${run.root}/flow-runs/${run.id}/retry`, {
+      from: "start",
+      ...versionBody(bundle),
+    })
     .then((one) => run.started(one.id), notify.error);
 }
+
+/** A run of a trigger source: it has no script page, and it is not run again by hand. */
+export const isSourceRun = (trigger: RunTrigger) => trigger.relay != null;
+
+/** What started a run, as the API's run schema says: a trigger source's run names its source. */
+export interface RunTrigger {
+  type?: string;
+  relay?: { resourceId: string; node: string; mode: "webhook" | "poll" } | null;
+  [detail: string]: unknown;
+}
+
+/** Where a trigger source is read and changed. */
+export const sourceLink = (link: string, path: string) =>
+  `${link}/extensions/trigger_source/edit/${path}`;
+
+/**
+ * What a command line should send to run a run again: the server's own copy of its input. The
+ * input shown here is masked, and may be a pointer to a stored one, so it is never pasted.
+ */
+export const scriptAgainCurl = (root: string, id: string) =>
+  curlFor("POST", `${root}/runs/${id}/rerun`, { bundle: "original" });
+export const flowAgainCurl = (root: string, id: string) =>
+  curlFor("POST", `${root}/flow-runs/${id}/retry`, { from: "start" });

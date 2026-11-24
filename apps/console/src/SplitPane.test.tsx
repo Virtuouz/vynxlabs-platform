@@ -59,3 +59,17 @@ test("a size kept the old way, as a bare number, still opens as it was", () => {
   split();
   expect(screen.getByRole("separator").getAttribute("aria-valuenow")).toBe("42");
 });
+
+test("stacked, the first pane has a height of its own, so what fills it is not left at a few pixels (P31)", () => {
+  split();
+  const first = screen.getByText("Canvas").parentElement as HTMLElement;
+  const second = screen.getByText("Settings").parentElement as HTMLElement;
+  // Below a laptop's width the panes lie one above the other and share the height by the kept share.
+  expect(first.className).toContain("max-lg:min-h-[var(--vx-min-first)]");
+  expect(first.className).toContain("max-lg:[flex-grow:var(--vx-grow-first)]");
+  expect(second.className).toContain("max-lg:min-h-[var(--vx-min-second)]");
+  const box = first.parentElement as HTMLElement;
+  expect(box.style.getPropertyValue("--vx-min-first")).toBe("160px");
+  expect(box.style.getPropertyValue("--vx-grow-first")).toBe("60");
+  expect(box.style.getPropertyValue("--vx-grow-second")).toBe("40");
+});

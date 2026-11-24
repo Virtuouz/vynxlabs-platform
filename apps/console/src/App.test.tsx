@@ -3,14 +3,17 @@ import { cleanup, fireEvent, renderHook, screen, waitFor, within } from "@testin
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { App, returnTarget, useReopenLastPlace } from "./App.tsx";
 import { match } from "./router.tsx";
+import { endSession } from "./session.ts";
 import { show } from "./testing.tsx";
 
 type Handler = (body: unknown) => [number, unknown];
 let routes: Record<string, Handler>;
 let signedIn: boolean;
+let permissions: string[];
 
 beforeEach(() => {
   signedIn = false;
+  permissions = [];
   history.replaceState(null, "", "/");
   routes = {
     "GET /api/v1/me": () =>
@@ -19,7 +22,7 @@ beforeEach(() => {
             200,
             {
               principal: { type: "member", id: "m1", name: "Alice", email: "alice@acme.example" },
-              instancePermissions: [],
+              instancePermissions: permissions,
               tenants: [{ id: "t1", slug: "acme", name: "Acme Corp" }],
             },
           ]
@@ -34,6 +37,10 @@ beforeEach(() => {
       signedIn = true;
       return [200, { token: "x" }];
     },
+    "GET /api/v1/sso/providers?email=alice%40acme.example": () => [
+      200,
+      { providers: [], password: true },
+    ],
     "GET /api/v1/tenants?limit=50": () => [
       200,
       {
@@ -54,6 +61,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   cleanup();
+  endSession();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
@@ -156,9 +164,38 @@ test("opening the console at its root goes back to the last workspace, once", as
   expect(location.pathname).toBe("/");
 });
 
+test("a tenant list with a filter in its address stays on it when the console opens (INS-fix)", async () => {
+  routes["GET /api/v1/me/recent"] = () => [
+    200,
+    { items: [{ tenantId: "t1", workspaceId: "w1", visitedAt: "2026-11-14T00:00:00.000Z" }] },
+  ];
+  history.replaceState(null, "", "/?dataLocation=cdrloc&q=acme");
+  renderHook(() => useReopenLastPlace(true));
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  expect(location.pathname).toBe("/");
+  expect(location.search).toBe("?dataLocation=cdrloc&q=acme");
+  history.replaceState(null, "", "/");
+});
+
 test("a member with nowhere remembered stays on the tenant list", async () => {
   routes["GET /api/v1/me/recent"] = () => [200, { items: [] }];
   renderHook(() => useReopenLastPlace(true));
   await new Promise((resolve) => setTimeout(resolve, 20));
   expect(location.pathname).toBe("/");
+});
+
+test("the instance's screens open for an operator and say whom they are for to anyone else (INS-20)", async () => {
+  signedIn = true;
+  routes["GET /api/v1/members?limit=50"] = () => [200, { items: [], nextCursor: null }];
+  history.replaceState(null, "", "/instance/members");
+  show(<App />);
+  await screen.findByText("For operators");
+  expect(screen.queryByRole("button", { name: "Create member" })).toBeNull();
+  expect(document.body.textContent).not.toContain("Ask a member who can give access");
+  cleanup();
+  // A role that gives everything, bound at the instance, is an operator too.
+  permissions = ["*:*"];
+  show(<App />);
+  await screen.findByRole("button", { name: "Create member" });
+  expect(screen.queryByText("For operators")).toBeNull();
 });

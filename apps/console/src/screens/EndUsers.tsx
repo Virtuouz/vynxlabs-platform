@@ -1,7 +1,8 @@
-import { Button, Closing, Dialog, Notice, TextField } from "@volvel/ui";
+import { Button, Closing, Dialog, Notice, SelectField, TextField } from "@volvel/ui";
 import { useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
+import { useNeeds } from "../kit/Can.tsx";
 import { CollectionView } from "../kit/CollectionView.tsx";
 import { Inspector, KeyValues, SectionLabel } from "../kit/layout.tsx";
 import { StatePill, Tag } from "../kit/status.tsx";
@@ -17,6 +18,8 @@ interface EndUser {
   email: string;
   name: string;
   hasPassword: boolean;
+  /** An identity provider has signed them in: they set no password, and wait for no invitation. */
+  signsInWithProvider?: boolean;
   attributes: Record<string, string>;
   groups: string[];
   disabled: boolean;
@@ -36,6 +39,62 @@ interface ShownLink extends MadeLink {
 
 const PAGE = 50;
 
+interface Address {
+  id: string;
+  hostname: string;
+  enabled: boolean;
+}
+const THIS_INSTANCE = "This instance's own address";
+
+/** Which of the tenant's addresses a link is built on. Asked only when there is a choice. */
+function AddressDialog({
+  asked,
+  addresses,
+  onClose,
+  onChosen,
+}: {
+  asked: { email: string; purpose: "invite" | "reset" } | undefined;
+  addresses: Address[];
+  onClose: () => void;
+  onChosen: (domainId: string | undefined) => void;
+}) {
+  const [chosen, setChosen] = useState("");
+  return (
+    <Dialog
+      open={asked !== undefined}
+      onClose={onClose}
+      title={asked?.purpose === "reset" ? "Password reset link" : "Invitation link"}
+      description={`Whoever opens it lands on the address you choose. For ${asked?.email ?? "them"}.`}
+    >
+      <form
+        className="flex flex-col gap-3"
+        onSubmit={(event) => {
+          event.preventDefault();
+          onChosen(chosen || undefined);
+        }}
+      >
+        <SelectField
+          name="domainId"
+          label="On which address"
+          options={[
+            { value: "", label: THIS_INSTANCE },
+            ...addresses.map((one) => ({ value: one.id, label: one.hostname })),
+          ]}
+          value={chosen}
+          hint="The tenant's own hostnames that are enabled. The link works on the one you pick."
+          onChange={setChosen}
+        />
+        <div className="flex justify-end gap-2">
+          <Button onClick={onClose}>Cancel</Button>
+          <Button type="submit" variant="primary">
+            Make link
+          </Button>
+        </div>
+      </form>
+    </Dialog>
+  );
+}
+
 const failed = (error: unknown) => {
   const failure = error as ApiError;
   return [failure.message, ...(failure.fields ?? []).map((field) => field.message)].join(" ");
@@ -43,7 +102,9 @@ const failed = (error: unknown) => {
 
 function Status({ user }: { user: EndUser }) {
   if (user.disabled) return <StatePill state="disabled" />;
-  if (!user.hasPassword) return <StatePill state="invited" />;
+  // Invited until they have used the invitation, or a provider has signed them in.
+  if (!user.hasPassword && !user.signsInWithProvider && !user.lastSignedInAt)
+    return <StatePill state="invited" />;
   return <StatePill state="active" />;
 }
 
@@ -98,6 +159,13 @@ export function EndUsers({ base, framed }: { base: string; framed?: Framed }) {
   const [attributesOf, setAttributesOf] = useState<EndUser>();
   const [problem, setProblem] = useState<string>();
   const [selected, setSelected] = useUrlParam("user", undefined, { push: true });
+  const [addressFor, setAddressFor] = useState<{
+    user: EndUser;
+    purpose: "invite" | "reset";
+  }>();
+  // Someone who may not read the domains has no choice to make: links are built as they always were.
+  const domains = useLoad<{ items: Address[] }>(`${base}/domains`);
+  const addresses = (domains.data?.items ?? []).filter((one) => one.enabled);
 
   const query = new URLSearchParams({ limit: String(PAGE) });
   const cursor = trail[trail.length - 1];
@@ -117,12 +185,35 @@ export function EndUsers({ base, framed }: { base: string; framed?: Framed }) {
       setProblem(failed(error));
     }
   };
-  const makeLink = (user: EndUser, purpose: "invite" | "reset") =>
+  const makeLinkOn = (user: EndUser, purpose: "invite" | "reset", domainId?: string) =>
     act(async () => {
-      const made = await api.post<MadeLink>(`${base}/end-users/${user.id}/links`, { purpose });
+      const made = await api.post<MadeLink>(`${base}/end-users/${user.id}/links`, {
+        purpose,
+        ...(domainId ? { domainId } : {}),
+      });
       setLink({ ...made, email: user.email, purpose });
     });
+  const makeLink = (user: EndUser, purpose: "invite" | "reset") =>
+    addresses.length > 0 ? setAddressFor({ user, purpose }) : makeLinkOn(user, purpose);
   const actions = (user: EndUser) => [
+    {
+      label: "Rename",
+      onSelect: async () => {
+        const name = await ask.prompt({
+          title: `Rename ${user.email}`,
+          text: "The name is what people see beside their email. Their email, what they were given and their sign-in are not touched.",
+          label: "Name",
+          initial: user.name,
+          action: "Rename",
+          required: false,
+        });
+        if (name === null || name.trim() === user.name) return;
+        return act(async () => {
+          await api.patch(`${base}/end-users/${user.id}`, { name: name.trim() });
+          notify.success(name.trim() ? `Now called ${name.trim()}.` : "Their name is cleared.");
+        });
+      },
+    },
     {
       label: "Attributes",
       onSelect: () => setAttributesOf({ ...user, attributes: user.attributes ?? {} }),
@@ -130,11 +221,12 @@ export function EndUsers({ base, framed }: { base: string; framed?: Framed }) {
     // A disabled account cannot be sent a link: enable it first.
     ...(user.disabled
       ? []
-      : [
-          user.hasPassword
-            ? { label: "Password reset link", onSelect: () => makeLink(user, "reset") }
-            : { label: "New invitation link", onSelect: () => makeLink(user, "invite") },
-        ]),
+      : user.hasPassword
+        ? [{ label: "Password reset link", onSelect: () => makeLink(user, "reset") }]
+        : // Someone a provider signs in has no password to set: a link would add one beside it.
+          user.signsInWithProvider || user.lastSignedInAt
+          ? []
+          : [{ label: "New invitation link", onSelect: () => makeLink(user, "invite") }]),
     user.disabled
       ? {
           label: "Enable",
@@ -146,11 +238,19 @@ export function EndUsers({ base, framed }: { base: string; framed?: Framed }) {
         }
       : {
           label: "Disable",
-          onSelect: () =>
-            act(async () => {
+          onSelect: async () => {
+            const sure = await ask.confirm({
+              title: `Disable ${user.email}?`,
+              text: "They are signed out of every app now and cannot sign in until you enable them again. What they were given is kept.",
+              action: "Disable",
+              danger: true,
+            });
+            if (!sure) return;
+            return act(async () => {
               await api.patch(`${base}/end-users/${user.id}`, { disabled: true });
               notify.success(`${user.email} can no longer sign in.`);
-            }),
+            });
+          },
         },
     {
       label: "Delete",
@@ -167,7 +267,12 @@ export function EndUsers({ base, framed }: { base: string; framed?: Framed }) {
     },
   ];
 
-  const chosen = rows.find((row) => row.id === selected);
+  const listed = rows.find((row) => row.id === selected);
+  // A link to someone past the pages loaded opens them all the same: they are read by themselves.
+  const alone = useLoad<EndUser>(
+    selected && page.data && !listed ? `${base}/end-users/${selected}` : null,
+  );
+  const chosen = listed ?? alone.data;
   const pages =
     trail.length > 1 || page.data?.nextCursor ? (
       <div className="flex items-center gap-2 text-meta text-ink-muted">
@@ -191,6 +296,7 @@ export function EndUsers({ base, framed }: { base: string; framed?: Framed }) {
       </div>
     ) : null;
 
+  const may = useNeeds({ base, permission: "end_user:write", what: "this tenant's end users" });
   return (
     <>
       <CollectionView<EndUser>
@@ -222,6 +328,7 @@ export function EndUsers({ base, framed }: { base: string; framed?: Framed }) {
             {framed?.tabs}
           </div>
         }
+        needs={{ base, permission: "end_user:write", what: "this tenant's end users" }}
         label="End users"
         rows={page.data ? rows : undefined}
         error={page.error}
@@ -281,8 +388,9 @@ export function EndUsers({ base, framed }: { base: string; framed?: Framed }) {
             title={chosen?.email}
             onClose={() => setSelected(undefined)}
             footer={
-              chosen
-                ? actions(chosen).map((action) => (
+              chosen ? (
+                <fieldset disabled={!may.can} className="contents">
+                  {actions(chosen).map((action) => (
                     <Button
                       key={action.label}
                       size="small"
@@ -291,8 +399,9 @@ export function EndUsers({ base, framed }: { base: string; framed?: Framed }) {
                     >
                       {action.label}
                     </Button>
-                  ))
-                : null
+                  ))}
+                </fieldset>
+              ) : null
             }
           >
             {chosen ? (
@@ -304,12 +413,12 @@ export function EndUsers({ base, framed }: { base: string; framed?: Framed }) {
                     {
                       label: "Last signed in",
                       value: chosen.lastSignedInAt ? (
-                        <Time value={chosen.lastSignedInAt} />
+                        <Time value={chosen.lastSignedInAt} mode="stamp" />
                       ) : (
                         "Never"
                       ),
                     },
-                    { label: "Added", value: <Time value={chosen.createdAt} /> },
+                    { label: "Added", value: <Time value={chosen.createdAt} mode="stamp" /> },
                     {
                       label: "Groups",
                       value:
@@ -354,9 +463,26 @@ export function EndUsers({ base, framed }: { base: string; framed?: Framed }) {
           fields: [
             { name: "email", label: "Email", type: "email" },
             { name: "name", label: "Name", required: false },
+            ...(addresses.length > 0
+              ? [
+                  {
+                    name: "domainId",
+                    label: "On which address",
+                    options: [
+                      { value: "", label: THIS_INSTANCE },
+                      ...addresses.map((one) => ({ value: one.id, label: one.hostname })),
+                    ],
+                    hint: "The link they are given opens on this address.",
+                  },
+                ]
+              : []),
           ],
-          submit: ({ email, name }) =>
-            api.post(`${base}/end-users`, { email, ...(name ? { name } : {}) }),
+          submit: ({ email, name, domainId }) =>
+            api.post(`${base}/end-users`, {
+              email,
+              ...(name ? { name } : {}),
+              ...(domainId ? { domainId } : {}),
+            }),
         }}
         open={inviting}
         onClose={() => setInviting(false)}
@@ -368,6 +494,18 @@ export function EndUsers({ base, framed }: { base: string; framed?: Framed }) {
         }}
       />
       <LinkDialog link={link} onClose={() => setLink(undefined)} />
+      <AddressDialog
+        asked={
+          addressFor ? { email: addressFor.user.email, purpose: addressFor.purpose } : undefined
+        }
+        addresses={addresses}
+        onClose={() => setAddressFor(undefined)}
+        onChosen={(domainId) => {
+          const asked = addressFor;
+          setAddressFor(undefined);
+          if (asked) void makeLinkOn(asked.user, asked.purpose, domainId);
+        }}
+      />
       <Closing subject={attributesOf}>
         {(attributesOf, shown) => (
           <AttributesDialog

@@ -2,7 +2,7 @@ import type { PageWidget } from "@volvel/manifest";
 import { chart, table } from "@volvel/widgets-core";
 import { expect, test } from "vitest";
 import type { Catalog } from "./model.ts";
-import { inTab, refusalsFor, tabProblems } from "./tabProblems.ts";
+import { actionFix, inTab, refusalsFor, tabProblems } from "./tabProblems.ts";
 
 const catalog: Catalog = {
   tables: [
@@ -115,4 +115,57 @@ test("what the server refused is put on the tab its place is fixed in", () => {
   const widget: PageWidget = { id: "t", type: "core/table", at };
   const found = tabProblems({ widget, definition: table, catalog, refusals: refused });
   expect(found.map((one) => one.tab)).toEqual(["actions", "display"]);
+});
+
+test("an action that starts a flow or script without what it needs says so before publishing", () => {
+  const action = (input: object) =>
+    ({
+      steps: [
+        { do: "flow", path: "flows/strict", input },
+        { do: "script", path: "strict-script" },
+      ],
+    }) as never;
+  const world = {
+    catalog,
+    flows: [{ path: "flows/strict", manualInput: { required: ["why"] } }],
+    scripts: [{ path: "strict-script", inputSchema: { required: ["why"] } }],
+  };
+  expect(actionFix(action({}), world)).toContain("starts flows/strict without why, which it needs");
+  expect(actionFix({ steps: [{ do: "script", path: "strict-script" }] } as never, world)).toContain(
+    "runs strict-script without why, which it needs",
+  );
+  expect(
+    actionFix(
+      { steps: [{ do: "flow", path: "flows/strict", input: { why: { asked: "why" } } }] } as never,
+      world,
+    ),
+  ).toBeUndefined();
+});
+
+test("w-builder 3: a chart sorted by a breakdown through a join (its name has an underscore) is not gone", () => {
+  const sorted: PageWidget = {
+    id: "c",
+    type: "core/chart",
+    at,
+    data: read({
+      table: "invoices",
+      groupBy: [{ column: "pet.species" }],
+      measures: [{ fn: "count", as: "count" }],
+      sort: [{ by: "pet_species", dir: "asc" }],
+    }),
+  };
+  expect(inTab(tabProblems({ widget: sorted, definition: chart, catalog }), "data")).toEqual([]);
+  // A column that is not any breakdown or value is still checked.
+  const gone: PageWidget = {
+    ...sorted,
+    data: read({
+      table: "invoices",
+      groupBy: [{ column: "pet.species" }],
+      measures: [{ fn: "count", as: "count" }],
+      sort: [{ by: "pet_breed", dir: "asc" }],
+    }),
+  };
+  expect(inTab(tabProblems({ widget: gone, definition: chart, catalog }), "data")).toEqual([
+    "Sorted by: pet_breed is not in invoices any more.",
+  ]);
 });

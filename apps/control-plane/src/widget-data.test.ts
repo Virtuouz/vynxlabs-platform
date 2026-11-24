@@ -317,6 +317,17 @@ const board = {
         },
       },
     },
+    {
+      ...byMonth,
+      id: "monthly",
+      at: { x: 0, y: 40, w: 12, h: 5 },
+      data: {
+        rows: {
+          ...byMonth.data.rows,
+          filters: [{ filter: "when", column: "created_at" }],
+        },
+      },
+    },
   ],
 };
 
@@ -354,8 +365,14 @@ function bundle(): Bundle {
         sql: "select title from notes where $1::text is null or title ilike '%' || $1 || '%' order by title",
         parameters: [{ name: "words", type: "text" }],
       }),
+      // A table whose rows are named by a number.
+      manifest("table", "gadgets", {
+        display: "serial",
+        columns: { serial: { type: "number", required: true } },
+      }),
       manifest("table", "payments", {
         columns: {
+          gadget: { type: "reference", references: "gadgets" },
           invoice: { type: "reference", references: "invoices", required: true },
           amount: { type: "number" },
           owner: { type: "text" },
@@ -748,6 +765,53 @@ describe("a date range", () => {
     expect(await read("last_month")).toEqual([]);
     // Not set, it narrows nothing.
     expect(await read(null)).toEqual(["INV-1", "INV-2", "INV-3"]);
+  });
+});
+
+describe("a summary says the period it was cut into, and the days asked for (WID-16)", () => {
+  test("a chart can put back the periods with nothing in them by that step, to those ends", async () => {
+    const read = async (filters: object) => {
+      const answer = await asked(alice, {
+        of: "dashboard",
+        path: "boards/by-team",
+        widget: "monthly",
+        filters,
+      });
+      expect(answer.status, JSON.stringify(answer.body)).toBe(200);
+      return answer.body.inputs.rows;
+    };
+    const ranged = await read({ when: { from: "2026-01-01", to: "2026-12-31" } });
+    expect(ranged.buckets).toEqual({ created_at_month: "month" });
+    // And what each value is, so that a pivot totals only what can be totalled (WID-20).
+    expect(ranged.measures).toEqual({ n: "count" });
+    expect(ranged.span).toEqual({ from: "2026-01-01", to: "2026-12-31" });
+    // No range asked for: the period is known and there are no ends to give.
+    const open = await read({ when: null });
+    expect(open.buckets).toEqual({ created_at_month: "month" });
+    expect(open.span).toBeUndefined();
+  });
+});
+
+describe("a date range in the reader's zone (D21)", () => {
+  test("the day a row was made in is the reader's day, whatever UTC's is", async () => {
+    // Everything was made a moment ago. Of these two zones, one is on another day than UTC now.
+    for (const zone of ["Pacific/Kiritimati", "Pacific/Pago_Pago"]) {
+      const today = new Intl.DateTimeFormat("en-CA", { timeZone: zone }).format(new Date());
+      const answer = await alice.get(
+        `${ws()}/widget-data?of=dashboard&path=boards/by-team&widget=recent&zone=${zone}&filters=${encodeURIComponent(
+          JSON.stringify({ when: { from: today, to: today } }),
+        )}`,
+      );
+      expect(answer.status, JSON.stringify(answer.body)).toBe(200);
+      expect(answer.body.inputs.rows.rows.length, zone).toBe(3);
+      // And "today" by name is that day too.
+      const named = await alice.get(
+        `${ws()}/widget-data?of=dashboard&path=boards/by-team&widget=recent&zone=${zone}&filters=${encodeURIComponent(
+          JSON.stringify({ when: "today" }),
+        )}`,
+      );
+      expect(named.body.inputs.rows.rows.length, `${zone} today`).toBe(3);
+    }
   });
 });
 
@@ -1364,6 +1428,15 @@ describe("what a field may be set to", () => {
     expect(labels(await choices(alice, "invoice", "&search=B-05"))).toHaveLength(10);
   });
 
+  test("TAB2: a reference to rows named by a number is searched by that number, not refused", async () => {
+    await alice.post(`${ws()}/rows/gadgets`, { rows: [{ serial: 1017 }, { serial: 2044 }] });
+    const found = await choices(alice, "gadget", "&search=10");
+    expect(found.status, JSON.stringify(found.body)).toBe(200);
+    expect(labels(found)).toEqual(["1017"]);
+    expect(labels(await choices(alice, "gadget", "&search=zzz"))).toEqual([]);
+    expect(labels(await choices(alice, "gadget"))).toEqual(["1017", "2044"]);
+  });
+
   test("for an enum are its values, searched", async () => {
     expect((await choices(alice, "method")).body.choices).toEqual([
       { value: "card", label: "card" },
@@ -1448,6 +1521,16 @@ describe("a record from the row chosen, or the user's own", () => {
     expect(mine.body.inputs.record.record).toMatchObject({ amount: 31 });
     const his = await asked(jon.browser, onPage("mine_own"), "/api/v1");
     expect(his.body.inputs.record.record).toMatchObject({ amount: 32 });
+  });
+
+  test("the user's own row is found whatever the capitals of the email held", async () => {
+    const made = await alice.post(`${ws()}/rows/payments`, {
+      rows: [{ invoice: ids["INV-2"], amount: 33, owner: "Mia.Shouting@Customer.example" }],
+    });
+    expect(made.status, JSON.stringify(made.body)).toBe(201);
+    const mia = (await endUser("mia.shouting@customer.example", "finance")).browser;
+    const mine = await asked(mia, onPage("mine_own"), "/api/v1");
+    expect(mine.body.inputs.record.record).toMatchObject({ amount: 33 });
   });
 
   test("with no row of their own, it is empty and says so", async () => {

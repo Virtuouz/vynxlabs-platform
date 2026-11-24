@@ -154,6 +154,33 @@ export function navigate(to: string, options: { replace?: boolean } = {}) {
 }
 
 /**
+ * Asks, once, whether to leave the page for good, such as by signing out: what a screen holds
+ * unsaved is lost with it. True when nothing is held, or the person chose to leave.
+ */
+export async function confirmLeave(): Promise<boolean> {
+  if (blockers.size === 0) return true;
+  if (!(await askToLeave(messageOfBlockers()))) return false;
+  blockers.clear();
+  return true;
+}
+
+/**
+ * A change of view inside the page (a tab, a step) that would drop what a screen holds unsaved:
+ * asked first, as leaving the page is. Nothing held, it goes at once.
+ */
+export function leaveFirst<T>(change: (value: T) => void): (value: T) => void {
+  return (value) => {
+    if (blockers.size === 0) {
+      change(value);
+      return;
+    }
+    void confirmLeave().then((leave) => {
+      if (leave) change(value);
+    });
+  };
+}
+
+/**
  * Asks before the page is left while `active`, such as while an editor holds
  * changes it has not saved. `message` says what would be lost.
  */
@@ -365,6 +392,9 @@ export function match(pattern: string, path: string): Record<string, string> | n
   }
   return params;
 }
+
+/** A link inside a sentence or a cell, which must read as one: in the action color, underlined. */
+export const TEXT_LINK = "text-action underline underline-offset-2 hover:no-underline";
 
 export function Link({
   to,

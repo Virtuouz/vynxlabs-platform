@@ -1,8 +1,10 @@
+import { SSO_REFUSAL_WORDS } from "@volvel/manifest";
 import { Button, ContainedArea, Notice, TextField } from "@volvel/ui";
 import { Eye, EyeOff } from "lucide-react";
 import { useState } from "react";
 import { ApiError, api } from "../api.ts";
 import { BrandMark, useBrand } from "../kit/brand.tsx";
+import { endSentence } from "../kit/format.ts";
 import { Junction } from "../kit/motifs.tsx";
 
 interface Ways {
@@ -11,27 +13,7 @@ interface Ways {
 }
 
 /** Why single sign-on sent someone back here, in words for the person it happened to. */
-const SSO_ERRORS: Record<string, string> = {
-  provider_off: "That way of signing in is turned off. Ask your administrator.",
-  provider_error: "The identity provider did not sign you in. Try again.",
-  invalid_answer:
-    "The identity provider's answer could not be accepted. Try again, and if it happens again tell your administrator.",
-  replayed: "That sign-in was already used. Start again.",
-  expired: "That sign-in took too long or was already used. Start again.",
-  no_subject:
-    "The identity provider did not say who you are. Tell your administrator: the provider's settings need a look.",
-  no_email:
-    "The identity provider did not send your email address. Tell your administrator: the provider's settings need a look.",
-  email_unverified:
-    "The identity provider says your email address is not verified. Verify it there, then try again.",
-  domain_not_proved:
-    "Your email address is not in a domain this sign-in is set up for. Ask your administrator.",
-  email_not_trusted:
-    "Your account is tied to a different identity at the provider. Ask your administrator to untie it.",
-  no_account: "There is no account here for you yet. Ask your administrator for one.",
-  not_in_tenant: "Your account has not been added here yet. Ask your administrator to add you.",
-  disabled: "Your account has been turned off.",
-};
+const SSO_ERRORS: Record<string, string | undefined> = SSO_REFUSAL_WORDS;
 
 /** Takes the reason single sign-on failed out of the address, so a reload does not show it again. */
 function takeSsoError(): string | undefined {
@@ -66,7 +48,10 @@ export function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
   const [ways, setWays] = useState<Ways>();
   const [error, setError] = useState<string | undefined>(takeSsoError);
   const [busy, setBusy] = useState(false);
-  const back = new URLSearchParams(window.location.search).get("return");
+  // Single sign-on sends the person back to where they were: an app's `?return=`, or this console page.
+  const here = `${window.location.pathname}${window.location.search}`;
+  const back =
+    new URLSearchParams(window.location.search).get("return") ?? (here === "/" ? null : here);
   const withReturn = (url: string) => (back ? `${url}?return=${encodeURIComponent(back)}` : url);
   const [reveal, setReveal] = useState(false);
   /** An owner signing in with a recovery code while their organization's sign-in is required. */
@@ -116,9 +101,10 @@ export function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
                 try {
                   if (!ways) {
                     // A password is asked for only once it is known that one is any use.
-                    const found = await api
-                      .get<Ways>(`/sso/providers?email=${encodeURIComponent(email.trim())}`)
-                      .catch((): Ways => ({ providers: [], password: true }));
+                    // A lookup that fails is shown, not turned into a password form that may be refused.
+                    const found = await api.get<Ways>(
+                      `/sso/providers?email=${encodeURIComponent(email.trim())}`,
+                    );
                     setWays(found);
                     return;
                   }
@@ -128,11 +114,15 @@ export function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
                 } catch (caught) {
                   const failure = caught as ApiError;
                   setError(
-                    failure.status === 401
-                      ? "That email and password do not match an account."
-                      : recovering && failure.status === 403
-                        ? "That recovery code is not right, or was already used. Each code works once."
-                        : failure.message,
+                    !ways
+                      ? `We could not check how this address signs in. ${endSentence(failure.message)} Press Continue to try again.`
+                      : failure.status === 401
+                        ? recovering
+                          ? "That email and password do not match an account. The recovery code was used up by this try; use another code."
+                          : "That email and password do not match an account."
+                        : recovering && failure.status === 403
+                          ? "That recovery code is not right, or was already used. Each code works once."
+                          : failure.message,
                   );
                 } finally {
                   setBusy(false);
@@ -209,7 +199,7 @@ export function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
                   autoComplete="one-time-code"
                   value={code}
                   required
-                  hint="One of the codes you made on your account page. It works once."
+                  hint="One of the codes you made on your account page. It works once, even if the password is wrong."
                   onChange={setCode}
                 />
               ) : null}

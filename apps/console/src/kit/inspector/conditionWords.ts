@@ -45,10 +45,21 @@ export function typedValue(op: string, text: string): unknown {
   return text;
 }
 
+/**
+ * A value that is not typed in but taken from where the page is: a column of the record the page
+ * is open on, or the person looking. Spoken as that.
+ */
+function referenceWords(value: object): string | undefined {
+  const at = value as { record?: unknown; user?: unknown };
+  if (typeof at.record === "string") return `this record's ${heading(at.record).toLowerCase()}`;
+  if (at.user === "id") return "the current user";
+  return undefined;
+}
+
 /** A value as it is read in a sentence or typed in a box. */
 export const shownValue = (value: unknown): string =>
   value !== null && typeof value === "object" && !Array.isArray(value)
-    ? lastWords(value as { count?: number; unit?: string })
+    ? (referenceWords(value) ?? lastWords(value as { count?: number; unit?: string }))
     : Array.isArray(value)
       ? value.join(", ")
       : value === undefined || value === null
@@ -128,6 +139,15 @@ function choiceValue(value: unknown, column: CatalogColumn | undefined): string 
   return Array.isArray(value) ? value.map(say).join(", ") : say(value);
 }
 
+/** What a value taken from the page's record or from the person looking is called in a sentence. */
+function sourceWords(value: unknown): string | undefined {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
+  if ("record" in value)
+    return `this record's ${heading(String((value as { record: string }).record)).toLowerCase()}`;
+  if ("user" in value) return "the current user";
+  return undefined;
+}
+
 /** The sentence of a condition: "Status is not" and its value, for a chip. */
 export function sentenceOf(
   condition: VisualCondition,
@@ -143,7 +163,7 @@ export function sentenceOf(
         ? ""
         : condition.op === "between" && Array.isArray(condition.value)
           ? condition.value.join(" and ")
-          : choiceValue(condition.value, column),
+          : (sourceWords(condition.value) ?? choiceValue(condition.value, column)),
   };
 }
 

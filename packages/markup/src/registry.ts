@@ -271,7 +271,32 @@ export const COMPONENTS: readonly ComponentSpec[] = [
       },
       additionalProperties: false,
     },
-    profiles: ["docs"],
+    profiles: ["product", "docs"],
+  },
+  {
+    name: "changelog",
+    summary: "The newest changelog entries",
+    insert: "::changelog{limit=5}$0",
+    form: "leaf",
+    description:
+      "The newest entries of the site's changelog, each with its title, its date and the whole of its page. An entry is a page in a folder named `changelog`, or with the subject `changelog`. `limit` is how many (10 when left out). `folder` and `subject` narrow it to one folder or one subject.",
+    label: "none",
+    props: {
+      type: "object",
+      properties: {
+        limit: text("How many entries to show, from 1 to 50. 10 when left out.", {
+          pattern: "^([1-9]|[1-4][0-9]|50)$",
+          maxLength: 2,
+        }),
+        folder: text("Only the entries under this folder, by its path.", {
+          pattern: PATH,
+          maxLength: 255,
+        }),
+        subject: text("Only the entries that name this subject.", { pattern: ID, maxLength: 80 }),
+      },
+      additionalProperties: false,
+    },
+    profiles: ["product", "docs"],
   },
   {
     name: "pages",
@@ -282,7 +307,7 @@ export const COMPONENTS: readonly ComponentSpec[] = [
       "The pages and folders of the folder this page is in, each with what it is for. A folder's own page with nothing written in it shows this.",
     label: "none",
     props: { type: "object", properties: {}, additionalProperties: false },
-    profiles: ["docs"],
+    profiles: ["product", "docs"],
   },
 ];
 

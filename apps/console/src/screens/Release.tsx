@@ -3,7 +3,8 @@ import { ArrowRight, History, Rocket, TriangleAlert } from "lucide-react";
 import { useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { ask, failureText, notify } from "../ask.tsx";
-import { type BatchAnswer, useBatch } from "../kit/BatchResult.tsx";
+import { type BatchAnswer, inSlices, useBatch } from "../kit/BatchResult.tsx";
+import { useNeeds } from "../kit/Can.tsx";
 import { Current } from "../kit/current.ts";
 import { ago } from "../kit/format.ts";
 import { ErrorState, Loading } from "../kit/LoadState.tsx";
@@ -17,12 +18,13 @@ import {
 } from "../kit/layout.tsx";
 import { Junction } from "../kit/motifs.tsx";
 import { kindName, objectHref } from "../kit/objects.tsx";
+import { RefusalList } from "../kit/RefusalList.tsx";
 import { SplitPane } from "../kit/SplitPane.tsx";
 import { EnvTag, Mono, StatePill, Tag } from "../kit/status.tsx";
 import { Truncate } from "../kit/Truncate.tsx";
 import { Link, navigate, useUrlParam } from "../router.tsx";
 import { DriftView } from "./Drift.tsx";
-import { ActivateVersion } from "./Execution.tsx";
+import { DeployVersion } from "./Execution.tsx";
 import { type PromotionRequest, RequestPromotion } from "./Promotion.tsx";
 import { breakingOf, PromotionConfirm, sentence } from "./PromotionConfirm.tsx";
 
@@ -131,7 +133,7 @@ export function Release({
   reload: () => void;
 }) {
   // The step is in the address: a link, a reload or Back lands on the same one.
-  const [step, setStep] = useUrlParam<ReleaseStep>(
+  const [asked, setStep] = useUrlParam<ReleaseStep>(
     "step",
     workspace.type === "production" ? "deploy" : initial,
     { push: true },
@@ -143,7 +145,7 @@ export function Release({
 
   const steps =
     workspace.type === "production"
-      ? [{ key: "deploy", label: "What runs here", detail: "Versions and rollback" }]
+      ? [{ key: "deploy", label: "What runs here", detail: "Versions and roll back" }]
       : [
           {
             key: "review",
@@ -156,14 +158,18 @@ export function Release({
             : []),
         ];
 
+  // An address can name a step this workspace does not have (review in production, promote with
+  // nowhere to promote to): it opens the first one that there is.
+  const step = steps.some((one) => one.key === asked) ? asked : (steps[0]?.key as ReleaseStep);
+
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
-        eyebrow="Release"
-        title={workspace.type === "production" ? "Versions" : "Release"}
+        eyebrow={workspace.type === "production" ? "Versions" : "Deploy"}
+        title={workspace.type === "production" ? "Versions" : "Deploy"}
         description={
           workspace.type === "production"
-            ? "What runs here, and what ran before. Rolling back activates an earlier version; promotion from the dev workspace is how changes arrive."
+            ? "What runs here, and what ran before. Rolling back deploys an earlier version; promotion from the dev workspace is how changes arrive."
             : "Drafts become a version of this dev workspace when deployed. A version reaches production only when it is promoted, and that is a separate, deliberate step."
         }
         meta={<EnvTag type={workspace.type} />}
@@ -257,8 +263,10 @@ function ReviewStep({
       danger: true,
     });
     if (!sure) return;
-    const send = (paths: string[]) =>
-      api.post<BatchAnswer>(`${root}/drafts/batch-discard`, { paths });
+    const send = (some: string[]) =>
+      inSlices(some, (slice) =>
+        api.post<BatchAnswer>(`${root}/drafts/batch-discard`, { paths: slice }),
+      );
     await batch.run(() => send(picked), {
       title: "Setting drafts aside",
       done: (n) => `${n} draft${n === 1 ? "" : "s"} set aside.`,
@@ -444,14 +452,11 @@ function ReviewStep({
             {preview.error ? <ErrorState error={preview.error} onRetry={preview.reload} /> : null}
             {preview.data?.refusal ? (
               <Notice tone="danger">
-                <strong>These changes cannot be deployed yet.</strong> {preview.data.refusal.detail}
-                <ul className="mt-2 mb-0 pl-5">
-                  {preview.data.refusal.errors.map((one) => (
-                    <li key={`${one.path} ${one.message}`}>
-                      <Mono>{one.path}</Mono> {one.message}
-                    </li>
-                  ))}
-                </ul>
+                <p className="m-0">
+                  <strong>These changes cannot be deployed yet.</strong>
+                </p>
+                <p className="m-0 mt-1">{preview.data.refusal.detail}</p>
+                <RefusalList errors={preview.data.refusal.errors} link={link} />
               </Notice>
             ) : preview.data?.summary ? (
               <>
@@ -465,13 +470,13 @@ function ReviewStep({
                 {(preview.data.summary.warnings ?? []).length > 0 ? (
                   <Notice tone="attention">
                     <span className="flex items-center gap-1.5 font-medium">
-                      <TriangleAlert aria-hidden="true" size={14} /> Not bound here, and the deploy
+                      <TriangleAlert aria-hidden="true" size={14} /> Not set up here, and the deploy
                       still works
                     </span>
                     <ul className="mt-1 mb-0 pl-5">
                       {(preview.data.summary.warnings ?? []).map((one) => (
                         <li key={one.path}>
-                          {one.message}. A run that reaches it fails until it is bound.
+                          {one.message}. A run that reaches it fails until it is set up.
                         </li>
                       ))}
                     </ul>
@@ -616,9 +621,18 @@ function LedgerStep({ root, workspace }: { root: string; workspace: Workspace })
     ledger.reload();
     bundles.reload();
   };
-  const running = bundles.data?.items.find((one) => one.active)?.id;
+  const runningBundle = bundles.data?.items.find((one) => one.active);
+  const running = runningBundle?.id;
   const ran = new Set(ledger.data?.items.map((row) => row.bundleId));
   const neverRun = (bundles.data?.items ?? []).filter((one) => !ran.has(one.id));
+  // A version is one row, however often it was deployed (a rollback deploys an earlier one
+  // again): the latest deployment of it speaks, newest first, and the count is said.
+  const times = new Map<string, number>();
+  for (const row of ledger.data?.items ?? [])
+    times.set(row.bundleId, (times.get(row.bundleId) ?? 0) + 1);
+  const versions = (ledger.data?.items ?? []).filter(
+    (row, at, all) => all.findIndex((one) => one.bundleId === row.bundleId) === at,
+  );
   return (
     <div className="flex flex-col gap-6">
       <section className="flex flex-col gap-2">
@@ -631,14 +645,17 @@ function LedgerStep({ root, workspace }: { root: string; workspace: Workspace })
           <EmptyCanvas title="Nothing deployed here yet" />
         ) : (
           <Panel as="div" className="divide-y divide-line">
-            {ledger.data.items.map((row) => (
+            {versions.map((row) => (
               <div key={row.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-3">
                 <Mono className="w-12 shrink-0 text-ink">v{row.bundleVersion}</Mono>
-                <span className="min-w-0 flex-1 truncate">
+                <span className="min-w-[min(100%,8rem)] flex-1 truncate">
                   {row.message ?? (row.promotedFromWorkspaceId ? "Promoted" : "No message")}
                 </span>
                 <span className="text-meta text-ink-subtle">
                   {row.createdBy ?? "—"} · {ago(row.createdAt)}
+                  {(times.get(row.bundleId) ?? 1) > 1
+                    ? ` · deployed ${times.get(row.bundleId)} times`
+                    : ""}
                 </span>
                 <span className="flex gap-1">
                   {(row.runningIn ?? []).map((one) => (
@@ -648,7 +665,8 @@ function LedgerStep({ root, workspace }: { root: string; workspace: Workspace })
                   ))}
                 </span>
                 {row.bundleId !== running ? (
-                  <ActivateVersion
+                  <DeployVersion
+                    running={runningBundle?.version ?? null}
                     root={root}
                     workspace={workspace}
                     bundleId={row.bundleId}
@@ -668,11 +686,12 @@ function LedgerStep({ root, workspace }: { root: string; workspace: Workspace })
             {neverRun.map((one) => (
               <div key={one.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-3">
                 <Mono className="w-12 shrink-0 text-ink">v{one.version}</Mono>
-                <span className="min-w-0 flex-1 text-ink-muted">
-                  Uploaded {ago(one.createdAt)}, never activated
+                <span className="min-w-[min(100%,8rem)] flex-1 text-ink-muted">
+                  Uploaded {ago(one.createdAt)}, never run here
                 </span>
                 {one.active ? null : (
-                  <ActivateVersion
+                  <DeployVersion
+                    running={runningBundle?.version ?? null}
                     root={root}
                     workspace={workspace}
                     bundleId={one.id}
@@ -736,6 +755,11 @@ function PromoteStep({
   const [fromRun] = useUrlParam("fromRun");
   const [problem, setProblem] = useState<string>();
   const data = preview.data;
+  const moving = useNeeds({
+    base: root,
+    permission: "workspace:write",
+    what: "where this workspace promotes to",
+  });
   // Only production has agents that were told a name and cannot be told another at once.
   const breaking = breakingOf(data);
 
@@ -748,7 +772,15 @@ function PromoteStep({
             {workspace.name} <EnvTag type="dev" />
           </span>
           <span className="text-meta text-ink-muted">
-            Runs <Mono>v{data?.bundle.version ?? "…"}</Mono>
+            {data ? (
+              <>
+                Runs <Mono>v{data.bundle.version}</Mono>
+              </>
+            ) : preview.error ? (
+              "Nothing is deployed here."
+            ) : (
+              "Reading what runs…"
+            )}
           </span>
         </Panel>
         <ArrowRight
@@ -767,9 +799,18 @@ function PromoteStep({
         </Panel>
       </div>
 
-      {preview.error ? <ErrorState error={preview.error} onRetry={preview.reload} /> : null}
+      {preview.error ? (
+        // A workspace with nothing deployed is a state, not a failure to retry.
+        preview.error.status === 409 ? (
+          <Notice tone="plain">{preview.error.message}</Notice>
+        ) : (
+          <ErrorState error={preview.error} onRetry={preview.reload} />
+        )
+      ) : null}
       {!data ? (
-        <p className="text-ink-muted">Working out what promoting would do…</p>
+        preview.error ? null : (
+          <p className="text-ink-muted">Working out what promoting would do…</p>
+        )
       ) : (
         <PreviewPanels data={data} targetName={target.name} link={link} />
       )}
@@ -786,9 +827,19 @@ function PromoteStep({
         <Notice tone="success">
           {target.name} now runs version {result.bundleVersion}.
           {result.release?.status === "done" ? ` Committed to ${result.release.branch}.` : ""}
-          {result.release?.status === "failed"
-            ? ` The release branch was not updated: ${result.release.problem ?? "the push failed"}. Try again from Git sync.`
-            : ""}
+          {result.release?.status === "failed" ? (
+            <>
+              {" "}
+              The release branch was not updated: {result.release.problem ?? "the push failed"}.{" "}
+              <Link
+                to={`${link.split("/workspaces/")[0]}/workspaces/${target.id}/git`}
+                className="text-action"
+              >
+                Try again from Git sync
+              </Link>
+              .
+            </>
+          ) : null}
         </Notice>
       ) : null}
       {data && data.canPromote === false ? (
@@ -814,6 +865,12 @@ function PromoteStep({
             variant="promote"
             loading={busy}
             disabled={!data?.possible}
+            {...(!data && preview.error
+              ? {
+                  tooltip:
+                    "There is nothing to promote until this workspace has something deployed.",
+                }
+              : {})}
             onClick={async () => {
               const sure = await ask.confirm({
                 ...promoteConfirm(
@@ -873,7 +930,13 @@ function PromoteStep({
             <Rocket aria-hidden="true" size={16} /> {promoteLabel(target)}
           </Button>
         )}
-        <Button variant="quiet" onClick={() => navigate(`${link}/settings`)}>
+        {/* The link is changed by saving the workspace's settings: `workspace:write` of the workspace. */}
+        <Button
+          variant="quiet"
+          disabled={!moving.can}
+          {...(moving.reason ? { tooltip: moving.reason } : {})}
+          onClick={() => navigate(`${link}/settings`)}
+        >
           Change where this promotes to
         </Button>
       </div>
@@ -899,14 +962,14 @@ export function PreviewPanels({
         <Panel className="flex flex-col gap-2 p-4">
           {data.refusal ? (
             <Notice tone="danger">
-              <strong>It cannot be promoted yet.</strong> {data.refusal.detail}
-              <ul className="mt-2 mb-0 pl-5">
-                {data.refusal.errors.map((one) => (
-                  <li key={`${one.path} ${one.message}`}>
-                    <Mono>{one.path}</Mono> {one.message}
-                  </li>
-                ))}
-              </ul>
+              <p className="m-0">
+                <strong>It cannot be promoted yet.</strong>
+              </p>
+              <p className="m-0 mt-1">{data.refusal.detail}</p>
+              <RefusalList
+                errors={data.refusal.errors}
+                link={link.replace(/\/workspaces\/[^/]+$/, `/workspaces/${data.target.id}`)}
+              />
             </Notice>
           ) : data.summary ? (
             <>

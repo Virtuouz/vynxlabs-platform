@@ -1,14 +1,25 @@
 import { Database } from "@volvel/db";
 import { buildApp } from "./app.js";
+import { commandOf, USAGE } from "./commands.js";
 import { ConfigError, loadConfig } from "./config.js";
-import { bootstrapAdmin } from "./kernel/bootstrap.js";
-import { startBackground } from "./kernel/execution/background.js";
+import { bootstrapAdmin, recoverOperator } from "./kernel/bootstrap.js";
 import { setWorkerUserMode } from "./kernel/execution/isolation.js";
-import { WorkerSupervisor } from "./kernel/execution/supervisor.js";
-import { rekey, rekeyIfRotating } from "./kernel/rekey.js";
-import { failInterruptedClones } from "./kernel/tenancy/clone.js";
+import { rekey, rekeyDataRole, rekeyIfRotating } from "./kernel/rekey.js";
 import { S3ObjectStore } from "./storage.js";
 import { version } from "./version.js";
+import { createWriter } from "./writer.js";
+
+// What was asked for, before anything is read or opened. `--help` and a word that is not a
+// command stop here: an unknown word never starts the instance.
+const command = commandOf(process.argv.slice(2));
+if (command.run === "help") {
+  console.log(USAGE);
+  process.exit(0);
+}
+if (command.run === "unknown") {
+  console.error(`${command.word} is not a command.\n\n${USAGE}`);
+  process.exit(2);
+}
 
 function loadConfigOrExit() {
   try {
@@ -23,6 +34,10 @@ function loadConfigOrExit() {
 }
 
 const config = loadConfigOrExit();
+if (command.run === "check-config") {
+  console.log("The settings are valid.");
+  process.exit(0);
+}
 const storage = new S3ObjectStore(config.s3);
 const database = new Database({
   connectionString: config.databaseUrl,
@@ -39,96 +54,84 @@ const migrations = await database.migrate().catch(async (error) => {
   await database.close();
   process.exit(1);
 });
+if (command.run === "migrate") {
+  console.log(
+    migrations.applied.length > 0
+      ? `Migrations applied: ${migrations.applied.length}. The database is at level ${migrations.level}.`
+      : `The database is up to date, at level ${migrations.level}.`,
+  );
+  await database.close();
+  process.exit(0);
+}
 // A database taking no writes, such as one whose disk is full, still lets the instance
 // start: it serves what reads alone can, and starts the rest once writes come back.
 const readOnlyAtStart = await database.readOnly().catch(() => false);
 if (!readOnlyAtStart) await database.queue.start();
 const app = await buildApp({ database, storage, version, config, logLevel: config.logLevel });
-let background: ReturnType<typeof startBackground> | undefined;
-/** Whether what needs writes is running: the queue, the background loop, managed workers. */
-let writing = false;
-/** A change between writing and not, in progress. */
-let changing: Promise<void> | undefined;
-
-async function startWriting(options: { atBoot?: boolean } = {}) {
-  await database.queue.start();
-  // At boot these ran already, before the sign-in for row requests was set up.
-  if (!options.atBoot) {
-    await bootstrapAdmin(app.kernel, app.log);
-    // During a rotation, what the other key sealed is sealed again before anything else uses it.
-    await rekeyIfRotating(app.kernel);
-  }
-  // A clone that was running an hour ago, when this process was not, did not survive.
-  await failInterruptedClones(app.kernel, new Date(Date.now() - 60 * 60 * 1000));
-  background = startBackground(
-    app.kernel,
-    config.managedWorkers === "process"
-      ? new WorkerSupervisor(app.kernel, {
-          url: `http://127.0.0.1:${config.port}`,
-          user: config.managedWorkerUser,
-          ...(config.limits.runSlots ? { runSlots: config.limits.runSlots } : {}),
-          ...(config.limits.runMemoryFloorMb !== undefined
-            ? { memoryFloorMb: config.limits.runMemoryFloorMb }
-            : {}),
-          ...(config.limits.managedWorkersMax
-            ? { maxWorkers: config.limits.managedWorkersMax }
-            : {}),
-        })
-      : undefined,
-  );
-  writing = true;
-}
-
-async function stopWriting() {
-  writing = false;
-  await background?.stop();
-  background = undefined;
-}
-
-/** Every 10 seconds: has the database started or stopped taking writes? */
-const WRITABLE_CHECK_MS = 10_000;
-const writableWatch = setInterval(() => {
-  if (changing || stopping) return;
-  changing = database
-    .readOnly()
-    .then(async (readOnly) => {
-      if (!readOnly && !writing) {
-        app.log.warn("the database takes writes again: starting the queue and background work");
-        await startWriting();
-      } else if (readOnly && writing) {
-        app.log.error(
-          "the database takes no writes: its disk may be full. Background work stops; " +
-            "reads go on, and changes are answered 503 until writes come back",
-        );
-        await stopWriting();
-      }
-    })
-    .catch((error) =>
-      app.log.warn({ err: error }, "could not tell whether the database takes writes"),
-    )
-    .finally(() => {
-      changing = undefined;
-    });
-}, WRITABLE_CHECK_MS);
-writableWatch.unref();
+const writer = createWriter({
+  database,
+  kernel: app.kernel,
+  log: app.log,
+  config,
+});
+const startWriting = writer.start;
 
 // `node dist/main.js rekey`: seals again with MASTER_KEY whatever is sealed with
 // MASTER_KEY_SECONDARY, says what it did, and exits. 1 when a value opens with neither.
-if (process.argv[2] === "rekey") {
-  const result = await rekey(app.kernel).catch(async (error) => {
+// With `--data-role` it also changes the seed of the data role's password: stop every replica
+// first, and start them again after.
+if (command.run === "rekey") {
+  const { dataRole } = command;
+  const result = await (async () => {
+    if (dataRole) await rekeyDataRole(app.kernel);
+    return rekey(app.kernel);
+  })().catch(async (error) => {
     console.error(`The rewrap failed: ${error instanceof Error ? error.message : error}`);
     await app.close();
     process.exit(1);
   });
-  console.log(JSON.stringify({ masterKey: app.kernel.vault.fingerprints, ...result }, null, 2));
+  console.log(
+    JSON.stringify(
+      {
+        masterKey: app.kernel.vault.fingerprints,
+        ...(dataRole ? { dataRole: "changed" } : {}),
+        ...result,
+      },
+      null,
+      2,
+    ),
+  );
+  if (dataRole) {
+    console.error(
+      "The data role's seed is changed. Restart every replica now: until it is, it cannot read tenants' tables.",
+    );
+  }
   await app.close();
   process.exit(result.unopened.length > 0 ? 1 : 0);
 }
 
+// `node dist/main.js recover-operator <email>`: the way back for an instance with no operator who
+// can sign in. Enables that account, makes it an operator admin, and prints a new password once.
+if (command.run === "recover-operator") {
+  const { email } = command;
+  if (!email) {
+    console.error("Say whose account: node dist/main.js recover-operator <email>");
+    await app.close();
+    process.exit(2);
+  }
+  const done = await recoverOperator(app.kernel, email).catch(async (error) => {
+    console.error(`Recovery failed: ${error instanceof Error ? error.message : error}`);
+    await app.close();
+    process.exit(1);
+  });
+  console.log(`${done.email} is an enabled operator admin. Its password is now: ${done.password}`);
+  console.log("Sign in with it and change it. Every earlier sign-in of that account has ended.");
+  await app.close();
+  process.exit(0);
+}
+
 app.addHook("onClose", async () => {
-  clearInterval(writableWatch);
-  await changing;
-  await background?.stop();
+  await writer.close();
   await database.close();
   storage.close();
 });
@@ -175,6 +178,9 @@ try {
     await app.listen({ host: config.host, port: config.port });
     await startWriting({ atBoot: true });
   }
+  // Only now: a start that takes long (a slow store) has no second loop begun beside it, and
+  // `rekey` and `recover-operator` never get here.
+  writer.watch(() => stopping);
   app.log.info({ version, managedWorkers: config.managedWorkers }, "control plane started");
 } catch (error) {
   app.log.fatal({ err: error }, "boot failed");

@@ -21,12 +21,21 @@
     "body": {
       "type": "object",
       "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "pattern": "^\\S(.*\\S)?$",
+          "description": "What people read. It can change: nothing refers to it."
+        },
         "description": {
           "type": "string",
-          "maxLength": 300
+          "maxLength": 500,
+          "description": "What it is for, in plain text."
         },
         "permissions": {
           "type": "array",
+          "description": "What the role allows, each as `kind:verb` such as `table:read`, with `*` for either half.",
           "items": {
             "type": "string",
             "pattern": "^(\\*|[a-z][a-z0-9_]*):(\\*|read|write)$"

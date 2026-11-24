@@ -1,4 +1,4 @@
-import { signInWithPassword } from "./sign-in.ts";
+import { signInAs } from "./as.ts";
 import { expect, type Page, test } from "./test.ts";
 import { expectNoAxeViolations } from "./visual.ts";
 
@@ -9,10 +9,6 @@ import { expectNoAxeViolations } from "./visual.ts";
  * promoted and run again, in ten presses or fewer and no search.
  */
 
-const ADMIN = {
-  email: process.env.E2E_ADMIN_EMAIL ?? "admin@example.com",
-  password: process.env.E2E_ADMIN_PASSWORD ?? "change-me-please",
-};
 const TENANT_ADMIN = "00000000-0000-7000-8000-000000000002";
 const stamp = Date.now().toString(36);
 
@@ -20,6 +16,18 @@ const stamp = Date.now().toString(36);
 const call = (page: Page, method: string, path: string, body?: unknown): Promise<any> =>
   page.evaluate(
     async ([method, path, body]) => {
+      // A draft save names the draft it saw: its revision now, or none when there is none.
+      if (
+        method === "PUT" &&
+        String(path).includes("/drafts/") &&
+        body &&
+        typeof body === "object" &&
+        !("revision" in body) &&
+        !("create" in body)
+      ) {
+        const seen = await fetch(`/api/v1${path}`);
+        if (seen.ok) body = { ...body, revision: (await seen.json()).revision };
+      }
       const response = await fetch(`/api/v1${path}`, {
         method: method as string,
         headers: body ? { "content-type": "application/json" } : {},
@@ -70,7 +78,7 @@ async function ended(page: Page, root: string, kind: "runs" | "flow-runs", id: s
 
 test.describe.configure({ mode: "serial" });
 
-test("the runs list, a failed flow run, and a production failure fixed in ten presses", async ({
+test("the runs list, a failed flow run, and a production failure fixed in ten presses @operate", async ({
   browser,
 }) => {
   test.setTimeout(240_000);
@@ -82,7 +90,7 @@ test("the runs list, a failed flow run, and a production failure fixed in ten pr
     errors.push(`a browser dialog: ${dialog.message()}`);
     void dialog.dismiss();
   });
-  await signInWithPassword(page, ADMIN.email, ADMIN.password);
+  await signInAs(page, "operator");
 
   const tenant = await call(page, "POST", "/tenants", { slug: `loop-${stamp}`, name: "Loop" });
   await call(page, "POST", `/tenants/${tenant.id}/access-grants`, {

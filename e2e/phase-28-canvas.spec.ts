@@ -1,5 +1,8 @@
-import { signInWithPassword } from "./sign-in.ts";
+import { signInAs } from "./as.ts";
+import { fernhillTenant } from "./fernhill.ts";
 import { expect, type Page, test } from "./test.ts";
+
+const TENANT = fernhillTenant();
 
 /**
  * The owner's first look at phase 28, its canvas findings, walked on the Fernhill example in its
@@ -8,7 +11,6 @@ import { expect, type Page, test } from "./test.ts";
  * height can be set, and a Full sheet is drawn at its true size.
  */
 
-const PASSWORD = process.env.E2E_FERNHILL_PASSWORD ?? "fernhill-demo-2026";
 const stamp = Date.now().toString(36);
 const PATH = `screens/canvas-${stamp}`;
 
@@ -16,6 +18,18 @@ const PATH = `screens/canvas-${stamp}`;
 const call = (page: Page, method: string, path: string, body?: unknown): Promise<any> =>
   page.evaluate(
     async ([method, path, body]) => {
+      // A draft save names the draft it saw: its revision now, or none when there is none.
+      if (
+        method === "PUT" &&
+        String(path).includes("/drafts/") &&
+        body &&
+        typeof body === "object" &&
+        !("revision" in body) &&
+        !("create" in body)
+      ) {
+        const seen = await fetch(`/api/v1${path}`);
+        if (seen.ok) body = { ...body, revision: (await seen.json()).revision };
+      }
       const response = await fetch(`/api/v1${path}`, {
         method: method as string,
         headers: body ? { "content-type": "application/json" } : {},
@@ -133,10 +147,10 @@ const drag = async (id: string, to: { x: number; y: number }, from = { x: 40, y:
 
 test.beforeAll(async ({ browser }) => {
   owner = await (await browser.newContext({ viewport: { width: 1440, height: 900 } })).newPage();
-  await signInWithPassword(owner, "maya.brooks@fernhill.example", PASSWORD);
-  const tenants = await call(owner, "GET", "/tenants?limit=200");
-  const tenant = tenants.items.find((one: { slug: string }) => one.slug === "fernhill");
-  test.skip(!tenant, "No tenant fernhill: set up the Fernhill example first.");
+  await signInAs(owner, "maya.brooks@fernhill.example");
+  const tenants = await call(owner, "GET", `/tenants?search=${TENANT}&limit=200`);
+  const tenant = tenants.items.find((one: { slug: string }) => one.slug === TENANT);
+  test.skip(!tenant, `No tenant ${TENANT}: set up the Fernhill example first.`);
   const { items } = await call(owner, "GET", `/tenants/${tenant.id}/workspaces`);
   const sandbox = items.find((one: { slug: string }) => one.slug === "sandbox");
   W = `/tenants/${tenant.id}/workspaces/${sandbox.id}`;
@@ -148,7 +162,7 @@ test.afterAll(async () => {
   await owner?.context().close();
 });
 
-test("POLISH-007: what is dragged follows the pointer, nothing blinks or scrolls, and the move reads nothing again", async () => {
+test("POLISH-007: what is dragged follows the pointer, nothing blinks or scrolls, and the move reads nothing again @fernhill @builder", async () => {
   await open("main");
   await expect(cell("chart").locator("canvas, svg").first()).toBeVisible();
   await owner.evaluate(() => {
@@ -206,7 +220,7 @@ test("POLISH-007: what is dragged follows the pointer, nothing blinks or scrolls
   expect(seen.widths).toHaveLength(1);
 });
 
-test("POLISH-008: a Section takes what is dragged on it, from above and held by its middle, and from Add to page", async () => {
+test("POLISH-008: a Section takes what is dragged on it, from above and held by its middle, and from Add to page @fernhill @builder", async () => {
   await open("main");
   const section = await cell("sec").boundingBox();
   if (!section) throw new Error("no section");
@@ -248,7 +262,7 @@ test("POLISH-008: a Section takes what is dragged on it, from above and held by 
     .toBe(3);
 });
 
-test("POLISH-002: a Text is as tall as its words until its height is set, and then keeps it", async () => {
+test("POLISH-002: a Text is as tall as its words until its height is set, and then keeps it @fernhill @builder", async () => {
   await open("words");
   const tall = async () => (await cell("text").boundingBox())?.height ?? 0;
   expect(await tall()).toBeGreaterThan(400);
@@ -269,7 +283,7 @@ test("POLISH-002: a Text is as tall as its words until its height is set, and th
   await expect.poll(tall).toBeGreaterThan(set);
 });
 
-test("POLISH-004: a Full sheet is drawn at its true size in the room there is", async () => {
+test("POLISH-004: a Full sheet is drawn at its true size in the room there is @fernhill @builder", async () => {
   await open("sheet");
   const frame = owner.locator("[data-scaled-frame]");
   await expect(frame).toHaveAttribute("data-scaled-frame", "100");

@@ -1,4 +1,5 @@
 import {
+  assetPathProblem,
   type Bundle,
   type BundleManifest,
   keyOf,
@@ -23,6 +24,88 @@ import { checkTable, type TableBody } from "./table.js";
 
 /** Events the platform publishes itself. No repository declares them. */
 export const PLATFORM_EVENT_PREFIX = "platform/";
+
+/** One field of a platform event's payload. */
+export interface PlatformEventField {
+  name: string;
+  type: "string" | "number" | "boolean";
+  /** Left out of the payload on some occasions. */
+  optional?: boolean;
+  description: string;
+}
+
+/** One event the platform publishes: its name, what it says and what its payload holds. */
+export interface PlatformEventDefinition {
+  name: string;
+  description: string;
+  payload: readonly PlatformEventField[];
+}
+
+/**
+ * The events the platform publishes, with what each says and what its payload holds: the one
+ * list the editors offer a trigger and a flow to listen for. Nobody declares these in a
+ * repository, so nothing else lists them.
+ */
+const EVENT_LIST = [
+  {
+    name: "platform/run-succeeded",
+    description: "A script run ended well.",
+    payload: [
+      { name: "runId", type: "string", description: "The run." },
+      { name: "script", type: "string", description: "The script's path." },
+    ],
+  },
+  {
+    name: "platform/run-failed",
+    description: "A script run failed for the last time.",
+    payload: [
+      { name: "runId", type: "string", description: "The run." },
+      { name: "script", type: "string", description: "The script's path." },
+      { name: "error", type: "string", optional: true, description: "Why it failed." },
+    ],
+  },
+  {
+    name: "platform/run-finished",
+    description: "A script run ended, however it ended, including a run that was canceled.",
+    payload: [
+      { name: "runId", type: "string", description: "The run." },
+      { name: "script", type: "string", description: "The script's path." },
+      { name: "status", type: "string", description: "succeeded, failed or `cancelled`." },
+      { name: "error", type: "string", optional: true, description: "Why it failed." },
+    ],
+  },
+  {
+    name: "platform/flow-run-finished",
+    description: "A flow run ended, however it ended, including a flow run that was canceled.",
+    payload: [
+      { name: "flowRunId", type: "string", description: "The flow run." },
+      { name: "flow", type: "string", description: "The flow's path." },
+      { name: "status", type: "string", description: "succeeded, failed or `cancelled`." },
+    ],
+  },
+  {
+    name: "platform/deployment-created",
+    description: "A version was deployed to the workspace.",
+    payload: [
+      { name: "deploymentId", type: "string", description: "The deployment." },
+      { name: "bundleVersion", type: "number", description: "The version deployed." },
+    ],
+  },
+  {
+    name: "platform/row-changed",
+    description: "A row of a table was inserted, updated or deleted.",
+    payload: [
+      { name: "table", type: "string", description: "The table's path." },
+      { name: "change", type: "string", description: "inserted, updated or deleted." },
+      { name: "id", type: "string", description: "The row's ID." },
+    ],
+  },
+] as const satisfies readonly PlatformEventDefinition[];
+
+export const PLATFORM_EVENTS: readonly PlatformEventDefinition[] = EVENT_LIST;
+
+/** What a platform event is called. A publisher names one of these and nothing else. */
+export type PlatformEventName = (typeof EVENT_LIST)[number]["name"];
 
 /**
  * Paths under this are the platform's own: the core nodes it adds to a bundle
@@ -81,7 +164,17 @@ export function checkBundleManifests(manifests: BundleManifest[]): string[] {
       !(manifest.kind === "script" && manifest.ownership === "ui")
     ) {
       problems.push(
-        `${manifest.path} (${manifest.kind}): paths under ${CORE_PREFIX} are kept for the platform's own nodes.`,
+        `${manifest.path} (${manifest.kind}): paths under ${CORE_PREFIX} are kept for Volvel's own nodes.`,
+      );
+    }
+    // `default` is what the queue of scripts that name no pool is shown as. A pool cannot be
+    // made with that name, so a script naming it would wait where no pool is.
+    if (
+      (manifest.kind === "script" || manifest.kind === "trigger_source") &&
+      (manifest.body as { worker?: unknown } | undefined)?.worker === "default"
+    ) {
+      problems.push(
+        `${manifest.path} (${manifest.kind}): /body/worker names a pool called default. That is the queue of ${manifest.kind === "script" ? "scripts" : "sources"} that name no pool: leave worker out to use it, or name a pool you have made.`,
       );
     }
     const result = registry.validateManifest(manifest);
@@ -190,6 +283,13 @@ export function checkBundleManifests(manifests: BundleManifest[]): string[] {
     if (manifest.kind === "trigger" && body.type === "event") {
       expect(manifest, "event", body.event, "event");
     }
+    if (manifest.kind === "trigger_source") {
+      // A source reads what it names as a script does, and fails on every request or tick without it.
+      for (const path of body.uses?.connections ?? [])
+        expect(manifest, "connections", path, "connection");
+      for (const path of body.uses?.variables ?? [])
+        expect(manifest, "variables", path, "variable");
+    }
     if (manifest.kind === "script") {
       for (const path of body.uses?.connections ?? [])
         expect(manifest, "connections", path, "connection");
@@ -202,6 +302,14 @@ export function checkBundleManifests(manifests: BundleManifest[]): string[] {
       for (const path of body.uses?.sources ?? []) expect(manifest, "sources", path, "data_source");
       expect(manifest, "onFailure.script", body.onFailure?.script, "script");
       expect(manifest, "onFailure.notify", body.onFailure?.notify, "connection");
+      // A failure is posted over HTTP: another kind of connection would fail only when a run does.
+      const notified = byPath.get(body.onFailure?.notify ?? "");
+      const connector = (notified?.body as { connector?: string } | undefined)?.connector;
+      if (notified?.kind === "connection" && connector !== undefined && connector !== "http") {
+        problems.push(
+          `${manifest.path} (script): onFailure.notify names "${notified.path}", which is a ${connector} connection. A failure is posted to an HTTP connection.`,
+        );
+      }
       const keyed = (body as { concurrency?: unknown }).concurrency;
       if (typeof keyed === "object" && keyed !== null && "key" in keyed) {
         const missing = keyMissing(
@@ -437,9 +545,11 @@ export function checkBundleAssets(
         `assets: ${asset.path} belongs to "${asset.app}", which is not an app in this bundle.`,
       );
     }
+    const unnamed = assetPathProblem(asset.path);
+    if (unnamed) problems.push(`${asset.app} (app): ${unnamed}`);
     if (asset.path.startsWith(RESERVED_ASSET_PREFIX) || asset.path === "_") {
       problems.push(
-        `${asset.app} (app): ${asset.path} is under "_", which the platform keeps for its own pages.`,
+        `${asset.app} (app): ${asset.path} is under "_", which Volvel keeps for its own pages.`,
       );
     }
   }
@@ -464,6 +574,18 @@ export function bundleExpressions(
         where: `${manifest.path} (trigger): /body/filter`,
         expression: manifest.body.filter,
       });
+    }
+    // The tags a start gives each run: one that does not parse is left out at run time, so
+    // it is said here, where it can still be fixed.
+    if (manifest.kind === "trigger" || manifest.kind === "schedule") {
+      const tags = (manifest.body as { tags?: unknown }).tags;
+      for (const [index, tag] of (Array.isArray(tags) ? tags : []).entries()) {
+        if (typeof tag === "string")
+          found.push({
+            where: `${manifest.path} (${manifest.kind}): /body/tags/${index}`,
+            expression: tag,
+          });
+      }
     }
     if (manifest.kind === "flow") {
       for (const { path, expression } of flowExpressions(manifest.body as unknown as FlowBody)) {

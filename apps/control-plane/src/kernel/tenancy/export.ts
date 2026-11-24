@@ -8,15 +8,69 @@ import { OWNED_TABLES, type OwnedTable } from "./tables.js";
 import { TAR_END, tarEntry } from "./tar.js";
 
 export const EXPORT_FORMAT = "volvel-tenant-export";
-export const EXPORT_FORMAT_VERSION = 1;
-/** What an export never carries, said in the manifest so that whoever imports it knows what to make again. */
+/**
+ * Format 2 authenticates the list of contents under the passphrase-wrapped key, and seals each
+ * member's password hash. Format 1 did neither, and is still read.
+ */
+export const EXPORT_FORMAT_VERSION = 2;
+export const EXPORT_FORMATS_READ = [1, 2];
+const API_KEYS = "API keys: create new ones on the instance the tenant moves to.";
+const WORKERS =
+  "Worker credentials: create new ones and restart the tenant's own workers with them.";
+const SIGN_INS =
+  "End users' sign-ins and unused invitation and reset links: people sign in again, with the password they had.";
+const MEMBER_PREFERENCES =
+  "Members' saved views of lists, and where they last were: each person's own, kept by the instance they use.";
+
+/**
+ * What an export never carries, by the table it leaves out, so that a test can fail when a table
+ * is left out and not named here. Said in the manifest so that whoever imports it knows what to
+ * make again. The tenant's key is not in it: it travels, wrapped under the passphrase.
+ */
+export const NOT_CARRIED_BY_TABLE: Record<string, string> = {
+  api_key: API_KEYS,
+  worker_credential: WORKERS,
+  worker: WORKERS,
+  access_grant: "Operator access grants: they belong to the instance the tenant is leaving.",
+  task: "Runs that were queued or in progress, and work handed to workers: a run belongs to the instance that started it.",
+  end_user_token: SIGN_INS,
+  app_session: SIGN_INS,
+  app_handoff: SIGN_INS,
+  app_domain:
+    "Hostnames registered for apps: a name points at one instance. Register it again where the tenant arrives.",
+  scim_token:
+    "Provisioning tokens (SCIM): a directory is given a new one at the address the tenant arrives at.",
+  scim_refusal:
+    "Refused pushes from directories: the list begins empty where the tenant arrives, and fills as directories push again.",
+  webhook_refusal:
+    "Refused webhook requests: seen again where the tenant arrives, if they are sent again.",
+  health_check: "How sources answered their last check: asked again where the tenant arrives.",
+  sso_state:
+    "Single sign-ins in progress, and the assertions already used: they last minutes and answer to this instance's address.",
+  sso_assertion:
+    "Single sign-ins in progress, and the assertions already used: they last minutes and answer to this instance's address.",
+  connection_oauth_state:
+    "Authorizations of connections that were in progress: they last minutes and answer to this instance's address.",
+  approval_link:
+    "Approval links sent by mail: a link leads to the instance that sent it. Ask for new ones where the tenant arrives.",
+  promotion_request:
+    "Requests to promote one workspace to another that were waiting: they name this instance's bundles and members. Ask again.",
+  workspace_clone: "A copy of a workspace that was being made: make it again.",
+  member_recent_scope: MEMBER_PREFERENCES,
+  member_recent_item: MEMBER_PREFERENCES,
+  member_saved_view: MEMBER_PREFERENCES,
+};
+
+/** What is not carried and is not a table of the tenant's own. */
+const NOT_CARRIED_ELSEWHERE = [
+  "Passwords of members who also belong to another tenant or run the instance: their account is one for the whole instance, so it is not the tenant's to give away. They keep their password where they already have an account, and need a new one where they have none.",
+  "Recovery codes: they are a member's own, for the whole instance. Make new ones where the member owns a tenant.",
+  "The audit log is cut at the tenant's retention period: entries older than it are not in the export.",
+];
+
 export const NOT_CARRIED = [
-  "API keys: create new ones on the instance the tenant moves to.",
-  "Worker credentials: create new ones and restart the tenant's own workers with them.",
-  "Operator access grants: they belong to the instance the tenant is leaving.",
-  "Runs that were queued or in progress: a run belongs to the instance that started it.",
-  "End users' sign-ins and unused invitation and reset links: people sign in again, with the password they had.",
-  "Hostnames registered for apps: a name points at one instance. Register it again where the tenant arrives.",
+  ...new Set(Object.values(NOT_CARRIED_BY_TABLE)),
+  ...NOT_CARRIED_ELSEWHERE,
 ];
 
 export interface ExportManifest {
@@ -37,6 +91,14 @@ export interface ExportManifest {
   notCarried: string[];
   /** Every other file in the archive, with its size and SHA-256. */
   entries: { path: string; bytes: number; sha256: string }[];
+  /** Format 2: an HMAC of this list without this field, under a key only the passphrase opens. */
+  authentication?: { alg: "hmac-sha256"; mac: string };
+}
+
+/** What the list's authentication covers: the list as written, without the authentication. */
+export function manifestText(manifest: ExportManifest): string {
+  const { authentication: _, ...rest } = manifest;
+  return JSON.stringify(rest);
 }
 
 interface ControlledTransaction extends Transaction<PlatformSchema> {
@@ -180,22 +242,69 @@ export async function* exportTenant(
       ),
     );
 
-    // The tenant's members, with the password hash each signs in with. They belong to
-    // the instance, so they travel as a list of their own and are matched by email on arrival.
-    yield* rows(
-      trx,
-      "members",
-      "member",
-      sql`select jsonb_build_object(
-            'id', m.id, 'name', m.name, 'email', m.email, 'email_verified', m.email_verified,
-            'image', m.image, 'created_at', m.created_at,
-            'password_hash', (select a.password from member_account a
-                              where a.member_id = m.id and a.provider_id = 'credential' limit 1)
-          )::text as line
-          from member m
-          where m.id in (select member_id from tenant_member where tenant_id = ${tenantId})
-          order by m.id`,
-    );
+    // The tenant's members. They belong to the instance, so they travel as a list of their own
+    // and are matched by email on arrival. A member's password hash is the account's, and the
+    // account is the whole instance's: it is sealed under the tenant's key, which only the
+    // passphrase opens, and only for a member who belongs here and nowhere else. A member who
+    // also belongs to another tenant, or runs the instance, travels without one.
+    const dataKey = kernel.vault.unwrapTenantKey(tenantId, key.wrapped_key);
+    const members = await sql<{
+      id: string;
+      name: string;
+      email: string;
+      email_verified: boolean;
+      image: string | null;
+      created_at: string;
+      password_hash: string | null;
+      elsewhere: boolean;
+    }>`select m.id, m.name, m.email, m.email_verified, m.image, to_jsonb(m.created_at) #>> '{}' as created_at,
+              (select a.password from member_account a
+               where a.member_id = m.id and a.provider_id = 'credential' limit 1) as password_hash,
+              (exists (select 1 from tenant_member o
+                       where o.member_id = m.id and o.tenant_id <> ${tenantId})
+               or exists (select 1 from binding b
+                          where b.principal_type = 'member' and b.principal_id = m.id
+                            and b.scope_type = 'instance')) as elsewhere
+       from member m
+       where m.id in (select member_id from tenant_member where tenant_id = ${tenantId})
+       order by m.id`.execute(trx);
+    {
+      let lines: string[] = [];
+      let bytes = 0;
+      let parts = 0;
+      const flush = function* () {
+        if (lines.length === 0) return;
+        yield* write(`members.${part(++parts)}.jsonl`, Buffer.from(`${lines.join("\n")}\n`));
+        lines = [];
+        bytes = 0;
+      };
+      for (const member of members.rows) {
+        const sealed =
+          member.password_hash && !member.elsewhere
+            ? kernel.vault
+                .encrypt(
+                  dataKey,
+                  { tenantId, workspaceId: "members", name: member.id },
+                  member.password_hash,
+                )
+                .toString("base64")
+            : null;
+        const line = JSON.stringify({
+          id: member.id,
+          name: member.name,
+          email: member.email,
+          email_verified: member.email_verified,
+          image: member.image,
+          created_at: member.created_at,
+          password_sealed: sealed,
+        });
+        lines.push(line);
+        bytes += line.length + 1;
+        if (bytes >= PART_BYTES) yield* flush();
+      }
+      yield* flush();
+      counts.member = members.rows.length;
+    }
 
     for (const entry of OWNED_TABLES) {
       if (entry.export === "never" || (entry.export === "history" && !options.history)) continue;
@@ -278,6 +387,10 @@ export async function* exportTenant(
       pendingRuns: Number(pending.n),
       notCarried: NOT_CARRIED,
       entries,
+    };
+    manifest.authentication = {
+      alg: "hmac-sha256",
+      mac: kernel.vault.manifestMac(tenantId, key.wrapped_key, manifestText(manifest)),
     };
     // Last, because it lists everything before it. An archive without it is incomplete.
     yield* tarEntry("manifest.json", Buffer.from(`${JSON.stringify(manifest, null, 2)}\n`));

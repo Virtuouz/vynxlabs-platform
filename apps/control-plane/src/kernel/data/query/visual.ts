@@ -8,6 +8,7 @@ import {
   type VisualQuery,
 } from "@volvel/manifest";
 import { dayAfter, lastRange } from "./filters.js";
+import { viewName } from "./view-name.js";
 
 /**
  * Writes the SQL of a query built from menus. What it writes is one SELECT
@@ -105,6 +106,8 @@ export function rowsGroupKey(
   return sql;
 }
 
+const DAY_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+
 export function compileVisual(
   query: VisualQuery,
   catalog: VisualCatalog,
@@ -114,6 +117,8 @@ export function compileVisual(
   today: Date = new Date(),
   /** Rows kept together by a column. */
   lead?: RowsGroup,
+  /** The reader's time zone: which moment a day begins at, for a column of times. */
+  zone = "UTC",
 ): CompiledVisual {
   const base = catalog.get(query.table);
   if (!base) {
@@ -167,6 +172,15 @@ export function compileVisual(
     return `$${parameters.length}`;
   };
 
+  /**
+   * The start of a day, for a column to be compared to: a date column takes the day itself; a column of
+   * times takes the moment the day begins in the reader's zone (D21), not at midnight UTC.
+   */
+  const dayStart = (at: { type: string }, day: string | number): string =>
+    at.type === "timestamp"
+      ? `timezone(${bind(zone)}::text, ${bind(day)}::date::timestamp)`
+      : `${bind(day)}::date`;
+
   const condition = (one: VisualCondition, path: string): string => {
     const at = column(one.column, `${path}/column`);
     if (one.op === "is_null") return `${at.sql} is null`;
@@ -181,6 +195,14 @@ export function compileVisual(
       // Compared as text, so one list serves a column of any kind.
       return `${at.sql}::text = any (${bind(one.value.map(String))}::text[])`;
     }
+    // Not an operator a manifest can write (the schema does not list it): the server's own, for the
+    // row that is the user's own, whose email is the same whatever its capitals.
+    if ((one.op as string) === "ieq") {
+      if (typeof one.value !== "string") {
+        throw new VisualRefused(`${path}/value`, `"ieq" needs text to compare with`);
+      }
+      return `lower(${at.sql}::text) = lower(${bind(one.value)})`;
+    }
     if (one.op === "contains") {
       if (typeof one.value !== "string") {
         throw new VisualRefused(`${path}/value`, `"contains" needs text to look for`);
@@ -193,12 +215,12 @@ export function compileVisual(
       if (one.op === "last") {
         const { count, unit } = one.value as LastValue;
         const range = lastRange(count, unit, today);
-        return `(${at.sql} >= ${bind(range.from)}::date and ${at.sql} < ${bind(dayAfter(range.to))}::date)`;
+        return `(${at.sql} >= ${dayStart(at, range.from)} and ${at.sql} < ${dayStart(at, dayAfter(range.to))})`;
       }
       const [from, to] = one.value as [string | number, string | number];
       if (typeof from === "number")
         return `(${at.sql} >= ${bind(from)} and ${at.sql} <= ${bind(to)})`;
-      return `(${at.sql} >= ${bind(from)}::date and ${at.sql} < ${bind(dayAfter(to as string))}::date)`;
+      return `(${at.sql} >= ${dayStart(at, from)} and ${at.sql} < ${dayStart(at, dayAfter(to as string))})`;
     }
     if (at.type === "json" || at.type === "file" || at.type === "enum_list") {
       throw new VisualRefused(
@@ -213,6 +235,9 @@ export function compileVisual(
     }
     if (typeof one.value === "object") {
       throw new VisualRefused(`${path}/value`, "needs one value: text, a number, or true or false");
+    }
+    if (at.type === "timestamp" && typeof one.value === "string" && DAY_ONLY.test(one.value)) {
+      return `${at.sql} ${operator} ${dayStart(at, one.value)}`;
     }
     return `${at.sql} ${operator} ${bind(one.value)}`;
   };
@@ -360,10 +385,10 @@ export function compileVisual(
   }
 
   const from = [
-    `${quoted(query.table)} as t`,
+    `${quoted(viewName(query.table))} as t`,
     ...[...joins.entries()].map(
       ([via, target]) =>
-        `left join ${quoted(target.table)} as ${joined(via)} on ${joined(via)}.id = t.${quoted(via)}`,
+        `left join ${quoted(viewName(target.table))} as ${joined(via)} on ${joined(via)}.id = t.${quoted(via)}`,
     ),
   ].join(" ");
   const sql = [

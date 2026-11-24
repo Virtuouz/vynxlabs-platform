@@ -15,13 +15,15 @@ export interface Reference {
 /**
  * Who uses each thing of one kind in a workspace, by its name, worked out
  * from what is deployed. One request for a whole list. `failed` says the
- * answer could not be read, which is not the same as nothing using it.
+ * answer could not be read, and `loaded` that it is here: neither is the same
+ * as nothing using it.
  */
 export function useReferences(root: string, kind: string, enabled = true) {
   const found = useLoad<{ items: Reference[] }>(enabled ? `${root}/references?kind=${kind}` : null);
   const usesOf = (name: string) =>
     (found.data?.items ?? []).filter((one) => one.target.name === name);
-  return Object.assign(usesOf, { failed: Boolean(found.error) });
+  // Until the answer is here, or when it could not be read, nothing is known: not "nothing".
+  return Object.assign(usesOf, { failed: Boolean(found.error), loaded: Boolean(found.data) });
 }
 
 /** What uses a thing, each named once, for a confirmation that lists them. */
@@ -39,6 +41,7 @@ export function UsedBy({
   link,
   all,
   failed = false,
+  loaded = true,
 }: {
   uses: Reference[];
   /** The workspace's console address. */
@@ -46,12 +49,18 @@ export function UsedBy({
   /** The thing's own page, where every use is listed. */
   all?: string | undefined;
   failed?: boolean;
+  /** False while the answer is still on its way: nothing is said about uses until it is here. */
+  loaded?: boolean;
 }) {
   if (failed) return <span className="text-ink-subtle">Could not be read</span>;
+  if (!loaded) return <span className="text-ink-subtle">Reading…</span>;
   if (uses.length === 0) return <span className="text-ink-subtle">Nothing deployed uses it</span>;
   const users = [...new Map(uses.map((one) => [one.by.path, one.by])).values()];
   return (
-    <span className="font-mono text-code text-ink-muted">
+    <span
+      data-used-by=""
+      className="block min-w-0 font-mono text-code text-ink-muted [overflow-wrap:anywhere]"
+    >
       {users.slice(0, 3).map((by, index) => (
         <span key={by.path}>
           {index > 0 ? ", " : ""}

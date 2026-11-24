@@ -1,5 +1,6 @@
 import { mkdirSync } from "node:fs";
-import { signInWithPassword } from "./sign-in.ts";
+import { signInAs } from "./as.ts";
+import { fernhillTenant } from "./fernhill.ts";
 import { expect, type Locator, type Page, test } from "./test.ts";
 
 /**
@@ -16,8 +17,7 @@ import { expect, type Locator, type Page, test } from "./test.ts";
  * Pictures go to `E2E_LOOK_SHOTS` when it is set (light and dark, at 1440, 768 and 390).
  */
 
-const PASSWORD = process.env.E2E_FERNHILL_PASSWORD ?? "fernhill-demo-2026";
-const TENANT = process.env.E2E_FERNHILL_TENANT ?? "fernhill";
+const TENANT = fernhillTenant();
 const SANDBOX = process.env.E2E_FERNHILL_SANDBOX ?? "sandbox";
 const OWNER = "maya.brooks@fernhill.example";
 const stamp = Date.now().toString(36);
@@ -30,6 +30,18 @@ type Answer = { status: number; body: any };
 const call = (page: Page, method: string, path: string, body?: unknown): Promise<Answer> =>
   page.evaluate(
     async ([method, path, body]) => {
+      // A draft save names the draft it saw: its revision now, or none when there is none.
+      if (
+        method === "PUT" &&
+        String(path).includes("/drafts/") &&
+        body &&
+        typeof body === "object" &&
+        !("revision" in body) &&
+        !("create" in body)
+      ) {
+        const seen = await fetch(`/api/v1${path}`);
+        if (seen.ok) body = { ...body, revision: (await seen.json()).revision };
+      }
       const response = await fetch(`/api/v1${path}`, {
         method: method as string,
         headers: body ? { "content-type": "application/json" } : {},
@@ -158,8 +170,8 @@ const body2 = {
 test.beforeAll(async ({ browser }) => {
   test.setTimeout(300_000);
   owner = await (await browser.newContext({ viewport: { width: 1440, height: 1000 } })).newPage();
-  await signInWithPassword(owner, OWNER, PASSWORD);
-  const tenants = await ok(owner, "GET", "/tenants?limit=200");
+  await signInAs(owner, OWNER);
+  const tenants = await ok(owner, "GET", `/tenants?search=${TENANT}&limit=200`);
   const tenant = tenants.items.find((one: { slug: string }) => one.slug === TENANT);
   test.skip(!tenant, `No tenant ${TENANT}: set up the Fernhill example first.`);
   const workspaces = (await ok(owner, "GET", `/tenants/${tenant.id}/workspaces`)).items;
@@ -357,7 +369,7 @@ async function measureList(label: string, list: Locator, handleOf: (key: string)
 
 // ----- 1. Dragging -----
 
-test("a table's columns slide: the dragged row follows, the others make room, it settles; Esc, the keys, and reduced motion", async () => {
+test("a table's columns slide: the dragged row follows, the others make room, it settles; Esc, the keys, and reduced motion @fernhill @builder", async () => {
   await openBuilder("Main");
   await chooseWidget("Invoices", "Display");
   const list = settings()
@@ -396,7 +408,7 @@ test("a table's columns slide: the dragged row follows, the others make room, it
   await owner.emulateMedia({ reducedMotion: "no-preference" });
 });
 
-test("the form's fields, an action's steps, the pages and the outline slide the same way", async () => {
+test("the form's fields, an action's steps, the pages and the outline slide the same way @fernhill @builder", async () => {
   await openBuilder("Main");
   // The form's fields.
   await chooseWidget("New invoice", "Display");
@@ -447,7 +459,7 @@ test("the form's fields, an action's steps, the pages and the outline slide the 
     .toBe(after[0]);
 });
 
-test("text is not selected while a row is dragged, and the handles take touch", async () => {
+test("text is not selected while a row is dragged, and the handles take touch @fernhill @builder", async () => {
   await openBuilder("Main");
   await chooseWidget("Invoices", "Display");
   const handle = settings().locator("[data-handle]").first();
@@ -465,7 +477,7 @@ test("text is not selected while a row is dragged, and the handles take touch", 
 
 // ----- 2. The dots -----
 
-test("a dot says that something is wrong in its tab, and a tab with settings but nothing wrong has none", async () => {
+test("a dot says that something is wrong in its tab, and a tab with settings but nothing wrong has none @fernhill @builder", async () => {
   await openBuilder("Main");
   // The invoices table has columns, a sort, a limit: all set, nothing wrong: no dots.
   await chooseWidget("Invoices");
@@ -522,7 +534,7 @@ test("a dot says that something is wrong in its tab, and a tab with settings but
   ).toHaveCount(1);
 });
 
-test("a dashboard's inspector follows the same rule", async () => {
+test("a dashboard's inspector follows the same rule @fernhill @builder", async () => {
   const board = await ok(owner, "POST", `${W}/dashboards`, { title: `Look ${stamp}` });
   try {
     await owner.setViewportSize({ width: 1440, height: 1000 });
@@ -547,7 +559,7 @@ test("a dashboard's inspector follows the same rule", async () => {
 
 // ----- 3. The help topic -----
 
-test("Help topic is a picklist over the documents: search, groups, a page with no topic, keys, Change and Clear", async () => {
+test("Help topic is a picklist over the documents: search, groups, a page with no topic, keys, Change and Clear @fernhill @builder", async () => {
   await openBuilder("Second");
   const form = settings().getByRole("region", { name: "Page settings" });
   await expect(form.getByText("None: this page has no Help button.")).toBeVisible();
@@ -606,7 +618,7 @@ test("Help topic is a picklist over the documents: search, groups, a page with n
     .toBe("");
 });
 
-test("a topic no document has is a problem in the settings, and a warning in the publish check", async () => {
+test("a topic no document has is a problem in the settings, and a warning in the publish check @fernhill @builder", async () => {
   await openBuilder("Helped", { width: 1440, height: 1000 }, NAME2);
   const form = settings().getByRole("region", { name: "Page settings" });
   await expect(form.getByText(/No document has the topic/)).toBeVisible({ timeout: 15_000 });
@@ -630,7 +642,7 @@ for (const [width, height] of [
   [390, 844],
 ] as const) {
   for (const scheme of ["light", "dark"] as const) {
-    test(`pictures at ${width}, ${scheme}: columns, the dot, the help window; nothing scrolls sideways`, async () => {
+    test(`pictures at ${width}, ${scheme}: columns, the dot, the help window; nothing scrolls sideways @fernhill @builder`, async () => {
       await owner.emulateMedia({ colorScheme: scheme });
       await openBuilder("Broken", { width, height });
       const sideways = await owner.evaluate(

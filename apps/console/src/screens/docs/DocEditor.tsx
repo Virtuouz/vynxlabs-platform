@@ -2,23 +2,26 @@ import {
   asDirectory,
   checkPageAmong,
   type DocIssue,
+  folderType,
   frontmatterOf,
   nameProblem,
+  PRODUCT_PREFIX,
   planMove,
   planRename,
   setFrontmatter,
 } from "@volvel/docs-engine";
-import { Button, Doc, Notice, Panel, TextField } from "@volvel/ui";
+import { Button, Doc, LimitNote, Notice, Panel, TextField } from "@volvel/ui";
 import { CircleAlert, CircleCheck, ExternalLink, FilePen, Pencil } from "lucide-react";
 import { type KeyboardEvent, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
-import { ApiError, api, useLoad } from "../../api.ts";
-import { ask, failureText, notify, takenText } from "../../ask.tsx";
+import { api, useLoad } from "../../api.ts";
+import { failureText, notify, takenText } from "../../ask.tsx";
 import { Diagram } from "../../diagrams/Diagram.tsx";
 import type { CodeEditorHandle, Marker } from "../../editor/CodeEditor.tsx";
 import { useWorkspaceTerms } from "../../help/glossary.tsx";
 import { useHelpTopic } from "../../help/store.ts";
 import { useBrand } from "../../kit/brand.tsx";
 import { DiffView } from "../../kit/DiffView.tsx";
+import { DraftClash } from "../../kit/DraftClash.tsx";
 import { useDraftSave } from "../../kit/draftSave.ts";
 import { useShortcut } from "../../kit/keys.ts";
 import { ErrorState, Pending } from "../../kit/LoadState.tsx";
@@ -26,11 +29,13 @@ import { MarkdownEditor } from "../../kit/markdown/MarkdownEditor.tsx";
 import { PageHeader } from "../../kit/PageHeader.tsx";
 import { useTitleObject } from "../../kit/title.ts";
 import { navigate, useNavigationGuard, useQueryValue } from "../../router.tsx";
-import { deletePage, folderItems, MoveDialog, PATH, useProduct } from "./Docs.tsx";
+import { deletePage, folderItems, keepPage, MoveDialog, PATH, useProduct } from "./Docs.tsx";
 import {
   appFor,
+  changelogFor,
   type DocPage,
   type DocsList,
+  entriesOf,
   findRow,
   folderId,
   glossaryFor,
@@ -38,10 +43,13 @@ import {
   indexOf,
   resolvers,
   rowsOf,
+  setOf,
   sourcesOf,
+  subjectsOf,
   termsOf,
 } from "./model.ts";
 import { PageDetails } from "./PageDetails.tsx";
+import { ServedAfter, ServedEyebrow } from "./Served.tsx";
 
 interface Opened {
   page: DocPage;
@@ -118,7 +126,6 @@ export function DocEditor({
       }),
     applied: (_answer, text, newest) => {
       setSaved(text);
-      setClash(false);
       list.reload();
       if (newest) {
         notify.success(
@@ -131,8 +138,7 @@ export function DocEditor({
     },
     failed: (error) => {
       // Someone else saved it since it was opened: say so, and keep what was typed.
-      if (error instanceof ApiError && error.code === "draft_changed") setClash(true);
-      else if (takenText(error)) setTaken(takenText(error));
+      if (takenText(error)) setTaken(takenText(error));
       else notify.error(error);
     },
   });
@@ -142,13 +148,13 @@ export function DocEditor({
     setSource(next);
     draft.edit(next);
   };
-  const [clash, setClash] = useState(false);
   const [taken, setTaken] = useState<string>();
   const [reveal, setReveal] = useState<{ line: number; at: number }>();
   const [comparing, setComparing] = useState(compareAsked === "1");
   const [cursor, setCursor] = useState({ line: 1, column: 1 });
   const [moving, setMoving] = useState(false);
   const [retitling, setRetitling] = useState(false);
+  const [retitleText, setRetitleText] = useState("");
   const handle = useRef<CodeEditorHandle | null>(null);
   const product = useProduct();
   const brand = useBrand();
@@ -170,10 +176,15 @@ export function DocEditor({
 
   const typed = useDeferredValue(source ?? "");
   const app = list.data ? appFor(list.data.apps, where) : undefined;
+  // What the other pages of the app say of themselves: their types and subjects are the set-wide
+  // checks' and the preview's, as the site will draw them.
+  const index = useMemo(() => (list.data ? indexOf(list.data, app) : []), [list.data, app]);
+  const others = useMemo(() => (list.data ? entriesOf(list.data, app) : []), [list.data, app]);
   const checked = useMemo(() => {
     if (!list.data) return undefined;
     const workspaceTerms = termsOf(list.data).map((term) => term.id);
-    return checkPageAmong(inApp(app, where) || "untitled", typed, indexOf(list.data, app), {
+    return checkPageAmong(inApp(app, where) || "untitled", typed, index, {
+      reservedPrefix: PRODUCT_PREFIX,
       ...(product
         ? { reservedTerms: Object.keys(product.terms), reservedTopics: Object.keys(product.topics) }
         : {}),
@@ -186,7 +197,24 @@ export function DocEditor({
         return found.columns?.some((one) => one.name === column) ? true : undefined;
       },
     });
-  }, [list.data, app, where, typed, product, resources]);
+  }, [list.data, app, where, typed, index, product, resources]);
+  const here = inApp(app, where) || "untitled";
+  const served = useMemo(
+    () => (checked ? setOf(others, checked.entry) : undefined),
+    [others, checked],
+  );
+  // What the folder says is under it, for a page that says none of its own.
+  const inherited = useMemo(
+    () =>
+      folderType(here, (at) =>
+        at === here ? undefined : index.find((one) => one.path === at)?.type,
+      ),
+    [here, index],
+  );
+  const knownSubjects = useMemo(
+    () => subjectsOf(index.filter((one) => one.path !== here)),
+    [index, here],
+  );
   const issues: DocIssue[] = checked?.issues ?? [];
   const errors = issues.filter((issue) => issue.severity === "error");
   const problems = useMemo<Marker[]>(
@@ -220,7 +248,8 @@ export function DocEditor({
   );
 
   const save = async () => {
-    if (placed || source === undefined) return;
+    // A page drafted for removal is kept first: saving would bring it back without being asked.
+    if (placed || source === undefined || opened.data?.page.state === "removed") return;
     setTaken(undefined);
     sent.current = { title, fresh, problems: errors.length > 0, path: where };
     await draft.save(fresh);
@@ -272,8 +301,10 @@ export function DocEditor({
     });
 
   const retitle = (typed: string) => {
-    setRetitling(false);
     const next = typed.trim();
+    // A title past its limit is said at the field and kept to shorten, not cut.
+    if (next.length > 120) return;
+    setRetitling(false);
     if (next === "" || next === title) return;
     const written = setFrontmatter(source, { title: next });
     if (written === undefined) {
@@ -348,19 +379,22 @@ export function DocEditor({
         }
         title={
           retitling ? (
-            <input
-              aria-label="Page title"
-              // biome-ignore lint/a11y/noAutofocus: it is opened by pressing its pencil, to be typed in.
-              autoFocus
-              defaultValue={title}
-              maxLength={120}
-              onBlur={(event) => retitle(event.currentTarget.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") retitle(event.currentTarget.value);
-                if (event.key === "Escape") setRetitling(false);
-              }}
-              className="w-full min-w-[16rem] rounded-control border border-action bg-surface px-2 text-ink outline-none"
-            />
+            <>
+              <input
+                aria-label="Page title"
+                // biome-ignore lint/a11y/noAutofocus: it is opened by pressing its pencil, to be typed in.
+                autoFocus
+                defaultValue={title}
+                onChange={(event) => setRetitleText(event.currentTarget.value)}
+                onBlur={(event) => retitle(event.currentTarget.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") retitle(event.currentTarget.value);
+                  if (event.key === "Escape") setRetitling(false);
+                }}
+                className="w-full min-w-[16rem] rounded-control border border-action bg-surface px-2 text-ink outline-none"
+              />
+              <LimitNote value={retitleText} max={120} />
+            </>
           ) : (
             title
           )
@@ -372,7 +406,10 @@ export function DocEditor({
                 size="small"
                 variant="quiet"
                 aria-label="Change the title"
-                onClick={() => setRetitling(true)}
+                onClick={() => {
+                  setRetitleText(title);
+                  setRetitling(true);
+                }}
               >
                 <Pencil aria-hidden size={14} />
               </Button>
@@ -385,7 +422,7 @@ export function DocEditor({
             ) : page && page.state !== "deployed" ? (
               <span className="inline-flex items-center gap-1 rounded-full border border-attention/60 bg-attention-soft px-2 py-0.5 text-meta text-attention">
                 <FilePen aria-hidden="true" size={14} />
-                Draft
+                {page.state === "removed" ? "To be removed" : "Draft"}
               </span>
             ) : null}
           </span>
@@ -465,34 +502,38 @@ export function DocEditor({
           </>
         }
       />
-      {clash ? (
+      {page?.state === "removed" ? (
         <Notice
-          tone="danger"
+          tone="attention"
           action={
             <Button
               size="small"
               onClick={async () => {
-                const theirs = await api.get<Opened>(`${root}/docs/page/${where}`);
-                const sure = await ask.confirm({
-                  title: "Take their version?",
-                  text: "What you typed since you opened the page is replaced by what they saved. Copy anything you want to keep first.",
-                  action: "Take theirs",
-                  danger: true,
-                });
-                if (!sure) return;
-                change(theirs.source);
-                setSaved(theirs.source);
-                draft.reset(theirs.source, theirs.revision ?? undefined);
-                setClash(false);
+                if (!(await keepPage(root, page))) return;
+                setSource(undefined);
+                list.reload();
+                opened.reload();
               }}
             >
-              See what they saved
+              Keep this page
             </Button>
           }
         >
-          Someone else saved this page after you opened it. Nothing of theirs was overwritten, and
-          what you typed is still here.
+          A draft removes this page. It is gone once that is deployed. What is shown is what is
+          deployed now; keep the page to change it.
         </Notice>
+      ) : null}
+      {draft.clashed ? (
+        <DraftClash
+          what="page"
+          mine={() => source}
+          onTake={async () => {
+            const theirs = await api.get<Opened>(`${root}/docs/page/${where}`);
+            setSource(theirs.source);
+            setSaved(theirs.source);
+            draft.reset(theirs.source, theirs.revision ?? undefined);
+          }}
+        />
       ) : null}
 
       <Panel className="flex min-h-0 flex-col overflow-hidden p-0">
@@ -501,6 +542,7 @@ export function DocEditor({
           label={`Source of ${where || "the new page"}`}
           path={`docs/${where || "new"}.md`}
           value={source}
+          readOnly={page?.state === "removed"}
           onChange={typeSource}
           onSave={save}
           problems={problems}
@@ -513,6 +555,7 @@ export function DocEditor({
           preview={
             <>
               {/* The served page's own title. Here it is a part of this screen, which has its heading already. */}
+              {served ? <ServedEyebrow set={served} path={here} /> : null}
               <h2 className="m-0 mb-1 text-display-lg">{title}</h2>
               {checked?.entry.frontmatter.description ? (
                 <p className="m-0 mb-5 text-ink-muted">{checked.entry.frontmatter.description}</p>
@@ -523,7 +566,7 @@ export function DocEditor({
                 <Doc
                   tree={asDirectory(inApp(app, where), checked.entry.tree)}
                   profile="docs"
-                  headingShift={1}
+                  headingTop={2}
                   productName={brand.productName}
                   asServed
                   lines
@@ -532,11 +575,21 @@ export function DocEditor({
                   glossary={(scope) =>
                     glossaryFor(data, { path: where }, scope, (to) => `${link}/docs/${to}`)
                   }
+                  changelog={(query) =>
+                    changelogFor(data, { path: where }, query, (to) => `${link}/docs/${to}`)
+                  }
                   {...drawn}
                   components={{
                     code: ({ value, lang }) =>
                       lang === "mermaid" ? <Diagram source={value} /> : undefined,
                   }}
+                />
+              ) : null}
+              {served ? (
+                <ServedAfter
+                  set={served}
+                  path={here}
+                  address={(to) => `${link}/docs/${app ? `${app.docs}/` : ""}${to}`}
                 />
               ) : null}
             </>
@@ -551,6 +604,8 @@ export function DocEditor({
                   onChange={change}
                   index={where === "index" || where.endsWith("/index")}
                   product={product}
+                  inherited={inherited}
+                  subjects={knownSubjects}
                 />
               ),
             },

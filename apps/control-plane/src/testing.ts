@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { Database, sql } from "@volvel/db";
 import { createTestDatabase } from "@volvel/db/testing";
 import type { RouteOptions } from "fastify";
-import { buildApp } from "./app.js";
+import { buildApp, describeApi as describe } from "./app.js";
 import type { Config } from "./config.js";
 import { recentAuthLog } from "./kernel/auth.js";
 import { bootstrapAdmin } from "./kernel/bootstrap.js";
@@ -39,6 +39,9 @@ export function testConfig(overrides: Partial<Config> = {}): Config {
     retention: { runsDays: 30, eventsDays: 30, refusalsDays: 7, auditDays: 400 },
     // The tests' stand-in services listen on this machine.
     egressAllow: { networks: ["127.0.0.0/8", "::1/128"], hosts: ["localhost"] },
+    trustedProxies: 1,
+    // Most suites sign in far more often than a person would. The limits are tested on their own.
+    authLimits: false,
     consoleDir: undefined,
     screensDir: undefined,
     appsUrl: undefined,
@@ -69,6 +72,20 @@ export interface ApiResponse {
   headers: Record<string, unknown>;
   /** The response exactly as sent, for answers that are not JSON. */
   bytes: Buffer;
+}
+
+/**
+ * Saves a draft as a console editor does: it says which draft it saw, the revision there is now,
+ * or none when there is no draft. A save that says nothing over a draft is refused.
+ */
+export async function putSeen(as: Client, url: string, body: Record<string, unknown>) {
+  const seen = await as.get(url);
+  return as.put(url, {
+    ...body,
+    ...(seen.status === 200 && body.revision === undefined && !body.create
+      ? { revision: (seen.body as { revision: number }).revision }
+      : {}),
+  });
 }
 
 export interface Client {
@@ -294,3 +311,8 @@ export async function startTestApp(
 }
 
 export type TestApp = Awaited<ReturnType<typeof startTestApp>>;
+
+/** The API's OpenAPI description, made with no database to connect to. */
+export const describeApi = (version = "0.0.0", config: Partial<Config> = {}) =>
+  describe({ version, config: testConfig(config) });
+export { DEFAULT_THEME, themeCss } from "./kernel/apps/theme.js";

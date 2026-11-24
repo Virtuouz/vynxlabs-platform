@@ -5,6 +5,7 @@ import {
   flowReferences,
   type InterfaceBody,
   widgetFlows,
+  widgetQueries,
   widgetTables,
 } from "@volvel/manifest";
 import type { Db } from "./audit.js";
@@ -12,13 +13,16 @@ import type { Db } from "./audit.js";
 /** Something a resource can depend on, by kind and name. */
 export type TargetKind =
   | "connection"
+  | "connection_group"
   | "secret"
   | "variable"
   | "table"
   | "script"
   | "flow"
   | "event"
-  | "interface";
+  | "interface"
+  | "query"
+  | "data_source";
 
 export interface Reference {
   target: { kind: TargetKind; name: string };
@@ -31,7 +35,15 @@ export interface Reference {
 }
 
 interface ScriptLike {
-  uses?: { connections?: string[]; secrets?: string[]; variables?: string[]; tables?: string[] };
+  uses?: {
+    connections?: string[];
+    connectionGroups?: string[];
+    secrets?: string[];
+    variables?: string[];
+    tables?: string[];
+    sources?: string[];
+    events?: string[];
+  };
   onFailure?: { notify?: string; script?: string };
 }
 
@@ -89,9 +101,14 @@ export async function workspaceReferences(
     ) {
       const script = body as ScriptLike;
       for (const name of script.uses?.connections ?? []) add("connection", name, by, "calls it");
+      for (const name of script.uses?.connectionGroups ?? [])
+        add("connection_group", name, by, "picks a member of it");
       for (const name of script.uses?.secrets ?? []) add("secret", name, by, "reads it");
       for (const name of script.uses?.variables ?? []) add("variable", name, by, "reads it");
       for (const name of script.uses?.tables ?? []) add("table", name, by, "reads and writes it");
+      for (const name of script.uses?.sources ?? [])
+        add("data_source", name, by, "reads and writes it");
+      for (const name of script.uses?.events ?? []) add("event", name, by, "may publish it");
       add("connection", script.onFailure?.notify, by, "sends its failures through it");
       add("script", script.onFailure?.script, by, "starts it when it fails");
     }
@@ -146,6 +163,7 @@ export async function workspaceReferences(
           : ((body as unknown as DashboardBody).widgets ?? []);
       for (const table of widgetTables(widgets)) add("table", table, by, "shows it");
       for (const path of widgetFlows(widgets)) add("flow", path, by, "asks for its approvals");
+      for (const path of widgetQueries(widgets)) add("query", path, by, "shows its rows");
     }
     if (resource.kind === "app") {
       const app = body as { interface?: string; reads?: string[] };
@@ -153,5 +171,25 @@ export async function workspaceReferences(
       for (const table of app.reads ?? []) add("table", table, by, "reads it");
     }
   }
+  // The workspace's own default alert uses what it names, and is no resource.
+  const workspace = await db
+    .selectFrom("workspace")
+    .select("failure_alert")
+    .where("id", "=", workspaceId)
+    .executeTakeFirst();
+  const settings = { kind: "workspace", path: "settings" };
+  const alert = workspace?.failure_alert;
+  if (alert?.notify)
+    found.push({
+      target: { kind: "connection", name: alert.notify },
+      by: settings,
+      how: "sends its failures through it",
+    });
+  if (alert?.script)
+    found.push({
+      target: { kind: "script", name: alert.script },
+      by: settings,
+      how: "starts it when a run fails",
+    });
   return found;
 }

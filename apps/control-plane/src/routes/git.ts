@@ -11,9 +11,11 @@ import {
   pushRelease,
   removeRepository,
   saveRepository,
+  unfollowBranch,
 } from "../kernel/git.js";
 import { access, type WorkspaceRef } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
+import { requireStanding } from "../kernel/pages/standing.js";
 import { AnyObject, Id, iso, NullableId, TenantParams, Time, WorkspaceParams } from "./shared.js";
 
 const NullableString = Type.Union([Type.String(), Type.Null()]);
@@ -23,6 +25,18 @@ const Repository = Type.Object({
   folder: Type.String({
     description:
       "Where resources made in the console are written. A resource file kept anywhere else is written back where it is; nothing that is not a resource's file is touched.",
+  }),
+  folderInForce: Type.String({
+    description:
+      "The folder resources made in the console are written to now: the `resources` that `volvel.yaml` names on the last branch read, else `folder`.",
+  }),
+  folderFrom: Type.Union([Type.Literal("setting"), Type.Literal("volvel.yaml")], {
+    description:
+      "Where `folderInForce` comes from. `volvel.yaml` wins over the setting (D65), and the setting is then not used.",
+  }),
+  fileReadAt: Type.Union([Type.String({ format: "date-time" }), Type.Null()], {
+    description:
+      "When a branch's `volvel.yaml` was last read, by a sync or a check. Null: not yet, so `folderFrom` is only the setting.",
   }),
   paused: Type.Boolean({
     description:
@@ -43,7 +57,7 @@ const Repository = Type.Object({
   }),
   tenantBranch: Type.Union([Type.String(), Type.Null()], {
     description:
-      "Each release of the tenant's access commits it to this branch, under `tenant/`. Never the default branch: a developer merges it. Null: off.",
+      "Each access change commits it to this branch, under `tenant/`. Never the default branch: a developer merges it. Null: off.",
   }),
   ...CredentialSet,
 });
@@ -85,10 +99,15 @@ export function gitRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       credential_kind?: string;
       release_branch?: string | null;
       tenant_branch?: string | null;
+      file_folder?: string | null;
+      file_read_at?: Date | null;
     }) => ({
       url: row.url,
       defaultBranch: row.default_branch,
       folder: row.folder,
+      folderInForce: row.file_folder ?? row.folder,
+      folderFrom: row.file_folder ? ("volvel.yaml" as const) : ("setting" as const),
+      fileReadAt: row.file_read_at ? iso(row.file_read_at) : null,
       paused: row.paused,
       verifiedAt: row.verified_at ? iso(row.verified_at) : null,
       credentialKind: row.credential_kind ?? "token",
@@ -140,6 +159,8 @@ export function gitRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             "credential_kind",
             "release_branch",
             "tenant_branch",
+            "file_folder",
+            "file_read_at",
           ])
           .where("tenant_id", "=", params.t)
           .executeTakeFirst();
@@ -208,6 +229,8 @@ export function gitRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.workspace("git:read") },
         schema: {
           summary: "How a workspace stands against its branch",
+          description:
+            "What the workspace is connected to, and how it differs from the repository.",
           tags: ["git"],
           params: WorkspaceParams,
           response: { 200: Status },
@@ -235,6 +258,29 @@ export function gitRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         const workspace = ctx.workspace as WorkspaceRef;
         ctx.mutated = true;
         await followBranch(kernel, ctx.actor, workspace, body.branch);
+        return status(workspace);
+      },
+    );
+
+    app.delete(
+      `${base}/git`,
+      {
+        config: { access: access.workspace("git:write") },
+        schema: {
+          summary: "Make a dev workspace follow no branch",
+          description:
+            "The workspace stops syncing with its branch. The branch and what is on it are left " +
+            "as they are, and the workspace can follow it again, or another, with `PUT`. A " +
+            "workspace that follows nothing is refused with `no_branch`.",
+          tags: ["git"],
+          params: WorkspaceParams,
+          response: { 200: Status },
+        },
+      },
+      async ({ ctx }) => {
+        const workspace = ctx.workspace as WorkspaceRef;
+        ctx.mutated = true;
+        await unfollowBranch(kernel, ctx.actor, workspace);
         return status(workspace);
       },
     );
@@ -523,6 +569,13 @@ export function gitRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                   "Resources changed on both sides, as their file names without the extension.",
               }),
               applied: Type.Array(Type.String()),
+              suspected: Type.Optional(
+                Type.Array(Type.String(), {
+                  description:
+                    "Paths the pull would delete although it creates something of the same kind, " +
+                    "so it stopped: ask again with `allowDelete` naming them, if they are not renames.",
+                }),
+              ),
             }),
           },
         },
@@ -538,6 +591,9 @@ export function gitRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         return pull(kernel, ctx.actor, workspace, {
           resolutions: body.resolutions,
           allowDelete: body.allowDelete,
+          // Brought in, SQL and a data source's table are held to what a console deploy is.
+          standing: (changes) =>
+            requireStanding(kernel, ctx, workspace, changes, { deploying: true }),
         });
       },
     );
@@ -548,6 +604,7 @@ export function gitRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.workspace("git:read") },
         schema: {
           summary: "The workspace's recent pushes and pulls",
+          description: "Each push and pull, newest first, with how it ended.",
           tags: ["git"],
           params: WorkspaceParams,
           response: {
@@ -580,7 +637,8 @@ export function gitRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         return {
           items: rows.map((row) => ({
             id: row.id,
-            kind: row.kind,
+            // A commit to a release branch is a push in the table, and says which branch in its detail.
+            kind: typeof row.detail?.release === "string" ? "release" : row.kind,
             status: row.status,
             commit: row.commit_id,
             message: row.message,

@@ -89,6 +89,12 @@ test("rejecting needs a comment", async () => {
     }),
   );
   expect(await screen.findByRole("heading", { name: "Rejected. Thank you, Bob." })).toBeTruthy();
+  // The same sentence as the console's approvals say about rejecting (OPS-28).
+  expect(
+    screen.getByText(
+      /Rejecting fails the step: the flow takes its error path, or fails if it has none\./,
+    ),
+  ).toBeTruthy();
 });
 
 test("a link that does not work says so, and where to look instead", async () => {
@@ -130,4 +136,11 @@ test("the decided list shows each decision's comment, and which were decided fro
   fireEvent.click(await screen.findByRole("radio", { name: /Decided/ }));
   expect(await screen.findByText(/Receipt checked/)).toBeTruthy();
   expect(screen.getByText(/decided from the mail/)).toBeTruthy();
+});
+
+test("WLK-15: the times on the page say their zone", async () => {
+  show(<ApproveLink token="abc123abc123abc123abc123" />);
+  await screen.findByRole("heading", { name: "Refund the Brooks family" });
+  expect(document.body.textContent).toMatch(/since \d{4}-\d\d-\d\d \d\d:\d\d:\d\d \S+\./);
+  expect(document.body.textContent).toMatch(/until \d{4}-\d\d-\d\d \d\d:\d\d:\d\d \S+, or/);
 });

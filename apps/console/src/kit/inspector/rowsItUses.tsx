@@ -31,7 +31,8 @@ import {
   type SortField,
   TextField,
 } from "@volvel/ui";
-import { Code2, Database, Plus, Table2 } from "lucide-react";
+import { moneyFormatOf } from "@volvel/widgets";
+import { Code2, Database, Plus, Table2, X } from "lucide-react";
 import { lazy, Suspense, useEffect, useState } from "react";
 import { Loading } from "../LoadState.tsx";
 import { useColumnValues } from "./catalog.ts";
@@ -49,17 +50,22 @@ import {
   bindFilter,
   type CatalogColumn,
   choiceWords,
+  columnsNamed,
   type DataPart,
   dataParts,
   defaultInputs,
   filterColumn,
+  followable,
   heading,
+  MAX_JOINS,
   MAX_SEARCH_COLUMNS,
   resultNames,
   searchColumns,
   sourcesOf,
+  tidyVisual,
   visualOf,
   withInput,
+  withoutColumns,
 } from "./model.ts";
 import {
   ChoiceList,
@@ -135,7 +141,11 @@ export function RowsItUses({
           setWriting={setWriting}
         />
       ) : null}
+      {visual && rows.source ? <AlsoFrom env={env} input={input} visual={visual} /> : null}
       {showSql ? <SqlBlock env={env} input={input} /> : null}
+      {data && ("query" in data.source || "sql" in data.source) ? (
+        <ConstantValues env={env} input={input} />
+      ) : null}
       {data && !visual && !showSql ? (
         <DrawerBlock>
           <p className="m-0 text-body-sm text-ink-muted">It gives its own columns.</p>
@@ -171,6 +181,147 @@ export function RowsItUses({
         />
       ) : null}
     </DrawerGroup>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Also from
+
+/** What of a query still needs the table followed by `via`, in words; empty when nothing does. */
+function neededBy(visual: VisualQuery, via: string): string[] {
+  const uses = (name: string | undefined) => name?.startsWith(`${via}.`) === true;
+  return [
+    ...((visual.groupBy ?? []).some((one) => uses(one.column)) ? ["Breakdown"] : []),
+    ...((visual.measures ?? []).some((one) => uses(one.column)) ? ["Values"] : []),
+  ];
+}
+
+/** What a column of a followed table is called in the result: `pet.name` is `pet_name`. */
+export const joinedName = (via: string, column: string) => `${via}_${column}`;
+
+/** Whether a column of a followed table would take the name of one the table has itself. */
+export const collides = (own: readonly string[], via: string, column: string) =>
+  own.includes(joinedName(via, column));
+
+/**
+ * "Also from": the tables the chosen table points to, each a chip that follows it, and for each
+ * one followed the columns of it to show. Every visual source gets it through "Rows it uses".
+ */
+function AlsoFrom({ env, input, visual }: { env: Env; input: string; visual: VisualQuery }) {
+  const options = followable(env.catalog, visual.table);
+  if (options.length === 0) return null;
+  const joins = visual.joins ?? [];
+  const key = `joins:${env.widget.id}:${input}`;
+  const summary = (visual.measures?.length ?? 0) > 0 || (visual.groupBy?.length ?? 0) > 0;
+  const own = columnsNamed(env.catalog, visual.table).map((one) => one.name);
+  const write = (next: VisualQuery, words: string) => writeVisual(env, input, next, words, key);
+
+  const follow = (via: string, on: boolean) => {
+    if (on) {
+      write({ ...visual, joins: [...joins, via] }, "following a table");
+      return;
+    }
+    const gone = (name: string | undefined) => name?.startsWith(`${via}.`) === true;
+    const next: VisualQuery = { ...visual, joins: joins.filter((one) => one !== via) };
+    if (visual.columns) next.columns = visual.columns.filter((one) => !gone(one));
+    if (visual.filters) next.filters = visual.filters.filter((one) => !gone(one.column));
+    if (visual.sort) next.sort = visual.sort.filter((one) => !gone(one.by));
+    // What the widget's Display lists of that table goes too, by either name it is known by:
+    // `via.column` in the query, `via_column` in the result.
+    const names = new Set(
+      (options.find((one) => one.via === via)?.columns ?? []).flatMap((column) => [
+        `${via}.${column.name}`,
+        joinedName(via, column.name),
+      ]),
+    );
+    const data = env.widget.data?.[input];
+    if (!data) return;
+    // Everything of the widget that names a column of that table goes too, in one place.
+    const widget = withoutColumns(
+      env.definition,
+      withInput(env.widget, input, {
+        ...(data as DataInput),
+        source: { visual: tidyVisual(next) },
+      }),
+      input,
+      names,
+    );
+    env.write(widget, "no longer following a table", key);
+  };
+  const choose = (via: string, column: string, on: boolean) => {
+    const name = `${via}.${column}`;
+    const have = visual.columns ?? own.filter((one) => !["created_at", "updated_at"].includes(one));
+    write(
+      { ...visual, columns: on ? [...have, name] : have.filter((one) => one !== name) },
+      "choosing the columns of another table",
+    );
+  };
+  return (
+    <DrawerBlock label="Also from">
+      <ChipSet label="Tables this also reads from">
+        {options.map((one) => {
+          const on = joins.includes(one.via);
+          const needed = on ? neededBy(visual, one.via) : [];
+          return (
+            <CheckChip
+              key={one.via}
+              checked={on}
+              disabled={needed.length > 0 || (!on && joins.length >= MAX_JOINS)}
+              onChange={(next) => follow(one.via, next)}
+            >
+              {heading(one.table)} by {heading(one.via).toLowerCase()}
+            </CheckChip>
+          );
+        })}
+      </ChipSet>
+      {options
+        .filter((one) => joins.includes(one.via))
+        .map((one) => {
+          const needed = neededBy(visual, one.via);
+          return (
+            <div key={one.via} className="flex flex-col gap-1">
+              {needed.length > 0 ? (
+                <p className="m-0 text-body-sm text-ink-muted">
+                  {heading(one.table)} is used by {needed.join(" and ")}: change that to stop
+                  following it.
+                </p>
+              ) : null}
+              {summary ? null : (
+                <ChipSet label={`Columns from ${heading(one.table)}`}>
+                  {one.columns.map((column) => (
+                    <CheckChip
+                      key={column.name}
+                      checked={(visual.columns ?? []).includes(`${one.via}.${column.name}`)}
+                      disabled={
+                        !(visual.columns ?? []).includes(`${one.via}.${column.name}`) &&
+                        collides(own, one.via, column.name)
+                      }
+                      onChange={(on) => choose(one.via, column.name, on)}
+                    >
+                      {heading(column.name)}
+                    </CheckChip>
+                  ))}
+                </ChipSet>
+              )}
+              {summary
+                ? null
+                : one.columns
+                    .filter(
+                      (column) =>
+                        !(visual.columns ?? []).includes(`${one.via}.${column.name}`) &&
+                        collides(own, one.via, column.name),
+                    )
+                    .map((column) => (
+                      <p key={column.name} className="m-0 text-body-sm text-ink-muted">
+                        {heading(column.name)} is not offered: {heading(visual.table)} already has a
+                        column called {joinedName(one.via, column.name)}, which this one would be
+                        called too.
+                      </p>
+                    ))}
+            </div>
+          );
+        })}
+    </DrawerBlock>
   );
 }
 
@@ -225,6 +376,18 @@ function SourceRow({
           label: heading(one.name),
           icon: Table2,
         }))
+      : []),
+    // A table of a bound data source is read as a list: only an input that is rows offers it.
+    ...(offered.includes("table") && declared?.shape === "rows"
+      ? (catalog.sources ?? []).map((one) => {
+          const at = one.name.lastIndexOf("/");
+          return {
+            value: `table:${one.name}`,
+            label: `${one.name.slice(at + 1)} in ${one.name.slice(0, at)}`,
+            icon: Database,
+            hint: "A table of a data source: listed as it is, not totalled.",
+          };
+        })
       : []),
     ...(offered.includes("query")
       ? catalog.queries.map((one) => ({
@@ -283,6 +446,125 @@ function SourceRow({
         />
       }
     />
+  );
+}
+
+/** What is typed as a value: a number when it reads as one exactly ("30", not "030"), else the words. */
+const valueOfText = (text: string): string | number =>
+  text.trim() !== "" && String(Number(text)) === text ? Number(text) : text;
+
+/**
+ * The values a saved query's parameters are given, and the numbered values of SQL written here
+ * ($1, $2). A filter can fill a parameter too (under "Where each one goes"); a value here is
+ * the same every time the widget reads.
+ */
+function ConstantValues({ env, input }: { env: Env; input: string }) {
+  const data = env.widget.data?.[input] as DataInput;
+  const key = `values:${env.widget.id}:${input}`;
+  const source = data.source as { query?: string; sql?: string; values?: unknown };
+  const write = (values: Record<string, unknown> | unknown[] | undefined, words: string) => {
+    const { values: _before, ...rest } = source;
+    const next = values === undefined ? rest : { ...rest, values };
+    env.write(
+      withInput(env.widget, input, { ...data, source: next as DataInput["source"] }),
+      words,
+      key,
+    );
+  };
+  if (source.sql !== undefined) {
+    const values = Array.isArray(source.values) ? source.values : [];
+    if (values.length === 0) return null;
+    return (
+      <DrawerBlock>
+        <p className="m-0 text-body-sm text-ink-muted">Values it passes to the query.</p>
+        {values.map((value, index) => (
+          <TextField
+            // biome-ignore lint/suspicious/noArrayIndexKey: a numbered value has no identity but its number
+            key={index}
+            name={`${env.widget.id}-${input}-value-${index + 1}`}
+            label={`Value of $${index + 1}`}
+            value={String(value ?? "")}
+            required={false}
+            onChange={(text) =>
+              write(
+                values.map((one, at) => (at === index ? valueOfText(text) : one)),
+                "changing a value of the query",
+              )
+            }
+          />
+        ))}
+      </DrawerBlock>
+    );
+  }
+  const given =
+    source.values && typeof source.values === "object" && !Array.isArray(source.values)
+      ? Object.entries(source.values as Record<string, unknown>)
+      : [];
+  const put = (entries: [string, unknown][], words: string) =>
+    write(entries.length === 0 ? undefined : Object.fromEntries(entries), words);
+  return (
+    <DrawerBlock>
+      <p className="m-0 text-body-sm text-ink-muted">
+        {given.length === 0
+          ? "A parameter of the query can be given a value that is the same every time."
+          : "Values given to the query's parameters. A page filter that fills one takes its place."}
+      </p>
+      {given.map(([name, value], index) => (
+        // biome-ignore lint/suspicious/noArrayIndexKey: a parameter is renamed in place, so its name cannot be its key
+        <div key={index} className="flex items-end gap-2">
+          <TextField
+            name={`${env.widget.id}-${input}-parameter-${index}`}
+            label={`Name of parameter ${index + 1}`}
+            value={name}
+            required={false}
+            onChange={(next) =>
+              put(
+                given.map((one, at) => (at === index ? [next.trim(), one[1]] : one)),
+                "renaming a parameter",
+              )
+            }
+          />
+          <TextField
+            name={`${env.widget.id}-${input}-value-${index}`}
+            label={`Value of ${name}`}
+            value={String(value ?? "")}
+            required={false}
+            onChange={(next) =>
+              put(
+                given.map((one, at) => (at === index ? [one[0], valueOfText(next)] : one)),
+                "changing a value of the query",
+              )
+            }
+          />
+          <Button
+            size="small"
+            variant="quiet"
+            aria-label={`Remove the value of ${name}`}
+            onClick={() =>
+              put(
+                given.filter((_, at) => at !== index),
+                "removing a value of the query",
+              )
+            }
+          >
+            <X aria-hidden="true" size={14} />
+          </Button>
+        </div>
+      ))}
+      <div>
+        <Button
+          size="small"
+          onClick={() =>
+            put(
+              [...given, [given.some(([name]) => name === "parameter") ? "" : "parameter", ""]],
+              "adding a value to the query",
+            )
+          }
+        >
+          <Plus aria-hidden="true" size={14} /> Add a value
+        </Button>
+      </div>
+    </DrawerBlock>
   );
 }
 
@@ -482,8 +764,11 @@ function ConditionBody({
   onChange,
   root,
   table,
+  recordColumns,
 }: {
   columns: readonly CatalogColumn[];
+  /** The columns of the record the page opens on, when it does: what a value may be taken from. */
+  recordColumns?: readonly CatalogColumn[] | undefined;
   start: ConditionValue;
   onChange: (next: ConditionValue) => void;
   /** Where the table's column values are read from, and which table. */
@@ -519,6 +804,22 @@ function ConditionBody({
           : undefined;
       }}
       value={draft}
+      valueFrom={(field) => {
+        const type = spokenType(columns.find((one) => one.name === field));
+        return {
+          ...(recordColumns && recordColumns.length > 0
+            ? { record: recordColumns.map((one) => ({ id: one.name, label: heading(one.name) })) }
+            : {}),
+          // Who is looking is a person's id: it is compared with a column that holds one.
+          user: type === "text",
+        };
+      }}
+      money={(field) => {
+        const format = moneyFormatOf(columns.find((one) => one.name === field));
+        return format?.style === "currency"
+          ? { currency: format.currency ?? "USD", minorUnits: format.minorUnits === true }
+          : undefined;
+      }}
       onChange={(next) => {
         setDraft(next);
         onChange(next);
@@ -542,6 +843,13 @@ function ConditionsBlock({
   columns: CatalogColumn[];
 }) {
   const conditions = visual.filters ?? [];
+  // A page that opens on a record lets a condition be about that record's own columns.
+  const opensOn = env.page && env.page.kind !== "page" ? env.page.record?.table : undefined;
+  const pageRecord = opensOn
+    ? env.catalog.tables
+        .find((one) => one.name === opensOn)
+        ?.columns.filter((one) => !["id", "created_at", "updated_at"].includes(one.name))
+    : undefined;
   const write = (filters: VisualCondition[], words: string, key?: string) =>
     writeVisual(env, input, { ...visual, filters }, words, key);
   /** The condition at `at`, replaced by what the editor made of it (a "not" of several is several). */
@@ -596,6 +904,7 @@ function ConditionsBlock({
                     columns={columns}
                     root={env.catalog.root}
                     table={visual.table}
+                    recordColumns={pageRecord}
                     start={toEditor(condition, column)}
                     onChange={(next) => replace(at, next)}
                   />
@@ -637,6 +946,7 @@ function ConditionsBlock({
                 columns={columns}
                 root={env.catalog.root}
                 table={visual.table}
+                recordColumns={pageRecord}
                 start={draft}
                 onChange={setDraft}
               />
@@ -674,7 +984,8 @@ function wordsOf(type: string): {
   return { desc: "Z to A", asc: "A to Z", phrase: { desc: "Z to A", asc: "A to Z" } };
 }
 
-function SortRow({
+/** The row "Sorted by" (and "Show at most"): the Data tab's, and a chart's own Order group. */
+export function SortRow({
   env,
   input,
   visual,

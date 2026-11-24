@@ -970,7 +970,7 @@ describe("resource registry", () => {
       kind: "role",
       schemaVersion: 1,
       ownership: "ui",
-      body: { name: "auditor", permissions: ["resource:read"] },
+      body: { name: "auditor", permissions: ["data:read"] },
     });
     const target = (await alice.client.get(`${base()}/access/roles/auditor`)).body;
     const binding = await alice.client.post(`/tenants/${acme}/bindings`, {
@@ -983,7 +983,7 @@ describe("resource registry", () => {
     const anyone = { type: "anonymous" as const, id: null };
     expect(
       (
-        await check(t.db, anyone, "resource:read", {
+        await check(t.db, anyone, "data:read", {
           tenantId: acme,
           workspaceId: dev,
           resourceId: target.id,
@@ -991,7 +991,7 @@ describe("resource registry", () => {
       ).allowed,
     ).toBe(true);
     expect(
-      (await check(t.db, anyone, "resource:read", { tenantId: acme, workspaceId: dev })).allowed,
+      (await check(t.db, anyone, "data:read", { tenantId: acme, workspaceId: dev })).allowed,
     ).toBe(false);
     await alice.client.delete(`/tenants/${acme}/bindings/${binding.body.id}`);
     await alice.client.delete(`${base()}/access/roles/auditor`);
@@ -1080,6 +1080,27 @@ describe("audit", () => {
       expect.arrayContaining(["member.created", "member.signed_in", "binding.created"]),
     );
     expect((await alice.client.get("/audit")).status).toBe(403);
+    // The instance's log is narrowed as a tenant's is, by what it holds (GOV-P8).
+    expect((await alice.client.get("/audit-facets")).status).toBe(403);
+    const facets = (await t.admin.get("/audit-facets")).body;
+    expect(facets.actions.some((one: { value: string }) => one.value === "member.signed_in")).toBe(
+      true,
+    );
+    expect(facets.actors.some((one: { id: string | null }) => one.id !== null)).toBe(true);
+    expect(facets.targetTypes.some((one: { value: string }) => one.value === "member")).toBe(true);
+    // A facet follows the filters: nothing is after the far future.
+    const later = (await t.admin.get("/audit-facets?from=2999-01-01T00:00:00Z")).body;
+    expect(later.actions).toEqual([]);
+    const members = (await t.admin.get("/audit?targetType=member&limit=200")).body.items;
+    expect(members.length).toBeGreaterThan(0);
+    expect(members.every((entry: { targetType: string }) => entry.targetType === "member")).toBe(
+      true,
+    );
+    const one = members[0] as { targetId: string };
+    const about = (await t.admin.get(`/audit?target=${one.targetId}&limit=200`)).body.items;
+    expect(about.every((entry: { targetId: string }) => entry.targetId === one.targetId)).toBe(
+      true,
+    );
   });
 
   test("sign-out and password changes are recorded", async () => {
@@ -1130,7 +1151,7 @@ describe("the write path", () => {
     // A page's actions are run, and their audit checked, in page-actions.test.ts.
     // Approvals decided from a page, and their audit, are in page-approvals.test.ts.
     const execution =
-      /\/(bundles|deployments|runs|connection-bindings|variable-values|worker-credentials|worker|hooks|auth|flow-runs|flow-layouts|events|rows|row|row-deletions|rows-export|table-purges|data-source-bindings|source-rows|source-row|files|promotions|database-locations|clones|deletion|exports|tenant-imports|end-users|end-user-groups|end-user-auth|bundle-assets|portal|domains|drafts|changes|test-runs|git-repository|git|mcp|connection-groups|connection-group-members|identity-providers|sso|dashboards|provisioning|scim|branding|trigger-pauses|draft-history|data-source-checks|references|recent|worker-pools|recovery-codes|retention|connection-tests|worker-host|schedule-firings|recent-items|alert-tests|tool-calls|connection-oauth|oauth|promotion-requests|approval-links|triggers|preferences|views|access|queries|page-actions|page-approvals)(\/|$)/;
+      /\/(bundles|deployments|runs|connection-bindings|variable-values|worker-credentials|worker|hooks|auth|flow-runs|flow-layouts|events|rows|row|row-deletions|rows-export|table-purges|data-source-bindings|source-rows|source-row|files|promotions|database-locations|clones|deletion|exports|tenant-imports|end-users|end-user-groups|end-user-auth|bundle-assets|portal|domains|drafts|changes|test-runs|git-repository|git|mcp|connection-groups|connection-group-members|identity-providers|sso|dashboards|provisioning|scim|branding|trigger-pauses|draft-history|data-source-checks|references|recent|worker-pools|recovery-codes|retention|connection-tests|worker-host|schedule-firings|recent-items|alert-tests|tool-calls|connection-oauth|oauth|promotion-requests|approval-links|triggers|preferences|views|access|queries|page-actions|page-approvals|member-password-links)(\/|$)/;
     // Deleting a workspace is exercised in environments.test.ts.
     expect(
       t.unexercised(
@@ -1139,7 +1160,10 @@ describe("the write path", () => {
           route !== "DELETE /api/v1/tenants/:t/workspaces/:w" &&
           // Suspending and disabling a member are exercised in scim.test.ts.
           route !== "PATCH /api/v1/members/:id" &&
-          route !== "PATCH /api/v1/tenants/:t/members/:memberId",
+          route !== "PATCH /api/v1/tenants/:t/members/:memberId" &&
+          // Making a member's password link is exercised, and its audit checked, in member-reset.test.ts.
+          route !== "POST /api/v1/tenants/:t/members/:memberId/password-link" &&
+          route !== "POST /api/v1/members/:memberId/password-link",
       ),
     ).toEqual([]);
   });
@@ -1203,6 +1227,20 @@ describe("reading the audit log", () => {
     expect(found.length).toBeGreaterThan(0);
     // A wildcard in the text is looked for, not used.
     expect((await alice.client.get(`${base}?q=%25%25%25`)).body.items).toEqual([]);
+    // The text is also looked for in what a target or an actor is called now (GOV-32): the email
+    // beside "Who" and "To", a workspace's name.
+    const named = ofMembers.find((entry) => entry.targetLabel?.includes("@"));
+    const byEmail = (
+      await alice.client.get(
+        `${base}?limit=200&q=${encodeURIComponent((named?.targetLabel ?? "").toUpperCase())}`,
+      )
+    ).body.items as { targetId: string }[];
+    expect(byEmail.length).toBeGreaterThan(0);
+    expect(byEmail.some((entry) => entry.targetId === named?.targetId)).toBe(true);
+    const byActorName = (
+      await alice.client.get(`${base}?limit=200&q=${encodeURIComponent("alice@")}`)
+    ).body.items as { actorId: string }[];
+    expect(byActorName.some((entry) => entry.actorId === alice.id)).toBe(true);
 
     // One entry by its ID, for a link to it.
     const one = found[0] as { id?: string };

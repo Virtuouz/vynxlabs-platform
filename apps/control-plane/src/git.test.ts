@@ -251,6 +251,20 @@ describe("connecting a repository", () => {
     expect(again.status).toBe(200);
   });
 
+  test("a stored token does not follow a changed address to another host (D10)", async () => {
+    const elsewhere = repoUrl.replace("127.0.0.1", "localhost");
+    expect(elsewhere).not.toBe(repoUrl);
+    const refused = await alice.put(`/tenants/${tenant}/git-repository`, { url: elsewhere });
+    expect(refused.status, JSON.stringify(refused.body)).toBe(400);
+    expect(refused.body.detail).toMatch(/Enter the access token again/);
+    expect((await alice.get(`/tenants/${tenant}/git-repository`)).body.repository.url).toBe(
+      repoUrl,
+    );
+    // The same host, another path: the token is still for it.
+    const samePlace = await alice.put(`/tenants/${tenant}/git-repository`, { url: repoUrl });
+    expect(samePlace.status).toBe(200);
+  });
+
   test("a dev workspace follows a branch of its own, never the default one", async () => {
     expect((await alice.put(`${ws()}/git`, { branch: "main" })).status).toBe(409);
     expect((await alice.put(`${ws()}/git`, { branch: "bad..name" })).status).toBe(400);
@@ -547,6 +561,31 @@ describe("seeing both sides, drafts and releases", () => {
     expect((await alice.post(`${ws()}/git/push`, {})).body.status).toBe("done");
   });
 
+  test("a plain push leaves on the branch the files of drafts that are still saved (REL-04)", async () => {
+    await alice.put(`${ws()}/drafts/orders/kept`, {
+      kind: "script",
+      schemaVersion: 1,
+      body: scriptBody("export default async () => ({ kept: true });\n"),
+    });
+    expect(
+      (await alice.post(`${ws()}/git/push`, { message: "Work in progress", drafts: true })).body
+        .status,
+    ).toBe("done");
+    const onBranch = () => sh(["ls-tree", "-r", "--name-only", "vx/dev"], bare());
+    expect(onBranch()).toContain("platform/orders/kept.script.ts");
+    // A plain push is of what is deployed: the draft is still saved, so its file stays.
+    const plain = await alice.post(`${ws()}/git/push`, {});
+    expect(plain.body, JSON.stringify(plain.body)).toMatchObject({
+      status: expect.stringMatching(/done|nothing/),
+    });
+    expect(onBranch()).toContain("platform/orders/kept.script.ts");
+    expect((await alice.get(`${ws()}/git`)).body.state).toBe("synced");
+    // Set aside, the next plain push takes it off.
+    await alice.delete(`${ws()}/drafts/orders/kept`);
+    expect((await alice.post(`${ws()}/git/push`, {})).body.status).toBe("done");
+    expect(onBranch()).not.toContain("platform/orders/kept.script.ts");
+  });
+
   test("a promotion commits what production now runs to its release branch", async () => {
     const promoted = await alice.post(`${ws()}/promotions`, {});
     expect(promoted.status, JSON.stringify(promoted.body)).toBe(201);
@@ -559,6 +598,13 @@ describe("seeing both sides, drafts and releases", () => {
     expect((await alice.post(`${ws(prod)}/git/release`, {})).body).toEqual({
       status: "nothing",
       branch: "release/main",
+    });
+    // History tells a release commit from a push: the console words it "Release".
+    const history = (await alice.get(`${ws(prod)}/git/operations`)).body.items;
+    expect(history[0]).toMatchObject({ kind: "release", status: "nothing" });
+    expect(history.find((one: { status: string }) => one.status === "done")).toMatchObject({
+      kind: "release",
+      detail: { release: "release/main" },
     });
     const branches = (await alice.get(`/tenants/${tenant}/git-branches`)).body.items;
     expect(branches).toEqual(
@@ -896,6 +942,38 @@ describe("safety", () => {
     expect(sh(["rev-list", "--count", `${main}..vx/access`], bare())).toBe("2");
   });
 
+  test("a pull brings SQL into the workspace only for someone who may write it (DAT-02)", async () => {
+    const role = await alice.post(`/tenants/${tenant}/roles`, {
+      name: "puller",
+      permissions: ["deployment:write", "code:write", "git:read", "resource:read", "data:read"],
+    });
+    expect(role.status, JSON.stringify(role.body)).toBe(201);
+    const made = await alice.post(`/tenants/${tenant}/members`, {
+      email: "puller@acme.example",
+      name: "Puller",
+      password: PASSWORD,
+    });
+    await alice.post(`/tenants/${tenant}/bindings`, {
+      principalType: "member",
+      principalId: made.body.id,
+      roleId: role.body.id,
+    });
+    const puller = await t.signIn("puller@acme.example", PASSWORD);
+    commitOnBranch(
+      {
+        "platform/reports/open.query.yaml": "schemaVersion: 1\nbody:\n  sql: select 1 as n\n",
+      },
+      "A query written in an editor",
+    );
+    const refused = await puller.post(`${ws()}/git/pull`, {});
+    expect(refused.status, JSON.stringify(refused.body)).toBe(403);
+    expect(refused.body.detail).toContain("sql:read");
+    expect((await alice.get(`${ws()}/resources/reports/open`)).status).toBe(404);
+    const taken = await alice.post(`${ws()}/git/pull`, {});
+    expect(taken.body, JSON.stringify(taken.body)).toMatchObject({ status: "done" });
+    expect((await alice.get(`${ws()}/resources/reports/open`)).status).toBe(200);
+  });
+
   test("every push and pull is recorded, and the token is in none of it", async () => {
     const operations = (await alice.get(`${ws()}/git/operations`)).body.items as {
       kind: string;
@@ -912,6 +990,190 @@ describe("safety", () => {
     expect(audit.some((entry) => entry.action === "workspace_git.pulled")).toBe(true);
     expect(JSON.stringify(audit)).not.toContain(TOKEN);
     expect(JSON.stringify(operations)).not.toContain(TOKEN);
+  });
+
+  test("a dev workspace stops following a branch, and the branch is left as it is (REL-09, D48)", async () => {
+    const made = await alice.post(`/tenants/${tenant}/workspaces`, {
+      slug: "side",
+      name: "Side",
+      type: "dev",
+    });
+    expect(made.status, JSON.stringify(made.body)).toBe(201);
+    const side = made.body.id as string;
+    const followed = await alice.put(`${ws(side)}/git`, { branch: "vx/side" });
+    expect(followed.body.branch, JSON.stringify(followed.body)).toBe("vx/side");
+    const stopped = await alice.delete(`${ws(side)}/git`);
+    expect(stopped.status, JSON.stringify(stopped.body)).toBe(200);
+    expect(stopped.body).toMatchObject({ branch: null, state: null });
+    // What the screen says to do is something the screen has.
+    const none = await alice.get(`${ws(side)}/git/compare`);
+    expect(none.body.code).toBe("no_branch");
+    expect(none.body.detail).toContain("Git sync");
+    expect(none.body.detail).not.toContain("Workspace settings");
+    // Asked again, with nothing followed, it says so.
+    expect((await alice.delete(`${ws(side)}/git`)).body.code).toBe("no_branch");
+    // Production has no branch to follow, and says what it commits to instead.
+    expect((await alice.delete(`${ws(prod)}/git`)).body.code).toBe("production_workspace");
+    expect((await alice.get(`${ws(prod)}/git`)).body.repository.releaseBranch).toBe("release");
+    const audit = (await alice.get(`/tenants/${tenant}/audit?limit=200`)).body.items as {
+      action: string;
+    }[];
+    expect(audit.filter((entry) => entry.action === "workspace_git.cleared")).toHaveLength(1);
+  });
+
+  test("a pull that would delete what holds runs says which paths, and goes through when they are allowed (REL-10)", async () => {
+    const code = "export default async () => ({ old: true });\n";
+    await deployDraft("pulls/old", code, "Something that ran");
+    expect((await alice.post(`${ws()}/git/push`, {})).body.status).toBe("done");
+    const started = await alice.post(`${ws()}/runs`, { script: "pulls/old", input: {} });
+    expect(started.status, JSON.stringify(started.body)).toBe(201);
+    const yaml = sh(["show", "vx/dev:platform/pulls/old.script.yaml"], bare());
+    commitOnBranch(
+      {
+        "platform/pulls/old.script.yaml": null,
+        "platform/pulls/old.script.ts": null,
+        "platform/pulls/new.script.yaml": yaml
+          .split("\n")
+          .filter((line) => !line.startsWith("key:"))
+          .join("\n"),
+        "platform/pulls/new.script.ts": code,
+      },
+      "Move it, or so it seems",
+    );
+    const refused = await alice.post(`${ws()}/git/pull`, {});
+    expect(refused.body, JSON.stringify(refused.body)).toMatchObject({
+      status: "failed",
+      suspected: ["pulls/old"],
+    });
+    expect((await alice.get(`${ws()}/resources/pulls/old`)).status).toBe(200);
+    const allowed = await alice.post(`${ws()}/git/pull`, { allowDelete: ["pulls/old"] });
+    expect(allowed.body, JSON.stringify(allowed.body)).toMatchObject({ status: "done" });
+    expect((await alice.get(`${ws()}/resources/pulls/old`)).status).toBe(404);
+    expect((await alice.get(`${ws()}/resources/pulls/new`)).status).toBe(200);
+  });
+
+  test("the folder volvel.yaml names is where a push writes and a pull reads, and a bad one is said (D65)", async () => {
+    const folderOf = async () =>
+      (await alice.get(`/tenants/${tenant}/git-repository`)).body.repository;
+    commitOnBranch(
+      {
+        "volvel.yaml": "roots:\n  - platform\n  - src\nresources: conf\n",
+        "conf/yamlfolder/limit.variable.yaml": 'schemaVersion: 1\nbody:\n  default: "7"\n',
+      },
+      "Name the folder in the file",
+    );
+    const pulled = await alice.post(`${ws()}/git/pull`, {});
+    expect(pulled.body, JSON.stringify(pulled.body)).toMatchObject({ status: "done" });
+    expect((await alice.get(`${ws()}/resources/yamlfolder/limit`)).body.body).toEqual({
+      default: "7",
+    });
+    // The page is told which folder is in force, and that the file says it.
+    expect(await folderOf()).toMatchObject({
+      folder: "platform",
+      folderInForce: "conf",
+      folderFrom: "volvel.yaml",
+    });
+    // A resource made in the console is written there, and nowhere under the setting's folder.
+    await alice.put(`${ws()}/drafts/yamlfolder/other`, {
+      kind: "variable",
+      schemaVersion: 1,
+      body: { default: "9" },
+    });
+    expect((await alice.post(`${ws()}/changes/deploy`, {})).status).toBe(201);
+    const pushed = await alice.post(`${ws()}/git/push`, {});
+    expect(pushed.body, JSON.stringify(pushed.body)).toMatchObject({ status: "done" });
+    expect(sh(["show", "vx/dev:conf/yamlfolder/other.variable.yaml"], bare())).toContain('"9"');
+    expect(() => sh(["show", "vx/dev:platform/yamlfolder/other.variable.yaml"], bare())).toThrow();
+    // A folder that is not a folder is a problem on the pull and the push, not a quiet fallback.
+    commitOnBranch({ "volvel.yaml": "resources: ../outside\n" }, "A folder outside");
+    for (const verb of ["pull", "push"]) {
+      const refused = await alice.post(`${ws()}/git/${verb}`, {});
+      expect(refused.body.status, JSON.stringify(refused.body)).toBe("failed");
+      expect(refused.body.problem).toContain("volvel.yaml: resources");
+      expect(refused.body.problem).toContain("cannot climb out of it");
+    }
+    // Taken out of the file, the setting's folder is in force again.
+    commitOnBranch({ "volvel.yaml": "roots:\n  - platform\n  - src\n" }, "Leave it to the page");
+    expect((await alice.post(`${ws()}/git/pull`, {})).body.status).not.toBe("failed");
+    expect(await folderOf()).toMatchObject({ folderInForce: "platform", folderFrom: "setting" });
+  });
+
+  test("after a pull, a resource made here still counts toward what a push would write", async () => {
+    await deployDraft("orders/madehere", "export default async () => ({ here: 1 });\n");
+    commitOnBranch({ "notes/readme.txt": "Somebody was here.\n" }, "A note");
+    expect((await alice.post(`${ws()}/git/pull`, {})).body.status).not.toBe("failed");
+    const compared = (await alice.get(`${ws()}/git/compare`)).body;
+    const made = compared.files.filter((file: { path: string }) =>
+      file.path.startsWith("platform/orders/madehere."),
+    );
+    expect(made.length).toBeGreaterThan(0);
+    for (const file of made) expect(file).toMatchObject({ change: "new_here", here: true });
+    expect(compared.ahead).toBeGreaterThanOrEqual(made.length);
+    expect((await alice.post(`${ws()}/git/push`, {})).body.status).toBe("done");
+  });
+
+  test("a folder moved by volvel.yaml does not make an edited file changed on both sides", async () => {
+    // The two agree, with the console's files in platform/.
+    await deployDraft("orders/moveme", "export default async () => ({ here: 1 });\n");
+    expect((await alice.post(`${ws()}/git/pull`, {})).body.status).not.toBe("failed");
+    expect((await alice.post(`${ws()}/git/push`, {})).body.status).toBe("done");
+    expect(sh(["ls-tree", "-r", "--name-only", "vx/dev"], bare())).toContain(
+      "platform/orders/moveme.script.ts",
+    );
+    // A developer moves the folder and says so; the workspace has not pulled it yet.
+    checkout();
+    sh(["mv", "platform", "moved"], clone);
+    writeFileSync(join(clone, "volvel.yaml"), "roots:\n  - moved\n  - src\nresources: moved\n");
+    sh(["add", "-A"], clone);
+    sh(
+      ["-c", "user.name=Dev", "-c", "user.email=dev@acme.example", "commit", "-q", "-m", "Move"],
+      clone,
+    );
+    sh(["push", "-q", "origin", "work:vx/dev"], clone);
+    await deployDraft("orders/moveme", "export default async () => ({ here: 2 });\n");
+    const compared = (await alice.get(`${ws()}/git/compare`)).body;
+    const edited = compared.files.filter((file: { path: string }) =>
+      file.path.startsWith("moved/orders/moveme."),
+    );
+    expect(edited.length).toBeGreaterThan(0);
+    for (const file of edited) {
+      expect(file, JSON.stringify(file)).toMatchObject({
+        here: true,
+        branch: false,
+        conflict: false,
+        change: "changed",
+      });
+    }
+    expect(compared.conflicts).toBe(0);
+    // Put it back for what follows.
+    checkout();
+    sh(["mv", "moved", "platform"], clone);
+    rmSync(join(clone, "volvel.yaml"));
+    sh(["add", "-A"], clone);
+    sh(
+      ["-c", "user.name=Dev", "-c", "user.email=dev@acme.example", "commit", "-q", "-m", "Back"],
+      clone,
+    );
+    sh(["push", "-q", "origin", "work:vx/dev"], clone);
+    expect((await alice.post(`${ws()}/git/pull`, {})).body.status).not.toBe("failed");
+    expect((await alice.post(`${ws()}/git/push`, {})).body.status).not.toBe("failed");
+  });
+
+  test("after a push with drafts, the drafted file is not counted as removed here", async () => {
+    await alice.put(`${ws()}/drafts/orders/sketch`, {
+      kind: "script",
+      schemaVersion: 1,
+      body: scriptBody("export default async () => ({ sketch: true });\n"),
+    });
+    expect((await alice.post(`${ws()}/git/push`, { drafts: true })).body.status).toBe("done");
+    const compared = (await alice.get(`${ws()}/git/compare`)).body;
+    expect(
+      compared.files.filter((file: { path: string }) => file.path.includes("orders/sketch.")),
+    ).toEqual([]);
+    expect(compared.ahead).toBe(0);
+    expect((await alice.get(`${ws()}/git`)).body.state).toBe("synced");
+    await alice.delete(`${ws()}/drafts/orders/sketch`);
+    expect((await alice.post(`${ws()}/git/push`, {})).body.status).toBe("done");
   });
 
   test("disconnecting leaves the repository as it is", async () => {

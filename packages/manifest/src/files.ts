@@ -195,6 +195,15 @@ function renderOne(
   return files;
 }
 
+/**
+ * The name of a resource's file, relative to the folder the console writes to:
+ * `<path>.<kind>.yaml`, and for a page of documentation `docs/<path>.md`. The one place
+ * that says it, for the files written, the files looked for and the reference.
+ */
+export function resourceFileName(kind: string, path: string): string {
+  return kind === DOC_KIND ? `docs/${path}.md` : `${path}.${kind}.yaml`;
+}
+
 const byPath = (a: ResourceFile, b: ResourceFile) =>
   a.path < b.path ? -1 : a.path > b.path ? 1 : 0;
 
@@ -211,17 +220,26 @@ export function renderResourceFiles(
       // The platform's own nodes are added again on every compose. They are not the repository's.
       .filter((manifest) => !manifest.path.startsWith("core/"))
       .flatMap((manifest) =>
-        renderOne(
-          manifest,
-          kinds,
-          manifest.kind === DOC_KIND
-            ? `docs/${manifest.path}.md`
-            : `${manifest.path}.${manifest.kind}.yaml`,
-          false,
-        ),
+        renderOne(manifest, kinds, resourceFileName(manifest.kind, manifest.path), false),
       )
       .sort(byPath)
   );
+}
+
+/**
+ * Whether a file in the resource folder, by its path under it, is one a pull writes: a
+ * resource's `.yaml` or `.ts`, or a page's Markdown under `docs/`. The inverse of the names
+ * `renderResourceFiles` gives.
+ */
+export function isFolderResourceFile(file: string): boolean {
+  return /\.(yaml|ts)$/.test(file) || (file.startsWith("docs/") && file.endsWith(".md"));
+}
+
+/** A resource's path from one of its files in the folder: the inverse of `renderResourceFiles`' names. */
+export function resourceOfFile(file: string): string {
+  if (file.startsWith("docs/") && file.endsWith(".md"))
+    return file.slice("docs/".length, -".md".length);
+  return file.replace(/\.[a-z_]+\.(yaml|ts)$/, "");
 }
 
 /**
@@ -244,11 +262,13 @@ function pathFromPlace(stem: string, roots: readonly string[]): string | undefin
 export function fileOf(manifest: BundleManifest, folder: string): string {
   const found = manifest.source && !manifest.source.generated ? manifest.source.file : undefined;
   if (manifest.kind === DOC_KIND) {
-    return found?.endsWith(".md") ? found : `${folder}/docs/${manifest.path}.md`;
+    return found?.endsWith(".md")
+      ? found
+      : `${folder}/${resourceFileName(manifest.kind, manifest.path)}`;
   }
   return found?.endsWith(`.${manifest.kind}.yaml`)
     ? found
-    : `${folder}/${manifest.path}.${manifest.kind}.yaml`;
+    : `${folder}/${resourceFileName(manifest.kind, manifest.path)}`;
 }
 
 /**
@@ -665,6 +685,10 @@ export interface RepositoryConfig {
    * named, the one folder of pages is `docs` inside the folder the console writes to.
    */
   docs: string[];
+  /** The file that exports every resource defined in code. Left out: `src/index.ts`. A flag of the command wins. */
+  entry?: string;
+  /** The folder the console writes its resources to. Left out: `platform`. A flag of the command wins. */
+  resources?: string;
 }
 
 /** The name of the file at a repository's root that says where its resource files are. */
@@ -689,14 +713,16 @@ export function parseRepositoryConfig(text: string | undefined): {
     };
   }
   const problems: string[] = [];
-  const { roots, ignore, docs, ...unknown } = (document ?? {}) as {
+  const { roots, ignore, docs, entry, resources, ...unknown } = (document ?? {}) as {
     roots?: unknown;
     ignore?: unknown;
     docs?: unknown;
+    entry?: unknown;
+    resources?: unknown;
   };
   if (Object.keys(unknown).length > 0) {
     problems.push(
-      `${REPOSITORY_CONFIG}: has keys other than roots, ignore and docs: ${Object.keys(unknown).join(", ")}.`,
+      `${REPOSITORY_CONFIG}: has keys other than roots, ignore, docs, entry and resources: ${Object.keys(unknown).join(", ")}.`,
     );
   }
   for (const [name, value] of [
@@ -710,6 +736,28 @@ export function parseRepositoryConfig(text: string | undefined): {
       continue;
     }
     config[name] = (value as string[]).map((one) => one.replace(/^\.?\/+|\/+$/g, ""));
+  }
+  for (const [name, value] of [
+    ["entry", entry],
+    ["resources", resources],
+  ] as const) {
+    if (value === undefined) continue;
+    if (typeof value !== "string" || value.trim() === "") {
+      problems.push(`${REPOSITORY_CONFIG}: ${name} is one path, as text.`);
+      continue;
+    }
+    const path = value
+      .trim()
+      .replace(/^\.?\/+/, "")
+      .replace(/\/+$/, "");
+    // The CLI builds from it and git sync writes to it: neither may leave the repository.
+    if (path.split("/").includes("..")) {
+      problems.push(
+        `${REPOSITORY_CONFIG}: ${name} is a path inside the repository: it cannot climb out of it with \`..\`.`,
+      );
+      continue;
+    }
+    config[name] = path;
   }
   return { config, problems };
 }
@@ -791,13 +839,13 @@ export function parseRepositoryFiles(
     notePage: (manifest, file) => {
       found.set(manifest.key ?? manifest.path, file.path);
       // Kept where the console would not have written it: it is the repository's to change.
-      if (file.path !== `${options.folder}/docs/${manifest.path}.md`) {
+      if (file.path !== `${options.folder}/${resourceFileName(manifest.kind, manifest.path)}`) {
         manifest.source = { file: file.path, generated: false };
       }
     },
     note: (manifest, file) => {
       found.set(manifest.key ?? manifest.path, file.path);
-      if (file.path !== `${options.folder}/${manifest.path}.${manifest.kind}.yaml`) {
+      if (file.path !== `${options.folder}/${resourceFileName(manifest.kind, manifest.path)}`) {
         manifest.source = { file: file.path, generated: false };
       }
     },

@@ -1,6 +1,6 @@
 import { Button, Skeleton } from "@volvel/ui";
 import { type ReactNode, useEffect, useState } from "react";
-import type { ApiError, Loaded } from "../api.ts";
+import { type ApiError, askForAccess, type Loaded } from "../api.ts";
 
 /** Waits this long before showing that something loads: most answers come sooner. */
 export const LOADING_DELAY_MS = 300;
@@ -57,11 +57,14 @@ export function ErrorState({
   error,
   what,
   onRetry,
+  help,
 }: {
   error: unknown;
   /** What could not be loaded, as the screen names it: "runs", "this flow". */
   what?: string | undefined;
   onRetry?: (() => void) | undefined;
+  /** What can be done about it, when the screen knows: a link to the place that changes it. */
+  help?: ReactNode;
 }) {
   const requestId = (error as Partial<ApiError> | undefined)?.requestId;
   // A refusal does not pass by asking again: say whom to ask instead.
@@ -76,12 +79,10 @@ export function ErrorState({
           {what ? <strong className="font-medium">Could not load {what}. </strong> : null}
           {messageOf(error)}
         </span>
-        {forbidden ? (
-          <span>
-            Ask a member who can give access in this tenant (an owner or administrator) to give you
-            a role with it.
-          </span>
+        {forbidden && !messageOf(error).includes(askForAccess()) ? (
+          <span>{askForAccess()}</span>
         ) : null}
+        {help ? <span>{help}</span> : null}
         {requestId ? <RequestId id={requestId} /> : null}
       </div>
       {onRetry && !forbidden ? (

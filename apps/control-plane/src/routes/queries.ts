@@ -2,10 +2,13 @@ import { createHash } from "node:crypto";
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import { dashboardKind, enumColor, type QueryBody, type VisualQuery } from "@volvel/manifest";
 import { Type } from "typebox";
+import { check } from "../kernel/authorize.js";
 import { loadCatalog } from "../kernel/data/apply.js";
 import { ALLOWED_FUNCTIONS } from "../kernel/data/query/allowed.js";
+import { readParameters } from "../kernel/data/query/parameters.js";
 import { checkFor, QUERY_ROWS, runQuery } from "../kernel/data/query/run.js";
-import { visualCatalog, writeVisual } from "../kernel/data/query/widget.js";
+import { namedInSql } from "../kernel/data/query/view-name.js";
+import { workspaceCatalog, writeVisual } from "../kernel/data/query/widget.js";
 import { scopeFor } from "../kernel/data/rows.js";
 import { badRequest, HttpError, notFound } from "../kernel/errors.js";
 import { access, findWorkspace, type RequestContext } from "../kernel/http.js";
@@ -40,7 +43,7 @@ export const QueryResultSchema = Type.Object({
       { sql: Type.String(), parameters: Type.Array(Type.Unknown()) },
       {
         description:
-          "For a query built from menus: the SQL the platform wrote for it, as someone would " +
+          "For a query built from menus: the SQL Volvel wrote for it, as someone would " +
           "write it, and the values of its parameters. It is what turning the query into SQL gives.",
       },
     ),
@@ -80,6 +83,15 @@ export const queryRoutes =
             path: issue.path.replace("/body/widgets/0/data/rows/source/visual", "/query"),
             message: issue.message,
           }));
+    };
+    /**
+     * Whoever has no standing in the tenant is told nothing, whatever they ask: the same 404 as for
+     * a tenant that is not there, before anything of the workspace is read.
+     */
+    const standing = async (ctx: RequestContext, params: { t: string; w: string }) => {
+      const at = { tenantId: params.t, workspaceId: params.w };
+      const decision = await check(db, ctx.principal, "data:read", at);
+      if (!decision.allowed && !decision.related) throw notFound("The tenant");
     };
     /** Refuses a table the caller may not read, naming it. */
     const reader =
@@ -166,7 +178,11 @@ export const queryRoutes =
       {
         // Whoever builds a query from menus needs this as much as whoever writes one. It gives
         // only the tables the caller may read rows of, so it asks for nothing more than that.
-        config: { access: access.custom },
+        config: {
+          access: access.custom(
+            "Needs `data:read`, and lists only the tables the caller may read.",
+          ),
+        },
         schema: {
           summary: "What a query can name: tables, their columns, and the functions allowed",
           description:
@@ -179,6 +195,10 @@ export const queryRoutes =
               tables: Type.Array(
                 Type.Object({
                   name: Type.String(),
+                  inSql: Type.Boolean({
+                    description:
+                      "Whether a query can name the table. A path of more than 63 bytes can be put on a page, and cannot be written in SQL.",
+                  }),
                   display: NullableString,
                   columns: Type.Array(
                     Type.Object({
@@ -221,11 +241,16 @@ export const queryRoutes =
                   "Whether the caller may run SQL of their own here, and write it into a " +
                   "dashboard's widget: whether they hold `sql:read`, which no wildcard gives.",
               }),
+              maySave: Type.Boolean({
+                description:
+                  "Whether the caller may keep a query as a draft: whether they hold `resource:write`.",
+              }),
             }),
           },
         },
       },
       async ({ ctx, params }) => {
+        await standing(ctx, params);
         await findWorkspace(kernel, params.t, params.w);
         const data = (await kernel.data.forTenant(params.t)).owner;
         const catalog = (await loadCatalog(data, params.w)).filter(
@@ -255,6 +280,8 @@ export const queryRoutes =
           if (!allowed) continue;
           tables.push({
             name: table.name,
+            // A path too long for Postgres to keep whole cannot be written in SQL, only put on a page.
+            inSql: namedInSql(table.name),
             display: table.display ?? null,
             columns: [
               { name: "id", type: "uuid", references: null },
@@ -285,15 +312,21 @@ export const queryRoutes =
             ],
           });
         }
-        const maySql = await ctx.allowed("sql:read", { tenantId: params.t, workspaceId: params.w });
-        return { tables, functions: [...ALLOWED_FUNCTIONS].sort(), maySql };
+        const at = { tenantId: params.t, workspaceId: params.w };
+        const maySql = await ctx.allowed("sql:read", at);
+        const maySave = await ctx.allowed("resource:write", at);
+        return { tables, functions: [...ALLOWED_FUNCTIONS].sort(), maySql, maySave };
       },
     );
 
     app.get(
       `${base}/queries/visual`,
       {
-        config: { access: access.custom },
+        config: {
+          access: access.custom(
+            "Needs `data:read` at each table the query reads, and each table's row policy applies.",
+          ),
+        },
         schema: {
           summary: "Run a query built from menus, and read its result",
           description:
@@ -314,6 +347,7 @@ export const queryRoutes =
         },
       },
       async ({ ctx, params, query: asked }) => {
+        await standing(ctx, params);
         await findWorkspace(kernel, params.t, params.w);
         const at = { tenantId: params.t, workspaceId: params.w };
         let visual: unknown;
@@ -324,10 +358,16 @@ export const queryRoutes =
         }
         const valid = validateVisual(visual);
         if (valid.length > 0) throw badRequest("The query is not valid.", valid);
-        const written = writeVisual(
-          visual as VisualQuery,
-          await visualCatalog(kernel, params.t, params.w),
-        );
+        // Only the tables the caller may read are there to be named: a table they may not read is
+        // answered as one that does not exist, and the names of the others cannot be probed.
+        const known = await workspaceCatalog(kernel, params.t, params.w);
+        for (const [name, table] of known.tables) {
+          if (
+            !(await ctx.allowed("data:read", { ...at, resourceId: table.resourceId ?? undefined }))
+          )
+            known.visual.delete(name);
+        }
+        const written = writeVisual(visual as VisualQuery, known.visual);
         const scope = await scopeFor(
           kernel,
           params.t,
@@ -371,6 +411,9 @@ export const queryRoutes =
               items: Type.Array(
                 Type.Object({
                   path: Type.String(),
+                  title: Type.Optional(
+                    Type.String({ description: "What people read, when it has one." }),
+                  ),
                   description: Type.String(),
                   sql: Type.String(),
                   parameters: Type.Array(Parameter),
@@ -381,6 +424,11 @@ export const queryRoutes =
                     Type.Literal("removed"),
                     Type.Null(),
                   ]),
+                  renamedFrom: Type.Optional(
+                    Type.String({
+                      description: "The deployed path, when the draft renames the query.",
+                    }),
+                  ),
                 }),
               ),
             }),
@@ -390,13 +438,13 @@ export const queryRoutes =
       async ({ params }) => {
         const deployed = await db
           .selectFrom("resource")
-          .select(["path", "body", "ownership"])
+          .select(["path", "key", "title", "body", "ownership"])
           .where("workspace_id", "=", params.w)
           .where("kind", "=", "query")
           .execute();
         const drafts = await db
           .selectFrom("resource_draft")
-          .select(["path", "body", "deleted"])
+          .select(["path", "key", "title", "body", "deleted"])
           .where("workspace_id", "=", params.w)
           .where("kind", "=", "query")
           .execute();
@@ -405,31 +453,41 @@ export const queryRoutes =
           raw: unknown,
           ownership: string,
           draft: "new" | "changed" | "removed" | null,
+          renamedFrom?: string,
+          title?: string | null,
         ) => {
           const body = (raw ?? {}) as Partial<QueryBody>;
           return {
             path,
+            ...(title ? { title } : {}),
             description: body.description ?? "",
             sql: body.sql ?? "",
             parameters: body.parameters ?? [],
             ownership,
             draft,
+            ...(renamedFrom ? { renamedFrom } : {}),
           };
         };
         const items = [
           ...deployed.map((one) => {
-            const draft = drafts.find((candidate) => candidate.path === one.path);
+            // A draft is of the resource by its key: a rename's draft is at another path, and is
+            // the same query, listed at the path it is to have.
+            const draft = drafts.find((candidate) => candidate.key === one.key);
             // What is listed is what runs. The draft's own text is read from the draft.
+            const moved = draft && !draft.deleted && draft.path !== one.path;
             return item(
-              one.path,
+              moved ? draft.path : one.path,
               one.body,
               one.ownership,
               draft ? (draft.deleted ? "removed" : "changed") : null,
+              moved ? one.path : undefined,
+              // A draft's title is what it will have; a draft that changes none carries the old one.
+              draft && !draft.deleted ? draft.title : one.title,
             );
           }),
           ...drafts
-            .filter((one) => !one.deleted && !deployed.some((row) => row.path === one.path))
-            .map((one) => item(one.path, one.body, "ui", "new")),
+            .filter((one) => !one.deleted && !deployed.some((row) => row.key === one.key))
+            .map((one) => item(one.path, one.body, "ui", "new", undefined, one.title)),
         ].sort((a, b) => a.path.localeCompare(b.path));
         return { items };
       },
@@ -438,7 +496,11 @@ export const queryRoutes =
     app.get(
       `${base}/queries/saved/*`,
       {
-        config: { access: access.custom },
+        config: {
+          access: access.custom(
+            "Needs `data:read` at the workspace or the table, for each table the query reads. Its row policy applies.",
+          ),
+        },
         schema: {
           summary: "Run a query the workspace keeps, and read its result",
           description:
@@ -463,6 +525,7 @@ export const queryRoutes =
         },
       },
       async ({ ctx, params, query: asked }) => {
+        await standing(ctx, params);
         let named: unknown = {};
         if (asked.params !== undefined) {
           try {
@@ -485,38 +548,22 @@ export const queryRoutes =
           throw notFound(`The query ${wildPath(params)}`);
         }
         const query = saved.body as unknown as QueryBody;
-        const given = body.params ?? {};
-        const declared = query.parameters ?? [];
-        const unknown = Object.keys(given).filter(
-          (name) => !declared.some((one) => one.name === name),
-        );
-        if (unknown.length > 0) {
-          throw badRequest("The query has no such parameter.", [
-            { path: `/params/${unknown[0]}`, message: `there is no parameter "${unknown[0]}"` },
-          ]);
-        }
-        const values = declared.map((parameter) => {
-          const value = given[parameter.name] ?? parameter.default ?? null;
-          if (value === null) {
-            if (parameter.required) {
-              throw badRequest("A parameter is missing.", [
-                { path: `/params/${parameter.name}`, message: "a value is required" },
-              ]);
-            }
-            return null;
-          }
-          const problem = misfit(parameter.type, value);
-          if (problem) {
-            throw badRequest("A parameter does not fit.", [
-              { path: `/params/${parameter.name}`, message: `must be ${problem}` },
-            ]);
-          }
-          return value;
-        });
-        // A query that reads no table still runs on the workspace's database, so it needs
-        // standing here. One that reads tables is held to each of them when it runs.
+        // The caller's standing on what it reads comes before anything is said of its parameters.
+        // A query that reads no table still runs on the workspace's database, so it needs standing
+        // here. One that reads tables is held to each of them.
         const read = await checkFor(kernel, params.t, params.w, query.sql).catch(() => undefined);
         if (!read || read.tables.length === 0) await ctx.authorize("data:read", at);
+        else {
+          const mayRead = reader(ctx, params);
+          for (const name of read.tables) {
+            await mayRead({ name, resourceId: read.resources.get(name)?.resourceId ?? null });
+          }
+        }
+        const given = body.params ?? {};
+        const declared = query.parameters ?? [];
+        const values = readParameters(declared, (name) => given[name], Object.keys(given), {
+          at: (name) => `/params/${name}`,
+        });
         const scope = await scopeFor(
           kernel,
           params.t,
@@ -536,27 +583,3 @@ export const queryRoutes =
       },
     );
   };
-
-/** Why a value does not fit a parameter of this type, or nothing when it does. */
-function misfit(type: string, value: unknown): string | undefined {
-  switch (type) {
-    case "text":
-      return typeof value === "string" ? undefined : "text";
-    case "integer":
-      return Number.isSafeInteger(value) ? undefined : "a whole number";
-    case "number":
-      return typeof value === "number" && Number.isFinite(value) ? undefined : "a number";
-    case "boolean":
-      return typeof value === "boolean" ? undefined : "true or false";
-    case "date":
-      return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)
-        ? undefined
-        : "a date, such as 2026-01-31";
-    case "timestamp":
-      return typeof value === "string" && !Number.isNaN(Date.parse(value))
-        ? undefined
-        : "a date and time, such as 2026-01-31T09:30:00Z";
-    default:
-      return "something this parameter can hold";
-  }
-}

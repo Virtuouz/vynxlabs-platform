@@ -145,7 +145,7 @@ export const PREVIEWS: Record<string, Preview> = {
         "Stock by shelf and supplier",
       ]),
   },
-  "labs/goal": {
+  "core/goal": {
     drawing: "goal",
     about: "How far a number is toward a target, with the share reached.",
     words: "target progress quota objective kpi budget",
@@ -155,8 +155,8 @@ export const PREVIEWS: Record<string, Preview> = {
   "core/button": {
     drawing: "button",
     about:
-      "One action people press: mark something paid, send a message, run a workflow. It can ask to confirm first.",
-    words: "action press click run pay payment charge send approve confirm mark paid workflow",
+      "One action people press: mark something paid, send a message, run a flow. It can ask to confirm first.",
+    words: "action press click run pay payment charge send approve confirm mark paid flow workflow", // search-alias: the old word still finds it
     reads: false,
     goodFor: () => ["Mark paid", "Send the invoice", "Approve the request"],
   },
@@ -171,9 +171,9 @@ export const PREVIEWS: Record<string, Preview> = {
   "core/approvals": {
     drawing: "approvals",
     about:
-      "Requests waiting for a decision. Pick one, read its details, approve or reject, and the next one is there. Who may decide is set on the workflow's step.",
+      "Requests waiting for a decision. Pick one, read its details, approve or reject, and the next one is there. Who may decide is set on the flow's step.",
     words:
-      "sign off approve approval approvals requests review decide reject queue inbox pending waiting workflow manager",
+      "sign off approve approval approvals requests review decide reject queue inbox pending waiting flow workflow manager", // search-alias: the old word still finds it
     reads: false,
     goodFor: () => [
       "Stock orders waiting for a manager",
@@ -225,7 +225,7 @@ const flowWords = (path: string, title: string | null) => {
 };
 
 /**
- * The card offered when the workspace has a workflow with an approval step and the page has no
+ * The card offered when the workspace has a flow with an approval step and the page has no
  * Approvals widget to decide it: what waits for a decision is worth a place where people work.
  */
 export function approvalsSuggestion(
@@ -240,7 +240,7 @@ export function approvalsSuggestion(
     hint:
       flows.length === 1 && first
         ? `${flowWords(first.path, first.title)} asks for a decision`
-        : `${flows.length} workflows ask for a decision`,
+        : `${flows.length} flows ask for a decision`,
   };
 }
 
@@ -263,7 +263,7 @@ export const SUGGESTION_WORDS: Record<string, string> = {
   filter: "narrow status filter",
   group: "toolbar buttons group",
   section: "heading numbers card",
-  approvals: "sign off approve requests review waiting decision workflow",
+  approvals: "sign off approve requests review waiting decision flow workflow", // search-alias: the old word still finds it
 };
 
 const FILLER = new Set(

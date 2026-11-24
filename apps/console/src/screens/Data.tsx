@@ -9,6 +9,8 @@ import {
   Grid,
   type GridColumn,
   type GridSort,
+  keepsKey,
+  localWall,
   Menu,
   MoveButtons,
   MultiSelectField,
@@ -21,25 +23,41 @@ import {
   TextAreaField,
   TextField,
   useFlip,
+  utcOf,
   ValueChip,
 } from "@volvel/ui";
 import { Download, Ellipsis, Keyboard } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
-import { type ApiError, api, useLoad } from "../api.ts";
+import { ApiError, api, useLoad, withCode } from "../api.ts";
 import { ask, failureText, notify } from "../ask.tsx";
 import { AttachedPages, workspaceOf } from "../help/glossary.tsx";
+import { useAddressBox } from "../kit/addressBox.ts";
+import { type Needs, useNeeds } from "../kit/Can.tsx";
 import { DataTable } from "../kit/DataTable.tsx";
-import { count } from "../kit/format.ts";
+import { count, counted } from "../kit/format.ts";
 import { HealthCell } from "../kit/health.tsx";
 import { useHistory } from "../kit/history.ts";
 import { useShortcut } from "../kit/keys.ts";
 import { ErrorState, Loading, Pending } from "../kit/LoadState.tsx";
-import { Inspector } from "../kit/layout.tsx";
-import { Code, StatePill } from "../kit/status.tsx";
+import { Inspector, useWide } from "../kit/layout.tsx";
+import { UsedBy, useReferences } from "../kit/references.tsx";
+import { Code, StatePill, Tag } from "../kit/status.tsx";
 import { UndoRedo } from "../kit/UndoRedo.tsx";
 import { ColumnsMenu, ViewsMenu } from "../kit/views.tsx";
 import { type CreateConfig, CreateDialog, ListScreen, Page, RemoveButton } from "../ListScreen.tsx";
 import { Link, navigate, useNavigationGuard, useUrlParam, useUrlState } from "../router.tsx";
+import {
+  ChangeTypeDialog,
+  ColumnRulesDialog,
+  DefaultField,
+  draftsOf,
+  hasNoDefault,
+  IndexDialog,
+  MAX_INDEXES,
+  MoreColumnsField,
+  typesFrom,
+} from "./ColumnControls.tsx";
+import { filterNode, toFilter } from "./gridFilter.ts";
 import { ResourceIdentity } from "./ResourceIdentity.tsx";
 import {
   type Policy,
@@ -67,14 +85,35 @@ const TYPES: { value: string; label: string }[] = [
   { value: "enum_list", label: "Several of a list" },
 ];
 
-/** One value an enum column offers, with what people read and the colour it is drawn on. */
+/**
+ * The Values field of a form that makes a column, shared by Create table and Add column: an
+ * enum or a list of values with none could not be made, and said so with no field named.
+ */
+const VALUES_FIELD = {
+  name: "values",
+  label: "Values",
+  required: false,
+  placeholder: "new, paid, shipped",
+  hint: "Separated by commas, in the order they are offered. Labels and colors are set afterwards, under Values.",
+  when: (values: Record<string, string>) => values.type === "enum" || values.type === "enum_list",
+};
+
+/** What a column's definition holds when it is made with these values from a form. */
+function newColumn(type: string, values: string | undefined) {
+  return {
+    type,
+    ...(type === "enum" || type === "enum_list" ? { values: listOf(values ?? "") } : {}),
+  };
+}
+
+/** One value an enum column offers, with what people read and the color it is drawn on. */
 interface ColumnValue {
   value: string;
   label?: string;
   color?: string;
 }
 
-/** A value of an enum column as a chip: its label on its colour. One the column no longer offers is plain. */
+/** A value of an enum column as a chip: its label on its color. One the column no longer offers is plain. */
 function ValueOf({ column, value }: { column: RowColumn; value: string }) {
   const found = column.values?.find((one) => one.value === value);
   return <ValueChip color={enumColor(found?.color)}>{found?.label ?? value}</ValueChip>;
@@ -105,29 +144,45 @@ interface RowsBrowserProps {
   /** The address of one row, or null when rows cannot be changed. */
   rowPath: ((key: string) => string) | null;
   keyColumn: string | null;
+  /** Whether a row can be added, when that is not what changing one takes (a source's table with no key). */
+  canAdd?: boolean;
   columns: RowColumn[];
   /** Where files are uploaded to, when the table can hold them. */
   filesPath?: string;
   /** Explains why rows cannot be changed, when they cannot. */
   readOnlyNote?: string;
+  /** What changing a row takes, and where: without it, rows are not changed and the line says so. */
+  needs?: Needs | undefined;
+  /** What the table is, whatever it is called: its saved views are kept under this. */
+  tableId?: string | undefined;
+  /** Where the table's indexes are changed, when the person may: a read stopped for taking too long points there. */
+  indexesAt?: string | undefined;
 }
 
 type DataRow = Record<string, unknown>;
 
-/** What was typed in a filter box, as the filter the data API takes. */
-export function toFilter(type: string, text: string): object | null {
-  const trimmed = text.trim();
-  if (trimmed === "") return null;
-  if (/^(empty|null)$/i.test(trimmed)) return { op: "is_null", value: true };
-  if (type === "text") return { op: "contains", value: trimmed };
-  // An enum is found by a value spelled out, a list by one value it has.
-  if (type === "enum") return { op: "eq", value: trimmed };
-  if (type === "enum_list") return { op: "has", value: trimmed };
-  const compared = /^(>=|<=|>|<)\s*(.+)$/.exec(trimmed);
-  const op = compared
-    ? { ">=": "gte", "<=": "lte", ">": "gt", "<": "lt" }[compared[1] as ">"]
-    : "eq";
-  return { op, value: parseValue(type, compared ? (compared[2] as string) : trimmed) };
+export { toFilter };
+
+/**
+ * The sort after a heading is pressed, as the address and the API write it (`a,-b`). A press
+ * alone sorts by that column up, then down, then not at all. With Shift the column is added to
+ * the others, after them, and pressing it again turns it down and then takes it off.
+ */
+export function nextSort(sort: GridSort[], column: string, additive: boolean): string | undefined {
+  const here = sort.find((one) => one.column === column);
+  const write = (list: GridSort[]) =>
+    list.length > 0
+      ? list.map((one) => `${one.descending ? "-" : ""}${one.column}`).join(",")
+      : undefined;
+  if (!additive) {
+    // The column alone: another sort is let go of, and this one goes up, down, off.
+    if (!here || sort.length > 1) return write([{ column, descending: false }]);
+    return here.descending ? undefined : write([{ column, descending: true }]);
+  }
+  if (!here) return write([...sort, { column, descending: false }]);
+  if (!here.descending)
+    return write(sort.map((one) => (one.column === column ? { ...one, descending: true } : one)));
+  return write(sort.filter((one) => one.column !== column));
 }
 
 /** What the rows of a table show: in the address, so a link opens the same view. */
@@ -139,11 +194,29 @@ const ROWS_URL = {
   cols: { type: "list" },
   /** What links and saved views from before phase 18 say: the columns left out. Read, never written. */
   hide: { type: "list" },
+  /** "any" when a row needs to satisfy one filter box and not every one. */
+  match: { type: "string" },
   /** "1" when the first column scrolls away with the rest. It stays in view otherwise. */
   unlock: { type: "string" },
   density: { type: "string", default: "standard" },
   row: { type: "string", push: true },
+  /** The cursors of the pages before this one, nearest last (`-` for the first page), so Previous survives a reload. */
+  back: { type: "list" },
 } as const;
+
+const NONE_CHECKED: Set<string> = new Set();
+
+const ROW_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** Whether text in a reference's filter box is what the server takes: IDs, `empty`, or `!` of them. */
+function referenceFilterOk(text: string): boolean {
+  const trimmed = text.trim();
+  if (trimmed === "" || /^(!\s*empty|!\s*null|not\s+empty|not\s+null|empty|null)$/i.test(trimmed))
+    return true;
+  return trimmed
+    .split("|")
+    .map((one) => one.trim().replace(/^(?:!=|!|not\s+)\s*/i, ""))
+    .every((one) => ROW_ID.test(one));
+}
 
 function RowsBrowser(
   props: RowsBrowserProps & {
@@ -154,9 +227,12 @@ function RowsBrowser(
 ) {
   const { columns, keyColumn, rowPath } = props;
   const [url, setUrl] = useUrlState(ROWS_URL);
-  const sort: GridSort | undefined = url.sort
-    ? { column: url.sort.replace(/^-/, ""), descending: url.sort.startsWith("-") }
-    : undefined;
+  const sort: GridSort[] = url.sort
+    ? url.sort
+        .split(",")
+        .filter(Boolean)
+        .map((entry) => ({ column: entry.replace(/^-/, ""), descending: entry.startsWith("-") }))
+    : [];
   const applied = (() => {
     try {
       return url.filter ? (JSON.parse(url.filter) as Record<string, string>) : {};
@@ -164,21 +240,33 @@ function RowsBrowser(
       return {};
     }
   })();
-  // What is typed reaches the address, and the server, once typing pauses.
-  const [typed, setTyped] = useState<Record<string, string>>(applied);
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      const kept = Object.fromEntries(Object.entries(typed).filter(([, text]) => text.trim()));
-      const next = Object.keys(kept).length > 0 ? JSON.stringify(kept) : undefined;
-      if (next !== url.filter) setUrl({ filter: next, page: undefined });
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [typed, url.filter, setUrl]);
-  const [filterError, setFilterError] = useState<string>();
-  /** The cursors of the pages before this one, so "Previous" has somewhere to go. */
-  const [back, setBack] = useState<string[]>([]);
+  // What is typed reaches the address, and the server, once typing pauses. A filter put in the
+  // address from elsewhere (a saved view, a link, Back) is what the boxes show.
+  const [typed, setTyped] = useAddressBox<Record<string, string>>(
+    url.filter,
+    (text) => {
+      try {
+        return text ? (JSON.parse(text) as Record<string, string>) : {};
+      } catch {
+        return {};
+      }
+    },
+    (boxes) => {
+      const kept = Object.fromEntries(Object.entries(boxes).filter(([, text]) => text.trim()));
+      return Object.keys(kept).length > 0 ? JSON.stringify(kept) : undefined;
+    },
+    (next) => setUrl({ filter: next, page: undefined, back: [] }),
+  );
   const [adding, setAdding] = useState(false);
-  const [checked, setChecked] = useState<Set<string>>(new Set());
+  // What is checked belongs to the page, order and filter it was checked on: on another, it is
+  // not there to see, and a delete must not take it along.
+  const scope = `${url.page ?? ""}|${url.sort ?? ""}|${url.filter ?? ""}|${url.match ?? ""}`;
+  const [picked, setPicked] = useState<{ scope: string; ids: Set<string> }>({
+    scope,
+    ids: new Set(),
+  });
+  const checked = picked.scope === scope ? picked.ids : NONE_CHECKED;
+  const setChecked = (ids: Set<string>) => setPicked({ scope, ids });
   // The columns shown, in order: as chosen, or all of them less what an older link hides.
   const known = new Set(columns.map((column) => column.name));
   const chosen = url.cols.filter((name) => known.has(name));
@@ -190,43 +278,71 @@ function RowsBrowser(
   const lockFirst = url.unlock !== "1";
   const compact = url.density === "compact";
 
-  let filter: object | undefined;
-  try {
-    const parts = columns.flatMap((column) => {
-      const built = toFilter(column.type, applied[column.name] ?? "");
-      return built ? [{ column: column.name, ...built }] : [];
-    });
-    if (parts.length > 0) filter = { and: parts };
-  } catch (error) {
-    if (filterError !== (error as Error).message) setFilterError((error as Error).message);
+  // What the filter boxes hold in the address, as a filter, and what in them cannot be read.
+  // Worked out from the text each time, so a message goes with the text that caused it.
+  const parts: object[] = [];
+  const filterErrors: Record<string, string> = {};
+  for (const column of columns) {
+    try {
+      const text = applied[column.name] ?? "";
+      // The server finds a reference by its row's ID alone; a name would be refused there.
+      if (column.references && !referenceFilterOk(text))
+        throw new Error(
+          "A reference is found by its row's ID, or by empty. Open the row to copy its ID.",
+        );
+      const built = toFilter(column.type, text);
+      if (built) parts.push(filterNode(column.name, built));
+    } catch (error) {
+      filterErrors[column.name] = (error as Error).message;
+    }
   }
+  const filterBroken = Object.keys(filterErrors).length > 0;
+  // While a box cannot be read nothing is asked for: showing every row as if it were filtered,
+  // or exporting them, would say something the filter does not.
+  const any = url.match === "any";
+  const filter: object | undefined =
+    parts.length > 0 && !filterBroken ? (any ? { or: parts } : { and: parts }) : undefined;
   const query = new URLSearchParams({ limit: String(PAGE) });
   if (filter) query.set("filter", JSON.stringify(filter));
   if (url.sort) query.set("sort", url.sort);
   if (url.page) query.set("cursor", url.page);
-  // What stands for the rows a reference points to comes with the page, for up to five of them.
-  const pointing = columns.filter((column) => column.references).slice(0, 5);
+  // What stands for the rows a reference points to comes with the page, for up to five of the
+  // columns shown, in the order shown.
+  const pointing = order
+    .flatMap((name) => columns.find((column) => column.name === name) ?? [])
+    .filter((column) => column.references)
+    .slice(0, 5);
   if (pointing.length > 0) query.set("expand", pointing.map((column) => column.name).join(","));
   const page = useLoad<{
     items: DataRow[];
     nextCursor: string | null;
     expanded?: Record<string, Record<string, unknown>>;
-  }>(`${props.rowsPath}?${query}`);
-  const canChange = rowPath !== null && keyColumn !== null;
+  }>(filterBroken ? null : `${props.rowsPath}?${query}`);
+  const pageData = filterBroken ? undefined : page.data;
+  const may = useNeeds(props.needs);
+  const canChange = rowPath !== null && keyColumn !== null && may.can;
+  /** A row may be added to a table with no key: only changing and deleting need one. */
+  const canAdd = props.canAdd ?? (rowPath !== null && keyColumn !== null);
   const keyOf = (row: DataRow) => String(row[keyColumn ?? ""] ?? JSON.stringify(row));
   // Rows saved in place since this page was loaded. They are shown as saved without loading again.
   const [saved, setSaved] = useState<{ of: unknown; rows: Record<string, DataRow> }>();
-  const changed = saved && saved.of === page.data ? saved.rows : {};
-  const rows = (page.data?.items ?? []).map((row) => changed[keyOf(row)] ?? row);
-  const toFirst = { page: undefined } as const;
+  const changed = saved && saved.of === pageData ? saved.rows : {};
+  const rows = (pageData?.items ?? []).map((row) => changed[keyOf(row)] ?? row);
+  const toFirst = { page: undefined, back: [] as string[] };
   // How many rows the filters leave, from the totals of a custom table. A source has none.
   const custom = props.rowsPath.includes("/rows/");
   const totalPath = custom
     ? `${props.rowsPath.replace("/rows/", "/aggregate/")}${filter ? `?filter=${encodeURIComponent(JSON.stringify(filter))}` : ""}`
     : null;
   const total = useLoad<{ items: { values: { count?: number } }[] }>(totalPath);
-  const counted = total.data?.items[0]?.values.count;
-  const open = rows.find((row) => keyOf(row) === url.row);
+  const counted = (filterBroken ? undefined : total.data)?.items[0]?.values.count;
+  const shown = rows.find((row) => keyOf(row) === url.row);
+  // A link to a row that is not on the page shown reads the row by its ID, where a table can.
+  const lookup = useLoad<DataRow>(
+    url.row && !shown && pageData && rowPath && custom ? rowPath(url.row) : null,
+  );
+  const open = shown ?? lookup.data;
+  const goneRow = url.row && !shown && lookup.error ? lookup.error : undefined;
   // Edits typed in the inspector and not saved: another row, or closing it, asks first.
   const unsaved = useRef(false);
   const choose = async (next: string | undefined) => {
@@ -248,9 +364,10 @@ function RowsBrowser(
   const exportQuery = new URLSearchParams();
   if (filter) exportQuery.set("filter", JSON.stringify(filter));
   if (url.sort) exportQuery.set("sort", url.sort);
-  const exportHref = custom
-    ? `/api/v1${props.rowsPath.replace("/rows/", "/rows-export/")}?${exportQuery}`
-    : null;
+  const exportHref =
+    custom && !filterBroken
+      ? `/api/v1${props.rowsPath.replace("/rows/", "/rows-export/")}?${exportQuery}`
+      : null;
   const grid: GridColumn[] = order
     .flatMap((name) => columns.find((column) => column.name === name) ?? [])
     .map((column) => ({
@@ -258,13 +375,15 @@ function RowsBrowser(
       description: column.description,
       type: column.type,
       editable: canChange && column.writable && column.type !== "file",
+      control: CELL_CONTROLS.has(column.type),
+      clearable: !column.required,
       sortable: !["json", "enum_list"].includes(column.type),
       filterable: !["json", "ARRAY"].includes(column.type),
     }));
   const saveRow = async (row: DataRow, values: Record<string, unknown>) => {
     if (!rowPath) return;
     const now = await api.patch<DataRow>(rowPath(keyOf(row)), values);
-    setSaved({ of: page.data, rows: { ...changed, [keyOf(row)]: now } });
+    setSaved({ of: pageData, rows: { ...changed, [keyOf(row)]: now } });
   };
   const deleteChecked = async () => {
     const ids = [...checked];
@@ -297,6 +416,7 @@ function RowsBrowser(
   const fill = props.fill === true;
   return (
     <div className={`flex flex-col gap-3 ${fill ? "min-h-0 flex-1" : ""}`}>
+      {may.line}
       <div className="flex shrink-0 flex-wrap items-center justify-between gap-3">
         {props.lead}
         {/* What a read-only table says stands in the row. The keys are behind a button: two
@@ -315,10 +435,32 @@ function RowsBrowser(
               }
             >
               <p className="m-0">
-                Arrow keys move between cells; Enter or F2 changes one, Escape puts it back. In a
-                filter, type text to look for, or a comparison such as &gt; 100. Type empty to find
-                rows with no value.
+                Arrow keys move between cells; Enter or F2 changes one, Escape puts it back. Shift
+                with Enter or a click on a heading adds a column to the sort.
               </p>
+              <p className="m-0 mt-2">In a filter, type:</p>
+              <ul className="m-0 mt-1 flex flex-col gap-0.5 pl-5">
+                <li>text to look for, or a value to match</li>
+                <li>
+                  <Code>{"> 100"}</Code>, <Code>{">= 100"}</Code>, <Code>{"< 100"}</Code> or{" "}
+                  <Code>{"<= 100"}</Code>
+                </li>
+                <li>
+                  <Code>{"10..20"}</Code> for a range, both ends included. <Code>{"10.."}</Code> and{" "}
+                  <Code>{"..20"}</Code> leave one end open
+                </li>
+                <li>
+                  <Code>{"!x"}</Code> for rows that are not exactly x, <Code>{"!~x"}</Code> for text
+                  that does not hold x
+                </li>
+                <li>
+                  <Code>{"a | b"}</Code> for rows that are a or b
+                </li>
+                <li>
+                  <Code>empty</Code> for rows with no value, <Code>{"!empty"}</Code> for rows with
+                  one
+                </li>
+              </ul>
             </Popover>
           )}
           <ColumnsMenu
@@ -349,23 +491,86 @@ function RowsBrowser(
           >
             {compact ? "Standard rows" : "Compact rows"}
           </Button>
-          {viewsOf(props.rowsPath) ? (
-            <ViewsMenu {...(viewsOf(props.rowsPath) as ViewsOf)} omit={["row", "page"]} />
+          {parts.length > 1 ? (
+            <SelectField
+              inline
+              name="match"
+              label="Rows must match"
+              value={any ? "any" : "all"}
+              options={[
+                { value: "all", label: "every filter" },
+                { value: "any", label: "any filter" },
+              ]}
+              onChange={(next) => setUrl({ match: next === "any" ? "any" : undefined, ...toFirst })}
+            />
+          ) : null}
+          {viewsOf(props.rowsPath, props.tableId) ? (
+            <ViewsMenu
+              {...(viewsOf(props.rowsPath, props.tableId) as ViewsOf)}
+              omit={["row", "page", "back"]}
+            />
           ) : null}
           {exportHref ? (
             <Button size="small" href={exportHref} download>
               <Download aria-hidden="true" size={14} /> CSV
             </Button>
+          ) : custom ? (
+            <Button size="small" disabled>
+              <Download aria-hidden="true" size={14} /> CSV
+            </Button>
           ) : null}
-          {canChange ? (
-            <Button variant="primary" onClick={() => setAdding(true)}>
+          {canAdd ? (
+            <Button
+              variant="primary"
+              disabled={!may.can}
+              {...(may.reason ? { tooltip: may.reason } : {})}
+              onClick={() => setAdding(true)}
+            >
               Add row
             </Button>
           ) : null}
         </span>
       </div>
-      {filterError ? <Notice tone="danger">{filterError}</Notice> : null}
-      {page.error ? <ErrorState error={page.error} what="the rows" onRetry={page.reload} /> : null}
+      {url.row && !shown && pageData && !open && (goneRow || !custom || !rowPath) ? (
+        <Notice
+          tone="attention"
+          action={
+            <Button size="small" onClick={() => void choose(undefined)}>
+              Close
+            </Button>
+          }
+        >
+          {goneRow && (goneRow as { status?: number }).status !== 404
+            ? "That row could not be read. Try the link again."
+            : custom && rowPath
+              ? "That row is gone: it was deleted, or its ID is not one of this table's."
+              : "That row is not on this page, and this source cannot read one row alone."}
+        </Notice>
+      ) : null}
+      {filterBroken ? (
+        <Notice tone="danger">
+          {Object.entries(filterErrors)
+            .map(([column, message]) => `${column}: ${message}`)
+            .join(" ")}
+        </Notice>
+      ) : null}
+      {page.error ? (
+        <ErrorState
+          error={page.error}
+          what="the rows"
+          onRetry={page.reload}
+          help={
+            props.indexesAt && (page.error as Partial<ApiError>).code === "too_slow" ? (
+              <>
+                An index on the columns you filter and sort by makes this faster.{" "}
+                <Link to={props.indexesAt} className="text-action underline">
+                  Add an index
+                </Link>
+              </>
+            ) : undefined
+          }
+        />
+      ) : null}
       {checked.size > 0 && canBatch ? (
         <div
           role="toolbar"
@@ -399,16 +604,24 @@ function RowsBrowser(
             onSelect={(row) => void choose(keyOf(row))}
             {...(canBatch ? { checked, onCheck: setChecked } : {})}
             sort={sort}
-            onSort={(column) => {
-              const next =
-                sort?.column !== column ? column : sort.descending ? undefined : `-${column}`;
-              setBack([]);
-              setUrl({ sort: next, ...toFirst });
+            onSort={(column, additive) => {
+              setUrl({ sort: nextSort(sort, column, additive), ...toFirst });
+            }}
+            editor={({ column: edited, value, save, cancel }) => {
+              const meta = columns.find((one) => one.name === edited.name);
+              return meta && CELL_CONTROLS.has(meta.type) ? (
+                <CellControl
+                  column={meta}
+                  value={value}
+                  rowsPath={props.rowsPath}
+                  save={save}
+                  cancel={cancel}
+                />
+              ) : undefined;
             }}
             filters={typed}
+            filterErrors={filterErrors}
             onFilter={(column, text) => {
-              setFilterError(undefined);
-              setBack([]);
               setTyped((current) => ({ ...current, [column]: text }));
             }}
             {...(canChange
@@ -441,7 +654,7 @@ function RowsBrowser(
               }
               if (column.type === "reference" && typeof value === "string") {
                 // The row it points to, by what that table says stands for a row.
-                const label = page.data?.expanded?.[column.name]?.[value];
+                const label = pageData?.expanded?.[column.name]?.[value];
                 if (label !== undefined && label !== null) return String(label);
                 return (
                   <span className="font-mono text-code-sm text-ink-muted">{String(value)}</span>
@@ -455,11 +668,7 @@ function RowsBrowser(
               return undefined;
             }}
             empty={
-              !page.data
-                ? ""
-                : filter
-                  ? "No rows match the filters."
-                  : "This table has no rows yet."
+              !pageData ? "" : filter ? "No rows match the filters." : "This table has no rows yet."
             }
           />
         </div>
@@ -515,20 +724,24 @@ function RowsBrowser(
             size="small"
             disabled={!url.page}
             onClick={() => {
-              const before = back.at(-1);
-              setBack((current) => current.slice(0, -1));
-              setUrl({ page: before || undefined });
+              const before = url.back.at(-1);
+              setUrl({
+                back: url.back.slice(0, -1),
+                page: before && before !== "-" ? before : undefined,
+              });
             }}
           >
             Previous
           </Button>
           <Button
             size="small"
-            disabled={!page.data?.nextCursor}
+            disabled={!pageData?.nextCursor}
             onClick={() => {
               // One step forward: the page shown now is where Previous comes back to.
-              setBack((current) => [...current, url.page ?? ""]);
-              setUrl({ page: page.data?.nextCursor ?? undefined });
+              setUrl({
+                back: [...url.back, url.page ?? "-"],
+                page: pageData?.nextCursor ?? undefined,
+              });
             }}
           >
             Next
@@ -571,6 +784,135 @@ const listOf = (text: string) =>
     .map((one) => one.trim())
     .filter(Boolean);
 
+/** The types whose cell is changed in the grid by a control of its own, not by typing the raw value. */
+const CELL_CONTROLS = new Set(["enum", "enum_list", "reference", "date", "timestamp"]);
+
+/**
+ * The control that changes one cell of the grid, where a value is chosen and not typed: a list's
+ * value in a select, and a several-valued list, a row of another table, a day or a moment in a
+ * small dialog that holds the field the row's inspector has. Escape puts the cell back.
+ */
+function CellControl({
+  column,
+  value,
+  rowsPath,
+  save,
+  cancel,
+}: {
+  column: RowColumn;
+  value: unknown;
+  rowsPath: string;
+  save: (next: unknown) => Promise<void>;
+  cancel: () => void;
+}) {
+  const held = Array.isArray(value) ? value.map(String) : value == null ? [] : [String(value)];
+  const [text, setText] = useState(
+    column.type === "enum_list"
+      ? held.join(",")
+      : column.type === "timestamp" && typeof value === "string"
+        ? localWall(value, "T")
+        : value == null
+          ? ""
+          : String(value),
+  );
+  const [error, setError] = useState<string>();
+  const [busy, setBusy] = useState(false);
+  // The dialog is put on the page shut and opened, so that it arrives with its motion.
+  const [arrived, setArrived] = useState(false);
+  useEffect(() => setArrived(true), []);
+  if (column.type === "enum") {
+    return (
+      <select
+        // biome-ignore lint/a11y/noAutofocus: the person just asked to change this cell
+        autoFocus
+        aria-label={column.name}
+        value={text}
+        disabled={busy}
+        className="-mx-1.5 h-7 w-[calc(100%+0.75rem)] min-w-24 rounded-inner border border-action bg-surface px-1.5 text-ink"
+        onChange={(event) => {
+          const next = event.currentTarget.value;
+          setText(next);
+          setBusy(true);
+          void save(next === "" ? null : next)
+            .catch(() => undefined)
+            .finally(() => setBusy(false));
+        }}
+        onBlur={cancel}
+        onKeyDown={(event) => {
+          // The grid's own keys are not for a cell being changed; the page's go on.
+          if (keepsKey(event)) event.stopPropagation();
+          if (event.key === "Escape") cancel();
+        }}
+      >
+        {valueOptions(column, held[0] ?? "").map((one) => (
+          <option key={one.value} value={one.value}>
+            {one.label}
+          </option>
+        ))}
+      </select>
+    );
+  }
+  const offered = valueOptions(column, "").slice(1);
+  const options = [
+    ...offered,
+    ...held
+      .filter((one) => !offered.some((known) => known.value === one))
+      .map((one) => ({ value: one, label: `${one} (no longer offered)` })),
+  ];
+  return (
+    // A press inside the dialog bubbles through the portal to the row, which would choose it.
+    // biome-ignore lint/a11y/noStaticElementInteractions: only keeps the press from reaching the row behind the dialog.
+    // biome-ignore lint/a11y/useKeyWithClickEvents: the dialog's own controls take the keys.
+    <span onClick={(event) => event.stopPropagation()}>
+      <Dialog open={arrived} onClose={cancel} title={`Change ${column.name}`}>
+        <form
+          className="flex flex-col gap-4"
+          onSubmit={async (event) => {
+            event.preventDefault();
+            setError(undefined);
+            setBusy(true);
+            try {
+              await save(parseValue(column.type, text));
+            } catch (caught) {
+              setError(failureText(caught));
+            } finally {
+              setBusy(false);
+            }
+          }}
+        >
+          {column.type === "enum_list" ? (
+            <MultiSelectField
+              label={column.name}
+              inline
+              value={listOf(text)}
+              options={options}
+              onChange={(next) => setText(next.join(","))}
+            />
+          ) : column.type === "reference" ? (
+            <ReferenceField column={column} rowsPath={rowsPath} value={text} onChange={setText} />
+          ) : (
+            <DateField
+              name={column.name}
+              label={column.name}
+              value={text}
+              required={false}
+              {...(column.type === "timestamp" ? { withTime: true, hint: "Your time zone." } : {})}
+              onChange={setText}
+            />
+          )}
+          {error ? <Notice tone="danger">{error}</Notice> : null}
+          <div className="flex justify-end gap-2">
+            <Button onClick={cancel}>Cancel</Button>
+            <Button type="submit" variant="primary" loading={busy}>
+              Save
+            </Button>
+          </div>
+        </form>
+      </Dialog>
+    </span>
+  );
+}
+
 /** A yes/no column: one control in every form, a select, since a typed word is only refused at save. */
 function BooleanField({
   column,
@@ -588,6 +930,7 @@ function BooleanField({
       name={column.name}
       label={column.name}
       value={value}
+      required={column.required}
       options={[
         { value: "", label: column.required ? "Choose" : "No value" },
         { value: "true", label: "Yes" },
@@ -603,6 +946,28 @@ function BooleanField({
 const OFFERED = 50;
 /** How long after the last key what is typed is sent to the server. */
 const TYPING_MS = 250;
+
+/**
+ * What a typed search asks of a table whose rows are named by this column: text is looked for
+ * inside the name, a number or a yes or no is matched whole, and a column that cannot be searched
+ * (JSON, a file, a list) or text that does not read as its type asks for nothing.
+ */
+export function pickerFilter(
+  display: string | undefined,
+  type: string | undefined,
+  text: string,
+): object | null {
+  const typed = text.trim();
+  if (!display || typed === "") return null;
+  if (type === undefined || type === "text")
+    return { column: display, op: "contains", value: text };
+  if (["json", "file", "enum_list"].includes(type)) return null;
+  try {
+    return { column: display, op: "eq", value: parseValue(type, typed) };
+  } catch {
+    return null;
+  }
+}
 
 /**
  * A reference column: the row it points to is chosen by what its table says stands for a row,
@@ -639,10 +1004,12 @@ function ReferenceField({
     const timer = setTimeout(() => setSent(typed), TYPING_MS);
     return () => clearTimeout(timer);
   }, [typed, sent]);
-  const filter =
-    display && sent
-      ? `&filter=${encodeURIComponent(JSON.stringify({ column: display, op: "contains", value: sent }))}`
-      : "";
+  const asked = pickerFilter(
+    display,
+    table.data?.columns?.find((one) => one.name === display)?.type,
+    sent,
+  );
+  const filter = asked ? `&filter=${encodeURIComponent(JSON.stringify(asked))}` : "";
   const rows = useLoad<{ items: DataRow[]; nextCursor: string | null }>(
     root && table.data ? `${root}/rows/${target}?limit=${OFFERED}${filter}` : null,
   );
@@ -666,7 +1033,8 @@ function ReferenceField({
     () => (held ? [{ value, label: heldLabel }, ...options] : options),
     [held, value, heldLabel, options],
   );
-  if (!root || table.error || rows.error) {
+  // The ID is typed only where the table cannot be read at all. A search that fails keeps the picker.
+  if (!root || table.error || (rows.error && !filter)) {
     return (
       <TextField
         name={column.name}
@@ -683,6 +1051,7 @@ function ReferenceField({
   return (
     <ComboboxField
       label={column.name}
+      required={column.required}
       options={offered}
       value={value || undefined}
       error={error}
@@ -696,6 +1065,23 @@ function ReferenceField({
       // Choosing a row puts its name in the box: that is not a search for it.
       {...(display ? { onSearch: (text: string) => setTyped(text === chosen ? "" : text) } : {})}
     />
+  );
+}
+
+/** The button of a file field, in the inspector and in Add row: it chooses a file, or replaces the one there is. */
+function ChooseFileButton({
+  chosen,
+  loading,
+  onClick,
+}: {
+  chosen: boolean;
+  loading?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <Button {...(loading !== undefined ? { loading } : {})} onClick={onClick}>
+      {chosen ? "Replace" : "Choose a file"}
+    </Button>
   );
 }
 
@@ -720,14 +1106,19 @@ function FileField({
   const input = useRef<HTMLInputElement>(null);
   const has = typeof value === "string" && value !== "";
   const change = async (next: File | null) => {
-    const sure = await ask.confirm({
-      title: next ? `Replace the file in ${column.name}?` : `Remove the file from ${column.name}?`,
-      text: `${
-        next ? `${next.name} takes its place. ` : "The row will have no file. "
-      }The old file stays in this row's history, until that history expires.`,
-      action: next ? "Replace" : "Remove",
-      danger: next === null,
-    });
+    // With no file there is nothing to replace and no history to say: choosing one just adds it.
+    const sure =
+      (!has && next) ||
+      (await ask.confirm({
+        title: next
+          ? `Replace the file in ${column.name}?`
+          : `Remove the file from ${column.name}?`,
+        text: `${
+          next ? `${next.name} takes its place. ` : "The row will have no file. "
+        }The old file stays in this row's history, until that history expires.`,
+        action: next ? "Replace" : "Remove",
+        danger: next === null,
+      }));
     if (!sure) return;
     setBusy(true);
     try {
@@ -738,7 +1129,7 @@ function FileField({
           )
         : null;
       await onSave({ [column.name]: stored ? stored.id : null });
-      notify.success(next ? "File replaced." : "File removed.");
+      notify.success(next ? (has ? "File replaced." : "File added.") : "File removed.");
     } catch (error) {
       notify.error(error);
     } finally {
@@ -769,9 +1160,7 @@ function FileField({
                 if (file) void change(file);
               }}
             />
-            <Button loading={busy} onClick={() => input.current?.click()}>
-              Replace
-            </Button>
+            <ChooseFileButton chosen={has} loading={busy} onClick={() => input.current?.click()} />
             {has ? (
               <Button disabled={busy} onClick={() => void change(null)}>
                 Remove
@@ -786,6 +1175,13 @@ function FileField({
 
 /** Text longer than this is edited in a text area, as the kit's forms do. */
 const LONG_TEXT = 200;
+
+/** What a refused save says of each field it names, by the column's name: for the field itself. */
+function fieldMessages(error: unknown): Record<string, string> {
+  return Object.fromEntries(
+    ((error as ApiError).fields ?? []).map((field) => [field.path.slice(1), field.message]),
+  );
+}
 
 function RowEditor({
   row,
@@ -817,7 +1213,10 @@ function RowEditor({
           : JSON.stringify(row[column.name], null, 2)
         : row[column.name] === null || row[column.name] === undefined
           ? ""
-          : String(row[column.name]);
+          : column.type === "timestamp"
+            ? // The reader's own clock, as a date field holds it; what is stored shows on hover.
+              localWall(String(row[column.name]), "T")
+            : String(row[column.name]);
   const dirty = Object.keys(text).length > 0;
   useNavigationGuard(dirty, "Your changes to this row are not saved.");
   useEffect(() => {
@@ -853,7 +1252,11 @@ function RowEditor({
           notify.success("Row saved.");
           setText({});
         } catch (error) {
-          notify.error(error);
+          // A refusal that names fields says so under each; one that names none is a toast.
+          const named = fieldMessages(error);
+          setErrors(named);
+          if (Object.keys(named).length === 0) notify.error(error);
+          else notify.error(new Error((error as Error).message));
         } finally {
           setBusy(false);
         }
@@ -898,13 +1301,29 @@ function RowEditor({
               setText((current) => ({ ...current, [column.name]: value.join(",") }))
             }
           />
+        ) : editable &&
+          column.writable &&
+          (column.type === "date" || column.type === "timestamp") ? (
+          <DateField
+            key={column.name}
+            name={column.name}
+            label={column.name}
+            value={text[column.name] ?? shown(column)}
+            required={column.required}
+            {...(column.type === "timestamp" ? { withTime: true } : {})}
+            {...(column.type === "timestamp" && typeof row[column.name] === "string"
+              ? { hint: `Your time zone. Stored as ${utcOf(String(row[column.name]))}` }
+              : {})}
+            error={errors[column.name]}
+            onChange={(value) => setText((current) => ({ ...current, [column.name]: value }))}
+          />
         ) : editable && column.writable && column.type !== "file" && roomy(column) ? (
           <TextAreaField
             key={column.name}
             name={column.name}
             label={column.name}
             value={text[column.name] ?? shown(column)}
-            required={false}
+            required={column.required}
             error={errors[column.name]}
             onChange={(value) => setText((current) => ({ ...current, [column.name]: value }))}
           />
@@ -914,7 +1333,7 @@ function RowEditor({
             name={column.name}
             label={column.name}
             value={text[column.name] ?? shown(column)}
-            required={false}
+            required={column.required}
             error={errors[column.name]}
             onChange={(value) => setText((current) => ({ ...current, [column.name]: value }))}
           />
@@ -974,15 +1393,29 @@ function AddRow({
 }) {
   const [values, setValues] = useState<Record<string, string>>({});
   const [files, setFiles] = useState<Record<string, File>>({});
+  const fileInputs = useRef<Record<string, HTMLInputElement | null>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [failure, setFailure] = useState<string>();
   const [busy, setBusy] = useState(false);
+  // The files this form has stored, by column, so a try that is refused does not store them again.
+  const uploaded = useRef<Record<string, { file: File; id: string }>>({});
+  // Opened again, it does not still hold what the last try was refused for.
+  useEffect(() => {
+    if (open) {
+      setErrors({});
+      setFailure(undefined);
+    }
+  }, [open]);
 
   const submit = async () => {
     const row: DataRow = {};
     const found: Record<string, string> = {};
     for (const column of columns) {
       if (column.type === "file") continue;
+      if (column.required && (values[column.name] ?? "").trim() === "") {
+        found[column.name] = `${column.name} needs a value.`;
+        continue;
+      }
       try {
         const value = parseValue(column.type, values[column.name] ?? "");
         if (value !== null) row[column.name] = value;
@@ -996,25 +1429,28 @@ function AddRow({
     setBusy(true);
     try {
       for (const [column, file] of Object.entries(files)) {
-        const stored = await api.upload<{ id: string }>(
-          `${filesPath}?name=${encodeURIComponent(file.name)}`,
-          file,
-        );
+        // A file already stored for this form is kept between tries: a refused row does not
+        // upload it again and leave one that no row names.
+        let stored = uploaded.current[column];
+        if (stored?.file !== file) {
+          const made = await api.upload<{ id: string }>(
+            `${filesPath}?name=${encodeURIComponent(file.name)}`,
+            file,
+          );
+          stored = { file, id: made.id };
+          uploaded.current[column] = stored;
+        }
         row[column] = stored.id;
       }
       await api.post(rowsPath, row);
       notify.success("Row added.");
       setValues({});
       setFiles({});
+      uploaded.current = {};
       onAdded();
     } catch (caught) {
-      const error = caught as ApiError;
-      setErrors(
-        Object.fromEntries(
-          (error.fields ?? []).map((field) => [field.path.slice(1), field.message]),
-        ),
-      );
-      setFailure(error.message);
+      setErrors(fieldMessages(caught));
+      setFailure((caught as Error).message);
     } finally {
       setBusy(false);
     }
@@ -1042,6 +1478,7 @@ function AddRow({
     >
       <form
         id="add-row"
+        noValidate
         className="flex flex-col gap-3"
         onSubmit={(event) => {
           event.preventDefault();
@@ -1084,6 +1521,7 @@ function AddRow({
               label={column.name}
               value={values[column.name] ?? ""}
               options={valueOptions(column, "")}
+              required={column.required}
               error={errors[column.name]}
               onChange={(value) => setValues((current) => ({ ...current, [column.name]: value }))}
             />
@@ -1099,29 +1537,60 @@ function AddRow({
               }
             />
           ) : column.type === "file" ? (
-            <label key={column.name} className="flex flex-col gap-1 text-body-sm font-medium">
-              {column.name}
-              <input
-                type="file"
-                className="font-normal"
-                onChange={(event) => {
-                  const file = event.currentTarget.files?.[0];
-                  setFiles((current) => {
-                    const { [column.name]: _removed, ...rest } = current;
-                    return file ? { ...rest, [column.name]: file } : rest;
-                  });
-                }}
-              />
-            </label>
+            <div key={column.name} className="flex flex-col gap-1">
+              <span className="text-body-sm text-ink-muted">{column.name}</span>
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  type="file"
+                  hidden
+                  aria-label={`File for ${column.name}`}
+                  ref={(node) => {
+                    fileInputs.current[column.name] = node;
+                  }}
+                  onChange={(event) => {
+                    const file = event.currentTarget.files?.[0];
+                    setFiles((current) => {
+                      const { [column.name]: _removed, ...rest } = current;
+                      return file ? { ...rest, [column.name]: file } : rest;
+                    });
+                  }}
+                />
+                <ChooseFileButton
+                  chosen={Boolean(files[column.name])}
+                  onClick={() => fileInputs.current[column.name]?.click()}
+                />
+                {files[column.name] ? (
+                  <>
+                    <span className="font-mono text-code break-all">
+                      {files[column.name]?.name}
+                    </span>
+                    <Button
+                      onClick={() => {
+                        const input = fileInputs.current[column.name];
+                        if (input) input.value = "";
+                        setFiles((current) => {
+                          const { [column.name]: _removed, ...rest } = current;
+                          return rest;
+                        });
+                      }}
+                    >
+                      Remove
+                    </Button>
+                  </>
+                ) : (
+                  <span className="text-ink-subtle">No file chosen</span>
+                )}
+              </div>
+            </div>
           ) : column.type === "date" || column.type === "timestamp" ? (
             <DateField
               key={column.name}
               name={column.name}
               label={column.name}
               value={values[column.name] ?? ""}
-              required={false}
-              {...(column.type === "timestamp" ? { withTime: true, timeZone: "UTC" as const } : {})}
-              hint={`${typeLabel(column.type)}${column.required ? "" : ", optional"}${column.type === "timestamp" ? "." : ""}`}
+              required={column.required}
+              {...(column.type === "timestamp" ? { withTime: true } : {})}
+              hint={`${typeLabel(column.type)}${column.required ? "" : ", optional"}${column.type === "timestamp" ? ", in your time zone." : ""}`}
               error={errors[column.name]}
               onChange={(value) => setValues((current) => ({ ...current, [column.name]: value }))}
             />
@@ -1131,7 +1600,7 @@ function AddRow({
               name={column.name}
               label={column.name}
               value={values[column.name] ?? ""}
-              required={false}
+              required={column.required}
               hint={`${typeLabel(column.type)}${column.required ? "" : ", optional"}`}
               error={errors[column.name]}
               onChange={(value) => setValues((current) => ({ ...current, [column.name]: value }))}
@@ -1142,7 +1611,7 @@ function AddRow({
               name={column.name}
               label={column.name}
               value={values[column.name] ?? ""}
-              required={false}
+              required={column.required}
               hint={`${typeLabel(column.type)}${column.required ? "" : ", optional"}`}
               error={errors[column.name]}
               onChange={(value) => setValues((current) => ({ ...current, [column.name]: value }))}
@@ -1158,6 +1627,8 @@ function AddRow({
 // ----- Tables -----
 
 interface TableSummary {
+  /** Tells apart two retired tables that had one name. */
+  id?: string;
   name: string;
   description: string;
   status: "active" | "retired";
@@ -1171,18 +1642,27 @@ export function Tables({ root, link }: { root: string; link: string }) {
   return (
     <ListScreen<TableSummary>
       title="Tables"
+      needs={{ base: root, permission: "resource:write", what: "this workspace's tables" }}
       description="The data this workspace keeps. A table defined in the repository changes when a bundle is deployed. Nothing is ever dropped by a deploy: what leaves a definition is retired and its data kept."
       path={`${root}/tables`}
-      rowKey={(row) => `${row.name}:${row.status}`}
+      rowKey={(row) => `${row.name}:${row.status}:${row.id ?? ""}`}
       columns={[
         {
           header: "Table",
           cell: (row) => (
             <span className="inline-flex items-center gap-2">
-              <Link to={`${link}/tables/${row.name}`} className="font-medium text-action">
+              <Link
+                to={`${link}/tables/${row.name}${row.status === "retired" && row.id ? `?id=${row.id}` : ""}`}
+                className="min-w-0 truncate font-medium text-action"
+              >
                 {row.name}
               </Link>
-              {row.status === "retired" ? <StatePill state="retired" /> : null}
+              {/* The pill keeps its word whole: it is the name that gives way. */}
+              {row.status === "retired" ? (
+                <span className="shrink-0">
+                  <StatePill state="retired" />
+                </span>
+              ) : null}
             </span>
           ),
         },
@@ -1215,19 +1695,84 @@ export function Tables({ root, link }: { root: string; link: string }) {
             placeholder: "notes",
             hint: "Lowercase letters, digits and dashes.",
           },
-          { name: "column", label: "First column", placeholder: "title" },
           {
-            name: "type",
-            label: "It holds",
-            options: TYPES.filter((type) => type.value !== "reference"),
+            name: "description",
+            label: "What it holds",
+            required: false,
+            placeholder: "Notes taken in meetings",
+            hint: "In plain words. Shown under the table's name.",
+            maxLength: 500,
+          },
+          { name: "column", label: "First column", placeholder: "title" },
+          { name: "type", label: "It holds", options: TYPES },
+          {
+            name: "references",
+            label: "Which table",
+            required: false,
+            when: (values) => values.type === "reference",
+            choose: {
+              path: `${root}/tables`,
+              option: (item: { name: string; status?: string }) =>
+                item.status === "retired" ? undefined : { value: item.name, label: item.name },
+            },
+          },
+          VALUES_FIELD,
+          {
+            name: "more",
+            label: "More columns",
+            render: ({ value, onChange }) => (
+              <MoreColumnsField root={root} value={value} onChange={onChange} />
+            ),
+          },
+          {
+            name: "policy",
+            label: "Who sees rows",
+            options: [
+              { value: "open", label: "Everyone who may use the table sees every row" },
+              { value: "owner", label: "Each person sees only the rows they added" },
+            ],
+            hint: "Changed later, with more rules, under Definition. A table of each person's own rows gets an owner_id column that holds who added the row.",
           },
         ],
-        submit: async ({ name = "", column = "", type = "text" }) => {
+        submit: async ({
+          name = "",
+          description = "",
+          column = "",
+          type = "text",
+          references,
+          values,
+          more,
+          policy = "open",
+        }) => {
+          const made: Record<string, Record<string, unknown>> = {};
+          const add = (columnName: string, kind: string, listed?: string, table?: string) => {
+            if (!columnName.trim()) throw new Error("Name every column, or remove the empty one.");
+            if (made[columnName] || ["id", "created_at", "updated_at"].includes(columnName))
+              throw new Error(
+                `There is already a column called "${columnName}". Choose another name.`,
+              );
+            if (kind === "reference" && !table)
+              throw new Error(`Choose the table that "${columnName}" points to.`);
+            made[columnName] = {
+              ...newColumn(kind, listed),
+              ...(kind === "reference" ? { references: table } : {}),
+            };
+          };
+          add(column, type, values, references);
+          for (const extra of draftsOf(more ?? ""))
+            add(extra.name.trim(), extra.type, extra.values, extra.references);
+          if (policy === "owner" && !made.owner_id) made.owner_id = { type: "uuid" };
           await api.put(`${root}/resources/${name}`, {
             kind: "table",
             schemaVersion: 1,
             ownership: "ui",
-            body: { columns: { [column]: { type } } },
+            body: {
+              ...(description.trim() ? { description: description.trim() } : {}),
+              columns: made,
+              ...(policy === "owner" ? { policy: { type: "owner", column: "owner_id" } } : {}),
+            },
+            // A new table: one already at this name is said so, not replaced.
+            create: true,
           });
           navigate(`${link}/tables/${name}`);
         },
@@ -1237,6 +1782,8 @@ export function Tables({ root, link }: { root: string; link: string }) {
 }
 
 interface TableColumn {
+  /** Tells apart two retired columns that had one name. */
+  id?: string;
   name: string;
   /** What the column holds, when its definition says. */
   description?: string;
@@ -1255,6 +1802,7 @@ interface TableColumn {
 }
 
 interface TableDetail {
+  id?: string;
   name: string;
   /** What the table is for, when its definition says. */
   description?: string;
@@ -1263,6 +1811,8 @@ interface TableDetail {
   policy: { type: string; column?: string; rules?: Rule[] };
   /** The column that stands for a row where another table refers to it. */
   display?: string | null;
+  /** The indexes the definition lists, each a list of column names. */
+  indexes?: string[][];
   rowCount: number;
   stored: { schema: string; table: string };
   columns: TableColumn[];
@@ -1275,7 +1825,9 @@ const SYSTEM_COLUMNS: RowColumn[] = [
 ];
 
 export function TableView({ root, name, link }: { root: string; name: string; link: string }) {
-  const table = useLoad<TableDetail>(`${root}/tables/${name}`);
+  // Two retired tables can have had one name: the list opens the one it shows by its ID.
+  const [which] = useUrlParam("id");
+  const table = useLoad<TableDetail>(`${root}/tables/${name}${which ? `?id=${which}` : ""}`);
   const [view, setView] = useUrlParam<"rows" | "definition">("view", "rows", { push: true });
   // A workbench has no page padding of its own, so these two carry it.
   if (table.error) {
@@ -1311,19 +1863,31 @@ export function TableView({ root, name, link }: { root: string; name: string; li
       fill
       helpKey="table"
       title={data.name}
-      description={`${data.description ? `${data.description.replace(/\.?\s*$/, ".")} ` : ""}${count(data.rowCount)} ${data.rowCount === 1 ? "row" : "rows"}. ${policyText(data.policy)}. Managed in the ${data.managedIn === "code" ? "repository" : "console"}.`}
+      description={`${data.description ? `${data.description.replace(/\.?\s*$/, ".")} ` : ""}${counted(data.rowCount, "row")}. ${policyText(data.policy)}.${retired ? ` Was managed in the ${data.managedIn === "code" ? "repository" : "console"}.` : ` Managed in the ${data.managedIn === "code" ? "repository" : "console"}.`}`}
     >
       <AttachedPages {...workspaceOf(root)} kind="table" path={data.name} />
       {retired ? (
         <Notice
           tone="attention"
           action={
-            <PurgeButton root={root} table={data.name} onDone={() => navigate(`${link}/tables`)} />
+            <span className="flex flex-wrap gap-2">
+              {data.managedIn === "ui" ? (
+                <BringBackButton root={root} table={data} onDone={table.reload} />
+              ) : null}
+              <PurgeButton
+                root={root}
+                table={data.name}
+                {...(data.id ? { tableId: data.id } : {})}
+                onDone={() => navigate(`${link}/tables`)}
+              />
+            </span>
           }
         >
           This table is retired. It left its definition, so nothing can read or write it, and its{" "}
-          {count(data.rowCount)} rows are kept. Deploying a definition with this name brings it
-          back.
+          {counted(data.rowCount, "row")} {data.rowCount === 1 ? "is" : "are"} kept.{" "}
+          {data.managedIn === "ui"
+            ? "Bring it back to use it again, with its columns, its rows and who sees them as they were."
+            : "Deploying a definition with this name brings it back."}
         </Notice>
       ) : view === "rows" ? null : (
         <div className="flex shrink-0 gap-1">
@@ -1342,6 +1906,16 @@ export function TableView({ root, name, link }: { root: string; name: string; li
           }
           key={active.map((column) => column.name).join(",")}
           label={`Rows of ${data.name}`}
+          tableId={data.id}
+          {...(data.managedIn === "ui"
+            ? { indexesAt: `${link}/tables/${data.name}?view=definition&at=indexes` }
+            : {})}
+          needs={{
+            base: root,
+            permission: "data:write",
+            what: "the rows of this table",
+            resource: { kind: "table", path: data.name },
+          }}
           rowsPath={`${root}/rows/${data.name}`}
           rowPath={(key) => `${root}/row/${key}/${data.name}`}
           keyColumn="id"
@@ -1370,24 +1944,112 @@ export function TableView({ root, name, link }: { root: string; name: string; li
   );
 }
 
+/**
+ * The definition a retired table comes back with: its active columns as the catalog holds them,
+ * and who sees its rows. What the definition said that the catalog does not (the columns' words)
+ * is not kept, and retired columns stay retired.
+ */
+export function bodyOfRetired(table: TableDetail): TableBody {
+  const columns: TableBody["columns"] = {};
+  for (const column of table.columns.filter((one) => one.status === "active")) {
+    columns[column.name] = {
+      type: column.type,
+      ...(column.required ? { required: true } : {}),
+      ...(column.unique ? { unique: true } : {}),
+      ...(column.default !== null && column.default !== undefined
+        ? { default: column.default }
+        : {}),
+      ...(column.references ? { references: column.references } : {}),
+      ...(column.references && column.onDelete && column.onDelete !== "restrict"
+        ? { onDelete: column.onDelete }
+        : {}),
+      ...(column.values ? { values: column.values } : {}),
+      ...(column.description ? { description: column.description } : {}),
+    };
+  }
+  return {
+    columns,
+    ...(table.description ? { description: table.description } : {}),
+    policy: table.policy as TableBody["policy"],
+    ...(table.display ? { display: table.display } : {}),
+    ...(table.indexes && table.indexes.length > 0 ? { indexes: table.indexes } : {}),
+  } as TableBody;
+}
+
+/** Makes a retired table of the console active again, by saving the definition it had. */
+function BringBackButton({
+  root,
+  table,
+  onDone,
+}: {
+  root: string;
+  table: TableDetail;
+  onDone: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  // Bringing a table back saves its definition again: `PUT resources/*` asks resource:write.
+  const need = useNeeds({ base: root, permission: "resource:write", what: "this table" });
+  return (
+    <Button
+      size="small"
+      loading={busy}
+      {...(need.can ? {} : { disabled: true, tooltip: need.reason })}
+      onClick={async () => {
+        setBusy(true);
+        try {
+          await api.put(`${root}/resources/${table.name}`, {
+            kind: "table",
+            schemaVersion: 1,
+            ownership: "ui",
+            body: bodyOfRetired(table),
+          });
+          notify.success(`The table ${table.name} is back, with its rows.`);
+          onDone();
+        } catch (error) {
+          notify.error(error);
+        } finally {
+          setBusy(false);
+        }
+      }}
+    >
+      Bring back
+    </Button>
+  );
+}
+
 function PurgeButton({
   root,
   table,
   column,
+  columnId,
+  tableId,
   onDone,
 }: {
   root: string;
   table: string;
   column?: string;
+  /** Which retired column, for two that had the name. */
+  columnId?: string;
+  tableId?: string;
   onDone: () => void;
 }) {
   const what = column ? `the retired column "${column}"` : `the retired table "${table}"`;
+  // `POST table-purges` asks table:write, which a person who may edit definitions need not hold.
+  const need = useNeeds({ base: root, permission: "table:write", what: "retired data" });
   return (
     <RemoveButton
       label="Delete for good"
+      disabled={need.can ? undefined : need.reason}
       confirm={`Delete ${what} and everything in it? This is the one action that destroys data, and it cannot be undone.`}
       typeToConfirm={column ?? table}
-      run={() => api.post(`${root}/table-purges`, { table, ...(column ? { column } : {}) })}
+      run={() =>
+        api.post(`${root}/table-purges`, {
+          table,
+          ...(column ? { column } : {}),
+          ...(columnId ? { columnId } : {}),
+          ...(tableId ? { tableId } : {}),
+        })
+      }
       onDone={onDone}
     />
   );
@@ -1481,7 +2143,7 @@ interface EditedValue {
   was?: string;
 }
 
-/** The values of an enum column: what each is called, the colour it is drawn on, and their order. */
+/** The values of an enum column: what each is called, the color it is drawn on, and their order. */
 function ValuesDialog({
   column,
   open,
@@ -1693,7 +2355,100 @@ interface TableBody {
   description?: string;
   columns: Record<string, Record<string, unknown>>;
   policy?: { type: string; column?: string; rules?: Rule[] };
+  /** The column that stands for a row where another table refers to it. */
+  display?: string;
+  indexes?: string[][];
   [key: string]: unknown;
+}
+
+/**
+ * Renames a column, or with no new name retires it, everywhere the definition names it: the
+ * column that stands for a row, the indexes, and the rules for who sees rows. One piece for
+ * both, so a rename never leaves a name behind that the server then refuses, and a retire
+ * never leaves an index or a display on a column that is gone. A column a rule needs to say
+ * whose a row is cannot be retired until that rule is changed, and the message says which.
+ */
+export function moveColumn(body: TableBody, from: string, to?: string) {
+  const policy = body.policy;
+  const rules = policy?.rules ?? [];
+  if (to === undefined) {
+    if (policy?.type === "owner" && policy.column === from) {
+      throw new Error(
+        `"${from}" says whose a row is, in this table's rule for who sees rows. Change that rule, then retire the column.`,
+      );
+    }
+    const used = rules.findIndex((rule) => "column" in rule.when && rule.when.column === from);
+    if (used >= 0) {
+      throw new Error(
+        `"${from}" is used by rule ${used + 1} of who sees rows. Change that rule, then retire the column.`,
+      );
+    }
+  }
+  const { [from]: definition, ...others } = body.columns;
+  body.columns = others;
+  if (to !== undefined && definition) {
+    const { renamedFrom: _old, ...kept } = definition;
+    body.columns[to] = { ...kept, renamedFrom: from };
+  }
+  if (body.display === from) {
+    if (to !== undefined) body.display = to;
+    else delete body.display;
+  }
+  if (body.indexes) {
+    const moved = body.indexes
+      .map((index) =>
+        to !== undefined
+          ? index.map((name) => (name === from ? to : name))
+          : index.filter((name) => name !== from),
+      )
+      .filter((index) => index.length > 0);
+    if (moved.length > 0) body.indexes = moved;
+    else delete body.indexes;
+  }
+  if (to !== undefined) {
+    if (policy?.column === from) policy.column = to;
+    for (const rule of rules) {
+      if ("column" in rule.when && rule.when.column === from) rule.when.column = to;
+    }
+  }
+}
+
+/** Stops a change that would put a column over one that has its name, and says so. */
+function takenColumn(body: TableBody, name: string) {
+  if (body.columns[name] || ["id", "created_at", "updated_at"].includes(name))
+    throw new Error(
+      `There is already a column called "${name}". Choose another name, or change that one.`,
+    );
+}
+
+/**
+ * The definition to save to go back to `state` from `now`. What was renamed since keeps its data
+ * when it goes back, so each is given the name it has now as the one it was called: a column,
+ * and a value of a choice.
+ */
+export function bodyToRestore(state: TableBody, now: TableBody | undefined): TableBody {
+  const back = structuredClone(state);
+  for (const [name, column] of Object.entries(now?.columns ?? {})) {
+    const from = column.renamedFrom;
+    if (typeof from === "string" && back.columns[from] && !back.columns[name]) {
+      back.columns[from] = { ...back.columns[from], renamedFrom: name };
+    }
+    const wasValues = back.columns[name]?.values;
+    if (!Array.isArray(column.values) || !Array.isArray(wasValues)) continue;
+    type Entry = string | { value: string; renamedFrom?: string };
+    const worded = (one: Entry) => (typeof one === "string" ? one : one.value);
+    for (const entry of column.values as Entry[]) {
+      if (typeof entry === "string" || typeof entry.renamedFrom !== "string") continue;
+      const at = (wasValues as Entry[]).findIndex((one) => worded(one) === entry.renamedFrom);
+      if (at < 0 || (wasValues as Entry[]).some((one) => worded(one) === entry.value)) continue;
+      const old = wasValues[at] as Entry;
+      wasValues[at] = {
+        ...(typeof old === "string" ? { value: old } : old),
+        renamedFrom: entry.value,
+      };
+    }
+  }
+  return back;
 }
 
 interface ColumnAction {
@@ -1701,6 +2456,151 @@ interface ColumnAction {
   onSelect: () => void;
   danger?: boolean;
   disabled?: boolean;
+}
+
+/**
+ * A value as text with its keys in order, so that two that say the same compare equal whatever order
+ * the store returned their keys in (a rule comes back with `when` before `allow`).
+ */
+function sameJson(value: unknown): string {
+  return JSON.stringify(value, (_key, each) =>
+    each && typeof each === "object" && !Array.isArray(each)
+      ? Object.fromEntries(Object.entries(each).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)))
+      : each,
+  );
+}
+
+/**
+ * A table's columns. From a tablet up each is a row of cells with its actions as buttons in the last
+ * one. On a phone the Rules and "When not given" cells are hidden by priority, and a last column
+ * would sit past the right edge, so the rules and the default stand under the name and the actions
+ * are one menu there, both seen at first view and reached with no sideways scroll.
+ */
+export function ColumnsTable({
+  rows,
+  actionsOf,
+}: {
+  rows: TableColumn[];
+  actionsOf: ((row: TableColumn) => ColumnAction[]) | undefined;
+}) {
+  const roomy = useWide(640);
+  const rulesOf = (row: TableColumn) =>
+    [row.required ? "Required" : "", row.unique ? "No two rows alike" : ""]
+      .filter(Boolean)
+      .join(", ");
+  const defaultOf = (row: TableColumn) =>
+    row.default === null || row.default === undefined ? (
+      ""
+    ) : (
+      <Code>{showValue(row.type, row.default)}</Code>
+    );
+  return (
+    <DataTable<TableColumn>
+      variant="static"
+      framed
+      label="Columns"
+      rows={rows}
+      rowKey={(row) => row.name}
+      empty={<p className="m-0 text-ink-muted">No columns.</p>}
+      columns={[
+        {
+          header: "Column",
+          cell: (row) => (
+            <span className="flex flex-col gap-0.5">
+              <Code>{row.name}</Code>
+              {row.description ? (
+                <span className="max-w-measure text-meta text-ink-muted">{row.description}</span>
+              ) : null}
+              {roomy ? null : (
+                <span data-column-stack className="flex flex-col gap-1 text-meta">
+                  {rulesOf(row) ? <span>{rulesOf(row)}</span> : null}
+                  {row.default === null || row.default === undefined ? null : (
+                    <span>When not given: {defaultOf(row)}</span>
+                  )}
+                  {actionsOf ? (
+                    <span>
+                      <Menu
+                        ariaLabel={`Actions for ${row.name}`}
+                        triggerClassName="inline-flex size-9 items-center justify-center rounded-control text-ink-muted hover:bg-sunken hover:text-ink"
+                        label={<Ellipsis aria-hidden="true" size={16} />}
+                        items={actionsOf(row).filter((one) => !one.disabled)}
+                      />
+                    </span>
+                  ) : null}
+                </span>
+              )}
+            </span>
+          ),
+        },
+        {
+          header: "Holds",
+          cell: (row) =>
+            row.references ? (
+              <span className="flex flex-col">
+                <span>A row of {row.references}</span>
+                <span className="text-meta text-ink-muted">
+                  {ON_DELETE.find((one) => one.value === (row.onDelete ?? "restrict"))?.short}
+                </span>
+              </span>
+            ) : row.values ? (
+              <span className="flex flex-col gap-1">
+                <span>{typeLabel(row.type)}</span>
+                <span className="inline-flex flex-wrap gap-1">
+                  {row.values.map((one) => (
+                    <ValueChip key={one.value} color={enumColor(one.color)}>
+                      {one.label ?? one.value}
+                    </ValueChip>
+                  ))}
+                </span>
+                {row.retiredValues && row.retiredValues.length > 0 ? (
+                  <span className="text-meta text-ink-muted">
+                    No longer offered, kept on the rows that hold them:{" "}
+                    {row.retiredValues.join(", ")}
+                  </span>
+                ) : null}
+              </span>
+            ) : (
+              typeLabel(row.type)
+            ),
+        },
+        {
+          header: "Rules",
+          priority: 2,
+          cell: rulesOf,
+        },
+        {
+          header: "When not given",
+          priority: 3,
+          cell: defaultOf,
+        },
+        ...(actionsOf && roomy
+          ? [
+              {
+                header: "",
+                align: "end" as const,
+                // Up to five buttons: they wrap inside the column, and it keeps room for two rows of them.
+                wide: true,
+                cell: (row: TableColumn) => (
+                  <span className="flex flex-wrap justify-end gap-1">
+                    {actionsOf(row).map((one) => (
+                      <Button
+                        key={one.label}
+                        size="small"
+                        variant={one.danger ? "danger" : "quiet"}
+                        {...(one.disabled ? { disabled: true } : {})}
+                        onClick={one.onSelect}
+                      >
+                        {one.label}
+                      </Button>
+                    ))}
+                  </span>
+                ),
+              },
+            ]
+          : []),
+      ]}
+    />
+  );
 }
 
 function Definition({
@@ -1714,23 +2614,40 @@ function Definition({
   table: TableDetail;
   reload: () => void;
 }) {
-  const editable = table.managedIn === "ui" && table.status === "active";
+  // A definition is saved as a resource of the workspace: `PUT resources/*` asks resource:write.
+  const mayDefine = useNeeds({
+    base: root,
+    permission: "resource:write",
+    what: "this table's definition",
+  });
+  const editable = table.managedIn === "ui" && table.status === "active" && mayDefine.can;
   // `/tenants/<id>`, the part of the workspace's address the tenant's people are listed under.
   const tenantBase = root.split("/workspaces/")[0];
   const [adding, setAdding] = useState(false);
   // The column whose values, or whose rule for a delete, are being changed.
   const [optionsOf, setOptionsOf] = useState<TableColumn>();
+  // The column whose rules (required, no two alike, what it is given) or whose type is being changed.
+  const [rulesOf, setRulesOf] = useState<TableColumn>();
+  const [typeOf, setTypeOf] = useState<TableColumn>();
+  const [indexing, setIndexing] = useState(false);
+  // A link from a read that was stopped for taking too long lands here, on the indexes.
+  const [at] = useUrlParam("at", "");
+  const indexesHeading = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    if (at === "indexes") indexesHeading.current?.scrollIntoView?.({ block: "start" });
+  }, [at]);
+  const indexes = table.indexes ?? [];
   const [failure, setFailure] = useState<string>();
   // What was chosen for "What stands for a row" shows at once, until the save has answered.
   const [chosenDisplay, setChosenDisplay] = useState<string>();
   // The rules editor is started afresh when the rules change from elsewhere (an undo, a deploy),
   // and not when its own save comes back: it would lose its "Saved" and its place.
   const rules = useRef<{ json: string; own: string | undefined; version: number }>({
-    json: JSON.stringify(table.policy),
+    json: sameJson(table.policy),
     own: undefined,
     version: 0,
   });
-  const policyNow = JSON.stringify(table.policy);
+  const policyNow = sameJson(table.policy);
   if (policyNow !== rules.current.json) {
     rules.current.json = policyNow;
     if (policyNow !== rules.current.own) rules.current.version += 1;
@@ -1739,6 +2656,9 @@ function Definition({
   const retired = table.columns.filter((column) => column.status === "retired");
   // The definition as last saved from here, and every change made to it, for ⌘Z.
   const stored = useRef<TableBody>(undefined);
+  // The version of the definition as this screen last read or saved it. A save names it, so that
+  // one made after someone else's change is refused and does not take their change back.
+  const held = useRef<number>(undefined);
   const restoring = useRef<(state: TableBody) => void>(() => {});
   const history = useHistory<TableBody | undefined>(
     () => stored.current,
@@ -1747,26 +2667,26 @@ function Definition({
   restoring.current = async (state) => {
     setFailure(undefined);
     const now = stored.current;
-    // A column renamed since keeps its data when it goes back: the one it was called is named.
-    const back = structuredClone(state);
-    for (const [name, column] of Object.entries(now?.columns ?? {})) {
-      const from = column.renamedFrom;
-      if (typeof from === "string" && back.columns[from] && !back.columns[name]) {
-        back.columns[from] = { ...back.columns[from], renamedFrom: name };
-      }
-    }
+    const back = bodyToRestore(state, now);
     try {
-      await api.put(`${root}/resources/${table.name}`, {
+      const saved = await api.put<{ version?: number }>(`${root}/resources/${table.name}`, {
         kind: "table",
         schemaVersion: 1,
         ownership: "ui",
         body: back,
+        ...(held.current !== undefined ? { version: held.current } : {}),
       });
       stored.current = back;
+      held.current = saved.version;
     } catch (error) {
       // What is saved is not what the history thinks it is: it cannot be trusted any more.
       history.clear();
-      setFailure(failureText(error));
+      // Another window's change is on the page already (it is read again below): it is not to be reloaded.
+      setFailure(
+        error instanceof ApiError && error.code === "draft_changed"
+          ? `Someone else changed ${table.name} after you opened it. This page shows what is saved now, so undo and redo start again from there.`
+          : `${failureText(error)} Undo and redo start again from what is saved now.`,
+      );
     }
     reload();
   };
@@ -1781,9 +2701,10 @@ function Definition({
       action: "Save",
       required: false,
       multiline: true,
+      maxLength: 500,
     });
     if (next === null) return;
-    const said = next.trim().slice(0, 500);
+    const said = next.trim();
     if (said === (table.description ?? "")) return;
     await change(
       (body) => {
@@ -1809,16 +2730,20 @@ function Definition({
   ) => {
     setFailure(undefined);
     try {
-      const resource = await api.get<{ body: TableBody }>(`${root}/resources/${table.name}`);
+      const resource = await api.get<{ body: TableBody; version?: number }>(
+        `${root}/resources/${table.name}`,
+      );
       const body = structuredClone(resource.body);
       const before = structuredClone(resource.body);
       edit(body);
-      await api.put(`${root}/resources/${table.name}`, {
+      const saved = await api.put<{ version?: number }>(`${root}/resources/${table.name}`, {
         kind: "table",
         schemaVersion: 1,
         ownership: "ui",
         body,
+        ...(resource.version !== undefined ? { version: resource.version } : {}),
       });
+      held.current = saved.version;
       // What it was before is what undoing takes back to; what it is now, what redoing does.
       stored.current = before;
       history.record(label);
@@ -1828,7 +2753,7 @@ function Definition({
       if (report) {
         const caught = error as ApiError;
         const first = caught.fields?.[0];
-        setFailure(first ? `${caught.message} ${first.message}` : caught.message);
+        setFailure(withCode(first ? `${caught.message} ${first.message}` : caught.message, caught));
       }
       throw error;
     }
@@ -1845,6 +2770,17 @@ function Definition({
           },
         ]
       : []),
+    ...(hasNoDefault(row.type) && row.type === "file"
+      ? []
+      : [{ label: "Rules", onSelect: () => setRulesOf(row) }]),
+    ...(row.references || typesFrom(row.type).length > 1
+      ? [
+          {
+            label: row.references ? "Change table" : "Change type",
+            onSelect: () => setTypeOf(row),
+          },
+        ]
+      : []),
     {
       label: "Describe",
       onSelect: async () => {
@@ -1856,9 +2792,10 @@ function Definition({
           action: "Save",
           required: false,
           multiline: true,
+          maxLength: 500,
         });
         if (next === null) return;
-        const said = next.trim().slice(0, 500);
+        const said = next.trim();
         if (said === (row.description ?? "")) return;
         void quietly(
           change(
@@ -1876,30 +2813,29 @@ function Definition({
     {
       label: "Rename",
       onSelect: async () => {
-        const next = await ask.prompt({
+        await ask.prompt({
           title: `Rename ${row.name}`,
           label: "New name",
           initial: row.name,
           action: "Rename",
+          // Said on the field, with the name kept: no request is made for a name that is taken.
+          submit: async (typed) => {
+            const next = typed.trim();
+            if (!next || next === row.name) return undefined;
+            try {
+              await change(
+                (body) => {
+                  takenColumn(body, next);
+                  moveColumn(body, row.name, next);
+                },
+                { label: `renaming ${row.name} to ${next}`, report: false },
+              );
+              return undefined;
+            } catch (error) {
+              return failureText(error);
+            }
+          },
         });
-        if (!next || next === row.name) return;
-        void quietly(
-          change(
-            (body) => {
-              const { renamedFrom: _old, ...kept } = body.columns[row.name] ?? {};
-              delete body.columns[row.name];
-              body.columns[next] = { ...kept, renamedFrom: row.name };
-              if (body.policy?.column === row.name) body.policy.column = next;
-              // A rule that looks at the column follows it to its new name.
-              for (const rule of body.policy?.rules ?? []) {
-                if ("column" in rule.when && rule.when.column === row.name) {
-                  rule.when.column = next;
-                }
-              }
-            },
-            { label: `renaming ${row.name} to ${next}` },
-          ),
-        );
       },
     },
     {
@@ -1915,7 +2851,7 @@ function Definition({
         });
         if (!sure) return;
         void quietly(
-          change((body) => delete body.columns[row.name], { label: `retiring ${row.name}` }),
+          change((body) => moveColumn(body, row.name), { label: `retiring ${row.name}` }),
         );
       },
     },
@@ -1923,12 +2859,13 @@ function Definition({
 
   return (
     <div className="flex flex-col gap-5">
-      {table.status === "active" && !editable ? (
+      {table.status === "active" && table.managedIn !== "ui" ? (
         <Notice tone="attention">
           This table is defined in the tenant's repository. To change it, change{" "}
           <Code>{"defineTable"}</Code> there and deploy.
         </Notice>
       ) : null}
+      {table.managedIn === "ui" ? mayDefine.line : null}
       {failure ? <Notice tone="danger">{failure}</Notice> : null}
       {editable ? (
         <section className="flex flex-wrap items-center gap-2" aria-label="About this table">
@@ -1952,119 +2889,10 @@ function Definition({
           <h2 className="m-0 text-title font-semibold">Columns</h2>
           {editable ? <Button onClick={() => setAdding(true)}>Add column</Button> : null}
         </div>
-        <DataTable<TableColumn>
-          variant="static"
-          framed
-          label="Columns"
-          rows={active}
-          rowKey={(row) => row.name}
-          empty={<p className="m-0 text-ink-muted">No columns.</p>}
-          columns={[
-            {
-              header: "Column",
-              cell: (row) => (
-                <span className="flex flex-col gap-0.5">
-                  <Code>{row.name}</Code>
-                  {row.description ? (
-                    <span className="max-w-measure text-meta text-ink-muted">
-                      {row.description}
-                    </span>
-                  ) : null}
-                </span>
-              ),
-            },
-            {
-              header: "Holds",
-              cell: (row) =>
-                row.references ? (
-                  <span className="flex flex-col">
-                    <span>A row of {row.references}</span>
-                    <span className="text-meta text-ink-muted">
-                      {ON_DELETE.find((one) => one.value === (row.onDelete ?? "restrict"))?.short}
-                    </span>
-                  </span>
-                ) : row.values ? (
-                  <span className="flex flex-col gap-1">
-                    <span>{typeLabel(row.type)}</span>
-                    <span className="inline-flex flex-wrap gap-1">
-                      {row.values.map((one) => (
-                        <ValueChip key={one.value} color={enumColor(one.color)}>
-                          {one.label ?? one.value}
-                        </ValueChip>
-                      ))}
-                    </span>
-                    {row.retiredValues && row.retiredValues.length > 0 ? (
-                      <span className="text-meta text-ink-muted">
-                        No longer offered, kept on the rows that hold them:{" "}
-                        {row.retiredValues.join(", ")}
-                      </span>
-                    ) : null}
-                  </span>
-                ) : (
-                  typeLabel(row.type)
-                ),
-            },
-            {
-              header: "Rules",
-              priority: 2,
-              cell: (row) =>
-                [row.required ? "Required" : "", row.unique ? "No two rows alike" : ""]
-                  .filter(Boolean)
-                  .join(", "),
-            },
-            {
-              header: "When not given",
-              priority: 3,
-              cell: (row) =>
-                row.default === null || row.default === undefined ? (
-                  ""
-                ) : (
-                  <Code>{JSON.stringify(row.default)}</Code>
-                ),
-            },
-            ...(editable
-              ? [
-                  {
-                    header: "",
-                    align: "end" as const,
-                    cell: (row: TableColumn) => {
-                      const actions = columnActions(row);
-                      return (
-                        <>
-                          <span className="hidden gap-1 sm:inline-flex">
-                            {actions.map((one) => (
-                              <Button
-                                key={one.label}
-                                size="small"
-                                variant={one.danger ? "danger" : "quiet"}
-                                {...(one.disabled ? { disabled: true } : {})}
-                                onClick={one.onSelect}
-                              >
-                                {one.label}
-                              </Button>
-                            ))}
-                          </span>
-                          {/* A phone has no room for four buttons: one menu holds them. */}
-                          <span className="sm:hidden">
-                            <Menu
-                              ariaLabel={`Actions for ${row.name}`}
-                              align="end"
-                              triggerClassName="inline-flex size-9 items-center justify-center rounded-control text-ink-muted hover:bg-sunken hover:text-ink"
-                              label={<Ellipsis aria-hidden="true" size={16} />}
-                              items={actions.filter((one) => !one.disabled)}
-                            />
-                          </span>
-                        </>
-                      );
-                    },
-                  },
-                ]
-              : []),
-          ]}
-        />
+        <ColumnsTable rows={active} actionsOf={editable ? columnActions : undefined} />
         <p className="m-0 text-body-sm text-ink-muted">
           Every table also has <Code>{"id"}</Code>, <Code>{"created_at"}</Code> and{" "}
-          <Code>{"updated_at"}</Code>, which the platform fills in.
+          <Code>{"updated_at"}</Code>, which Volvel fills in.
         </p>
       </section>
 
@@ -2080,13 +2908,14 @@ function Definition({
             framed
             label="Retired columns"
             rows={retired}
-            rowKey={(row) => row.name}
+            rowKey={(row) => row.id ?? row.name}
             empty={null}
             columns={[
               { header: "Column", cell: (row) => <Code>{row.name}</Code> },
-              { header: "Held", cell: (row) => typeLabel(row.type) },
+              { header: "Held", priority: 2, cell: (row) => typeLabel(row.type) },
               {
                 header: "Still holds",
+                priority: 2,
                 cell: (row) => `${count(row.held ?? 0)} ${row.held === 1 ? "value" : "values"}`,
               },
               {
@@ -2102,6 +2931,7 @@ function Definition({
                           void quietly(
                             change(
                               (body) => {
+                                takenColumn(body, row.name);
                                 body.columns[row.name] = {
                                   type: row.type,
                                   ...(row.references ? { references: row.references } : {}),
@@ -2119,7 +2949,13 @@ function Definition({
                         Bring back
                       </Button>
                     ) : null}
-                    <PurgeButton root={root} table={table.name} column={row.name} onDone={reload} />
+                    <PurgeButton
+                      root={root}
+                      table={table.name}
+                      column={row.name}
+                      {...(row.id ? { columnId: row.id } : {})}
+                      onDone={reload}
+                    />
                   </span>
                 ),
               },
@@ -2166,6 +3002,86 @@ function Definition({
         )}
       </section>
 
+      <section className="flex flex-col gap-2" aria-labelledby="indexes-heading">
+        <h2
+          id="indexes-heading"
+          ref={indexesHeading}
+          tabIndex={-1}
+          className="m-0 text-title font-semibold"
+        >
+          Indexes
+        </h2>
+        <p className="m-0 max-w-measure text-ink-muted">
+          An index on the columns rows are filtered or sorted by keeps a read of a large table from
+          being stopped for taking too long. It makes writes a little slower.
+        </p>
+        {indexes.length === 0 ? (
+          <p className="m-0 text-ink-muted">No indexes. Only the ID is indexed.</p>
+        ) : (
+          <DataTable<{ columns: string[] }>
+            variant="static"
+            framed
+            label="Indexes"
+            rows={indexes.map((columns) => ({ columns }))}
+            rowKey={(row) => row.columns.join(",")}
+            empty={null}
+            columns={[
+              {
+                header: "Columns, in order",
+                cell: (row) => <Code>{row.columns.join(", ")}</Code>,
+              },
+              ...(editable
+                ? [
+                    {
+                      header: "",
+                      align: "end" as const,
+                      cell: (row: { columns: string[] }) => (
+                        <Button
+                          size="small"
+                          variant="quiet"
+                          aria-label={`Remove the index on ${row.columns.join(", ")}`}
+                          onClick={() =>
+                            void quietly(
+                              change(
+                                (body) => {
+                                  const left = (body.indexes ?? []).filter(
+                                    (one) => one.join(",") !== row.columns.join(","),
+                                  );
+                                  if (left.length > 0) body.indexes = left;
+                                  else delete body.indexes;
+                                },
+                                { label: `removing the index on ${row.columns.join(", ")}` },
+                              ),
+                            )
+                          }
+                        >
+                          Remove
+                        </Button>
+                      ),
+                    },
+                  ]
+                : []),
+            ]}
+          />
+        )}
+        {editable ? (
+          <div>
+            <Button
+              size="small"
+              disabled={indexes.length >= MAX_INDEXES}
+              onClick={() => setIndexing(true)}
+            >
+              Add an index
+            </Button>
+            {indexes.length >= MAX_INDEXES ? (
+              <span className="ml-2 text-body-sm text-ink-muted">
+                A table has at most {MAX_INDEXES} indexes. Remove one to add another.
+              </span>
+            ) : null}
+          </div>
+        ) : null}
+      </section>
+
       <section className="flex flex-col gap-3">
         <h2 className="m-0 text-title font-semibold">Who sees rows</h2>
         {editable ? (
@@ -2174,7 +3090,7 @@ function Definition({
             policy={table.policy as Policy}
             columns={active}
             onSave={(policy) => {
-              rules.current.own = JSON.stringify(policy);
+              rules.current.own = sameJson(policy);
               return change(
                 (body) => {
                   body.policy = policy;
@@ -2196,7 +3112,16 @@ function Definition({
           </div>
         )}
         {table.policy.type !== "open" && tenantBase ? (
-          <SeeItAs root={root} table={table.name} usersPath={`${tenantBase}/end-users?limit=200`} />
+          <SeeItAs
+            root={root}
+            table={table.name}
+            usersPath={`${tenantBase}/end-users`}
+            columns={table.columns}
+            groupsPaths={{
+              endUsers: `${tenantBase}/end-user-groups`,
+              members: `${tenantBase}/groups`,
+            }}
+          />
         ) : null}
       </section>
 
@@ -2260,6 +3185,65 @@ function Definition({
           )
         }
       </Closing>
+      <IndexDialog
+        key={indexes.length}
+        open={indexing}
+        columns={[...active.map((column) => column.name), "created_at", "updated_at", "id"]}
+        existing={indexes}
+        onClose={() => setIndexing(false)}
+        onSave={(columns) =>
+          change(
+            (body) => {
+              body.indexes = [...(body.indexes ?? []), columns];
+            },
+            { report: false, label: `the index on ${columns.join(", ")}` },
+          )
+        }
+      />
+      <Closing subject={rulesOf}>
+        {(column, shown) => (
+          <ColumnRulesDialog
+            key={column.name}
+            open={shown}
+            column={column}
+            onClose={() => setRulesOf(undefined)}
+            onSave={(edit) =>
+              change(
+                (body) => {
+                  const definition = body.columns[column.name];
+                  if (definition) edit(definition);
+                },
+                { report: false, label: `the rules of ${column.name}` },
+              )
+            }
+          />
+        )}
+      </Closing>
+      <Closing subject={typeOf}>
+        {(column, shown) => (
+          <ChangeTypeDialog
+            key={column.name}
+            root={root}
+            open={shown}
+            column={column}
+            onClose={() => setTypeOf(undefined)}
+            onSave={(edit) =>
+              change(
+                (body) => {
+                  const definition = body.columns[column.name];
+                  if (definition) edit(definition);
+                },
+                {
+                  report: false,
+                  label: column.references
+                    ? `the table ${column.name} points to`
+                    : `the type of ${column.name}`,
+                },
+              )
+            }
+          />
+        )}
+      </Closing>
       <CreateDialog
         open={adding}
         onClose={() => setAdding(false)}
@@ -2288,14 +3272,7 @@ function Definition({
               when: (values) => values.type === "reference",
               options: ON_DELETE.map((one) => ({ value: one.value, label: one.label })),
             },
-            {
-              name: "values",
-              label: "Values",
-              required: false,
-              placeholder: "new, paid, shipped",
-              hint: "Separated by commas, in the order they are offered. Labels and colors are set afterwards, under Values.",
-              when: (values) => values.type === "enum" || values.type === "enum_list",
-            },
+            VALUES_FIELD,
             {
               name: "required",
               label: "Must every row have one?",
@@ -2305,12 +3282,33 @@ function Definition({
               ],
             },
             {
+              name: "unique",
+              label: "Must every row's value be different?",
+              options: [
+                { value: "no", label: "No" },
+                { value: "yes", label: "Yes: no two rows alike" },
+              ],
+              when: (values) => !["json", "file", "enum_list"].includes(values.type ?? "text"),
+            },
+            {
               name: "fallback",
               label: "Value when none is given",
               required: false,
-              hint: "Optional.",
+              when: (values) => !hasNoDefault(values.type ?? "text"),
+              render: ({ value, values, error, onChange }) => (
+                <DefaultField
+                  // A new control when the type changes: a yes/no and a date hold different text.
+                  key={values.type ?? "text"}
+                  type={values.type ?? "text"}
+                  values={listOf(values.values ?? "")}
+                  value={value}
+                  error={error}
+                  onChange={onChange}
+                />
+              ),
             },
           ],
+          done: (_result, sent) => `The column ${sent.name} was added.`,
           submit: ({
             name = "",
             type = "text",
@@ -2318,10 +3316,12 @@ function Definition({
             onDelete,
             values,
             required,
+            unique,
             fallback,
           }) =>
             change(
               (body) => {
+                takenColumn(body, name);
                 body.columns[name] = {
                   type,
                   ...(type === "reference" && references ? { references } : {}),
@@ -2332,7 +3332,10 @@ function Definition({
                     ? { values: listOf(values ?? "") }
                     : {}),
                   ...(required === "yes" ? { required: true } : {}),
-                  ...(fallback ? { default: parseValue(type, fallback) } : {}),
+                  ...(unique === "yes" ? { unique: true } : {}),
+                  ...(fallback && !hasNoDefault(type)
+                    ? { default: parseValue(type, fallback) }
+                    : {}),
                 };
               },
               { label: `adding ${name}` },
@@ -2348,8 +3351,11 @@ function Definition({
 interface SourceBinding {
   path: string;
   description: string;
+  /** Some resource of the workspace declares it, so there is a declaration to edit. */
   defined: boolean;
   bound: boolean;
+  /** Declared by a workspace linked to this one: it arrives with the next promotion. */
+  arrives?: boolean;
   health?: {
     ok: boolean;
     problem: string | null;
@@ -2383,9 +3389,13 @@ const SOURCE_FIELDS = [
   {
     name: "ssl",
     label: "Encrypt the connection",
+    // A new source starts encrypted. The server's certificate is checked, so a database with a
+    // private certificate authority needs No until that is arranged (D41).
+    initial: "yes",
+    hint: "The server's certificate is checked. Choose No for a database whose certificate a public authority did not sign.",
     options: [
-      { value: "no", label: "No" },
       { value: "yes", label: "Yes" },
+      { value: "no", label: "No" },
     ],
   },
 ] satisfies CreateConfig["fields"];
@@ -2413,21 +3423,39 @@ function sourceBody({
   };
 }
 
+/** Whether a password kept for the source would reach somewhere else (the server's D10, as the form sees it). */
+function pointsElsewhere(was: SourceBinding["config"], now: Record<string, string | undefined>) {
+  if (!was) return false;
+  return (
+    (was.host ?? "").toLowerCase() !== (now.host ?? "").toLowerCase() ||
+    (was.port ?? 5432) !== (now.port ? Number(now.port) : 5432) ||
+    was.user !== now.user ||
+    (was.ssl === true && now.ssl !== "yes")
+  );
+}
+
 /** Changes how a connected source is reached, from what it is now. The password stays unless one is typed. */
 function ChangeSource({
   root,
   row,
   onDone,
+  need,
 }: {
   root: string;
   row: SourceBinding;
   onDone: () => void;
+  need: { can: boolean; reason?: string | undefined };
 }) {
   const [open, setOpen] = useState(false);
   const config = row.config;
   return (
     <>
-      <Button size="small" onClick={() => setOpen(true)}>
+      <Button
+        size="small"
+        disabled={!need.can}
+        {...(need.reason ? { tooltip: need.reason } : {})}
+        onClick={() => setOpen(true)}
+      >
         Change
       </Button>
       <CreateDialog
@@ -2447,9 +3475,79 @@ function ChangeSource({
         }}
         config={{
           action: `Change ${row.path}`,
-          description: `How ${row.path} is reached. Leave the password empty to keep the stored one. Scripts that use it read the new details at once.`,
-          fields: SOURCE_FIELDS,
+          description: `How ${row.path} is reached. Leave the password empty to keep the stored one. It is dropped when the host, port or user changes or encryption is turned off: then type it again. Scripts that use it read the new details at once.`,
+          fields: [
+            ...SOURCE_FIELDS,
+            ...(row.hasPassword
+              ? [
+                  {
+                    name: "removePassword",
+                    label: "Remove the stored password",
+                    type: "checkbox" as const,
+                    required: false,
+                    hint: "For a database that lets this user in without one. Scripts that use it then connect with no password.",
+                  },
+                ]
+              : []),
+          ],
           done: () => `${row.path} was changed.`,
+          submit: (values) => {
+            // The stored password does not go to another address: it is asked for here, not lost in silence.
+            if (row.hasPassword && !values.password && pointsElsewhere(config, values))
+              throw new Error(
+                "The host, port, user or encryption changed, so the stored password will not be sent there. Type the password again.",
+              );
+            const body = sourceBody(values);
+            if (values.removePassword === "true" && values.password)
+              throw new Error("Either type a new password or remove the stored one, not both.");
+            return api.put(
+              `${root}/data-source-bindings/${row.path}`,
+              values.removePassword === "true" ? { ...body, password: null } : body,
+            );
+          },
+        }}
+      />
+    </>
+  );
+}
+
+/** Connects a source that is declared and not yet reached: its own button, with its name already in. */
+function ConnectSource({
+  root,
+  row,
+  onDone,
+}: {
+  root: string;
+  row: SourceBinding;
+  onDone: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const need = useSourceWrite(root);
+  return (
+    <>
+      <Button
+        size="small"
+        variant="primary"
+        disabled={!need.can}
+        {...(need.reason ? { tooltip: need.reason } : {})}
+        aria-label={`Connect ${row.path}`}
+        onClick={() => setOpen(true)}
+      >
+        Connect
+      </Button>
+      <CreateDialog
+        open={open}
+        onClose={() => setOpen(false)}
+        onCreated={() => {
+          setOpen(false);
+          onDone();
+        }}
+        config={{
+          action: `Connect ${row.path}`,
+          description:
+            "Where this workspace reaches the database. The password is stored sealed and never shown again. Volvel never changes the database's structure.",
+          fields: SOURCE_FIELDS,
+          done: () => `${row.path} was connected.`,
           submit: (values) =>
             api.put(`${root}/data-source-bindings/${row.path}`, sourceBody(values)),
         }}
@@ -2463,16 +3561,20 @@ function TestSource({
   root,
   row,
   onDone,
+  need,
 }: {
   root: string;
   row: SourceBinding;
   onDone: () => void;
+  need: { can: boolean; reason?: string | undefined };
 }) {
   const [testing, setTesting] = useState(false);
   return (
     <Button
       size="small"
       loading={testing}
+      disabled={!need.can}
+      {...(need.reason ? { tooltip: need.reason } : {})}
       onClick={async () => {
         setTesting(true);
         try {
@@ -2496,23 +3598,45 @@ function TestSource({
 }
 
 export function Sources({ root, link }: { root: string; link: string }) {
+  const sourceUses = useReferences(root, "data_source");
+  // Declaring a source is a resource of the workspace, which `PUT resources/*` guards.
+  const declare = useNeeds({
+    base: root,
+    permission: "resource:write",
+    what: "this workspace's data sources",
+  });
   return (
     <ListScreen<SourceBinding>
       title="Data sources"
-      description="Databases outside the platform that this workspace reads and writes. The address and password are set here, never in the repository, so dev and production can point at different databases."
+      needs={{ base: root, permission: "data_source:write", what: "this workspace's data sources" }}
+      setupField="path"
+      description="Databases outside Volvel that this workspace reads and writes. The address and password are set here, never in the repository, so dev and production can point at different databases."
       path={`${root}/data-source-bindings`}
       rowKey={(row) => row.path}
+      action={
+        <Button
+          disabled={!declare.can}
+          {...(declare.reason ? { tooltip: declare.reason } : {})}
+          onClick={() => navigate(`${link}/resources/new/data_source`)}
+        >
+          Declare source
+        </Button>
+      }
       columns={[
         {
           header: "Source",
-          cell: (row) =>
-            row.bound ? (
-              <Link to={`${link}/sources/${row.path}`} className="font-medium text-action">
-                {row.path}
-              </Link>
-            ) : (
-              <Code>{row.path}</Code>
-            ),
+          cell: (row) => (
+            <span className="inline-flex flex-wrap items-center gap-2">
+              {row.bound ? (
+                <Link to={`${link}/sources/${row.path}`} className="font-medium text-action">
+                  {row.path}
+                </Link>
+              ) : (
+                <Code>{row.path}</Code>
+              )}
+              {row.arrives ? <Tag tone="neutral">Arrives with the next promotion</Tag> : null}
+            </span>
+          ),
         },
         // On a phone a source keeps its name and its health; where it points, from a tablet up.
         {
@@ -2531,6 +3655,18 @@ export function Sources({ root, link }: { root: string; link: string }) {
             ),
         },
         {
+          header: "Used by",
+          priority: 2,
+          cell: (row) => (
+            <UsedBy
+              uses={sourceUses(row.path)}
+              failed={sourceUses.failed}
+              loaded={sourceUses.loaded}
+              link={link}
+            />
+          ),
+        },
+        {
           header: "Password",
           priority: 3,
           cell: (row) => (row.hasPassword ? "Set" : row.bound ? "None" : ""),
@@ -2540,20 +3676,36 @@ export function Sources({ root, link }: { root: string; link: string }) {
           cell: (row) => (row.bound ? <HealthCell health={row.health} /> : ""),
         },
       ]}
-      rowActions={(row, reload) =>
-        row.bound ? (
-          <span className="inline-flex gap-2">
-            <TestSource root={root} row={row} onDone={reload} />
-            <ChangeSource root={root} row={row} onDone={reload} />
-            <RemoveButton
-              label="Unbind"
-              confirm={`Unbind "${row.path}"? Scripts that use it will fail until it is bound again. Nothing in that database changes.`}
-              run={() => api.delete(`${root}/data-source-bindings/${row.path}`)}
-              onDone={reload}
-            />
-          </span>
-        ) : null
-      }
+      rowActions={(row, reload) => (
+        <span className="inline-flex flex-wrap items-center gap-2">
+          {row.defined ? (
+            declare.can ? (
+              <Link
+                to={`${link}/resources/edit/data_source/${row.path}`}
+                aria-label={`Edit ${row.path}`}
+                className="text-action"
+              >
+                Edit
+              </Link>
+            ) : (
+              <Button
+                size="small"
+                disabled
+                aria-label={`Edit ${row.path}`}
+                {...(declare.reason ? { tooltip: declare.reason } : {})}
+              >
+                Edit
+              </Button>
+            )
+          ) : null}
+          {row.bound ? (
+            // The list's column of actions says where they sit and wraps them (kit/rowActions.tsx).
+            <SourceActions root={root} row={row} onDone={reload} />
+          ) : (
+            <ConnectSource root={root} row={row} onDone={reload} />
+          )}
+        </span>
+      )}
       empty={{
         title: "No data sources yet",
         text: "Connect a Postgres database you already have. Its tables can then be browsed here and used by scripts.",
@@ -2561,7 +3713,7 @@ export function Sources({ root, link }: { root: string; link: string }) {
       create={{
         action: "Connect database",
         description:
-          "Connecting a source that is already connected replaces its details. Leave the password empty to keep the stored one. The platform never changes the database's structure.",
+          "Connecting a source that is already connected replaces its details. Leave the password empty to keep the stored one. It is dropped when the host, port or user changes or encryption is turned off: then type it again. Volvel never changes the database's structure.",
         fields: [
           {
             name: "path",
@@ -2585,10 +3737,62 @@ export function Sources({ root, link }: { root: string; link: string }) {
   );
 }
 
+/** What the server asks to test, connect, change or remove a source here: `data_source:write`. */
+function useSourceWrite(root: string) {
+  return useNeeds({
+    base: root,
+    permission: "data_source:write",
+    what: "this workspace's data sources",
+  });
+}
+
+/** Test, Change and Remove from here of a bound data source: the list's row and the source's own page share them. */
+function SourceActions({
+  root,
+  row,
+  onDone,
+  onUnbound = onDone,
+  className = "",
+}: {
+  root: string;
+  row: SourceBinding;
+  onDone: () => void;
+  /** Told once the source is unbound, when that leaves nothing to show (its page). */
+  onUnbound?: () => void;
+  className?: string;
+}) {
+  const need = useSourceWrite(root);
+  return (
+    <span className={`inline-flex flex-wrap items-center gap-2 ${className}`}>
+      <TestSource root={root} row={row} onDone={onDone} need={need} />
+      <ChangeSource root={root} row={row} onDone={onDone} need={need} />
+      <RemoveButton
+        label="Remove from here"
+        disabled={need.can ? undefined : need.reason}
+        confirm={`Remove "${row.path}" from here? Scripts that use it will fail until it is set up again. Nothing in that database changes.`}
+        run={() => api.delete(`${root}/data-source-bindings/${row.path}`)}
+        onDone={onUnbound}
+      />
+    </span>
+  );
+}
+
 interface SourceTable {
   name: string;
   key: string | null;
-  columns: RowColumn[];
+  columns: (RowColumn & { hasDefault?: boolean })[];
+}
+
+/**
+ * What a source that could not be read says. An answer with no reason of its own, from a source
+ * set to encrypt, most likely met a server that does not offer encrypted connections: said so, with
+ * the way out, instead of "Internal Server Error".
+ */
+export function sourceFailure(message: string, binding: SourceBinding | undefined): string {
+  if (!/^internal server error\.?$/i.test(message.trim())) return message;
+  return binding?.config?.ssl
+    ? `${binding.path} could not be read. It is set to encrypt, and its server may not support encrypted connections. Choose Change and turn Encrypt off, or ask whoever runs the database.`
+    : message;
 }
 
 export function SourceView({ root, path, link }: { root: string; path: string; link: string }) {
@@ -2596,22 +3800,38 @@ export function SourceView({ root, path, link }: { root: string; path: string; l
   const [chosen, setChosen] = useUrlParam("item", undefined, { push: true });
   const items = tables.data?.items ?? [];
   const table = items.find((candidate) => candidate.name === chosen) ?? items[0];
+  // What is done to the source is done here as in the list: its binding is read for the buttons.
+  const bindings = useLoad<{ items: SourceBinding[] }>(`${root}/data-source-bindings`);
+  const binding = bindings.data?.items.find((one) => one.path === path);
 
   return (
     <Page
       fill
       helpKey="source"
       title={path}
-      description="An external database. Rows are read and written there directly. The platform does not change its structure, and its own access rules apply."
+      description="An external database. Rows are read and written there directly. Volvel does not change its structure, and its own access rules apply."
       action={
-        <Link to={`${link}/sources`} className="text-action">
-          All data sources
-        </Link>
+        <span className="flex flex-wrap items-center gap-3">
+          {binding?.bound ? (
+            <SourceActions
+              root={root}
+              row={binding}
+              onDone={() => {
+                bindings.reload();
+                tables.reload();
+              }}
+              onUnbound={() => navigate(`${link}/sources`)}
+            />
+          ) : null}
+          <Link to={`${link}/sources`} className="text-action">
+            All data sources
+          </Link>
+        </span>
       }
     >
       {tables.error ? (
         <Notice tone="danger" action={<Button onClick={tables.reload}>Try again</Button>}>
-          {tables.error.message}
+          {sourceFailure(tables.error.message, binding)}
         </Notice>
       ) : !tables.data ? (
         <Loading />
@@ -2648,19 +3868,30 @@ export function SourceView({ root, path, link }: { root: string; path: string; l
               fill
               key={table.name}
               label={`Rows of ${table.name}`}
-              rowsPath={`${root}/source-rows/${table.name}/${path}`}
+              rowsPath={`${root}/source-rows/${encodeURIComponent(table.name)}/${path}`}
               rowPath={
                 table.key
-                  ? (key) => `${root}/source-row/${table.name}/${encodeURIComponent(key)}/${path}`
+                  ? (key) =>
+                      `${root}/source-row/${encodeURIComponent(table.name)}/${encodeURIComponent(key)}/${path}`
                   : null
               }
               keyColumn={table.key}
-              columns={table.columns}
+              needs={{
+                base: root,
+                permission: "data_source:write",
+                what: "the rows of this table",
+              }}
+              canAdd
+              // A column the database fills in (a sequence, a default) is not asked for.
+              columns={table.columns.map((column) => ({
+                ...column,
+                required: column.required && !column.hasDefault,
+              }))}
               {...(table.key
                 ? {}
                 : {
                     readOnlyNote:
-                      "This table has no primary key, so rows can be read and added but not changed or deleted.",
+                      "This table has no primary key, so rows can be added but not changed or deleted.",
                   })}
             />
           </div>
@@ -2671,13 +3902,18 @@ export function SourceView({ root, path, link }: { root: string; path: string; l
 }
 
 type ViewsOf = { tenantId: string; workspaceId: string; list: string };
-/** A table's rows have saved views of their own, named for the table, kept to what a list name may be. */
-function viewsOf(rowsPath: string): ViewsOf | undefined {
+/** A table's rows have saved views of their own, named for the table, kept to what a list name may be (a letter, then up to 39 letters, digits and dashes). */
+export function viewsOf(rowsPath: string, tableId?: string): ViewsOf | undefined {
   const match = /^\/tenants\/([^/]+)\/workspaces\/([^/]+)\/rows\/(.+)$/.exec(rowsPath);
   if (!match) return undefined;
   const [, tenantId, workspaceId, table] = match as unknown as [string, string, string, string];
-  const slug = `rows-${table.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`
-    .slice(0, 40)
-    .replace(/-+$/, "");
+  // By what the table is: two names that differ only in marks are two lists, and a renamed
+  // table keeps its views. The random end of its ID, since the start of one is a time.
+  const slug = tableId
+    ? `rows-${tableId
+        .replace(/[^a-z0-9]/gi, "")
+        .toLowerCase()
+        .slice(-20)}`
+    : `rows-${table.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`.slice(0, 40).replace(/-+$/, "");
   return { tenantId, workspaceId, list: slug };
 }

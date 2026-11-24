@@ -7,7 +7,8 @@
       "type": "object",
       "properties": {
         "type": {
-          "const": "webhook"
+          "const": "webhook",
+          "description": "Starts when its address is called."
         },
         "description": {
           "type": "string",
@@ -17,10 +18,12 @@
         "script": {
           "type": "string",
           "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
-          "maxLength": 255
+          "maxLength": 255,
+          "description": "The script it starts."
         },
         "enabled": {
-          "type": "boolean"
+          "type": "boolean",
+          "description": "Whether it starts anything. Default true. Turn it off to pause it without deleting it."
         },
         "tags": {
           "type": "array",
@@ -53,7 +56,8 @@
               "enum": [
                 "hmac-sha256",
                 "hmac-sha1"
-              ]
+              ],
+              "description": "The way the signature is made: HMAC with SHA-256, or with SHA-1."
             },
             "header": {
               "type": "string",
@@ -114,7 +118,8 @@
       "type": "object",
       "properties": {
         "type": {
-          "const": "event"
+          "const": "event",
+          "description": "Starts when an event is published."
         },
         "description": {
           "type": "string",
@@ -124,7 +129,8 @@
         "script": {
           "type": "string",
           "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
-          "maxLength": 255
+          "maxLength": 255,
+          "description": "The script it starts."
         },
         "event": {
           "type": "string",
@@ -139,7 +145,8 @@
           "description": "CEL over `event`. The script runs only when it is true."
         },
         "enabled": {
-          "type": "boolean"
+          "type": "boolean",
+          "description": "Whether it starts anything. Default true. Turn it off to pause it without deleting it."
         },
         "tags": {
           "type": "array",
@@ -163,27 +170,33 @@
       "type": "object",
       "properties": {
         "type": {
-          "const": "form"
+          "const": "form",
+          "description": "Starts when someone sends a form Volvel serves."
         },
         "script": {
           "type": "string",
           "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
-          "maxLength": 255
+          "maxLength": 255,
+          "description": "The script it starts."
         },
         "enabled": {
-          "type": "boolean"
+          "type": "boolean",
+          "description": "Whether it starts anything. Default true. Turn it off to pause it without deleting it."
         },
         "title": {
           "type": "string",
           "minLength": 1,
-          "maxLength": 120
+          "maxLength": 120,
+          "description": "The heading of the form's page."
         },
         "description": {
           "type": "string",
-          "maxLength": 1000
+          "maxLength": 1000,
+          "description": "What is said under the heading, to whoever fills the form in."
         },
         "fields": {
           "type": "array",
+          "description": "What the form asks, in order. Each answer is a field of the input.",
           "minItems": 1,
           "maxItems": 30,
           "items": {
@@ -198,7 +211,8 @@
               "label": {
                 "type": "string",
                 "minLength": 1,
-                "maxLength": 120
+                "maxLength": 120,
+                "description": "What the field is called on the page."
               },
               "type": {
                 "enum": [
@@ -209,14 +223,17 @@
                   "date",
                   "select",
                   "checkbox"
-                ]
+                ],
+                "description": "What kind of answer it takes: a line of text, several lines, an email address, a number, a date, one of a list or a checkbox."
               },
               "required": {
-                "type": "boolean"
+                "type": "boolean",
+                "description": "Whether the form can be sent with it empty."
               },
               "help": {
                 "type": "string",
-                "maxLength": 300
+                "maxLength": 300,
+                "description": "A line under the field that says what to put in it."
               },
               "options": {
                 "type": "array",
@@ -242,7 +259,8 @@
         "submitLabel": {
           "type": "string",
           "minLength": 1,
-          "maxLength": 40
+          "maxLength": 40,
+          "description": "What the button that sends the form says."
         },
         "success": {
           "type": "string",

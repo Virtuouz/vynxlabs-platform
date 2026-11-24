@@ -1,6 +1,9 @@
-import { signInWithPassword } from "./sign-in.ts";
+import { signInAs } from "./as.ts";
+import { fernhillTenant } from "./fernhill.ts";
 import { expect, type Page, test } from "./test.ts";
 import { expectNoAxeViolations } from "./visual.ts";
+
+const TENANT = fernhillTenant();
 
 /**
  * "Group rows by" (phase 28, asked for after the first look), walked on the Fernhill example in
@@ -8,7 +11,6 @@ import { expectNoAxeViolations } from "./visual.ts";
  * List, drawn under headings on the canvas, counted over every page, and kept after a reload.
  */
 
-const PASSWORD = process.env.E2E_FERNHILL_PASSWORD ?? "fernhill-demo-2026";
 const stamp = Date.now().toString(36);
 const PATH = `screens/group-${stamp}`;
 
@@ -16,6 +18,18 @@ const PATH = `screens/group-${stamp}`;
 const call = (page: Page, method: string, path: string, body?: unknown): Promise<any> =>
   page.evaluate(
     async ([method, path, body]) => {
+      // A draft save names the draft it saw: its revision now, or none when there is none.
+      if (
+        method === "PUT" &&
+        String(path).includes("/drafts/") &&
+        body &&
+        typeof body === "object" &&
+        !("revision" in body) &&
+        !("create" in body)
+      ) {
+        const seen = await fetch(`/api/v1${path}`);
+        if (seen.ok) body = { ...body, revision: (await seen.json()).revision };
+      }
       const response = await fetch(`/api/v1${path}`, {
         method: method as string,
         headers: body ? { "content-type": "application/json" } : {},
@@ -90,10 +104,10 @@ const groupBy = async (id: string, column: string) => {
 
 test.beforeAll(async ({ browser }) => {
   owner = await (await browser.newContext({ viewport: { width: 1440, height: 1000 } })).newPage();
-  await signInWithPassword(owner, "maya.brooks@fernhill.example", PASSWORD);
-  const tenants = await call(owner, "GET", "/tenants?limit=200");
-  const tenant = tenants.items.find((one: { slug: string }) => one.slug === "fernhill");
-  test.skip(!tenant, "No tenant fernhill: set up the Fernhill example first.");
+  await signInAs(owner, "maya.brooks@fernhill.example");
+  const tenants = await call(owner, "GET", `/tenants?search=${TENANT}&limit=200`);
+  const tenant = tenants.items.find((one: { slug: string }) => one.slug === TENANT);
+  test.skip(!tenant, `No tenant ${TENANT}: set up the Fernhill example first.`);
   const { items } = await call(owner, "GET", `/tenants/${tenant.id}/workspaces`);
   const sandbox = items.find((one: { slug: string }) => one.slug === "sandbox");
   W = `/tenants/${tenant.id}/workspaces/${sandbox.id}`;
@@ -110,7 +124,7 @@ test.afterAll(async () => {
   await owner?.context().close();
 });
 
-test("POLISH-009: a Table's rows are grouped by day from the drawer, each day with how many it has, and kept after a reload", async () => {
+test("POLISH-009: a Table's rows are grouped by day from the drawer, each day with how many it has, and kept after a reload @fernhill @builder", async () => {
   await owner.goto(`${L}/screens/${PATH}`);
   await expect(cell("table").getByRole("row").nth(3)).toBeVisible();
   await expect(groups("table")).toHaveCount(0);
@@ -158,7 +172,7 @@ test("POLISH-009: a Table's rows are grouped by day from the drawer, each day wi
   await expectNoAxeViolations(owner, "a page with grouped rows");
 });
 
-test("POLISH-009: a List is grouped by a choice, as cards too, and Nothing takes it off", async () => {
+test("POLISH-009: a List is grouped by a choice, as cards too, and Nothing takes it off @fernhill @builder", async () => {
   await owner.goto(`${L}/screens/${PATH}`);
   const editor = await groupBy("list", "clinic");
   await owner.keyboard.press("Escape");

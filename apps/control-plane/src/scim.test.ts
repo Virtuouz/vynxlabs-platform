@@ -348,6 +348,12 @@ describe("setting a provider up to push", () => {
       bulk: { supported: false },
       filter: { supported: true, maxResults: 200 },
     });
+    // A provider shows this address to its administrator, so it must lead somewhere.
+    const documentation: string | undefined = config.body.documentationUri;
+    if (documentation) {
+      const there = await t.app.inject({ url: new URL(documentation).pathname });
+      expect(there.statusCode, `${documentation} answers`).toBeLessThan(400);
+    }
     expect(
       (await push(staff, "GET", "/ResourceTypes")).body.Resources.map((r: Any) => r.id),
     ).toEqual(["User", "Group"]);
@@ -452,6 +458,11 @@ describe("a tenant's members, pushed as Entra pushes them", () => {
       },
     });
 
+    // The audit log names the provider as who acted, not an empty actor.
+    const shown = (await alice.get(`/tenants/${tenant}/audit?action=scim.user_pushed`)).body
+      .items[0];
+    expect(shown.actorLabel).toBe("SCIM: Acme Staff");
+
     // Found again by either name, whatever the case.
     expect(
       (await push(staff, "GET", `/Users?filter=userName eq "bob@ACME.example"`)).body.Resources[0]
@@ -467,6 +478,48 @@ describe("a tenant's members, pushed as Entra pushes them", () => {
     // The person signs in for the first time already tied: by the provider's own name for them.
     const signedIn = await signInAs(staff, OBJECT_ID, "someone-else@elsewhere.example");
     expect(signedIn).toMatchObject({ principalId: bob, created: false, linked: false });
+  });
+
+  test("a name a directory pushes is changed there; a person's own is changed by them, and their sessions are listed at any age (ACC-MP2, ACC-MP3)", async () => {
+    // Bob is pushed, so his name is the directory's. He is given a password to sign in with.
+    await sql`
+      insert into member_account (id, member_id, account_id, provider_id, password, created_at, updated_at)
+      select ${newId()}, ${bob}, ${bob}, 'credential', password, now(), now()
+      from member_account
+      where provider_id = 'credential'
+        and member_id = (select id from member where email = 'alice@acme.example')
+    `.execute(t.db);
+    const asBob = await t.signIn("bob@acme.example", PASSWORD);
+    expect((await asBob.get("/me")).body.principal.nameFrom).toBe("Acme Staff");
+    const refused = await asBob.post("/auth/update-user", { name: "Robert" });
+    expect(refused.status).toBe(403);
+    expect(refused.body.detail).toBe("Your name comes from Acme Staff. Change it there.");
+    expect((await asBob.get("/me")).body.principal.name).toBe("Bob Stone");
+    // Alice is nobody's push: her name is hers, and /me says so.
+    expect((await alice.get("/me")).body.principal.nameFrom).toBeNull();
+    expect((await alice.post("/auth/update-user", { name: "Alice A" })).status).toBe(200);
+    expect((await alice.get("/me")).body.principal.name).toBe("Alice A");
+    // A session made two days ago is still listed and still ended by its owner.
+    await sql`
+      update member_session set created_at = now() - interval '2 days'
+      where member_id = (select id from member where email = 'alice@acme.example')
+    `.execute(t.db);
+    const listed = await alice.get("/auth/list-sessions");
+    expect(listed.status, JSON.stringify(listed.body)).toBe(200);
+    expect((listed.body as Any[]).length).toBeGreaterThan(0);
+    expect((await lastAudit("member.renamed")).details).toEqual({ name: "Alice A" });
+    const second = await t.signIn("alice@acme.example", PASSWORD);
+    expect(((await alice.get("/auth/list-sessions")).body as Any[]).length).toBe(2);
+    const secondToken = ((await second.get("/auth/get-session")).body as Any).session.token;
+    const ended = await alice.post("/auth/revoke-session", { token: secondToken });
+    expect(ended.status).toBe(200);
+    expect((await second.get("/me")).status).toBe(401);
+    const third = await t.signIn("alice@acme.example", PASSWORD);
+    const others = await alice.post("/auth/revoke-other-sessions", {});
+    expect(others.status).toBe(200);
+    expect((await third.get("/me")).status).toBe(401);
+    expect((await alice.get("/me")).status).toBe(200);
+    expect(await lastAudit("member.other_sessions_ended")).toBeTruthy();
   });
 
   test("what cannot be taken in is refused, in words a directory's log can show", async () => {
@@ -495,6 +548,23 @@ describe("a tenant's members, pushed as Entra pushes them", () => {
     expect(seen.body.people.map((one: { email: string }) => one.email)).toContain(
       "bob@acme.example",
     );
+    // The people come a page at a time, and the answer says there are more (GOV-34).
+    await push(staff, "POST", "/Users", entraUser("cy@acme.example", "c-1"));
+    await push(staff, "POST", "/Users", entraUser("di@acme.example", "d-1"));
+    const page = (await alice.get(`${provisioning(staff)}/pushed?limit=2`)).body;
+    expect(page.people).toHaveLength(2);
+    expect(typeof page.nextCursor).toBe("string");
+    const next = (
+      await alice.get(
+        `${provisioning(staff)}/pushed?limit=2&cursor=${encodeURIComponent(page.nextCursor)}`,
+      )
+    ).body;
+    expect(next.people.length).toBeGreaterThan(0);
+    expect(next.people[0].userName).not.toBe(page.people[0].userName);
+    await t.db
+      .deleteFrom("scim_user")
+      .where("user_name", "in", ["cy@acme.example", "di@acme.example"])
+      .execute();
     const nameless = await push(staff, "POST", "/Users", { schemas: [USER], active: true });
     expect(nameless.status).toBe(400);
     const noEmail = await push(staff, "POST", "/Users", { schemas: [USER], userName: "bob2" });
@@ -1152,6 +1222,20 @@ describe("the instance's own provider", () => {
       .where("id", "=", customers)
       .execute();
     expect((await push(customers, "GET", "/Users")).status).toBe(200);
+  });
+});
+
+describe("a push cannot take the last one who administers (GOV-04)", () => {
+  test("turning off a tenant's only admin is refused with 409, and they carry on", async () => {
+    const pushed = await push(staff, "POST", "/Users", {
+      schemas: [USER],
+      userName: "alice@acme.example",
+      emails: [{ primary: true, value: "alice@acme.example" }],
+      displayName: "Alice",
+      active: false,
+    });
+    expect(pushed.status, JSON.stringify(pushed.body)).toBe(409);
+    expect((await alice.get(`/tenants/${tenant}/members`)).status).toBe(200);
   });
 });
 

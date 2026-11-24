@@ -54,6 +54,7 @@ const PRESSES: [ShortcutId, () => void][] = [
   ["run", () => press("Enter", { ctrlKey: true })],
   ["undo", () => press("z", { ctrlKey: true })],
   ["redo", () => press("z", { ctrlKey: true, shiftKey: true })],
+  ["rename", () => press("F2")],
   ["add.widget", () => press("a")],
   ["close", () => press("Escape")],
   ["flow.duplicate", () => press("d", { ctrlKey: true })],

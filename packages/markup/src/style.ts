@@ -1,7 +1,7 @@
 /**
  * The stylesheet for a page of documentation, wherever it is drawn: served as
  * a site, or shown in a console. It styles only what is inside an element of
- * class `vd-doc`, and takes its colours from custom properties, each with a
+ * class `vd-doc`, and takes its colors from custom properties, each with a
  * plain default, so whoever shows the page maps them onto a theme:
  *
  *   --vd-ink  --vd-muted  --vd-line  --vd-surface  --vd-sunken  --vd-action
@@ -17,6 +17,13 @@ export const DOC_CSS = `
   line-height: 1.6;
   overflow-wrap: break-word;
 }
+/* Made from the page's own ink, so each is read against whatever ground the page has, in light and in dark. */
+.vd-doc {
+  --vd-stripe: color-mix(in srgb, var(--vd-ink, #1a1a1a) 6%, transparent);
+  --vd-code-bg: color-mix(in srgb, var(--vd-ink, #1a1a1a) 11%, transparent);
+  --vd-code-ink: var(--vd-ink, #1a1a1a);
+  --vd-code-line: color-mix(in srgb, var(--vd-ink, #1a1a1a) 26%, transparent);
+}
 .vd-doc > :first-child { margin-top: 0; }
 .vd-doc > :last-child { margin-bottom: 0; }
 .vd-doc h1, .vd-doc h2, .vd-doc h3, .vd-doc h4, .vd-doc h5, .vd-doc h6 {
@@ -26,10 +33,13 @@ export const DOC_CSS = `
   letter-spacing: -0.01em;
   scroll-margin-top: var(--vd-scroll-margin, 5rem);
 }
-.vd-doc h1 { font-size: 1.75em; }
-.vd-doc h2 { font-size: 1.4em; }
-.vd-doc h3 { font-size: 1.15em; }
-.vd-doc h4, .vd-doc h5, .vd-doc h6 { font-size: 1em; }
+/* Each level is its own size, weight and spacing, in em of the page's body text: a site that grows its body grows its headings, and a small panel keeps the same steps. */
+.vd-doc h1 { font-size: 2.25em; }
+.vd-doc h2 { margin-top: 2em; padding-bottom: 0.3em; border-bottom: 1px solid var(--vd-line, #dcdcdc); font-size: 2em; font-weight: 700; letter-spacing: -0.02em; }
+.vd-doc h3 { margin-top: 1.8em; font-size: 1.6em; font-weight: 650; }
+.vd-doc h4 { margin-top: 1.6em; font-size: 1.3em; font-weight: 600; }
+.vd-doc h5 { margin-top: 1.5em; font-size: 1.1em; font-weight: 600; }
+.vd-doc h6 { margin-top: 1.5em; font-size: 1em; font-weight: 600; font-variant-caps: all-small-caps; letter-spacing: 0.06em; }
 .vd-doc p, .vd-doc ul, .vd-doc ol, .vd-doc blockquote, .vd-doc pre, .vd-doc figure { margin: 0 0 1em; }
 .vd-doc ul, .vd-doc ol { padding-left: 1.5em; }
 .vd-doc ul { list-style: disc; }
@@ -50,10 +60,13 @@ export const DOC_CSS = `
   font-family: var(--vd-font-code, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
   font-size: 0.9em;
 }
+/* Inline code is a chip of its own: a block of code is a panel on the sunken ground, with its own edge. */
 .vd-doc :not(pre) > code {
-  padding: 0.1em 0.35em;
+  padding: 0.12em 0.4em;
   border-radius: 4px;
-  background: var(--vd-sunken, #f3f3f3);
+  background: var(--vd-code-bg);
+  color: var(--vd-code-ink);
+  box-shadow: inset 0 0 0 1px var(--vd-code-line);
 }
 .vd-doc pre {
   padding: 0.85em 1em;
@@ -71,7 +84,8 @@ export const DOC_CSS = `
   background: var(--vd-surface, #fff);
   white-space: nowrap;
 }
-.vd-doc .vd-table { margin: 0 0 1em; overflow-x: auto; }
+.vd-doc .vd-table { position: relative; margin: 0 0 1em; overflow-x: auto; container-type: inline-size; }
+.vd-doc tbody tr:nth-child(even) { background: var(--vd-stripe); }
 .vd-doc table { width: 100%; border-collapse: collapse; }
 .vd-doc th, .vd-doc td {
   padding: 0.45em 0.75em;
@@ -83,6 +97,25 @@ export const DOC_CSS = `
 .vd-doc .vd-align-left { text-align: left; }
 .vd-doc .vd-align-center { text-align: center; }
 .vd-doc .vd-align-right { text-align: right; }
+/* As table-saw stacks a table: where its container is narrow, a row is label and value pairs, the labels
+   from each cell's data-label, with the header row kept for a screen reader. No script does this. */
+@container (max-width: 40rem) {
+  /* A table of one or two columns fits a phone as it is: only three or more stack. */
+  .vd-doc .vd-table:not([data-cols="1"]):not([data-cols="2"]) thead tr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(1px, 1px, 1px, 1px); }
+  .vd-doc .vd-table:not([data-cols="1"]):not([data-cols="2"]) table, .vd-doc .vd-table:not([data-cols="1"]):not([data-cols="2"]) tbody { display: block; }
+  .vd-doc .vd-table:not([data-cols="1"]):not([data-cols="2"]) tbody tr { display: block; padding: 0.35em 0; border-bottom: 1px solid var(--vd-line, #dcdcdc); }
+  .vd-doc .vd-table:not([data-cols="1"]):not([data-cols="2"]) tbody td {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+    gap: 0 1em;
+    border-bottom: 0;
+    padding-block: 0.25em;
+    text-align: left;
+    overflow-wrap: anywhere;
+  }
+  .vd-doc .vd-table:not([data-cols="1"]):not([data-cols="2"]) tbody td::before { content: attr(data-label); font-weight: 600; }
+  .vd-doc .vd-table:not([data-cols="1"]):not([data-cols="2"]) tbody td:not([data-label]) { grid-template-columns: minmax(0, 1fr); }
+}
 .vd-doc .vd-tasks { padding-left: 0.25em; list-style: none; }
 .vd-doc .vd-task input { margin-right: 0.35em; }
 
@@ -207,8 +240,82 @@ export const DOC_CSS = `
 .vd-doc .vd-details-body { padding: 0 1em 0.75em; }
 .vd-doc .vd-details-body > :last-child { margin-bottom: 0; }
 
+.vd-doc .vd-zoom {
+  display: inline-block;
+  max-width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--vd-radius, 6px);
+  background: none;
+  color: inherit;
+  font: inherit;
+  line-height: 0;
+  vertical-align: bottom;
+  cursor: zoom-in;
+}
+.vd-doc .vd-zoom:focus-visible { outline: 2px solid var(--vd-action, #1d4ed8); outline-offset: 2px; }
+/* The larger view of a picture: over everything, the picture fitted to the window with its words under it. */
+.vd-doc .vd-lightbox {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #fff;
+  overflow: hidden;
+}
+.vd-doc .vd-lightbox[open] { display: grid; place-items: center; }
+.vd-doc .vd-lightbox::backdrop { background: rgb(0 0 0 / 0.98); }
+.vd-doc .vd-lightbox-figure {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  max-width: 100vw;
+  max-height: 100dvh;
+  margin: 0;
+  padding: 3.5rem 1rem 1rem;
+  box-sizing: border-box;
+}
+.vd-doc .vd-lightbox-img {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: calc(100vw - 2rem);
+  max-height: calc(100dvh - 9rem);
+  object-fit: contain;
+  transform-origin: 0 0;
+  cursor: default;
+}
+.vd-doc .vd-lightbox-caption { max-width: min(60rem, 100%); margin: 0; padding: 0.35rem 0.6rem; border-radius: 6px; background: #000; font-size: 0.95rem; line-height: 1.4; text-align: center; color: #fff; }
+.vd-doc .vd-lightbox-close {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  display: grid;
+  place-items: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  padding: 0;
+  border: 1px solid rgb(255 255 255 / 0.6);
+  border-radius: 50%;
+  background: rgb(0 0 0 / 0.6);
+  color: #fff;
+  font-size: 1.5rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.vd-doc .vd-lightbox-close:hover { background: rgb(0 0 0 / 0.85); }
+.vd-doc .vd-lightbox-close:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
 .vd-doc .vd-field code { font-weight: 600; }
 .vd-doc .vd-screenshot img { border: 1px solid var(--vd-line, #dcdcdc); }
+.vd-doc .vd-screenshot .vd-shot-dark { display: none; }
 .vd-doc .vd-screenshot-missing { color: var(--vd-muted, #5c5c5c); font-style: italic; }
 .vd-doc .vd-unavailable { color: var(--vd-muted, #5c5c5c); font-style: italic; }
 
@@ -260,6 +367,17 @@ export const DOC_CSS = `
 .vd-doc .vd-glossary dt { font-weight: 600; }
 .vd-doc .vd-glossary dd { display: flex; flex-direction: column; gap: 0.15em; margin: 0.1em 0 0; }
 .vd-doc .vd-glossary-also, .vd-doc .vd-glossary-page { font-size: 0.875em; color: var(--vd-muted, #5c5c5c); }
+.vd-doc .vd-changelog { margin: 0 0 1.25em; }
+.vd-doc .vd-changelog-entry { padding: 1.25em 0 0.5em; border-top: 1px solid var(--vd-line, #dcdcdc); scroll-margin-top: var(--vd-scroll-margin, 5rem); }
+.vd-doc .vd-changelog-entry:first-child { border-top: 0; padding-top: 0.25em; }
+.vd-doc .vd-changelog-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 0.25em 1em; margin: 0 0 0.5em; }
+.vd-doc .vd-changelog-title { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.vd-doc .vd-changelog-title a { color: inherit; text-decoration: none; }
+.vd-doc .vd-changelog-title a:hover { text-decoration: underline; }
+.vd-doc .vd-changelog-date { font-size: 0.875em; color: var(--vd-muted, #5c5c5c); white-space: nowrap; }
+.vd-doc .vd-changelog-body { min-width: 0; overflow-wrap: anywhere; }
+.vd-doc .vd-changelog-body > :first-child { margin-top: 0; }
+.vd-doc .vd-changelog-more { margin: 0.5em 0 0; font-size: 0.9375em; }
 
 .vd-doc .vd-mermaid {
   position: relative;
@@ -380,5 +498,40 @@ export const DOC_CSS = `
 .vd-doc .vd-tab-button { transition: color 0.15s ease, border-color 0.15s ease; }
 @media (prefers-reduced-motion: reduce) {
   .vd-doc *, .vd-doc *::before, .vd-doc *::after { transition-duration: 0.01ms !important; }
+}
+/* Highlighted code: Prism's classes, drawn by the server, colored here. Light values; DOC_DARK_CSS has the dark ones. */
+.vd-doc .token.keyword, .vd-doc .token.atrule, .vd-doc .token.important { color: var(--vd-tok-keyword, #a21caf); }
+.vd-doc .token.boolean, .vd-doc .token.constant, .vd-doc .token.symbol { color: var(--vd-tok-literal, #155e75); }
+.vd-doc .token.string, .vd-doc .token.char, .vd-doc .token.attr-value, .vd-doc .token.inserted, .vd-doc .token.regex { color: var(--vd-tok-string, #166534); }
+.vd-doc .token.number, .vd-doc .token.unit, .vd-doc .token.hexcode { color: var(--vd-tok-number, #9a3412); }
+.vd-doc .token.comment, .vd-doc .token.prolog, .vd-doc .token.doctype, .vd-doc .token.cdata { color: var(--vd-tok-comment, #5c5c5c); font-style: italic; }
+.vd-doc .token.property, .vd-doc .token.attr-name, .vd-doc .token.key, .vd-doc .token.selector, .vd-doc .token.tag { color: var(--vd-tok-attr, #1d4ed8); }
+.vd-doc .token.function, .vd-doc .token.class-name, .vd-doc .token.builtin, .vd-doc .token.variable, .vd-doc .token.title { color: var(--vd-tok-name, #155e75); }
+.vd-doc .token.deleted { color: var(--vd-tok-deleted, #b91c1c); }
+.vd-doc .token.bold, .vd-doc .token.title { font-weight: 600; }
+.vd-doc .token.italic { font-style: italic; }
+.vd-doc .token.operator, .vd-doc .token.punctuation { color: inherit; }
+/* A marked line: a band the full width of the block, its bar in the gutter, with no gap between marked lines. Light enough that every token keeps 4.5:1 on it. */
+.vd-doc pre code mark.vd-line-mark { display: inline-block; vertical-align: top; min-width: calc(100% + 0.75em); margin-inline-start: -0.75em; padding-inline-start: calc(0.75em - 3px); color: inherit; background: color-mix(in srgb, var(--vd-tok-attr, #1d4ed8) 8%, transparent); border-inline-start: 3px solid var(--vd-tok-attr, #1d4ed8); }
+`;
+
+/**
+ * The colors of highlighted code on a dark page. Not part of `DOC_CSS`, which styles only what is inside a page:
+ * this one says when the page is dark, as the theme's own tokens do (the system, unless `data-theme` says otherwise).
+ */
+export const DOC_DARK_CSS = `
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .vd-doc .vd-screenshot .vd-shot-dark { display: block; }
+  :root:not([data-theme="light"]) .vd-doc .vd-screenshot .vd-shot-light:has(+ .vd-shot-dark) { display: none; }
+  :root:not([data-theme="light"]) .vd-doc {
+    --vd-tok-keyword: #e879f9; --vd-tok-literal: #67e8f9; --vd-tok-string: #86efac;
+    --vd-tok-number: #fdba74; --vd-tok-comment: #a3a3a3; --vd-tok-attr: #93c5fd; --vd-tok-name: #67e8f9; --vd-tok-deleted: #fca5a5;
+  }
+}
+:root[data-theme="dark"] .vd-doc .vd-screenshot .vd-shot-dark { display: block; }
+:root[data-theme="dark"] .vd-doc .vd-screenshot .vd-shot-light:has(+ .vd-shot-dark) { display: none; }
+:root[data-theme="dark"] .vd-doc {
+  --vd-tok-keyword: #e879f9; --vd-tok-literal: #67e8f9; --vd-tok-string: #86efac;
+  --vd-tok-number: #fdba74; --vd-tok-comment: #a3a3a3; --vd-tok-attr: #93c5fd; --vd-tok-name: #67e8f9; --vd-tok-deleted: #fca5a5;
 }
 `;

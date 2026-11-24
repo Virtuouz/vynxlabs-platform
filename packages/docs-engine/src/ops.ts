@@ -1,4 +1,6 @@
 import { linkKind, parse, topicOf, walk } from "@volvel/markup";
+import { CHANGELOG_NAME } from "./changelog.js";
+import { CHANGELOG_TEMPLATE, DOC_TEMPLATES, type DocType, folderType } from "./diataxis.js";
 import { frontmatterOf, setFrontmatter, splitFrontmatter, titleOf } from "./page.js";
 import { resolveLink } from "./set.js";
 
@@ -117,9 +119,52 @@ export function orderOf(pages: readonly PageSource[], folder: string): string[] 
     .map((one) => one.name);
 }
 
-/** A page's source with a new folder page's frontmatter, and nothing written under it. */
-export function newPageSource(title: string): string {
-  return setFrontmatter("", { title }) ?? `---\ntitle: ${JSON.stringify(title)}\n---\n`;
+/**
+ * A new page's source: its title, and nothing written under it. Given a type,
+ * the page starts from that type's template, with `type:` on it only when the
+ * folder does not already say it (`inherited`).
+ */
+export function newPageSource(title: string, type?: DocType, inherited?: DocType): string {
+  const top = setFrontmatter("", {
+    title,
+    ...(type && type !== inherited ? { type } : {}),
+  });
+  const head = top ?? `---\ntitle: ${JSON.stringify(title)}\n---\n`;
+  return type ? `${head}\n${DOC_TEMPLATES[type]}` : head;
+}
+
+/** A changelog entry's file name: the day it is made, then its title. `2026-11-24-new-intake`. */
+export function changelogEntryName(title: string, today: string): string {
+  const slug = slugOf(title);
+  return slug === "" ? today : `${today}-${slug}`.slice(0, 80);
+}
+
+/**
+ * A new changelog entry for the site `folder` is in: under its `changelog/` folder (or the one
+ * `folder` is already in), named with today's day, from the changelog template. It is no type of
+ * page, so it says none.
+ */
+export function planNewChangelogEntry(
+  pages: readonly PageSource[],
+  folder: string,
+  next: { title: string; today: string; name?: string },
+): Plan {
+  if (next.title.trim() === "") return { problem: "A title is needed." };
+  if (folder === "")
+    return { problem: "A page goes in a folder. Top-level folders are the sites." };
+  const parts = folder.split("/");
+  const at = parts.indexOf(CHANGELOG_NAME);
+  const into = at === -1 ? `${parts[0]}/${CHANGELOG_NAME}` : parts.slice(0, at + 1).join("/");
+  const name = next.name ?? changelogEntryName(next.title, next.today);
+  const problem = nameProblem(name);
+  if (problem) return { problem };
+  const path = join(into, name);
+  if (pages.some((page) => page.path === path)) {
+    return { problem: `There is already an entry named ${name}. Change its title or its name.` };
+  }
+  const top = setFrontmatter("", { title: next.title.trim() });
+  const head = top ?? `---\ntitle: ${JSON.stringify(next.title.trim())}\n---\n`;
+  return { changes: [{ path, source: `${head}\n${CHANGELOG_TEMPLATE}`, created: true }] };
 }
 
 /**
@@ -434,7 +479,7 @@ export function planRename(
 export function planNewPage(
   pages: readonly PageSource[],
   folder: string,
-  next: { title: string; name: string },
+  next: { title: string; name: string; type?: DocType },
 ): Plan {
   if (next.title.trim() === "") return { problem: "A title is needed." };
   const problem = nameProblem(next.name);
@@ -450,7 +495,13 @@ export function planNewPage(
           : `There is already something named ${next.name} here.`,
     };
   }
-  return { changes: [{ path, source: newPageSource(next.title.trim()), created: true }] };
+  const inherited = folderType(
+    path,
+    (at) => frontmatterOf(pages.find((page) => page.path === at)?.source ?? "")?.type,
+  );
+  // A page left to the folder's type starts from that type's template too, and says nothing of it.
+  const source = newPageSource(next.title.trim(), next.type ?? inherited, inherited);
+  return { changes: [{ path, source, created: true }] };
 }
 
 /**

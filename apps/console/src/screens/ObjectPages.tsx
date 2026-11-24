@@ -1,28 +1,39 @@
-import { Button, Closing, JsonView } from "@volvel/ui";
+import { Button, Closing, JsonView, Notice } from "@volvel/ui";
 import { FileCode2, ListChecks } from "lucide-react";
-import { useState } from "react";
-import { api, useLoad } from "../api.ts";
-import { notify } from "../ask.tsx";
+import { useEffect, useState } from "react";
+import { ApiError, api, useLoad } from "../api.ts";
+import { failureText, notify } from "../ask.tsx";
 import { CodeEditor } from "../editor/CodeEditor.tsx";
 import { AttachedPages, workspaceOf } from "../help/glossary.tsx";
+import { useMay, useNeeds } from "../kit/Can.tsx";
 import { Current } from "../kit/current.ts";
 import { DataTable } from "../kit/DataTable.tsx";
+import { putDraft, readDraft } from "../kit/draftApi.ts";
 import { ago } from "../kit/format.ts";
 import { ErrorState, Loading, Pending } from "../kit/LoadState.tsx";
 import { KeyValues } from "../kit/layout.tsx";
 import { ObjectPage } from "../kit/ObjectPage.tsx";
 import { kindName, ObjectLink, objectHref, triggerKey } from "../kit/objects.tsx";
-import { ReferenceList } from "../kit/references.tsx";
+import { ReferenceList, useReferences, usersOf } from "../kit/references.tsx";
 import { SecretField } from "../kit/SecretField.tsx";
 import { Mono, StatePill } from "../kit/status.tsx";
 import { Time } from "../kit/Time.tsx";
-import { when } from "../ListScreen.tsx";
-import { Link, navigate, useUrlParam } from "../router.tsx";
+import { RemoveButton, when } from "../ListScreen.tsx";
+import { Link, navigate, TEXT_LINK, useUrlParam } from "../router.tsx";
 import { RecentRuns } from "./Authoring.tsx";
-import { RunButton } from "./Execution.tsx";
+import {
+  type CodeChoices,
+  type LimitsBody,
+  LimitsFields,
+  useCodeChoices,
+} from "./CodeSettings.tsx";
+import { CONNECTOR_NAMES, type ConnectionRow, ConnectionWizard } from "./ConnectionWizard.tsx";
+import { ConnectionHealth, RunButton, TestConnection } from "./Execution.tsx";
 import { NotFound } from "./NotFound.tsx";
 import { type Trigger, TriggerState, useTriggerPause } from "./Operate.tsx";
+import { PublishEventButton } from "./PublishEvent.tsx";
 import { NewScheduleSheet } from "./ScheduleForm.tsx";
+import { VariableSheet } from "./VariableSheet.tsx";
 
 /**
  * A page of its own for each thing a workspace holds that had only a row in a
@@ -55,87 +66,124 @@ function Gate<T>({
   return <>{children(found.data)}</>;
 }
 
-interface Connection {
-  path: string;
-  connector: string;
-  description: string;
-  defined: boolean;
-  bound: boolean;
-  config: Record<string, unknown> | null;
-  hasCredential: boolean;
-  updatedAt: string | null;
-  health: {
-    ok: boolean;
-    problem: string | null;
-    latencyMs: number | null;
-    checkedAt: string;
-  } | null;
-}
-
 export function ConnectionPage({ root, link, path }: { root: string; link: string; path: string }) {
-  const found = useLoad<Connection>(`${root}/connection-bindings/${path}`);
+  const found = useLoad<ConnectionRow>(`${root}/connection-bindings/${path}`);
+  const uses = useReferences(root, "connection");
+  const may = useMay(root, "connection:write", "run:read");
+  const mayWrite = may("connection:write");
+  // The same sheet the list opens, here on the page itself.
+  const [editing, setEditing] = useState<ConnectionRow | null>(null);
   return (
     <Gate found={found} list={`${link}/connections`} noun="connection">
       {(one) => (
-        <ObjectPage
-          back={{ to: `${link}/connections`, label: "Connections" }}
-          eyebrow="Connection"
-          title={one.path}
-          state={
-            <>
-              <StatePill state={one.bound ? "bound" : "unbound"}>
-                {one.bound ? "Set up here" : "Not set up here"}
-              </StatePill>
-              {one.health ? (
-                <StatePill state={one.health.ok ? "reachable" : "unreachable"}>
-                  {one.health.ok ? "Answered" : "Did not answer"}
-                </StatePill>
-              ) : null}
-            </>
-          }
-          actions={
-            <Button
-              onClick={() => navigate(`${link}/connections?item=${encodeURIComponent(one.path)}`)}
-            >
-              Change where it points
-            </Button>
-          }
-          meta={
-            <KeyValues
-              rows={[
-                { label: "Kind", value: one.connector, mono: true },
-                ...(one.description ? [{ label: "What it is for", value: one.description }] : []),
-                { label: "Credential", value: one.hasCredential ? "Set" : "None" },
-                {
-                  label: "Declared",
-                  value: one.defined ? "Deployed" : "Only set up here, or in a draft",
-                },
-                ...(one.updatedAt
-                  ? [{ label: "Last changed", value: <Time value={one.updatedAt} /> }]
-                  : []),
-                ...(one.health && !one.health.ok && one.health.problem
-                  ? [{ label: "Last check", value: one.health.problem }]
-                  : []),
-              ]}
-            />
-          }
-          tabs={[
-            {
-              id: "used-by",
-              label: "Used by",
-              content: <ReferenceList root={root} link={link} kind="connection" name={one.path} />,
-            },
-            {
-              id: "settings",
-              label: "Where it points",
-              content: one.config ? (
-                <JsonView label="Settings" value={one.config} />
-              ) : (
-                <p className="m-0 text-ink-muted">Not set up in this workspace yet.</p>
-              ),
-            },
-          ]}
-        />
+        <>
+          <ObjectPage
+            back={{ to: `${link}/connections`, label: "Connections" }}
+            eyebrow="Connection"
+            title={one.path}
+            state={
+              <>
+                <StatePill state={one.bound ? "bound" : "unbound"} />
+                <ConnectionHealth root={root} row={one} mayConnect={mayWrite} />
+              </>
+            }
+            actions={
+              <>
+                {one.bound &&
+                (!one.oauth || one.oauth.status === "connected") &&
+                may("run:read") &&
+                mayWrite ? (
+                  <TestConnection root={root} path={one.path} onDone={() => found.reload?.()} />
+                ) : null}
+                {mayWrite ? (
+                  <Button onClick={() => setEditing(one)}>
+                    {one.bound ? "Change where it points" : "Set up"}
+                  </Button>
+                ) : null}
+                {one.bound && mayWrite ? (
+                  <RemoveButton
+                    label="Remove from here"
+                    confirm={`Remove ${one.path} from here? Scripts that use it will fail until it is set up again.`}
+                    affected={usersOf(uses(one.path))}
+                    usesUnread={uses.failed || !uses.loaded}
+                    run={() => api.delete(`${root}/connection-bindings/${one.path}`)}
+                    onDone={() => found.reload?.()}
+                  />
+                ) : null}
+              </>
+            }
+            meta={
+              <KeyValues
+                rows={[
+                  {
+                    label: "Kind",
+                    value: CONNECTOR_NAMES[one.connector] ?? one.connector,
+                  },
+                  ...(one.description ? [{ label: "What it is for", value: one.description }] : []),
+                  { label: "Credential", value: one.hasCredential ? "Set" : "None" },
+                  {
+                    label: "Declared",
+                    value: one.defined
+                      ? "Deployed"
+                      : one.draft === "new"
+                        ? "In a draft, never deployed"
+                        : "Only set up here",
+                  },
+                  ...(one.oauth?.connectedAt
+                    ? [
+                        {
+                          label: "Connected",
+                          value: <Time value={one.oauth.connectedAt} mode="stamp" />,
+                        },
+                      ]
+                    : []),
+                  ...(one.updatedAt
+                    ? [
+                        {
+                          label: "Last changed",
+                          value: <Time value={one.updatedAt} mode="stamp" />,
+                        },
+                      ]
+                    : []),
+                  ...(one.health && !one.health.ok && one.health.problem
+                    ? [{ label: "Last check", value: one.health.problem }]
+                    : []),
+                ]}
+              />
+            }
+            tabs={[
+              {
+                id: "used-by",
+                label: "Used by",
+                content: (
+                  <ReferenceList root={root} link={link} kind="connection" name={one.path} />
+                ),
+              },
+              {
+                id: "settings",
+                label: "Where it points",
+                content: one.config ? (
+                  <JsonView label="Settings" value={one.config} />
+                ) : (
+                  <p className="m-0 text-ink-muted">Not set up in this workspace yet.</p>
+                ),
+              },
+            ]}
+          />
+          <Closing subject={editing}>
+            {(row, shown) => (
+              <ConnectionWizard
+                key={row.path}
+                root={root}
+                open={shown}
+                row={row}
+                rows={[row]}
+                onClose={() => setEditing(null)}
+                onSaved={() => found.reload?.()}
+              />
+            )}
+          </Closing>
+        </>
       )}
     </Gate>
   );
@@ -151,40 +199,65 @@ interface Variable {
 
 export function VariablePage({ root, link, path }: { root: string; link: string; path: string }) {
   const found = useLoad<Variable>(`${root}/variable-values/${path}`);
+  const [editing, setEditing] = useState<Variable | null>(null);
+  const mayWrite = useMay(root, "variable:write")("variable:write");
   return (
     <Gate found={found} list={`${link}/variables`} noun="variable">
       {(one) => (
-        <ObjectPage
-          back={{ to: `${link}/variables`, label: "Variables" }}
-          eyebrow="Variable"
-          title={one.path}
-          meta={
-            <KeyValues
-              rows={[
-                ...(one.description ? [{ label: "What it is for", value: one.description }] : []),
-                {
-                  label: "Value here",
-                  value:
-                    one.value ?? (one.default !== null ? `The default: ${one.default}` : "Not set"),
-                  mono: one.value !== null,
-                },
-                ...(one.default !== null
-                  ? [{ label: "Default", value: one.default, mono: true }]
-                  : []),
-                ...(one.updatedAt
-                  ? [{ label: "Last set", value: <Time value={one.updatedAt} /> }]
-                  : []),
-              ]}
-            />
-          }
-          tabs={[
-            {
-              id: "used-by",
-              label: "Used by",
-              content: <ReferenceList root={root} link={link} kind="variable" name={one.path} />,
-            },
-          ]}
-        />
+        <>
+          <ObjectPage
+            back={{ to: `${link}/variables`, label: "Variables" }}
+            eyebrow="Variable"
+            title={one.path}
+            actions={
+              mayWrite ? (
+                <Button onClick={() => setEditing(one)}>
+                  {one.value !== null ? "Change value" : "Set value"}
+                </Button>
+              ) : null
+            }
+            meta={
+              <KeyValues
+                rows={[
+                  ...(one.description ? [{ label: "What it is for", value: one.description }] : []),
+                  {
+                    label: "Value here",
+                    value:
+                      one.value === ""
+                        ? "Empty"
+                        : (one.value ??
+                          (one.default !== null ? `The default: ${one.default}` : "Not set")),
+                    mono: one.value !== null && one.value !== "",
+                  },
+                  ...(one.default !== null
+                    ? [{ label: "Default", value: one.default, mono: true }]
+                    : []),
+                  ...(one.updatedAt
+                    ? [{ label: "Last set", value: <Time value={one.updatedAt} mode="stamp" /> }]
+                    : []),
+                ]}
+              />
+            }
+            tabs={[
+              {
+                id: "used-by",
+                label: "Used by",
+                content: <ReferenceList root={root} link={link} kind="variable" name={one.path} />,
+              },
+            ]}
+          />
+          <Closing subject={editing}>
+            {(variable, shown) => (
+              <VariableSheet
+                root={root}
+                variable={variable}
+                open={shown}
+                onClose={() => setEditing(null)}
+                onSaved={() => found.reload?.()}
+              />
+            )}
+          </Closing>
+        </>
       )}
     </Gate>
   );
@@ -208,6 +281,15 @@ function ReplaceSecret({
 }) {
   const [value, setValue] = useState("");
   const [busy, setBusy] = useState(false);
+  const mayReplace = useMay(root, "secret:write")("secret:write");
+  if (!mayReplace) {
+    return (
+      <p className="m-0 max-w-xl text-ink-muted">
+        Replacing the value needs the secret:write permission: ask an administrator of this
+        workspace.
+      </p>
+    );
+  }
   return (
     <form
       className="flex max-w-xl flex-col gap-3"
@@ -299,8 +381,24 @@ interface Resource {
   body: { description?: string; schema?: unknown; payload?: unknown };
 }
 
-export function EventPage({ root, link, path }: { root: string; link: string; path: string }) {
+export function EventPage({
+  root,
+  link,
+  path,
+  production = false,
+}: {
+  root: string;
+  link: string;
+  path: string;
+  production?: boolean;
+}) {
   const found = useLoad<Resource>(`${root}/resources/${path}`);
+  const may = useNeeds({ base: root, permission: "resource:write", what: "this event" });
+  const mayPublish = useNeeds({
+    base: root,
+    permission: "event:write",
+    what: "this event",
+  });
   return (
     <Gate found={found} list={`${link}/events`} noun="event">
       {(one) => (
@@ -309,9 +407,29 @@ export function EventPage({ root, link, path }: { root: string; link: string; pa
           eyebrow="Event"
           title={one.path}
           actions={
-            <Button onClick={() => navigate(`${link}/resources/edit/event/${one.path}`)}>
-              Change its declaration
-            </Button>
+            <>
+              <fieldset disabled={!mayPublish.can} className="contents">
+                <PublishEventButton
+                  root={root}
+                  production={production}
+                  event={one.path}
+                  label="Publish it"
+                />
+              </fieldset>
+              <Button
+                disabled={!may.can}
+                {...(may.reason ? { tooltip: may.reason } : {})}
+                onClick={() => navigate(`${link}/resources/edit/event/${one.path}`)}
+              >
+                Change its declaration
+              </Button>
+            </>
+          }
+          line={
+            <>
+              {mayPublish.line}
+              {may.line}
+            </>
           }
           meta={
             <KeyValues
@@ -344,7 +462,10 @@ export function EventPage({ root, link, path }: { root: string; link: string; pa
               id: "recent",
               label: "Recent",
               content: (
-                <Link to={`${link}/events?q=${encodeURIComponent(one.path)}`}>
+                <Link
+                  to={`${link}/events?name=${encodeURIComponent(one.path)}`}
+                  className={TEXT_LINK}
+                >
                   See it in the event log
                 </Link>
               ),
@@ -387,6 +508,7 @@ export function TriggersOf({
     (one) => one.script === path && (one.targetKind ?? "script") === kind,
   );
   const [adding, setAdding] = useState(false);
+  const may = useNeeds({ base: root, permission: "resource:write", what: "its triggers" });
   const listPath = `${root}/triggers?${new URLSearchParams({ target: path })}`;
   const { pause, resume } = useTriggerPause({ root, production, listPath });
   return (
@@ -397,7 +519,12 @@ export function TriggersOf({
         </p>
       ) : (
         <div>
-          <Button size="small" onClick={() => setAdding(true)}>
+          <Button
+            size="small"
+            disabled={!may.can}
+            {...(may.reason ? { tooltip: may.reason } : {})}
+            onClick={() => setAdding(true)}
+          >
             Add a schedule
           </Button>
         </div>
@@ -418,7 +545,8 @@ export function TriggersOf({
       </Closing>
       <DataTable<Trigger>
         actions={(one) => [
-          ...(one.type === "schedule"
+          // A schedule that is turned off may be run to try it; one that is held may not.
+          ...(one.type === "schedule" && !one.paused && !one.pausedBy
             ? [
                 {
                   label: "Run it now",
@@ -458,7 +586,7 @@ export function TriggersOf({
             header: "State",
             cell: (one) => (
               <span className="flex flex-col">
-                <TriggerState row={one} workspacePaused={false} />
+                <TriggerState row={one} />
                 {one.cron ? (
                   <span className="text-meta text-ink-muted">
                     <Mono>{one.cron}</Mono>
@@ -547,6 +675,12 @@ export function ScriptPage({
   production?: boolean;
 }) {
   const scripts = useLoad<{ items: ScriptSummary[] }>(`${root}/scripts`);
+  const mayRun = useNeeds({
+    base: root,
+    permission: "run:write",
+    what: "this script",
+    resource: { kind: "script", path },
+  });
   const one = scripts.data?.items.find((script) => script.path === path);
   const found: Loaded<ScriptSummary> = {
     data: one,
@@ -602,15 +736,17 @@ export function ScriptPage({
             }
             actions={
               <>
-                <RunButton
-                  root={root}
-                  script={script.path}
-                  schema={script.inputSchema ?? {}}
-                  runsLink={`${link}/runs`}
-                  deployed={script.deployed !== false}
-                  draft={script.draft === true}
-                  size="regular"
-                />
+                <fieldset disabled={!mayRun.can} className="contents" title={mayRun.reason}>
+                  <RunButton
+                    root={root}
+                    script={script.path}
+                    schema={script.inputSchema ?? {}}
+                    runsLink={`${link}/runs`}
+                    deployed={script.deployed !== false}
+                    draft={script.draft === true}
+                    size="regular"
+                  />
+                </fieldset>
                 <Button
                   variant="primary"
                   onClick={() => navigate(`${link}/scripts/edit/${script.path}`)}
@@ -619,6 +755,7 @@ export function ScriptPage({
                 </Button>
               </>
             }
+            line={mayRun.line}
             meta={
               <span className="flex flex-col gap-1.5">
                 {script.description ? (
@@ -652,6 +789,18 @@ export function ScriptPage({
                 content: <ReferenceList root={root} link={link} kind="script" name={script.path} />,
               },
               {
+                id: "settings",
+                label: "Settings",
+                content: (
+                  <ScriptSettings
+                    root={root}
+                    link={link}
+                    path={script.path}
+                    production={production}
+                  />
+                ),
+              },
+              {
                 id: "source",
                 label: "Source",
                 content: <SourceAt root={root} link={link} path={script.path} />,
@@ -661,5 +810,296 @@ export function ScriptPage({
         </>
       )}
     </Gate>
+  );
+}
+
+interface ScriptSettingsBody {
+  timeoutSeconds?: number;
+  memoryMb?: number;
+  concurrency?: number | { key: string; limit: number };
+  worker?: string;
+  onFailure?: { script?: string; notify?: string };
+  retries?: { limit: number; delaySeconds: number; backoff: boolean };
+  uses?: Record<string, string[] | undefined>;
+}
+
+/**
+ * What a script runs with, as the editor's Settings set it: read here, and changed here too, with
+ * the same fields. A change is saved as a draft, as in the editor: nothing that runs changes
+ * until it is deployed.
+ */
+function ScriptSettings({
+  root,
+  link,
+  path,
+  production = false,
+}: {
+  root: string;
+  link: string;
+  path: string;
+  production?: boolean;
+}) {
+  const found = useLoad<{ kind: string; ownership?: string; body: ScriptSettingsBody }>(
+    `${root}/resources/${path}`,
+  );
+  const may = useNeeds({
+    base: root,
+    permission: "resource:write",
+    what: "this script's settings",
+  });
+  const [editing, setEditing] = useState(false);
+  const [saved, setSaved] = useState(false);
+  // The draft, when there is one: a script never deployed has only that, and a saved change is
+  // read back from it. Production takes no drafts.
+  const [draft, setDraft] = useState<{ body: ScriptSettingsBody; revision: number }>();
+  const [looked, setLooked] = useState(production);
+  const [draftError, setDraftError] = useState<unknown>();
+  useEffect(() => {
+    if (production || editing) return;
+    let current = true;
+    readDraft<ScriptSettingsBody>(root, path)
+      .then((one) => {
+        if (!current) return;
+        setDraft(one && !one.deleted ? { body: one.body, revision: one.revision } : undefined);
+        setDraftError(undefined);
+        setLooked(true);
+      })
+      .catch((error) => {
+        if (!current) return;
+        setDraftError(error);
+        setLooked(true);
+      });
+    return () => {
+      current = false;
+    };
+  }, [root, path, production, editing]);
+  const notDeployed = found.error instanceof ApiError && found.error.status === 404;
+  if (found.error && !(notDeployed && !looked) && !(notDeployed && draft)) {
+    return (
+      <ErrorState what="the settings of this script" error={found.error} onRetry={found.reload} />
+    );
+  }
+  if (draftError && !found.data) {
+    return (
+      <ErrorState
+        what="the draft of this script"
+        error={draftError}
+        onRetry={() => setLooked(false)}
+      />
+    );
+  }
+  if (!looked || (!found.data && !draft)) return <Loading />;
+  const body: ScriptSettingsBody = draft?.body ?? found.data?.body ?? {};
+  const list = (names: string[] | undefined) =>
+    names && names.length > 0 ? names.join(", ") : undefined;
+  const concurrency =
+    typeof body.concurrency === "object"
+      ? `${body.concurrency.limit} for each value of ${body.concurrency.key}`
+      : body.concurrency !== undefined
+        ? String(body.concurrency)
+        : undefined;
+  const rows: { label: string; value: string | undefined; mono?: boolean }[] = [
+    {
+      label: "Stops after",
+      value: body.timeoutSeconds !== undefined ? `${body.timeoutSeconds} seconds` : undefined,
+    },
+    {
+      label: "Tries again",
+      value: body.retries
+        ? body.retries.limit === 0
+          ? "Never: a failed run is not tried again"
+          : `${body.retries.limit} time${body.retries.limit === 1 ? "" : "s"}, ${body.retries.delaySeconds} seconds apart${body.retries.backoff ? ", waiting longer each time" : ""}`
+        : undefined,
+    },
+    { label: "Memory", value: body.memoryMb !== undefined ? `${body.memoryMb} MB` : undefined },
+    { label: "Runs at once", value: concurrency },
+    { label: "Worker pool", value: body.worker },
+    { label: "Connections", value: list(body.uses?.connections) },
+    { label: "Secrets", value: list(body.uses?.secrets) },
+    { label: "Variables", value: list(body.uses?.variables) },
+    { label: "Tables", value: list(body.uses?.tables) },
+    { label: "Data sources", value: list(body.uses?.sources) },
+    { label: "Events it may publish", value: list(body.uses?.events) },
+    { label: "Connection groups", value: list(body.uses?.connectionGroups) },
+    { label: "Starts, when it fails for the last time", value: body.onFailure?.script },
+    {
+      label: "Sends a summary through, when it fails for the last time",
+      value: body.onFailure?.notify,
+    },
+  ];
+  const set = rows.filter((row) => row.value !== undefined);
+  // Code that a repository holds is changed there, and production is changed by promotion.
+  const mayChange = !production && found.data?.ownership !== "code";
+  if (editing) {
+    return (
+      <ScriptSettingsForm
+        root={root}
+        link={link}
+        path={path}
+        deployed={body}
+        onClose={(didSave) => {
+          setEditing(false);
+          setSaved(didSave);
+        }}
+      />
+    );
+  }
+  return (
+    <div className="flex max-w-2xl flex-col gap-3">
+      {saved ? (
+        <Notice tone="success">
+          Saved as a draft. It runs this way once it is deployed.{" "}
+          <Link to={`${link}/scripts/edit/${path}`}>Open the draft</Link>
+        </Notice>
+      ) : draft ? (
+        <Notice tone="plain">
+          {found.data
+            ? "This script has a draft. These are the draft's settings: the deployed script keeps its own until the draft is deployed."
+            : "This script is only a draft and is not deployed yet. These are the draft's settings."}{" "}
+          <Link to={`${link}/scripts/edit/${path}`}>Open the draft</Link>
+        </Notice>
+      ) : null}
+      {set.length === 0 ? (
+        <p className="m-0 text-ink-muted">
+          Nothing is set: it runs with the workspace's defaults and uses nothing it has not been
+          given.
+        </p>
+      ) : (
+        <KeyValues rows={set.map((row) => ({ label: row.label, value: row.value }))} />
+      )}
+      {mayChange ? (
+        <div className="flex flex-wrap items-center gap-3">
+          <Button
+            variant="secondary"
+            disabled={!may.can}
+            tooltip={may.reason}
+            onClick={() => {
+              setSaved(false);
+              setEditing(true);
+            }}
+          >
+            Change the settings
+          </Button>
+          <span className="text-meta text-ink-subtle">
+            A change is kept as a draft, as in the editor.{" "}
+            <Link to={`${link}/scripts/edit/${path}`}>Open the code</Link>
+          </span>
+        </div>
+      ) : (
+        <p className="m-0 text-meta text-ink-subtle">
+          {production
+            ? "Settings change in a dev workspace and reach production by promotion."
+            : "The repository holds this script: change its settings there."}{" "}
+          <Link to={`${link}/scripts/edit/${path}`}>Open the code</Link>
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** The same fields as the editor's Settings, over what the draft holds, or what is deployed. */
+function ScriptSettingsForm({
+  root,
+  link,
+  path,
+  deployed,
+  onClose,
+}: {
+  root: string;
+  link: string;
+  path: string;
+  deployed: ScriptSettingsBody;
+  onClose: (saved: boolean) => void;
+}) {
+  const choices: CodeChoices = useCodeChoices(root);
+  const [base, setBase] = useState<{ body: Record<string, unknown>; revision?: number }>();
+  const [problem, setProblem] = useState<string>();
+  const [fields, setFields] = useState<ApiError["fields"]>([]);
+  const [saving, setSaving] = useState(false);
+  // What the draft holds when there is one, so that its other changes are kept.
+  useEffect(() => {
+    let current = true;
+    readDraft(root, path)
+      .then((draft) => {
+        if (!current) return;
+        if (draft && !draft.deleted) setBase({ body: draft.body, revision: draft.revision });
+        else setBase({ body: deployed as Record<string, unknown> });
+      })
+      .catch((error) => current && setProblem(failureText(error)));
+    return () => {
+      current = false;
+    };
+  }, [root, path, deployed]);
+  const [body, setBody] = useState<LimitsBody>();
+  useEffect(() => {
+    if (base && !body) setBody(base.body as LimitsBody);
+  }, [base, body]);
+  if (!base || !body) {
+    return problem ? <Notice tone="danger">{problem}</Notice> : <Loading />;
+  }
+  const change = (next: Partial<LimitsBody>) => setBody((was) => ({ ...(was ?? {}), ...next }));
+  const changeFailure = (next: { script?: string | undefined; notify?: string | undefined }) =>
+    setBody((was) => {
+      const merged = { ...(was?.onFailure ?? {}), ...next };
+      const kept = Object.fromEntries(Object.entries(merged).filter(([, value]) => value));
+      return { ...(was ?? {}), onFailure: Object.keys(kept).length > 0 ? kept : undefined };
+    });
+  const save = async () => {
+    setSaving(true);
+    setProblem(undefined);
+    setFields([]);
+    try {
+      // Fields left empty are not sent: the manifest wants them absent, not undefined.
+      const sent = Object.fromEntries(
+        Object.entries(body).filter(([, value]) => value !== undefined),
+      );
+      await putDraft(
+        root,
+        path,
+        { kind: "script", schemaVersion: 1, body: sent },
+        base.revision !== undefined ? { revision: base.revision } : { first: true },
+      );
+      onClose(true);
+    } catch (error) {
+      setProblem(failureText(error));
+      setFields((error as ApiError).fields ?? []);
+    } finally {
+      setSaving(false);
+    }
+  };
+  return (
+    <form
+      className="flex max-w-2xl flex-col gap-3"
+      onSubmit={(event) => {
+        event.preventDefault();
+        void save();
+      }}
+    >
+      {base.revision !== undefined ? (
+        <Notice tone="plain">
+          This script has a draft. Your changes are added to it.{" "}
+          <Link to={`${link}/scripts/edit/${path}`}>Open the draft</Link>
+        </Notice>
+      ) : null}
+      <LimitsFields
+        kind="script"
+        noun="script"
+        body={body}
+        change={change}
+        changeFailure={changeFailure}
+        readOnly={saving}
+        fieldError={(pointer) => fields?.find((field) => field.path.startsWith(pointer))?.message}
+        choices={choices}
+      />
+      {problem ? <Notice tone="danger">{problem}</Notice> : null}
+      <div className="flex flex-wrap items-center gap-2">
+        <Button type="submit" loading={saving}>
+          Save as a draft
+        </Button>
+        <Button variant="quiet" disabled={saving} onClick={() => onClose(false)}>
+          Cancel
+        </Button>
+      </div>
+    </form>
   );
 }

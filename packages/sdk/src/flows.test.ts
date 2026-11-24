@@ -46,3 +46,57 @@ describe("a flow's options", () => {
     });
   });
 });
+
+describe("a flow's choice of flow, tags and layout", () => {
+  const flow = defineFlow({
+    path: "orders/route",
+    nodes: {
+      at: trigger.schedule("0 6 * * *", { tags: ["trigger.cron"] }),
+      hook: trigger.webhook({ tags: ["trigger.body.kind"] }),
+      ev: trigger.event("orders/placed", { tags: ["event.payload.id"] }),
+      each: step.foreach("trigger.items", {
+        flowFrom: "item.flow",
+        allow: ["orders/a", defineFlow({ path: "orders/b", nodes: {}, edges: [] })],
+      }),
+      sub: step.subflow("orders/a"),
+      choose: step.subflow({ flowFrom: "trigger.flow", allow: ["orders/a"], input: "trigger" }),
+    },
+    edges: [],
+    layout: { at: { x: 0, y: 10 }, each: { x: 200, y: 10 } },
+  });
+  const body = flow.toManifest("flow").body as {
+    nodes: Record<string, Record<string, unknown>>;
+    layout?: unknown;
+  };
+
+  test("a flow is chosen by an expression from a list", () => {
+    expect(body.nodes.each).toMatchObject({
+      type: "foreach",
+      flowFrom: "item.flow",
+      allow: ["orders/a", "orders/b"],
+    });
+    expect(body.nodes.choose).toEqual({
+      type: "subflow",
+      flowFrom: "trigger.flow",
+      allow: ["orders/a"],
+      input: "trigger",
+    });
+    expect(body.nodes.sub).toEqual({ type: "subflow", flow: "orders/a" });
+  });
+
+  test("triggers carry tags", () => {
+    expect((body.nodes.at?.trigger as { tags?: string[] } | undefined)?.tags).toEqual([
+      "trigger.cron",
+    ]);
+    expect((body.nodes.hook?.trigger as { tags?: string[] } | undefined)?.tags).toEqual([
+      "trigger.body.kind",
+    ]);
+    expect((body.nodes.ev?.trigger as { tags?: string[] } | undefined)?.tags).toEqual([
+      "event.payload.id",
+    ]);
+  });
+
+  test("positions are kept", () => {
+    expect(body.layout).toEqual({ at: { x: 0, y: 10 }, each: { x: 200, y: 10 } });
+  });
+});

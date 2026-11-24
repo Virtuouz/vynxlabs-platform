@@ -2,6 +2,8 @@
 title: Invoices and chasing them
 description: When an invoice is made, when it counts as paid, and what happens when it is not.
 topic: desk-invoices
+type: explanation
+subjects: [visits]
 about:
   - table: invoices
   - flow: billing/chase-unpaid

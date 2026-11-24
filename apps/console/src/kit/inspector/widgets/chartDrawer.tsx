@@ -4,13 +4,12 @@
  * what fits: the chart types the data can work with, the look, and, over time, the extra options.
  */
 
-import type { PageWidget } from "@volvel/manifest";
+import { groupName, type PageWidget } from "@volvel/manifest";
 import {
   DrawerBlock,
   DrawerGroup,
   DrawerRow,
   SegmentedControl,
-  TextField,
   type TileOption,
   TilePicker,
   ToggleRow,
@@ -30,15 +29,19 @@ import {
   ChartColumn,
   ChartLine,
   ChartPie,
+  ChartScatter,
   Grid2x2,
   List,
   Palette,
 } from "lucide-react";
 import type { ReactNode } from "react";
-import { BreakdownRow, MeasureRow } from "../measureControls.tsx";
+import type { Env } from "../controls.tsx";
+import { BreakdownRow, MeasureRow, MoreMeasures } from "../measureControls.tsx";
 import { heading } from "../model.ts";
+import { SortRow } from "../rowsItUses.tsx";
 import {
   ChoiceRow,
+  CompareAcross,
   ConfigToggle,
   type DrawerData,
   dateFilters,
@@ -64,6 +67,7 @@ const KINDS: { value: ChartKind; label: string; icon: typeof ChartColumn }[] = [
   { value: "line", label: "Line", icon: ChartLine },
   { value: "area", label: "Area", icon: ChartArea },
   { value: "heatmap", label: "Heatmap", icon: Grid2x2 },
+  { value: "scatter", label: "Scatter", icon: ChartScatter },
 ];
 
 /** What a type would need, in the words under its tile. */
@@ -99,11 +103,26 @@ const MARK_WORDS: Record<string, string> = {
   scatter: "points",
 };
 
-const plural = (word: string) => (/s$/.test(word) ? word : `${word}s`);
+/** "status" is "statuses", "clinic" is "clinics", and a word that is already plural, as "species", stays. */
+export const plural = (word: string) =>
+  /(us|ss|x|ch|sh)$/.test(word) ? `${word}es` : /s$/.test(word) ? word : `${word}s`;
+
+/** The value drawn up the side: the one chosen as "Up the side", else the first. */
+export function drawnMeasure(query: Query, config: Record<string, unknown>) {
+  const all = query.visual.measures ?? [];
+  return all.find((one) => one.as === config.y) ?? all[0];
+}
+
+/** The breakdowns, the one chosen as "Along the bottom" (else the first) leading. */
+export function drawnGroups(query: Query, config: Record<string, unknown>) {
+  const all = groupsOf(query);
+  const along = all.find((one) => groupName(one) === config.x) ?? all[0];
+  return along ? [along, ...all.filter((one) => one !== along)] : all;
+}
 
 /** "the sum of total": what a measure reads as in a sentence. */
-function measureSentence(query: Query): string {
-  const measure = query.visual.measures?.[0];
+function measureSentence(query: Query, config: Record<string, unknown> = {}): string {
+  const measure = drawnMeasure(query, config);
   if (!measure) return "the figures";
   const column = measure.column ? lower(measure.column) : "rows";
   switch (measure.fn) {
@@ -124,7 +143,7 @@ function measureSentence(query: Query): string {
 
 /** "Reads as the sum of total for each clinic. Drawn as bars; 3 clinics." */
 export function readsAs(query: Query, config: Record<string, unknown>, count: number | undefined) {
-  const groups = groupsOf(query);
+  const groups = drawnGroups(query, config);
   const first = groups[0];
   const second = groups[1];
   const when = first?.type !== undefined && TEMPORAL.has(first.type);
@@ -138,7 +157,7 @@ export function readsAs(query: Query, config: Record<string, unknown>, count: nu
   const how = MARK_WORDS[kindOf(config)] ?? "bars";
   const tail = count === undefined ? "" : `; ${count} ${count === 1 ? noun : plural(noun)}`;
   return {
-    reads: `Reads as ${measureSentence(query)} ${along}${split}.`.replace(" .", "."),
+    reads: `Reads as ${measureSentence(query, config)} ${along}${split}.`.replace(" .", "."),
     drawn: `Drawn as ${how}${tail}.`,
   };
 }
@@ -280,7 +299,8 @@ function figures(query: Query, data: DrawerData | undefined, order?: unknown) {
       ? orderRows([...summary.rows], summary.breakdowns[0] ?? "", [name], order)
       : summary.rows
     ).map((row) => Number(row[name]) || 0),
-    count: summary.rows.length,
+    // How many different values are drawn along the bottom, not how many rows the answer has.
+    count: new Set(summary.rows.map((row) => row[summary.breakdowns[0] ?? ""])).size,
     real: data?.summary !== undefined,
   };
 }
@@ -321,6 +341,7 @@ export function ChartData({ env, data }: SectionProps) {
         note="Three questions in plain words. The chart type is suggested from the answers."
       >
         <MeasureRow env={env} input="rows" at={0} label="Measure" />
+        <MoreMeasures env={env} input="rows" label="Measure" />
         <BreakdownRow env={env} input="rows" at={0} label="For each" after={suggest} />
         {first ? (
           <BreakdownRow
@@ -343,6 +364,14 @@ export function ChartData({ env, data }: SectionProps) {
         </DrawerBlock>
       </DrawerGroup>
       <DrawerGroup label="Order">
+        <SortRow
+          env={env}
+          input="rows"
+          visual={query.visual}
+          columns={query.columns}
+          withSort
+          withLimit={false}
+        />
         {dated ? null : (
           <ChoiceRow
             idPrefix={env.widget.id}
@@ -402,7 +431,13 @@ export function ChartDisplay({ env, data }: SectionProps) {
   const kind = kindOf(config);
   const mark = (config.mark as string | undefined) ?? "bar";
   const filters = dateFilters(env);
-  const measure = query?.visual.measures?.[0];
+  const measure = query ? drawnMeasure(query, config) : undefined;
+  const along = query ? drawnGroups(query, config)[0] : undefined;
+  // A heatmap's side is the column it splits into rows; every other chart's is the measure.
+  const side =
+    mark === "heatmap" && query
+      ? (drawnGroups(query, config)[1]?.column ?? "")
+      : (measure?.column ?? measure?.as ?? "");
 
   const tiles: TileOption<ChartKind>[] = KINDS.map((one) => {
     const fit = chartFits(one.value, shape);
@@ -414,7 +449,7 @@ export function ChartDisplay({ env, data }: SectionProps) {
     };
   });
   const comparing = isComparing(config);
-  const colours = (config.colors as string | undefined) ?? "theme";
+  const colors = (config.colors as string | undefined) ?? "theme";
   const palette = (name: string) =>
     name === "theme" ? THEME_SWATCHES : (PALETTES[name as keyof typeof PALETTES] ?? []).slice(0, 3);
   void data;
@@ -423,7 +458,7 @@ export function ChartDisplay({ env, data }: SectionProps) {
     <>
       <DrawerGroup
         label="Chart type"
-        note="Greyed types don't fit this data; the note says what they would need."
+        note="Grayed types don't fit this data; the note says what they would need."
       >
         <DrawerBlock>
           <TilePicker
@@ -459,16 +494,17 @@ export function ChartDisplay({ env, data }: SectionProps) {
       </DrawerGroup>
       <DrawerGroup label="Look">
         <NumbersRow env={env} />
+        {query ? <AxisRows env={env} query={query} /> : null}
         <ChoiceRow
           idPrefix={env.widget.id}
           label="Colors"
           icon={Palette}
-          value={colours}
+          value={colors}
           options={[
             { value: "theme", label: "App theme", swatches: palette("theme") },
             { value: "cool", label: "Cool", swatches: palette("cool") },
             { value: "warm", label: "Warm", swatches: palette("warm") },
-            { value: "mono", label: "Greys", swatches: palette("mono") },
+            { value: "mono", label: "Grays", swatches: palette("mono") },
           ]}
           onChange={(next) =>
             set("colors", next === "theme" ? undefined : next, "changing the colors")
@@ -484,40 +520,13 @@ export function ChartDisplay({ env, data }: SectionProps) {
             label="Show axis titles"
             on={config.axisTitles !== false}
             help={
-              groups[0] && measure
-                ? `${heading(groups[0].column)} along the bottom, ${heading(measure.column ?? measure.as)} up the side`
+              along && measure
+                ? `${heading(along.column)} along the bottom, ${heading(side)} up the side`
                 : undefined
             }
           />
         )}
-        {mark !== "pie" && config.axisTitles !== false
-          ? (["x", "y"] as const).map((axis) => (
-              <DrawerRow
-                key={axis}
-                label={axis === "x" ? "Along the bottom" : "Up the side"}
-                value={
-                  typeof config[axis] === "string" && config[axis] !== "" ? (
-                    (config[axis] as string)
-                  ) : (
-                    <span className="text-ink-muted">Named from the data</span>
-                  )
-                }
-                editorTitle={axis === "x" ? "Title along the bottom" : "Title up the side"}
-                editor={
-                  <TextField
-                    name={`${env.widget.id}-axis-${axis}`}
-                    label={axis === "x" ? "Along the bottom" : "Up the side"}
-                    required={false}
-                    maxLength={60}
-                    value={typeof config[axis] === "string" ? (config[axis] as string) : ""}
-                    onChange={(text) =>
-                      set(axis, text === "" ? undefined : text, "changing an axis title")
-                    }
-                  />
-                }
-              />
-            ))
-          : null}
+
         {mark === "pie" ||
         mark === "heatmap" ||
         groups.length > 1 ||
@@ -526,10 +535,9 @@ export function ChartDisplay({ env, data }: SectionProps) {
             idPrefix={env.widget.id}
             label="Legend"
             icon={List}
-            value={(config.legend as "auto" | "shown" | "hidden" | undefined) ?? "auto"}
+            value={(config.legend as "auto" | "hidden" | undefined) ?? "auto"}
             options={[
               { value: "auto", label: "Automatic" },
-              { value: "shown", label: "Always" },
               { value: "hidden", label: "Never" },
             ]}
             onChange={(next) => set("legend", next, "changing the legend")}
@@ -548,6 +556,7 @@ export function ChartDisplay({ env, data }: SectionProps) {
               )
             }
           />
+          {comparing ? <CompareAcross env={env} /> : null}
           {mark === "line" || mark === "area" ? (
             <>
               <ConfigToggle env={env} name="smooth" label="Smooth the line" />
@@ -561,6 +570,46 @@ export function ChartDisplay({ env, data }: SectionProps) {
           ) : null}
         </DrawerGroup>
       ) : null}
+    </>
+  );
+}
+
+/** "Along the bottom" and "Up the side": which of the result's columns each axis draws; left out is the first. */
+function AxisRows({ env, query }: { env: Env; query: Query }) {
+  const set = setter(env);
+  const across = groupsOf(query).map((one) => groupName(one));
+  const up = (query.visual.measures ?? []).map((one) => one.as);
+  const rows = [
+    { name: "x", label: "Along the bottom", first: "First breakdown", names: across },
+    { name: "y", label: "Up the side", first: "First value", names: up },
+  ] as const;
+  return (
+    <>
+      {rows.map((row) =>
+        row.names.length < 2 ? null : (
+          <ChoiceRow
+            key={row.name}
+            idPrefix={env.widget.id}
+            label={row.label}
+            value={
+              row.names.includes(env.config[row.name] as string)
+                ? (env.config[row.name] as string)
+                : ""
+            }
+            options={[
+              { value: "", label: row.first },
+              ...row.names.map((name) => ({ value: name, label: heading(name) })),
+            ]}
+            onChange={(next) =>
+              set(
+                row.name,
+                next === "" ? undefined : next,
+                `changing what is ${row.label.toLowerCase()}`,
+              )
+            }
+          />
+        ),
+      )}
     </>
   );
 }

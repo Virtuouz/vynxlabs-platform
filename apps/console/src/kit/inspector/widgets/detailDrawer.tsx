@@ -7,6 +7,8 @@ import type { DataInput, WidgetSource } from "@volvel/manifest";
 import { DrawerBlock, RadioCards, SegmentedControl, SelectField, ToggleRow } from "@volvel/ui";
 import { SettingRow } from "../controls.tsx";
 import { configSettings, heading, withInput } from "../model.ts";
+import { ChoiceColors } from "./choiceBadges.tsx";
+import type { Tone } from "./columnModel.ts";
 import { FieldsList } from "./fieldsList.tsx";
 import { type Env, Group, LabelledBlock, setConfig } from "./recordShared.tsx";
 
@@ -152,6 +154,23 @@ export function DetailDisplaySection({ env }: { env: Env }) {
           {named.map((setting) => (
             <SettingRow key={setting.name} env={env} setting={setting} />
           ))}
+          {typeof env.config.status === "string" && env.config.status ? (
+            <DrawerBlock>
+              <ChoiceColors
+                env={env}
+                column={env.config.status}
+                badges={env.config.statusBadges as Record<string, Tone> | undefined}
+                onChange={(next) =>
+                  setConfig(
+                    env,
+                    "statusBadges",
+                    Object.keys(next).length > 0 ? next : undefined,
+                    "the status colors",
+                  )
+                }
+              />
+            </DrawerBlock>
+          ) : null}
         </Group>
       ) : null}
       <Group label="Look">

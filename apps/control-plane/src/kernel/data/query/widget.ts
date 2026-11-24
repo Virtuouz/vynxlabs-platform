@@ -10,9 +10,11 @@ import { followRecordedKey } from "../../dashboard-queries.js";
 import { badRequest, notFound } from "../../errors.js";
 import type { Kernel } from "../../kernel.js";
 import { resolveResource } from "../../resolve.js";
+import { todayIn } from "../../zones.js";
 import { loadCatalog } from "../apply.js";
 import type { CatalogTable } from "../plan.js";
 import { dayAfter, daysIn, type FilterValues, rangeOf } from "./filters.js";
+import { readParameters } from "./parameters.js";
 import {
   compileVisual,
   type ExtraCondition,
@@ -160,9 +162,11 @@ export function writeVisual(
   extra: ExtraCondition[] = [],
   at = "/query",
   lead?: RowsGroup,
+  /** The reader's time zone: "today" and where a day begins are the reader's (D21). */
+  zone?: string,
 ) {
   try {
-    return compileVisual(query, catalog, extra, new Date(), lead);
+    return compileVisual(query, catalog, extra, todayIn(zone), lead, zone);
   } catch (error) {
     if (!(error instanceof VisualRefused)) throw error;
     throw badRequest("The query cannot be run.", [
@@ -214,6 +218,8 @@ export async function inputQuery(
     filters: readonly PageFilter[];
     values: FilterValues;
     catalog: VisualCatalog;
+    /** The reader's time zone, as an IANA name. */
+    zone?: string | undefined;
     /** The deployed page and where the input is in it, whose recorded keys a saved query falls back on. */
     follow?: { pageId: string; place: string };
   },
@@ -246,6 +252,7 @@ export async function inputQuery(
       conditionsFor(input, filters, page.values),
       "/source/visual",
       kind.lead,
+      page.zone,
     );
     return { text: written.sql, parameters: written.parameters, columns: written.columns };
   }
@@ -279,9 +286,15 @@ export async function inputQuery(
     return {
       ...(byKey ? { followed: { names: byKey.names, now: byKey.now } } : {}),
       text: saved.sql,
-      parameters: (saved.parameters ?? []).map(
-        (parameter) =>
-          given(parameter.name) ?? source.values?.[parameter.name] ?? parameter.default ?? null,
+      // As the saved query's own route reads them: a missing or misfit value is refused by name.
+      parameters: readParameters(
+        saved.parameters ?? [],
+        (name) => given(name) ?? source.values?.[name],
+        Object.keys(source.values ?? {}),
+        {
+          at: (name) => `/source/values/${name}`,
+          missing: (parameter) => `Choose ${parameter.label ?? parameter.name}.`,
+        },
       ),
     };
   }

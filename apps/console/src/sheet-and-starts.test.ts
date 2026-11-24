@@ -80,6 +80,30 @@ describe("money known from the table, at the start", () => {
   });
 });
 
+describe("a new detail lists every column", () => {
+  test("the column that is its heading, and the one that is its status, are in the list, hidden: drawn once, and there to show", () => {
+    const config = detailWidget(info, { x: 0, y: 0, w: 12, h: 8 }).config as {
+      heading: string;
+      status?: string;
+      fields: { column: string; hidden?: boolean }[];
+    };
+    expect(config.heading).toBe("number");
+    const by = (name: string) => config.fields.find((one) => one.column === name);
+    expect(by("number")).toMatchObject({ hidden: true });
+    expect(by("status")).toMatchObject({ hidden: true });
+    expect(by("total")?.hidden).toBeUndefined();
+    // The table's order is kept.
+    expect(config.fields.map((one) => one.column)).toEqual([
+      "created_at",
+      "number",
+      "client",
+      "total",
+      "status",
+      "issued",
+    ]);
+  });
+});
+
 describe("the detail made from a table carries the table's columns", () => {
   test("labels, formats and badge tones come with it, in the table's order", () => {
     const list: PageWidget = table([], {

@@ -14,18 +14,22 @@ import {
   TextField,
 } from "@volvel/ui";
 import { Plus, Trash2 } from "lucide-react";
-import { useState } from "react";
+import { type ReactNode, useMemo, useRef, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, failureText, notify } from "../ask.tsx";
+import { Can, useCan } from "../kit/Can.tsx";
 import { DataTable } from "../kit/DataTable.tsx";
 import { listOf } from "../kit/format.ts";
 import { ErrorState, Loading } from "../kit/LoadState.tsx";
 import { Stepper } from "../kit/layout.tsx";
 import { PageHeader } from "../kit/PageHeader.tsx";
+import { LoadMore, usePagedList } from "../kit/paged.tsx";
+import { SaveBar } from "../kit/SaveBar.tsx";
 import { SecretField } from "../kit/SecretField.tsx";
-import { StatePill, Tag } from "../kit/status.tsx";
+import { Mono, StatePill, Tag } from "../kit/status.tsx";
+import { useOpenRow } from "../kit/useOpenRow.ts";
 import { CopyButton, Page, when } from "../ListScreen.tsx";
-import { useUrlParam } from "../router.tsx";
+import { leaveFirst, Link as RouteLink, useUrlParam } from "../router.tsx";
 import { Provisioning } from "./Provisioning.tsx";
 
 type Audience = "members" | "end_users";
@@ -98,11 +102,16 @@ interface Domain {
   verifiedAt: string | null;
   checkedAt: string | null;
   problem: string | null;
+  /** When a check first missed the record of a proved domain: it stays proved, and this says so. */
+  recordGoneAt?: string | null;
   record: { name: string; value: string } | null;
 }
 interface GroupMap {
   value: string;
   groupId: string;
+  groupName?: string;
+  /** `release` for one an access change made: it is changed by another access change, not here. */
+  managedBy?: "hand" | "release";
 }
 interface Link {
   id: string;
@@ -325,6 +334,15 @@ function SetUp({
             </>
           )}
         </div>
+        {provider.audience === "members" ? (
+          <div className="flex flex-col gap-1">
+            <CopyLine label="Sign-in address" value={provider.addresses.start} />
+            <p className="m-0 text-meta text-ink-subtle">
+              For a tile in the provider's app list, or a bookmark: it opens this provider's sign-in
+              and brings the person back here. It works once the provider is turned on.
+            </p>
+          </div>
+        ) : null}
         <p className="m-0 text-ink-muted">
           {provider.protocol === "oidc"
             ? "Register an application of the web kind, with the authorization code flow. Have it send the email, and a groups claim if you will map groups."
@@ -456,8 +474,16 @@ function Domains({ root, instance }: { root: string; instance: boolean }) {
         onSubmit={(event) => {
           event.preventDefault();
           void run(async () => {
-            await api.post(`${root}/domains`, { domain: domain.trim() });
-            notify.success(`${domain.trim()} is added. Prove it is yours with the record shown.`);
+            const added = await api.post<Domain>(`${root}/domains`, { domain: domain.trim() });
+            // Proved at once (the instance's own domains): nothing to publish. Unproved with a
+            // record: the record is shown. Neither: only what happened.
+            notify.success(
+              added.verified
+                ? `${added.domain} is added. It needs no proof here.`
+                : added.record
+                  ? `${added.domain} is added. Prove it is yours with the record shown.`
+                  : `${added.domain} is added.`,
+            );
             setDomain("");
           });
         }}
@@ -482,7 +508,11 @@ function Domains({ root, instance }: { root: string; instance: boolean }) {
           <div className="flex flex-wrap items-center justify-between gap-2">
             <span className="flex flex-wrap items-center gap-2">
               <strong>{row.domain}</strong>
-              {row.verified ? (
+              {row.verified && row.recordGoneAt ? (
+                <StatePill state="warning">
+                  Proved {when(row.verifiedAt ?? "")}; record gone since {when(row.recordGoneAt)}
+                </StatePill>
+              ) : row.verified ? (
                 <StatePill state="verified">Proved</StatePill>
               ) : (
                 <StatePill state="unverified">Not proved</StatePill>
@@ -536,19 +566,67 @@ function Domains({ root, instance }: { root: string; instance: boolean }) {
 }
 
 function Groups({ base, root, audience }: { base: string; root: string; audience: Audience }) {
-  const groups = useLoad<{ items: { id: string; name: string }[] }>(
-    `${base}/${audience === "members" ? "groups" : "end-user-groups"}?limit=200`,
+  // The picker is searched on the server, so a group past the first page can still be chosen.
+  const [typed, setTyped] = useState("");
+  const groups = usePagedList<{ id: string; name: string }>(
+    `${base}/${audience === "members" ? "groups" : "end-user-groups"}`,
+    { search: typed, limit: 200 },
   );
   const stored = useLoad<{ items: GroupMap[] }>(`${root}/group-maps`);
   const [edited, setEdited] = useState<GroupMap[]>();
   const [busy, setBusy] = useState(false);
-  const rows = edited ?? stored.data?.items ?? [];
+  const all = stored.data?.items ?? [];
+  const released = all.filter((row) => row.managedBy === "release");
+  const rows = edited ?? all.filter((row) => row.managedBy !== "release");
+  const [problem, setProblem] = useState<string>();
+  const tenantId = base.split("/").pop();
   const change = (index: number, patch: Partial<GroupMap>) =>
     setEdited(rows.map((row, at) => (at === index ? { ...row, ...patch } : row)));
-  const options = (groups.data?.items ?? []).map((group) => ({
-    value: group.id,
-    label: group.name,
-  }));
+  // A group already chosen stays an option when a search leaves it out of the list. The same
+  // list until something changes: a list that changes under the box resets what is typed in it.
+  const chosenKey = JSON.stringify([
+    (groups.items ?? []).map((group) => [group.id, group.name]),
+    rows.map((row) => [row.groupId, row.groupName ?? null]),
+  ]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: chosenKey stands for both lists
+  const options = useMemo(() => {
+    const listed = groups.items ?? [];
+    return [
+      ...listed.map((group) => ({ value: group.id, label: group.name })),
+      ...rows
+        .filter((row) => row.groupId && !listed.some((one) => one.id === row.groupId))
+        .map((row) => ({ value: row.groupId, label: row.groupName ?? row.groupId })),
+    ];
+  }, [chosenKey]);
+  const saveMapping = async () => {
+    // A row left empty is nothing; one half filled in is not saved quietly without its half.
+    const half = rows.findIndex((row) => !!row.value.trim() !== !!row.groupId);
+    if (half >= 0) {
+      setProblem(
+        `Row ${half + 1} is not complete. ${
+          rows[half]?.value.trim()
+            ? "Choose the group here for it"
+            : "Write the group at the provider for it"
+        }, or remove the row.`,
+      );
+      return;
+    }
+    setProblem(undefined);
+    const items = rows.filter((row) => row.value.trim() && row.groupId);
+    setBusy(true);
+    try {
+      await api.put(`${root}/group-maps`, {
+        items: items.map((row) => ({ value: row.value.trim(), groupId: row.groupId })),
+      });
+      setEdited(undefined);
+      stored.reload();
+      notify.success("The group mapping was saved.");
+    } catch (error) {
+      notify.error(error);
+    } finally {
+      setBusy(false);
+    }
+  };
   return (
     <div className="flex max-w-measure flex-col gap-4">
       <p className="m-0 text-ink-muted">
@@ -557,6 +635,28 @@ function Groups({ base, root, audience }: { base: string; root: string; audience
         never touched. Use <code className="font-mono text-code">*</code> for everyone the provider
         signs in.
       </p>
+      {released.length > 0 ? (
+        <div className="flex flex-col gap-2">
+          <p className="m-0 text-ink-muted">
+            These come from an{" "}
+            <RouteLink to={`/t/${tenantId}/releases`} className="text-action">
+              access change
+            </RouteLink>
+            . Change them there.
+          </p>
+          {released.map((row) => (
+            <div
+              key={`${row.value}\n${row.groupId}`}
+              className="flex flex-wrap items-center gap-2 rounded-control bg-structure px-3 py-2"
+            >
+              <Mono>{row.value}</Mono>
+              <span className="text-ink-muted">goes to</span>
+              <strong>{row.groupName ?? row.groupId}</strong>
+              <Tag tone="neutral">Access change</Tag>
+            </div>
+          ))}
+        </div>
+      ) : null}
       {rows.map((row, index) => (
         // biome-ignore lint/suspicious/noArrayIndexKey: rows have no identity until saved
         <div key={index} className="flex flex-wrap items-end gap-2">
@@ -574,7 +674,13 @@ function Groups({ base, root, audience }: { base: string; root: string; audience
               label="Group here"
               options={options}
               value={row.groupId || undefined}
-              onChange={(value) => change(index, { groupId: value ?? "" })}
+              onSearch={setTyped}
+              onChange={(value) =>
+                change(index, {
+                  groupId: value ?? "",
+                  groupName: options.find((option) => option.value === value)?.label ?? "",
+                })
+              }
             />
           </div>
           <Button
@@ -585,35 +691,31 @@ function Groups({ base, root, audience }: { base: string; root: string; audience
           </Button>
         </div>
       ))}
+      <LoadMore
+        shown={groups.items?.length ?? 0}
+        hasMore={groups.hasMore}
+        loading={groups.loadingMore}
+        error={groups.moreError}
+        noun="groups"
+        onMore={groups.loadMore}
+      />
       <div className="flex flex-wrap gap-2">
         <Button onClick={() => setEdited([...rows, { value: "", groupId: "" }])}>
           <Plus size={16} aria-hidden="true" /> Add a mapping
         </Button>
-        <Button
-          variant="primary"
-          loading={busy}
-          disabled={edited === undefined}
-          onClick={async () => {
-            const items = rows.filter((row) => row.value.trim() && row.groupId);
-            setBusy(true);
-            try {
-              await api.put(`${root}/group-maps`, {
-                items: items.map((row) => ({ value: row.value.trim(), groupId: row.groupId })),
-              });
-              setEdited(undefined);
-              stored.reload();
-              notify.success("The group mapping was saved.");
-            } catch (error) {
-              notify.error(error);
-            } finally {
-              setBusy(false);
-            }
-          }}
-        >
-          Save mapping
-        </Button>
       </div>
-      {groups.data && options.length === 0 ? (
+      {problem ? <Notice tone="danger">{problem}</Notice> : null}
+      <SaveBar
+        dirty={edited !== undefined}
+        saving={busy}
+        onSave={() => void saveMapping()}
+        onDiscard={() => {
+          setEdited(undefined);
+          setProblem(undefined);
+        }}
+        what="this group mapping"
+      />
+      {groups.items && options.length === 0 && !typed ? (
         <Notice tone="attention">
           {audience === "members"
             ? "This tenant has no groups yet. Create one under Groups."
@@ -629,6 +731,18 @@ const SIGNED = [
   { value: "assertion", label: "The assertion" },
   { value: "response", label: "The whole response" },
   { value: "both", label: "Both" },
+];
+
+/** The name ID formats providers are usually asked for. A stored one that is not here is kept. */
+const NAME_ID_FORMATS = [
+  { value: "", label: "Not asked: the provider chooses" },
+  {
+    value: "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress",
+    label: "Email address",
+  },
+  { value: "urn:oasis:names:tc:SAML:2.0:nameid-format:persistent", label: "Persistent" },
+  { value: "urn:oasis:names:tc:SAML:2.0:nameid-format:transient", label: "Transient" },
+  { value: "urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified", label: "Unspecified" },
 ];
 
 function Settings({
@@ -656,9 +770,34 @@ function Settings({
       .join("\n"),
   );
   const [clientSecret, setClientSecret] = useState("");
+  const [removeSecret, setRemoveSecret] = useState(false);
+  const [scopes, setScopes] = useState((provider.config.scopes ?? []).join(" "));
   const [provision, setProvision] = useState(provider.provision);
   const [roleId, setRoleId] = useState(provider.defaultRoleId ?? undefined);
-  const [error, setError] = useState<ApiError>();
+  const [error, setError] = useState<ApiError | string>();
+  // A refusal of one field is said at that field, with what was typed kept. Only what no field
+  // here shows, or that is not about a field, is said in a notice.
+  const fieldError = (tail: string) =>
+    typeof error === "string"
+      ? undefined
+      : error?.fields?.find(
+          (one) => one.path === `/body/${tail}` || one.path.startsWith(`/body/${tail}/`),
+        )?.message;
+  const unplaced =
+    error === undefined
+      ? undefined
+      : typeof error === "string"
+        ? error
+        : error.fields?.length
+          ? error.fields.some(
+              (one) =>
+                !/^\/body\/(name|defaultRoleId|config\/(entryPoint|idpIssuer|certificates|nameIdFormat|signed|issuer|clientId|scopes|attributes))(\/|$)/.test(
+                  one.path,
+                ),
+            )
+            ? failureText(error)
+            : undefined
+          : failureText(error);
   const [busy, setBusy] = useState(false);
   const set = (patch: Partial<Config>) => setConfig((current) => ({ ...current, ...patch }));
   const claim = (key: keyof Claims, label: string, usual: string) => (
@@ -671,269 +810,487 @@ function Settings({
     />
   );
   const saml = provider.protocol === "saml";
+  // What is on the screen, to tell whether it differs from what was last saved.
+  const snapshotOf = (values: { config: Config; certificates: string }) =>
+    JSON.stringify([
+      name,
+      values.config,
+      values.certificates,
+      attributes,
+      clientSecret,
+      removeSecret,
+      scopes,
+      provision,
+      roleId ?? null,
+    ]);
+  const [saved, setSaved] = useState(() => snapshotOf({ config, certificates }));
+  const dirty = snapshotOf({ config, certificates }) !== saved;
+  const form = useRef<HTMLFormElement>(null);
+  const discard = () => {
+    setName(provider.name);
+    setConfig(provider.config);
+    setCertificates((provider.config.certificates ?? []).join("\n"));
+    setAttributes(
+      Object.entries(provider.config.attributes ?? {})
+        .map(([attribute, claim]) => `${attribute} = ${claim}`)
+        .join("\n"),
+    );
+    setClientSecret("");
+    setRemoveSecret(false);
+    setScopes((provider.config.scopes ?? []).join(" "));
+    setProvision(provider.provision);
+    setRoleId(provider.defaultRoleId ?? undefined);
+    setError(undefined);
+  };
+  const [metadataUrl, setMetadataUrl] = useState("");
+  const [metadataXml, setMetadataXml] = useState("");
+  const [reading, setReading] = useState(false);
+  const [readError, setReadError] = useState<ApiError | string>();
+  const readAgain = async () => {
+    setReadError(undefined);
+    const sure = await ask.confirm({
+      title: "Read the metadata again?",
+      text: "The sign-in address, the provider's entity ID and the signing certificates are replaced by what the metadata says. If the entity ID is another, the ties between people and this provider's sign-ins are removed.",
+      action: "Read the metadata",
+    });
+    if (!sure) return;
+    setReading(true);
+    try {
+      // Only the metadata is sent: the three values it describes would win over it if sent too.
+      const read = await api.patch<IdentityProvider>(root, {
+        config: metadataXml.trim()
+          ? { metadataXml: metadataXml.trim() }
+          : { metadataUrl: metadataUrl.trim() },
+      });
+      setConfig(read.config);
+      setCertificates((read.config.certificates ?? []).join("\n"));
+      setSaved(
+        snapshotOf({
+          config: read.config,
+          certificates: (read.config.certificates ?? []).join("\n"),
+        }),
+      );
+      setMetadataUrl("");
+      setMetadataXml("");
+      onChanged(read);
+      notify.success("The metadata was read. The sign-in address and certificates are as it says.");
+    } catch (caught) {
+      setReadError(caught as ApiError);
+    } finally {
+      setReading(false);
+    }
+  };
 
   return (
-    <form
-      className="flex max-w-measure flex-col gap-3"
-      onSubmit={async (event) => {
-        event.preventDefault();
-        setBusy(true);
-        setError(undefined);
-        try {
-          const { spCertificate: _ours, ...sent } = config;
-          const saved = await api.patch<IdentityProvider>(root, {
-            name: name.trim(),
-            config: {
-              ...sent,
-              ...(saml
-                ? {
-                    certificates: certificates
-                      .split(/(?<=-----END CERTIFICATE-----)/)
-                      .map((certificate) => certificate.trim())
-                      .filter(Boolean),
-                  }
-                : {}),
-              attributes: Object.fromEntries(
-                attributes
-                  .split("\n")
-                  .map((line) => line.split("=").map((part) => part.trim()))
-                  .filter((parts) => parts.length === 2 && parts[0] && parts[1]),
-              ),
-            },
-            ...(clientSecret ? { clientSecret } : {}),
-            provision,
-            ...(provider.audience === "members" && !instance
-              ? { defaultRoleId: roleId ?? null }
-              : {}),
-          });
-          setClientSecret("");
-          onChanged(saved);
-          notify.success("The provider was saved.");
-        } catch (caught) {
-          setError(caught as ApiError);
-        } finally {
-          setBusy(false);
-        }
-      }}
-    >
-      <TextField label="Name" name="name" value={name} required maxLength={80} onChange={setName} />
+    <div className="flex max-w-measure flex-col gap-6">
       {saml ? (
-        <>
+        <section className="flex flex-col gap-3" aria-label="Read the metadata again">
+          <h2 className="m-0 text-title font-semibold">Read the metadata again</h2>
+          <p className="m-0 text-ink-muted">
+            When the provider changes its certificate or its address, have it be read here instead
+            of copied by hand.
+          </p>
           <TextField
-            label="Sign-in address"
-            name="entryPoint"
-            value={config.entryPoint ?? ""}
-            required
-            hint="Where people are sent to sign in."
-            onChange={(entryPoint) => set({ entryPoint })}
-          />
-          <TextField
-            label="Provider's entity ID"
-            name="idpIssuer"
-            value={config.idpIssuer ?? ""}
-            required
-            onChange={(idpIssuer) => set({ idpIssuer })}
+            label="Metadata address"
+            name="readMetadataUrl"
+            value={metadataUrl}
+            placeholder="https://login.example.com/saml/metadata"
+            disabled={metadataXml.trim() !== ""}
+            hint="Where the provider publishes its metadata."
+            onChange={setMetadataUrl}
           />
           <TextAreaField
-            label="Signing certificates"
-            name="certificates"
-            value={certificates}
-            rows={5}
-            hint="One or more, in PEM form. List the new one beside the old one while a certificate is being replaced."
-            onChange={setCertificates}
+            label="Or paste the metadata"
+            name="readMetadataXml"
+            value={metadataXml}
+            rows={4}
+            hint="The provider's metadata file. Used instead of the address when filled in."
+            onChange={setMetadataXml}
           />
-          <SelectField
-            label="What must be signed"
-            name="signed"
-            value={config.signed ?? "either"}
-            options={SIGNED}
-            onChange={(signed) => set({ signed })}
-          />
-          <CheckboxField
-            label="Sign the requests sent to the provider"
-            name="signRequests"
-            checked={config.signRequests ?? true}
-            onChange={(signRequests) => set({ signRequests })}
-          />
-          <CheckboxField
-            label="Ask the provider to encrypt assertions"
-            name="encryptAssertions"
-            checked={config.encryptAssertions ?? false}
-            hint="Publishes this side's certificate in the metadata for the provider to encrypt to. The provider must wrap the key with RSA-OAEP with MGF1 (rsa-oaep-mgf1p) and the SHA-1 digest. Keycloak's defaults differ: set both on its client."
-            onChange={(encryptAssertions) => set({ encryptAssertions })}
-          />
-          <CheckboxField
-            label="Accept SHA-1 signatures"
-            name="allowSha1"
-            checked={config.allowSha1 ?? false}
-            hint="Weak. Only for a provider that cannot sign with SHA-256. Turning this on is written to the audit log."
-            onChange={(allowSha1) => set({ allowSha1 })}
-          />
-          <CheckboxField
-            label="Accept sign-ins the provider begins"
-            name="allowIdpInitiated"
-            checked={config.allowIdpInitiated ?? false}
-            hint="For a tile on the provider's own start page. Such a sign-in answers no request of ours, so it is off unless you need it. Turning this on is written to the audit log."
-            onChange={(allowIdpInitiated) => set({ allowIdpInitiated })}
-          />
-        </>
-      ) : (
-        <>
-          <TextField
-            label="Issuer"
-            name="issuer"
-            value={config.issuer ?? ""}
-            required
-            onChange={(issuer) => set({ issuer })}
-          />
-          <TextField
-            label="Client ID"
-            name="clientId"
-            value={config.clientId ?? ""}
-            required
-            onChange={(clientId) => set({ clientId })}
-          />
-          <SecretField
-            label="Client secret"
-            name="clientSecret"
-            stored={provider.hasSecret}
-            setAt={provider.credentialSetAt}
-            setBy={provider.credentialSetBy}
-            autoComplete="off"
-            value={clientSecret}
-            onChange={setClientSecret}
-          />
-          <TextField
-            label="Scopes"
-            name="scopes"
-            value={(config.scopes ?? []).join(" ")}
-            hint="Separated by spaces."
-            onChange={(value) => set({ scopes: value.split(/\s+/).filter(Boolean) })}
-          />
-          <CheckboxField
-            label="Also read the user-info address"
-            name="userinfo"
-            checked={config.userinfo ?? false}
-            hint="For a provider that leaves groups or email out of the ID token."
-            onChange={(userinfo) => set({ userinfo })}
-          />
-        </>
-      )}
-      <h2 className="mt-3 mb-0 text-title font-semibold">Which claims to read</h2>
-      <p className="m-0 text-ink-muted">Leave a field empty to use the usual name.</p>
-      <div className="grid gap-3 sm:grid-cols-2">
-        {claim("subject", "Subject", saml ? "The name ID" : "sub")}
-        {claim("email", "Email", saml ? "email, mail" : "email")}
-        {claim("name", "Name", saml ? "name, displayName" : "name")}
-        {claim("groups", "Groups", saml ? "groups, memberOf" : "groups")}
-      </div>
-      {provider.audience === "end_users" ? (
-        <>
-          <TextAreaField
-            label="Attributes"
-            name="attributes"
-            value={attributes}
-            rows={3}
-            placeholder="customer_id = customerId"
-            hint="One a line: the attribute here, an equals sign, the claim it is read from. A table's row rules can match on these."
-            onChange={setAttributes}
-          />
-          <CheckboxField
-            label="Take the provider's word on emails"
-            name="trustEmail"
-            checked={config.trustEmail ?? false}
-            hint="Lets a first sign-in take over an existing account with the same email, in a domain that has not been proved here. Only for a provider that verifies emails itself."
-            onChange={(trustEmail) => set({ trustEmail })}
-          />
-        </>
+          {readError ? <Notice tone="danger">{failureText(readError)}</Notice> : null}
+          <div>
+            <Button
+              variant="secondary"
+              loading={reading}
+              disabled={metadataUrl.trim() === "" && metadataXml.trim() === ""}
+              onClick={readAgain}
+            >
+              Read the metadata
+            </Button>
+          </div>
+        </section>
       ) : null}
-      <h2 className="mt-3 mb-0 text-title font-semibold">New people</h2>
-      <CheckboxField
-        label="Create people the first time they sign in"
-        name="provision"
-        checked={provision}
-        hint={
-          provider.audience === "members"
-            ? "Off, only members who already exist can sign in."
-            : "Off, only end users who already exist can sign in."
-        }
-        onChange={setProvision}
-      />
-      {provider.audience === "members" && !instance ? (
-        <ComboboxField
-          label="Role given to a new member"
-          options={(roles.data?.items ?? [])
-            .filter((role) => !role.workspaceId)
-            .map((role) => ({ value: role.id, label: role.name }))}
-          value={roleId}
-          hint="Leave empty to give nothing. A new member can then sign in and see nothing until someone gives them a role."
-          onChange={setRoleId}
+      <form
+        ref={form}
+        className="flex flex-col gap-3"
+        onSubmit={async (event) => {
+          event.preventDefault();
+          setError(undefined);
+          // Subjects belong to the issuer that gave them: another issuer may use one for another
+          // person. Saying so first is what lets the ties go with the old one.
+          const moved = saml
+            ? (config.idpIssuer ?? "") !== (provider.config.idpIssuer ?? "")
+            : (config.issuer ?? "") !== (provider.config.issuer ?? "");
+          if (moved) {
+            const sure = await ask.confirm({
+              title: saml ? "Change the identity provider's entity ID?" : "Change the issuer?",
+              text: `The ties between people and this provider's sign-ins are removed. The next time each person signs in, they are found by their email again.${
+                saml
+                  ? ""
+                  : " A client secret stored for the old address is not sent to a new one: give it again if the address changes."
+              }`,
+              action: "Change it",
+              danger: true,
+            });
+            if (!sure) return;
+          }
+          // One a line, split at the first equals sign: a claim may hold one. A line that is not
+          // whole is said, not dropped.
+          const pairs: [string, string][] = [];
+          const lines = attributes.split("\n");
+          for (const [at, line] of lines.entries()) {
+            if (!line.trim()) continue;
+            const cut = line.indexOf("=");
+            const attribute = cut < 0 ? "" : line.slice(0, cut).trim();
+            const claimName = cut < 0 ? "" : line.slice(cut + 1).trim();
+            if (!attribute || !claimName) {
+              setError(
+                `Line ${at + 1} is not complete: write the attribute here, an equals sign, then the claim it is read from.`,
+              );
+              return;
+            }
+            pairs.push([attribute, claimName]);
+          }
+          setBusy(true);
+          try {
+            const { spCertificate: _ours, ...sent } = config;
+            const updated = await api.patch<IdentityProvider>(root, {
+              name: name.trim(),
+              config: {
+                ...sent,
+                ...(saml
+                  ? {
+                      certificates: certificates
+                        .split(/(?<=-----END CERTIFICATE-----)/)
+                        .map((certificate) => certificate.trim())
+                        .filter(Boolean),
+                    }
+                  : {}),
+                ...(saml ? {} : { scopes: scopes.split(/\s+/).filter(Boolean) }),
+                attributes: Object.fromEntries(pairs),
+              },
+              ...(clientSecret ? { clientSecret } : removeSecret ? { clientSecret: null } : {}),
+              provision,
+              ...(provider.audience === "members" && !instance
+                ? { defaultRoleId: roleId ?? null }
+                : {}),
+            });
+            setClientSecret("");
+            setRemoveSecret(false);
+            // What was typed is now what is saved; the secret is never kept on the screen.
+            setSaved(
+              JSON.stringify([
+                name,
+                config,
+                certificates,
+                attributes,
+                "",
+                false,
+                scopes,
+                provision,
+                roleId ?? null,
+              ]),
+            );
+            onChanged(updated);
+            // A secret stored for the old issuer is not sent to a new one: said, not lost in silence.
+            if (provider.hasSecret && !updated.hasSecret)
+              notify.info(
+                "The provider was saved. Its client secret was dropped because the issuer changed: give it again in Settings.",
+              );
+            else notify.success("The provider was saved.");
+          } catch (caught) {
+            setError(caught as ApiError);
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        <TextField
+          label="Name"
+          name="name"
+          error={fieldError("name")}
+          value={name}
+          required
+          maxLength={80}
+          onChange={setName}
         />
-      ) : null}
-      {error ? <Notice tone="danger">{failureText(error)}</Notice> : null}
-      <div className="mt-1 flex justify-end">
-        <Button type="submit" variant="primary" loading={busy}>
-          Save
-        </Button>
-      </div>
-    </form>
+        {saml ? (
+          <>
+            <TextField
+              label="Sign-in address"
+              name="entryPoint"
+              error={fieldError("config/entryPoint")}
+              value={config.entryPoint ?? ""}
+              required
+              hint="Where people are sent to sign in."
+              onChange={(entryPoint) => set({ entryPoint })}
+            />
+            <TextField
+              label="Provider's entity ID"
+              name="idpIssuer"
+              error={fieldError("config/idpIssuer")}
+              value={config.idpIssuer ?? ""}
+              required
+              onChange={(idpIssuer) => set({ idpIssuer })}
+            />
+            <TextAreaField
+              label="Signing certificates"
+              name="certificates"
+              error={fieldError("config/certificates")}
+              value={certificates}
+              rows={5}
+              hint="One or more, in PEM form. List the new one beside the old one while a certificate is being replaced."
+              onChange={setCertificates}
+            />
+            <SelectField
+              label="Name ID format"
+              name="nameIdFormat"
+              error={fieldError("config/nameIdFormat")}
+              value={config.nameIdFormat ?? ""}
+              options={
+                config.nameIdFormat && !NAME_ID_FORMATS.some((f) => f.value === config.nameIdFormat)
+                  ? [...NAME_ID_FORMATS, { value: config.nameIdFormat, label: config.nameIdFormat }]
+                  : NAME_ID_FORMATS
+              }
+              hint="What this side asks the provider to send as the person's name ID. Persistent keeps one person to one name ID; email address is for a provider that has no lasting one."
+              onChange={(value) => set({ nameIdFormat: value === "" ? null : value })}
+            />
+            <SelectField
+              label="What must be signed"
+              name="signed"
+              error={fieldError("config/signed")}
+              value={config.signed ?? "either"}
+              options={SIGNED}
+              onChange={(signed) => set({ signed })}
+            />
+            <CheckboxField
+              label="Sign the requests sent to the provider"
+              name="signRequests"
+              checked={config.signRequests ?? true}
+              onChange={(signRequests) => set({ signRequests })}
+            />
+            <CheckboxField
+              label="Ask the provider to encrypt assertions"
+              name="encryptAssertions"
+              checked={config.encryptAssertions ?? false}
+              hint="Publishes this side's certificate in the metadata for the provider to encrypt to. The provider must wrap the key with RSA-OAEP with MGF1 (rsa-oaep-mgf1p) and the SHA-1 digest. Keycloak's defaults differ: set both on its client."
+              onChange={(encryptAssertions) => set({ encryptAssertions })}
+            />
+            <CheckboxField
+              label="Accept SHA-1 signatures"
+              name="allowSha1"
+              checked={config.allowSha1 ?? false}
+              hint="Weak. Only for a provider that cannot sign with SHA-256. Turning this on is written to the audit log."
+              onChange={(allowSha1) => set({ allowSha1 })}
+            />
+            <CheckboxField
+              label="Accept sign-ins the provider begins"
+              name="allowIdpInitiated"
+              checked={config.allowIdpInitiated ?? false}
+              hint="For a tile on the provider's own start page. Such a sign-in answers no request of ours, so it is off unless you need it. Turning this on is written to the audit log."
+              onChange={(allowIdpInitiated) => set({ allowIdpInitiated })}
+            />
+          </>
+        ) : (
+          <>
+            <TextField
+              label="Issuer"
+              name="issuer"
+              error={fieldError("config/issuer")}
+              value={config.issuer ?? ""}
+              required
+              onChange={(issuer) => set({ issuer })}
+            />
+            <TextField
+              label="Client ID"
+              name="clientId"
+              error={fieldError("config/clientId")}
+              value={config.clientId ?? ""}
+              required
+              onChange={(clientId) => set({ clientId })}
+            />
+            <SecretField
+              label="Client secret"
+              name="clientSecret"
+              stored={provider.hasSecret}
+              setAt={provider.credentialSetAt}
+              setBy={provider.credentialSetBy}
+              autoComplete="off"
+              value={clientSecret}
+              onChange={setClientSecret}
+            />
+            {provider.hasSecret && !clientSecret ? (
+              <CheckboxField
+                label="Remove the stored client secret"
+                name="removeSecret"
+                checked={removeSecret}
+                hint="For a public client: the provider is then signed in with PKCE alone. Applies when you save."
+                onChange={setRemoveSecret}
+              />
+            ) : null}
+            <TextField
+              label="Scopes"
+              name="scopes"
+              error={fieldError("config/scopes")}
+              value={scopes}
+              hint="Separated by spaces."
+              onChange={setScopes}
+            />
+            <CheckboxField
+              label="Also read the user-info address"
+              name="userinfo"
+              checked={config.userinfo ?? false}
+              hint="For a provider that leaves groups or email out of the ID token."
+              onChange={(userinfo) => set({ userinfo })}
+            />
+          </>
+        )}
+        <h2 className="mt-3 mb-0 text-title font-semibold">Which claims to read</h2>
+        <p className="m-0 text-ink-muted">Leave a field empty to use the usual name.</p>
+        <div className="grid gap-3 sm:grid-cols-2">
+          {claim("subject", "Subject", saml ? "The name ID" : "sub")}
+          {claim("email", "Email", saml ? "email, mail" : "email")}
+          {claim("name", "Name", saml ? "name, displayName" : "name")}
+          {claim("groups", "Groups", saml ? "groups, memberOf" : "groups")}
+        </div>
+        {provider.audience === "end_users" ? (
+          <>
+            <TextAreaField
+              label="Attributes"
+              name="attributes"
+              error={fieldError("config/attributes")}
+              value={attributes}
+              rows={3}
+              placeholder="customer_id = customerId"
+              hint="One a line: the attribute here, an equals sign, the claim it is read from. A table's row rules can match on these."
+              onChange={setAttributes}
+            />
+            <CheckboxField
+              label="Take the provider's word on emails"
+              name="trustEmail"
+              checked={config.trustEmail ?? false}
+              hint="Lets a first sign-in take over an existing account with the same email, in a domain that has not been proved here. Only for a provider that verifies emails itself."
+              onChange={(trustEmail) => set({ trustEmail })}
+            />
+          </>
+        ) : null}
+        <h2 className="mt-3 mb-0 text-title font-semibold">New people</h2>
+        <CheckboxField
+          label="Create people the first time they sign in"
+          name="provision"
+          checked={provision}
+          hint={
+            provider.audience === "members"
+              ? `Off, only members who already exist can sign in.${
+                  instance
+                    ? " A person made here has no access until an operator gives it, one person at a time."
+                    : ""
+                }`
+              : "Off, only end users who already exist can sign in."
+          }
+          onChange={setProvision}
+        />
+        {provider.audience === "members" && !instance ? (
+          <ComboboxField
+            label="Role given to a new member"
+            error={fieldError("defaultRoleId")}
+            options={(roles.data?.items ?? [])
+              .filter((role) => !role.workspaceId)
+              .map((role) => ({ value: role.id, label: role.name }))}
+            value={roleId}
+            hint="Leave empty to give nothing. A new member can then sign in and see nothing until someone gives them a role."
+            onChange={setRoleId}
+          />
+        ) : null}
+        {unplaced ? <Notice tone="danger">{unplaced}</Notice> : null}
+        <SaveBar
+          dirty={dirty}
+          saving={busy}
+          onSave={() => form.current?.requestSubmit()}
+          onDiscard={discard}
+          what="this provider's settings"
+        />
+      </form>
+    </div>
   );
 }
 
 function People({ root }: { root: string }) {
-  const list = useLoad<{ items: Link[] }>(`${root}/links`);
+  const list = usePagedList<Link>(`${root}/links`, { limit: 200 });
   return list.error ? (
     <ErrorState error={list.error} onRetry={list.reload} />
   ) : (
-    <DataTable<Link>
-      variant="static"
-      framed
-      label="People who signed in"
-      rows={list.data?.items ?? []}
-      rowKey={(row) => row.id}
-      empty={
-        <EmptyState title="Nobody yet">
-          People appear here the first time they sign in through this provider.
-        </EmptyState>
-      }
-      columns={[
-        { header: "Person", cell: (row) => row.name || row.email || "Unknown" },
-        { header: "Email at the provider", cell: (row) => row.email ?? "" },
-        {
-          header: "Subject",
-          cell: (row) => <code className="font-mono text-code break-all">{row.subject}</code>,
-        },
-        {
-          header: "Last signed in",
-          cell: (row) => (row.lastSignedInAt ? when(row.lastSignedInAt) : "Never"),
-        },
-        {
-          header: "",
-          cell: (row) => (
-            <Button
-              onClick={async () => {
-                const sure = await ask.confirm({
-                  title: `Untie ${row.email ?? row.subject}?`,
-                  text: "For when this person's identity at the provider was replaced. Their next sign-in ties them again by email, under the rules of a first sign-in.",
-                  action: "Untie",
-                  danger: true,
-                });
-                if (!sure) return;
-                try {
-                  await api.delete(`${root}/links/${row.id}`);
-                  notify.success("Untied. Their next sign-in ties them again by email.");
-                  list.reload();
-                } catch (error) {
-                  notify.error(error);
-                }
-              }}
-            >
-              Untie
-            </Button>
-          ),
-        },
-      ]}
-    />
+    <div className="flex flex-col gap-3">
+      <DataTable<Link>
+        variant="static"
+        framed
+        label="People who signed in"
+        rows={list.items ?? []}
+        rowKey={(row) => row.id}
+        empty={
+          <EmptyState title="Nobody yet">
+            People appear here the first time they sign in through this provider.
+          </EmptyState>
+        }
+        columns={[
+          { header: "Person", cell: (row) => row.name || row.email || "Unknown" },
+          { header: "Email at the provider", priority: 2, cell: (row) => row.email ?? "" },
+          {
+            header: "Subject",
+            priority: 3,
+            cell: (row) => <code className="font-mono text-code break-all">{row.subject}</code>,
+          },
+          {
+            header: "Last signed in",
+            priority: 2,
+            cell: (row) => (row.lastSignedInAt ? when(row.lastSignedInAt) : "Never"),
+          },
+          {
+            header: "",
+            cell: (row) => (
+              <Button
+                onClick={async () => {
+                  const sure = await ask.confirm({
+                    title: `Untie ${row.email ?? row.subject}?`,
+                    text: "For when this person's identity at the provider was replaced. Their next sign-in ties them again by email, under the rules of a first sign-in.",
+                    action: "Untie",
+                    danger: true,
+                  });
+                  if (!sure) return;
+                  try {
+                    await api.delete(`${root}/links/${row.id}`);
+                    notify.success("Untied. Their next sign-in ties them again by email.");
+                    list.reload();
+                  } catch (error) {
+                    notify.error(error);
+                  }
+                }}
+              >
+                Untie
+              </Button>
+            ),
+          },
+        ]}
+      />
+      <LoadMore
+        shown={list.items?.length ?? 0}
+        hasMore={list.hasMore}
+        loading={list.loadingMore}
+        error={list.moreError}
+        noun="people"
+        onMore={list.loadMore}
+      />
+    </div>
   );
 }
 
@@ -1005,6 +1362,19 @@ function ProviderDetail({
     }
   };
   const who = provider.audience === "members" ? "members" : "end users";
+  // What changes a provider needs: switched off for a member who may only read.
+  const gate = {
+    base: instance ? "/instance" : base,
+    permission: instance ? "instance:write" : "sso:write",
+  };
+  const can = useCan(gate.base, gate.permission);
+  // Changing tab drops what the tab holds unsaved: it asks as leaving the page does.
+  const changeTab = leaveFirst(setTab);
+  const guarded = (content: ReactNode) => (
+    <Can {...gate} what="this provider">
+      {content}
+    </Can>
+  );
 
   return (
     <section className="flex flex-col gap-4">
@@ -1020,7 +1390,7 @@ function ProviderDetail({
           <>
             <Button
               variant="danger"
-              disabled={busy}
+              disabled={busy || !can}
               onClick={async () => {
                 const sure = await ask.typeToConfirm({
                   title: `Remove ${provider.name}?`,
@@ -1041,7 +1411,7 @@ function ProviderDetail({
             </Button>
             {provider.enabled && !provider.paused ? (
               <Button
-                disabled={busy}
+                disabled={busy || !can}
                 onClick={async () => {
                   const sure = await ask.confirm(
                     provider.enforce
@@ -1054,8 +1424,8 @@ function ProviderDetail({
                           title: "Require single sign-on?",
                           text:
                             provider.audience === "members"
-                              ? "Members with an email in this provider's proved domains can no longer sign in with a password. The operators of this instance keep theirs, so that a broken provider locks nobody out for good."
-                              : "End users this provider covers can no longer sign in with a password: those in its proved domains, or everyone when it has none.",
+                              ? "Members with an email in this provider's proved domains can no longer sign in with a password. Their open sessions end now, except yours, and they sign in again with the provider. The operators of this instance keep their passwords and sessions, so that a broken provider locks nobody out for good."
+                              : "End users this provider covers can no longer sign in with a password: those in its proved domains, or everyone when it has none. Their open sessions end now.",
                           action: "Require it",
                           danger: true,
                         },
@@ -1076,6 +1446,7 @@ function ProviderDetail({
             <Button
               variant="primary"
               loading={busy}
+              disabled={!can}
               onClick={async () => {
                 if (on) {
                   // Turning it off ends sign-in through it for everyone it covers: that is said first.
@@ -1094,7 +1465,7 @@ function ProviderDetail({
                       provider.enforce
                         ? `It is required now, and stops being required: those ${who} can use a password again.`
                         : `Those ${who} can still use a password.`
-                    } Anyone who has no password needs one, or another provider, to get in.`,
+                    } Anyone who has no password needs one, or another provider, to get in. A directory that pushes people to it keeps pushing while it is off.`,
                     action: "Turn off",
                     danger: true,
                   });
@@ -1112,7 +1483,7 @@ function ProviderDetail({
         <Stepper
           steps={steps}
           current={current}
-          onChoose={(key) => setTab(key === "enforce" ? "setup" : key)}
+          onChoose={(key) => changeTab(key === "enforce" ? "setup" : key)}
         />
       </nav>
       {on && !provider.enforce && provider.audience === "members" ? (
@@ -1131,27 +1502,31 @@ function ProviderDetail({
       <Tabs
         label="Provider sections"
         value={tab}
-        onChange={setTab}
+        onChange={changeTab}
         tabs={[
           {
             id: "setup",
             label: "Set up",
-            content: <SetUp root={root} provider={provider} onChanged={onChanged} />,
+            content: guarded(<SetUp root={root} provider={provider} onChanged={onChanged} />),
           },
-          { id: "domains", label: "Domains", content: <Domains root={root} instance={instance} /> },
+          {
+            id: "domains",
+            label: "Domains",
+            content: guarded(<Domains root={root} instance={instance} />),
+          },
           ...(instance
             ? []
             : [
                 {
                   id: "groups",
                   label: "Groups",
-                  content: <Groups base={base} root={root} audience={provider.audience} />,
+                  content: guarded(<Groups base={base} root={root} audience={provider.audience} />),
                 },
               ]),
           {
             id: "settings",
             label: "Settings",
-            content: (
+            content: guarded(
               <Settings
                 key={provider.id}
                 base={base}
@@ -1159,19 +1534,19 @@ function ProviderDetail({
                 instance={instance}
                 provider={provider}
                 onChanged={onChanged}
-              />
+              />,
             ),
           },
-          { id: "people", label: "People", content: <People root={root} /> },
+          { id: "people", label: "People", content: guarded(<People root={root} />) },
           {
             id: "provisioning",
             label: "Provisioning",
-            content: (
+            content: guarded(
               <Provisioning
                 root={`${base}/provisioning/${provider.id}`}
                 instance={instance}
                 audience={provider.audience}
-              />
+              />,
             ),
           },
         ]}
@@ -1185,11 +1560,10 @@ export function SingleSignOn({ base }: { base: string }) {
   const instance = base === "/instance";
   const list = useLoad<{ items: IdentityProvider[] }>(`${base}/identity-providers`);
   const [connecting, setConnecting] = useState(false);
+  const canConnect = useCan(base, instance ? "instance:write" : "sso:write");
   // The provider open is in the address: a link opens it, and the breadcrumb leads back.
   const [open, setOpen] = useUrlParam("provider", undefined, { push: true });
-  const [fresh, setFresh] = useState<IdentityProvider>();
-  const shown =
-    (fresh?.id === open ? fresh : undefined) ?? list.data?.items.find((one) => one.id === open);
+  const [shown, setFresh] = useOpenRow(list, open);
   const setShown = (provider: IdentityProvider | undefined) => {
     setFresh(provider);
     setOpen(provider?.id);
@@ -1216,7 +1590,7 @@ export function SingleSignOn({ base }: { base: string }) {
     );
   }
   const connect = (
-    <Button variant="primary" onClick={() => setConnecting(true)}>
+    <Button variant="primary" disabled={!canConnect} onClick={() => setConnecting(true)}>
       Connect a provider
     </Button>
   );
@@ -1259,8 +1633,8 @@ export function SingleSignOn({ base }: { base: string }) {
                 </button>
               ),
             },
-            { header: "For", cell: (row) => FOR[row.audience] },
-            { header: "Protocol", cell: (row) => PROTOCOL[row.protocol] },
+            { header: "For", priority: 2, cell: (row) => FOR[row.audience] },
+            { header: "Protocol", priority: 3, cell: (row) => PROTOCOL[row.protocol] },
             { header: "State", cell: (row) => <State provider={row} /> },
           ]}
         />

@@ -1,13 +1,17 @@
 import { type PageWidget, widgetTables } from "@volvel/manifest";
 import { Button, Notice, SelectField, SideSheet, Tabs } from "@volvel/ui";
 import { ArrowUpRight } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api, useLoad } from "../api.ts";
-import { ask, failureText } from "../ask.tsx";
+import { ask, failureText, noteWaiting } from "../ask.tsx";
+import { useNeeds } from "../kit/Can.tsx";
 import { CollectionView } from "../kit/CollectionView.tsx";
+import type { SortState } from "../kit/DataTable.tsx";
 import { bytes, count } from "../kit/format.ts";
-import { Inspector, KeyValues } from "../kit/layout.tsx";
+import { FilterChips, Inspector, KeyValues } from "../kit/layout.tsx";
+import { RemoveDraftButton } from "../kit/RemoveDraftButton.tsx";
 import { Mono, Tag } from "../kit/status.tsx";
+import { useRecordRecent } from "../recent.ts";
 import { useUrlParam } from "../router.tsx";
 
 export interface AppSummary {
@@ -21,7 +25,13 @@ export interface AppSummary {
   bytes: number;
   /** Who is bound at the app itself: "anyone", "every end user", an email or a group's name. */
   access: string[];
+  /** Who a binding at the workspace or at the tenant lets open it, and every other app. */
+  broaderAccess?: { scope: "workspace" | "tenant"; label: string }[];
+  /** False for a documentation app that is switched off: kept, and not served. */
+  published?: boolean;
   builtWith?: "code" | "builder" | "docs";
+  /** `code`: defined in the repository and removed there. */
+  ownership?: string;
   /** For a docs app: the folder of pages it serves. */
   docs?: string | null;
   interface?: string | null;
@@ -50,6 +60,16 @@ function RowsFor({ root, table, group }: { root: string; table: string; group: s
   return <span className="font-mono text-code">{counted.data.items[0]?.values.count ?? 0}</span>;
 }
 
+const SCOPE = { workspace: "whole workspace", tenant: "whole tenant" } as const;
+
+/** Everyone an app is open to, at the app and by a binding that reaches all apps. */
+const openTo = (app: AppSummary) => [
+  ...app.access,
+  ...(app.broaderAccess ?? []).map((one) => `${one.label} (${SCOPE[one.scope]})`),
+];
+const isPublic = (app: AppSummary) =>
+  app.access.includes("anyone") || (app.broaderAccess ?? []).some((one) => one.label === "anyone");
+
 const external = (url: string, text: string) => (
   <a href={url} target="_blank" rel="noreferrer" className="break-all text-action">
     {text}
@@ -65,12 +85,14 @@ interface Binding {
   principalType: string;
   principalId: string | null;
   principalLabel: string;
+  roleId?: string;
   roleName: string;
   managedByResource: boolean;
 }
 interface Named {
   id: string;
   name: string;
+  builtin?: boolean;
 }
 interface Stored {
   id: string;
@@ -106,6 +128,7 @@ function ShareDialog({
     open ? `${base}/end-user-groups?limit=200` : null,
   );
   const roles = useLoad<{ items: Named[] }>(open ? `${base}/roles?limit=200` : null);
+  const apps = useLoad<{ items: AppSummary[] }>(open ? `${root}/apps` : null);
   const [who, setWho] = useState("end_users");
   const [may, setMay] = useState("portal_reader");
   const [busy, setBusy] = useState(false);
@@ -126,6 +149,9 @@ function ShareDialog({
   const atApp = (bindings.data?.items ?? []).filter(
     (binding) => binding.scopeType === "resource" && binding.resourceId === app?.id,
   );
+  // The portal roles are the built-in ones: a role of a workspace may be called the same.
+  const portalRole = (name: string) =>
+    roles.data?.items.find((role) => role.builtin && role.name === name);
   const options = [
     { value: "end_users", label: "Every end user who signs in" },
     ...(endUserGroups.data?.items ?? []).map((group) => ({
@@ -146,7 +172,8 @@ function ShareDialog({
       bindings.reload();
       onChanged();
     } catch (error) {
-      setProblem(failureText(error));
+      if (noteWaiting(error)) onChanged();
+      else setProblem(failureText(error));
     } finally {
       setBusy(false);
     }
@@ -162,6 +189,18 @@ function ShareDialog({
         <span>Staff whose role lets them read this workspace</span>
         <span className="text-meta text-ink-subtle">always</span>
       </div>
+      {(app?.broaderAccess ?? []).map((one) => (
+        <div
+          key={`${one.scope}:${one.label}`}
+          className="flex items-center justify-between gap-2 rounded-control border border-line px-3 py-2"
+        >
+          <span>
+            {one.label}{" "}
+            <span className="text-ink-muted">may open every app of the {SCOPE[one.scope]}</span>
+          </span>
+          <span className="text-meta text-ink-subtle">under Access</span>
+        </div>
+      ))}
       {atApp.length === 0 ? (
         <p className="m-0 text-ink-muted">Nobody else yet.</p>
       ) : (
@@ -174,9 +213,11 @@ function ShareDialog({
               <span>
                 {binding.principalLabel}{" "}
                 <span className="text-ink-muted">
-                  {binding.roleName === "portal_reader"
+                  {binding.roleId !== undefined &&
+                  binding.roleId === portalRole("portal_reader")?.id
                     ? "may read"
-                    : binding.roleName === "portal_user"
+                    : binding.roleId !== undefined &&
+                        binding.roleId === portalRole("portal_user")?.id
                       ? "may read and change"
                       : `as ${binding.roleName}`}
                 </span>
@@ -199,19 +240,55 @@ function ShareDialog({
                         other.principalId === binding.principalId &&
                         other.roleName === binding.roleName,
                     );
-                    const tablesToo = theirs.filter((one) => one.resourceId !== app?.id).length;
+                    // A table another app of the workspace reads, which is shared the same way,
+                    // stays: that app would stop working for them.
+                    const usedElsewhere = (one: Binding) => {
+                      const path = tables.find((table) => table.id === one.resourceId)?.path;
+                      if (!path) return [];
+                      return (apps.data?.items ?? []).filter(
+                        (other) =>
+                          other.id !== app?.id &&
+                          other.reads?.includes(path) &&
+                          (bindings.data?.items ?? []).some(
+                            (held) =>
+                              held.resourceId === other.id &&
+                              held.principalType === binding.principalType &&
+                              held.principalId === binding.principalId &&
+                              held.roleName === binding.roleName,
+                          ),
+                      );
+                    };
+                    const kept = new Set<string>();
+                    const keptFor = new Set<string>();
+                    for (const one of theirs) {
+                      if (one.resourceId === app?.id) continue;
+                      const others = usedElsewhere(one);
+                      if (others.length === 0) continue;
+                      kept.add(one.id);
+                      for (const other of others) keptFor.add(other.title);
+                    }
+                    const tablesToo = theirs.filter(
+                      (one) => one.resourceId !== app?.id && !kept.has(one.id),
+                    ).length;
                     const sure = await ask.confirm({
                       title: `Stop sharing ${app?.title ?? "the app"} with ${binding.principalLabel}?`,
-                      text:
+                      text: `${
                         tablesToo > 0
                           ? `They lose the app, and their access to its ${tablesToo} table${tablesToo === 1 ? "" : "s"} goes with it.`
-                          : "They lose the app.",
+                          : "They lose the app."
+                      }${
+                        kept.size > 0
+                          ? ` ${kept.size} table${kept.size === 1 ? " stays" : "s stay"}, for ${keptFor.size} other app${keptFor.size === 1 ? "" : "s"} that use${keptFor.size === 1 ? "s" : ""} ${kept.size === 1 ? "it" : "them"}: ${[...keptFor].join(", ")}.`
+                          : ""
+                      }`,
                       action: "Stop sharing",
                       danger: true,
                     });
                     if (!sure) return;
                     await run(async () => {
-                      for (const one of theirs) await api.delete(`${base}/bindings/${one.id}`);
+                      for (const one of theirs) {
+                        if (!kept.has(one.id)) await api.delete(`${base}/bindings/${one.id}`);
+                      }
                     });
                   }}
                 >
@@ -228,7 +305,7 @@ function ShareDialog({
           event.preventDefault();
           void run(async () => {
             const [principalType, principalId] = who.split(":");
-            const roleId = roles.data?.items.find((role) => role.name === may)?.id;
+            const roleId = portalRole(may)?.id;
             if (!roleId) throw new Error("The role for this was not found.");
             for (const resourceId of targets) {
               const held = (bindings.data?.items ?? []).some(
@@ -236,7 +313,7 @@ function ShareDialog({
                   binding.resourceId === resourceId &&
                   binding.principalType === principalType &&
                   binding.principalId === (principalId ?? null) &&
-                  binding.roleName === may,
+                  binding.roleId === roleId,
               );
               if (held) continue;
               await api.post(`${base}/bindings`, {
@@ -382,7 +459,7 @@ export function Apps({ root }: { root: string }) {
   const [version, setVersion] = useState(0);
   return (
     <>
-      <AppList key={version} root={root} onShare={setSharing} />
+      <AppList root={root} refresh={version} onShare={setSharing} />
       <ShareDialog
         root={root}
         app={sharing}
@@ -396,11 +473,56 @@ export function Apps({ root }: { root: string }) {
   );
 }
 
-function AppList({ root, onShare }: { root: string; onShare: (app: AppSummary) => void }) {
+function AppList({
+  root,
+  refresh,
+  onShare,
+}: {
+  root: string;
+  /** Counted up when what is shared may have changed: the list is read again, and stays where it is. */
+  refresh: number;
+  onShare: (app: AppSummary) => void;
+}) {
   const list = useLoad<{ items: AppSummary[] }>(`${root}/apps`);
+  const reload = list.reload;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only when `refresh` counts up
+  useEffect(() => {
+    if (refresh > 0) reload();
+  }, [refresh]);
   const instance = useLoad<{ appsAddress?: "separate" | "console" | "none" }>("/instance");
+  const share = useNeeds({ base: root, permission: "binding:write", what: "who may open an app" });
+  // Taking a draft back is a change of a draft: `interface:write` or `doc:write` is enough for an
+  // app of their kind, as for any draft.
+  const edit = useNeeds({
+    base: root,
+    permission: "resource:write",
+    alone: ["interface:write", "doc:write"],
+    what: "this workspace's apps",
+  });
   const [chosen, setChosen] = useUrlParam("app", undefined, { push: true });
-  const open = list.data?.items.find((row) => row.id === chosen);
+  // A link names an app by its ID or by its path: the palette's Recent list keeps paths.
+  const open = list.data?.items.find((row) => row.id === chosen || row.path === chosen);
+  const ids = /^\/tenants\/([^/]+)\/workspaces\/([^/]+)/.exec(root);
+  useRecordRecent(ids?.[1], ids?.[2], open ? "app" : undefined, open?.path);
+  const [search, setSearch] = useState("");
+  const [built, setBuilt] = useState<"all" | "builder" | "code" | "docs">("all");
+  const [sort, setSort] = useState<SortState>();
+  const items = list.data?.items ?? [];
+  const needle = search.trim().toLowerCase();
+  const shown = items
+    .filter(
+      (row) =>
+        (built === "all" || (row.builtWith ?? "code") === built) &&
+        (needle === "" ||
+          row.title.toLowerCase().includes(needle) ||
+          row.path.toLowerCase().includes(needle)),
+    )
+    .sort((a, b) => {
+      if (!sort) return 0;
+      const pick = (row: AppSummary) =>
+        sort.key === "built" ? (row.builtWith ?? "code") : row.title.toLowerCase();
+      return (pick(a) < pick(b) ? -1 : pick(a) > pick(b) ? 1 : 0) * (sort.dir === "asc" ? 1 : -1);
+    });
   const unserved =
     instance.data?.appsAddress === "none" &&
     (list.data?.items ?? []).some(
@@ -419,11 +541,49 @@ function AppList({ root, onShare }: { root: string; onShare: (app: AppSummary) =
         </div>
       ) : null}
       <CollectionView<AppSummary>
-        title="Published apps"
+        title="Apps"
         description="What end users and staff can open: apps built in the repository, and apps made in the App Builder. Each has an address here, and can have hostnames of the tenant's own under Domains."
+        toolbar={
+          <div className="flex flex-wrap items-center gap-3">
+            <label className="flex h-8 w-64 max-w-full items-center gap-2 rounded-control border border-line bg-structure px-3 text-ink-subtle">
+              <span className="sr-only">Find an app</span>
+              <input
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Find by name or path"
+                className="min-w-0 flex-1 border-0 bg-transparent text-ink outline-none placeholder:text-ink-subtle"
+              />
+            </label>
+            <FilterChips
+              label="Built"
+              value={built}
+              onChange={setBuilt}
+              options={[
+                { value: "all", label: "All", count: items.length },
+                {
+                  value: "builder",
+                  label: "App Builder",
+                  count: items.filter((row) => row.builtWith === "builder").length,
+                },
+                {
+                  value: "code",
+                  label: "Repository",
+                  count: items.filter((row) => (row.builtWith ?? "code") === "code").length,
+                },
+                {
+                  value: "docs",
+                  label: "Documentation",
+                  count: items.filter((row) => row.builtWith === "docs").length,
+                },
+              ]}
+            />
+          </div>
+        }
+        table={{ sort, onSort: setSort }}
         columns={[
           {
             header: "App",
+            sort: "title",
             cell: (row) => (
               <span className="flex min-w-0 flex-col">
                 <span className="truncate font-medium">{row.title}</span>
@@ -434,24 +594,27 @@ function AppList({ root, onShare }: { root: string; onShare: (app: AppSummary) =
           {
             header: "Address",
             priority: 2,
-            cell: (row) => (
-              <span className="flex min-w-0 flex-col">
-                {external(row.url, row.url.replace(/^https?:\/\//, ""))}
-                {row.domains
-                  .filter((domain) => domain.enabled)
-                  .map((domain) => (
-                    <span key={domain.hostname}>{external(domain.url, domain.hostname)}</span>
-                  ))}
-              </span>
-            ),
+            cell: (row) =>
+              row.published === false ? (
+                <Tag tone="draft">Not published</Tag>
+              ) : (
+                <span className="flex min-w-0 flex-col">
+                  {external(row.url, row.url.replace(/^https?:\/\//, ""))}
+                  {row.domains
+                    .filter((domain) => domain.enabled)
+                    .map((domain) => (
+                      <span key={domain.hostname}>{external(domain.url, domain.hostname)}</span>
+                    ))}
+                </span>
+              ),
           },
           {
             header: "Open to",
             priority: 3,
             cell: (row) =>
-              row.access.length > 0 ? (
-                <span className={row.access.includes("anyone") ? "text-attention" : ""}>
-                  {row.access.join(", ")}
+              openTo(row).length > 0 ? (
+                <span className={isPublic(row) ? "text-attention" : ""}>
+                  {openTo(row).join(", ")}
                 </span>
               ) : (
                 <span className="text-ink-subtle">Staff only</span>
@@ -459,6 +622,7 @@ function AppList({ root, onShare }: { root: string; onShare: (app: AppSummary) =
           },
           {
             header: "Built",
+            sort: "built",
             cell: (row) =>
               row.builtWith === "builder" ? (
                 <Tag tone="draft">App Builder</Tag>
@@ -469,15 +633,18 @@ function AppList({ root, onShare }: { root: string; onShare: (app: AppSummary) =
               ),
           },
         ]}
-        rows={list.data?.items}
+        rows={list.data ? shown : undefined}
         rowKey={(row) => row.id}
-        selected={chosen}
+        selected={open?.id ?? chosen}
         onSelect={(row) => setChosen(row.id)}
         error={list.error}
         onRetry={list.reload}
         empty={{
-          title: "No apps yet",
-          text: "An app is defined in the tenant's repository with defineApp, or made in the App Builder. It is served once it is deployed here.",
+          title: items.length > 0 ? "No app matches" : "No apps yet",
+          text:
+            items.length > 0
+              ? "Clear the search or choose All."
+              : "An app is defined in the tenant's repository with defineApp, or made in the App Builder. It is served once it is deployed here.",
         }}
         inspector={
           open ? (
@@ -489,30 +656,60 @@ function AppList({ root, onShare }: { root: string; onShare: (app: AppSummary) =
               onClose={() => setChosen(undefined)}
               footer={
                 <>
-                  <Button variant="primary" onClick={() => onShare(open)}>
+                  <Button
+                    variant="primary"
+                    disabled={!share.can}
+                    {...(share.reason ? { tooltip: share.reason } : {})}
+                    onClick={() => onShare(open)}
+                  >
                     Share
                   </Button>
-                  <a
-                    href={open.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center gap-1.5 text-meta"
-                  >
-                    Open the live app <ArrowUpRight aria-hidden="true" size={14} />
-                  </a>
+                  {open.ownership === "code" ? (
+                    <span className="text-meta text-ink-muted">
+                      Managed in the repository: the app is removed there.
+                    </span>
+                  ) : (
+                    <fieldset disabled={!edit.can} className="contents">
+                      <RemoveDraftButton
+                        root={root}
+                        kind="app"
+                        path={open.path}
+                        noun="app"
+                        state="deployed"
+                        then="Its address stops serving once that draft is deployed."
+                        onDone={() => list.reload()}
+                      />
+                    </fieldset>
+                  )}
+                  {open.published === false ? null : (
+                    <a
+                      href={open.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1.5 text-meta"
+                    >
+                      Open the live app <ArrowUpRight aria-hidden="true" size={14} />
+                    </a>
+                  )}
                 </>
               }
             >
               <div className="flex flex-col gap-4">
                 {open.description ? <p className="m-0 text-ink-muted">{open.description}</p> : null}
-                {open.access.includes("anyone") ? (
+                {isPublic(open) ? (
                   <Notice tone="attention">
                     Anyone with the address can open it, without signing in.
                   </Notice>
                 ) : null}
                 <KeyValues
                   rows={[
-                    { label: "Address", value: external(open.url, open.url) },
+                    {
+                      label: "Address",
+                      value:
+                        open.published === false
+                          ? "Not published: switched off in the repository, so nothing is served"
+                          : external(open.url, open.url),
+                    },
                     ...open.domains.map((domain) => ({
                       label: domain.enabled ? "Hostname" : "Hostname (off)",
                       value: external(domain.url, domain.hostname),
@@ -543,8 +740,8 @@ function AppList({ root, onShare }: { root: string; onShare: (app: AppSummary) =
                     {
                       label: "Open to",
                       value:
-                        open.access.length > 0
-                          ? open.access.join(", ")
+                        openTo(open).length > 0
+                          ? openTo(open).join(", ")
                           : "Staff whose role lets them read this workspace",
                     },
                   ]}

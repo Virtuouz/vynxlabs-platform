@@ -1,4 +1,4 @@
-import { signInWithPassword } from "./sign-in.ts";
+import { signInAs } from "./as.ts";
 import { expect, type Page, test } from "./test.ts";
 import { readEveryList } from "./visual.ts";
 
@@ -8,16 +8,24 @@ import { readEveryList } from "./visual.ts";
  * is locked in view or not.
  */
 
-const ADMIN = {
-  email: process.env.E2E_ADMIN_EMAIL ?? "admin@example.com",
-  password: process.env.E2E_ADMIN_PASSWORD ?? "change-me-please",
-};
 const stamp = Date.now().toString(36);
 
 // biome-ignore lint/suspicious/noExplicitAny: answers are inspected freely
 const call = (page: Page, method: string, path: string, body?: unknown): Promise<any> =>
   page.evaluate(
     async ([method, path, body]) => {
+      // A draft save names the draft it saw: its revision now, or none when there is none.
+      if (
+        method === "PUT" &&
+        String(path).includes("/drafts/") &&
+        body &&
+        typeof body === "object" &&
+        !("revision" in body) &&
+        !("create" in body)
+      ) {
+        const seen = await fetch(`/api/v1${path}`);
+        if (seen.ok) body = { ...body, revision: (await seen.json()).revision };
+      }
       const response = await fetch(`/api/v1${path}`, {
         method: method as string,
         headers: body ? { "content-type": "application/json" } : {},
@@ -40,7 +48,7 @@ let moved: string;
 test.beforeAll(async ({ browser }) => {
   test.setTimeout(240_000);
   page = await (await browser.newContext({ viewport: { width: 1100, height: 800 } })).newPage();
-  await signInWithPassword(page, ADMIN.email, ADMIN.password);
+  await signInAs(page, "operator");
   await readEveryList(page);
   const tenant = await call(page, "POST", "/tenants", {
     slug: `columns-${stamp}`,
@@ -83,7 +91,7 @@ const headers = async () =>
     .map((text) => text.trim())
     .filter(Boolean);
 
-test("a column is dragged between two others, which part for it", async () => {
+test("a column is dragged between two others, which part for it @data", async () => {
   await page.goto(`${link}/tables/people`);
   await expect(page.getByRole("grid")).toBeVisible();
   // The columns come as the table keeps them, which is not the order they were written in.
@@ -118,7 +126,7 @@ test("a column is dragged between two others, which part for it", async () => {
   expect(new URL(page.url()).searchParams.getAll("cols")[0]).toBe(moved);
 });
 
-test("the same from the keyboard, with the handle or the arrows", async () => {
+test("the same from the keyboard, with the handle or the arrows @data", async () => {
   await page.getByRole("button", { name: "Columns" }).click();
   const dialog = page.getByRole("dialog", { name: "Columns" });
   // On a column's handle the arrows move it one place, and say where it is now.
@@ -156,7 +164,7 @@ test("the same from the keyboard, with the handle or the arrows", async () => {
   expect((await headers())[0]).toBe(moved);
 });
 
-test("the first column is locked in view, or not, and a link from before still hides", async () => {
+test("the first column is locked in view, or not, and a link from before still hides @data", async () => {
   const grid = page.getByRole("grid");
   const first = grid.getByRole("columnheader", { name: moved });
   const scroller = grid.locator("xpath=..");

@@ -1,8 +1,9 @@
 import { MAX_PAGES, type Page } from "@volvel/manifest";
-import { Button, Dialog, SelectField, TextField } from "@volvel/ui";
+import { Button, Dialog, Notice, SelectField, TextField } from "@volvel/ui";
 import { useEffect, useMemo, useState } from "react";
 import { useCatalog } from "../../kit/inspector/catalog.ts";
 import { heading, mainTable } from "../../kit/inspector/model.ts";
+import { NAME_MAX } from "./names.ts";
 import { useTableInfo } from "./SampleRecord.tsx";
 import {
   blankPage,
@@ -39,7 +40,7 @@ export function NewPageDialog({
   pages: readonly Page[];
   onMake: (started: Started) => void;
 }) {
-  const { catalog } = useCatalog(root);
+  const { catalog, error: catalogError } = useCatalog(root);
   const tables = catalog.tables;
   const [start, setStart] = useState<Start>("blank");
   const [table, setTable] = useState<string>();
@@ -89,6 +90,13 @@ export function NewPageDialog({
           if (started && !tooMany) onMake(started);
         }}
       >
+        {catalogError ? (
+          <Notice tone="danger">
+            The tables could not be read, so a page cannot start from one yet: {catalogError} Close
+            this and open it again, or ask a tenant admin whether you may read the workspace's
+            tables.
+          </Notice>
+        ) : null}
         <fieldset className="m-0 flex flex-col gap-1 border-0 p-0">
           <legend className="mb-1 text-label text-ink-subtle uppercase">Start from</legend>
           {options.map((one) => (
@@ -130,7 +138,8 @@ export function NewPageDialog({
           label="Name of the page"
           name="page-title"
           value={typed ?? startTitle(start, chosen)}
-          maxLength={200}
+          maxLength={NAME_MAX}
+          showCount
           required
           onChange={setTyped}
         />

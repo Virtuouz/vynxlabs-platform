@@ -3,6 +3,7 @@ import {
   CircleCheck,
   CirclePause,
   CircleX,
+  EyeOff,
   FileInput,
   GitCompareArrows,
   GitMerge,
@@ -15,11 +16,13 @@ import {
 import type { ReactNode } from "react";
 import { useLoad } from "../api.ts";
 import { duration, hm } from "../kit/format.ts";
+import { formatCombo } from "../kit/keys.ts";
 import { ErrorState, Loading } from "../kit/LoadState.tsx";
 import { EmptyCanvas, NextStep, PageHeader, Panel, SectionLabel } from "../kit/layout.tsx";
 import { Junction, Wire } from "../kit/motifs.tsx";
 import { triggerKey } from "../kit/objects.tsx";
 import { EnvTag, Mono, StatePill } from "../kit/status.tsx";
+import { useInstanceStartsWorkers } from "../kit/useInstanceStartsWorkers.ts";
 import { Link, navigate } from "../router.tsx";
 import type { WorkspaceCounts } from "../Shell.tsx";
 import { type Trigger, TriggerState } from "./Operate.tsx";
@@ -29,6 +32,8 @@ interface Workspace {
   name: string;
   type: "production" | "dev";
   triggersPaused: boolean;
+  /** An operator has paused every trigger in the instance. */
+  pausedByInstance?: boolean;
 }
 
 const TRIGGER_ICON: Record<string, typeof Timer> = {
@@ -183,9 +188,7 @@ function FirstRun({
       key: "worker",
       done: (counts.workersOnline ?? 0) > 0 || managedWorkers,
       title: "A worker to run code",
-      detail: managedWorkers
-        ? "The instance starts workers for this tenant when there is work."
-        : "Start a worker with a credential, so scripts have somewhere to run.",
+      detail: "Start a worker with a credential, so scripts have somewhere to run.",
       to: `${tenantLink}/workers`,
       action: "Workers",
     },
@@ -201,7 +204,7 @@ function FirstRun({
       key: "run",
       done: counts.everRan === true,
       title: "A first run",
-      detail: "Run it from its editor with ⌘↵, or start it from the scripts list.",
+      detail: `Run it from its editor with ${formatCombo("Mod+Enter")}, or start it from the scripts list.`,
       to: `${link}/scripts`,
       action: "Scripts",
     },
@@ -211,7 +214,7 @@ function FirstRun({
       title: "A first deploy",
       detail: "Deploying makes what you wrote what runs here, for schedules and webhooks too.",
       to: `${link}/release`,
-      action: "Releases",
+      action: "Deploy",
     },
   ];
   const next = steps.find((step) => !step.done);
@@ -265,6 +268,7 @@ export function Overview({
   const summary = useLoad<WorkspaceCounts>(`${root}/summary`);
   const tenantRoot = root.split("/workspaces/")[0] ?? "";
   const tenant = useLoad<{ managedWorkers?: boolean }>(tenantRoot);
+  const startsWorkers = useInstanceStartsWorkers(tenantRoot, tenant.data?.managedWorkers);
   const triggers = useLoad<{ items: Trigger[] }>(`${root}/triggers`);
   const stats = useLoad<RunStats>(`${root}/run-stats?hours=24`);
   const counts = summary.data;
@@ -273,7 +277,22 @@ export function Overview({
   const firstRun =
     counts !== undefined &&
     counts.scripts !== undefined &&
+    // A count the viewer may not read is not zero: the checklist waits for the ones it needs.
+    counts.scripts != null &&
+    counts.everRan != null &&
     (counts.everRan === false || counts.version === null);
+
+  // What the server left out because the viewer may not read it: said, not turned into zero.
+  const unseen: string[] = [];
+  if (counts) {
+    if (counts.failedRuns?.count == null) unseen.push("failed runs");
+    if (counts.approvalsWaiting == null) unseen.push("approvals");
+    if (counts.unboundConnections == null) unseen.push("connections");
+    if (counts.drafts == null) unseen.push("drafts");
+  }
+  const unseenText = `You cannot see ${
+    unseen.length > 1 ? `${unseen.slice(0, -1).join(", ")} and ${unseen.at(-1)}` : unseen[0]
+  }. Ask an administrator for read access if you need them.`;
 
   const attention: { key: string; node: ReactNode }[] = [];
   if (counts) {
@@ -363,7 +382,7 @@ export function Overview({
           <NextStep
             tone="attention"
             icon={<Plug aria-hidden="true" size={16} />}
-            title={`${unbound} connection${unbound === 1 ? " has" : "s have"} nothing bound here`}
+            title={`${unbound} connection${unbound === 1 ? " is" : "s are"} not set up here`}
             detail="A run that reaches it fails until it points somewhere."
             action={
               <Button size="small" onClick={() => navigate(`${link}/connections`)}>
@@ -391,18 +410,24 @@ export function Overview({
           />
         ),
       });
-    if (workspace.triggersPaused)
+    if (workspace.triggersPaused || workspace.pausedByInstance)
       attention.push({
         key: "paused",
         node: (
           <NextStep
             tone="attention"
             icon={<CirclePause aria-hidden="true" size={16} />}
-            title="Triggers are paused"
+            title={
+              workspace.pausedByInstance
+                ? "Triggers are paused by the instance"
+                : "Triggers are paused"
+            }
             detail={
-              workspace.type === "dev"
-                ? "Dev workspaces start this way, so a schedule you try here does not run beside production's. Runs started by hand still work."
-                : "No schedule, webhook or event starts anything here. Runs started by hand still work."
+              workspace.pausedByInstance
+                ? "An operator has paused every trigger in this instance. Nothing starts here until they resume them. Runs started by hand still work."
+                : workspace.type === "dev"
+                  ? "Dev workspaces start this way, so a schedule you try here does not run beside production's. Runs started by hand still work."
+                  : "No schedule, webhook or event starts anything here. Runs started by hand still work."
             }
             action={
               <Button size="small" onClick={() => navigate(`${link}/settings`)}>
@@ -418,7 +443,7 @@ export function Overview({
   const primary =
     drafts > 0 && workspace.type === "dev" ? (
       <Button variant="primary" onClick={() => navigate(`${link}/changes`)}>
-        Review release
+        Review changes
       </Button>
     ) : (
       <Button onClick={() => navigate(`${link}/runs`)}>Open runs</Button>
@@ -433,8 +458,10 @@ export function Overview({
         meta={
           <>
             <EnvTag type={workspace.type} />
-            {workspace.triggersPaused ? (
-              <StatePill state="paused">Triggers paused</StatePill>
+            {workspace.triggersPaused || workspace.pausedByInstance ? (
+              <StatePill state="paused">
+                {workspace.pausedByInstance ? "Triggers paused by the instance" : "Triggers paused"}
+              </StatePill>
             ) : null}
             {counts?.version !== null && counts?.version !== undefined ? (
               <span className="text-ink-muted">
@@ -449,8 +476,8 @@ export function Overview({
       {summary.error ? <ErrorState error={summary.error} onRetry={summary.reload} /> : null}
 
       {/* From 1920 px, three columns: what needs you, how it runs and ships, what starts it. */}
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)] 3xl:grid-cols-[minmax(0,2.2fr)_minmax(0,1fr)]">
-        <div className="flex flex-col gap-6 3xl:grid 3xl:grid-cols-2 3xl:items-start">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-6 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)] 3xl:grid-cols-[minmax(0,2.2fr)_minmax(0,1fr)]">
+        <div className="flex min-w-0 flex-col gap-6 3xl:grid 3xl:grid-cols-2 3xl:items-start">
           <div className="flex min-w-0 flex-col gap-6">
             {firstRun && counts ? (
               <Panel>
@@ -458,7 +485,7 @@ export function Overview({
                   counts={counts}
                   link={link}
                   tenantLink={link.split("/workspaces/")[0] ?? ""}
-                  managedWorkers={tenant.data?.managedWorkers === true}
+                  managedWorkers={startsWorkers === true}
                   dev={workspace.type === "dev"}
                 />
               </Panel>
@@ -469,15 +496,31 @@ export function Overview({
                 <Panel className="divide-y divide-line">
                   {!counts ? (
                     <p className="m-0 px-4 py-3 text-ink-muted">Checking…</p>
-                  ) : attention.length === 0 ? (
-                    <NextStep
-                      tone="success"
-                      icon={<CircleCheck aria-hidden="true" size={16} />}
-                      title="Nothing needs you here"
-                      detail="No failed runs in the last 24 hours, nothing waiting, everything bound."
-                    />
                   ) : (
-                    attention.map((item) => <div key={item.key}>{item.node}</div>)
+                    <>
+                      {attention.map((item) => (
+                        <div key={item.key}>{item.node}</div>
+                      ))}
+                      {unseen.length > 0 ? (
+                        <NextStep
+                          tone="action"
+                          icon={<EyeOff aria-hidden="true" size={16} />}
+                          title={
+                            attention.length === 0
+                              ? "Nothing you can see needs you here"
+                              : "Some of this you cannot see"
+                          }
+                          detail={unseenText}
+                        />
+                      ) : attention.length === 0 ? (
+                        <NextStep
+                          tone="success"
+                          icon={<CircleCheck aria-hidden="true" size={16} />}
+                          title="Nothing needs you here"
+                          detail="No failed runs in the last 24 hours, nothing waiting, everything set up."
+                        />
+                      ) : null}
+                    </>
                   )}
                 </Panel>
               </section>
@@ -508,7 +551,7 @@ export function Overview({
                     </Link>
                   }
                 >
-                  Release
+                  Deploy
                 </SectionLabel>
                 <Panel className="flex flex-col gap-4 p-4">
                   <div className="flex flex-wrap items-center gap-2 text-body-sm">
@@ -581,23 +624,38 @@ export function Overview({
                   <Link
                     key={triggerKey(trigger)}
                     to={`${link}/triggers?trigger=${encodeURIComponent(triggerKey(trigger))}`}
-                    className="flex items-start gap-3 px-4 py-3 text-ink no-underline hover:bg-surface-raised"
+                    // The name keeps room of its own and its state wraps under it where there is none:
+                    // beside "Workspace paused" and "Fires once when resumed" a name was left 3 px.
+                    className="flex flex-wrap items-start gap-x-3 gap-y-1 px-4 py-3 text-ink no-underline hover:bg-surface-raised"
                   >
-                    <Icon aria-hidden="true" size={16} className="mt-0.5 shrink-0 text-ink-muted" />
-                    <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                      <span className="truncate font-mono text-code">
-                        {trigger.path}
-                        {trigger.node ? (
-                          <span className="text-ink-subtle">#{trigger.node}</span>
-                        ) : null}
-                      </span>
-                      <span className="truncate text-meta text-ink-subtle">
-                        {trigger.type}
-                        {trigger.script ? ` → ${trigger.script}` : ""}
-                      </span>
+                    <div
+                      data-trigger-name=""
+                      className="flex min-w-[min(100%,12rem)] flex-1 items-start gap-3"
+                    >
+                      <Icon
+                        aria-hidden="true"
+                        size={16}
+                        className="mt-0.5 shrink-0 text-ink-muted"
+                      />
+                      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                        <span className="truncate font-mono text-code">
+                          {trigger.path}
+                          {trigger.node ? (
+                            <span className="text-ink-subtle">#{trigger.node}</span>
+                          ) : null}
+                        </span>
+                        <span className="truncate text-meta text-ink-subtle">
+                          {trigger.type}
+                          {trigger.script ? ` → ${trigger.script}` : ""}
+                        </span>
+                      </div>
                     </div>
-                    <span className="shrink-0 text-meta">
-                      <TriggerState row={trigger} workspacePaused={workspace.triggersPaused} />
+                    <span className="min-w-0 max-w-full text-meta">
+                      <TriggerState
+                        row={trigger}
+                        workspacePaused={workspace.triggersPaused}
+                        instancePaused={workspace.pausedByInstance === true}
+                      />
                     </span>
                   </Link>
                 );

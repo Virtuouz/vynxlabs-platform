@@ -207,10 +207,9 @@ export function adoptLegacy(): string[] {
  * a setting moved from the old keys, is sent to the server.
  */
 export function loadPreferences(): Promise<void> {
-  if (!loaded) {
-    waiting = true;
-    notify();
-  }
+  // Not announced: it starts before the screens that read it draw (the console starts it while
+  // it renders), and they read it as they draw. Its end is announced.
+  if (!loaded) waiting = true;
   loaded ??= (async () => {
     adoptLegacy();
     try {

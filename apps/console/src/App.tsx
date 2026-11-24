@@ -141,10 +141,10 @@ export function App() {
   useRememberPlace(signedIn, path);
   useOAuthReturn(signedIn, path);
   useReopenLastPlace(signedIn);
-  // A member's settings follow them from browser to browser.
-  useEffect(() => {
-    if (signedIn && me.data?.principal.type === "member") void loadPreferences();
-  }, [signedIn, me.data?.principal.type]);
+  // A member's settings follow them from browser to browser. Started here, before the screens
+  // draw, so that what a screen decides once per visit from them (a list's description read or
+  // not) waits for them. Once per page: a second call is the first's.
+  if (signedIn && me.data?.principal.type === "member") void loadPreferences();
   const ended = useSessionEnded();
   const holder = me.data?.principal.id;
   // From here on a 401 means the session ended, not that nobody signed in.

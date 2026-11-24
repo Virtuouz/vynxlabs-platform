@@ -136,13 +136,23 @@ test("the drawer slides open once, stays still for the next run, and slides shut
   const drawer = page.getByRole("complementary", { name: "The chosen run" });
   await expect(drawer).toHaveCount(0);
 
-  // Every width the drawer's room has while it is on the page, frame by frame.
+  // Every width the drawer's room has while it is on the page, frame by frame, and whether an
+  // animation was running on it. On a loaded machine frames are skipped, and a slide can end
+  // between two of them: then the running animation is what shows that it slid.
   await page.evaluate(() => {
     const seen: number[] = [];
-    (window as unknown as { __room: number[] }).__room = seen;
+    const host = window as unknown as { __room: number[]; __moving: boolean };
+    host.__room = seen;
+    host.__moving = false;
     const tick = () => {
       const node = document.querySelector('aside[aria-label="The chosen run"]')?.parentElement;
-      if (node) seen.push(Math.round(node.getBoundingClientRect().width));
+      if (node) {
+        seen.push(Math.round(node.getBoundingClientRect().width));
+        const running = [node, ...node.querySelectorAll("aside")].some(
+          (one) => one.getAnimations().length > 0,
+        );
+        if (running) host.__moving = true;
+      }
       requestAnimationFrame(tick);
     };
     requestAnimationFrame(tick);
@@ -152,6 +162,16 @@ test("the drawer slides open once, stays still for the next run, and slides shut
       const seen = (window as unknown as { __room: number[] }).__room;
       return seen.splice(0, seen.length);
     });
+  /** Whether it slid since last asked: a frame part of the way, or an animation running on it. */
+  const slid = async (frames: number[], full: number) => {
+    const moving = await page.evaluate(() => {
+      const host = window as unknown as { __moving: boolean };
+      const was = host.__moving;
+      host.__moving = false;
+      return was;
+    });
+    return moving || frames.some((width) => width > 0 && width < full);
+  };
 
   await rows.nth(0).click();
   await expect(drawer).toBeVisible();
@@ -159,20 +179,23 @@ test("the drawer slides open once, stays still for the next run, and slides shut
   const opening = await widths();
   const full = opening.at(-1) as number;
   expect(full).toBeGreaterThan(280);
-  // It grew: some frame showed it part of the way.
-  expect(opening.some((width) => width > 0 && width < full)).toBe(true);
+  // It grew: some frame showed it part of the way, or it was animating.
+  expect(await slid(opening, full)).toBe(true);
 
   // Another run: what it shows changes, and it does not move.
   const first = await drawer.textContent();
   await rows.nth(3).click();
   await expect.poll(async () => (await drawer.textContent()) !== first).toBe(true);
   await page.waitForTimeout(450);
-  expect(new Set(await widths())).toEqual(new Set([full]));
+  // Still: every frame at its full width, and no animation on it.
+  const still = await widths();
+  expect(new Set(still)).toEqual(new Set([full]));
+  expect(await slid(still, full)).toBe(false);
 
   await drawer.getByRole("button", { name: "Close" }).click();
   await expect(drawer).toHaveCount(0);
   const closing = await widths();
-  expect(closing.some((width) => width > 0 && width < full)).toBe(true);
+  expect(await slid(closing, full)).toBe(true);
 });
 
 test("with reduced motion the drawer is there or it is not @polish", async () => {

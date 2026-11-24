@@ -702,6 +702,9 @@ export function RunsWorkbench({
     },
     {
       header: "Started",
+      // A phone keeps the state and the target, which gets the room: with a checkbox and a menu
+      // beside them a third column left the target 70 px.
+      priority: 2,
       width: "w-32",
       sort: "started",
       cell: (one) => {

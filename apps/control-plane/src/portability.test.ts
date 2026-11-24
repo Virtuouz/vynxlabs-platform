@@ -1322,6 +1322,9 @@ describe("back again", () => {
     );
     expect(imported.status, JSON.stringify(imported.body)).toBe(201);
     expect(imported.body.tenant).toMatchObject({ slug: "acme-returned", dataLocation: null });
+    // The tenant was here before and its audit entries were kept: the report still counts the
+    // rows the file brought, the number the check said, not those plus what was already here.
+    expect(imported.body.counts).toEqual(light.counts);
     // Alice's account was still here, so it is linked rather than made again.
     expect(imported.body.members.linked).toBeGreaterThanOrEqual(1);
     await a.db

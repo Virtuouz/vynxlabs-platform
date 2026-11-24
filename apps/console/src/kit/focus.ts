@@ -39,3 +39,20 @@ export function keepPlace(opener: EventTarget | null): () => void {
     setTimeout(again, 0);
   };
 }
+
+/**
+ * After a form refuses what was typed, the keyboard goes to the first field that carries the
+ * refusal, so the reader is where the message is and a screen reader is told it. Fields the form
+ * marks invalid (`aria-invalid`, which the kit's fields set when given an `error`) are looked for
+ * once the refusal has been drawn.
+ */
+export function focusFirstInvalid(form: ParentNode | null | undefined): void {
+  const look = () => form?.querySelector<HTMLElement>('[aria-invalid="true"]') ?? null;
+  const found = look();
+  if (found) {
+    found.focus();
+    return;
+  }
+  // The message is drawn with the next render: look again once.
+  setTimeout(() => look()?.focus(), 0);
+}

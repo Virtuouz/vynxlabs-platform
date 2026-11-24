@@ -78,7 +78,7 @@ export function PageHeader({
     <h1
       className={`m-0 min-w-0 ${
         bar
-          ? "truncate text-title max-sm:basis-full"
+          ? "max-w-full shrink-0 truncate text-title"
           : mono
             ? `font-mono text-title ${compact ? "truncate" : "break-words"}`
             : size === "display-lg"
@@ -97,13 +97,11 @@ export function PageHeader({
   if (compact) {
     return (
       <header className={bar ? "flex shrink-0 flex-col gap-2 px-4 py-3" : "flex flex-col gap-2"}>
-        <div
-          className={`flex items-center justify-between gap-3 ${bar ? "flex-nowrap" : "flex-wrap"}`}
-        >
-          {/* The name and state give way before the actions do, so the bar stays one row. An editor's header gives the name room instead, and the actions wrap under it. */}
+        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+          {/* The name keeps its room and is never squeezed to a few letters: what does not fit beside it (its state, a long status, the actions) wraps under it. A bar keeps the room the name needs and a little more. */}
           <div
             data-heading-block=""
-            className={`flex min-w-0 flex-1 items-center gap-3 ${bar ? "flex-nowrap max-sm:flex-wrap" : "min-w-[min(100%,16rem)] flex-wrap"}`}
+            className={`flex flex-1 flex-wrap items-center gap-x-3 gap-y-1 ${bar ? "min-w-[min(100%,12rem)]" : "min-w-[min(100%,16rem)]"}`}
           >
             {heading}
             {state}

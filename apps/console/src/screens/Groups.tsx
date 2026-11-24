@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { ask, failureText, notify } from "../ask.tsx";
 import { CollectionView } from "../kit/CollectionView.tsx";
+import { focusFirstInvalid } from "../kit/focus.ts";
 import { ErrorState } from "../kit/LoadState.tsx";
 import { usePagedList } from "../kit/paged.tsx";
 import { Code, Mono, Tag } from "../kit/status.tsx";
@@ -618,7 +619,11 @@ export function AttributesDialog({
         className="flex flex-col gap-3"
         onSubmit={async (event) => {
           event.preventDefault();
-          if (repeats.size > 0 || badNames > 0) return;
+          if (repeats.size > 0 || badNames > 0) {
+            // Refused at the field: the keyboard goes to the name that is wrong, not left on Save.
+            focusFirstInvalid(event.currentTarget);
+            return;
+          }
           setBusy(true);
           setProblem(undefined);
           try {
@@ -638,8 +643,9 @@ export function AttributesDialog({
         }}
       >
         {rows.map(([name, value], index) => (
+          // On a phone the name and the value stack, so a refusal under the name has the whole width.
           // biome-ignore lint/suspicious/noArrayIndexKey: a row has no identity but its place while its name is being typed
-          <div key={index} className="grid grid-cols-[1fr_1fr_auto] items-end gap-2">
+          <div key={index} className="grid grid-cols-1 items-end gap-2 sm:grid-cols-[1fr_1fr_auto]">
             <TextField
               name={`name-${index}`}
               label="Name"

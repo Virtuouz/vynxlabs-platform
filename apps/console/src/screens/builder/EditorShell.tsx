@@ -163,7 +163,8 @@ export function EditorShell({
             <span
               role="status"
               title={typeof saving === "object" ? savingWords(saving, savedWords) : undefined}
-              className={`min-w-0 max-w-[26rem] truncate text-body-sm max-xl:sr-only ${typeof saving === "object" ? "text-danger" : "text-ink-muted"}`}
+              // A refusal is the one status that is always seen, in up to two lines, and never left to squeeze the name; "Saved" and "Saving" are for the room there is.
+              className={`min-w-0 max-w-[26rem] text-body-sm ${typeof saving === "object" ? "line-clamp-2 break-words text-danger" : "truncate text-ink-muted max-xl:sr-only"}`}
             >
               {savingWords(saving, savedWords)}
             </span>

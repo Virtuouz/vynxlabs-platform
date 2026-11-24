@@ -327,6 +327,16 @@ export function PageEditor({
   const suggestedInfo = useTableInfo(root, suggested);
   const nextSteps = suggestionsFor(context, suggestedInfo);
   const widget = widgets.find((one) => one.id === selected);
+  // On a screen too narrow for the settings pane they are a sheet, and closing it returns the
+  // focus to whatever opened it, which a widget takes as being chosen: the sheet opened again at
+  // once, and neither its X nor Esc could close it. A widget the focus only arrives on within a
+  // moment of the sheet closing is not chosen by that (a press on it is).
+  const closedSheetAt = useRef(0);
+  const SHEET_RETURN_MS = 1000;
+  const canvasSelect = (id: string | undefined, via?: "focus") => {
+    if (via === "focus" && Date.now() - closedSheetAt.current < SHEET_RETURN_MS) return;
+    onSelect(id);
+  };
   const full = widgets.length >= MAX_PAGE_WIDGETS;
   // "Add to page" adds into the container that is chosen (or that holds the widget that is).
   const addsTo = resolved(widgets, targetOfSelection(widgets, selected));
@@ -843,7 +853,7 @@ export function PageEditor({
                       editing={{
                         readOnly,
                         selected,
-                        onSelect,
+                        onSelect: canvasSelect,
                         onChange: fromCanvas,
                         ...(layout?.askLayout ? { askLayout: layout.askLayout } : {}),
                         onRename: (id, title) =>
@@ -918,6 +928,7 @@ export function PageEditor({
         canvas={canvas}
         inspectorOpen={widget !== undefined || pageInfo?.settingsOpen === true}
         onCloseInspector={() => {
+          closedSheetAt.current = Date.now();
           onSelect(undefined);
           pageInfo?.onCloseSettings();
         }}

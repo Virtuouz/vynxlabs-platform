@@ -96,8 +96,9 @@ function describeScript(before: Body, after: Body): string[] {
   if (!same(code(before), code(after))) {
     const lines = (text: string | undefined) => (text ?? "").split("\n").length;
     const delta = lines(code(after)) - lines(code(before));
+    const line = (n: number) => (n === 1 ? "line" : "lines");
     out.push(
-      `Changes its code${delta === 0 ? "" : delta > 0 ? ` (${delta} more lines)` : ` (${-delta} fewer lines)`}.`,
+      `Changes its code${delta === 0 ? "" : delta > 0 ? ` (${delta} more ${line(delta)})` : ` (${-delta} fewer ${line(-delta)})`}.`,
     );
   }
   const uses = (body: Body, kind: string) =>

@@ -7,6 +7,7 @@ import { DataTable } from "../kit/DataTable.tsx";
 import { Loading } from "../kit/LoadState.tsx";
 import { SectionLabel } from "../kit/layout.tsx";
 import { Code, StatePill } from "../kit/status.tsx";
+import { Breakable } from "../kit/Truncate.tsx";
 import { useOpenRow } from "../kit/useOpenRow.ts";
 import { CopyButton, Page, when } from "../ListScreen.tsx";
 import { useUrlParam } from "../router.tsx";
@@ -511,12 +512,14 @@ export function Domains({ base }: { base: string }) {
                     href={row.url}
                     target="_blank"
                     rel="noreferrer"
-                    className="font-medium break-words text-action"
+                    className="font-medium text-action"
                   >
-                    {row.hostname}
+                    <Breakable>{row.hostname}</Breakable>
                   </a>
                 ) : (
-                  <span className="font-medium break-words">{row.hostname}</span>
+                  <span className="font-medium">
+                    <Breakable>{row.hostname}</Breakable>
+                  </span>
                 ),
             },
             {

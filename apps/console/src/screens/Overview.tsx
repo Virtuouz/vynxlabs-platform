@@ -624,22 +624,33 @@ export function Overview({
                   <Link
                     key={triggerKey(trigger)}
                     to={`${link}/triggers?trigger=${encodeURIComponent(triggerKey(trigger))}`}
-                    className="flex items-start gap-3 px-4 py-3 text-ink no-underline hover:bg-surface-raised"
+                    // The name keeps room of its own and its state wraps under it where there is none:
+                    // beside "Workspace paused" and "Fires once when resumed" a name was left 3 px.
+                    className="flex flex-wrap items-start gap-x-3 gap-y-1 px-4 py-3 text-ink no-underline hover:bg-surface-raised"
                   >
-                    <Icon aria-hidden="true" size={16} className="mt-0.5 shrink-0 text-ink-muted" />
-                    <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                      <span className="truncate font-mono text-code">
-                        {trigger.path}
-                        {trigger.node ? (
-                          <span className="text-ink-subtle">#{trigger.node}</span>
-                        ) : null}
-                      </span>
-                      <span className="truncate text-meta text-ink-subtle">
-                        {trigger.type}
-                        {trigger.script ? ` → ${trigger.script}` : ""}
-                      </span>
+                    <div
+                      data-trigger-name=""
+                      className="flex min-w-[min(100%,12rem)] flex-1 items-start gap-3"
+                    >
+                      <Icon
+                        aria-hidden="true"
+                        size={16}
+                        className="mt-0.5 shrink-0 text-ink-muted"
+                      />
+                      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                        <span className="truncate font-mono text-code">
+                          {trigger.path}
+                          {trigger.node ? (
+                            <span className="text-ink-subtle">#{trigger.node}</span>
+                          ) : null}
+                        </span>
+                        <span className="truncate text-meta text-ink-subtle">
+                          {trigger.type}
+                          {trigger.script ? ` → ${trigger.script}` : ""}
+                        </span>
+                      </div>
                     </div>
-                    <span className="shrink-0 text-meta">
+                    <span className="min-w-0 max-w-full text-meta">
                       <TriggerState
                         row={trigger}
                         workspacePaused={workspace.triggersPaused}

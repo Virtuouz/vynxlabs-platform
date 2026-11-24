@@ -20,17 +20,23 @@ test("WLK-17e: an editor's compact heading keeps room for the name, so its actio
   );
 });
 
-test("a bar heading stays one row", () => {
+test("round 5: a bar heading keeps its name whole and wraps what does not fit beside it, at any width", () => {
   const { container } = render(
-    <PageHeader compact bar title="x" actions={<button type="button">Done</button>} />,
+    <PageHeader
+      compact
+      bar
+      title="Clinic visits"
+      state={<span>1 to fix</span>}
+      actions={<button type="button">Publish</button>}
+    />,
   );
-  expect(container.querySelector("[data-heading-block]")?.className).not.toContain("min-w-[min");
-});
-
-test("p31 fc: a bar heading on a phone puts the state under the name, so the name is not squeezed beside it", () => {
-  const { container } = render(
-    <PageHeader compact bar title="Clinic visits" state={<span>2 to fix</span>} />,
-  );
-  expect(container.querySelector("[data-heading-block]")?.className).toContain("max-sm:flex-wrap");
-  expect(container.querySelector("h1")?.className).toContain("max-sm:basis-full");
+  const block = container.querySelector("[data-heading-block]") as HTMLElement;
+  // The block asks for a minimum and wraps its parts; the row wraps the actions under it.
+  expect(block.className).toContain("min-w-[min(100%,12rem)]");
+  expect(block.className).toContain("flex-wrap");
+  expect(block.parentElement?.className).toContain("flex-wrap");
+  // The name never shrinks below what it says: it is cut only at the block's own edge.
+  const name = container.querySelector("h1") as HTMLElement;
+  expect(name.className).toContain("shrink-0");
+  expect(name.className).toContain("max-w-full");
 });

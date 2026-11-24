@@ -1345,6 +1345,6 @@ describe("a one-line script edit (P31 fe)", () => {
     const listed = (await alice.get(`${ws()}/drafts`)).body.items.find(
       (item: { path: string }) => item.path === "orders/oneline",
     );
-    expect(listed.about).toEqual(["Changes its code (1 more lines)."]);
+    expect(listed.about).toEqual(["Changes its code (1 more line)."]);
   });
 });

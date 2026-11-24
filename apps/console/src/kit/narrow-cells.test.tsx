@@ -141,10 +141,11 @@ test("a list's row actions sit under the first cell on a phone, and are the last
   const button = await screen.findByRole("button", { name: "Disable" });
   const cell = button.closest("td") as HTMLElement;
   expect(cell.parentElement?.firstElementChild).toBe(cell);
-  // The column of actions is not drawn on a phone, so the table is not made wider for it.
-  expect(screen.getByRole("columnheader", { name: "Actions" }).className).toContain("hidden");
+  // There is no column of actions on a phone, so the table is not made wider for one: the name's
+  // column (which holds the buttons, and so keeps 14rem) and the kind's.
+  expect(screen.queryByRole("columnheader", { name: "Actions" })).toBeNull();
   const table = document.querySelector("table") as HTMLElement;
-  expect(table.style.getPropertyValue("--table-min-1")).toBe("14rem");
+  expect(table.style.getPropertyValue("--table-min-1")).toBe("21rem");
   phone.unmount();
   media(true);
   show(list());
@@ -187,4 +188,49 @@ test("round 4: beside an inspector a list waits longer to show its second and th
   expect(threeBeside).toContain("2xl:table-cell");
   expect(tableBeside).toContain("xl:min-w-");
   expect(tableBeside).not.toMatch(/(^| )(sm|lg):min-w-/);
+});
+
+test("round 5: the room a table has decides which tiers of columns it shows, and its actions are never the column dropped", async () => {
+  const { fittingTier, tableMinimums } = await import("./DataTable.tsx");
+  const columns = [
+    { header: "Source", cell: () => "" },
+    { header: "Points to", priority: 2 as const, cell: () => "" },
+    { header: "Used by", priority: 2 as const, cell: () => "" },
+    { header: "Password", priority: 3 as const, cell: () => "" },
+    { header: "Health", cell: () => "" },
+    { header: "Actions", wide: true, cell: () => "" },
+  ];
+  // 3 + 2 units of 7rem at the first tier, 5 at the second, 6 at the third (wide counts twice).
+  const mins = tableMinimums(columns, { checking: false, actions: false });
+  expect(mins).toEqual([28, 42, 49]);
+  // 768 px window less the rail: 638 px of room is 39.9rem, which holds the first tier only.
+  expect(fittingTier(638, mins)).toBe(1);
+  expect(fittingTier(42 * 16, mins)).toBe(2);
+  expect(fittingTier(1200, mins)).toBe(3);
+  // The tier of the actions column is the first: at the smallest room it is still there.
+  vi.stubGlobal(
+    "fetch",
+    async () => new Response(JSON.stringify({ items: [{ id: "a", n: "A" }], nextCursor: null })),
+  );
+  vi.stubGlobal("matchMedia", () => ({
+    matches: true,
+    addEventListener: () => undefined,
+    removeEventListener: () => undefined,
+  }));
+  show(
+    <ListCollection<{ id: string; n: string }>
+      title="Things"
+      path="/things"
+      columns={[
+        { header: "Name", cell: (row) => row.n },
+        { header: "Kind", priority: 2, cell: () => "x" },
+      ]}
+      rowKey={(row) => row.id}
+      empty={{ title: "None" }}
+      rowActions={() => <button type="button">Disable</button>}
+    />,
+  );
+  const header = await screen.findByRole("columnheader", { name: "Actions" });
+  expect(header.className).not.toMatch(/hidden|sm:table-cell|lg:table-cell/);
+  vi.unstubAllGlobals();
 });

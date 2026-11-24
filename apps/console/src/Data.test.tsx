@@ -1257,7 +1257,8 @@ test("WLK-09d: the buttons of a source's row wrap on a phone instead of widening
   show(<Sources root={root} link="/t/t1/workspaces/w1" />);
   const unbind = await screen.findByRole("button", { name: "Remove from here" });
   expect(unbind.parentElement?.className).toMatch(/flex-wrap/);
-  expect(unbind.parentElement?.className).toMatch(/max-sm:flex-col/);
+  // Round 5: no stacking or right alignment of its own; the list's column says where they sit.
+  expect(unbind.parentElement?.className).not.toMatch(/max-sm:/);
 });
 
 test("WLK-09b: a retired table keeps its pill whole and says where it was managed", async () => {
@@ -2294,7 +2295,13 @@ test("m1fix: a table's description past 500 characters is refused at the field, 
   expect(saved()).toBeUndefined();
 }, 20000);
 
-test("p31 fc: on a phone a source's buttons stack in one column instead of clipping the row", async () => {
+test("round 5: on a phone a source's buttons sit under its name, from the left, in the column that has the room, and wrap there", async () => {
+  vi.stubGlobal("matchMedia", (query: string) => ({
+    matches: false,
+    media: query,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+  }));
   routes[`GET /api/v1${root}/data-source-bindings`] = () => [
     200,
     {
@@ -2313,10 +2320,16 @@ test("p31 fc: on a phone a source's buttons stack in one column instead of clipp
   ];
   show(<Sources root={root} link="/t/t1/workspaces/w1" />);
   const test = await screen.findByRole("button", { name: "Test" });
-  for (const group of [test.parentElement, test.parentElement?.parentElement]) {
-    expect(group?.className).toContain("max-sm:flex-col");
-    expect(group?.className).toContain("max-sm:items-end");
-  }
+  // In the first cell, where the name is, not in a column of their own past the edge.
+  const cell = test.closest("td") as HTMLElement;
+  expect(cell.parentElement?.firstElementChild).toBe(cell);
+  const actions = test.closest("[data-row-actions]") as HTMLElement;
+  expect(actions.className).toContain("flex-wrap");
+  expect(actions.className).toContain("justify-start");
+  expect(actions.className).not.toContain("justify-end");
+  // That column keeps room for the widest button (14rem), and the table has no column of actions.
+  expect(screen.getByRole("columnheader", { name: "Source" }).className).toContain("w-[14rem]");
+  expect(screen.queryByRole("columnheader", { name: "Actions" })).toBeNull();
 });
 
 test("p31 fc: a source page whose read answers only 'Internal Server Error' while it encrypts says the server may not support encryption", async () => {

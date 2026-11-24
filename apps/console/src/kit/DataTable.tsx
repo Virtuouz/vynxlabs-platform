@@ -8,6 +8,7 @@ import {
   type ReactNode,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -77,6 +78,31 @@ const SHOWN = { 1: "", 2: "hidden sm:table-cell", 3: "hidden lg:table-cell" } as
  * screen and its third for a wider one, so its last column (the actions) is not under the panel.
  */
 const SHOWN_BESIDE = { 1: "", 2: "hidden xl:table-cell", 3: "hidden 2xl:table-cell" } as const;
+/** The width, in rem, that each tier of columns needs: 7 for a column, 14 for a `wide` one, and the check and actions columns. */
+export function tableMinimums<Row>(
+  columns: DataColumn<Row>[],
+  extras: { checking: boolean; actions: boolean },
+): [number, number, number] {
+  return ([1, 2, 3] as const).map((level) => {
+    const units = columns
+      .filter((column) => (column.priority ?? 1) <= level)
+      .reduce((sum, column) => sum + (column.wide ? 2 : 1), 0);
+    return units * 7 + (extras.checking ? 2.5 : 0) + (extras.actions ? 3 : 0);
+  }) as [number, number, number];
+}
+
+/**
+ * The highest tier of columns whose minimum fits the room the table has. Tiers are chosen by the
+ * width of the table's own box and not the window's: a list under a navigation rail or beside an
+ * inspector has less room than its window, and a column that does not fit is dropped, never left
+ * to be cut at the box's edge or to push the actions out of reach.
+ */
+export function fittingTier(room: number, minimums: readonly number[], rem = 16): 1 | 2 | 3 {
+  if ((minimums[2] ?? 0) * rem <= room) return 3;
+  if ((minimums[1] ?? 0) * rem <= room) return 2;
+  return 1;
+}
+
 const PAD: Record<Density, string> = { compact: "py-0.5", standard: "py-2", comfortable: "py-3" };
 /** Row heights the virtual list estimates with, matching the paddings above. */
 const HEIGHT: Record<Density, number> = { compact: 28, standard: 36, comfortable: 44 };
@@ -210,7 +236,13 @@ export function DataTable<Row>(props: DataTableProps<Row>) {
     [allColumns, columnsShown],
   );
   const density = props.density ?? "standard";
-  const region = useRef<HTMLDivElement>(null);
+  const region = useRef<HTMLDivElement | null>(null);
+  // The box is also kept as state, so measuring starts when it is drawn (an empty list has none).
+  const [box, setBox] = useState<HTMLDivElement | null>(null);
+  const attach = useCallback((element: HTMLDivElement | null) => {
+    region.current = element;
+    setBox(element);
+  }, []);
   useRestoredScroll(region, `table:${id ?? label}`);
   const [all, setAll] = useState(false);
   const grid = variant !== "static";
@@ -370,16 +402,35 @@ export function DataTable<Row>(props: DataTableProps<Row>) {
   const slow = useDelayed(loading === true || rows === undefined);
   const edge = (index: number, count: number) =>
     `${index === 0 ? "pl-4 md:pl-6" : ""} ${index === count - 1 ? "pr-4 md:pr-6" : ""}`;
-  // The width its columns need where they are shown, so a narrow screen scrolls the table
-  // sideways and no cell runs under the next, and an action column is never cut off.
+  // The width its columns need where they are shown, so no cell runs under the next and an action
+  // column is never cut off. Where the box can be measured, the tier shown is the one that fits
+  // it (`fittingTier`); before that, and where nothing is measured, the window's width decides.
+  const mins = tableMinimums(columns, { checking, actions: actions !== undefined });
   const minimums: Record<string, string> = {};
-  for (const level of [1, 2, 3] as const) {
-    const shown = columns
-      .filter((column) => (column.priority ?? 1) <= level)
-      .reduce((units, column) => units + (column.wide ? 2 : 1), 0);
-    const rem = shown * 7 + (checking ? 2.5 : 0) + (actions ? 3 : 0);
-    minimums[`--table-min-${level}`] = `${rem}rem`;
-  }
+  mins.forEach((rem, index) => {
+    minimums[`--table-min-${index + 1}`] = `${rem}rem`;
+  });
+  const [room, setRoom] = useState<number | undefined>();
+  useLayoutEffect(() => {
+    if (!box) {
+      setRoom(undefined);
+      return;
+    }
+    const read = () => setRoom(box.clientWidth > 0 ? box.clientWidth : undefined);
+    read();
+    if (typeof ResizeObserver === "undefined") return;
+    const watch = new ResizeObserver(read);
+    watch.observe(box);
+    return () => watch.disconnect();
+  }, [box]);
+  const rem =
+    typeof document === "undefined"
+      ? 16
+      : Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+  const fit = room === undefined ? undefined : fittingTier(room, mins, rem);
+  /** Which tier a column belongs to shows by the box when it is measured, by the window when not. */
+  const shownAt = (priority: 1 | 2 | 3 | undefined) =>
+    fit === undefined ? tier[priority ?? 1] : (priority ?? 1) <= fit ? "" : "hidden";
   const cells = [
     ...(checking ? [{ kind: "check" as const }] : []),
     ...columns.map((column) => ({ kind: "data" as const, column })),
@@ -453,11 +504,19 @@ export function DataTable<Row>(props: DataTableProps<Row>) {
           role={grid ? "grid" : undefined}
           aria-rowcount={grid ? shown.length + 1 : undefined}
           onKeyDown={onKeyDown}
-          style={minimums as CSSProperties}
-          className={`w-full min-w-[var(--table-min-1)] table-fixed border-collapse text-left ${
-            beside
-              ? "xl:min-w-[var(--table-min-2)] 2xl:min-w-[var(--table-min-3)]"
-              : "sm:min-w-[var(--table-min-2)] lg:min-w-[var(--table-min-3)]"
+          style={
+            {
+              ...minimums,
+              // Measured: the minimum of the tier that fits, and never more than the box has.
+              ...(fit !== undefined ? { minWidth: `min(var(--table-min-${fit}), 100%)` } : {}),
+            } as CSSProperties
+          }
+          className={`w-full table-fixed border-collapse text-left ${
+            fit !== undefined
+              ? ""
+              : beside
+                ? "min-w-[var(--table-min-1)] xl:min-w-[var(--table-min-2)] 2xl:min-w-[var(--table-min-3)]"
+                : "min-w-[var(--table-min-1)] sm:min-w-[var(--table-min-2)] lg:min-w-[var(--table-min-3)]"
           }`}
           aria-busy={refreshing || undefined}
         >
@@ -502,7 +561,7 @@ export function DataTable<Row>(props: DataTableProps<Row>) {
                         : undefined
                     }
                     // A width asked for is for a table with room: on a phone the columns take what they need, or the one beside it is squeezed.
-                    className={`whitespace-nowrap px-3 py-2 font-medium ${column.wide ? "w-[14rem]" : column.width ? `${column.width} max-sm:w-auto` : ""} ${tier[column.priority ?? 1]} ${
+                    className={`whitespace-nowrap px-3 py-2 font-medium ${column.wide ? "w-[14rem]" : column.width ? `${column.width} max-sm:w-auto` : ""} ${shownAt(column.priority)} ${
                       column.align === "end" ? "text-right" : ""
                     } ${edges}`}
                   >
@@ -649,7 +708,7 @@ export function DataTable<Row>(props: DataTableProps<Row>) {
                       <td
                         key={columnKey(column)}
                         {...common}
-                        className={`px-3 [overflow-wrap:anywhere] ${PAD[density]} ${tier[column.priority ?? 1]} ${
+                        className={`px-3 [overflow-wrap:anywhere] ${PAD[density]} ${shownAt(column.priority)} ${
                           column.align === "end" ? "text-right tabular-nums" : ""
                         } ${column.truncate ? "truncate" : ""} ${edges} ${ring}`}
                         onPointerEnter={column.truncate ? fullOnHover : undefined}
@@ -690,7 +749,7 @@ export function DataTable<Row>(props: DataTableProps<Row>) {
 
   return (
     <div
-      ref={region}
+      ref={attach}
       data-table={id}
       className={`${fill ? "min-h-0 flex-1 overflow-auto" : "overflow-x-auto"} ${
         // panel-allowed: a table drawn on its own carries the panel's edge itself.

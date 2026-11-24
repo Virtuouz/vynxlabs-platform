@@ -227,6 +227,7 @@ export const AUDIT_ACTIONS = [
   "workspace.updated",
   "workspace_git.cleared",
   "workspace_git.pulled",
+  "widget.version_removed",
   "workspace_git.pushed",
   "workspace_git.set",
 ] as const;
@@ -282,6 +283,7 @@ export const AUDIT_AREAS: readonly AuditArea[] = [
   { area: "page_action", tenant: "Page actions" },
   { area: "alert", tenant: "Alerts" },
   { area: "bundle_asset", tenant: "Bundle assets" },
+  { area: "widget", tenant: "Widgets" },
   { area: "end_user_group", tenant: "End user groups" },
   { area: "connection_group", tenant: "Connection groups" },
   { area: "group_member", tenant: "Group members" },

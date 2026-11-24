@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import type { BundleManifest } from "./bundle.js";
-import { checkBundleManifests } from "./bundle-check.js";
+import { checkBundleAssets, checkBundleManifests } from "./bundle-check.js";
 import { platformKinds } from "./kinds.js";
 
 const body = () => ({
@@ -114,5 +114,44 @@ describe("the widget kind", () => {
     expect(checkBundleManifests([widget((b) => (b.entry = "/etc/passwd"))])).toEqual([
       expect.stringContaining("entry"),
     ]);
+  });
+});
+
+describe("the files of a widget in a bundle", () => {
+  const file = (path: string) => ({
+    app: "x/goal",
+    path,
+    sha256: "a".repeat(64),
+    size: 1,
+    contentType: "text/html",
+  });
+  const bundle = (paths: string[], owner = "x/goal") => ({
+    formatVersion: 4 as const,
+    manifests: [widget()],
+    assets: paths.map((path) => ({ ...file(path), app: owner })),
+  });
+
+  test("are its frame page and one script", () => {
+    expect(checkBundleAssets(bundle(["frame.html", "view-1a2b3c4d.js"]))).toEqual([]);
+  });
+
+  test("are refused when the page, the script or both are missing, or others come with them", () => {
+    expect(checkBundleAssets(bundle(["view-1a2b3c4d.js"]))).toEqual([
+      expect.stringContaining("its frame page frame.html is not among its files"),
+      expect.stringContaining("a widget is its frame page and one script, and has 1 files"),
+    ]);
+    expect(checkBundleAssets(bundle(["frame.html"]))).toEqual([
+      expect.stringContaining("its script is not among its files"),
+      expect.stringContaining("has 1 files"),
+    ]);
+    expect(checkBundleAssets(bundle(["frame.html", "view-1a2b3c4d.js", "extra.js"]))).toEqual([
+      expect.stringContaining("has 3 files"),
+    ]);
+  });
+
+  test("are refused for a widget the bundle does not have", () => {
+    expect(checkBundleAssets(bundle(["frame.html", "view-1a2b3c4d.js"], "x/other"))).toEqual(
+      expect.arrayContaining([expect.stringContaining("not an app or a widget")]),
+    );
   });
 });

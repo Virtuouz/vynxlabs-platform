@@ -1287,7 +1287,8 @@ describe("DOC-03 types and subjects in the docs editor", () => {
     const shown = await screen.findByRole("region", { name: "The page as it will be served" });
     await waitFor(() => expect(within(shown).getByText("How-to guide")).toBeTruthy());
     expect(shown.querySelector(".eyebrow")?.textContent).toBe("How-to guide");
-    const related = within(shown).getByRole("complementary", { name: "Related" });
+    // The related pages are read with the site's other pages, and may come after the page itself.
+    const related = await within(shown).findByRole("complementary", { name: "Related" });
     expect(within(related).getByRole("link", { name: "Refund limits" }).getAttribute("href")).toBe(
       `${link}/docs/handbook/limits/refund-limits`,
     );

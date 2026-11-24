@@ -1,6 +1,7 @@
 import { type RefObject, useEffect, useRef, useState } from "react";
 import { openHelp } from "../help/store.ts";
 import { openPalette } from "../kit/keys.ts";
+import { plainEditorOnly } from "./plain.ts";
 
 export interface CodeEditorProps {
   /** Names the editor for screen readers: "Source of orders/sync". */
@@ -157,6 +158,10 @@ export function CodeEditor({
   useEffect(() => {
     let gone = false;
     let cleanup = () => {};
+    if (plainEditorOnly()) {
+      setState("plain");
+      return;
+    }
     import("./monaco.ts").then(
       ({ monaco, applyTheme }) => {
         if (gone || !host.current) return;

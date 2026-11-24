@@ -4,6 +4,8 @@ import { Play, Save } from "lucide-react";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { type ApiError, api, useLoad, useLoadOf } from "../api.ts";
 import { ask, failureText, notify, takenText } from "../ask.tsx";
+// The editor is large and is loaded when a query is first written.
+import { plainEditorOnly } from "../editor/plain.ts";
 import { DraftClash } from "../kit/DraftClash.tsx";
 import { type DraftRead, putDraft } from "../kit/draftApi.ts";
 import { useDraftSave } from "../kit/draftSave.ts";
@@ -20,7 +22,6 @@ import { Page } from "../ListScreen.tsx";
 import { navigate, useUrlParam } from "../router.tsx";
 import { ResourceIdentity } from "./ResourceIdentity.tsx";
 
-// The editor is large and is loaded when a query is first written.
 const CodeEditor = lazy(() =>
   import("../editor/CodeEditor.tsx").then((module) => ({ default: module.CodeEditor })),
 );
@@ -398,7 +399,7 @@ export function Queries({
 
   // The editor completes from what the workspace has.
   useEffect(() => {
-    if (!schema.data) return;
+    if (!schema.data || plainEditorOnly()) return;
     const known = schema.data;
     void import("../editor/monaco.ts").then(({ setSqlSchema }) =>
       setSqlSchema({ ...known, tables: known.tables.filter((table) => table.inSql !== false) }),

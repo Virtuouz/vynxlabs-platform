@@ -641,6 +641,15 @@ describe("the instance keeps an operator who can sign in (ACC-09, INS-04, GOV-04
       x.client.delete(`/bindings/${first.id}`),
     ]);
     expect([a.status, b.status].sort()).toEqual([204, 409]);
+    // Which of the two went first is chance. When it was x, the first operator is no operator now,
+    // and the next test makes its operators as them: x, who stays, makes them one again.
+    if (b.status === 204) {
+      const back = await x.client.post("/bindings", {
+        memberId: first.memberId,
+        roleId: roles.operator_admin,
+      });
+      expect(back.status, JSON.stringify(back.body)).toBe(201);
+    }
   });
 
   test("a disabled operator is not one who is left", async () => {

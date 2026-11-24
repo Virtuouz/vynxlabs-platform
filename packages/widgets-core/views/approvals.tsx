@@ -705,17 +705,27 @@ export function ApprovalsView(props: WidgetViewProps<ApprovalsConfig>) {
     setFocus(undefined);
   }, [focus]);
 
+  // A request that leaves is drawn leaving for a moment, then dropped; the moment is let go if
+  // the widget goes first, so nothing is set on a widget that is no longer there.
+  const timers = useRef(new Set<ReturnType<typeof setTimeout>>());
+  useEffect(() => {
+    const kept = timers.current;
+    return () => {
+      for (const timer of kept) clearTimeout(timer);
+      kept.clear();
+    };
+  }, []);
   const leave = useCallback((item: ApprovalItem, at: number) => {
     setLeaving((now) => new Map(now).set(item.id, { item, at, still: reducedMotion() }));
-    setTimeout(
-      () =>
-        setLeaving((now) => {
-          const next = new Map(now);
-          next.delete(item.id);
-          return next;
-        }),
-      PENDING_MS,
-    );
+    const timer = setTimeout(() => {
+      timers.current.delete(timer);
+      setLeaving((now) => {
+        const next = new Map(now);
+        next.delete(item.id);
+        return next;
+      });
+    }, PENDING_MS);
+    timers.current.add(timer);
   }, []);
 
   const onDecide = async (

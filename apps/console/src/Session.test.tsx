@@ -102,7 +102,16 @@ function Draft({ guard = false }: { guard?: boolean }) {
   return (
     <section>
       <textarea aria-label="Draft" value={text} onChange={(event) => setText(event.target.value)} />
-      <button type="button" onClick={() => api.put("/draft", { text }).then(() => setSaved(text))}>
+      <button
+        type="button"
+        // A save still waiting for a sign-in when its test ends fails then, with nobody to tell.
+        onClick={() =>
+          api
+            .put("/draft", { text })
+            .then(() => setSaved(text))
+            .catch(() => {})
+        }
+      >
         Save draft
       </button>
       <p>Saved: {saved}</p>

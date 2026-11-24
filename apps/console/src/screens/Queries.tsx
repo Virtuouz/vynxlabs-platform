@@ -13,6 +13,7 @@ import { count } from "../kit/format.ts";
 import { formatCombo } from "../kit/keys.ts";
 import { ErrorState, Loading, LoadState } from "../kit/LoadState.tsx";
 import { SectionLabel } from "../kit/layout.tsx";
+import { takeOverNotice } from "../kit/ownership.ts";
 import { ReadTable } from "../kit/ReadTable.tsx";
 import { RemoveDraftButton } from "../kit/RemoveDraftButton.tsx";
 import { ReferenceList } from "../kit/references.tsx";
@@ -653,9 +654,7 @@ export function Queries({
             </Notice>
           )}
           {mayKeep && current?.ownership === "code" ? (
-            <Notice tone="attention">
-              This query is managed in the tenant's repository. Saving a draft of it takes it over.
-            </Notice>
+            <Notice tone="attention">{takeOverNotice("query", "draft")}</Notice>
           ) : null}
           {keep.clashed ? <DraftClash what="query" mine={() => text} onTake={takeTheirs} /> : null}
           {schema.data.maySql ? null : (

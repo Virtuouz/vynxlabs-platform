@@ -157,7 +157,7 @@ test("a schedule from the repository opens with its settings, and saving takes i
   expect(((await screen.findByLabelText("When, as a cron line")) as HTMLInputElement).value).toBe(
     "0 2 * * *",
   );
-  expect(screen.getByText(/defined by the code in the tenant's repository/)).toBeTruthy();
+  expect(screen.getByText(/defined in code, in the tenant's repository/)).toBeTruthy();
   // The input is a form drawn from the script's schema.
   expect(((await screen.findByLabelText("Full")) as HTMLInputElement).checked).toBe(true);
   // The next times are shown.

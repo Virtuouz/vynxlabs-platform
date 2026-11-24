@@ -42,6 +42,7 @@ import {
 import { ago } from "../kit/format.ts";
 import { useGroupKeys } from "../kit/inspector/groupChoices.tsx";
 import { glide } from "../kit/motion.ts";
+import { takeOverNotice } from "../kit/ownership.ts";
 import { listenChoices } from "../kit/platformEvents.ts";
 import "@xyflow/react/dist/style.css";
 import { Play, Plus, Redo2, TriangleAlert, Undo2 } from "lucide-react";
@@ -2550,9 +2551,7 @@ export function FlowEditor({
             />
           ) : null}
           {state === "repository" ? (
-            <Notice tone="attention">
-              This flow is managed in the tenant's repository. Saving a draft of it takes it over.
-            </Notice>
+            <Notice tone="attention">{takeOverNotice("flow", "draft")}</Notice>
           ) : null}
           {problem ? <Notice tone="danger">{problem}</Notice> : null}
           {found.length > 0 ? (

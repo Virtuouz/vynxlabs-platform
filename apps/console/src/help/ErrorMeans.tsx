@@ -60,7 +60,7 @@ export function ErrorMeans({ code }: { code: string }) {
       tree={state.tree}
       profile="product"
       productName={brand.productName}
-      headingShift={2}
+      headingTop={3}
       idPrefix={`means-${code}`}
     />
   );

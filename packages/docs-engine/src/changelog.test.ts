@@ -11,7 +11,7 @@ import {
 import { changelogEntryName } from "./ops.js";
 import { manifestOf } from "./output.js";
 import { setFromManifest } from "./package.js";
-import { buildDocSet } from "./set.js";
+import { buildDocSet, folderItems, neighboursOf, pagesInOrder } from "./set.js";
 
 const page = (path: string, front: string, updated?: string) =>
   readPage(path, `---\n${front}\n---\n\nBody of ${path}.\n`, {
@@ -143,6 +143,34 @@ describe("the entries of a site", () => {
       changelogOf(set).map((one) => one.date),
     );
     expect(again.pages.get("changelog/by-date")?.frontmatter.date).toBe("2026-10-15");
+  });
+});
+
+describe("where a changelog is listed", () => {
+  const set = site(
+    ["ref/changelog/index", "title: Changelog"],
+    ["ref/changelog/0-1-0", "title: 0.1.0"],
+    ["ref/changelog/0-5-0", "title: 0.5.0"],
+    ["ref/changelog/unreleased", "title: Unreleased"],
+    ["ref/changelog/2026-02-01-dated", "title: Dated", "2026-02-01T00:00:00Z"],
+  );
+  const titles = (items: { title: string }[]) => items.map((one) => one.title);
+
+  test("the navigation and Previous/Next run in the order ::changelog gives, newest first", () => {
+    const folder = folderItems(set.nav, "ref/changelog/0-5-0");
+    const wanted = changelogOf(set).map((one) => one.title);
+    expect(titles(folder)).toEqual(wanted);
+    expect(titles(pagesInOrder(set.nav))).toEqual(["Changelog", ...wanted]);
+    expect(neighboursOf(set.nav, "ref/changelog/0-5-0").before?.title).toBe("Unreleased");
+  });
+
+  test("a page its index lists by name keeps the place the index gives it", () => {
+    const listed = site(
+      ["ref/changelog/index", "title: Changelog\npages: [0-1-0]"],
+      ["ref/changelog/0-1-0", "title: 0.1.0"],
+      ["ref/changelog/0-5-0", "title: 0.5.0"],
+    );
+    expect(titles(folderItems(listed.nav, "ref/changelog/0-5-0"))).toEqual(["0.1.0", "0.5.0"]);
   });
 });
 

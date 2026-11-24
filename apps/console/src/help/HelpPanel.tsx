@@ -371,7 +371,7 @@ export function HelpPanel({
               tree={page.value.tree}
               profile="product"
               productName={brand.productName}
-              headingShift={2}
+              headingTop={3}
               idPrefix="help"
               {...options}
               more={(href, word) => (

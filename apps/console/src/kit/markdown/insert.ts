@@ -30,6 +30,7 @@ const MENU: Record<string, { name: string; glyph: string }> = {
   "file-tree": { name: "File tree", glyph: "┣" },
   pages: { name: "Pages in this folder", glyph: "▤" },
   glossary: { name: "Glossary", glyph: "A–Z" },
+  changelog: { name: "Changelog", glyph: "◷" },
   field: { name: "Field", glyph: "ƒ" },
   term: { name: "Term", glyph: "Aa" },
   kbd: { name: "Key", glyph: "⌘" },

@@ -79,6 +79,12 @@ export interface RenderOptions {
    * that has headings of its own: 2 draws `#` as an h3. None goes past h6.
    */
   headingShift?: number;
+  /**
+   * The level the highest heading the page uses is drawn at, the next one level lower, and so on,
+   * whatever the author wrote: 2 under a page's own title as h1. No level is skipped. When given
+   * it takes the place of `headingShift`, which is for a tree that is only a part of a page.
+   */
+  headingTop?: number;
   /** Put before every id this drawing makes up, so two drawings on one page do not clash. */
   idPrefix?: string;
   /**
@@ -141,7 +147,19 @@ export interface Context {
 /** The tag of an element that holds what a renderer drew in its own way. */
 export const CUSTOM = "#custom";
 
-export function context(options: RenderOptions = {}): Context {
+/** How far the headings of `tree` go down so that the highest one used is at `top`; none goes past h6. */
+export function shiftFor(tree: Node, top: number): number {
+  let highest = 7;
+  for (const { node } of walk(tree)) {
+    if (node.type === "heading") highest = Math.min(highest, node.depth);
+  }
+  return highest === 7 ? 0 : top - highest;
+}
+
+export function context(options: RenderOptions = {}, tree?: Node): Context {
+  if (options.headingTop !== undefined && tree) {
+    options = { ...options, headingShift: shiftFor(tree, options.headingTop) };
+  }
   return {
     options,
     profile: options.profile ?? "docs",
@@ -283,7 +301,7 @@ function usual(node: Node, ctx: Context): Drawn[] {
     case "heading":
       return [
         el(
-          `h${Math.min(6, node.depth + Math.max(0, ctx.options.headingShift ?? 0))}`,
+          `h${Math.max(1, Math.min(6, node.depth + (ctx.options.headingShift ?? 0)))}`,
           { id: node.id },
           inside(),
         ),

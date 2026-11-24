@@ -402,7 +402,7 @@ export function MarkdownEditor({
                   <Doc
                     tree={read}
                     profile={profile}
-                    headingShift={1}
+                    headingTop={2}
                     lines
                     idPrefix={`p${id}`}
                     {...(knows.term ? { term: knows.term } : {})}

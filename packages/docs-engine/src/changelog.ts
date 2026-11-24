@@ -100,12 +100,21 @@ export function changelogOf(
       page,
     });
   }
-  return out.sort((a, b) => {
-    if (a.date !== b.date) {
-      if (a.date === undefined) return -1;
-      if (b.date === undefined) return 1;
-      return b.date.localeCompare(a.date);
-    }
-    return b.path.localeCompare(a.path);
-  });
+  return out.sort(newestFirst);
+}
+
+/**
+ * The order of a changelog wherever it is listed: the list, the navigation, a page's Previous and
+ * Next. Undated first, then the latest day, then the later path.
+ */
+export function newestFirst(
+  a: { path: string; date?: string | undefined },
+  b: { path: string; date?: string | undefined },
+): number {
+  if (a.date !== b.date) {
+    if (a.date === undefined) return -1;
+    if (b.date === undefined) return 1;
+    return b.date.localeCompare(a.date);
+  }
+  return b.path.localeCompare(a.path);
 }

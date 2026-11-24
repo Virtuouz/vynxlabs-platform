@@ -381,12 +381,21 @@ export function changelogFor(
   address: (path: string) => string,
 ) {
   const app = appFor(list.apps, page.path);
-  if (!app) return [];
-  const pages = new Map(entriesOf(list, app).map((entry) => [entry.path, entry]));
+  // A folder no app names yet is the root of the site it will be: its top folder, as an app's docs is.
+  const docs = app?.docs ?? page.path.split("/")[0] ?? "";
+  if (docs === "" || !page.path.includes("/")) return [];
+  const pages = new Map(
+    list.pages
+      .filter((one) => one.state !== "removed" && one.path.startsWith(`${docs}/`))
+      .map((one) => {
+        const entry = readPage(one.path.slice(docs.length + 1), one.source).entry;
+        return [entry.path, entry] as const;
+      }),
+  );
   return changelogOf({ pages }, query).map((entry) => ({
     id: entry.path.replace(/[^a-z0-9_-]+/g, "-"),
     title: entry.title,
-    href: address(`${app.docs}/${entry.path}`),
+    href: address(`${docs}/${entry.path}`),
     ...(entry.date ? { date: entry.date } : {}),
     tree: entry.page.tree,
   }));

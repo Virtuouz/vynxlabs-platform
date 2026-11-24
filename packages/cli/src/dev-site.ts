@@ -18,6 +18,7 @@ import {
   type ResourceLike,
 } from "@volvel/docs-engine";
 import {
+  changelogFeed,
   DOCS_ASSET_PATH,
   DOCS_POLICY,
   docPage,
@@ -426,6 +427,19 @@ export async function startSiteServer(options: SiteServerOptions) {
             searchAnswer(drawn, docs.search.grouped(query, collection ? { collection } : {})),
           ),
         );
+      }
+      if (file === "changelog.xml") {
+        // The page head links it wherever the site has entries; origin is the one the browser used.
+        const feed = changelogFeed(docs.built.set, {
+          title: drawn.title,
+          base: drawn.base,
+          origin: `http://${request.headers.host ?? "localhost"}`,
+        });
+        if (feed !== undefined) {
+          return send(response, 200, "application/rss+xml; charset=utf-8", feed, {
+            "x-content-type-options": "nosniff",
+          });
+        }
       }
       const markdown = pageMarkdown(docs.built.set, file, (page) => {
         const found = loaded.manifests.find(

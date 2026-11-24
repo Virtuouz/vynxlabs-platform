@@ -222,7 +222,7 @@ function ownComponent(
  * elements as `renderHtml`, one for one.
  */
 export function renderReact(tree: Node, options: ReactOptions = {}): ReactNode {
-  const ctx = context(options);
+  const ctx = context(options, tree);
   const components = options.components;
   if (components) ctx.custom = (node) => own(node, ctx, components);
   return toReact(draw(tree, ctx));

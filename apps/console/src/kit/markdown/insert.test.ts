@@ -49,7 +49,7 @@ describe("what the Insert menu offers", () => {
     expect(
       offered.filter((name) => !names.has(name) && !(name in NOT_IN_MENU) && name !== "tab"),
     ).toEqual([]);
-    expect(names.has("glossary")).toBe(true);
+    for (const name of ["glossary", "pages", "changelog"]) expect(names.has(name)).toBe(true);
     // Nothing is excused that the menu offers.
     expect(Object.keys(NOT_IN_MENU).filter((name) => names.has(name))).toEqual([]);
   });

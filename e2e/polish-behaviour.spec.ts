@@ -1,26 +1,17 @@
 import { overdraws } from "./measure.ts";
-import {
-  call,
-  open,
-  type Polish,
-  setUpPolishTenant,
-  tearDownPolishTenant,
-} from "./polish-setup.ts";
-import { expect, test } from "./test.ts";
+import { call, open, type Polish, test } from "./polish-setup.ts";
+import { expect } from "./test.ts";
 import { readEveryList } from "./visual.ts";
 
 /** The console's polish (phase 16, P4; phases 23): what a screen does, rather than where it stands. */
 
 test.describe.configure({ mode: "serial" });
 
+// The tenant is the worker's (polish-setup's `polish` fixture), shared with the other polish specs.
 let ctx: Polish;
 
-test.beforeAll(async ({ browser }) => {
-  ctx = await setUpPolishTenant(browser, "b");
-});
-
-test.afterAll(async () => {
-  if (ctx) await tearDownPolishTenant(ctx);
+test.beforeEach(({ polish }) => {
+  ctx = polish;
 });
 
 /** P4-6: a time is one line, wherever it stands, from 1280 px up. */
@@ -54,10 +45,17 @@ test("no time wraps onto a second line at 1280 px or wider @polish", async () =>
 test("the audit log's filters sit under its title and description on a first visit @polish", async () => {
   for (const width of [1440, 390]) {
     await ctx.page.setViewportSize({ width, height: 900 });
-    // A member who has not read it: the preference is cleared, here and in the browser.
-    await call(ctx.page, "DELETE", "/me/preferences/seen:audit-log").catch(() => {});
-    await ctx.page.evaluate(() => localStorage.removeItem("vx-pref:seen:audit-log"));
-    await open(ctx.page, `/t/${ctx.tenant.id}/audit`);
+    // A member who has not read it: the preference is cleared, here and in the browser. The
+    // layout specs, on other workers, read the same member's marks, so a visit of theirs
+    // between the clearing and the opening is cleared again.
+    await expect(async () => {
+      await call(ctx.page, "DELETE", "/me/preferences/seen:audit-log").catch(() => {});
+      await ctx.page.evaluate(() => localStorage.removeItem("vx-pref:seen:audit-log"));
+      await open(ctx.page, `/t/${ctx.tenant.id}/audit`);
+      await expect(ctx.page.locator("main header").first().locator("p")).toBeVisible({
+        timeout: 2000,
+      });
+    }).toPass({ timeout: 30_000 });
     const title = ctx.page.getByRole("heading", { level: 1, name: "Audit log" });
     await expect(title).toBeVisible();
     const header = ctx.page.locator("main header").first();
@@ -83,11 +81,14 @@ test("the audit log's filters sit under its title and description on a first vis
 /** P4-1: what a list is for is said once, then kept behind help; operator access is one line. */
 test("a list says what it is for once, and operator access hides to a mark and comes back @polish", async () => {
   await ctx.page.setViewportSize({ width: 1440, height: 900 });
-  await call(ctx.page, "DELETE", "/me/preferences/seen:flows").catch(() => {});
-  await ctx.page.evaluate(() => localStorage.removeItem("vx-pref:seen:flows"));
-  await open(ctx.page, `${ctx.ws}/flows`);
   const sentence = ctx.page.getByText(/A flow is a graph of steps/);
-  await expect(sentence).toBeVisible();
+  // Other workers' visits to Flows may mark it read between the clearing and the opening.
+  await expect(async () => {
+    await call(ctx.page, "DELETE", "/me/preferences/seen:flows").catch(() => {});
+    await ctx.page.evaluate(() => localStorage.removeItem("vx-pref:seen:flows"));
+    await open(ctx.page, `${ctx.ws}/flows`);
+    await expect(sentence).toBeVisible({ timeout: 2000 });
+  }).toPass({ timeout: 30_000 });
   await open(ctx.page, `${ctx.ws}/flows`);
   await expect(sentence).toBeHidden();
   await ctx.page.getByRole("button", { name: "About Flows" }).click();
@@ -115,13 +116,22 @@ test("a run that arrives while rows are checked waits behind a control, and redu
   await open(ctx.page, `${ctx.ws}/runs`);
   const grid = ctx.page.getByRole("grid", { name: "Runs" });
   await grid.getByRole("checkbox").nth(1).check();
-  await call(ctx.page, "POST", `${ctx.W}/runs`, { script: "stock/check", input: {} });
+  const started = await call(ctx.page, "POST", `${ctx.W}/runs`, {
+    script: "stock/check",
+    input: {},
+  });
   const pill = ctx.page.getByRole("button", { name: /^1 new run$/ });
   await expect(pill).toBeVisible({ timeout: 20_000 });
   const before = await grid.locator("tbody tr[data-row]").count();
   await pill.click();
   await expect(pill).toBeHidden();
   await expect(grid.locator("tbody tr[data-row]")).toHaveCount(before + 1);
+  // The run is finished before the worker's next test: a run still queued draws the queue on the Workers screen.
+  await expect
+    .poll(async () => (await call(ctx.page, "GET", `${ctx.W}/runs/${started.id}`)).status, {
+      timeout: 200_000,
+    })
+    .not.toMatch(/^(queued|running)$/);
 
   const still = await (
     await browser.newContext({

@@ -44,7 +44,7 @@ The lines between the two `---` at the top are folded in the source, and a line 
 
 ### Insert
 
-A search box **Find a component** filters the list, which has **Blocks** and **Inline**. It offers the components the `docs` profile has and that can go where the cursor is: **Callout**, **Tabs**, **Tab**, **Steps**, **Details**, **Code tabs**, **File tree**, **Pages in this folder**, **Glossary**, **Field**, **Term** and **Key**. Inside **Tabs** only **Tab** is offered, inside **Code tabs** nothing, and **Tab** only inside **Tabs**. A search that finds nothing says "Nothing is called that." A footer says "Inserts at the cursor", and "inside" the container it is in. :kbd[↑], :kbd[↓] and :kbd[Enter] choose, and :kbd[Escape] closes the list and returns to the source. Inside a component the new one is written one level deeper. The product's own `product` and `screenshot` components are not offered: no tenant page may use them. `::changelog` is not in the list either: type it. What each takes is in [Writing documentation](../../../../develop/reference/docs/components).
+A search box **Find a component** filters the list, which has **Blocks** and **Inline**. It offers the components the `docs` profile has and that can go where the cursor is: **Callout**, **Tabs**, **Tab**, **Steps**, **Details**, **Code tabs**, **File tree**, **Pages in this folder**, **Glossary**, **Changelog**, **Field**, **Term** and **Key**. Inside **Tabs** only **Tab** is offered, inside **Code tabs** nothing, and **Tab** only inside **Tabs**. A search that finds nothing says "Nothing is called that." A footer says "Inserts at the cursor", and "inside" the container it is in. :kbd[↑], :kbd[↓] and :kbd[Enter] choose, and :kbd[Escape] closes the list and returns to the source. Inside a component the new one is written one level deeper. The product's own `product` and `screenshot` components are not offered: no tenant page may use them. **Changelog** writes `::changelog{limit=5}` at the cursor. What each takes is in [Writing documentation](../../../../develop/reference/docs/components).
 
 ## Page details
 
@@ -63,7 +63,7 @@ The tab **Page details** is a form for the top of the page. It writes the page's
 | **What it is about** | A row per resource: **Kind** (table, script, flow, app, connection, query) and **Path**, with a remove button. **Resource** adds one. At most 50. |
 | **Notes on the product's help** | **Add this page's notes to** lists the topics of the product's help, "Choose a topic of the help…". Each chosen one shows by its title with a remove button. At most 20. |
 
-A page's place among the others is not here: drag it in the tree, or list it in `pages:` on its folder's own page. The top of the page also takes `key`, `since` and `moved_from`, written in the source only. See [what the top of a page says](../../../../develop/reference/docs/frontmatter).
+Under the fields a line says "Place among the others.": a page's place is not a field, so drag it in the tree, or list it in `pages:` on its folder's own page. The top of the page also takes `key`, `since` and `moved_from`, written in the source only. See [what the top of a page says](../../../../develop/reference/docs/frontmatter).
 
 ## Problems
 

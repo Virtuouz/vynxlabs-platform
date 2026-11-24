@@ -59,5 +59,5 @@ Checked by: second agent, 2026-11-24. Run on 8097 and read against `model.ts`, `
 | Claim | Source or run | Checked by | Result |
 | --- | --- | --- | --- |
 | A `::changelog` line draws the page's own site's entries newest first, none outside a site; an entry with no date shows none in the preview. | model.ts:373-393; run | second agent, 2026-11-24 | holds |
-| The **Insert** list lacks `::changelog`: type it. | run (list read) | second agent, 2026-11-24 | holds as the product is today; fault: the Insert list should offer it (other lane) |
+| The **Insert** list lacks `::changelog`: type it. | run (list read) | second agent, 2026-11-24 | page corrected: Insert offers **Changelog**; fault fixed (d4): `::changelog` is in the Insert menu (insert.ts), confirmed in the code |
 | **Date**: a day from the browser's date field, optional, written `date: YYYY-MM-DD`; the order of precedence in the hint. | PageDetails.tsx:164-170; schema.ts:165-171; run | second agent, 2026-11-24 | holds |

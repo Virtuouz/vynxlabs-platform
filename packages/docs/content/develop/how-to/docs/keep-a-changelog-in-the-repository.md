@@ -102,10 +102,9 @@ Every page of the deployed site has a link to the feed in its head, and the feed
 - **`volvel build` stops at a `date` line.** Write the day as `YYYY-MM-DD`, in plain text, and make sure it is a day on the calendar.
 - **An entry is dated the day it last changed.** Nothing else dated it: it has no `date:` and no day at the start or end of its name. A day in the middle of a name does not count.
 - **An entry comes first, with no date.** The page has no `date:`, no day in its name, and no last update; it counts as not released.
-- **The deploy says "A page uses a key that this instance may not know: the instance may be older than this CLI."** The instance does not know `date` yet. Upgrade the instance, or take `date:` out of the pages' top. (The message itself ends "take type, subjects and moved_from out of the pages' top": it does not name `date`.)
-- **`volvel dev` shows the entries but `changelog.xml` is not found.** The local site draws the changelog and links the feed. It does not serve `changelog.xml`: read it on the deployed site.
+- **The deploy says "A page uses a key that this instance may not know: the instance may be older than this CLI."** The instance does not know `date` yet. Upgrade the instance, or take `date:` out of the pages' top.
 - **A page you did not mean to list appears.** It names the subject `changelog`, or sits in a folder named `changelog`.
-- **The address of the `changelog/` folder says "There is no page here".** Only its entries are pages. Link to the page that holds `::changelog`.
+- **The `changelog/` folder has no page of its own.** Its address shows the folder's entries as a list, as `::changelog` does. To word it yourself, add `changelog/index.md`.
 
 ## Related
 

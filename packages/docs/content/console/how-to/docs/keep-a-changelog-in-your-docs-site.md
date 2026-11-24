@@ -30,7 +30,7 @@ An entry's date is the first of these that applies: **Date**, a day that begins 
 
 :::steps
 1. Make a page in the site's folder, for example **What's new** (the file `what-s-new.md`), or open one that is there.
-2. In the editor, write the line below on a line of its own. The **Insert** list does not offer it, so type it. `limit` is how many entries it shows, 10 when left out, from 1 to 50.
+2. In the editor, write the line below on a line of its own. Press **Insert** (or :kbd[/]) and choose **Changelog**, or type it. `limit` is how many entries it shows, 10 when left out, from 1 to 50.
 
    ```md
    ::changelog{limit=2}
@@ -60,7 +60,7 @@ Every page of the site now has a feed link in its head, and the feed is at `chan
 - **An entry comes first, with no date, on the site.** Nothing dates it, so it counts as not released.
 - **A page is listed that is not in `changelog/`.** A page that names the subject `changelog` is an entry wherever it is. Remove the subject from **Page details** if it is not one.
 - **The Problems panel says "The date is not a day on the calendar: "2026-02-30". Write it as YYYY-MM-DD."** The page cannot be deployed until the day is real. Choose it again in **Date**, or mend the line in the source.
-- **The address of the `changelog/` folder says "There is no page here".** Only its entries are pages. Link to the page that holds `::changelog`.
+- **The `changelog/` folder has no page of its own.** Its address shows the folder's entries as a list, as `::changelog` does, though it is not a page you can edit. To word it yourself, make `changelog/index`.
 
 ## Related
 

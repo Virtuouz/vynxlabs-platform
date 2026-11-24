@@ -142,7 +142,12 @@ function flowInput(body: Record<string, unknown>): string | undefined {
   for (const node of Object.values(body.nodes)) {
     if (!isObject(node) || node.type !== "trigger" || !isObject(node.trigger)) continue;
     if (node.trigger.type !== "manual") continue;
-    inputs.push(typeOfSchema(node.trigger.input));
+    // Without a schema the manual start takes any object (see FlowTrigger), not anything at all.
+    inputs.push(
+      node.trigger.input === undefined
+        ? "Record<string, unknown>"
+        : typeOfSchema(node.trigger.input),
+    );
   }
   if (inputs.length === 0) return undefined;
   return [...new Set(inputs)].map((one) => `(${one})`).join(" | ");

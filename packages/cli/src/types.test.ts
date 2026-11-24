@@ -254,6 +254,33 @@ export type { Same };
     expect(diagnose(dir, ["src/parity.ts", ENV_TYPES_FILE])).toEqual([]);
   });
 
+  test("a flow's manual input compiles as its schema says, and any object without one", async () => {
+    const dir = await fixture({
+      "src/flows.ts": `import type { VolvelFlows } from "@volvel/sdk";
+export const typed: VolvelFlows["onboard"]["input"] = { who: "ana" };
+export const bare: VolvelFlows["bare"]["input"] = { anything: 1 };
+// @ts-expect-error who is a string
+export const wrong: VolvelFlows["onboard"]["input"] = { who: 1 };
+// @ts-expect-error a bare manual start takes an object, not a number
+export const notObject: VolvelFlows["bare"]["input"] = 3;
+`,
+    });
+    const manual = (input?: unknown) => ({
+      nodes: { go: { type: "trigger", trigger: { type: "manual", ...(input ? { input } : {}) } } },
+    });
+    const text = envDeclarations([
+      {
+        kind: "flow",
+        path: "onboard",
+        body: manual({ type: "object", properties: { who: { type: "string" } } }),
+      },
+      { kind: "flow", path: "bare", body: manual() },
+    ]);
+    await mkdir(join(dir, ".platform"), { recursive: true });
+    await writeFile(join(dir, ENV_TYPES_FILE), text);
+    expect(diagnose(dir, ["src/flows.ts", ENV_TYPES_FILE])).toEqual([]);
+  });
+
   test("a script's and a flow's schemas, a variable and a connection are declared", () => {
     const text = envDeclarations([
       {
@@ -280,9 +307,24 @@ export type { Same };
           },
         },
       },
+      {
+        kind: "flow",
+        path: "bare",
+        body: { nodes: { go: { type: "trigger", trigger: { type: "manual" } } } },
+      },
+      {
+        kind: "flow",
+        path: "nightly",
+        body: {
+          nodes: { go: { type: "trigger", trigger: { type: "schedule", cron: "0 3 * * *" } } },
+        },
+      },
       { kind: "variable", path: "limit", body: { default: "5" } },
       { kind: "connection", path: "shop", body: { connector: "http" } },
     ]);
+    // A manual start with no schema takes any object; a flow with no manual start says unknown.
+    expect(text).toContain('"bare": { input: (Record<string, unknown>) }');
+    expect(text).toContain('"nightly": { input: unknown }');
     expect(text).toContain("interface VolvelScripts");
     expect(text).toContain('"sync": { input: { id: string; }; output: (number)[] }');
     expect(text).toContain('"onboard": { input: ({ who?: string; }) }');

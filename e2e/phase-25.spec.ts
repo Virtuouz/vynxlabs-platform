@@ -1,5 +1,5 @@
+import { asPerson, signInAs } from "./as.ts";
 import { closeSetting, openSetting, settingRow } from "./inspector.ts";
-import { signInWithPassword } from "./sign-in.ts";
 import { type Browser, expect, type Page, test } from "./test.ts";
 
 /**
@@ -21,7 +21,6 @@ const PASSWORD = process.env.E2E_FERNHILL_PASSWORD ?? "fernhill-demo-2026";
 const TENANT = process.env.E2E_FERNHILL_TENANT ?? "fernhill";
 const SANDBOX = process.env.E2E_FERNHILL_SANDBOX ?? "sandbox";
 const OWNER = "maya.brooks@fernhill.example";
-const FRONT_DESK = "jess.morgan@fernhill.example";
 const stamp = Date.now().toString(36);
 const PAGE = `screens/p25-${stamp}`;
 const APP = `p25-${stamp}`;
@@ -65,7 +64,7 @@ async function signedIn(browser: Browser, email: string): Promise<Page> {
   const page = await (
     await browser.newContext({ viewport: { width: 1440, height: 900 } })
   ).newPage();
-  await signInWithPassword(page, email, PASSWORD);
+  await signInAs(page, email, PASSWORD);
   return page;
 }
 
@@ -126,7 +125,7 @@ test.afterAll(async () => {
   await owner.context().close();
 });
 
-test("POLISH-002: Invoiced by week is a line of the sum of Total by week, in five choices, without scrolling the inspector", async () => {
+test("POLISH-002: Invoiced by week is a line of the sum of Total by week, in five choices, without scrolling the inspector @fernhill @builder", async () => {
   await openBuilder();
   await choose("Invoiced by week");
   const inspector = settings();
@@ -158,7 +157,7 @@ test("POLISH-002: Invoiced by week is a line of the sum of Total by week, in fiv
   await expect(inspector).toContainText("Hiding a widget isn’t security");
 });
 
-test("POLISH-003: Unpaid is changed to a count in the reader's words, and Undo takes it back", async () => {
+test("POLISH-003: Unpaid is changed to a count in the reader's words, and Undo takes it back @fernhill @builder", async () => {
   await openBuilder();
   await choose("Unpaid");
   const value = await openSetting(owner, settings(), "Value");
@@ -181,7 +180,7 @@ test("POLISH-003: Unpaid is changed to a count in the reader's words, and Undo t
     .toBe("sum");
 });
 
-test("POLISH-007: a widget is renamed where it is, moved and sized by keys, copied, removed and brought back", async () => {
+test("POLISH-007: a widget is renamed where it is, moved and sized by keys, copied, removed and brought back @fernhill @builder", async () => {
   await openBuilder();
   await choose("Average invoice");
   await widget("Average invoice").locator("button[title=Rename]").click();
@@ -207,7 +206,7 @@ test("POLISH-007: a widget is renamed where it is, moved and sized by keys, copi
   await expect(owner.locator("section[data-selected]")).toHaveCount(0);
 });
 
-test("POLISH-008: a chart is carried from Add to page onto the grid, lands where it is let go, and Esc carries nothing", async () => {
+test("POLISH-008: a chart is carried from Add to page onto the grid, lands where it is let go, and Esc carries nothing @fernhill @builder", async () => {
   await openBuilder();
   const count = await owner.locator("section[role=group]").count();
   const pickUp = async (name: string) => {
@@ -255,7 +254,7 @@ test("POLISH-008: a chart is carried from Add to page onto the grid, lands where
   await expect(owner.getByText("Stat was not added.")).toBeAttached();
 });
 
-test("POLISH-011: a Text widget is added from Add to page and written in Markdown with an alert and steps", async () => {
+test("POLISH-011: a Text widget is added from Add to page and written in Markdown with an alert and steps @fernhill @builder", async () => {
   await openBuilder();
   await owner
     .getByRole("button", { name: /Add to page/ })
@@ -278,7 +277,7 @@ test("POLISH-011: a Text widget is added from Add to page and written in Markdow
   await expect(text).not.toContainText(":::");
 });
 
-test("POLISH-002: the Goal is added from Add to page and set in the same inspector", async () => {
+test("POLISH-002: the Goal is added from Add to page and set in the same inspector @fernhill @builder", async () => {
   await openBuilder();
   await owner
     .getByRole("button", { name: /Add to page/ })
@@ -303,7 +302,7 @@ test("POLISH-002: the Goal is added from Add to page and set in the same inspect
     .toBe(20000000);
 });
 
-test("POLISH-002: a member's dashboard is built in the same editor, and Add to page offers only what reads", async () => {
+test("POLISH-002: a member's dashboard is built in the same editor, and Add to page offers only what reads @fernhill @builder", async () => {
   await owner.goto(`${L}/dashboards`);
   await owner
     .getByRole("button", { name: /New dashboard/ })
@@ -331,7 +330,7 @@ test("POLISH-002: a member's dashboard is built in the same editor, and Add to p
   await call(owner, "DELETE", `${W}/dashboards/${id}`);
 });
 
-test("POLISH-001: the page is published, says what it changes first, and opens for its maker and not for the front desk", async ({
+test("POLISH-001: the page is published, says what it changes first, and opens for its maker and not for the front desk @fernhill @builder", async ({
   browser,
 }) => {
   test.setTimeout(180_000);
@@ -360,24 +359,8 @@ test("POLISH-001: the page is published, says what it changes first, and opens f
     timeout: 30_000,
   });
   await manager.context().close();
-  const desk = await (await browser.newContext()).newPage();
+  const desk = await (await asPerson(browser, "jess")).newPage();
   await desk.goto("/portal/fernhill/");
-  await desk
-    .getByRole("link", { name: "Sign in" })
-    .or(desk.getByRole("button", { name: "Sign in" }))
-    .first()
-    .click();
-  await desk.getByLabel(/Email/).first().fill(FRONT_DESK);
-  const next = desk.getByRole("button", { name: "Continue" });
-  if (await next.count()) await next.click();
-  await desk
-    .getByLabel(/Password/)
-    .first()
-    .fill(PASSWORD);
-  await desk
-    .getByRole("button", { name: /Sign in/ })
-    .last()
-    .click();
   await expect(desk.getByText("Front desk").first()).toBeVisible({ timeout: 20_000 });
   await desk.goto("/apps/fernhill/clinics/performance/");
   await expect(desk.getByText("Not for this account")).toBeVisible();

@@ -1,4 +1,4 @@
-import { signInWithPassword } from "./sign-in.ts";
+import { signInAs } from "./as.ts";
 import { expect, type Page, test } from "./test.ts";
 
 /**
@@ -7,10 +7,6 @@ import { expect, type Page, test } from "./test.ts";
  * by searching, which the server answers, and by loading more pages.
  */
 
-const ADMIN = {
-  email: process.env.E2E_ADMIN_EMAIL ?? "admin@example.com",
-  password: process.env.E2E_ADMIN_PASSWORD ?? "change-me-please",
-};
 const TENANT_ADMIN = "00000000-0000-7000-8000-000000000002";
 const stamp = Date.now().toString(36);
 const COUNT = 250;
@@ -41,7 +37,7 @@ let tenant: { id: string };
 test.beforeAll(async ({ browser }) => {
   test.setTimeout(600_000);
   page = await (await browser.newContext({ viewport: { width: 1440, height: 900 } })).newPage();
-  await signInWithPassword(page, ADMIN.email, ADMIN.password);
+  await signInAs(page, "operator");
   tenant = await call(page, "POST", "/tenants", { slug: `paging-${stamp}`, name: "Paging" });
   await call(page, "POST", `/tenants/${tenant.id}/access-grants`, {
     reason: "Looking for the 250th member of a long list",
@@ -65,7 +61,7 @@ test.afterAll(async () => {
   await page.context().close();
 });
 
-test("the 250th member is found by searching for them", async () => {
+test("the 250th member is found by searching for them @data", async () => {
   await page.goto(`/t/${tenant.id}/members`);
   await expect(page.getByText("Showing the first")).toBeVisible({ timeout: 30_000 });
   await page.getByRole("textbox", { name: /Search by email or name/ }).fill(last);
@@ -73,7 +69,7 @@ test("the 250th member is found by searching for them", async () => {
   await expect(page.getByText("Showing the first")).toHaveCount(0);
 });
 
-test("the 250th member is reached by loading more pages", async () => {
+test("the 250th member is reached by loading more pages @data", async () => {
   await page.goto(`/t/${tenant.id}/members`);
   const more = page.getByRole("button", { name: "Load more" });
   // The first page is drawn before anything is asked of the button.
@@ -87,7 +83,7 @@ test("the 250th member is reached by loading more pages", async () => {
   await expect(page.getByRole("gridcell", { name: last }).first()).toBeVisible({ timeout: 30_000 });
 });
 
-test("a group's picker finds the 250th by typing, not only the first page", async () => {
+test("a group's picker finds the 250th by typing, not only the first page @data", async () => {
   const group = await call(page, "POST", `/tenants/${tenant.id}/groups`, {
     name: `everyone-${stamp}`,
   });

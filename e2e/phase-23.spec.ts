@@ -1,5 +1,5 @@
+import { signInAs } from "./as.ts";
 import { overdraws } from "./measure.ts";
-import { signInWithPassword } from "./sign-in.ts";
 import { type Browser, expect, type Page, test } from "./test.ts";
 
 /**
@@ -78,7 +78,7 @@ async function signedIn(browser: Browser, email: string, password = PASSWORD): P
   const page = await (
     await browser.newContext({ viewport: { width: 1440, height: 900 } })
   ).newPage();
-  await signInWithPassword(page, email, password);
+  await signInAs(page, email, password);
   return page;
 }
 
@@ -172,7 +172,7 @@ const scrolling = (page: Page) =>
     };
   });
 
-test("POLISH-004: a table's rows scroll in one place, with the header pinned, at 1440, 768 and 390 px", async () => {
+test("POLISH-004: a table's rows scroll in one place, with the header pinned, at 1440, 768 and 390 px @fernhill @docs", async () => {
   for (const [width, height] of [
     [1440, 900],
     [768, 1024],
@@ -204,7 +204,7 @@ test("POLISH-004: a table's rows scroll in one place, with the header pinned, at
   await owner.setViewportSize({ width: 1440, height: 900 });
 });
 
-test("POLISH-001: a supplier past the first 50 is found by typing, and chosen, and the picker says there are more", async () => {
+test("POLISH-001: a supplier past the first 50 is found by typing, and chosen, and the picker says there are more @fernhill @docs", async () => {
   await owner.goto(`${L}/tables/${INVOICES}?row=${invoice}`);
   const panel = owner.getByRole("complementary", { name: "The chosen row" });
   const box = panel.getByRole("combobox");
@@ -227,7 +227,7 @@ test("POLISH-001: a supplier past the first 50 is found by typing, and chosen, a
   await expect(panel.getByText(/Type to find more/)).toBeVisible();
 });
 
-test("POLISH-001: a vendor past the first 200 of 230 is chosen by typing its name", async () => {
+test("POLISH-001: a vendor past the first 200 of 230 is chosen by typing its name @fernhill @docs", async () => {
   await owner.goto(`${L}/tables/${PURCHASES}?row=${purchase}`);
   const panel = owner.getByRole("complementary", { name: "The chosen row" });
   const box = panel.getByRole("combobox");
@@ -248,7 +248,7 @@ test("POLISH-001: a vendor past the first 200 of 230 is chosen by typing its nam
   expect((await ok(owner, "GET", `${W}/row/${purchase}/${PURCHASES}`)).vendor).toBe(chosen.id);
 });
 
-test("POLISH-010: a file is replaced and then removed from the inspector, after asking and saying the old one stays", async () => {
+test("POLISH-010: a file is replaced and then removed from the inspector, after asking and saying the old one stays @fernhill @docs", async () => {
   await owner.goto(`${L}/tables/${INVOICES}?row=${invoice}`);
   const panel = owner.getByRole("complementary", { name: "The chosen row" });
   const first = await owner.evaluate(
@@ -289,7 +289,7 @@ test("POLISH-010: a file is replaced and then removed from the inspector, after 
   expect((await call(owner, "GET", `${W}/files/${replaced.scan}`)).status).toBe(200);
 });
 
-test("POLISH-003: a query is renamed where it is listed, and an app's title is changed with its address unchanged", async () => {
+test("POLISH-003: a query is renamed where it is listed, and an app's title is changed with its address unchanged @fernhill @docs", async () => {
   test.setTimeout(180_000);
   const put = (path: string, kind: string, body: unknown) =>
     ok(owner, "PUT", `${W}/drafts/${path}`, {
@@ -342,7 +342,7 @@ test("POLISH-003: a query is renamed where it is listed, and an app's title is c
   expect(drafts.some((one) => one.path.startsWith(`${ROOT}-app-`))).toBe(false);
 });
 
-test("POLISH-003: a doc writer deploys a docs site with its feedback table, and no other table", async ({
+test("POLISH-003: a doc writer deploys a docs site with its feedback table, and no other table @fernhill @docs", async ({
   browser,
 }) => {
   test.setTimeout(180_000);
@@ -415,7 +415,7 @@ test("POLISH-003: a doc writer deploys a docs site with its feedback table, and 
   }
 });
 
-test("POLISH-002: Release is one list of deploys, and goes back from a row of it", async () => {
+test("POLISH-002: Release is one list of deploys, and goes back from a row of it @fernhill @docs", async () => {
   test.setTimeout(180_000);
   const bundles = (await ok(owner, "GET", `${W}/bundles`)).items as {
     id: string;
@@ -454,7 +454,7 @@ test("POLISH-002: Release is one list of deploys, and goes back from a row of it
   await ok(owner, "POST", `${W}/deployments`, { bundleId: running });
 });
 
-test("POLISH-006: a viewer's tenant overview counts what the tenant's queue lists", async ({
+test("POLISH-006: a viewer's tenant overview counts what the tenant's queue lists @fernhill @docs", async ({
   browser,
 }) => {
   const viewer = await signedIn(browser, VIEWER);
@@ -481,7 +481,7 @@ test("POLISH-006: a viewer's tenant overview counts what the tenant's queue list
   }
 });
 
-test("POLISH-004: the audit log's filters sit under its title, at 1440 and 390 px", async () => {
+test("POLISH-004: the audit log's filters sit under its title, at 1440 and 390 px @fernhill @docs", async () => {
   for (const width of [1440, 390]) {
     await owner.setViewportSize({ width, height: 900 });
     await owner.goto(`/t/${TID}/audit`);
@@ -503,7 +503,7 @@ test("POLISH-004: the audit log's filters sit under its title, at 1440 and 390 p
   await owner.setViewportSize({ width: 1440, height: 900 });
 });
 
-test("POLISH-010: going back to an access release lists what it removes, and is a danger confirm", async ({
+test("POLISH-010: going back to an access release lists what it removes, and is a danger confirm @fernhill @docs", async ({
   browser,
 }) => {
   test.setTimeout(180_000);

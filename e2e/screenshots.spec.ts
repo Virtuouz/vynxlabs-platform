@@ -150,7 +150,7 @@ const call = (page: Page, method: string, path: string, body?: unknown): Promise
     [method, path, body] as const,
   );
 
-test("the pictures the documentation shows are taken", async ({ browser }) => {
+test("the pictures the documentation shows are taken @fernhill @docs", async ({ browser }) => {
   test.skip(process.env.SCREENSHOTS !== "1", "Taken only when asked: pnpm docs:screenshots.");
   test.setTimeout(Math.max(240_000, CHOSEN.length * 2 * 15_000 + 120_000));
   const first = await (await browser.newContext()).newPage();

@@ -1,4 +1,4 @@
-import { signInWithPassword } from "./sign-in.ts";
+import { signInAs } from "./as.ts";
 import { expect, type Page, test } from "./test.ts";
 import { expectNoAxeViolations } from "./visual.ts";
 
@@ -23,7 +23,6 @@ import { expectNoAxeViolations } from "./visual.ts";
  * named a little differently is changed in one place. A `// GUESS:` says what it assumes.
  */
 
-const PASSWORD = process.env.E2E_FERNHILL_PASSWORD ?? "fernhill-demo-2026";
 const TENANT = process.env.E2E_FERNHILL_TENANT ?? "fernhill";
 const SANDBOX = process.env.E2E_FERNHILL_SANDBOX ?? "sandbox";
 const OWNER = "maya.brooks@fernhill.example";
@@ -250,7 +249,7 @@ const noSideways = (page: Page) =>
 test.beforeAll(async ({ browser }) => {
   test.setTimeout(240_000);
   owner = await (await browser.newContext({ viewport: { width: 1440, height: 900 } })).newPage();
-  await signInWithPassword(owner, OWNER, PASSWORD);
+  await signInAs(owner, OWNER);
   const tenants = await ok(owner, "GET", "/tenants?limit=200");
   const tenant = tenants.items.find((one: { slug: string }) => one.slug === TENANT);
   test.skip(!tenant, `No tenant ${TENANT}: set up the Fernhill example first.`);
@@ -389,7 +388,7 @@ test.afterAll(async () => {
 
 // ----- The served app -----
 
-test("POLISH-006: Money's bar reads Search invoices, Clinic, Issued and Status; a client code narrows the table and the stats, and a reload and a shared link keep it", async () => {
+test("POLISH-006: Money's bar reads Search invoices, Clinic, Issued and Status; a client code narrows the table and the stats, and a reload and a shared link keep it @fernhill @builder", async () => {
   await owner.setViewportSize({ width: 1440, height: 900 });
   await openApp(owner);
   await expect(invoices(owner)).toBeVisible({ timeout: 30_000 });
@@ -429,7 +428,7 @@ test("POLISH-006: Money's bar reads Search invoices, Clinic, Issued and Status; 
   await expectNoAxeViolations(owner, "Money with its search bar");
 });
 
-test("POLISH-005: Money's bar fits a phone: the search box is whole and the page does not scroll sideways", async () => {
+test("POLISH-005: Money's bar fits a phone: the search box is whole and the page does not scroll sideways @fernhill @builder", async () => {
   await owner.setViewportSize({ width: 390, height: 844 });
   await openApp(owner);
   await expect(searchInvoices(owner)).toBeVisible({ timeout: 30_000 });
@@ -441,7 +440,7 @@ test("POLISH-005: Money's bar fits a phone: the search box is whole and the page
   await owner.setViewportSize({ width: 1440, height: 900 });
 });
 
-test("POLISH-006: Visits is a Section of stats and Tabs; the open tab is in the address and survives a reload, and the arrow keys change it", async () => {
+test("POLISH-006: Visits is a Section of stats and Tabs; the open tab is in the address and survives a reload, and the arrow keys change it @fernhill @builder", async () => {
   await openApp(owner, "visits");
   const clinics = section(owner, "At the clinics");
   await expect(clinics).toBeVisible({ timeout: 30_000 });
@@ -475,7 +474,7 @@ test("POLISH-006: Visits is a Section of stats and Tabs; the open tab is in the 
   await expectNoAxeViolations(owner, "Visits with its tabs");
 });
 
-test("POLISH-005: on a phone Visits' tabs and what its Section holds are laid out in the phone's two columns, and nothing scrolls sideways", async () => {
+test("POLISH-005: on a phone Visits' tabs and what its Section holds are laid out in the phone's two columns, and nothing scrolls sideways @fernhill @builder", async () => {
   await owner.setViewportSize({ width: 390, height: 844 });
   await openApp(owner, "visits");
   const clinics = section(owner, "At the clinics");
@@ -504,7 +503,7 @@ test("POLISH-005: on a phone Visits' tabs and what its Section holds are laid ou
   await owner.setViewportSize({ width: 1440, height: 900 });
 });
 
-test("POLISH-006: a Section that folds is folded by a press, stays folded after a reload, and opens again", async () => {
+test("POLISH-006: a Section that folds is folded by a press, stays folded after a reload, and opens again @fernhill @builder", async () => {
   await openApp(owner, "visits");
   const clinics = section(owner, "At the clinics");
   await expect(foldButton(clinics, true)).toBeVisible({ timeout: 30_000 });
@@ -528,7 +527,7 @@ test("POLISH-006: a Section that folds is folded by a press, stays folded after 
   });
 });
 
-test("POLISH-006: Stock has a search that finds an item, a folding Orders to VetSupply, and an Action group of Reorder and Count stock", async () => {
+test("POLISH-006: Stock has a search that finds an item, a folding Orders to VetSupply, and an Action group of Reorder and Count stock @fernhill @builder", async () => {
   await openApp(owner, "stock");
   const stock = owner.getByRole("region", { name: "Stock", exact: true }).first();
   await expect(stock).toBeVisible({ timeout: 30_000 });
@@ -563,7 +562,7 @@ test("POLISH-006: Stock has a search that finds an item, a folding Orders to Vet
   ).toBeVisible();
 });
 
-test("POLISH-005: the invoice sheet's Action group holds Mark paid, Send invoice, Edit and Void, the last under More; at 390 px what does not fit is under More too", async () => {
+test("POLISH-005: the invoice sheet's Action group holds Mark paid, Send invoice, Edit and Void, the last under More; at 390 px what does not fit is under More too @fernhill @builder", async () => {
   const link = `${base}?sheet=invoice&record=${invoice.sheet.id}`;
   const names = ["Mark paid", "Send invoice", "Edit", "Void"];
   // At a desktop width the first three are buttons (Fernhill's Action group shows up to three),
@@ -615,7 +614,7 @@ test("POLISH-005: the invoice sheet's Action group holds Mark paid, Send invoice
 
 // ----- The builder -----
 
-test("POLISH-002: Add to page's Organize group offers Section, Tabs and Search and filter, and the Action group is there for an app", async () => {
+test("POLISH-002: Add to page's Organize group offers Section, Tabs and Search and filter, and the Action group is there for an app @fernhill @builder", async () => {
   await openBuilder(`screens/${PAGE}`, /^Play/);
   await owner
     .getByRole("button", { name: /Add to page/ })
@@ -637,7 +636,7 @@ test("POLISH-002: Add to page's Organize group offers Section, Tabs and Search a
   await expect(dialog).toHaveCount(0);
 });
 
-test("POLISH-008: a widget is dragged into a Section and out again, and the page keeps it where it was let go", async () => {
+test("POLISH-008: a widget is dragged into a Section and out again, and the page keeps it where it was let go @fernhill @builder", async () => {
   await openBuilder(`screens/${PAGE}`, /^Play/);
   await addToPage(/^Section/);
   await expect(widget("Section")).toBeVisible();
@@ -669,7 +668,7 @@ test("POLISH-008: a widget is dragged into a Section and out again, and the page
     .toBeUndefined();
 });
 
-test("POLISH-007: the same moves from the keyboard: ⋯ › Move to lists The page, the Section and each tab, and moves the widget there and back", async () => {
+test("POLISH-007: the same moves from the keyboard: ⋯ › Move to lists The page, the Section and each tab, and moves the widget there and back @fernhill @builder", async () => {
   await openBuilder(`screens/${PAGE}`, /^Play/);
   await ensure("Section", /^Section/);
   await ensure("Tabs", /^Tabs/);
@@ -699,7 +698,7 @@ test("POLISH-007: the same moves from the keyboard: ⋯ › Move to lists The pa
     .toBeUndefined();
 });
 
-test("POLISH-008: a widget is dragged onto a tab of Tabs, and out of it", async () => {
+test("POLISH-008: a widget is dragged onto a tab of Tabs, and out of it @fernhill @builder", async () => {
   await openBuilder(`screens/${PAGE}`, /^Play/);
   await ensure("Tabs", /^Tabs/);
   const tabs = await savedId("core/tabs");
@@ -718,7 +717,7 @@ test("POLISH-008: a widget is dragged onto a tab of Tabs, and out of it", async 
     .toBeUndefined();
 });
 
-test("POLISH-003: the outline nests what a Section holds, the Section grows with it, and duplicating or removing it takes what it holds, and Undo brings it back", async () => {
+test("POLISH-003: the outline nests what a Section holds, the Section grows with it, and duplicating or removing it takes what it holds, and Undo brings it back @fernhill @builder", async () => {
   await openBuilder(`screens/${PAGE}`, /^Play/);
   await ensure("Section", /^Section/);
   const container = await savedId("core/section");
@@ -766,7 +765,7 @@ test("POLISH-003: the outline nests what a Section holds, the Section grows with
     .toBe(container);
 });
 
-test("POLISH-003: Add to page suggests Search invoices where a page of Invoices has none, and adds it to the page's bar", async () => {
+test("POLISH-003: Add to page suggests Search invoices where a page of Invoices has none, and adds it to the page's bar @fernhill @builder", async () => {
   await openBuilder(`screens/${SUGGEST}`, /^Money/);
   const open = () =>
     owner
@@ -801,7 +800,7 @@ test("POLISH-003: Add to page suggests Search invoices where a page of Invoices 
   await owner.keyboard.press("Escape");
 });
 
-test("POLISH-003: a button offers to be grouped with the one beside it, and the two become one Action group", async () => {
+test("POLISH-003: a button offers to be grouped with the one beside it, and the two become one Action group @fernhill @builder", async () => {
   await openBuilder(`screens/${PAGE}`, /^Tools/);
   await widget("Print").focus();
   // GUESS: the offer is a button in the inspector whose name says "group".
@@ -833,7 +832,7 @@ test("POLISH-003: a button offers to be grouped with the one beside it, and the 
   await expect(widget("Email")).toBeVisible();
 });
 
-test("POLISH-003: + Page offers A list of Invoices, which makes a page with a search, a table, a detail sheet and a New invoice form opened from a button on the table", async () => {
+test("POLISH-003: + Page offers A list of Invoices, which makes a page with a search, a table, a detail sheet and a New invoice form opened from a button on the table @fernhill @builder", async () => {
   await openBuilder(`screens/${PAGE}`, /^Play/);
   const known = new Set(((await drafted()).pages as Wid[]).map((one) => one.id));
   await owner.getByRole("button", { name: "Add a page", exact: true }).click();
@@ -877,7 +876,7 @@ test("POLISH-003: + Page offers A list of Invoices, which makes a page with a se
 
 // ----- A dashboard -----
 
-test("POLISH-002: a dashboard's filters are a Search and filter widget that is edited in the inspector, and Action group is not offered", async () => {
+test("POLISH-002: a dashboard's filters are a Search and filter widget that is edited in the inspector, and Action group is not offered @fernhill @builder", async () => {
   await owner.setViewportSize({ width: 1440, height: 1000 });
   await owner.goto(`${L}/dashboards`);
   const made = await ok(owner, "POST", `${W}/dashboards`, { title: `Walk ${stamp}` });

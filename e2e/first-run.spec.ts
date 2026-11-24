@@ -1,4 +1,4 @@
-import { signInWithPassword } from "./sign-in.ts";
+import { signInAs } from "./as.ts";
 import { expect, type Page, test } from "./test.ts";
 import { expectNoAxeViolations } from "./visual.ts";
 
@@ -9,10 +9,6 @@ import { expectNoAxeViolations } from "./visual.ts";
  * check themselves off.
  */
 
-const ADMIN = {
-  email: process.env.E2E_ADMIN_EMAIL ?? "admin@example.com",
-  password: process.env.E2E_ADMIN_PASSWORD ?? "change-me-please",
-};
 const stamp = Date.now().toString(36);
 
 // biome-ignore lint/suspicious/noExplicitAny: answers are inspected freely
@@ -31,14 +27,14 @@ const call = (page: Page, method: string, path: string, body?: unknown): Promise
     [method, path, body] as const,
   );
 
-test("a tenant made in the console, its first workspace's steps, and a first run in twelve presses", async ({
+test("a tenant made in the console, its first workspace's steps, and a first run in twelve presses @operate @instance", async ({
   browser,
 }) => {
   test.setTimeout(240_000);
   const page = await (
     await browser.newContext({ viewport: { width: 1440, height: 900 } })
   ).newPage();
-  await signInWithPassword(page, ADMIN.email, ADMIN.password);
+  await signInAs(page, "operator");
 
   // Made from the tenants list; the operator is offered membership, checked already.
   // Opening the console takes a member back to where they were last; the tenants list is the

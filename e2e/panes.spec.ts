@@ -1,4 +1,4 @@
-import { signInWithPassword } from "./sign-in.ts";
+import { ownMember, signInAs } from "./as.ts";
 import { expect, type Page, test } from "./test.ts";
 
 /**
@@ -6,10 +6,6 @@ import { expect, type Page, test } from "./test.ts";
  * keyboard, a pane folds and opens again, and sizes survive a reload.
  */
 
-const ADMIN = {
-  email: process.env.E2E_ADMIN_EMAIL ?? "admin@example.com",
-  password: process.env.E2E_ADMIN_PASSWORD ?? "change-me-please",
-};
 const stamp = Date.now().toString(36);
 
 // biome-ignore lint/suspicious/noExplicitAny: answers are inspected freely
@@ -40,27 +36,31 @@ const call = (page: Page, method: string, path: string, body?: unknown): Promise
     [method, path, body] as const,
   );
 
-test("panes move by keyboard, fold, and are as they were left after a reload", async ({
+test("panes move by keyboard, fold, and are as they were left after a reload @polish", async ({
   browser,
 }) => {
   test.setTimeout(180_000);
-  const page = await (
+  // The operator makes the tenant; every setting the test then changes is a member's of its own.
+  const operator = await (
     await browser.newContext({ viewport: { width: 1440, height: 900 } })
   ).newPage();
-  await signInWithPassword(page, ADMIN.email, ADMIN.password);
-  const tenant = await call(page, "POST", "/tenants", {
+  await signInAs(operator, "operator");
+  const tenant = await call(operator, "POST", "/tenants", {
     slug: `panes-${stamp}`,
     name: "Panes",
     addCreator: true,
   });
-  const dev = await call(page, "POST", `/tenants/${tenant.id}/workspaces`, {
+  const dev = await call(operator, "POST", `/tenants/${tenant.id}/workspaces`, {
     slug: "dev",
     name: "Dev",
     type: "dev",
   });
+  const page = await ownMember(browser, operator, tenant.id, {
+    viewport: { width: 1440, height: 900 },
+  });
   const W = `/tenants/${tenant.id}/workspaces/${dev.id}`;
   const link = `/t/${tenant.id}/workspaces/${dev.id}`;
-  // Each setting this test makes is the admin's own: forgotten at the end.
+  // Each setting this test makes is that member's own: forgotten at the end all the same.
   const forget = async () => {
     for (const key of ["split:flow-editor", "split:run-page"]) {
       await call(page, "DELETE", `/me/preferences/${key}`).catch(() => {});
@@ -133,7 +133,7 @@ test("panes move by keyboard, fold, and are as they were left after a reload", a
   );
 
   await forget();
-  await call(page, "POST", `/tenants/${tenant.id}/deletion`, { confirm: tenant.slug }).catch(
+  await call(operator, "POST", `/tenants/${tenant.id}/deletion`, { confirm: tenant.slug }).catch(
     () => {},
   );
 });

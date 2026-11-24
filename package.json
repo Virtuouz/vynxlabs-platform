@@ -22,12 +22,13 @@
     "check:migrations": "node scripts/migrations-lock.mjs",
     "check:licenses": "node scripts/check-licenses.mjs",
     "dev:console": "pnpm --filter @volvel/console dev",
-    "e2e": "playwright test -c e2e",
+    "e2e": "node e2e/run.mjs",
+    "e2e:changed": "node e2e/run.mjs --only-changed=${E2E_BASE:-main}",
     "docs:check": "tsc -b && node packages/docs/check.mjs --staleness && node packages/docs/generate.mjs && node packages/docs/check.mjs",
     "docs:export": "tsc -b && pnpm --filter @volvel/docs build && node packages/docs/export.mjs",
     "docs:generate": "tsc -b && node packages/docs/generate.mjs",
     "release:check": "pnpm build && node scripts/release-check.mjs",
-    "docs:screenshots": "SCREENSHOTS=1 playwright test -c e2e screenshots"
+    "docs:screenshots": "SCREENSHOTS=1 node e2e/run.mjs screenshots"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.10.2",

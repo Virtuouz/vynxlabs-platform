@@ -57,7 +57,7 @@ async function signIn(browser: Browser, email: string, password: string): Promis
   return page;
 }
 
-test("a developer asks, a promoter decides from the overview, drift shows the change, access shows why", async ({
+test("a developer asks, a promoter decides from the overview, drift shows the change, access shows why @access @operate", async ({
   browser,
 }) => {
   const admin = await signIn(browser, ADMIN.email, ADMIN.password);

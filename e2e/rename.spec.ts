@@ -1,4 +1,4 @@
-import { signInWithPassword } from "./sign-in.ts";
+import { signInAs } from "./as.ts";
 import { expect, type Page, test } from "./test.ts";
 
 /**
@@ -8,10 +8,6 @@ import { expect, type Page, test } from "./test.ts";
  * API, so a name that only looked changed would fail.
  */
 
-const ADMIN = {
-  email: process.env.E2E_ADMIN_EMAIL ?? "admin@example.com",
-  password: process.env.E2E_ADMIN_PASSWORD ?? "change-me-please",
-};
 const TENANT_ADMIN = "00000000-0000-7000-8000-000000000002";
 const stamp = Date.now().toString(36);
 
@@ -31,11 +27,11 @@ const call = (page: Page, method: string, path: string, body?: unknown): Promise
     [method, path, body] as const,
   );
 
-test("a workspace, a tenant and a table are renamed from their screens, and a table change is undone", async ({
+test("a workspace, a tenant and a table are renamed from their screens, and a table change is undone @data @instance", async ({
   browser,
 }) => {
   const page = await (await browser.newContext()).newPage();
-  await signInWithPassword(page, ADMIN.email, ADMIN.password);
+  await signInAs(page, "operator");
   const tenant = await call(page, "POST", "/tenants", { slug: `rename-${stamp}`, name: "Before" });
   await call(page, "POST", `/tenants/${tenant.id}/access-grants`, {
     reason: "The rename e2e test",

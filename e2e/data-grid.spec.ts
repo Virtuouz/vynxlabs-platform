@@ -1,4 +1,4 @@
-import { signInWithPassword } from "./sign-in.ts";
+import { signInAs } from "./as.ts";
 import { expect, type Page, test } from "./test.ts";
 import { expectNoAxeViolations } from "./visual.ts";
 
@@ -8,10 +8,6 @@ import { expectNoAxeViolations } from "./visual.ts";
  * reached, changed and put back from the keyboard alone.
  */
 
-const ADMIN = {
-  email: process.env.E2E_ADMIN_EMAIL ?? "admin@example.com",
-  password: process.env.E2E_ADMIN_PASSWORD ?? "change-me-please",
-};
 const TENANT_ADMIN = "00000000-0000-7000-8000-000000000002";
 const stamp = Date.now().toString(36);
 
@@ -31,14 +27,14 @@ const call = (page: Page, method: string, path: string, body?: unknown): Promise
     [method, path, body] as const,
   );
 
-test("10,000 rows page without repeating or moving, and a cell is changed from the keyboard", async ({
+test("10,000 rows page without repeating or moving, and a cell is changed from the keyboard @data", async ({
   browser,
 }) => {
   test.setTimeout(240_000);
   const page = await (
     await browser.newContext({ viewport: { width: 1440, height: 900 } })
   ).newPage();
-  await signInWithPassword(page, ADMIN.email, ADMIN.password);
+  await signInAs(page, "operator");
   const tenant = await call(page, "POST", "/tenants", { slug: `grid-${stamp}`, name: "Grid" });
   await call(page, "POST", `/tenants/${tenant.id}/access-grants`, {
     reason: "The data grid e2e test",

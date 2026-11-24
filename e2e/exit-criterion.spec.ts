@@ -98,7 +98,7 @@ test.afterAll(async () => {
   await git.stop();
 });
 
-test("a member signs in through single sign-on, and is given a tenant to look after", async ({
+test("a member signs in through single sign-on, and is given a tenant to look after @instance @access", async ({
   browser,
 }) => {
   // An operator connects the organization's identity provider, once.
@@ -200,7 +200,7 @@ test("a member signs in through single sign-on, and is given a tenant to look af
   ok(await asAda("PUT", `${W}/git`, { branch: "vx/sandbox" }), "follow a branch");
 });
 
-test("she writes a script and a flow of core nodes in the console, and deploys them", async () => {
+test("she writes a script and a flow of core nodes in the console, and deploys them @instance @access", async () => {
   // A script, in the editor.
   await ada.goto(`${link}/scripts/new`);
   await ada.getByLabel("Path").fill("orders/greet");
@@ -309,7 +309,7 @@ test("she writes a script and a flow of core nodes in the console, and deploys t
   await expect(ada.getByText(/Deployed as version/)).toBeVisible();
 });
 
-test("the deploy is a commit on the repository's branch, and a signed webhook starts the flow chosen by the data", async () => {
+test("the deploy is a commit on the repository's branch, and a signed webhook starts the flow chosen by the data @instance @access", async () => {
   const pushed = ok(
     await asAda("POST", `${W}/git/push`, { message: "Take orders in" }),
     "push",
@@ -353,7 +353,7 @@ test("the deploy is a commit on the repository's branch, and a signed webhook st
     .toEqual(["A-1 small", "A-2 large"]);
 });
 
-test("she promotes it to production", async () => {
+test("she promotes it to production @instance @access", async () => {
   // Production is told nothing it was not given: without the secret the webhook checks
   // signatures against, the promotion is refused, and says what is missing.
   const refused = await asAda("POST", `${W}/promotions`);
@@ -373,7 +373,7 @@ test("she promotes it to production", async () => {
   expect(there).toEqual(expect.arrayContaining(["orders/intake", "orders/greet", "orders"]));
 });
 
-test("she publishes an app over a table, and two groups of end users see it differently", async ({
+test("she publishes an app over a table, and two groups of end users see it differently @instance @access", async ({
   browser,
 }) => {
   const T = `/tenants/${tenant.id}`;
@@ -527,7 +527,7 @@ test("she publishes an app over a table, and two groups of end users see it diff
   expect(sees).toEqual({ north: { rows: 3, total: "600" }, south: { rows: 2, total: "30" } });
 });
 
-test("a developer edits a file and pushes, and the change is pulled into the workspace", async () => {
+test("a developer edits a file and pushes, and the change is pulled into the workspace @instance @access", async () => {
   // What the builder published is on the branch too, once pushed.
   ok(await asAda("POST", `${W}/git/push`, { message: "Publish the bills app" }), "push again");
   git.edit(
@@ -548,7 +548,7 @@ test("a developer edits a file and pushes, and the change is pulled into the wor
   await expect(ada.getByText("vx/sandbox").first()).toBeVisible();
 });
 
-test("no screen used a browser dialog, and none threw", () => {
+test("no screen used a browser dialog, and none threw @instance @access", () => {
   expect(dialogs).toEqual([]);
   expect(errors).toEqual([]);
 });

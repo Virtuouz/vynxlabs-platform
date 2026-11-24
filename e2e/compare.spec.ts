@@ -1,4 +1,4 @@
-import { signInWithPassword } from "./sign-in.ts";
+import { signInAs } from "./as.ts";
 import { expect, type Page, test } from "./test.ts";
 import { expectNoAxeViolations } from "./visual.ts";
 
@@ -8,10 +8,6 @@ import { expectNoAxeViolations } from "./visual.ts";
  * version, with the source's difference one press away.
  */
 
-const ADMIN = {
-  email: process.env.E2E_ADMIN_EMAIL ?? "admin@example.com",
-  password: process.env.E2E_ADMIN_PASSWORD ?? "change-me-please",
-};
 const stamp = Date.now().toString(36);
 
 // biome-ignore lint/suspicious/noExplicitAny: answers are inspected freely
@@ -56,14 +52,14 @@ const script = (code: string) => ({
   },
 });
 
-test("a run that fails after a deploy says the version changed, and shows the source's difference", async ({
+test("a run that fails after a deploy says the version changed, and shows the source's difference @operate", async ({
   browser,
 }) => {
   test.setTimeout(240_000);
   const page = await (
     await browser.newContext({ viewport: { width: 1440, height: 900 } })
   ).newPage();
-  await signInWithPassword(page, ADMIN.email, ADMIN.password);
+  await signInAs(page, "operator");
   const tenant = await call(page, "POST", "/tenants", {
     slug: `compare-${stamp}`,
     name: "Compare",

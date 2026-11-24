@@ -1,6 +1,6 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { signInWithPassword } from "./sign-in.ts";
+import { signInAs } from "./as.ts";
 import { expect, type Page, test } from "./test.ts";
 import { expectNoAxeViolations } from "./visual.ts";
 
@@ -14,10 +14,6 @@ import { expectNoAxeViolations } from "./visual.ts";
  * reads them from E2E_MAIL_DIR, the same folder as the test sees it.
  */
 
-const ADMIN = {
-  email: process.env.E2E_ADMIN_EMAIL ?? "admin@example.com",
-  password: process.env.E2E_ADMIN_PASSWORD ?? "change-me-please",
-};
 const MAIL_DIR = process.env.E2E_MAIL_DIR;
 const TENANT_ADMIN = "00000000-0000-7000-8000-000000000002";
 const stamp = Date.now().toString(36);
@@ -67,13 +63,13 @@ async function linkFor(to: string): Promise<string> {
 
 test.skip(!MAIL_DIR, "Set E2E_MAIL_DIR to where the instance keeps its mail (MAIL_CAPTURE_DIR).");
 
-test("an approver approves from the mail on a phone, and the console says who and why", async ({
+test("an approver approves from the mail on a phone, and the console says who and why @access", async ({
   browser,
 }) => {
   const errors: string[] = [];
   const admin = await (await browser.newContext()).newPage();
   admin.on("pageerror", (error) => errors.push(String(error).slice(0, 300)));
-  await signInWithPassword(admin, ADMIN.email, ADMIN.password);
+  await signInAs(admin, "operator");
 
   const tenant = await call(admin, "POST", "/tenants", { slug: `mail-${stamp}`, name: "Fernhill" });
   await call(admin, "POST", `/tenants/${tenant.id}/access-grants`, {

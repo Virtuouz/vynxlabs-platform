@@ -1,5 +1,5 @@
+import { signInAs } from "./as.ts";
 import { choose, closeSetting, openSetting } from "./inspector.ts";
-import { signInWithPassword } from "./sign-in.ts";
 import { expect, type Page, test } from "./test.ts";
 import { expectNoAxeViolations, readEveryList } from "./visual.ts";
 
@@ -11,10 +11,6 @@ import { expectNoAxeViolations, readEveryList } from "./visual.ts";
  * result is kept as a file.
  */
 
-const ADMIN = {
-  email: process.env.E2E_ADMIN_EMAIL ?? "admin@example.com",
-  password: process.env.E2E_ADMIN_PASSWORD ?? "change-me-please",
-};
 const stamp = Date.now().toString(36);
 
 // biome-ignore lint/suspicious/noExplicitAny: answers are inspected freely
@@ -47,7 +43,7 @@ const day = (back: number) => {
 test.beforeAll(async ({ browser }) => {
   test.setTimeout(240_000);
   page = await (await browser.newContext({ viewport: { width: 1500, height: 1000 } })).newPage();
-  await signInWithPassword(page, ADMIN.email, ADMIN.password);
+  await signInAs(page, "operator");
   await readEveryList(page);
   const tenant = await call(page, "POST", "/tenants", {
     slug: `boards-${stamp}`,
@@ -180,7 +176,7 @@ test.afterAll(async () => {
 
 const widget = (name: string) => page.getByRole("region", { name, exact: true });
 
-test("from inside a dashboard, its section is a link back, and the rail shows an area's screens without leaving", async () => {
+test("from inside a dashboard, its section is a link back, and the rail shows an area's screens without leaving @data @builder", async () => {
   await page.goto(`${link}/dashboards/${board}`);
   await expect(page.getByRole("heading", { name: "Lending", level: 1 })).toBeVisible();
   const crumbs = page.getByRole("navigation", { name: "Where you are" });
@@ -216,7 +212,7 @@ test("from inside a dashboard, its section is a link back, and the rail shows an
   await expect(page).toHaveURL(/\/dashboards$/);
 });
 
-test("each widget draws what its query gives, and says how fresh it is", async () => {
+test("each widget draws what its query gives, and says how fresh it is @data @builder", async () => {
   await page.goto(`${link}/dashboards/${board}`);
   // The last thirty days: three loans, 80 in fees.
   await expect(widget("Fees")).toContainText("80");
@@ -246,7 +242,7 @@ test("each widget draws what its query gives, and says how fresh it is", async (
   await expectNoAxeViolations(page, "a dashboard");
 });
 
-test("the date filter changes every widget bound to it, and the address keeps it (POLISH-006)", async () => {
+test("the date filter changes every widget bound to it, and the address keeps it (POLISH-006) @data @builder", async () => {
   await page.goto(`${link}/dashboards/${board}`);
   await expect(widget("Fees")).toContainText("80");
   // The older loans, 60 and 62 days ago, are reached with "Last 90 days": 105 in fees.
@@ -266,7 +262,7 @@ test("the date filter changes every widget bound to it, and the address keeps it
 
 // Drill-through to the rows behind a number (phase 18) is an action since phase 26: the number's
 // widget says "Show the rows behind it" when it is pressed.
-test("a number opens the rows behind it", async () => {
+test("a number opens the rows behind it @data @builder", async () => {
   await page.goto(`${link}/dashboards/${board}`);
   await expect(widget("Fees")).toContainText("80");
   await widget("Fees").getByRole("button").first().click();
@@ -288,7 +284,7 @@ test("a number opens the rows behind it", async () => {
   await expect(page.getByRole("dialog")).toHaveCount(0);
 });
 
-test("a widget's rows are kept as a file, from its frame (POLISH-002)", async () => {
+test("a widget's rows are kept as a file, from its frame (POLISH-002) @data @builder", async () => {
   await page.goto(`${link}/dashboards/${board}`);
   await widget("Fees by device").getByRole("button", { name: "Download Fees by device" }).click();
   const csv = page.waitForEvent("download");
@@ -306,7 +302,7 @@ test("a widget's rows are kept as a file, from its frame (POLISH-002)", async ()
   await expect(widget("Fees").getByRole("button", { name: /^Download/ })).toHaveCount(0);
 });
 
-test("a pivot of loans by month and status is built from menus, with no SQL written", async () => {
+test("a pivot of loans by month and status is built from menus, with no SQL written @data @builder", async () => {
   await page.goto(`${link}/dashboards/${board}?edit=1`);
   await page
     .getByRole("button", { name: /Add to page/ })
@@ -340,7 +336,7 @@ test("a pivot of loans by month and status is built from menus, with no SQL writ
   ]);
 });
 
-test("widgets are dragged into place and stretched, from the keyboard too, and a change is undone (POLISH-007)", async () => {
+test("widgets are dragged into place and stretched, from the keyboard too, and a change is undone (POLISH-007) @data @builder", async () => {
   await page.goto(`${link}/dashboards/${board}?edit=1`);
   const chart = page.getByRole("group", { name: "Fees by status", exact: true });
   await expect(chart).toBeVisible();

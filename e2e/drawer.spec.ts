@@ -1,4 +1,4 @@
-import { signInWithPassword } from "./sign-in.ts";
+import { signInAs } from "./as.ts";
 import { expect, type Page, test } from "./test.ts";
 import { readEveryList } from "./visual.ts";
 
@@ -11,10 +11,6 @@ import { readEveryList } from "./visual.ts";
  * leaving with motion by the fixture in `test.ts`.
  */
 
-const ADMIN = {
-  email: process.env.E2E_ADMIN_EMAIL ?? "admin@example.com",
-  password: process.env.E2E_ADMIN_PASSWORD ?? "change-me-please",
-};
 const stamp = Date.now().toString(36);
 
 // biome-ignore lint/suspicious/noExplicitAny: answers are inspected freely
@@ -52,7 +48,7 @@ let W: string;
 test.beforeAll(async ({ browser }) => {
   test.setTimeout(240_000);
   page = await (await browser.newContext({ viewport: { width: 1500, height: 700 } })).newPage();
-  await signInWithPassword(page, ADMIN.email, ADMIN.password);
+  await signInAs(page, "operator");
   await readEveryList(page);
   const tenant = await call(page, "POST", "/tenants", {
     slug: `drawer-${stamp}`,
@@ -114,7 +110,7 @@ const scrollers = (root: string) =>
     return found;
   }, root);
 
-test("the runs list scrolls in one place, and its header stays", async () => {
+test("the runs list scrolls in one place, and its header stays @polish", async () => {
   await page.goto(`${link}/runs`);
   const table = page.locator('[data-table="runs"]');
   await expect(table.getByRole("row")).not.toHaveCount(0);
@@ -128,7 +124,7 @@ test("the runs list scrolls in one place, and its header stays", async () => {
   await table.evaluate((node) => node.scrollTo({ top: 0 }));
 });
 
-test("the drawer slides open once, stays still for the next run, and slides shut", async () => {
+test("the drawer slides open once, stays still for the next run, and slides shut @polish", async () => {
   await page.goto(`${link}/runs`);
   const table = page.locator('[data-table="runs"]');
   const rows = table.locator("tbody tr");
@@ -175,7 +171,7 @@ test("the drawer slides open once, stays still for the next run, and slides shut
   expect(closing.some((width) => width > 0 && width < full)).toBe(true);
 });
 
-test("with reduced motion the drawer is there or it is not", async () => {
+test("with reduced motion the drawer is there or it is not @polish", async () => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto(`${link}/runs`);
   const rows = page.locator('[data-table="runs"] tbody tr');
@@ -189,7 +185,7 @@ test("with reduced motion the drawer is there or it is not", async () => {
   await page.emulateMedia({ reducedMotion: "no-preference" });
 });
 
-test("on a narrower screen the same details slide over the list as a sheet, both ways", async () => {
+test("on a narrower screen the same details slide over the list as a sheet, both ways @polish", async () => {
   // The fixture in test.ts fails this if the sheet arrives or leaves in one frame.
   await page.setViewportSize({ width: 1000, height: 700 });
   await page.goto(`${link}/runs`);
@@ -203,7 +199,7 @@ test("on a narrower screen the same details slide over the list as a sheet, both
   await page.setViewportSize({ width: 1500, height: 700 });
 });
 
-test("a row's JSON is edited in a text area that grows with it and can still be dragged", async () => {
+test("a row's JSON is edited in a text area that grows with it and can still be dragged @polish", async () => {
   const short = { a: 1 };
   const long = Object.fromEntries(Array.from({ length: 30 }, (_, i) => [`key${i}`, i]));
   await call(page, "POST", `${W}/rows/notes`, { title: "short", detail: short });

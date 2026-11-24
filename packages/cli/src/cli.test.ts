@@ -394,9 +394,24 @@ test("init says how to install the CLI and sign in, and writes a tsconfig (CLI-1
     expect(created.out).toContain("npm install --global @volvel/cli");
     expect(created.out).toContain("volvel login --url");
     expect(JSON.parse(await readFile(join(dir, "tsconfig.json"), "utf8")).include).toEqual([
-      "src",
+      "scripts",
       ".platform/*.d.ts",
     ]);
+    // YAML first: the table and the schedule are files, the script is code, and the editor knows the schemas.
+    expect(await readFile(join(dir, "volvel.yaml"), "utf8")).toContain("resources: resources");
+    expect(await readFile(join(dir, "resources", "greetings.table.yaml"), "utf8")).toContain(
+      "columns:",
+    );
+    expect(
+      await readFile(join(dir, "resources", "hello-every-morning.schedule.yaml"), "utf8"),
+    ).toContain("script: hello");
+    expect(await readFile(join(dir, "scripts", "hello.ts"), "utf8")).toContain(
+      'ctx.table("greetings")',
+    );
+    expect(await readFile(join(dir, ".gitignore"), "utf8")).toContain(".platform/");
+    expect(
+      JSON.parse(await readFile(join(dir, ".vscode", "settings.json"), "utf8"))["yaml.schemas"],
+    ).toHaveProperty(["./.platform/schemas/table.schema.json"], ["**/*.table.yaml"]);
   } finally {
     await rm(join(dir, ".."), { recursive: true });
   }

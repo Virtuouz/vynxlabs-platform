@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
@@ -716,10 +716,22 @@ describe("working locally", () => {
     const directory = join(home, "new-tenant");
     const created = await cli(["init", directory]);
     expect(created.code).toBe(0);
-    expect(await readFile(join(directory, "src", "index.ts"), "utf8")).toContain("defineScript");
+    expect(await readFile(join(directory, "scripts", "hello.ts"), "utf8")).toContain(
+      "defineScript",
+    );
     expect(
       JSON.parse(await readFile(join(directory, "package.json"), "utf8")).dependencies,
     ).toHaveProperty("@volvel/sdk");
     expect((await cli(["init", directory])).err).toContain("is not empty");
+    // As written, it builds, and the script runs on this machine without the table it uses in a workspace.
+    await symlink(join(example, "node_modules"), join(directory, "node_modules"));
+    const built = await cli(["build", "--dir", directory]);
+    expect(built.err).toBe("");
+    expect(built.out).toMatch(
+      /table\s+greetings[\s\S]*script\s+hello[\s\S]*schedule\s+hello-every-morning/,
+    );
+    const ran = await cli(["run", "hello", "--dir", directory, "--input", '{"name":"Ada"}']);
+    expect(ran.err).toBe("");
+    expect(ran.out).toContain('Output: {"greeting":"Hello, Ada"}');
   });
 });

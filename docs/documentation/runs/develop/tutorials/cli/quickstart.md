@@ -33,3 +33,11 @@ Instance http://localhost:8091 (same throwaway instance), CLI and SDK from fresh
 
 ## Third pass, 2026-11-23 (second agent)
 All 15 steps once, as written, on the current build: workspaces made in the console dialogs (submitted), key from the Account dialog, `volvel init` to `promote`, `runs`. Only the registry `npm install` fails (404), as step 4 says. 390 px and dark: the console dialogs and the Keys screens were walked in the other tutorials' passes.
+
+## Phase 34, A7 run, 2026-11-24
+
+Instance http://localhost:8712 (throwaway, lane a7's build, commit `d619bfbd` plus the working tree), Fernhill seeded. Terminal only.
+
+- Workspaces `cli-start-live` (production) and `cli-start-dev` (dev, promotes to it) made through the API; key `My laptop`. `volvel init fernhill-cli`, `login`, `run hello`, `build`, `deploy --preview`, `deploy`, `run hello --remote`, the variable file and script edit, local runs, `deploy --message`, remote run, `promote --preview`, `promote --message`, `runs`: each as the page shows (outputs copied into it).
+- `npm install` was not run: `node_modules` was linked to the example's, since nothing is published.
+- The page got wrong: the old starter (`src/index.ts`, two resources) and step 11's diff.

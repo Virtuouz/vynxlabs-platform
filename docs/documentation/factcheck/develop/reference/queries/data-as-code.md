@@ -20,3 +20,12 @@ Code as of commit `14f7d5b9` (branch `phase-31-write-the-docs`), 2026-11-23. Wri
 Labels, quoted messages and limits of the page were swept against the console and control-plane source (every bold label and quoted refusal found; messages built from parts checked at their template).
 
 - The three SDK snippets (`defineQuery`, `defineDataSource`, `defineDashboard`) were typechecked against `packages/sdk` with tsc and passed. The lending YAML is an excerpt of `examples/higher-ed-devices/platform/reports/lending.dashboard.yaml`: the page now says it is shortened.
+
+## Phase 34, A7 (YAML first), 2026-11-24
+
+Commit `d619bfbd` plus the working tree. Written by the A7 writer; second agent's check pending. Run on the throwaway instance of lane a7 (http://localhost:8712, Fernhill seeded).
+
+| Claim | Source (file:line) | Checked by | Result |
+| --- | --- | --- | --- |
+| Query, data source and dashboard YAML deploy as shown. | run: the page's three files, with the table and query the dashboard names, deployed to `walk3` | writer, 2026-11-24 | holds as run |
+| Files are Files, `define*` are Code; a draft takes a Code resource over. | `apps/console/src/kit/ownership.ts`; `Queries.tsx:657` | writer, 2026-11-24 | holds as read |

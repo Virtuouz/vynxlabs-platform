@@ -4,7 +4,7 @@ description: What a repository holds, where the CLI looks for each thing, the fi
 subjects: [cli, repository]
 ---
 
-A tenant's repository is a folder of TypeScript and files that `volvel build` turns into one bundle. This page lists what is where. For why a resource may be in code or in a file, see [Code or files](../../explanation/cli/code-or-files).
+A tenant's repository is a folder of YAML files and TypeScript that `volvel build` turns into one bundle. Most resources are files in the console's folder; scripts, and anything that shares values, are TypeScript exported from the entry file. This page lists what is where. For why a resource may be in code or in a file, see [Code or files](../../explanation/cli/code-or-files) and [Definitions in code](../../explanation/cli/definitions-in-code).
 
 ## Files and folders
 
@@ -27,17 +27,18 @@ A tenant's repository is a folder of TypeScript and files that `volvel build` tu
     - bundle.json
     - local.json
     - pulled.json
+    - volvel-env.d.ts
     - schemas/
 :::
 
 | Path | What it is | Who writes it |
 | --- | --- | --- |
-| `src/index.ts` | The **entry file**: every resource defined in code is exported from it. Only its exports count. Two `export *` that give the same name cancel that name out. | You. `volvel init` writes it. |
-| `package.json`, `tsconfig.json`, `.gitignore` | A starter's dependency on `@volvel/sdk` at `^0.5.0`; a TypeScript settings file that includes `src`; a `.gitignore` listing `node_modules/` and `.platform/`. | `volvel init`, once. |
-| `platform/` | The **console's folder**: resources made in the console, as files named `<path>.<kind>.yaml`. | `volvel pull`, or you. |
+| `platform/` | The **console's folder**: every resource that is a file, named `<path>.<kind>.yaml`. The console edits these too. | `volvel pull`, `volvel convert`, or you. |
+| `src/index.ts` | The **entry file**: every resource defined in code is exported from it. Only its exports count, and each definition is exported by name: a list is not deployed. Two `export *` that give the same name cancel that name out. | You. `volvel init` writes it. |
+| `package.json`, `tsconfig.json`, `.gitignore` | A starter's dependency on `@volvel/sdk` at `^0.5.0`; a TypeScript settings file that includes `src` and `.platform/*.d.ts`; a `.gitignore` listing `node_modules/` and `.platform/`. | `volvel init`, once. |
 | `platform/docs/` | Pages of documentation, as `<path>.md`. The page's path is its place under the folder. | `volvel pull`, or you. |
 | `tenant/` | The tenant's access, as `<key>.<kind>.yaml`, for example `tenant/groups/tech-desk.group.yaml`. These files are read by `volvel tenant ...`, not by `build` or `deploy`. | `volvel tenant pull`, or you. |
-| `volvel.yaml` | Says where things are, when they are not at the defaults. Optional. | You. No starter makes one. |
+| `volvel.yaml` | Says where things are, when they are not at the defaults. Optional. | You. No starter makes one. `volvel convert` writes one when the repository has no `platform/` folder. |
 | `.platform/` | What the CLI keeps in the repository. List it in `.gitignore`. | The CLI. |
 
 `.platform/` holds:
@@ -45,6 +46,7 @@ A tenant's repository is a folder of TypeScript and files that `volvel build` tu
 | File | What it is |
 | --- | --- |
 | `bundle.json` | The bundle `volvel build` wrote. |
+| `volvel-env.d.ts` | The names of your tables, events, variables and connections, for the types of your scripts. `volvel build`, `volvel dev` and `volvel types` write it. See [Generated types](generated-types). |
 | `local.json` | The values of a local run: `connections`, `groups`, `secrets`, `variables`. You write it. See [Run a script on your machine](../../how-to/cli/run-a-script-locally). |
 | `pulled.json` | What the last `volvel pull` wrote, by checksum, and the drafts it took. |
 | `schemas/` | `<kind>.schema.json`, one file for each kind of file, from `volvel schemas`. |
@@ -104,5 +106,7 @@ With that file, `volvel build` of a repository that holds `src/lending/items.tab
 ## Related
 
 - [Code or files](../../explanation/cli/code-or-files)
+- [Generated types](generated-types)
+- [volvel convert](convert)
 - [The command reference](../cli)
 - [Bring console changes into the repository](../../how-to/cli/pull-console-changes)

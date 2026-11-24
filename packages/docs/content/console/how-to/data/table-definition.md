@@ -10,7 +10,7 @@ By the end you will have added a column to a table, told the table what that col
 
 ## Before you start
 
-- The table was made in the console. The list of tables says **Console** under **Managed in**. A table that a deploy defines says **Repository** and its **Definition** tab shows "This table is defined in the tenant's repository. To change it, change `defineTable` there and deploy." There is no way to change it in the console.
+- The table is managed as **Files**. The list of tables says **Files** under **Managed in** for a table made in the console and for one the repository holds as a `<path>.table.yaml` file. A table that a deploy defines with `defineTable` says **Code**, and its **Definition** tab shows "This table is defined in code, in the tenant's repository. To change it, change `defineTable` there and deploy, or take it over here: it is then managed as files, and a deploy that still defines it takes it back." Press **Take over in the console** to change it here, in a dev workspace: see [How tables work](../../explanation/how-tables-work). A file changed in the console is refused by the repository's next deploy until `volvel pull`: see [Keep the console and the repository in step](../../../develop/how-to/cli/keep-in-step).
 - You hold `resource:write` in the workspace. A person who does not sees a line on the tab saying so, and the buttons are not there. See the [permissions reference](../../../administer/reference/permissions). The `workspace_admin` role has it.
 - The table is active. A retired table has no **Definition** tab: see [Retire a table or a column, and bring it back](retired-data).
 
@@ -100,7 +100,7 @@ The column is in the **Columns** table, and in the grid on the **Rows** tab. The
 - **"… column "species" is now unique, and some rows share a value: "dog" is in 5 rows …"** The message names up to three repeated values and how many rows hold each. Change those rows, then save again.
 - **"… column "pet" cannot become an enum while rows hold other values: …"** A text column becomes one of a list only when every row holds one of the values. Add the values the message names, or change those rows.
 - **"… is used by rule 1 of who sees rows. Change that rule, then retire the column."** The column is named by a row rule. Change the rule under **Who sees rows**, then retire the column.
-- **A button is missing or grayed out.** You do not hold `resource:write`, or the table is the repository's, or it is retired.
+- **A button is missing or grayed out.** You do not hold `resource:write`, or the table is one of Code that you have not taken over, or it is retired.
 - **The dialog says "A column of this kind cannot become another without risking what it holds."** The column's type has no change that keeps every value. Add a column of the type you want, copy the values across in a script, then retire the old one.
 - The console has no computed columns, no rules that check a row before it is saved, and no history of a row. A table cannot be made from a CSV.
 

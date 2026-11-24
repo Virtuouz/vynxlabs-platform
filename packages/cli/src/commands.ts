@@ -121,8 +121,8 @@ export const COMMANDS = [
   entry(
     "deploy",
     REPOSITORY,
-    "deploy --tenant <slug> --workspace <slug> [--preview] [--message <text>] [--json] [--allow-delete <path>]",
-    "Build, upload and deploy the bundle. Stops before uploading when it would delete console resources the repository has no file for, unless --allow-delete names each. With --preview, says what it would do and changes nothing. --message is kept with the version; in CI (CI is set) the subject of the last git commit is used when there is none. With --json, the one answer is a JSON document.",
+    "deploy --tenant <slug> --workspace <slug> [--preview] [--message <text>] [--json] [--allow-delete <path>] [--force]",
+    "Build, upload and deploy the bundle. Stops before uploading when it would delete console resources the repository has no file for, unless --allow-delete names each. It is refused when the console changed or made a resource it would replace or remove since the repository last had it (run pull first); --force deploys anyway, and is written to the audit log. With --preview, says what it would do and changes nothing. --message is kept with the version; in CI (CI is set) the subject of the last git commit is used when there is none. With --json, the one answer is a JSON document.",
   ),
   entry(
     "rollback",

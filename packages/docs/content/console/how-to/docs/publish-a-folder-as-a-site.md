@@ -30,7 +30,7 @@ By the end a top-level folder of pages is served at its own address, and you hav
 
 ## Who may open the site
 
-A docs app is opened as any app is: by a binding that gives a role to a person, a group, a service account or anonymous visitors. With none, a person outside the workspace's members cannot open it. The Documentation screen does not make bindings. A tenant admin gives access, as in [Give someone access](../../../administer/how-to/access/give-access), or the repository defines the binding with `defineBinding`.
+A docs app is opened as any app is: by a binding that gives a role to a person, a group, a service account or anonymous visitors. With none, a person outside the workspace's members cannot open it. The Documentation screen does not make bindings. A tenant admin gives access, as in [Give someone access](../../../administer/how-to/access/give-access), or the repository defines the binding, as a `<path>.binding.yaml` file or with `defineBinding`.
 
 ## Stop it, bring it back, or remove it
 

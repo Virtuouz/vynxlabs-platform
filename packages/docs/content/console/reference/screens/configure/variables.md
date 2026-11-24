@@ -7,7 +7,7 @@ moved_from:
   - configure/variables
 ---
 
-A variable is a named setting a script or a trigger source reads at run time. Its name, what it is for and an optional default are declared in code with `defineVariable`, or in a `.variable.yaml` file. Its value is set per workspace, here. A workspace that sets none uses the default. A variable is text: the console and the API hold only strings, up to 65,536 characters.
+A variable is a named setting a script or a trigger source reads at run time. Its name, what it is for and an optional default are declared in a `<path>.variable.yaml` file, or in code with `defineVariable`. Its value is set per workspace, here. A workspace that sets none uses the default. A variable is text: the console and the API hold only strings, up to 65,536 characters.
 
 A variable is not secret. Anyone with `variable:read` sees its value, and the audit log keeps the value each time it is set (`variable.set`). Put a key or a password in a [secret](secrets).
 
@@ -63,7 +63,7 @@ The meta shows **What it is for**, **Value here** (the value; **Empty**; "The de
 
 ## Where a variable comes from
 
-The console does not make a variable. It is declared by `defineVariable` or a `.variable.yaml` file in the repository, or as a draft in the console's resource editor; the link on a **Draft, never deployed** variable opens that. The default and the description come from the declaration.
+The console does not make a variable. It is declared by a `.variable.yaml` file or `defineVariable` in the repository, or as a draft in the console's resource editor; the link on a **Draft, never deployed** variable opens that. The default and the description come from the declaration.
 
 ## Permissions
 

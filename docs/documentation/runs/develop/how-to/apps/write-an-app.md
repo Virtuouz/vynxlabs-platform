@@ -25,3 +25,9 @@
 - Found: the page's `<input aria-label="Pet">` drew invisible in dark at 390 px. The page now uses `TextField`; the Desk page then showed label, field and button at 390 px in light and dark, no horizontal scroll, Tab reaches the field.
 - Opening the deployed app: a guest got 503 with the text naming `APPS_URL`; the page's "The result" says so.
 - Restored apps-docs afterwards with a second deploy (version 6: flow `welcome`, interface `screens/board` and apps `board` and `guide` created), so the share-an-app steps work again. Both API keys made for the check were revoked.
+
+## Phase 34, A7 run, 2026-11-24
+
+Instance http://localhost:8712 (throwaway, lane a7's build, commit `d619bfbd` plus the working tree), Fernhill seeded. Terminal only.
+
+- The page's code blocks extracted by script into `examples/a7app`; `volvel build` and `volvel deploy` to `apps-docs`; `tsc --noEmit` of `src` clean. The page in a browser: not run.

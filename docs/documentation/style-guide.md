@@ -50,6 +50,7 @@ Use the left column. Do not use the right, except in a quotation of an old name,
 | version | release, build | The number the screen shows. "Release" is left only for Git's release branch and the API's `release` field. |
 | access change | access release, release for access | A change to a tenant's access, from files or by approval. The tab is **Access changes**. The commands `volvel tenant plan`, `volvel tenant release` and `volvel tenant pull` keep their names. |
 | approval | sign-off | A flow step that waits for a person. An access change also waits for approval. |
+| Files, Code (as **Managed in**) | Repository, Console (as an owner) | The two owners of a resource. **Files**: a YAML file that the console and the repository both edit, and what is made in the console. **Code**: a TypeScript definition, changed in the repository only. The console's own words, from `apps/console/src/kit/ownership.ts`. |
 | member | user (alone) | A person in a tenant. Say "end user", "guest" and "service account" for the others. |
 | end user, end-user group | customer, client | Someone who uses an app and does not run the tenant. |
 | role, permission, binding | right, privilege, grant (as a noun) | A role is a set of permissions; a binding gives a role to a person, group or service account. |
@@ -197,7 +198,8 @@ Rules:
 - **higher-ed-devices** (`examples/higher-ed-devices`) is for pages that start from a repository: `volvel.yaml`, TypeScript resources, `tenant/` access, a flow with approval, `volvel deploy` and `promote`. It does not create its own tenant, so say what the reader must make first.
 - **An empty tenant** is the start of the quickstart and of every page that is about first use.
 - **`acme`** gives short snippets only. It is not a tutorial.
-- Code in a page runs: it is checked against the SDK and was run on the instance the walk uses.
+- **Examples are YAML first (phase 34).** A resource that can be a file is shown as its `<path>.<kind>.yaml` file, with the path in the `title=` of the fence, before any TypeScript. TypeScript is shown where it matters, and the page says why and links [Definitions in code](../../packages/docs/content/develop/explanation/cli/definitions-in-code.md): a script (always code), a value shared with other definitions, or a definition that code imports for its type. A `define*` example for a resource that could be a file is a second example, after the YAML, in one sentence or one short block. The YAML is taken from `volvel convert` or a `volvel pull` of a real workspace, not written from memory. A reader should never need TypeScript to make a table, a variable, a connection, a role, a binding, a flow, a schedule, a trigger, a theme or an app of files.
+- Code in a page runs: it is checked against the SDK and was run on the instance the walk uses. The run of a how-to says in its fact-check record which files and commands were run as written.
 - **Never real personal data.** Use the example's people, `example.com` addresses and made-up numbers. **Never the owner's name or company**, in a page, a path, a sample address or a screenshot. Names of tools of ours are Volvel's. Passwords on a page are only the seeded demo ones, and only on a page that is about the seeded example.
 - Dates: the clock of the screenshots is fixed (`CLOCK` in `screenshots.mjs`); do not write "today" for a date that matters, and write a time with its zone.
 

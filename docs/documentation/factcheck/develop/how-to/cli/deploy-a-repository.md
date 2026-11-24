@@ -24,3 +24,11 @@ Lines are current at commit `5ebf1c80` (branch phase-31-write-the-docs). Paths a
 | `--message` over 500 characters is cut to 500 (497 and `...`); `--message ""` is `--message needs some words.` | run | second agent, 2026-11-23, run | holds as run |
 | The refusal texts `rename_suspected`, `path_taken`, `kind_changed`, `incompatible_bundle`, `assets_missing`, `bindings_invalid` and the `The build failed:` list match the strings in the code (not provoked on the instance, except the build failure). | `deploy.ts:369,387,281,665`; `resources.ts:125`; `bundles.ts:109`; `cli/cli.ts:1398` | second agent, 2026-11-23, read from the code | holds as read |
 | A deploy of the same bundle again prints `Deployed version N` with the active version's number (no new version). | run | second agent, 2026-11-23, run | holds as run |
+
+## Phase 34, A7 (YAML first), 2026-11-24
+
+Commit `d619bfbd` plus the working tree. Written by the A7 writer; second agent's check pending. Run on the throwaway instance of lane a7 (http://localhost:8712, Fernhill seeded).
+
+| Claim | Source (file:line) | Checked by | Result |
+| --- | --- | --- | --- |
+| The `console_changed` refusal text and exit code 1. | `packages/cli/src/cli.ts:138-160`; `apps/control-plane/src/kernel/execution/basis.ts:49-52` | writer, 2026-11-24 | holds as run |

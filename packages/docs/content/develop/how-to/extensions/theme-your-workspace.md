@@ -1,6 +1,6 @@
 ---
 title: Theme your workspace
-description: Change the colors, corner radii and fonts of a workspace's apps with defineTheme, in light and in dark.
+description: Change the colors, corner radii and fonts of a workspace's apps with a theme file, in light and in dark.
 subjects: [theme, apps]
 ---
 
@@ -10,7 +10,7 @@ By the end the apps a workspace serves will use your colors, your corner radii o
 
 ## Before you start
 
-- A tenant repository with a workspace, and the CLI signed in to the instance. Fernhill's repository (`examples/fernhill/src/apps.ts`) has a theme you can copy.
+- A tenant repository with a workspace, and the CLI signed in to the instance. The example `examples/higher-ed-devices/platform/theme.theme.yaml` has a theme you can copy.
 - A theme changes how the workspace's apps look. It does not change the console, which has its own branding that an operator sets once for the instance. A tenant's own colors, logo and name are set under **Branding** on the tenant's page.
 - A workspace has one theme. A second is refused when the bundle is checked: "a workspace can have one theme, and "<path>" is already one."
 - Fernhill is set up: see [Set up the Fernhill example](../../../start/how-to/example/set-up-the-fernhill-example).
@@ -18,28 +18,30 @@ By the end the apps a workspace serves will use your colors, your corner radii o
 ## Set the tokens
 
 :::steps
-1. Add a theme to a file of the repository. `tokens` replaces values for the light scheme, and `dark` replaces them for when the viewer prefers a dark one.
+1. Add a theme file to the console's folder of the repository, `platform/theme.theme.yaml`. `tokens` replaces values for the light scheme, and `dark` replaces them for when the viewer prefers a dark one.
 2. Set only what you want to change. Every token you leave out keeps the tenant's branding value, and the kit's value where the tenant has none.
 3. Set the colors that must change in both `tokens` and `dark`. A color set in `tokens` is not carried into dark: in a dark scheme the kit's dark color stands unless `dark` sets one.
 4. Run `volvel deploy`. The workspace's stylesheet carries the new values once the version is deployed.
 :::
 
-```ts title="src/apps.ts"
-import { defineTheme } from "@volvel/sdk";
-
-/** Fernhill's own colors, for its apps. */
-export const theme = defineTheme({
-  tokens: {
-    action: "#1f6f5c",
-    "action-ink": "#ffffff",
-    "action-soft": "#e3f1ec",
-    "radius-panel": "12px",
-  },
-  dark: { action: "#6fd1b4", "action-ink": "#062a20", "action-soft": "#173a31" },
-});
+```yaml title="platform/theme.theme.yaml"
+# Fernhill's own colors, for its apps.
+schemaVersion: 1
+body:
+  tokens:
+    action: "#1f6f5c"
+    action-ink: "#ffffff"
+    action-soft: "#e3f1ec"
+    radius-panel: 12px
+  dark:
+    action: "#6fd1b4"
+    action-ink: "#062a20"
+    action-soft: "#173a31"
 ```
 
-A length or a font set in `tokens` applies in a dark scheme too, because `dark` has no value of its own for it. The path is `theme` unless you give `path`.
+The theme's path is `theme`, from the file's name. In TypeScript the same theme is `defineTheme({ tokens: { … }, dark: { … } })`, exported from the entry file, and its path is `theme` unless you give `path`: write it that way when the colors are shared with other definitions, see [Definitions in code](../../explanation/cli/definitions-in-code).
+
+A length or a font set in `tokens` applies in a dark scheme too, because `dark` has no value of its own for it.
 
 ## The tokens
 
@@ -86,8 +88,8 @@ Open the stylesheet and look for your values: for Fernhill's Sandbox it holds `-
 
 ## If it does not work
 
-- **The deploy is refused with "a workspace can have one theme".** Two `defineTheme` calls exist in the repository. The line starts with the path of the extra theme, such as `theme-two (theme):`, and the quoted path is the theme already there. Keep one.
+- **The deploy is refused with "a workspace can have one theme".** Two themes exist in the repository, as files or as `defineTheme` calls. The line starts with the path of the extra theme, such as `theme-two (theme):`, and the quoted path is the theme already there. Keep one.
 - **The deploy is refused with `/body/tokens/<token> must be a plain color, length or font list.`** The value has a character or a word that is not allowed, such as `url(...)` or `var(--x)`. Write the color itself.
-- **The deploy is refused with `/body/tokens must NOT have additional properties (shiny)`.** The name in the parentheses is not one of the 27 tokens. `THEME_TOKENS` lists them.
+- **The build fails with `theme (theme): /body/tokens must NOT have additional properties (shiny)`.** The name in the parentheses is not one of the 27 tokens. `THEME_TOKENS` lists them.
 - **Dark looks unchanged.** You set the color in `tokens` only. Set it in `dark` too.
 - **The console did not change.** A theme is for the workspace's apps. The console's look is set by the operator under **Console branding**.

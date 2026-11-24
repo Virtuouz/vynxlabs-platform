@@ -19,3 +19,12 @@ Lines are current at commit `5ebf1c80` (branch phase-31-write-the-docs), 2026-11
 | Code sample type-checks against the SDK. | run: `tsc --noEmit -p examples/fernhill` with the sample added | writer, run | holds as run |
 
 Checked by: second agent, 2026-11-23. Run: the Code tab deploy, `does not take one` and `not a table in this repository` refusals, the palette order (Starts, Steps, Logic, Core, groups, Scripts), a flow test with the step. Corrected: the palette order, and the refusal for a console-made table (fault fixed (fc item 17): in a flow the repository owns, `FlowEditor.tsx` `ofKind` offers only code-owned tables and no drafts, confirmed in the code; the page says so and the refusal row no longer says the form lists console tables).
+
+## Phase 34, A7 (YAML first), 2026-11-24
+
+Commit `d619bfbd` plus the working tree. Written by the A7 writer; second agent's check pending. Run on the throwaway instance of lane a7 (http://localhost:8712, Fernhill seeded).
+
+| Claim | Source (file:line) | Checked by | Result |
+| --- | --- | --- | --- |
+| Flow YAML with `type: script`, `with.tables`. | run: `volvel convert` of the TypeScript flow gave this file; deployed to `walk1` | writer, 2026-11-24 | holds as run |
+| Build refusals: `refers to "nope", which is not a table in this repository`; `which does not take one`. | run: `volvel build` with each fault | writer, 2026-11-24 | holds as run |

@@ -20,3 +20,11 @@ Code as of branch `phase-31-write-the-docs`, 2026-11-23. Written by the page's w
 Checked by: second agent, 2026-11-23. Every label and quoted string was searched for in `apps/console/src` and the manifest source by script; the ones below were read in the code or run on the instance (http://localhost:8091, own workspace `flows-check` and own flows `flows-…`).
 
 - The search box's accessible name is **Find a flow**; "Find by path or purpose" is its placeholder (Flows.tsx:117-121); "1 run is waiting for a person." for one (Flows.tsx:107). The button is **Offer to an agent…** with an ellipsis (OfferToAgent.tsx:249). Confirmed on the instance: chips All 4, Failed in 24 hours, Waiting, Drafted; the inspector rows Deployed v1, Draft None, Steps, Runs in 24 hours, What starts it; the flow page buttons Edit, Offer to an agent…, Start flow, Add a schedule. Walked at 390 px light and dark: no sideways scroll.
+
+## Phase 34, A7 (YAML first), 2026-11-24
+
+Commit `d619bfbd` plus the working tree. Written by the A7 writer; second agent's check pending. Run on the throwaway instance of lane a7 (http://localhost:8712, Fernhill seeded).
+
+| Claim | Source (file:line) | Checked by | Result |
+| --- | --- | --- | --- |
+| Empty-state text quoted; a flow is also a file. | `apps/console/src/screens/Flows.tsx:232` | writer, 2026-11-24 | holds as read |

@@ -44,3 +44,11 @@ Code as of commit `be324f78` (branch `phase-31-write-the-docs`), 2026-11-23. Wri
 The API text for PATCH row and DELETE row now says "Not written to the audit log" (`routes/data.ts:988,1146`), so the inventory's open item about "Audited." no longer applies.
 
 Checked by: second agent, 2026-11-23. Code re-read; the retire, bring back and delete for good behavior run on the instance. Corrected: row rules are one step of undo once saved (the page said they were not part of Undo); the claim that the catalog keeps a retired column's default to put back is replaced, because the console's Bring back does not restore it.
+
+## Phase 34, A7 (YAML first), 2026-11-24
+
+Commit `d619bfbd` plus the working tree. Written by the A7 writer; second agent's check pending. Run on the throwaway instance of lane a7 (http://localhost:8712, Fernhill seeded).
+
+| Claim | Source (file:line) | Checked by | Result |
+| --- | --- | --- | --- |
+| Files and Code owners; take-over; production has no take-over. | `apps/console/src/screens/Data.tsx:2619-2630,2768-2790,2905-2925` | writer, 2026-11-24 | holds as read; walked by a6 (p34-a6.md) |

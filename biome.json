@@ -9,6 +9,7 @@
     "includes": [
       "**",
       "!schemas",
+      "!**/generated",
       "!**/migrations.lock.json",
       "!**/*.md",
       "!**/fixtures",

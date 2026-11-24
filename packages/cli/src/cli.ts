@@ -17,6 +17,7 @@ import { inputOf } from "./input.js";
 import { init, runLocally } from "./local.js";
 import { pull, pulledFile, readPulled } from "./pull.js";
 import { SCHEMA_FOLDER, writeEditorSchemas } from "./schemas.js";
+import { widgetCommand } from "./widget.js";
 
 export { CliError };
 
@@ -1322,6 +1323,10 @@ const HANDLERS: Record<CommandName, (rest: string[], io: Io) => Promise<number>>
   },
   init: async (rest, io) => {
     await init(rest, io);
+    return 0;
+  },
+  widget: async (rest, io) => {
+    await widgetCommand(rest, io);
     return 0;
   },
   build: async (rest, io) => {

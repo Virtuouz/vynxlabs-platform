@@ -1,0 +1,4 @@
+schemaVersion: 1
+body:
+  description: How many orders one sync sends to the ERP.
+  default: "50"

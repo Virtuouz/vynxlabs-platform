@@ -1,0 +1,10 @@
+schemaVersion: 1
+body:
+  tokens:
+    action: "#0b6e4f"
+    action-soft: "#dff3ea"
+    radius-panel: 14px
+  dark:
+    action: "#5fd3a6"
+    action-ink: "#04261a"
+    action-soft: "#143a2c"

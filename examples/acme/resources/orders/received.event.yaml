@@ -1,0 +1,23 @@
+# Published by anything that learns of a new order. The order flow listens for it.
+# The payload has the shape of `Order` in src/index.ts, which the scripts check their input by.
+schemaVersion: 1
+body:
+  description: An order has arrived and needs handling.
+  payload:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    properties:
+      id:
+        type: string
+      total:
+        type: number
+      currency:
+        type: string
+      owner:
+        type: string
+        format: uuid
+        pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+    required:
+      - id
+      - total
+      - currency

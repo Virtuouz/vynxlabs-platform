@@ -219,12 +219,18 @@ export async function putResource(
       path: input.path,
       version,
       ...(existing ? { key: existing.key } : {}),
+      ...(existing && existing.ownership !== input.ownership
+        ? { ownershipFrom: existing.ownership, ownership: input.ownership }
+        : {}),
       ...(renamedFrom !== undefined ? { renamedFrom } : {}),
     },
   });
 
   return {
     created: !existing,
+    /** Who managed the resource before this write, when it is not who does now. */
+    ownershipFrom:
+      existing && existing.ownership !== input.ownership ? existing.ownership : undefined,
     renamedFrom,
     /** Whether an alias at this path, of a resource renamed away from it, was ended by this. */
     aliasRemoved,

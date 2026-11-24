@@ -26,6 +26,7 @@ import { ago } from "../kit/format.ts";
 import { formatCombo, useShortcut } from "../kit/keys.ts";
 import { ErrorState, Loading } from "../kit/LoadState.tsx";
 import { ProductionNotice } from "../kit/objects.tsx";
+import { takeOverNotice } from "../kit/ownership.ts";
 import { PageHeader } from "../kit/PageHeader.tsx";
 import { RemoveDraftButton } from "../kit/RemoveDraftButton.tsx";
 import { clearRecovery, useKeptCopy, useRecoveryCopy } from "../kit/recovery.ts";
@@ -1027,9 +1028,7 @@ export function ScriptEditor({
           its history and what is bound to it.
         </Notice>
       ) : state === "repository" ? (
-        <Notice tone="attention">
-          Saving a draft of this {about.noun} takes it over from the repository.
-        </Notice>
+        <Notice tone="attention">{takeOverNotice(about.noun, "draft")}</Notice>
       ) : null}
       {draft.clashed ? (
         <DraftClash

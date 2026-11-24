@@ -1,0 +1,35 @@
+schemaVersion: 1
+body:
+  description: Orders to the supplier, as the reorder flow placed them.
+  columns:
+    number:
+      type: text
+      required: true
+      unique: true
+    clinic:
+      type: text
+      required: true
+    sku:
+      type: text
+      required: true
+    item:
+      type: text
+      required: true
+    quantity:
+      type: integer
+      required: true
+    total:
+      type: integer
+      required: true
+    status:
+      type: text
+      required: true
+    supplier_ref:
+      type: text
+  policy:
+    type: rules
+    rules:
+      - allow: read
+        when:
+          column: clinic
+          in: groups

@@ -1,0 +1,67 @@
+schemaVersion: 1
+body:
+  description: Checks an order, asks for approval when it is large, and sends it to the ERP.
+  nodes:
+    from_event:
+      type: trigger
+      trigger:
+        type: event
+        event: orders/received
+    by_hand:
+      type: trigger
+      trigger:
+        type: manual
+    check:
+      type: script
+      script: orders/check
+      input: "{'order': trigger}"
+    route:
+      type: branch
+      cases:
+        - name: invalid
+          when: "!steps.check.output.valid"
+        - name: large
+          when: trigger.total > 1000.0
+    refuse:
+      type: fail
+      message: "'Order ' + trigger.id + ' was refused: ' + steps.check.output.reason"
+    approve:
+      type: approval
+      title: Approve a large order
+      detail: "{'order': trigger.id, 'total': trigger.total, 'currency': trigger.currency}"
+    send:
+      type: script
+      script: orders/send-to-erp
+      input: "{'order': trigger}"
+    record:
+      type: script
+      script: orders/record
+      input: "{'order': trigger, 'status': 'sent'}"
+    report:
+      type: set
+      values:
+        order: trigger.id
+        problem: steps.send.error.message
+  edges:
+    - from: from_event
+      to: check
+    - from: by_hand
+      to: check
+    - from: check
+      to: route
+    - from: route
+      to: refuse
+      output: invalid
+    - from: route
+      to: approve
+      output: large
+    - from: route
+      to: send
+      output: otherwise
+    - from: approve
+      to: send
+    - from: send
+      to: record
+    - from: send
+      to: report
+      error: true

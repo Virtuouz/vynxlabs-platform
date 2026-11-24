@@ -1,0 +1,6 @@
+schemaVersion: 1
+body:
+  role: public_reader
+  principal:
+    type: anonymous
+  resource: public

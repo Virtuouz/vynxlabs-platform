@@ -1,14 +1,14 @@
 import { appContext, signInUrl, table, useQuery, useSession } from "@volvel/app";
+import type { TableOf } from "@volvel/sdk";
 import { EmptyState, Notice, PageShell } from "@volvel/ui";
 import { createRoot } from "react-dom/client";
-import type { notices } from "../../src/index.ts";
 import "./styles.css";
 
 function App() {
   const context = appContext();
   const { signedIn } = useSession();
   const found = useQuery(() =>
-    table<typeof notices>("notices").find({ sort: ["-created_at"], limit: 20 }),
+    table<TableOf<"notices">>("notices").find({ sort: ["-created_at"], limit: 20 }),
   );
   // The portal is the app beside this one.
   const portal = new URL("../portal/", new URL(context.base, location.origin)).pathname;

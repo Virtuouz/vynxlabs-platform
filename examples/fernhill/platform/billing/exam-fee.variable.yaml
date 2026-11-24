@@ -1,0 +1,4 @@
+schemaVersion: 1
+body:
+  description: The exam fee on every invoice, in cents.
+  default: "6500"

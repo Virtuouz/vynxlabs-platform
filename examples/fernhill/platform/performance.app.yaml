@@ -1,0 +1,5 @@
+schemaVersion: 1
+body:
+  title: Clinic performance
+  description: Money, visits and stock across the group.
+  interface: screens/performance

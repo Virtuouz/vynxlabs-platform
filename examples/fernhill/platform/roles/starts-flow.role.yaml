@@ -1,0 +1,7 @@
+schemaVersion: 1
+body:
+  name: starts_flow
+  description: Starts a flow and reads its runs.
+  permissions:
+    - flow_run:write
+    - flow_run:read

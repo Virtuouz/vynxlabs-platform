@@ -108,12 +108,12 @@ test("an app the repository manages is read only until it is taken over, and say
   summary = { mayAuthor: true, authorBlockedBy: null };
   Object.assign(listed, { ownership: "code", draft: false });
   await open();
-  expect(screen.getByText(/managed in the repository/)).toBeTruthy();
+  expect(screen.getByText(/defined in code, in the tenant's repository/)).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Rename the app" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Add to page" })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Take over" }));
   await waitFor(() => expect(screen.getByRole("button", { name: "Rename the app" })).toBeTruthy());
-  expect(screen.getByText(/moves it out of the repository/)).toBeTruthy();
+  expect(screen.getByText(/takes it back/)).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Take over" })).toBeNull();
   expect(calls.some((call) => call.startsWith("PUT"))).toBe(false);
 });

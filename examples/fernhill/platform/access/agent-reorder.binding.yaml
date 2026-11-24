@@ -1,0 +1,7 @@
+schemaVersion: 1
+body:
+  role: starts_flow
+  principal:
+    type: service_account
+    key: phone-assistant
+  resource: inventory/reorder

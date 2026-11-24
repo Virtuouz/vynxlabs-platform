@@ -1,4 +1,4 @@
-import { type DataInput, defineApp, defineInterface, defineQuery } from "@volvel/sdk";
+import { type DataInput, defineInterface } from "@volvel/sdk";
 import { REASONS } from "./constants.ts";
 
 /**
@@ -43,26 +43,6 @@ const VISIT_BADGES = {
 const at = (x: number, y: number, w: number, h: number) => ({ x, y, w, h });
 
 // ----- The saved query -----
-
-/** One row per vet: how many visits, how many seen to the end, how long a visit is booked for. */
-export const vetWorkload = defineQuery({
-  path: "reports/vet-workload",
-  description:
-    "Visits for each vet over a stretch of days: booked, finished, and the usual length.",
-  sql: `select vet, count(*) as visits,
-    count(*) filter (where status = 'done') as finished,
-    round(avg(minutes)) as usual_minutes
-  from appointments
-  where vet is not null
-    and ($1::date is null or starts_at::date >= $1::date)
-    and ($2::date is null or starts_at::date <= $2::date)
-  group by vet
-  order by visits desc`,
-  parameters: [
-    { name: "from", type: "date", label: "From" },
-    { name: "to", type: "date", label: "To" },
-  ],
-});
 
 // ----- Page filters and how data follows them -----
 
@@ -2455,11 +2435,4 @@ export const operations = defineInterface({
       ],
     },
   ],
-});
-
-export const operationsApp = defineApp({
-  path: "operations",
-  title: "Clinic operations",
-  description: "The day at the three clinics, money, pets and owners, stock and callbacks.",
-  interface: "screens/operations",
 });

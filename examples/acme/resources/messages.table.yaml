@@ -1,0 +1,14 @@
+schemaVersion: 1
+body:
+  description: Messages sent through the contact form.
+  columns:
+    name:
+      type: text
+      required: true
+    email:
+      type: text
+    about:
+      type: text
+    message:
+      type: text
+      required: true

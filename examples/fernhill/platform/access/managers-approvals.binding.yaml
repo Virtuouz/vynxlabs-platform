@@ -1,0 +1,6 @@
+schemaVersion: 1
+body:
+  role: decides_approvals
+  principal:
+    type: group
+    key: practice-managers

@@ -7,6 +7,7 @@ import { DraftClash } from "../../kit/DraftClash.tsx";
 import { isDraftClash, putDraft } from "../../kit/draftApi.ts";
 import { ago } from "../../kit/format.ts";
 import { useHistory } from "../../kit/history.ts";
+import { takeOverNotice, takingOverNotice } from "../../kit/ownership.ts";
 import { RemoveDraftButton } from "../../kit/RemoveDraftButton.tsx";
 import {
   DeviceSwitch,
@@ -558,15 +559,10 @@ export function AppBuilder({
             tone="attention"
             action={<Button onClick={() => setTookOver(true)}>Take over</Button>}
           >
-            This app is managed in the repository, so it is shown as it is published and cannot be
-            changed here. Taking it over lets you change it here: the next publish then moves it out
-            of the repository, and changes made there no longer reach it.
+            {takeOverNotice("app", "publish")} Until then it is shown as it is published.
           </Notice>
         ) : fromRepository ? (
-          <Notice tone="attention">
-            You are taking this app over from the repository. The next publish moves it out of the
-            repository, and changes made there no longer reach it.
-          </Notice>
+          <Notice tone="attention">{takingOverNotice("app")}</Notice>
         ) : null}
         {clash ? (
           <DraftClash

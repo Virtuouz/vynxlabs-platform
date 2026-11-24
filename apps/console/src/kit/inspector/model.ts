@@ -117,6 +117,13 @@ export function heading(name: string): string {
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
+/** A pack as a drawer names it beside a widget's kind: the workspace's own pack ("x") is "Your widgets". */
+export const packName = (pack: string): string => (pack === "x" ? "Your widgets" : heading(pack));
+
+/** A pack as a tile of "Add to page" names it. */
+export const packTitle = (pack: string): string =>
+  pack === "x" ? "Your widget" : `${heading(pack)} pack`;
+
 // ---------------------------------------------------------------------------
 // Which settings a tab holds
 

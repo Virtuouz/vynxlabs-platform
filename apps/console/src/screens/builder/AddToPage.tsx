@@ -2,9 +2,9 @@ import { Dialog, Kbd } from "@volvel/ui";
 import { type Surface, type WidgetDefinition, WidgetRegistry } from "@volvel/widgets";
 import { Search, Sparkles } from "lucide-react";
 import { useState } from "react";
-import { type Catalog, heading } from "../../kit/inspector/model.ts";
+import { type Catalog, packTitle } from "../../kit/inspector/model.ts";
 import { manyOf } from "./records.ts";
-import { offeredOn } from "./registry.ts";
+import { offeredOn, useRegistry } from "./registry.ts";
 import { factsOf, matchesWords, previewOf, SUGGESTION_WORDS, wordsOf } from "./selectorData.ts";
 import { WidgetDrawing } from "./WidgetDrawing.tsx";
 import { outlineIcon } from "./widgetIcons.ts";
@@ -85,6 +85,8 @@ export function AddToPage({
   /** What the page calls its first number ("Invoiced"): the examples in the preview use the page's own words. */
   measure?: string | undefined;
 }) {
+  // A workspace's own widgets arrive after the dialog may be open.
+  useRegistry();
   const [search, setSearch] = useState("");
   const [lit, setLit] = useState<string>();
   const typed = search.trim();
@@ -226,7 +228,7 @@ export function AddToPage({
                 Labs
               </span>
             ) : pack === "core" ? null : (
-              <span className="text-meta font-normal text-ink-muted">{heading(pack)} pack</span>
+              <span className="text-meta font-normal text-ink-muted">{packTitle(pack)}</span>
             )}
           </span>
           <span className="text-meta text-ink-muted">{definition.description}</span>

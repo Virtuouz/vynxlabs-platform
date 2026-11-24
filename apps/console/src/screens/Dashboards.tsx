@@ -41,7 +41,7 @@ import { useViewer } from "../viewer.ts";
 import { pageClient } from "./builder/client.ts";
 import { NAME_MAX } from "./builder/names.ts";
 import { PageEditor } from "./builder/PageEditor.tsx";
-import { definitionOf, views } from "./builder/registry.ts";
+import { definitionOf, useViews, useWorkspaceWidgets } from "./builder/registry.ts";
 import { type FilterValues, PageView } from "./builder/renderer.ts";
 import { ResourceIdentity } from "./ResourceIdentity.tsx";
 
@@ -289,6 +289,8 @@ export function DashboardView({
   /** A dev workspace: a dashboard the workspace keeps is changed here, as a draft. */
   editable?: boolean;
 }) {
+  useWorkspaceWidgets(root);
+  const views = useViews();
   const [loaded, setLoaded] = useState<Dashboard>();
   const [missing, setMissing] = useState<ApiError>();
   /** Counted up by Try again, so the read is made once more. */

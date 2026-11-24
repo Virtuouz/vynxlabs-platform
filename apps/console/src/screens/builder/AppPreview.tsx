@@ -9,7 +9,7 @@ import { navigate } from "../../router.tsx";
 import { useViewer } from "../../viewer.ts";
 import { DeviceSwitch, VIEWPORTS } from "./BuilderHeader.tsx";
 import { pageClient } from "./client.ts";
-import { views } from "./registry.ts";
+import { useViews, useWorkspaceWidgets } from "./registry.ts";
 
 /**
  * The app as it is being built, drawn as people will use it: its menu, record pages, side sheets,
@@ -31,6 +31,8 @@ export function AppPreview({
   path: string;
   workspaceName: string;
 }) {
+  useWorkspaceWidgets(root);
+  const views = useViews();
   const [body, setBody] = useState<InterfaceBody>();
   const [problem, setProblem] = useState<string>();
   const [device, setDevice] = useState<keyof typeof VIEWPORTS>("desktop");

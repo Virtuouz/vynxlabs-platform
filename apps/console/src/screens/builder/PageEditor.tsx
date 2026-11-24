@@ -72,7 +72,7 @@ import {
   pageTable,
   suggestionsFor,
 } from "./records.ts";
-import { definitionOf, views } from "./registry.ts";
+import { definitionOf, updated, updateOf, useViews, useWorkspaceWidgets } from "./registry.ts";
 import {
   allAutomatic,
   automaticAt,
@@ -261,6 +261,8 @@ export function PageEditor({
     if (readOnly) return;
     hostChange({ ...next, widgets: fitContainers(next.widgets) }, label, key);
   };
+  useWorkspaceWidgets(root);
+  const views = useViews();
   const [adding, setAdding] = useState(false);
   /** The widget just placed: the focus goes to it when "Add to page" closes, its settings next. */
   const justPlaced = useRef<string | undefined>(undefined);
@@ -1004,7 +1006,14 @@ export function PageEditor({
                       }
                     : {})}
                   widget={widget}
-                  definition={definitionOf(widget.type)}
+                  definition={definitionOf(widget.type, widget.version)}
+                  update={updateOf(widget)}
+                  onUpdate={() =>
+                    edit(
+                      updated(widget),
+                      `update ${nameOf(widget)} to v${updateOf(widget)?.version}`,
+                    )
+                  }
                   surface={surface}
                   filters={filters}
                   neighbours={widgets.filter((one) => one.id !== widget.id)}

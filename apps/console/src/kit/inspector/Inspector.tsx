@@ -57,8 +57,8 @@ import {
   type DataPart,
   dataParts,
   type FlowChoice,
-  heading,
   isShown,
+  packName,
   READS_NO_ROWS,
   type ScriptChoice,
   type TabFate,
@@ -107,6 +107,10 @@ export interface InspectorProps {
   onAddFilters?: () => void;
   /** Removes a tab of this container with what it held moved or removed; the container editor's own, when it has one. */
   onRemoveTab?: (tab: string, fate: TabFate) => void;
+  /** For a widget of the workspace's own: the newer version that is deployed, and what it changes. */
+  update?: { version: string; says: string } | undefined;
+  /** Moves the widget to that version. Never done without being asked. */
+  onUpdate?: (() => void) | undefined;
   /** The tab shown, when the host keeps it; and told when it changes. */
   tab?: Tab | undefined;
   onTab?: ((tab: Tab) => void) | undefined;
@@ -199,7 +203,7 @@ export function Inspector(props: InspectorProps) {
   }
 
   const pack = WidgetRegistry.packOf(definition.type);
-  const named = pack === "core" ? definition.title : `${definition.title} · ${heading(pack)}`;
+  const named = pack === "core" ? definition.title : `${definition.title} · ${packName(pack)}`;
   const kind = props.holds ? `${named} · ${props.holds}` : named;
   const Icon = outlineIcon(definition.icon);
 
@@ -324,6 +328,17 @@ export function Inspector(props: InspectorProps) {
           places={props.places}
           onChoose={props.onMove}
         />
+      ) : null}
+      {props.update && props.onUpdate && !props.readOnly ? (
+        <Notice tone="info">
+          <p className="m-0 mb-1 font-medium">
+            Version {props.update.version} is deployed. This page uses {widget.version}.
+          </p>
+          <p className="m-0 mb-2">{props.update.says}</p>
+          <Button size="small" onClick={props.onUpdate}>
+            Update to v{props.update.version}
+          </Button>
+        </Notice>
       ) : null}
       <DrawerTabs
         idPrefix={prefix}

@@ -1,5 +1,8 @@
 import { signInAs } from "./as.ts";
+import { fernhillTenant } from "./fernhill.ts";
 import { expect, type Page, test } from "./test.ts";
+
+const TENANT = fernhillTenant();
 
 /**
  * The owner's first look at phase 28, its canvas findings, walked on the Fernhill example in its
@@ -145,9 +148,9 @@ const drag = async (id: string, to: { x: number; y: number }, from = { x: 40, y:
 test.beforeAll(async ({ browser }) => {
   owner = await (await browser.newContext({ viewport: { width: 1440, height: 900 } })).newPage();
   await signInAs(owner, "maya.brooks@fernhill.example");
-  const tenants = await call(owner, "GET", "/tenants?limit=200");
-  const tenant = tenants.items.find((one: { slug: string }) => one.slug === "fernhill");
-  test.skip(!tenant, "No tenant fernhill: set up the Fernhill example first.");
+  const tenants = await call(owner, "GET", `/tenants?search=${TENANT}&limit=200`);
+  const tenant = tenants.items.find((one: { slug: string }) => one.slug === TENANT);
+  test.skip(!tenant, `No tenant ${TENANT}: set up the Fernhill example first.`);
   const { items } = await call(owner, "GET", `/tenants/${tenant.id}/workspaces`);
   const sandbox = items.find((one: { slug: string }) => one.slug === "sandbox");
   W = `/tenants/${tenant.id}/workspaces/${sandbox.id}`;

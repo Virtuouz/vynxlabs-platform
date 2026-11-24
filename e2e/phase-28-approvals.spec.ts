@@ -1,5 +1,6 @@
 import type { Browser } from "@playwright/test";
 import { asPerson, signInAs } from "./as.ts";
+import { fernhillTenant } from "./fernhill.ts";
 import { expect, type Page, test } from "./test.ts";
 import { expectNoAxeViolations } from "./visual.ts";
 
@@ -18,7 +19,7 @@ import { expectNoAxeViolations } from "./visual.ts";
  */
 
 const PASSWORD = process.env.E2E_FERNHILL_PASSWORD ?? "fernhill-demo-2026";
-const TENANT = process.env.E2E_FERNHILL_TENANT ?? "fernhill";
+const TENANT = fernhillTenant();
 const SANDBOX = process.env.E2E_FERNHILL_SANDBOX ?? "sandbox";
 const OWNER = "maya.brooks@fernhill.example";
 const MANAGER = "rowan.ellis@fernhill.example";
@@ -78,7 +79,7 @@ test.beforeAll(async ({ browser }) => {
   test.setTimeout(240_000);
   owner = await (await browser.newContext({ viewport: { width: 1440, height: 900 } })).newPage();
   await signInAs(owner, OWNER);
-  const tenants = await ok(owner, "GET", "/tenants?limit=200");
+  const tenants = await ok(owner, "GET", `/tenants?search=${TENANT}&limit=200`);
   const tenant = tenants.items.find((one: { slug: string }) => one.slug === TENANT);
   test.skip(!tenant, `No tenant ${TENANT}: set up the Fernhill example first.`);
   tenantId = tenant.id;
@@ -413,7 +414,7 @@ test("POLISH-001: someone with no approval standing, and an end user, see nothin
 
   // An end user of the front desk, signed in at the portal.
   const desk = await (await asPerson(browser, "jess")).newPage();
-  await desk.goto("/portal/fernhill/");
+  await desk.goto(`/portal/${TENANT}/`);
   await expect(desk.getByText("Front desk").first()).toBeVisible({ timeout: 20_000 });
   await desk.goto(base);
   await expect(widgetOf(desk)).toBeVisible({ timeout: 30_000 });

@@ -1,4 +1,5 @@
 import { signInAs } from "./as.ts";
+import { fernhillTenant } from "./fernhill.ts";
 import { expect, type Locator, type Page, test } from "./test.ts";
 import { expectNoAxeViolations } from "./visual.ts";
 
@@ -20,7 +21,7 @@ import { expectNoAxeViolations } from "./visual.ts";
  */
 
 const PASSWORD = process.env.E2E_FERNHILL_PASSWORD ?? "fernhill-demo-2026";
-const TENANT = process.env.E2E_FERNHILL_TENANT ?? "fernhill";
+const TENANT = fernhillTenant();
 const SANDBOX = process.env.E2E_FERNHILL_SANDBOX ?? "sandbox";
 const OWNER = "maya.brooks@fernhill.example";
 /** In Practice managers and in Billing. */
@@ -250,7 +251,7 @@ test.beforeAll(async ({ browser }) => {
   test.setTimeout(300_000);
   owner = await (await browser.newContext({ viewport: { width: 1440, height: 900 } })).newPage();
   await signInAs(owner, OWNER);
-  const tenants = await ok(owner, "GET", "/tenants?limit=200");
+  const tenants = await ok(owner, "GET", `/tenants?search=${TENANT}&limit=200`);
   const tenant = tenants.items.find((one: { slug: string }) => one.slug === TENANT);
   test.skip(!tenant, `No tenant ${TENANT}: set up the Fernhill example first.`);
   const workspaces = (await ok(owner, "GET", `/tenants/${tenant.id}/workspaces`)).items;
@@ -2526,7 +2527,7 @@ test("Acceptance, the pet owners' portal: an owner signs in on a phone and sees 
   const person = await endUserOnAPhone(browser, OWNER_EMAIL);
   const requested: string[] = [];
   try {
-    await person.goto("/apps/fernhill/sandbox/my-account/");
+    await person.goto(`/apps/${TENANT}/sandbox/my-account/`);
     // Their own details: found by their email, on a phone.
     await expect(person.getByRole("region", { name: "Your details" })).toContainText(me?.code, {
       timeout: 30_000,

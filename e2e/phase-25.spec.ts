@@ -1,4 +1,5 @@
 import { asPerson, signInAs } from "./as.ts";
+import { fernhillTenant } from "./fernhill.ts";
 import { closeSetting, openSetting, settingRow } from "./inspector.ts";
 import { type Browser, expect, type Page, test } from "./test.ts";
 
@@ -18,7 +19,7 @@ import { type Browser, expect, type Page, test } from "./test.ts";
  */
 
 const PASSWORD = process.env.E2E_FERNHILL_PASSWORD ?? "fernhill-demo-2026";
-const TENANT = process.env.E2E_FERNHILL_TENANT ?? "fernhill";
+const TENANT = fernhillTenant();
 const SANDBOX = process.env.E2E_FERNHILL_SANDBOX ?? "sandbox";
 const OWNER = "maya.brooks@fernhill.example";
 const stamp = Date.now().toString(36);
@@ -94,7 +95,7 @@ async function choose(name: string) {
 test.beforeAll(async ({ browser }) => {
   test.setTimeout(180_000);
   owner = await signedIn(browser, OWNER);
-  const tenants = await ok(owner, "GET", "/tenants?limit=200");
+  const tenants = await ok(owner, "GET", `/tenants?search=${TENANT}&limit=200`);
   const tenant = tenants.items.find((one: { slug: string }) => one.slug === TENANT);
   test.skip(!tenant, `No tenant ${TENANT}: set up the Fernhill example first.`);
   const workspaces = (await ok(owner, "GET", `/tenants/${tenant.id}/workspaces`)).items;
@@ -350,7 +351,7 @@ test("POLISH-001: the page is published, says what it changes first, and opens f
   // Clinic performance itself, as the repository deployed it to the clinics: a manager opens it,
   // and a front-desk end user, whom it is not shared with, is told so.
   const manager = await signedIn(browser, OWNER);
-  await manager.goto("/apps/fernhill/clinics/performance/");
+  await manager.goto(`/apps/${TENANT}/clinics/performance/`);
   const staff = manager
     .getByRole("link", { name: /staff/i })
     .or(manager.getByRole("button", { name: /staff/i }));
@@ -360,9 +361,9 @@ test("POLISH-001: the page is published, says what it changes first, and opens f
   });
   await manager.context().close();
   const desk = await (await asPerson(browser, "jess")).newPage();
-  await desk.goto("/portal/fernhill/");
+  await desk.goto(`/portal/${TENANT}/`);
   await expect(desk.getByText("Front desk").first()).toBeVisible({ timeout: 20_000 });
-  await desk.goto("/apps/fernhill/clinics/performance/");
+  await desk.goto(`/apps/${TENANT}/clinics/performance/`);
   await expect(desk.getByText("Not for this account")).toBeVisible();
   await desk.context().close();
 });

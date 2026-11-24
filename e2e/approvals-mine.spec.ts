@@ -1,4 +1,5 @@
 import { signInAs } from "./as.ts";
+import { fernhillTenant } from "./fernhill.ts";
 import { expect, type Page, test } from "./test.ts";
 
 /**
@@ -10,7 +11,7 @@ import { expect, type Page, test } from "./test.ts";
  */
 
 const PASSWORD = process.env.E2E_FERNHILL_PASSWORD ?? "fernhill-demo-2026";
-const TENANT = process.env.E2E_FERNHILL_TENANT ?? "fernhill";
+const TENANT = fernhillTenant();
 const WORKSPACE = process.env.E2E_FERNHILL_WORKSPACE ?? "clinics";
 
 // biome-ignore lint/suspicious/noExplicitAny: answers are inspected freely

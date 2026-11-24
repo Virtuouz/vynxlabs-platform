@@ -30,3 +30,28 @@ export async function signInWithPassword(page: Page, email: string, password: st
     .getByRole("heading", { name: "Sign in" })
     .waitFor({ state: "detached", timeout: 15_000 });
 }
+
+/**
+ * Signs in at a tenant's portal (`/portal/<slug>/`) as one of its end users, through the
+ * portal's own form, and waits for the front desk to show.
+ */
+export async function signInToPortal(page: Page, slug: string, email: string, password: string) {
+  await page.goto(`/portal/${slug}/`);
+  await page
+    .getByRole("link", { name: "Sign in" })
+    .or(page.getByRole("button", { name: "Sign in" }))
+    .first()
+    .click();
+  await page.getByLabel(/Email/).first().fill(email);
+  const next = page.getByRole("button", { name: "Continue" });
+  if (await next.count()) await next.click();
+  await page
+    .getByLabel(/Password/)
+    .first()
+    .fill(password);
+  await page
+    .getByRole("button", { name: /Sign in/ })
+    .last()
+    .click();
+  await page.getByText("Front desk").first().waitFor({ timeout: 20_000 });
+}

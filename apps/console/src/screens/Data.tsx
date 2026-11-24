@@ -1683,7 +1683,7 @@ export function Tables({ root, link }: { root: string; link: string }) {
       ]}
       empty={{
         title: "No tables yet",
-        text: "Define a table in the tenant's repository with defineTable and deploy it, or create one here to try things out.",
+        text: "Write a `<path>.table.yaml` file in your repository's resources folder (or use defineTable in code) and deploy it, or create one here to try things out.",
       }}
       create={{
         action: "Create table",

@@ -114,4 +114,6 @@ test("with no event declared, the dialog says so and what to do", async () => {
   show(<EventsWorkbench root={root} link={link} production={false} />);
   fireEvent.click(await screen.findByRole("button", { name: "Publish an event" }));
   expect(await screen.findByText(/No event is declared in this workspace yet/)).toBeTruthy();
+  // The file comes first, then code.
+  expect(screen.getByText("<path>.event.yaml")).toBeTruthy();
 });

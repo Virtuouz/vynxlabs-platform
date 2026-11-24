@@ -229,7 +229,7 @@ export function Flows({
           items.length > 0
             ? "Try another word, or show every flow."
             : editable
-              ? "Draw one here, or define one in the tenant's repository with defineFlow."
+              ? "Draw one here, or write a `<path>.flow.yaml` file in your repository's resources folder, or use defineFlow in code."
               : "Flows reach a production workspace by promotion from its dev workspace.",
         ...(editable && items.length === 0
           ? {

@@ -1,4 +1,4 @@
-import { signInWithPassword } from "./sign-in.ts";
+import { signInAs } from "./as.ts";
 import { expect, type Page, test } from "./test.ts";
 import { expectNoAxeViolations } from "./visual.ts";
 
@@ -9,10 +9,6 @@ import { expectNoAxeViolations } from "./visual.ts";
  * promoted and run again, in ten presses or fewer and no search.
  */
 
-const ADMIN = {
-  email: process.env.E2E_ADMIN_EMAIL ?? "admin@example.com",
-  password: process.env.E2E_ADMIN_PASSWORD ?? "change-me-please",
-};
 const TENANT_ADMIN = "00000000-0000-7000-8000-000000000002";
 const stamp = Date.now().toString(36);
 
@@ -82,7 +78,7 @@ async function ended(page: Page, root: string, kind: "runs" | "flow-runs", id: s
 
 test.describe.configure({ mode: "serial" });
 
-test("the runs list, a failed flow run, and a production failure fixed in ten presses", async ({
+test("the runs list, a failed flow run, and a production failure fixed in ten presses @operate", async ({
   browser,
 }) => {
   test.setTimeout(240_000);
@@ -94,7 +90,7 @@ test("the runs list, a failed flow run, and a production failure fixed in ten pr
     errors.push(`a browser dialog: ${dialog.message()}`);
     void dialog.dismiss();
   });
-  await signInWithPassword(page, ADMIN.email, ADMIN.password);
+  await signInAs(page, "operator");
 
   const tenant = await call(page, "POST", "/tenants", { slug: `loop-${stamp}`, name: "Loop" });
   await call(page, "POST", `/tenants/${tenant.id}/access-grants`, {

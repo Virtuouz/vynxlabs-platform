@@ -1,5 +1,5 @@
 import type { Browser } from "@playwright/test";
-import { signInWithPassword } from "./sign-in.ts";
+import { asPerson, signInAs } from "./as.ts";
 import { expect, type Page, test } from "./test.ts";
 import { expectNoAxeViolations } from "./visual.ts";
 
@@ -77,7 +77,7 @@ const ITEM = `F3 ${stamp} item`;
 test.beforeAll(async ({ browser }) => {
   test.setTimeout(240_000);
   owner = await (await browser.newContext({ viewport: { width: 1440, height: 900 } })).newPage();
-  await signInWithPassword(owner, OWNER, PASSWORD);
+  await signInAs(owner, OWNER);
   const tenants = await ok(owner, "GET", "/tenants?limit=200");
   const tenant = tenants.items.find((one: { slug: string }) => one.slug === TENANT);
   test.skip(!tenant, `No tenant ${TENANT}: set up the Fernhill example first.`);
@@ -197,7 +197,7 @@ async function as(
 ) {
   const context = await browser.newContext({ viewport: size, colorScheme: scheme });
   const page = await context.newPage();
-  await signInWithPassword(page, email, PASSWORD);
+  await signInAs(page, email, PASSWORD);
   return page;
 }
 
@@ -236,7 +236,7 @@ const decideApi = (page: Page, id: string, decision: "approve" | "reject", comme
 
 // ----- The manager -----
 
-test("POLISH-001: a manager opens the queue in the app and reads the request's fields", async ({
+test("POLISH-001: a manager opens the queue in the app and reads the request's fields @fernhill @access", async ({
   browser,
 }) => {
   manager = await as(browser, MANAGER);
@@ -259,7 +259,7 @@ test("POLISH-001: a manager opens the queue in the app and reads the request's f
   await expect(detailOf(manager)).toContainText(`${ITEM} 1`);
 });
 
-test("POLISH-001: approving one runs the flow on, says so, opens the next, and keeps the focus in the list", async () => {
+test("POLISH-001: approving one runs the flow on, says so, opens the next, and keeps the focus in the list @fernhill @access", async () => {
   const [first] = await waitingIds(owner);
   const before = await rows(manager).count();
   await approveButton(manager).click();
@@ -277,7 +277,7 @@ test("POLISH-001: approving one runs the flow on, says so, opens the next, and k
     .toBe("succeeded");
 });
 
-test("POLISH-001: rejecting asks why in the box, says so when it is empty, and the server asks too", async () => {
+test("POLISH-001: rejecting asks why in the box, says so when it is empty, and the server asks too @fernhill @access", async () => {
   // The next is open (item 2). Reject opens a box with the cursor in it.
   await rejectButton(manager).click();
   const why = detailOf(manager).getByRole("textbox", { name: /Why are you rejecting this/ });
@@ -312,7 +312,7 @@ test("POLISH-001: rejecting asks why in the box, says so when it is empty, and t
     .not.toBe("waiting_approval");
 });
 
-test("POLISH-006: the Decided tab lists both with who, what and why, and a reload keeps them", async () => {
+test("POLISH-006: the Decided tab lists both with who, what and why, and a reload keeps them @fernhill @access", async () => {
   await showTab(manager, "Decided");
   const decided = widgetOf(manager).getByRole("list", { name: "Decided requests" });
   await expect(decided.getByRole("listitem")).toHaveCount(2);
@@ -334,7 +334,7 @@ test("POLISH-006: the Decided tab lists both with who, what and why, and a reloa
 
 // ----- Someone who may read and not decide -----
 
-test("POLISH-001: someone who may read approvals and not decide sees the requests, the buttons greyed with why, and the API refuses", async ({
+test("POLISH-001: someone who may read approvals and not decide sees the requests, the buttons greyed with why, and the API refuses @fernhill @access", async ({
   browser,
 }) => {
   const reader = await as(browser, "devi.shah@fernhill.example");
@@ -358,7 +358,7 @@ test("POLISH-001: someone who may read approvals and not decide sees the request
 
 // ----- Someone with no approval standing, and an end user -----
 
-test("POLISH-001: someone with no approval standing, and an end user, see nothing: no list, no counts, no titles", async ({
+test("POLISH-001: someone with no approval standing, and an end user, see nothing: no list, no counts, no titles @fernhill @access", async ({
   browser,
 }) => {
   // A role that opens an app and nothing more, for a member made for the walk and for end users.
@@ -412,24 +412,8 @@ test("POLISH-001: someone with no approval standing, and an end user, see nothin
   await plain.context().close();
 
   // An end user of the front desk, signed in at the portal.
-  const desk = await (await browser.newContext()).newPage();
+  const desk = await (await asPerson(browser, "jess")).newPage();
   await desk.goto("/portal/fernhill/");
-  await desk
-    .getByRole("link", { name: "Sign in" })
-    .or(desk.getByRole("button", { name: "Sign in" }))
-    .first()
-    .click();
-  await desk.getByLabel(/Email/).first().fill("jess.morgan@fernhill.example");
-  const next = desk.getByRole("button", { name: "Continue" });
-  if (await next.count()) await next.click();
-  await desk
-    .getByLabel(/Password/)
-    .first()
-    .fill(PASSWORD);
-  await desk
-    .getByRole("button", { name: /Sign in/ })
-    .last()
-    .click();
   await expect(desk.getByText("Front desk").first()).toBeVisible({ timeout: 20_000 });
   await desk.goto(base);
   await expect(widgetOf(desk)).toBeVisible({ timeout: 30_000 });
@@ -449,7 +433,7 @@ test("POLISH-001: someone with no approval standing, and an end user, see nothin
 
 // ----- Two people at once -----
 
-test("POLISH-009: two managers decide the same request: the second is told who got there first, and what they decided", async ({
+test("POLISH-009: two managers decide the same request: the second is told who got there first, and what they decided @fernhill @access", async ({
   browser,
 }) => {
   const other = await as(browser, OWNER);
@@ -486,7 +470,7 @@ test("POLISH-009: two managers decide the same request: the second is told who g
 
 // ----- Phone width, the keyboard, and the themes -----
 
-test("POLISH-005: at 390 the queue is a list and the request's page, not a cut-off pair; nothing scrolls sideways", async ({
+test("POLISH-005: at 390 the queue is a list and the request's page, not a cut-off pair; nothing scrolls sideways @fernhill @access", async ({
   browser,
 }) => {
   const phone = await as(browser, MANAGER, { width: 390, height: 844 });
@@ -508,7 +492,7 @@ test("POLISH-005: at 390 the queue is a list and the request's page, not a cut-o
   await phone.context().close();
 });
 
-test("POLISH-007: by keyboard alone: the list takes the arrows, Enter reaches the buttons, a reason is typed, and Esc leaves it", async ({
+test("POLISH-007: by keyboard alone: the list takes the arrows, Enter reaches the buttons, a reason is typed, and Esc leaves it @fernhill @access", async ({
   browser,
 }) => {
   const keys = await as(browser, MANAGER);
@@ -545,7 +529,7 @@ test("POLISH-007: by keyboard alone: the list takes the arrows, Enter reaches th
 });
 
 for (const scheme of ["light", "dark"] as const) {
-  test(`POLISH-010: no accessibility violation in the queue, ${scheme}: waiting, the reason box, and decided`, async ({
+  test(`POLISH-010: no accessibility violation in the queue, ${scheme}: waiting, the reason box, and decided @fernhill @access`, async ({
     browser,
   }) => {
     const page = await as(browser, MANAGER, { width: 1440, height: 900 }, scheme);
@@ -578,7 +562,7 @@ const queueNow = async () => {
   return body.pages[0].widgets.find((one: any) => one.id === "queue");
 };
 
-test("POLISH-002: Add to page finds Approvals by the words 'sign off', and the widget is placed", async () => {
+test("POLISH-002: Add to page finds Approvals by the words 'sign off', and the widget is placed @fernhill @access", async () => {
   await owner.setViewportSize({ width: 1440, height: 1000 });
   await owner.goto(`${L}/screens/${SCREEN}`);
   await owner
@@ -600,7 +584,7 @@ test("POLISH-002: Add to page finds Approvals by the words 'sign off', and the w
   );
 });
 
-test("POLISH-003: the drawer writes what each shows, the buttons' words and Ask why, and a reload keeps them", async () => {
+test("POLISH-003: the drawer writes what each shows, the buttons' words and Ask why, and a reload keeps them @fernhill @access", async () => {
   await owner.setViewportSize({ width: 1440, height: 1000 });
   await owner.goto(`${L}/screens/${SCREEN}`);
   await owner.getByRole("button", { name: "Orders to sign off" }).first().click();

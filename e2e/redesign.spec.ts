@@ -77,6 +77,9 @@ async function signIn(browser: Browser): Promise<Page> {
 test.beforeAll(async ({ browser }) => {
   admin = await signIn(browser);
   api = apiOf(admin);
+  // The theme is a setting the server keeps for the operator: start from the default, whatever
+  // an earlier run's last page wrote after it was cleared.
+  await api("DELETE", "/me/preferences/theme").catch(() => {});
   await readEveryList(admin);
   before = ok(await api("GET", "/instance/branding"), "read the branding").body;
   ok(
@@ -164,7 +167,7 @@ const screens = () => {
 
 for (const theme of THEMES) {
   for (const size of WIDTHS) {
-    test(`every screen fits a ${size.name} in ${theme}`, async () => {
+    test(`every screen fits a ${size.name} in ${theme} @instance @polish`, async () => {
       await admin.setViewportSize({ width: size.width, height: size.height });
       await admin.evaluate((choice) => localStorage.setItem("vx-theme", choice), theme);
       for (const [name, path] of screens()) {
@@ -191,7 +194,7 @@ for (const theme of THEMES) {
   }
 }
 
-test("the component kit looks as reviewed, whole, in light and in dark", async () => {
+test("the component kit looks as reviewed, whole, in light and in dark @instance @polish", async () => {
   await admin.setViewportSize({ width: 1440, height: 960 });
   for (const theme of THEMES) {
     await admin.evaluate((choice) => localStorage.setItem("vx-theme", choice), theme);
@@ -209,7 +212,7 @@ test("the component kit looks as reviewed, whole, in light and in dark", async (
   }
 });
 
-test("on a phone the navigation is a drawer, and another area's screen is reached in one opening", async () => {
+test("on a phone the navigation is a drawer, and another area's screen is reached in one opening @instance @polish", async () => {
   await admin.setViewportSize({ width: 390, height: 844 });
   await admin.goto(`/t/${tenant.id}/workspaces/${workspace}/scripts`);
   await expect(admin.getByRole("navigation", { name: "Main" })).toBeHidden();
@@ -231,7 +234,7 @@ test("on a phone the navigation is a drawer, and another area's screen is reache
   await expect(admin).toHaveURL(/\/dashboards$/);
 });
 
-test("the console carries the instance's name and color, and not the tenant's", async ({
+test("the console carries the instance's name and color, and not the tenant's @instance @polish", async ({
   browser,
 }) => {
   // A browser that has not seen the instance before, so no stylesheet is kept from
@@ -256,6 +259,6 @@ test("the console carries the instance's name and color, and not the tenant's", 
   await visitor.context().close();
 });
 
-test("no screen threw, and no browser dialog appeared", () => {
+test("no screen threw, and no browser dialog appeared @instance @polish", () => {
   expect(errors).toEqual([]);
 });

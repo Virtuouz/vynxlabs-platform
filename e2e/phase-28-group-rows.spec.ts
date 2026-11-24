@@ -1,4 +1,4 @@
-import { signInWithPassword } from "./sign-in.ts";
+import { signInAs } from "./as.ts";
 import { expect, type Page, test } from "./test.ts";
 import { expectNoAxeViolations } from "./visual.ts";
 
@@ -8,7 +8,6 @@ import { expectNoAxeViolations } from "./visual.ts";
  * List, drawn under headings on the canvas, counted over every page, and kept after a reload.
  */
 
-const PASSWORD = process.env.E2E_FERNHILL_PASSWORD ?? "fernhill-demo-2026";
 const stamp = Date.now().toString(36);
 const PATH = `screens/group-${stamp}`;
 
@@ -102,7 +101,7 @@ const groupBy = async (id: string, column: string) => {
 
 test.beforeAll(async ({ browser }) => {
   owner = await (await browser.newContext({ viewport: { width: 1440, height: 1000 } })).newPage();
-  await signInWithPassword(owner, "maya.brooks@fernhill.example", PASSWORD);
+  await signInAs(owner, "maya.brooks@fernhill.example");
   const tenants = await call(owner, "GET", "/tenants?limit=200");
   const tenant = tenants.items.find((one: { slug: string }) => one.slug === "fernhill");
   test.skip(!tenant, "No tenant fernhill: set up the Fernhill example first.");
@@ -122,7 +121,7 @@ test.afterAll(async () => {
   await owner?.context().close();
 });
 
-test("POLISH-009: a Table's rows are grouped by day from the drawer, each day with how many it has, and kept after a reload", async () => {
+test("POLISH-009: a Table's rows are grouped by day from the drawer, each day with how many it has, and kept after a reload @fernhill @builder", async () => {
   await owner.goto(`${L}/screens/${PATH}`);
   await expect(cell("table").getByRole("row").nth(3)).toBeVisible();
   await expect(groups("table")).toHaveCount(0);
@@ -170,7 +169,7 @@ test("POLISH-009: a Table's rows are grouped by day from the drawer, each day wi
   await expectNoAxeViolations(owner, "a page with grouped rows");
 });
 
-test("POLISH-009: a List is grouped by a choice, as cards too, and Nothing takes it off", async () => {
+test("POLISH-009: a List is grouped by a choice, as cards too, and Nothing takes it off @fernhill @builder", async () => {
   await owner.goto(`${L}/screens/${PATH}`);
   const editor = await groupBy("list", "clinic");
   await owner.keyboard.press("Escape");

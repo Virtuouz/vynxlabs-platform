@@ -1,4 +1,4 @@
-import { signInWithPassword } from "./sign-in.ts";
+import { signInAs } from "./as.ts";
 import { expect, type Page, test } from "./test.ts";
 
 /**
@@ -36,10 +36,10 @@ for (const person of [
   { email: "devi.shah@fernhill.example", who: "the developer" },
   { email: "maya.brooks@fernhill.example", who: "the practice owner" },
 ]) {
-  test(`as ${person.who}, the overview's count matches the queue Decide opens`, async ({
+  test(`as ${person.who}, the overview's count matches the queue Decide opens @fernhill @access`, async ({
     page,
   }) => {
-    await signInWithPassword(page, person.email, PASSWORD);
+    await signInAs(page, person.email, PASSWORD);
     const where = await open(page);
     const summary = await get(page, `${where.api}/summary`);
     test.skip(!summary.approvalsWaiting, "Nothing waits for a decision in this workspace.");

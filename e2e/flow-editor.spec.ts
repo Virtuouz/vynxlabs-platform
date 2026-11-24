@@ -1,4 +1,4 @@
-import { signInWithPassword } from "./sign-in.ts";
+import { signInAs } from "./as.ts";
 import { expect, type Page, test } from "./test.ts";
 import { expectNoAxeViolations } from "./visual.ts";
 
@@ -9,10 +9,6 @@ import { expectNoAxeViolations } from "./visual.ts";
  * a removed step comes back with ⌘Z, kept by autosave.
  */
 
-const ADMIN = {
-  email: process.env.E2E_ADMIN_EMAIL ?? "admin@example.com",
-  password: process.env.E2E_ADMIN_PASSWORD ?? "change-me-please",
-};
 const TENANT_ADMIN = "00000000-0000-7000-8000-000000000002";
 const stamp = Date.now().toString(36);
 
@@ -67,7 +63,7 @@ const flow = {
   ],
 };
 
-test("a draft flow is tested, read, previewed and undone without leaving its editor", async ({
+test("a draft flow is tested, read, previewed and undone without leaving its editor @builder", async ({
   browser,
 }) => {
   const page = await (await browser.newContext()).newPage();
@@ -77,7 +73,7 @@ test("a draft flow is tested, read, previewed and undone without leaving its edi
     errors.push(`a browser dialog: ${dialog.message()}`);
     void dialog.dismiss();
   });
-  await signInWithPassword(page, ADMIN.email, ADMIN.password);
+  await signInAs(page, "operator");
 
   const tenant = await call(page, "POST", "/tenants", {
     slug: `fe-${stamp}`,
@@ -182,7 +178,7 @@ test("a draft flow is tested, read, previewed and undone without leaving its edi
   expect(errors).toEqual([]);
 });
 
-test("a flow is built, saved and tested from the keyboard, without dragging", async ({
+test("a flow is built, saved and tested from the keyboard, without dragging @builder", async ({
   browser,
 }) => {
   const page = await (await browser.newContext()).newPage();
@@ -192,7 +188,7 @@ test("a flow is built, saved and tested from the keyboard, without dragging", as
     errors.push(`a browser dialog: ${dialog.message()}`);
     void dialog.dismiss();
   });
-  await signInWithPassword(page, ADMIN.email, ADMIN.password);
+  await signInAs(page, "operator");
   const tenant = await call(page, "POST", "/tenants", {
     slug: `fk-${stamp}`,
     name: "Flow by keyboard",
@@ -270,7 +266,7 @@ test("a flow is built, saved and tested from the keyboard, without dragging", as
   expect(errors).toEqual([]);
 });
 
-test("steps are duplicated, copied into another flow, and a renamed case keeps its connection", async ({
+test("steps are duplicated, copied into another flow, and a renamed case keeps its connection @builder", async ({
   browser,
 }) => {
   test.setTimeout(180_000);
@@ -279,7 +275,7 @@ test("steps are duplicated, copied into another flow, and a renamed case keeps i
     permissions: ["clipboard-read", "clipboard-write"],
   });
   const page = await context.newPage();
-  await signInWithPassword(page, ADMIN.email, ADMIN.password);
+  await signInAs(page, "operator");
   const tenant = await call(page, "POST", "/tenants", {
     slug: `canvas-${stamp}`,
     name: "Canvas",

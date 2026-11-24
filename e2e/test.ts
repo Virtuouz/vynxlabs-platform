@@ -78,13 +78,32 @@ function watchOverlays() {
 
 const faults: string[] = [];
 
+/**
+ * Each worker is a different address to the instance, which allows twenty sign-ins a minute
+ * from one and works the caller out from X-Forwarded-For (one proxy hop is trusted). Workers
+ * that signed in from one address would share that count.
+ */
+const workerAddress = () => {
+  const n = Number(process.env.TEST_PARALLEL_INDEX ?? 0);
+  return `10.32.${Math.floor(n / 250)}.${(n % 250) + 1}`;
+};
+const workerHeaders = () => ({ "X-Forwarded-For": workerAddress() });
+
 export const test = base.extend<{ overlaysMove: undefined }, { watched: undefined }>({
+  // biome-ignore lint/correctness/noEmptyPattern: Playwright reads a fixture's needs from this pattern
+  extraHTTPHeaders: async ({}, use) => {
+    await use(workerHeaders());
+  },
   watched: [
     async ({ browser }, use) => {
-      // Every context, however a spec makes it, is watched.
+      // Every context, however a spec makes it, is watched, and is this worker's address.
       const make = browser.newContext.bind(browser);
       (browser as Browser).newContext = async (...given) => {
-        const context: BrowserContext = await make(...given);
+        const [options] = given;
+        const context: BrowserContext = await make({
+          ...options,
+          extraHTTPHeaders: { ...workerHeaders(), ...options?.extraHTTPHeaders },
+        });
         await context.exposeFunction("__overlayFault", (text: string) => void faults.push(text));
         await context.addInitScript(watchOverlays);
         return context;

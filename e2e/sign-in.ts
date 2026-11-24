@@ -1,11 +1,14 @@
 import type { Page } from "@playwright/test";
 
 /**
- * Signs in with a password from the console's own form. The auth library allows
- * three sign-ins in ten seconds from one address, and every spec signs in from
- * the same one, so a sign-in refused with 429 waits out the window and tries again.
+ * Signs in with a password from the console's own form. The auth library allows twenty
+ * sign-ins a minute from one address: each worker sends an address of its own (see
+ * `test.ts`), so a 429 is rare, and when it comes it says how long to wait (Retry-After).
  * It returns once the form has gone, wherever the console then opens: it reopens
  * the last place a member was.
+ *
+ * Most specs do not sign in through the form: `as.ts` gives a person already signed in.
+ * This is for the specs that test the form, and for members a spec makes itself.
  */
 export async function signInWithPassword(page: Page, email: string, password: string) {
   await page.goto("/");
@@ -18,8 +21,10 @@ export async function signInWithPassword(page: Page, email: string, password: st
         response.url().includes("/auth/sign-in/email") && response.request().method() === "POST",
     );
     await page.getByRole("button", { name: "Sign in" }).click();
-    if ((await answer).status() !== 429 || attempt === 4) break;
-    await page.waitForTimeout(10_500);
+    const response = await answer;
+    if (response.status() !== 429 || attempt === 4) break;
+    const told = Number(response.headers()["retry-after"]);
+    await page.waitForTimeout((Number.isFinite(told) && told > 0 ? told : 10) * 1000 + 500);
   }
   await page
     .getByRole("heading", { name: "Sign in" })

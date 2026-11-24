@@ -1,4 +1,4 @@
-import { signInWithPassword } from "./sign-in.ts";
+import { signInAs } from "./as.ts";
 import { expect, type Page, test } from "./test.ts";
 import { expectNoAxeViolations } from "./visual.ts";
 
@@ -9,10 +9,6 @@ import { expectNoAxeViolations } from "./visual.ts";
  * tab's title says what is open, and the first Tab on a page skips to its content.
  */
 
-const ADMIN = {
-  email: process.env.E2E_ADMIN_EMAIL ?? "admin@example.com",
-  password: process.env.E2E_ADMIN_PASSWORD ?? "change-me-please",
-};
 const TENANT_ADMIN = "00000000-0000-7000-8000-000000000002";
 const stamp = Date.now().toString(36);
 
@@ -44,7 +40,7 @@ const call = (page: Page, method: string, path: string, body?: unknown): Promise
     [method, path, body] as const,
   );
 
-test("a new script has no errors, keeps its undo history, and runs with ⌘↵ from the code", async ({
+test("a new script has no errors, keeps its undo history, and runs with ⌘↵ from the code @builder", async ({
   browser,
 }) => {
   const page = await (await browser.newContext()).newPage();
@@ -54,7 +50,7 @@ test("a new script has no errors, keeps its undo history, and runs with ⌘↵ f
     errors.push(`a browser dialog: ${dialog.message()}`);
     void dialog.dismiss();
   });
-  await signInWithPassword(page, ADMIN.email, ADMIN.password);
+  await signInAs(page, "operator");
 
   const tenant = await call(page, "POST", "/tenants", {
     slug: `se-${stamp}`,

@@ -24,7 +24,7 @@ test.afterAll(async () => {
 });
 
 /** P4-6: a time is one line, wherever it stands, from 1280 px up. */
-test("no time wraps onto a second line at 1280 px or wider", async () => {
+test("no time wraps onto a second line at 1280 px or wider @polish", async () => {
   for (const width of [1280, 1440]) {
     await ctx.page.setViewportSize({ width, height: 900 });
     for (const path of [
@@ -51,7 +51,7 @@ test("no time wraps onto a second line at 1280 px or wider", async () => {
  * Phase 23 M5 (POLISH-004, 013): a list's filters have a row of their own. The audit log, on a
  * visit that shows its description, has no filter beside the title and no text over text.
  */
-test("the audit log's filters sit under its title and description on a first visit", async () => {
+test("the audit log's filters sit under its title and description on a first visit @polish", async () => {
   for (const width of [1440, 390]) {
     await ctx.page.setViewportSize({ width, height: 900 });
     // A member who has not read it: the preference is cleared, here and in the browser.
@@ -81,7 +81,7 @@ test("the audit log's filters sit under its title and description on a first vis
 });
 
 /** P4-1: what a list is for is said once, then kept behind help; operator access is one line. */
-test("a list says what it is for once, and operator access hides to a mark and comes back", async () => {
+test("a list says what it is for once, and operator access hides to a mark and comes back @polish", async () => {
   await ctx.page.setViewportSize({ width: 1440, height: 900 });
   await call(ctx.page, "DELETE", "/me/preferences/seen:flows").catch(() => {});
   await ctx.page.evaluate(() => localStorage.removeItem("vx-pref:seen:flows"));
@@ -108,7 +108,7 @@ test("a list says what it is for once, and operator access hides to a mark and c
 });
 
 /** P4-4: a run that starts while rows are checked waits at the top, and nothing moves under reduced motion. */
-test("a run that arrives while rows are checked waits behind a control, and reduced motion moves nothing", async ({
+test("a run that arrives while rows are checked waits behind a control, and reduced motion moves nothing @polish", async ({
   browser,
 }) => {
   await ctx.page.setViewportSize({ width: 1440, height: 900 });
@@ -157,7 +157,7 @@ test("a run that arrives while rows are checked waits behind a control, and redu
  * filled tag, the switcher's entry, and the amber rule under the header. In dev, none of them.
  * (The roadmap's acceptance is a usability test; this checks what that test would rely on.)
  */
-test("production carries three marks that agree, and dev carries none", async () => {
+test("production carries three marks that agree, and dev carries none @polish", async () => {
   for (const width of [390, 768, 1440]) {
     await ctx.page.setViewportSize({ width, height: 900 });
     for (const [path, production] of [

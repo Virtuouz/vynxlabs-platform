@@ -1,4 +1,4 @@
-import { signInWithPassword } from "./sign-in.ts";
+import { signInAs } from "./as.ts";
 import { expect, type Page, test } from "./test.ts";
 
 /**
@@ -8,10 +8,6 @@ import { expect, type Page, test } from "./test.ts";
  * which keeps its pages and its app.
  */
 
-const ADMIN = {
-  email: process.env.E2E_ADMIN_EMAIL ?? "admin@example.com",
-  password: process.env.E2E_ADMIN_PASSWORD ?? "change-me-please",
-};
 const stamp = Date.now().toString(36);
 
 // biome-ignore lint/suspicious/noExplicitAny: answers are inspected freely
@@ -54,14 +50,14 @@ async function say(page: Page, action: string) {
   await page.getByRole("dialog").getByRole("button", { name: action, exact: true }).click();
 }
 
-test("a script, a flow, a query and a docs site are removed, taken back, removed and deployed", async ({
+test("a script, a flow, a query and a docs site are removed, taken back, removed and deployed @builder @operate", async ({
   browser,
 }) => {
   test.setTimeout(240_000);
   const page = await (
     await browser.newContext({ viewport: { width: 1440, height: 900 } })
   ).newPage();
-  await signInWithPassword(page, ADMIN.email, ADMIN.password);
+  await signInAs(page, "operator");
   const tenant = await call(page, "POST", "/tenants", {
     slug: `life-${stamp}`,
     name: "Lifecycle",

@@ -1,5 +1,5 @@
 import { mkdirSync } from "node:fs";
-import { signInWithPassword } from "./sign-in.ts";
+import { signInAs } from "./as.ts";
 import { type Browser, expect, type Page, test } from "./test.ts";
 import { expectNoAxeViolations } from "./visual.ts";
 
@@ -13,10 +13,6 @@ import { expectNoAxeViolations } from "./visual.ts";
  * looked at. They are not compared with reviewed ones.
  */
 
-const ADMIN = {
-  email: process.env.E2E_ADMIN_EMAIL ?? "admin@example.com",
-  password: process.env.E2E_ADMIN_PASSWORD ?? "change-me-please",
-};
 const stamp = Date.now().toString(36);
 const SHOTS = new URL("./results/documentation/", import.meta.url).pathname;
 mkdirSync(SHOTS, { recursive: true });
@@ -114,7 +110,7 @@ interface Setup {
 
 async function signedIn(browser: Browser, width = 1440, height = 900): Promise<Page> {
   const page = await (await browser.newContext({ viewport: { width, height } })).newPage();
-  await signInWithPassword(page, ADMIN.email, ADMIN.password);
+  await signInAs(page, "operator");
   return page;
 }
 
@@ -122,7 +118,7 @@ let made: Setup;
 
 test.describe.configure({ mode: "serial" });
 
-test("a workspace is given a table that says what its columns hold, and a handbook about it", async ({
+test("a workspace is given a table that says what its columns hold, and a handbook about it @docs", async ({
   browser,
 }) => {
   test.setTimeout(180_000);
@@ -178,7 +174,7 @@ test("a workspace is given a table that says what its columns hold, and a handbo
   await page.context().close();
 });
 
-test("a screen has help beside it on F1, with the team's own notes, and nothing is fetched from outside", async ({
+test("a screen has help beside it on F1, with the team's own notes, and nothing is fetched from outside @docs", async ({
   browser,
 }) => {
   test.setTimeout(180_000);
@@ -263,7 +259,7 @@ test("a screen has help beside it on F1, with the team's own notes, and nothing 
   await page.context().close();
 });
 
-test("a page is read, written with a live preview, checked as it is typed, and deployed from the console", async ({
+test("a page is read, written with a live preview, checked as it is typed, and deployed from the console @docs", async ({
   browser,
 }) => {
   test.setTimeout(240_000);
@@ -383,7 +379,7 @@ test("a page is read, written with a live preview, checked as it is typed, and d
   await page.context().close();
 });
 
-test("the docs app is read by someone who is not signed in, with scripts and without", async ({
+test("the docs app is read by someone who is not signed in, with scripts and without @docs", async ({
   browser,
 }) => {
   test.setTimeout(120_000);
@@ -487,7 +483,7 @@ test("the docs app is read by someone who is not signed in, with scripts and wit
   await plain.close();
 });
 
-test("a page of an app names its help, and the app shows that page of the handbook", async ({
+test("a page of an app names its help, and the app shows that page of the handbook @docs", async ({
   browser,
 }) => {
   test.setTimeout(120_000);
@@ -540,7 +536,7 @@ test("a page of an app names its help, and the app shows that page of the handbo
   await page.context().close();
 });
 
-test("a page is dragged to another folder, its details are a form, and a trigger says what it is for", async ({
+test("a page is dragged to another folder, its details are a form, and a trigger says what it is for @docs", async ({
   browser,
 }) => {
   test.setTimeout(120_000);
@@ -602,7 +598,7 @@ test("a page is dragged to another folder, its details are a form, and a trigger
   await page.context().close();
 });
 
-test("the kit's new pieces are on the kit sheet, and pass the accessibility check", async ({
+test("the kit's new pieces are on the kit sheet, and pass the accessibility check @docs", async ({
   browser,
 }) => {
   const page = await signedIn(browser, 1440, 1000);

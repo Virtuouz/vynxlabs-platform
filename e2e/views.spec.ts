@@ -1,3 +1,4 @@
+import { signInAs } from "./as.ts";
 import { signInWithPassword } from "./sign-in.ts";
 import { expect, type Page, test } from "./test.ts";
 
@@ -7,10 +8,6 @@ import { expect, type Page, test } from "./test.ts";
  * another member.
  */
 
-const ADMIN = {
-  email: process.env.E2E_ADMIN_EMAIL ?? "admin@example.com",
-  password: process.env.E2E_ADMIN_PASSWORD ?? "change-me-please",
-};
 const stamp = Date.now().toString(36);
 
 // biome-ignore lint/suspicious/noExplicitAny: answers are inspected freely
@@ -41,14 +38,14 @@ const call = (page: Page, method: string, path: string, body?: unknown): Promise
     [method, path, body] as const,
   );
 
-test("a view is saved, chosen again, and its link shows another member the same list", async ({
+test("a view is saved, chosen again, and its link shows another member the same list @data", async ({
   browser,
 }) => {
   test.setTimeout(180_000);
   const page = await (
     await browser.newContext({ viewport: { width: 1440, height: 900 } })
   ).newPage();
-  await signInWithPassword(page, ADMIN.email, ADMIN.password);
+  await signInAs(page, "operator");
   const tenant = await call(page, "POST", "/tenants", {
     slug: `views-${stamp}`,
     name: "Views",

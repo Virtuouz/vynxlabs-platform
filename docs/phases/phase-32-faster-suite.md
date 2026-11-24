@@ -1,7 +1,7 @@
 # Phase 32: the browser suite runs in a third of the time
 
-Status: in progress, on branch `phase-32-faster-suite`, off `phase-31-write-the-docs`.
-Last updated: 2026-11-23
+Status: built, at the owner's stop, on branch `phase-32-faster-suite`, off `phase-31-write-the-docs`. Nothing merged or pushed.
+Last updated: 2026-11-24
 
 The owner (2026-11-23): the browser suite "slows down development more than the time it takes to implement. I'm not saying get rid of the suite but to figure out how to speed it up", and chose to make this the first thing after phase 31. The plan is `~/.claude/plans/i-would-like-to-fuzzy-meteor-of-45518b7f-b8fc-41f4-9613-9ba4253edadd.md` (phase 32).
 
@@ -44,6 +44,7 @@ The owner (2026-11-23): the browser suite "slows down development more than the 
 | Fernhill first, one polish tenant per run, 4 workers | **12.4 min** (9.2 main + 3.2 alone) | **all 270 passed** |
 | A Fernhill copy per Fernhill worker (3), the instance-wide specs on a second instance at the same time, 6 workers | 9.3 min | 1 failed (the drawer's animation, sampled frame by frame) |
 | The same, after the fixes below | **9.0 min** (9.0 main, 4.5 alone beside it) | **all 271 passed** |
+| Three in a row after the last fix | **9.2, 9.0, 9.0 min** | all passed, each time |
 
 **What limited each run, measured rather than guessed** (a sampler every 5 s: the instance's CPU in the window, Postgres's CPU, the load, runs queued; and Playwright's JSON report for each test's worker, start and end):
 

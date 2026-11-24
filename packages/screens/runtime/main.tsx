@@ -21,6 +21,7 @@ import {
   AppView,
   helpingPage,
   type PageDataClient,
+  setFrameSource,
   useAddress,
   viewRegistry,
   WidgetReadError,
@@ -39,6 +40,19 @@ interface InterfaceView {
 
 /** The platform's packs: what a page made in the console may hold. */
 const platform = viewRegistry(corePack, labsPack);
+
+// The frames of a tenant's widgets are served at the address this app is: the apps address, or
+// the tenant's own hostname. An instance that serves apps nowhere says so, and draws no frames.
+{
+  const context = appContext();
+  setFrameSource({ origin: window.location.origin, slug: context.tenant.slug });
+  fetch(`${context.api}/instance`)
+    .then((answer) => (answer.ok ? answer.json() : null))
+    .then((instance: { appsAddress?: string } | null) => {
+      if (instance?.appsAddress === "none") setFrameSource(null);
+    })
+    .catch(() => {});
+}
 
 function workspaceApi() {
   const context = appContext();

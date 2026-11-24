@@ -111,3 +111,5 @@ export function themeVariables(theme: FrameTheme): Record<string, string> {
   }
   return variables;
 }
+
+export { payloadProblem } from "./schema.js";

@@ -12,7 +12,7 @@
  */
 
 import type { PageWidget } from "@volvel/manifest";
-import { workspaceViews } from "@volvel/screens";
+import { type FrameSource, setFrameSource, workspaceViews } from "@volvel/screens";
 import {
   compareVersions,
   type DeployedWidget,
@@ -57,6 +57,28 @@ const subscribe = (listener: () => void) => {
   return () => listeners.delete(listener);
 };
 
+/**
+ * Where a tenant widget's frame is served from: the apps address, and the tenant's slug in it.
+ * `null` where the instance serves apps nowhere, so a widget says so instead of waiting.
+ */
+async function frameSourceOf(root: string): Promise<FrameSource | null> {
+  try {
+    const [instance, tenant] = await Promise.all([
+      api.get<{ appsAddress?: "separate" | "console" | "none"; appsUrl?: string | null }>(
+        "/instance",
+      ),
+      api.get<{ slug: string }>(`/tenants/${root.split("/")[2]}`),
+    ]);
+    if (instance.appsAddress === "separate" && instance.appsUrl)
+      return { origin: instance.appsUrl, slug: tenant.slug };
+    if (instance.appsAddress === "console")
+      return { origin: window.location.origin, slug: tenant.slug };
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 /** Makes a workspace's widgets the ones this console offers and draws. */
 export function setWorkspaceWidgets(root: string, deployed: readonly DeployedWidget[]): void {
   state = {
@@ -85,9 +107,13 @@ export function useWorkspaceWidgets(root: string): boolean {
     let live = true;
     // Another workspace's widgets are not this one's while its own are on the way.
     if (state.root !== undefined) resetWorkspaceWidgets();
+    const frames = frameSourceOf(root);
     api.get<WorkspaceWidgets>(`${root}/widgets`).then(
-      (found) => {
-        if (live) setWorkspaceWidgets(root, found.items);
+      async (found) => {
+        const source = await frames;
+        if (!live) return;
+        setFrameSource(source);
+        setWorkspaceWidgets(root, found.items);
       },
       () => {
         if (live) setWorkspaceWidgets(root, []);

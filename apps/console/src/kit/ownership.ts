@@ -28,4 +28,4 @@ export const ownershipMeaning = (ownership: string): string =>
  * since, until `volvel pull`, or `--force`).
  */
 export const takeOverConsequence = (noun: string): string =>
-  `From then on the console manages this ${noun} as files, and you can change it here. A deploy of the repository that still defines it takes it back, and is refused first if you changed it here since, until you run \`volvel pull\` or deploy with \`--force\`. To keep it here, remove its definition from the code.`;
+  `From then on the console manages this ${noun} as files, and you can change it here. A deploy of the repository that still defines it takes it back, and is refused first if you changed it here since, until you run volvel pull, or deploy with --force. To keep it here, remove its definition from the code.`;

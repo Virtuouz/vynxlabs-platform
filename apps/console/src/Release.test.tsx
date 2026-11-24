@@ -306,6 +306,10 @@ test("a Promote step with nothing deployed says so once: no spinner, no retry, P
   }) as HTMLButtonElement;
   expect(promote.disabled).toBe(true);
   expect(screen.getAllByText(/nothing to promote/)).toHaveLength(1);
+  // The From panel does not keep a loading placeholder where the version would be (round 5).
+  expect(screen.queryByText(/Runs\s*v…/)).toBeNull();
+  expect(screen.queryByText("Reading what runs…")).toBeNull();
+  expect(screen.getByText("Nothing is deployed here.")).toBeTruthy();
 });
 
 test("a file that differs from the branch says how: new, removed or changed, and on which side", () => {
@@ -378,6 +382,11 @@ test("Versions is the one list: a repeated version rolls back from its row, and 
   expect(screen.getAllByText("v1")).toHaveLength(1);
   expect(screen.getAllByText("v2")).toHaveLength(1);
   expect(screen.getByText(/deployed 2 times/)).toBeTruthy();
+  // A version's label keeps room of its own in a row that wraps, so a narrow screen puts the rest
+  // under it instead of cutting it to "Promot…" (round 5; layout is not measured in happy-dom).
+  const label = screen.getByText("Version 1");
+  expect(label.className).toContain("min-w-[min(100%,8rem)]");
+  expect(label.className).not.toContain("min-w-0");
   expect(screen.getByText("Not yet run here")).toBeTruthy();
   expect(screen.queryByText("Bundles and rollback")).toBeNull();
   fireEvent.click(buttons[0] as HTMLElement);

@@ -648,7 +648,7 @@ function LedgerStep({ root, workspace }: { root: string; workspace: Workspace })
             {versions.map((row) => (
               <div key={row.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-3">
                 <Mono className="w-12 shrink-0 text-ink">v{row.bundleVersion}</Mono>
-                <span className="min-w-0 flex-1 truncate">
+                <span className="min-w-[min(100%,8rem)] flex-1 truncate">
                   {row.message ?? (row.promotedFromWorkspaceId ? "Promoted" : "No message")}
                 </span>
                 <span className="text-meta text-ink-subtle">
@@ -686,7 +686,7 @@ function LedgerStep({ root, workspace }: { root: string; workspace: Workspace })
             {neverRun.map((one) => (
               <div key={one.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-3">
                 <Mono className="w-12 shrink-0 text-ink">v{one.version}</Mono>
-                <span className="min-w-0 flex-1 text-ink-muted">
+                <span className="min-w-[min(100%,8rem)] flex-1 text-ink-muted">
                   Uploaded {ago(one.createdAt)}, never run here
                 </span>
                 {one.active ? null : (
@@ -772,7 +772,15 @@ function PromoteStep({
             {workspace.name} <EnvTag type="dev" />
           </span>
           <span className="text-meta text-ink-muted">
-            Runs <Mono>v{data?.bundle.version ?? "…"}</Mono>
+            {data ? (
+              <>
+                Runs <Mono>v{data.bundle.version}</Mono>
+              </>
+            ) : preview.error ? (
+              "Nothing is deployed here."
+            ) : (
+              "Reading what runs…"
+            )}
           </span>
         </Panel>
         <ArrowRight

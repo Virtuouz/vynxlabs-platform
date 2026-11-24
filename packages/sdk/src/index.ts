@@ -16,7 +16,17 @@ export type {
 
 import type { DashboardBody, InterfaceBody } from "@volvel/widgets/page";
 
-export type { Logger, RunInfo, ScriptContext } from "./context.js";
+export type {
+  Logger,
+  RunInfo,
+  ScriptContext,
+  VolvelConnections,
+  VolvelEvents,
+  VolvelFlows,
+  VolvelScripts,
+  VolvelTables,
+  VolvelVariables,
+} from "./context.js";
 export type {
   ConnectionTest,
   Connector,

@@ -393,7 +393,10 @@ test("init says how to install the CLI and sign in, and writes a tsconfig (CLI-1
     const created = await cli(["init", dir]);
     expect(created.out).toContain("npm install --global @volvel/cli");
     expect(created.out).toContain("volvel login --url");
-    expect(JSON.parse(await readFile(join(dir, "tsconfig.json"), "utf8")).include).toEqual(["src"]);
+    expect(JSON.parse(await readFile(join(dir, "tsconfig.json"), "utf8")).include).toEqual([
+      "src",
+      ".platform/*.d.ts",
+    ]);
   } finally {
     await rm(join(dir, ".."), { recursive: true });
   }

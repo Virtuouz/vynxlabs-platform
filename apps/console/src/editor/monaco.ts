@@ -57,6 +57,19 @@ for (const [name, content] of Object.entries(libraries)) {
   monaco.typescript.typescriptDefaults.addExtraLib(content, `${sdk}/${name}`);
 }
 
+let envTypes: { dispose(): void } | undefined;
+/**
+ * Gives the SDK the workspace's names: its tables, events, variables and connections, as the
+ * platform writes them for the workspace. Replaces what was given before.
+ */
+export function setEnvTypes(text: string) {
+  envTypes?.dispose();
+  envTypes = monaco.typescript.typescriptDefaults.addExtraLib(
+    text,
+    "file:///.platform/volvel-env.d.ts",
+  );
+}
+
 // The SDK hands scripts zod as `z`, so its types come too.
 const zodRoot = "../../../../packages/sdk/node_modules/zod/";
 const zodTypes = import.meta.glob<string>(

@@ -14,6 +14,12 @@ export interface CodeEditorProps {
   readOnly?: boolean;
   /** A CSS length. */
   height?: string;
+  /**
+   * For code that uses the SDK: declarations that give it the workspace's own names (its tables,
+   * events, variables and connections), so that `ctx.table("orders")` completes and is checked.
+   * The same for every editor on the page: the last given are used.
+   */
+  declarations?: string | undefined;
   /** A line to scroll to and select when the document opens, such as where something is defined. */
   revealLine?: number | undefined;
   /**
@@ -91,6 +97,7 @@ export function CodeEditor({
   path,
   readOnly = false,
   height = "28rem",
+  declarations,
   revealLine,
   onRun,
   onSave,
@@ -155,6 +162,16 @@ export function CodeEditor({
   /** Replaces the text with what is given, as an undoable step. Set once the editor is there. */
   const replace = useRef<(next: string, select?: { start: number; end: number }) => void>(() => {});
 
+  useEffect(() => {
+    if (declarations === undefined || plainEditorOnly()) return;
+    let gone = false;
+    import("./monaco.ts").then(({ setEnvTypes }) => {
+      if (!gone) setEnvTypes(declarations);
+    });
+    return () => {
+      gone = true;
+    };
+  }, [declarations]);
   useEffect(() => {
     let gone = false;
     let cleanup = () => {};

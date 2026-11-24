@@ -285,6 +285,12 @@ export const api = {
   put: <T>(path: string, body?: unknown) => call<T>("PUT", path, body),
   patch: <T>(path: string, body: unknown) => call<T>("PATCH", path, body),
   delete: <T>(path: string) => call<T>("DELETE", path),
+  /** Reads an answer that is text, such as a declaration file. */
+  text: async (path: string): Promise<string> => {
+    const response = await apiFetch(path, { method: "GET" });
+    if (!response.ok) await read<unknown>(response);
+    return response.text();
+  },
   /** Sends a file's bytes as they are. */
   upload: async <T>(path: string, file: File, method: "POST" | "PUT" = "POST"): Promise<T> => {
     const response = await apiFetch(path, {

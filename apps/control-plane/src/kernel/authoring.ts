@@ -141,6 +141,39 @@ async function activeBundle(kernel: Kernel, db: Db | Trx, workspaceId: string) {
   return row ? { ...row, content: await loadBundle(kernel, row) } : undefined;
 }
 
+/**
+ * What the workspace is running, code-managed and console-managed, with its saved drafts laid
+ * over it by key: the definitions a script written there may name. A draft that deletes a
+ * resource takes it out. Only what the type declarations are written from is read.
+ */
+export async function namedResources(
+  kernel: Kernel,
+  db: Db | Trx,
+  workspaceId: string,
+): Promise<{ kind: string; path: string; body: Record<string, unknown> }[]> {
+  const active = await activeBundle(kernel, db, workspaceId);
+  const byKey = new Map<string, { kind: string; path: string; body: Record<string, unknown> }>();
+  for (const manifest of active?.content.manifests ?? []) {
+    byKey.set(keyOf(manifest), { kind: manifest.kind, path: manifest.path, body: manifest.body });
+  }
+  const drafts = await db
+    .selectFrom("resource_draft")
+    .select(["key", "kind", "path", "body", "deleted"])
+    .where("workspace_id", "=", workspaceId)
+    .execute();
+  for (const draft of drafts) {
+    if (draft.deleted) byKey.delete(draft.key);
+    else {
+      byKey.set(draft.key, {
+        kind: draft.kind,
+        path: draft.path,
+        body: draft.body as Record<string, unknown>,
+      });
+    }
+  }
+  return [...byKey.values()];
+}
+
 /** A base for a workspace with no bundle yet: no resources and no code. */
 const emptyBase = (): UnsignedBundle => ({
   formatVersion: 1,

@@ -120,7 +120,10 @@ test("round 4 and 5: a status is never cut, whatever its label or its detail", (
     expect(part.className, part.textContent ?? "").not.toMatch(
       /truncate|overflow-hidden|text-ellipsis/,
     );
-    expect(part.className).toContain("min-w-0");
+    // A one-word label does not shrink below its word (a table cell that may break anywhere gave "Succeeded" 71 of its 73 px).
+    if (part.hasAttribute("data-label") && !/\s/.test(part.textContent ?? "")) {
+      expect(part.className).toContain("shrink-0");
+    } else expect(part.className).toContain("min-w-0");
   }
   const pills = [...container.querySelectorAll<HTMLElement>("[data-state-pill]")];
   for (const pill of pills) expect(pill.className).toContain("flex-wrap");

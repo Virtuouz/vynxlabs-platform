@@ -173,7 +173,8 @@ export function StatePill({
         />
         <span
           data-label=""
-          className={`min-w-0 break-words ${oneWord ? "whitespace-nowrap" : ""} ${tone}`}
+          // A word is never broken, and it does not shrink: a table cell that may break anywhere would otherwise give it less than its width (round 6).
+          className={`break-words ${oneWord ? "shrink-0 whitespace-nowrap" : "min-w-0"} ${tone}`}
         >
           {children ?? word}
         </span>

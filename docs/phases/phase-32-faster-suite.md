@@ -85,3 +85,5 @@ The owner (2026-11-23): the browser suite "slows down development more than the 
 For daily work, the tags and `pnpm e2e:changed` run only what a change touches.
 
 **Polish gate.** Not applicable: no screen a person sees changes in this phase.
+
+**Full suites at the end.** `pnpm e2e`: three full runs in a row passed (above). `pnpm test`: 4979 of 4990 passed. The 7 failures are the same 7 that failed when the whole unit suite ran at the end of phase 31: `DraftBasis`, `Queries`, `MarkdownEditor` and `TextOnPage`, all editor tests with timing. Run alone, all 28 tests of those files pass. They fail only under the full suite's load and are worth the same look as the browser suite's timing tests.

@@ -13,6 +13,7 @@ By the end you will have a Table on an app page that reads the Fernhill appointm
 - You are signed in to the console and the **Sandbox** workspace is open. The App Builder needs `resource:write` or `interface:write` in the workspace; without one it opens read only. In a production workspace it is always read only: you change an app in a dev workspace and it arrives by promotion. See the [permissions reference](../../../administer/reference/permissions).
 - An app with a page. To make one, open **Build**, then **App Builder**, press **Make an app**, give it a name and an address, and press **Make the app**. It starts with one empty page.
 - To read a table the widget's reader needs `data:read`; hiding a widget is not security (see [How widgets get their data](../../explanation/widgets/how-widgets-get-their-data)).
+- Fernhill is set up: see [Set up the Fernhill example](../../../start/how-to/example/set-up-the-fernhill-example).
 
 ## Show rows in a Table
 

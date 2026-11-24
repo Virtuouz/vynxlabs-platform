@@ -16,6 +16,7 @@ The CLI has no command for this. The console does it by hand; the API does it fr
 - An API key whose owner holds `connection:write`, `secret:write` and `variable:write` in the workspace. A Developer and a Workspace admin have all three. Make a key under **Account**, in **API keys**, or from a service account's page. See [Who can change what in Configure](../../../administer/reference/configure/who-can-change-what).
 - Node 24 or later, for `fetch` and top-level `await`.
 - The instance's address, and the credential and values to set. Fernhill's stand-in is at `http://127.0.0.1:4020`.
+- Fernhill is set up: see [Set up the Fernhill example](../../../start/how-to/example/set-up-the-fernhill-example).
 
 ## Write the script
 

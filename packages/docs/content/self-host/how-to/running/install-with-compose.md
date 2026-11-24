@@ -61,6 +61,7 @@ Next:
 
 - [Put a proxy in front](put-a-proxy-in-front) before anyone else reaches it.
 - [Back up an instance](back-up-an-instance) and try a [restore](restore-an-instance).
+- To try the instance with a demo tenant, [Set up the Fernhill example](../../../start/how-to/example/set-up-the-fernhill-example).
 - To use your own database or store, see [Use your own Postgres](use-your-own-postgres) and [Use your own object store](use-your-own-object-store).
 
 ## If it does not work

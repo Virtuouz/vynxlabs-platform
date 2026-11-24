@@ -12,6 +12,7 @@ By the end you will have an app in the **App Builder** list with a page that lis
 
 - You are signed in to the console, in a dev workspace such as Fernhill's Sandbox. A production workspace is read only for apps. You need `resource:write` or `interface:write` there. A tenant admin and the App maintainer role have it. See the [permissions reference](../../../administer/reference/permissions).
 - The workspace has a table to read. This page uses Fernhill's `appointments`.
+- Fernhill is set up: see [Set up the Fernhill example](../../../start/how-to/example/set-up-the-fernhill-example).
 
 ## Steps
 

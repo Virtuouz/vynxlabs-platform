@@ -14,6 +14,7 @@ By the end you will have a connector or a trigger source deployed in a dev works
 - You need `resource:write`, `code:write` and `deployment:write` in the workspace. See the [permissions reference](../../../administer/reference/permissions).
 - The tenant's switch **Code in the console** is on. If it is off, saving is refused with "Writing code in the console is turned off for this tenant. Code is deployed from its repository. Someone who may change the tenant can turn it on under Repository." A tenant admin turns it on under **Repository**.
 - You know what the extension is for. If you are not sure you need one, read [What an extension is](../../../develop/explanation/extensions/what-an-extension-is) first. HTTP, mail and OAuth 2.0 connections need none.
+- Fernhill is set up: see [Set up the Fernhill example](../../../start/how-to/example/set-up-the-fernhill-example).
 
 ## Write a connector
 

@@ -13,6 +13,7 @@ By the end you will have an app that was written in the tenant's repository open
 - An app that the repository manages. The **App Builder** list says "Managed in the repository: the app is removed there." in its last column. Fernhill's Clinic operations is one.
 - A dev workspace, and `resource:write` or `interface:write` there. A production workspace is read only for every app.
 - Be sure you want this. After the next publish the console is where the app is changed, and changes made in the repository no longer reach it.
+- Fernhill is set up: see [Set up the Fernhill example](../../../start/how-to/example/set-up-the-fernhill-example).
 
 ## Steps
 

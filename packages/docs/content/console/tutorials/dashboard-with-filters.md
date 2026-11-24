@@ -9,7 +9,7 @@ You will have a dashboard of your own with a figure, a chart and a table of appo
 ## Before you start
 
 - You can sign in to the console as Maya Brooks, `maya.brooks@fernhill.example`, a tenant admin of Fernhill. The seeded password is `fernhill-demo-2026`. Reading the rows needs `data:read`. A dashboard shows each person the rows they may read.
-- Fernhill is set up, with its Sandbox and the table `appointments`.
+- Fernhill is set up, with its Sandbox and the table `appointments`. See [Set up the Fernhill example](../../start/how-to/example/set-up-the-fernhill-example).
 - A browser at least as wide as a laptop screen.
 
 :::steps

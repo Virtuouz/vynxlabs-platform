@@ -14,6 +14,7 @@ By the end your working copy has run on a worker in a dev workspace, with that w
 - The workspace is a dev workspace. A production workspace is refused: `cli-live is a production workspace. A local build is tried in a dev workspace.`
 - You hold, in that workspace, `bundle:write`, `run:write` and `code:write`; for a flow also `flow_run:write`. A workspace admin holds all of them. See the [permissions reference](../../../administer/reference/permissions).
 - The tenant has **Code in the console** on. Without it the instance answers 403 `console_code_off`: "Writing code in the console is turned off for this tenant. Code is deployed from its repository. Someone who may change the tenant can turn it on under Repository." The switch is on the tenant's **Repository** page, under **Code in the console**. It covers a test run of a build you upload as well as code written in the console.
+- Fernhill is set up: see [Set up the Fernhill example](../../../start/how-to/example/set-up-the-fernhill-example).
 
 ## Run it
 

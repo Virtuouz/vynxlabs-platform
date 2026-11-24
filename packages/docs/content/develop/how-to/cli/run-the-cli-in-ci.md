@@ -17,6 +17,7 @@ The commands below were run as written from a shell with `CI`, `VOLVEL_URL` and 
 - The CLI can be installed in the job. Nothing is published to npm yet: until it is, the job needs the tarballs from [Install the command line](install-the-cli) in a place it can reach. After a release, `npm install --global @volvel/cli` does it.
 - A `package-lock.json` committed in the repository: `npm ci` refuses a folder without one, and `volvel init` does not write it. `npm install` makes it.
 - The repository's secrets `VOLVEL_URL` and `VOLVEL_TOKEN`: the address of the instance, and the key.
+- Fernhill is set up: see [Set up the Fernhill example](../../../start/how-to/example/set-up-the-fernhill-example).
 
 ## The pipeline
 

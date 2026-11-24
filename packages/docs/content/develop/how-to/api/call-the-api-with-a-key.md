@@ -13,6 +13,7 @@ By the end you will have made a key, read your own account with it, and revoked 
 - You are a member of the tenant, and the instance's address is in `VOLVEL_URL`, for example `https://volvel.example.com`. Every route starts with `/api/v1`.
 - Any member may make a key for themselves. A key acts as its owner, with the permissions its owner holds, so a key can do nothing its owner could not. See [how the API knows who is calling](../../explanation/api/how-the-api-knows-who-is-calling).
 - A key for a program, not a person, belongs to a service account: you need `service_account:write` in the tenant. See the [service accounts screen](../../../administer/reference/screens/service-accounts).
+- Fernhill is set up: see [Set up the Fernhill example](../../../start/how-to/example/set-up-the-fernhill-example).
 
 ## Make a key and use it
 

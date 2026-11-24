@@ -13,6 +13,7 @@ By the end you will have started a script run and a flow run with an idempotency
 - A key and the instance's address, as in [Call the API with an API key](call-the-api-with-a-key). In the examples `$WS` is `$VOLVEL_URL/api/v1/tenants/<tenant id>/workspaces/<workspace id>`.
 - A script and a flow in the workspace. The examples use Fernhill's `appointments/free-times` and `billing/chase-unpaid`.
 - Starting a script needs `run:write`, at the workspace or at the script. Starting a flow needs `flow_run:write`. A guest of an app cannot start either (403).
+- Fernhill is set up: see [Set up the Fernhill example](../../../start/how-to/example/set-up-the-fernhill-example).
 
 ## Send the request with a key
 

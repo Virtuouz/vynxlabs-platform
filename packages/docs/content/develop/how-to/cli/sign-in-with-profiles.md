@@ -12,6 +12,7 @@ By the end the same machine is signed in to two instances, and each command says
 
 - An API key for each instance, made under **Account** in that instance's console: **API keys**, then **Create API key**. The key acts as you, with your permissions in that instance.
 - The key begins `vxk_`.
+- Fernhill is set up: see [Set up the Fernhill example](../../../start/how-to/example/set-up-the-fernhill-example).
 
 ## Sign in, with and without a profile
 

@@ -14,6 +14,7 @@ By the end a script will have called an API through a connection, signed in with
 - A dev workspace to try things in. This page calls it `try-it` in the tenant `fernhill`. Do not use a workspace whose resources you want to keep: a deploy makes the workspace match the repository.
 - You are signed in to the console as someone with `connection:write`, `secret:write` and `variable:write` in that workspace, such as a Workspace admin or a Developer.
 - Fernhill's stand-in for its supplier is running: `pnpm stand-ins` in `examples/fernhill`. It answers at `http://127.0.0.1:4020` and accepts the token `vs_demo_51be22`. Open that address to see the orders it received.
+- Fernhill is set up: see [Set up the Fernhill example](../../../start/how-to/example/set-up-the-fernhill-example).
 
 ## Write and run the script
 

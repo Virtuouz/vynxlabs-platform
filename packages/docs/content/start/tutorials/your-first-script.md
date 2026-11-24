@@ -11,6 +11,7 @@ You will have a script that adds up a list of amounts, a version of it deployed 
 - You can sign in to the console as an operator admin of the instance. Making a tenant is an operator's act.
 - The instance has a worker, a process that runs scripts. A worker the instance starts for itself counts. If there is none, the first step of the workspace's **First steps** list, **A worker to run code**, stays open and a run waits.
 - A browser at least as wide as a laptop screen.
+- Fernhill is set up: see [Set up the Fernhill example](../../start/how-to/example/set-up-the-fernhill-example).
 
 :::steps
 1. **Make a tenant.** Sign in as the operator admin. The first screen is **Instance**, with the list **Tenants**. (If you already belong to a tenant, the console opens in it: choose **Instance** in the narrow bar on the left.) Press **Create tenant**. In **Name** type `Tut First`. In **Slug** type `tut-first`. Leave **Make me a member, as tenant admin** checked. Press **Create tenant**. The tenant opens on its overview, and under **AT A GLANCE** it shows **Workspaces** 0 and **Members** 1. You are inside as a member, so you do not need an access grant.

@@ -13,6 +13,7 @@ By the end the tables, flows and other resources someone made in the console are
 - You are signed in and the repository is a git repository you can commit to.
 - You hold `resource:read` in the workspace, on the whole workspace. The instance refuses `volvel pull` to someone who holds it for only some kinds. A workspace admin holds it. See the [permissions reference](../../../administer/reference/permissions).
 - Why it matters: the first resource file in a repository makes a deploy speak for all of a workspace's console resources, so the ones it has no file for are deleted. See [Preview and deploy a repository](deploy-a-repository).
+- Fernhill is set up: see [Set up the Fernhill example](../../../start/how-to/example/set-up-the-fernhill-example).
 
 ## Pull
 

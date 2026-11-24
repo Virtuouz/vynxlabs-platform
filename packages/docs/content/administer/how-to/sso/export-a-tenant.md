@@ -13,6 +13,7 @@ By the end you have a file with everything the tenant has, sealed where it must 
 - You hold `export:write` on the tenant.
 - A passphrase of at least 12 characters, which you will pass on separately from the file. It is not stored: without it the secrets and members' passwords cannot be read.
 - Room for the file. History can make it much larger.
+- Fernhill is set up: see [Set up the Fernhill example](../../../start/how-to/example/set-up-the-fernhill-example).
 
 ## Steps
 

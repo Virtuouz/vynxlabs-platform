@@ -9,7 +9,7 @@ You will have a published app with one page, a table of Fernhill's appointments 
 ## Before you start
 
 - You can sign in to the console as Maya Brooks, `maya.brooks@fernhill.example`, a tenant admin of Fernhill. Making and publishing an app needs `resource:write` and `deployment:write`, which a tenant admin has. The seeded password is `fernhill-demo-2026`.
-- Fernhill is set up, and its Sandbox is a :term[dev workspace]{id=dev-workspace}. The app reads the table `appointments`.
+- Fernhill is set up, and its Sandbox is a :term[dev workspace]{id=dev-workspace}. The app reads the table `appointments`. See [Set up the Fernhill example](../../start/how-to/example/set-up-the-fernhill-example).
 - A browser at least as wide as a laptop screen.
 
 :::steps

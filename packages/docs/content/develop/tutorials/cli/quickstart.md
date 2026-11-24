@@ -10,7 +10,7 @@ You will have a repository on your machine with one script in it, the same scrip
 
 - The `volvel` command is installed. See [Install the command line](../../how-to/cli/install-the-cli). Nothing is published yet, so that page installs from tarballs.
 - Node 24 or later.
-- You can sign in to the console as Maya Brooks, `maya.brooks@fernhill.example`, the tenant admin of Fernhill, on an instance where Fernhill is set up. The instance's address is written `<instance>` below; the examples use `http://localhost:8091`. A tenant admin may do everything in this tutorial. See the [permissions reference](../../../administer/reference/permissions) for what each step needs.
+- You can sign in to the console as Maya Brooks, `maya.brooks@fernhill.example`, the tenant admin of Fernhill, on an instance where Fernhill is set up. The instance's address is written `<instance>` below; the examples use `http://localhost:8091`. A tenant admin may do everything in this tutorial. See the [permissions reference](../../../administer/reference/permissions) for what each step needs. See [Set up the Fernhill example](../../../start/how-to/example/set-up-the-fernhill-example).
 - The instance has a worker that runs scripts. If it has none, a run waits and never starts.
 - A terminal and a browser.
 

@@ -9,7 +9,7 @@ You will have a run that failed because an outside service was down, you will kn
 ## Before you start
 
 - You can sign in to the console as Maya Brooks, `maya.brooks@fernhill.example`, a tenant admin of Fernhill. The seeded password is `fernhill-demo-2026`. Starting a run needs `run:write`, and running one again needs the same.
-- Fernhill is set up, its Sandbox has the script `reminders/send`, and Fernhill's outside systems, its stand-ins, are running on the machine where you work. They answer at `http://127.0.0.1:4020`. TextLine is the one that sends texts. A command line on that machine can make it fail, and the page gives the two commands.
+- Fernhill is set up, its Sandbox has the script `reminders/send`, and Fernhill's outside systems, its stand-ins, are running on the machine where you work. They answer at `http://127.0.0.1:4020`. TextLine is the one that sends texts. A command line on that machine can make it fail, and the page gives the two commands. See [Set up the Fernhill example](../../start/how-to/example/set-up-the-fernhill-example).
 - A browser at least as wide as a laptop screen.
 
 :::steps

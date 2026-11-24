@@ -13,6 +13,7 @@ By the end you will have a query that counts Fernhill's visits by clinic from a 
 - You are signed in to the console and a dev workspace is open, such as Fernhill's Sandbox.
 - You hold `sql:read` to write and run SQL, and `resource:write` to keep a query. `sql:read` is held by the roles `tenant_admin`, `workspace_admin` and `developer`; a wildcard does not give it. See [SQL and data source permissions](../../../administer/reference/queries/sql-and-source-permissions).
 - The tables you will read exist, and you may read their rows (`data:read`). Fernhill has `appointments`.
+- Fernhill is set up: see [Set up the Fernhill example](../../../start/how-to/example/set-up-the-fernhill-example).
 
 ## Write the query and run it
 

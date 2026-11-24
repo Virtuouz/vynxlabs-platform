@@ -9,7 +9,7 @@ You will have a service account that an agent can sign in as, one script offered
 ## Before you start
 
 - You can sign in to the console as Maya Brooks, `maya.brooks@fernhill.example`, a tenant admin of Fernhill. The seeded password is `fernhill-demo-2026`. Making a service account, a key and an offer are tenant admin acts.
-- Fernhill is set up, with its Sandbox workspace and the deployed script `agent/clinic-day`.
+- Fernhill is set up, with its Sandbox workspace and the deployed script `agent/clinic-day`. See [Set up the Fernhill example](../../start/how-to/example/set-up-the-fernhill-example).
 - A terminal with `curl` and `python3` on the machine where you work, on the same network as the instance. The command lines write the instance as `http://localhost:8091`: use your own address.
 - A browser at least as wide as a laptop screen.
 

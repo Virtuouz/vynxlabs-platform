@@ -12,6 +12,7 @@ By the end a Chart on an app page counts Fernhill appointments, shown first as b
 
 - An app with a page, open in the App Builder of the **Sandbox** workspace. You need `resource:write` or `interface:write`.
 - The list of chart types and every setting are in the [Chart reference](../../../develop/reference/widgets/chart).
+- Fernhill is set up: see [Set up the Fernhill example](../../../start/how-to/example/set-up-the-fernhill-example).
 
 ## Add the chart and say what it counts
 

@@ -12,6 +12,7 @@ By the end a docs app of your repository is served on your computer, drawn from 
 
 - A repository whose pages are files and that has a docs app: see [Keep documentation in the repository](keep-documentation-in-the-repository).
 - You are signed in with `volvel login`, and the tenant and the workspace exist. `volvel dev` talks to that workspace as you.
+- Fernhill is set up: see [Set up the Fernhill example](../../../start/how-to/example/set-up-the-fernhill-example).
 
 ## Steps
 

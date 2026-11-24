@@ -19,6 +19,7 @@ import {
   widgetFlows,
   widgetTables,
 } from "./page.js";
+import { BUILTIN_ROLE_NAMES } from "./permissions.js";
 import { KindRegistry, validateJson } from "./registry.js";
 import { checkTable, type TableBody } from "./table.js";
 
@@ -135,7 +136,14 @@ interface ScriptUses {
 /** "a" or "an", by how the kind's name is said. */
 const article = (kind: string) => (/^[aeiou]/.test(kind) ? "an" : "a");
 
-export function checkBundleManifests(manifests: BundleManifest[]): string[] {
+export function checkBundleManifests(
+  manifests: BundleManifest[],
+  /**
+   * `tenantRoles`: the names of the roles the tenant has made, which a bundle's bindings may name
+   * too. A caller that does not know them leaves it out, and a name that may be one is let through.
+   */
+  known: { tenantRoles?: readonly string[] } = {},
+): string[] {
   const problems: string[] = [];
   const byPath = new Map<string, BundleManifest>();
   /** Paths used twice. That is reported once; references to them are not reported again. */
@@ -226,6 +234,32 @@ export function checkBundleManifests(manifests: BundleManifest[]): string[] {
         `${from.path} (${from.kind}): ${field} refers to "${path}", which is not ${article(kind)} ${kind} in this repository.`,
       );
     }
+  };
+
+  /** A binding names a role by its name: a built-in one, one of the repository, or the tenant's. */
+  const roleNames = new Map(
+    manifests
+      .filter((one) => one.kind === "role")
+      .map((one) => [(one.body as { name?: string }).name, one.path] as const),
+  );
+  const checkRole = (binding: BundleManifest) => {
+    const name = (binding.body as { role?: unknown }).role;
+    if (typeof name !== "string") return;
+    const field = `${binding.path} (binding): /body/role refers to "${name}"`;
+    const defined = byPath.get(name);
+    const named = (defined?.body as { name?: string } | undefined)?.name;
+    if (defined?.kind === "role" && named !== name) {
+      problems.push(
+        `${field}, which is a role's path. A binding names a role by its name: "${named}".`,
+      );
+      return;
+    }
+    if (BUILTIN_ROLE_NAMES.includes(name) || roleNames.has(name)) return;
+    if (known.tenantRoles?.includes(name)) return;
+    if (known.tenantRoles === undefined) return;
+    problems.push(
+      `${field}, which is not a role in this repository, a built-in role or one of the tenant's.`,
+    );
   };
 
   for (const manifest of manifests) {
@@ -408,6 +442,7 @@ export function checkBundleManifests(manifests: BundleManifest[]): string[] {
         problems.push(`${manifest.path} (${manifest.kind}): ${issue.path} ${issue.message}`);
       }
     }
+    if (manifest.kind === "binding") checkRole(manifest);
     if (manifest.kind === "app") {
       expect(
         manifest,

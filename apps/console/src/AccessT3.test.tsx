@@ -178,8 +178,14 @@ test("p31 fc: an attribute name that is not usable is refused at its field, in w
     target: { value: "Bad Name" },
   });
   expect(await screen.findByText(/Bad Name cannot be a name/)).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  // The person is on Save when they press it, as in a browser.
+  const save = screen.getByRole("button", { name: "Save" });
+  save.focus();
+  fireEvent.click(save);
   expect(calls.some((c) => c.method === "PATCH")).toBe(false);
+  // Round 5: the refusal takes the keyboard to the field that has the message, not leaves it on Save.
+  const field = screen.getByLabelText("Name", { selector: '[name="name-0"]' });
+  await waitFor(() => expect(document.activeElement).toBe(field));
 });
 
 test("ACC-MP8: a group can say what it is for when made and afterwards", async () => {

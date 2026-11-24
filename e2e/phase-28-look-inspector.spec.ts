@@ -1,5 +1,6 @@
 import { mkdirSync } from "node:fs";
 import { signInAs } from "./as.ts";
+import { fernhillTenant } from "./fernhill.ts";
 import { expect, type Locator, type Page, test } from "./test.ts";
 
 /**
@@ -16,7 +17,7 @@ import { expect, type Locator, type Page, test } from "./test.ts";
  * Pictures go to `E2E_LOOK_SHOTS` when it is set (light and dark, at 1440, 768 and 390).
  */
 
-const TENANT = process.env.E2E_FERNHILL_TENANT ?? "fernhill";
+const TENANT = fernhillTenant();
 const SANDBOX = process.env.E2E_FERNHILL_SANDBOX ?? "sandbox";
 const OWNER = "maya.brooks@fernhill.example";
 const stamp = Date.now().toString(36);
@@ -170,7 +171,7 @@ test.beforeAll(async ({ browser }) => {
   test.setTimeout(300_000);
   owner = await (await browser.newContext({ viewport: { width: 1440, height: 1000 } })).newPage();
   await signInAs(owner, OWNER);
-  const tenants = await ok(owner, "GET", "/tenants?limit=200");
+  const tenants = await ok(owner, "GET", `/tenants?search=${TENANT}&limit=200`);
   const tenant = tenants.items.find((one: { slug: string }) => one.slug === TENANT);
   test.skip(!tenant, `No tenant ${TENANT}: set up the Fernhill example first.`);
   const workspaces = (await ok(owner, "GET", `/tenants/${tenant.id}/workspaces`)).items;

@@ -1,4 +1,5 @@
 import { signInAs } from "./as.ts";
+import { fernhillTenant } from "./fernhill.ts";
 import { type Browser, expect, type Page, type Request, test } from "./test.ts";
 
 /**
@@ -23,7 +24,7 @@ import { type Browser, expect, type Page, type Request, test } from "./test.ts";
  */
 
 const PASSWORD = process.env.E2E_FERNHILL_PASSWORD ?? "fernhill-demo-2026";
-const TENANT = process.env.E2E_FERNHILL_TENANT ?? "fernhill";
+const TENANT = fernhillTenant();
 const SANDBOX = process.env.E2E_FERNHILL_SANDBOX ?? "sandbox";
 const WORKSPACE = process.env.E2E_FERNHILL_WORKSPACE ?? "clinics";
 const OWNER = "maya.brooks@fernhill.example";
@@ -106,7 +107,7 @@ let L: string;
 test.beforeAll(async ({ browser }) => {
   test.setTimeout(120_000);
   owner = await signedIn(browser, OWNER);
-  const tenants = await ok(owner, "GET", "/tenants?limit=200");
+  const tenants = await ok(owner, "GET", `/tenants?search=${TENANT}&limit=200`);
   tenant = tenants.items.find((one: { slug: string }) => one.slug === TENANT);
   test.skip(!tenant, `No tenant ${TENANT}: set up the Fernhill example first.`);
   const workspaces = (await ok(owner, "GET", `/tenants/${tenant.id}/workspaces`)).items;

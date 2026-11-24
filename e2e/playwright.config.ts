@@ -101,11 +101,19 @@ function projects() {
   const phase = process.env.E2E_PHASE;
   const main = [
     { name: "setup", testMatch: "auth.setup.ts" },
-    // Fernhill's specs share its Sandbox (its apps, rows and feedback table): one worker, the
-    // files one after the other, beside the specs that make tenants of their own. Listed first:
+    // Fernhill's specs change its Sandbox (its apps, rows and feedback table): a worker to a copy,
+    // the files one after the other on each, beside the specs that make tenants of their own. Listed first:
     // Playwright hands out work in the order of the projects, and this chain is the longest, so
     // it starts at once rather than after every parallel spec has been taken.
-    { name: "fernhill", ...only([...fernhill, ...feedback]), dependencies: ["setup"], workers: 1 },
+    // One worker for each copy of Fernhill (E2E_FERNHILL_COPIES, three by default): the copies are
+    // made by `fernhill-copies`, which runs only when this project has tests to run.
+    { name: "fernhill-copies", testMatch: "fernhill-copies.setup.ts", dependencies: ["setup"] },
+    {
+      name: "fernhill",
+      ...only([...fernhill, ...feedback]),
+      dependencies: ["setup", "fernhill-copies"],
+      workers: Number(process.env.E2E_FERNHILL_COPIES ?? 3),
+    },
     { name: "parallel", ...only(parallel), dependencies: ["setup"] },
   ];
   // One worker, the files one after the other.

@@ -22,7 +22,12 @@ const ADMIN = {
 };
 const STAND_INS = process.env.STAND_INS ?? "http://127.0.0.1:4020";
 const PASSWORD = "fernhill-demo-2026";
-const SLUG = "fernhill";
+// FERNHILL_SLUG makes a copy of Fernhill beside the first (the browser suite runs on several, one
+// per worker). People are instance-wide accounts: a copy adds the existing Maya, Rowan... to
+// itself, with their one password. A copy's hostname is `<slug>.localhost`, and it writes no
+// demo.json (the first copy's file is the one that says what to sign in with).
+const SLUG = process.env.FERNHILL_SLUG ?? "fernhill";
+const IS_COPY = SLUG !== "fernhill";
 const PAYFERN_SECRET = "whsec_fernhill_demo";
 const LOCUMS = 60;
 const SUPPLIERS = 220;
@@ -102,7 +107,9 @@ if (!ready?.ok) {
 step(`Signing in to ${URL_} as the operator`);
 const admin = await session(ADMIN.email, ADMIN.password);
 
-const existing = (await admin.get("/tenants?limit=200")).items.find((one) => one.slug === SLUG);
+const existing = (await admin.get(`/tenants?search=${SLUG}&limit=200`)).items.find(
+  (one) => one.slug === SLUG,
+);
 if (existing) {
   if (!process.argv.includes("--reset")) {
     console.error(`A tenant "${SLUG}" exists. Run again with --reset to delete it and start over.`);
@@ -142,7 +149,10 @@ if (existing) {
 // ----- The tenant and its people -----
 
 step("Creating the tenant, and opening operator access to set it up");
-const tenant = await admin.post("/tenants", { slug: SLUG, name: "Fernhill Veterinary Group" });
+const tenant = await admin.post("/tenants", {
+  slug: SLUG,
+  name: IS_COPY ? `Fernhill Veterinary Group (${SLUG})` : "Fernhill Veterinary Group",
+});
 const T = `/tenants/${tenant.id}`;
 // Before a grant the operator sees nothing inside the tenant. The built-in admin role has a fixed ID.
 let builtin = { tenant_admin: "00000000-0000-7000-8000-000000000002" };
@@ -179,9 +189,24 @@ const PEOPLE = [
     about: "Clinical director",
   },
 ];
+/**
+ * Adds a member: the account is made if the email has none, else the existing person is added
+ * (the password is then ignored). Copies seeded at once may both try to make the same new
+ * account, so the one that loses asks again and finds it.
+ */
+async function addMember(body) {
+  for (let tries = 0; ; tries += 1) {
+    try {
+      return await admin.post(`${T}/members`, body);
+    } catch (error) {
+      if (tries >= 5) throw error;
+      await sleep(300 + Math.random() * 700);
+    }
+  }
+}
 const members = {};
 for (const person of PEOPLE) {
-  const created = await admin.post(`${T}/members`, {
+  const created = await addMember({
     email: person.email,
     name: person.name,
     password: PASSWORD,
@@ -200,7 +225,7 @@ for (let from = 1; from <= LOCUMS; from += 10) {
   await Promise.all(
     Array.from({ length: Math.min(10, LOCUMS - from + 1) }, (_, i) => {
       const number = String(from + i).padStart(2, "0");
-      return admin.post(`${T}/members`, {
+      return addMember({
         email: `locum.${number}@fernhill.example`,
         name: `Locum ${number}`,
         password: PASSWORD,
@@ -502,7 +527,7 @@ await admin.post(`${D}/rows/supplier_contacts`, {
 
 // A doc writer: writes and deploys documentation in the sandbox, and nothing else there.
 step("Adding Sam Reyes, who writes documentation in the sandbox");
-const sam = await admin.post(`${T}/members`, {
+const sam = await addMember({
   email: "sam.reyes@fernhill.example",
   name: "Sam Reyes",
   password: PASSWORD,
@@ -805,7 +830,7 @@ step("A portal hostname for everything, and the tenant's portal settings");
 const domain = await admin.post(`${T}/domains`, {
   workspaceId: prod.id,
   app: "",
-  hostname: "fernhill.localhost",
+  hostname: IS_COPY ? `${SLUG}.localhost` : "fernhill.localhost",
 });
 await admin.patch(`${T}/domains/${domain.id}`, { enabled: true });
 await admin.put(`${T}/portal`, { signUp: false });
@@ -837,7 +862,7 @@ const demo = {
     performance: `${URL_}/apps/${SLUG}/clinics/performance/`,
     operations: `${URL_}/apps/${SLUG}/clinics/operations/`,
     portal: `${URL_}/portal/${SLUG}/`,
-    oneHostname: `${URL_.replace("localhost", "fernhill.localhost")}/`,
+    oneHostname: `${URL_.replace("localhost", `${SLUG}.localhost`)}/`,
   },
   agent: {
     mcp: `${URL_}/api/v1${P}/mcp`,
@@ -846,9 +871,13 @@ const demo = {
   },
   standIns: `${STAND_INS}/`,
 };
-mkdirSync(join(HERE, ".platform"), { recursive: true });
-writeFileSync(join(HERE, ".platform/demo.json"), `${JSON.stringify(demo, null, 2)}\n`);
-console.log(`\nDone. Sign-ins and addresses are in ${join(HERE, ".platform/demo.json")}`);
+if (IS_COPY) {
+  console.log(`\nDone. The copy "${SLUG}" is made; demo.json is the first Fernhill's, unchanged.`);
+} else {
+  mkdirSync(join(HERE, ".platform"), { recursive: true });
+  writeFileSync(join(HERE, ".platform/demo.json"), `${JSON.stringify(demo, null, 2)}\n`);
+  console.log(`\nDone. Sign-ins and addresses are in ${join(HERE, ".platform/demo.json")}`);
+}
 console.log(
   `Who may mark an invoice paid: Practice managers (Maya Brooks, Rowan Ellis) and Billing (Rowan Ellis, Devi Shah). Everyone else sees "Mark paid" grayed.`,
 );

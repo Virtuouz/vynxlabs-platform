@@ -1,6 +1,9 @@
 import { signInAs } from "./as.ts";
+import { fernhillTenant } from "./fernhill.ts";
 import { expect, type Page, test } from "./test.ts";
 import { expectNoAxeViolations } from "./visual.ts";
+
+const TENANT = fernhillTenant();
 
 /**
  * "Group rows by" (phase 28, asked for after the first look), walked on the Fernhill example in
@@ -102,9 +105,9 @@ const groupBy = async (id: string, column: string) => {
 test.beforeAll(async ({ browser }) => {
   owner = await (await browser.newContext({ viewport: { width: 1440, height: 1000 } })).newPage();
   await signInAs(owner, "maya.brooks@fernhill.example");
-  const tenants = await call(owner, "GET", "/tenants?limit=200");
-  const tenant = tenants.items.find((one: { slug: string }) => one.slug === "fernhill");
-  test.skip(!tenant, "No tenant fernhill: set up the Fernhill example first.");
+  const tenants = await call(owner, "GET", `/tenants?search=${TENANT}&limit=200`);
+  const tenant = tenants.items.find((one: { slug: string }) => one.slug === TENANT);
+  test.skip(!tenant, `No tenant ${TENANT}: set up the Fernhill example first.`);
   const { items } = await call(owner, "GET", `/tenants/${tenant.id}/workspaces`);
   const sandbox = items.find((one: { slug: string }) => one.slug === "sandbox");
   W = `/tenants/${tenant.id}/workspaces/${sandbox.id}`;

@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Browser, BrowserContext, BrowserContextOptions, Page } from "@playwright/test";
+import { fernhillTenant } from "./fernhill.ts";
 import { signInWithPassword } from "./sign-in.ts";
 
 /**
@@ -39,7 +40,17 @@ function person(local: string) {
 export type Who = keyof typeof PEOPLE;
 
 const here = dirname(fileURLToPath(import.meta.url));
-export const authFile = (who: Who) => join(here, ".auth", `${who}.json`);
+/**
+ * A console session is the person's own, the same in every copy of Fernhill. A portal session
+ * is one tenant's (a cookie for each), so Jess has one for each copy: `jess.json` for the
+ * first `fernhill`, `jess-<copy>.json` for a copy. Without `slug`, a portal person's is the
+ * session for this worker's Fernhill.
+ */
+export const authFile = (who: Who, slug?: string) => {
+  if (!PEOPLE[who].portal) return join(here, ".auth", `${who}.json`);
+  const tenant = slug ?? fernhillTenant();
+  return join(here, ".auth", tenant === "fernhill" ? `${who}.json` : `${who}-${tenant}.json`);
+};
 
 /** A person by key (`maya`) or by address (`maya.brooks@fernhill.example`). */
 export function whoIs(who: string): Who | undefined {

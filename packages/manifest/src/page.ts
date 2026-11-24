@@ -647,7 +647,7 @@ export const dashboardKind: KindDefinition = {
 
 /** The widgets the platform knows: the core pack and the platform's other packs (labs). */
 const platformPacks = (): WidgetRegistry => new WidgetRegistry([...CORE_WIDGETS, ...LABS_WIDGETS]);
-let platformWidgets: WidgetRegistry = platformPacks();
+const platformWidgets: WidgetRegistry = platformPacks();
 
 /**
  * A registry of the platform's packs, and the tenant widgets a workspace (or a bundle) has
@@ -657,21 +657,9 @@ export function workspaceRegistry(deployed: Iterable<DeployedWidget> = []): Widg
   return platformPacks().withDeployed(deployed);
 }
 
-/** The registry pages are checked against. A pack the platform ships is added once, at start. */
+/** The platform's own widgets: what a page is checked against where no workspace is in play. */
 export function widgetRegistry(): WidgetRegistry {
   return platformWidgets;
-}
-
-/** Adds a pack's definitions to the registry pages are checked against. */
-export function registerWidgets(definitions: Iterable<WidgetDefinition>): void {
-  for (const definition of definitions) {
-    if (!platformWidgets.get(definition.type)) platformWidgets.add(definition);
-  }
-}
-
-/** For tests: back to the platform's packs alone. */
-export function resetWidgets(): void {
-  platformWidgets = platformPacks();
 }
 
 const configAjv = new Ajv2020({ allErrors: true, strict: false });

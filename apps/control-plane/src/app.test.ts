@@ -281,6 +281,7 @@ const LISTS_NOT_YET_SAID: string[] = [
   "GET /api/v1/tenants/{t}/workspaces/{w}/data-source-tables/{*}",
   "GET /api/v1/tenants/{t}/workspaces/{w}/interfaces",
   "GET /api/v1/tenants/{t}/workspaces/{w}/docs/search",
+  "GET /api/v1/tenants/{t}/workspaces/{w}/widgets",
   "GET /api/v1/worker/runs/{id}/connection-groups/{*}",
   "GET /api/v1/tenants/{t}/search",
   "GET /api/v1/tenants/{t}/workspaces/{w}/alerts",

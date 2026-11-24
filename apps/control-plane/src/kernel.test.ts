@@ -767,6 +767,7 @@ describe("resource registry", () => {
       "trigger",
       "trigger_source",
       "variable",
+      "widget",
     ]);
   });
 
@@ -1151,7 +1152,8 @@ describe("the write path", () => {
     // A page's actions are run, and their audit checked, in page-actions.test.ts.
     // Approvals decided from a page, and their audit, are in page-approvals.test.ts.
     const execution =
-      /\/(bundles|deployments|runs|connection-bindings|variable-values|worker-credentials|worker|hooks|auth|flow-runs|flow-layouts|events|rows|row|row-deletions|rows-export|table-purges|data-source-bindings|source-rows|source-row|files|promotions|database-locations|clones|deletion|exports|tenant-imports|end-users|end-user-groups|end-user-auth|bundle-assets|portal|domains|drafts|changes|test-runs|git-repository|git|mcp|connection-groups|connection-group-members|identity-providers|sso|dashboards|provisioning|scim|branding|trigger-pauses|draft-history|data-source-checks|references|recent|worker-pools|recovery-codes|retention|connection-tests|worker-host|schedule-firings|recent-items|alert-tests|tool-calls|connection-oauth|oauth|promotion-requests|approval-links|triggers|preferences|views|access|queries|page-actions|page-approvals|member-password-links)(\/|$)/;
+      /\/(bundles|deployments|runs|connection-bindings|variable-values|worker-credentials|worker|hooks|auth|flow-runs|flow-layouts|events|rows|row|row-deletions|rows-export|table-purges|data-source-bindings|source-rows|source-row|files|promotions|database-locations|clones|deletion|exports|tenant-imports|end-users|end-user-groups|end-user-auth|bundle-assets|portal|domains|drafts|changes|test-runs|git-repository|git|mcp|connection-groups|connection-group-members|identity-providers|sso|dashboards|provisioning|scim|branding|trigger-pauses|draft-history|data-source-checks|references|recent|worker-pools|recovery-codes|retention|connection-tests|worker-host|schedule-firings|recent-items|alert-tests|tool-calls|connection-oauth|oauth|promotion-requests|approval-links|triggers|preferences|views|access|queries|page-actions|page-approvals|member-password-links|resource-basis|widgets)(\/|$)/;
+    // Removing a widget version is exercised in widgets.test.ts; the basis of a resource in pull-first.test.ts.
     // Deleting a workspace is exercised in environments.test.ts.
     expect(
       t.unexercised(

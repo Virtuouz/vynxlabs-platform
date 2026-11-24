@@ -1,14 +1,6 @@
 import { createHash } from "node:crypto";
 import { sql } from "@volvel/db";
-import {
-  type Bundle,
-  type BundleManifest,
-  bundleDigest,
-  registerWidgets,
-  resetWidgets,
-  WIDGET_POLICY,
-} from "@volvel/manifest";
-import type { WidgetDefinition } from "@volvel/widgets";
+import { type Bundle, type BundleManifest, bundleDigest, WIDGET_POLICY } from "@volvel/manifest";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { sweepAppFiles } from "./kernel/apps/assets.js";
 import { type Client, startTestApp, type TestApp } from "./testing.js";
@@ -123,8 +115,6 @@ const get = (host: string, url: string, headers: Record<string, string> = {}) =>
   t.app.inject({ method: "GET", url, headers: { host, ...headers } });
 
 beforeAll(async () => {
-  // What the server's checker knows of a tenant's widget: the platform registers it per workspace.
-  registerWidgets([definition("1.0.0") as unknown as WidgetDefinition]);
   t = await startTestApp({ config: { appsUrl: `http://${APPS}` } });
   const roles = Object.fromEntries(
     (
@@ -158,7 +148,6 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  resetWidgets();
   await t?.stop();
 });
 

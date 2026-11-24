@@ -82,38 +82,50 @@ test("NARROW-1: a state never grows past its cell, and a health cell has no mini
   expect(container.querySelector("[data-health]")?.className).not.toContain("min-w-[");
 });
 
-test("R-last: a state of one word is not cut to a letter in a narrow row; a longer one still shortens", () => {
+test("R-last: a state is never cut: one word keeps its width, a longer label wraps at its spaces", () => {
   const { container } = render(
     <>
       <StatePill state="allowed" />
       <StatePill state="waiting_approval" />
     </>,
   );
-  const [one, many] = [...container.querySelectorAll("[data-cut]")];
+  const [one, many] = [...container.querySelectorAll("[data-label]")];
   expect(one?.textContent).toBe("Allowed");
   expect(one?.className).toContain("whitespace-nowrap");
-  expect(one?.className).not.toContain("truncate");
-  expect(one?.parentElement?.className).not.toContain("min-w-0");
-  expect(many?.className).toContain("truncate");
+  expect(many?.className).not.toContain("whitespace-nowrap");
+  for (const label of [one, many]) {
+    expect(label?.className).not.toContain("truncate");
+    expect(label?.className).toContain("break-words");
+  }
 });
 
-test("round 4: a status given as one word of text, with or without a detail, is never cut", () => {
+test("round 4 and 5: a status is never cut, whatever its label or its detail", () => {
   const { container } = render(
     <>
       <StatePill state="ok">Reached</StatePill>
       <StatePill state="failed" detail="tested 3 days ago">
         Failed
       </StatePill>
+      <StatePill state="unbound" detail="last seen 3 days ago">
+        No worker online
+      </StatePill>
+      <StatePill state="ok" detail="40 ms · tested 3 days ago">
+        Reached
+      </StatePill>
     </>,
   );
-  const cuts = [...container.querySelectorAll("[data-cut]")] as HTMLElement[];
-  for (const label of [cuts[0], cuts[1]]) {
-    expect(label?.className).toContain("whitespace-nowrap");
-    expect(label?.className).toContain("shrink-0");
-    expect(label?.className).not.toContain("truncate");
+  // Nothing in a pill is truncated or clipped: a label that is too long wraps, and the detail
+  // wraps under the label, so a narrow cell shows all of it ("Reached" / "4…", "No worker o…").
+  for (const part of container.querySelectorAll<HTMLElement>("[data-label], [data-detail]")) {
+    expect(part.className, part.textContent ?? "").not.toMatch(
+      /truncate|overflow-hidden|text-ellipsis/,
+    );
+    expect(part.className).toContain("min-w-0");
   }
-  // The detail is what gives way.
-  expect(cuts[2]?.textContent).toBe("tested 3 days ago");
-  expect(cuts[2]?.className).toContain("truncate");
-  expect(cuts[1]?.parentElement?.className).toContain("min-w-0");
+  const pills = [...container.querySelectorAll<HTMLElement>("[data-state-pill]")];
+  for (const pill of pills) expect(pill.className).toContain("flex-wrap");
+  const labels = [...container.querySelectorAll<HTMLElement>("[data-label]")];
+  expect(labels[0]?.className).toContain("whitespace-nowrap");
+  expect(labels[2]?.className).not.toContain("whitespace-nowrap");
+  expect(container.querySelectorAll("[data-detail]")).toHaveLength(3);
 });

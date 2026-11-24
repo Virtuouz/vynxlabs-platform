@@ -22,6 +22,7 @@ import {
   defineTriggerSource,
   defineVariable,
   defineWebhook,
+  defineWidget,
   type ResourceDefinition,
   trigger,
   z,
@@ -223,6 +224,33 @@ const examples: Record<string, ResourceDefinition[]> = {
     }),
   ],
   variable: [defineVariable({ path: "region", description: "x", default: "eu" })],
+  widget: [
+    defineWidget({
+      type: "x/goal",
+      version: "1.0.0",
+      title: "Goal",
+      description: "Progress toward a target",
+      category: "understand",
+      icon: "target",
+      surfaces: ["app", "dashboard"],
+      data: { value: { shape: "summary", label: "Value", required: true, sources: ["table"] } },
+      dataHints: [{ of: "value", controls: [{ control: "source", label: "Source" }] }],
+      config: {
+        type: "object",
+        properties: {
+          target: {
+            type: "number",
+            "x-volvel": { tab: "display", control: "number", label: "Target" },
+          },
+        },
+      },
+      words: { target: "What it counts toward." },
+      defaults: { target: 10 },
+      events: { reached: { gives: "nothing", label: "When reached", payload: { type: "object" } } },
+      layout: { min: { w: 2, h: 2 }, default: { w: 3, h: 3 }, phone: "stack", frame: "card" },
+      entry: "widgets/goal/view.tsx",
+    }),
+  ],
 };
 
 describe("each define* makes what its kind's schema accepts", () => {

@@ -19,6 +19,7 @@ import { init, runLocally } from "./local.js";
 import { pull, pulledFile, readPulled } from "./pull.js";
 import { SCHEMA_FOLDER, writeEditorSchemas } from "./schemas.js";
 import { writeEnvTypes } from "./types.js";
+import { widgetCommand } from "./widget.js";
 
 export { CliError };
 
@@ -135,15 +136,27 @@ export async function request(
 const OLDER_INSTANCE = /There is no "(type|subjects|moved_from|date)" (here|in )/;
 
 /** Explains a refused request in the server's own words, including each named problem. */
+/** One problem of a refusal. What the console changed is named by its path: the path is the point. */
+function problemLine(code: unknown, problem: { path?: string; message: string }): string {
+  return code === "console_changed" && problem.path
+    ? `  - ${problem.path}: ${problem.message}`
+    : `  - ${problem.message}`;
+}
+
 export function refusal(reply: ApiReply, doing: string): CliError {
   if (reply.status === 401) {
     return new CliError("The API key was not accepted. Create a new one and run login again.");
   }
-  const problems = ((reply.body?.errors ?? []) as { message: string }[]).map(
-    (problem) => `  - ${problem.message}`,
+  const problems = ((reply.body?.errors ?? []) as { path?: string; message: string }[]).map(
+    (problem) => problemLine(reply.body?.code, problem),
   );
   const detail = reply.body?.detail ?? `The instance answered ${reply.status}.`;
   const lines = [`Could not ${doing}. ${detail}`, ...problems];
+  if (reply.body?.code === "console_changed") {
+    lines.push(
+      "To overwrite them on purpose, deploy again with --force. That is written to the audit log.",
+    );
+  }
   // An instance from before a page could say these refuses the key, and says it by name.
   const older = ((reply.body?.errors ?? []) as { message: string }[]).some((problem) =>
     OLDER_INSTANCE.test(problem.message),
@@ -468,6 +481,7 @@ async function deploy(args: string[], io: Io) {
       ...jsonOption,
       preview: { type: "boolean" as const },
       message: { type: "string" as const },
+      force: { type: "boolean" as const },
     },
   });
   const say = spoken(io, values.json);
@@ -488,7 +502,7 @@ async function deploy(args: string[], io: Io) {
       : [];
   // A resource deleted in the console and pulled is meant to go: its file is gone on purpose.
   // A bundle with no console file at all leaves the console's resources as they are.
-  if (bundle.manifests.some((manifest) => manifest.ownership === "ui")) {
+  if (!values.force && bundle.manifests.some((manifest) => manifest.ownership === "ui")) {
     await refuseToDropConsoleResources(
       settings,
       base,
@@ -508,7 +522,7 @@ async function deploy(args: string[], io: Io) {
     const allowed: string[] = values["allow-delete"] ?? [];
     const answer = await request(
       settings.url,
-      `${base}/deployment-preview?bundleId=${tried.body.id}${allowed.length > 0 ? `&allowDelete=${encodeURIComponent(allowed.join(","))}` : ""}`,
+      `${base}/deployment-preview?bundleId=${tried.body.id}${allowed.length > 0 ? `&allowDelete=${encodeURIComponent(allowed.join(","))}` : ""}${values.force ? "&force=true" : ""}`,
       settings.token,
     );
     if (answer.status >= 300) throw refusal(answer, `check a deploy to ${values.workspace}`);
@@ -517,7 +531,12 @@ async function deploy(args: string[], io: Io) {
       throw new CliError(
         [
           `It cannot be deployed. ${why.detail}`,
-          ...(why.errors as { message: string }[]).map((problem) => `  - ${problem.message}`),
+          ...(why.errors as { path?: string; message: string }[]).map((problem) =>
+            problemLine(why.code, problem),
+          ),
+          ...(why.code === "console_changed"
+            ? ["To overwrite them on purpose, deploy again with --force."]
+            : []),
         ].join("\n"),
       );
     }
@@ -544,6 +563,7 @@ async function deploy(args: string[], io: Io) {
       ...(message ? { message } : {}),
       ...(carried.length > 0 ? { settleDrafts: carried } : {}),
       ...(values["allow-delete"]?.length ? { allowDelete: values["allow-delete"] } : {}),
+      ...(values.force ? { force: true } : {}),
     },
   });
   if (deployed.status >= 300) throw refusal(deployed, `deploy to ${values.workspace}`);
@@ -1362,6 +1382,10 @@ const HANDLERS: Record<CommandName, (rest: string[], io: Io) => Promise<number>>
   },
   init: async (rest, io) => {
     await init(rest, io);
+    return 0;
+  },
+  widget: async (rest, io) => {
+    await widgetCommand(rest, io);
     return 0;
   },
   build: async (rest, io) => {

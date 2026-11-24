@@ -207,6 +207,11 @@ export interface ResourceTable {
   /** What a bundle says about it beside its body: `mcp`, `source`. */
   meta: ColumnType<ResourceMeta, string | undefined, string>;
   ownership: Ownership;
+  /**
+   * The content a resource owned as files last had in step with the repository (a hash of
+   * `contentHash`'s input). Null when it never was.
+   */
+  basis_hash: ColumnType<string | null, string | null | undefined, string | null>;
   version: number;
   body: Json<Record<string, unknown>>;
   created_at: Generated<Date>;

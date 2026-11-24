@@ -14,6 +14,7 @@ import { ErrorState, Loading, Pending } from "../kit/LoadState.tsx";
 import { KeyValues } from "../kit/layout.tsx";
 import { ObjectPage } from "../kit/ObjectPage.tsx";
 import { kindName, ObjectLink, objectHref, triggerKey } from "../kit/objects.tsx";
+import { ownershipWord } from "../kit/ownership.ts";
 import { ReferenceList, useReferences, usersOf } from "../kit/references.tsx";
 import { SecretField } from "../kit/SecretField.tsx";
 import { Mono, StatePill } from "../kit/status.tsx";
@@ -437,7 +438,7 @@ export function EventPage({
                 ...(one.body.description
                   ? [{ label: "What it means", value: one.body.description }]
                   : []),
-                { label: "Managed in", value: one.ownership === "code" ? "Repository" : "Console" },
+                { label: "Managed in", value: ownershipWord(one.ownership) },
                 { label: "Version", value: String(one.version), mono: true },
               ]}
             />

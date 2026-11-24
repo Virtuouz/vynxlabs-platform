@@ -1675,3 +1675,104 @@ export type VariableBody = {
   /** Used in a workspace that has not set its own value. */
   default?: string;
 };
+
+/** The body of a widget resource's file, version 1. */
+export type WidgetBody = {
+  /** The widget's type, in the tenant's own namespace: `x/<name>`. The other namespaces are Volvel's. A resource's path is its type. */
+  type: string;
+  /** Semver. A page names the type; a deploy pins the version it was built with. */
+  version: string;
+  /** What it is called. */
+  title: string;
+  /** One line, said in "Add to page". */
+  description: string;
+  /** The group "Add to page" lists it under. */
+  category: "records" | "action" | "understand" | "organize" | "content";
+  /** The name of an icon from the kit's set. Any other name is drawn as a puzzle piece. */
+  icon: string;
+  /** Where it may be put: an app's page, a dashboard. */
+  surfaces: ("app" | "dashboard")[];
+  /** What it reads, by input name: the platform reads it under the viewer's permissions and gives it to the view. */
+  data: {
+    [name: string]: {
+      /** What it is given: `rows`, `summary`, `record` or `approvals`. */
+      shape: "rows" | "summary" | "record" | "approvals";
+      /** What the inspector calls it when there is more than one. Left out: "Source". */
+      label?: string;
+      /** Whether the widget cannot be drawn without it. Default true. */
+      required?: boolean;
+      /** Where it may come from: a table, a query, SQL or approvals. */
+      sources?: ("table" | "query" | "sql" | "approvals")[];
+      /** For a summary: how many values it may work out. */
+      values?: {
+        /** The fewest. */
+        min: number;
+        /** The most. */
+        max: number;
+      };
+      /** For a summary: how many ways it may be broken down. */
+      breakdowns?: {
+        /** The fewest. */
+        min: number;
+        /** The most. */
+        max: number;
+      };
+    };
+  };
+  /** The Data tab's controls for each input. */
+  dataHints?: Record<string, unknown>[];
+  /** A JSON Schema (draft 2020-12) for the widget's settings, an object with `properties`, each with an `x-volvel` hint saying how the inspector draws it from the fixed set of controls. */
+  config: {
+    /** Always `object`. */
+    type: "object";
+    /** Each setting by name: its JSON Schema with an `x-volvel` hint. */
+    properties: Record<string, unknown>;
+  };
+  /** What each setting is, by its path in `config`, where the schema does not say. */
+  words?: {
+    [name: string]: string;
+  };
+  /** What the widget is when it is added, before anyone changes it. */
+  defaults?: Record<string, unknown>;
+  /** What can happen to the widget that an action may be attached to, by name. */
+  events: {
+    [name: string]: {
+      /** What it gives the action attached to it: a `record`, a `group` or `nothing`. */
+      gives: "record" | "group" | "nothing";
+      /** Said in the Actions tab: "When a row is clicked". */
+      label: string;
+      /** A JSON Schema for what the frame sends with it. The host drops what does not fit. */
+      payload?: Record<string, unknown>;
+    };
+  };
+  /** Its size in the page's grid, and what it does on a phone. */
+  layout: {
+    /** The smallest it may be made. */
+    min: {
+      /** Columns wide, of the page's twelve. */
+      w: number;
+      /** Rows high, of 40 pixels each. */
+      h: number;
+    };
+    /** The size it is added with. */
+    default: {
+      /** Columns wide, of the page's twelve. */
+      w: number;
+      /** Rows high, of 40 pixels each. */
+      h: number;
+    };
+    /** The largest it may be made. */
+    max?: {
+      /** Columns wide, of the page's twelve. */
+      w: number;
+      /** Rows high, of 40 pixels each. */
+      h: number;
+    };
+    /** On a narrow screen: full width, drawn as a list, or not shown. */
+    phone?: "stack" | "list" | "hide";
+    /** Whether the page draws it on a card with its title (the default) or as it is. */
+    frame?: "card" | "none";
+  };
+  /** The file in the repository that is the view: a module that draws it with `@volvel/widget-frame`. Built into one script at deploy. */
+  entry: string;
+};

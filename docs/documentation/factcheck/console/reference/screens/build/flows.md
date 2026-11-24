@@ -23,8 +23,12 @@ Checked by: second agent, 2026-11-23. Every label and quoted string was searched
 
 ## Phase 34, A7 (YAML first), 2026-11-24
 
-Commit `d619bfbd` plus the working tree. Written by the A7 writer; second agent's check pending. Run on the throwaway instance of lane a7 (http://localhost:8712, Fernhill seeded).
+Commit `d619bfbd` plus the working tree. Written by the A7 writer; second agent checked 2026-11-24 (a7r). Run on the throwaway instance of lane a7 (http://localhost:8712, Fernhill seeded).
 
 | Claim | Source (file:line) | Checked by | Result |
 | --- | --- | --- | --- |
 | Empty-state text quoted; a flow is also a file. | `apps/console/src/screens/Flows.tsx:232` | writer, 2026-11-24 | holds as read |
+
+### Second check (a7r), 2026-11-24, second agent
+
+Lane a7r build, `pnpm docs:check` passes. Second agent, 2026-11-24. The empty-state quote is in `apps/console/src/screens/Flows.tsx` (a8 is changing the copy). A `<path>.flow.yaml` builds (webhook run). Holds.

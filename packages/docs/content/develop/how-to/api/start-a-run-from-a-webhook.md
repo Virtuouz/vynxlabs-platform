@@ -11,22 +11,21 @@ By the end you will have started a script by sending a signed request to its web
 ## Before you start
 
 - A script and a webhook trigger that starts it, deployed in a workspace. The trigger's address is shown with the trigger to those who may manage it; through the API it is `url` in `GET /api/v1/tenants/<t>/workspaces/<w>/triggers`. It ends in a token that begins `vxh_`. See [the webhook address and its key](../../explanation/flows/webhook-address-and-key).
-- The sender's shared secret, saved as a secret of the workspace, and its name in the trigger's `verify`. The example trigger is:
+- The sender's shared secret, saved as a secret of the workspace, and its name in the trigger's `verify`. The example trigger is a file of the repository, `platform/hooks/orders.trigger.yaml`:
 
-  ```json
-  {
-    "type": "webhook",
-    "script": "hooks/echo",
-    "verify": {
-      "scheme": "hmac-sha256",
-      "header": "X-Signature",
-      "secret": "HOOK_SECRET",
-      "prefix": "sha256=",
-      "timestampHeader": "X-Timestamp",
-      "signed": "{timestamp}.{body}",
-      "toleranceSeconds": 300
-    }
-  }
+  ```yaml title=platform/hooks/orders.trigger.yaml
+  schemaVersion: 1
+  body:
+    type: webhook
+    script: hooks/echo
+    verify:
+      scheme: hmac-sha256
+      header: X-Signature
+      secret: HOOK_SECRET
+      prefix: "sha256="
+      timestampHeader: X-Timestamp
+      signed: "{timestamp}.{body}"
+      toleranceSeconds: 300
   ```
 
 - The triggers of the workspace are not paused. A dev workspace starts with them paused.

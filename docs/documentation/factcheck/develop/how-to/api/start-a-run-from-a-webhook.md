@@ -29,8 +29,12 @@ Checked by: second agent, 2026-11-23.
 
 ## Phase 34, A7 (YAML first), 2026-11-24
 
-Commit `d619bfbd` plus the working tree. Written by the A7 writer; second agent's check pending. Run on the throwaway instance of lane a7 (http://localhost:8712, Fernhill seeded).
+Commit `d619bfbd` plus the working tree. Written by the A7 writer; second agent checked 2026-11-24 (a7r). Run on the throwaway instance of lane a7 (http://localhost:8712, Fernhill seeded).
 
 | Claim | Source (file:line) | Checked by | Result |
 | --- | --- | --- | --- |
 | The flow YAML equals the TypeScript flow. | run: `volvel convert` of the TypeScript flow checks equal manifests; deployed to `walk6` | writer, 2026-11-24 | holds as run (the webhook was not called again) |
+
+### Second check (a7r), 2026-11-24, second agent
+
+Lane a7r build (a7 merged), throwaway instance http://localhost:8722 (database a7r34, Fernhill seeded), lane CLI `packages/cli/dist/bin.js`. `pnpm docs:check` passes. Ran on a scratch repository (a script, the trigger file, the flow file) in a dev workspace with triggers unpaused and the secret set: the signed request answered `202 {"runId":...}`; a wrong secret answered 401 `signature_invalid` 'The signature does not match.'; the run shows the quoted trigger and input; the flow answered 201 `{"got":1}`, `x-check: yes` and `x-flow-run`, and a form body `a=7` gave `{"got":"7"}`. Both YAML files validate and build. CORRECTED: the example trigger was JSON; it is now the YAML file that was deployed (`platform/hooks/orders.trigger.yaml`). Not run: stale timestamp, 25 s hold, 429.

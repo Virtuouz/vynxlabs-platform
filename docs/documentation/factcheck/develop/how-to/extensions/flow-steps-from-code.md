@@ -22,9 +22,13 @@ Checked by: second agent, 2026-11-23. Run: the Code tab deploy, `does not take o
 
 ## Phase 34, A7 (YAML first), 2026-11-24
 
-Commit `d619bfbd` plus the working tree. Written by the A7 writer; second agent's check pending. Run on the throwaway instance of lane a7 (http://localhost:8712, Fernhill seeded).
+Commit `d619bfbd` plus the working tree. Written by the A7 writer; second agent checked 2026-11-24 (a7r). Run on the throwaway instance of lane a7 (http://localhost:8712, Fernhill seeded).
 
 | Claim | Source (file:line) | Checked by | Result |
 | --- | --- | --- | --- |
 | Flow YAML with `type: script`, `with.tables`. | run: `volvel convert` of the TypeScript flow gave this file; deployed to `walk1` | writer, 2026-11-24 | holds as run |
 | Build refusals: `refers to "nope", which is not a table in this repository`; `which does not take one`. | run: `volvel build` with each fault | writer, 2026-11-24 | holds as run |
+
+### Second check (a7r), 2026-11-24, second agent
+
+Lane a7r build (a7 merged), throwaway instance http://localhost:8722 (database a7r34, Fernhill seeded), lane CLI `packages/cli/dist/bin.js`. `pnpm docs:check` passes. Built the page's script and flow file together with a `visits` table file: builds as the page says.

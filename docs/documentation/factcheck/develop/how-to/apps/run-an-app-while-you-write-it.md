@@ -27,8 +27,12 @@ Lines are current at commit `14f7d5b9` (branch phase-31-write-the-docs). Paths a
 
 ## Phase 34, A7 (YAML first), 2026-11-24
 
-Commit `d619bfbd` plus the working tree. Written by the A7 writer; second agent's check pending. Run on the throwaway instance of lane a7 (http://localhost:8712, Fernhill seeded).
+Commit `d619bfbd` plus the working tree. Written by the A7 writer; second agent checked 2026-11-24 (a7r). Run on the throwaway instance of lane a7 (http://localhost:8712, Fernhill seeded).
 
 | Claim | Source (file:line) | Checked by | Result |
 | --- | --- | --- | --- |
 | An interface is a `<path>.interface.yaml` file or `defineInterface`. | `examples/higher-ed-devices/platform/screens/*.interface.yaml` | writer, 2026-11-24 | holds as read |
+
+### Second check (a7r), 2026-11-24, second agent
+
+Lane a7r build, `pnpm docs:check` passes. Second agent, 2026-11-24. `interface.v1/v2` schemas exist; the sentence is read, not run (no interface dev server run).

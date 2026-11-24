@@ -13,3 +13,7 @@ Run: instance on lane a7's build, database a734, port 8712, Fernhill seeded by `
 | A comment above a converted export is dropped and counted. | run; `convert.ts:1314` | writer, 2026-11-24 | holds as run |
 | The checks and the put-back text. | `packages/cli/src/convert.ts:1195-1290` | writer, 2026-11-24 | holds as read |
 | A kind that is not one is ignored by `--only`. | run: `--only nonsense --dry-run` converted 0 | writer, 2026-11-24 | holds as run |
+
+### Second check (a7r), 2026-11-24, second agent
+
+Lane a7r build (a7 merged), throwaway instance http://localhost:8722 (database a7r34, Fernhill seeded), lane CLI `packages/cli/dist/bin.js`. `pnpm docs:check` passes. Same runs; the 'Where the files go' rule (`platform/` kept because it exists: 'Resources go to platform/, which this repository already has.') and the stay reasons (`uses `AGENT`, a value computed in code`, `typeof x.__row` with file and line, a script) as printed.

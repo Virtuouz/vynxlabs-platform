@@ -31,8 +31,12 @@ Checked by: second agent, 2026-11-23. Method: every label and quoted text search
 
 ## Phase 34, A7 (YAML first), 2026-11-24
 
-Commit `d619bfbd` plus the working tree. Written by the A7 writer; second agent's check pending. Run on the throwaway instance of lane a7 (http://localhost:8712, Fernhill seeded).
+Commit `d619bfbd` plus the working tree. Written by the A7 writer; second agent checked 2026-11-24 (a7r). Run on the throwaway instance of lane a7 (http://localhost:8712, Fernhill seeded).
 
 | Claim | Source (file:line) | Checked by | Result |
 | --- | --- | --- | --- |
 | Empty-state texts quoted as the console words them. | `apps/console/src/screens/Operate.tsx:923`; `PublishEvent.tsx:93` | writer, 2026-11-24 | holds as read |
+
+### Second check (a7r), 2026-11-24, second agent
+
+Lane a7r build, `pnpm docs:check` passes. Second agent, 2026-11-24. The quotes are in `apps/console/src/screens/Operate.tsx` and `PublishEvent.tsx` as written today (a8 is changing them). Holds for this build.

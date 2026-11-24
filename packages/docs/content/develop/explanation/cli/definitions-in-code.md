@@ -96,7 +96,9 @@ A person who has no repository at hand can take a definition in code over in a d
 - **An app:** the App Builder shows it as it is published, and says taking it over lets you change it there. The next publish makes it files.
 - **A script in code** cannot be taken over. Its code leans on the rest of the repository. Make a new one at the same path in the console, and a deploy of it takes the old one's place with its history and what is bound to it.
 
-A take-over does not remove the definition from the repository. The next deploy of a repository that still defines the resource takes it back, and is refused first if the console changed the resource since the take-over, until you run `volvel pull`, or deploy with `--force`. To keep it in the console, delete the definition from the code. To keep it in the repository, run `volvel pull` to bring the console's version in as a file, and then [convert](../../how-to/cli/convert-definitions-to-files) or remove the old definition.
+A take-over does not remove the definition from the repository. The next deploy of a repository that still defines the resource takes it back, and is refused first if the console changed the resource since the take-over, until you deploy with `--force`. To keep it in the console, delete the definition from the code. To keep it in the repository, copy what the console changed into the definition by hand, and deploy.
+
+`volvel pull` does not help for a table taken over this way: a table has no draft, and the pull brings in only what a draft or a deployed file holds, so it writes no file for the table (`Pulled 0 files`). It still tells the workspace that it took the table, and the next deploy then passes and replaces the console's change, retiring a column added there. Put the change in the definition before you deploy. A flow, a query or another resource taken over through a draft is brought in by `volvel pull` as a file.
 
 ## Related
 

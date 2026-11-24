@@ -30,8 +30,12 @@ Lines are current at commit `14f7d5b9` (branch phase-31-write-the-docs). Paths a
 
 ## Phase 34, A7 (YAML first), 2026-11-24
 
-Commit `d619bfbd` plus the working tree. Written by the A7 writer; second agent's check pending. Run on the throwaway instance of lane a7 (http://localhost:8712, Fernhill seeded).
+Commit `d619bfbd` plus the working tree. Written by the A7 writer; second agent checked 2026-11-24 (a7r). Run on the throwaway instance of lane a7 (http://localhost:8712, Fernhill seeded).
 
 | Claim | Source (file:line) | Checked by | Result |
 | --- | --- | --- | --- |
 | Table and bindings and role as YAML; `TableOf<"visits">` in the page; deploy `7 created`. | run: the page's files extracted and built, deployed to `apps-docs`; `volvel build` output copied | writer, 2026-11-24 | holds as run (the app was not opened in a browser) |
+
+### Second check (a7r), 2026-11-24, second agent
+
+Lane a7r build (a7 merged), throwaway instance http://localhost:8722 (database a7r34, Fernhill seeded), lane CLI `packages/cli/dist/bin.js`. `pnpm docs:check` passes. Rebuilt the repository from the page's snippets (table file, script, app, `apps/desk`, three bindings and the role) with the lane CLI: `volvel build` and `deploy` print what the page shows (`App files: 6, 4 new.`, `7 created`). The **Apps** screen lists the app with the tag REPOSITORY, the address `/apps/fernhill/<workspace>/desk/` and **Front desk** under Open to, and says repository apps are not served until `APPS_URL` is set, as the page says. Not run: the app's page in a browser (the instance has no `APPS_URL`).

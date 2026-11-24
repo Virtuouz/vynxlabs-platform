@@ -15,3 +15,7 @@ Run: instance on lane a7's build, database a734, port 8712, Fernhill seeded by `
 | `Row`, `Insert`, `TableOf`. | `packages/sdk/src/context.ts:41-58`; run: `tsc` passed on the snippet | writer, 2026-11-24 | holds as run |
 | Console editor reads `GET .../types.d.ts` with `script:read`; loaded on open; silent failure. | `apps/control-plane/src/routes/execution.ts:1108-1110`; `docs/documentation/fixed/p34-a3.md` | writer, 2026-11-24 | holds as read; a3 looked at the editor in a browser |
 | tsconfig `include` is `["scripts", ".platform/*.d.ts"]` from init. | `examples/fernhill-cli/tsconfig.json` (run of `volvel init`) | writer, 2026-11-24 | holds as run |
+
+### Second check (a7r), 2026-11-24, second agent
+
+Lane a7r build (a7 merged), throwaway instance http://localhost:8722 (database a7r34, Fernhill seeded), lane CLI `packages/cli/dist/bin.js`. `pnpm docs:check` passes. Ran `volvel types` and `build` in a `volvel init` repository: file text, `Row`, `Insert` and `TableOf` compile, a misspelled column is TS2551, `ctx.table("notes")` is untyped, a second `volvel types` leaves the file's time unchanged (`packages/cli/src/types.ts:17`). CORRECTED the `volvel types` row: the command prints a second line (about `include` and running it again). The console endpoint is `routes/execution.ts:1108`, `script:read`.

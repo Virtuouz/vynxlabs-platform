@@ -22,8 +22,12 @@ Lines are current at commit `5ebf1c80` (branch phase-31-write-the-docs). Paths a
 
 ## Phase 34, A7 (YAML first), 2026-11-24
 
-Commit `d619bfbd` plus the working tree. Written by the A7 writer; second agent's check pending. Run on the throwaway instance of lane a7 (http://localhost:8712, Fernhill seeded).
+Commit `d619bfbd` plus the working tree. Written by the A7 writer; second agent checked 2026-11-24 (a7r). Run on the throwaway instance of lane a7 (http://localhost:8712, Fernhill seeded).
 
 | Claim | Source (file:line) | Checked by | Result |
 | --- | --- | --- | --- |
 | `platform/` is the console's folder, `volvel-env.d.ts` in `.platform/`, `volvel.yaml` written by convert. | `packages/cli/src/types.ts`; `convert.ts:1035`; run | writer, 2026-11-24 | holds as run |
+
+### Second check (a7r), 2026-11-24, second agent
+
+Lane a7r build (a7 merged), throwaway instance http://localhost:8722 (database a7r34, Fernhill seeded), lane CLI `packages/cli/dist/bin.js`. `pnpm docs:check` passes. The `volvel.yaml` keys, and the `platform/` default for `volvel convert`, as the other runs showed (`Resources go to platform/, which this repository already has.`). Not run: every row of the tables.

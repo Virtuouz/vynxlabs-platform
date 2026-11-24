@@ -75,7 +75,7 @@ A name the generated file does not know is a type error here, unlike in `ctx.tab
 | Command | When |
 | --- | --- |
 | `volvel build` | Every time. |
-| `volvel types` | On its own: `Wrote the types of your tables, events, variables and connections to .platform/volvel-env.d.ts.` |
+| `volvel types` | On its own: `Wrote the types of your tables, events, variables and connections to .platform/volvel-env.d.ts.`, then a line that says to include `.platform/*.d.ts` in `tsconfig.json` and to run it again after a definition changes. |
 | `volvel dev` | At the start, and again on each rebuild. |
 | `volvel convert` | After it has rebuilt, before it compiles what is left. |
 

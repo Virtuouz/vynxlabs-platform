@@ -12,3 +12,7 @@
 
 ## Not run
 Git sync (no remote); the console's **Roll back anyway** dialog (read from the code and a2's walk).
+
+## Second check (a7r), 2026-11-24
+
+Instance http://localhost:8722 (throwaway, lane a7r, Fernhill seeded). Repository from `volvel init`, workspace `cli-start-dev`. Console change (API draft and deploy), refused deploy, `--preview`, `pull` (kept file, exit 1), `pull --force`, deploy, `--force` and its audit entry: as the page shows. In a browser (Playwright, 1440 and 390 px dark), **Roll back to this version** with a console change asked "Roll back CLI start dev anyway?" and **Roll back anyway** rolled back and wrote `deployment.forced`. The page got wrong: a taken-over table is not brought in by `volvel pull` (see the fact-check of how-tables-work). Not run: Git sync.

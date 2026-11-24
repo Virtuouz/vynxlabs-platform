@@ -42,6 +42,8 @@ The owner (2026-11-23): the browser suite "slows down development more than the 
 | Same, with a sampler | 15.3 min | all passed |
 | Main part only, 8 workers, with a timeline | 11.7 min | 1 failed (an animation sampled on an overloaded machine) |
 | Fernhill first, one polish tenant per run, 4 workers | **12.4 min** (9.2 main + 3.2 alone) | **all 270 passed** |
+| A Fernhill copy per Fernhill worker (3), the instance-wide specs on a second instance at the same time, 6 workers | 9.3 min | 1 failed (the drawer's animation, sampled frame by frame) |
+| The same, after the fixes below | **9.0 min** (9.0 main, 4.5 alone beside it) | **all 271 passed** |
 
 **What limited each run, measured rather than guessed** (a sampler every 5 s: the instance's CPU in the window, Postgres's CPU, the load, runs queued; and Playwright's JSON report for each test's worker, start and end):
 
@@ -62,11 +64,22 @@ The owner (2026-11-23): the browser suite "slows down development more than the 
 - **Do expensive setup once and share it read-only:** the same holds for a replica's cold start or a worker's warm-up.
 - **Schedule the longest chain first:** for a job queue, ordering by expected length shortens the total time.
 - **Rate limits keyed only by address** penalise many clients behind one address (the workers here; an office behind NAT in production). Key by account as well.
+- **Live updates need a periodic check behind them.** An event stream alone loses events: one sent before a page subscribed, or dropped under load. Whatever shows a live state should read it again now and then until it is final (fixed here for runs; other live screens are worth the same look).
+- **Run slots are sized from memory alone** (96 on 16 cores here), and each tenant has a managed worker process of its own. Under many tenants at once that is memory, not CPU, that runs out, and the free-memory floor then holds every new worker back. Slots bounded by cores as well as memory, and idle workers reaped sooner, would keep a busy instance fair.
+- **Is the database limit real?** Mostly the suite's own shape: what saturated Postgres was 8 tenant setups at once, each making a schema, tables and row policies, deploying and running. That is what onboarding many tenants or deploying often looks like, and it is worth making cheaper. Ordinary use (reads, row writes, runs) never came near it: at 4 workers Postgres averaged 27% of a core. A load test shaped like real traffic would say how far ordinary use goes.
 - **Clean-up must not fail silently:** a refused deletion should be surfaced and retried.
 
-**Not reached:** the exit criterion's 10 minutes. The full run is 12.4 min. What would reach it:
-- seeding a Fernhill of its own per worker, so the 8.7-minute chain splits (the seed takes about a minute);
-- making `redesign`, `favicon` and `exit-criterion` stop changing the whole instance, or giving them a second instance, so the 3.2-minute alone part runs beside the main part.
+**The last two changes** (owner, 2026-11-24: "make those two changes"):
+- **A Fernhill copy per worker** (lane f1, `fixed/p32-f1.md`): the seed takes `FERNHILL_SLUG`; copies reuse the instance's people (an existing account is added to a tenant, not refused), so the saved sessions still work; `fernhill-copies.setup.ts` seeds the missing copies in parallel, once per instance; each Fernhill worker claims its own. The Fernhill chain went from 8.7 to 4.3 minutes on 3 copies.
+- **A second instance for the specs that change the whole instance** (`E2E_ALONE_URL`, port 8090, which Keycloak's test realm sends sign-ins back to): they run there beside the rest. Without one they still run after the rest, as CI's groups do.
+
+**Found on the way, fixed:**
+- **A product fault.** A run followed while the live stream was up was read again only on an event naming it, so a missed event left it "Running" for ever: the Test pane read "ran 1m 26s" for a run that had succeeded in 0.3 s. `useLiveRun` (`apps/console/src/screens/Execution.tsx`, used by the Test pane, the run page, the runs workbench and flow runs) now asks again every 5 s while the stream is up, until the run ends; a test in `Stream.test.tsx` fails without it.
+- **The instance's free-memory floor** (a tenth of memory by default) held managed workers back while the browsers took memory, so a new tenant's first run waited past its test's limit. Test instances and CI set `RUN_MEMORY_FLOOR_MB=512`.
+- **Two goes side by side:** each writes its output outside the folder Playwright searches (`e2e-results/`), since a go empties its output folder when it starts and the other, still listing its specs, found it gone.
+- **The drawer's slide** is now seen by its running animation as well as by a frame part of the way: frames are skipped on a loaded machine.
+
+**Not counted above:** the run slots the instance gives itself are sized from memory alone: 96 at once on this 16-core machine, each tenant with a managed worker process of its own. For a product finding, see "For an application that scales".
 
 For daily work, the tags and `pnpm e2e:changed` run only what a change touches.
 

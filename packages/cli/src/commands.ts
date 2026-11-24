@@ -115,8 +115,8 @@ export const COMMANDS = [
   entry(
     "dev",
     REPOSITORY,
-    "dev [app] --tenant <slug> --workspace <slug> [--port <n>] [--no-strict]",
-    "Serve an app with reload, against that workspace's data, as yourself: an app made of files (built from its source), an interface (drawn from its file with Volvel's own screens) or a docs site (drawn from its pages with Volvel's own renderer, with search). With one app it needs no name; otherwise [app] is its path. An interface is drawn with Volvel's screens, which the CLI carries; set SCREENS_DIR to use another build of them. Field help is not drawn locally. What only the instance knows, such as the product's own terms in a docs page, is said on the page. The page is served under the content policy Volvel gives a deployed app, so what it would refuse fails here too; --no-strict leaves the policy off.",
+    "dev [app] --tenant <slug> --workspace <slug> [--port <n>] [--no-strict] | dev --widgets [--port <n>]",
+    "Serve an app with reload, against that workspace's data, as yourself: an app made of files (built from its source), an interface (drawn from its file with Volvel's own screens) or a docs site (drawn from its pages with Volvel's own renderer, with search). With one app it needs no name; otherwise [app] is its path. An interface is drawn with Volvel's screens, which the CLI carries; set SCREENS_DIR to use another build of them. Field help is not drawn locally. What only the instance knows, such as the product's own terms in a docs page, is said on the page. The page is served under the content policy Volvel gives a deployed app, so what it would refuse fails here too; --no-strict leaves the policy off. A repository that defines widgets and no app, or `dev --widgets`, previews each widget instead, with no instance: its frame and content policy are those of a deploy, with controls for its config, data, state, size and theme, a log of the events it raises, and a rebuild when a file is saved.",
   ),
   entry(
     "deploy",

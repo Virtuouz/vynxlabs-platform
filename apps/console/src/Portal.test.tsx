@@ -592,6 +592,25 @@ test("turning a served hostname off says what stops, and asks first (GOV-35)", a
   await waitFor(() => expect(sent("PATCH")[0]?.body).toEqual({ enabled: false }));
 });
 
+test("round 5: a hostname breaks at its dots when the column is narrow, never inside a word", async () => {
+  routes[`GET /api/v1${base}/domains`] = () => [
+    200,
+    { items: [{ ...domain, hostname: "fernhill.localhost", enabled: true }] },
+  ];
+  routes[`GET /api/v1${base}/workspaces`] = () => [200, { items: [] }];
+  show(<Domains base={base} />);
+  const link = await screen.findByRole("link", { name: /fernhill/ });
+  // One <wbr> after the dot: a break opportunity that is not a character, so copying keeps the name whole.
+  expect(link.querySelectorAll("wbr")).toHaveLength(1);
+  expect(link.textContent).toBe("fernhill.localhost");
+  expect(link.className).not.toContain("break-words");
+  cleanup();
+  routes[`GET /api/v1${base}/domains`] = () => [200, { items: [{ ...domain, enabled: false }] }];
+  show(<Domains base={base} />);
+  const name = (await screen.findAllByText(/orders/)).find((one) => one.querySelector("wbr"));
+  expect(name?.querySelectorAll("wbr").length).toBeGreaterThan(0);
+});
+
 test("a hostname an operator enabled without proof says it serves, though nothing proves the name is the tenant's", async () => {
   const unproved = { ...domain, enabled: true, verifiedAt: null };
   routes[`GET /api/v1${base}/domains`] = () => [200, { items: [unproved] }];

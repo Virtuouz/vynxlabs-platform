@@ -1,4 +1,6 @@
 import { appContext, logoUrl, runScript, signOut, table, useQuery, useSession } from "@volvel/app";
+// Types only: none of the repository's server code reaches the browser.
+import type { TableOf } from "@volvel/sdk";
 import {
   Badge,
   type BadgeTone,
@@ -16,8 +18,6 @@ import {
 } from "@volvel/ui";
 import { useMemo } from "react";
 import { createRoot } from "react-dom/client";
-// Types only: none of the repository's server code reaches the browser.
-import type { notices, orders } from "../../src/index.ts";
 import "./styles.css";
 
 const TONES: Record<string, BadgeTone> = {
@@ -48,7 +48,7 @@ const noticeForm: FormSchema = {
 function Orders() {
   const toast = useToast();
   const found = useQuery(() =>
-    table<typeof orders>("orders").find({ sort: ["-created_at"], limit: 200 }),
+    table<TableOf<"orders">>("orders").find({ sort: ["-created_at"], limit: 200 }),
   );
   const rows = found.data ?? [];
   const byStatus = useMemo(() => {
@@ -124,7 +124,9 @@ function Orders() {
 
 function Notices() {
   const toast = useToast();
-  const found = useQuery(() => table<typeof notices>("notices").find({ sort: ["-created_at"] }));
+  const found = useQuery(() =>
+    table<TableOf<"notices">>("notices").find({ sort: ["-created_at"] }),
+  );
   const rows = found.data ?? [];
   return (
     <div className="grid gap-6">
@@ -147,7 +149,7 @@ function Notices() {
                 variant="danger"
                 size="small"
                 onClick={async () => {
-                  await table<typeof notices>("notices").delete(row.id);
+                  await table<TableOf<"notices">>("notices").delete(row.id);
                   found.reload();
                 }}
               >
@@ -164,7 +166,7 @@ function Notices() {
           schema={noticeForm}
           submitLabel="Publish"
           onSubmit={async (values) => {
-            await table<typeof notices>("notices").insert(
+            await table<TableOf<"notices">>("notices").insert(
               values as { title: string; body?: string },
             );
             toast.success("Published.");

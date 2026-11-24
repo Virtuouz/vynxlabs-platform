@@ -1,0 +1,4 @@
+schemaVersion: 1
+body:
+  connector: http
+  description: The web shop's order API.

@@ -104,3 +104,13 @@ test("the settings sheet of a widget closes by its X and by Escape, and the focu
   await new Promise((resolve) => setTimeout(resolve, 100));
   expect(screen.queryByRole("dialog", { name: "Settings" })).toBeNull();
 }, 15000);
+
+test("round 6: the builder bar's save words keep one width, so the bar does not change height when a save finishes", async () => {
+  summary = { mayAuthor: true, authorBlockedBy: null };
+  await open();
+  await waitFor(() =>
+    expect(
+      screen.getAllByRole("status").some((one) => one.className.includes("min-w-[min(100%,12rem)]")),
+    ).toBe(true),
+  );
+});

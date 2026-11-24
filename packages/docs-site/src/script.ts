@@ -180,6 +180,8 @@ export const DOCS_SCRIPT = `${ENHANCE_SCRIPT}
       return value === "light" || value === "dark" ? value : "system";
     } catch (_) { return "system"; }
   };
+  const NEXT = { system: "light", light: "dark", dark: "system" };
+  const WORDS = { system: "System", light: "Light", dark: "Dark" };
   const showChoice = () => {
     const choice = readChoice();
     if (choice === "system") delete document.documentElement.dataset.theme;
@@ -187,25 +189,40 @@ export const DOCS_SCRIPT = `${ENHANCE_SCRIPT}
     for (const button of document.querySelectorAll("[data-theme-choice]")) {
       button.setAttribute("aria-pressed", String(button.getAttribute("data-theme-choice") === choice));
     }
+    for (const button of document.querySelectorAll("[data-theme-cycle]")) {
+      button.setAttribute("data-current", choice);
+      button.setAttribute("aria-label", "Color theme: " + WORDS[choice] + ". Change it to " + WORDS[NEXT[choice]]);
+      button.setAttribute("title", "Color theme: " + WORDS[choice]);
+    }
+  };
+  // Kept in this browser; on the product's documentation, beside the console, it is the console's
+  // own setting, so a member signed in has it kept with their other settings too, as the console
+  // keeps it. Nobody signed in: the server refuses, and the browser's copy stands.
+  const choose = (choice) => {
+    try {
+      if (choice === "system") localStorage.removeItem(themeKey);
+      else localStorage.setItem(themeKey, themeKey === "vd-theme" ? choice : JSON.stringify(choice));
+    } catch (_) {
+      // Storage is refused: the choice holds for this page only.
+    }
+    if (data.themeKey === "vx-pref:theme") {
+      const path = "/api/v1/me/preferences/theme";
+      const sent = choice === "system"
+        ? fetch(path, { method: "DELETE", credentials: "same-origin", keepalive: true })
+        : fetch(path, { method: "PUT", credentials: "same-origin", keepalive: true, headers: { "content-type": "application/json" }, body: JSON.stringify({ value: choice }) });
+      sent.catch(() => {});
+    }
+    showChoice();
   };
   for (const group of document.querySelectorAll("[data-themes]")) {
     group.hidden = false;
     for (const button of group.querySelectorAll("[data-theme-choice]")) {
-      button.addEventListener("click", () => {
-        const choice = button.getAttribute("data-theme-choice");
-        try {
-          if (choice === "system") localStorage.removeItem(themeKey);
-          else localStorage.setItem(themeKey, themeKey === "vd-theme" ? choice : JSON.stringify(choice));
-        } catch (_) {
-          // Storage is refused: the choice holds for this page only.
-        }
-        if (choice === "system") delete document.documentElement.dataset.theme;
-        else document.documentElement.dataset.theme = choice;
-        for (const other of document.querySelectorAll("[data-theme-choice]")) {
-          other.setAttribute("aria-pressed", String(other.getAttribute("data-theme-choice") === choice));
-        }
-      });
+      button.addEventListener("click", () => choose(button.getAttribute("data-theme-choice")));
     }
+  }
+  for (const button of document.querySelectorAll("[data-theme-cycle]")) {
+    button.hidden = false;
+    button.addEventListener("click", () => choose(NEXT[readChoice()]));
   }
   showChoice();
   // Another tab of the site (or the console) changed it.

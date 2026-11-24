@@ -335,7 +335,6 @@ function shell(
 <div class="layout">
 <header class="topbar">
 ${brand(at)}
-${themeControl()}
 <a class="iconbutton" href="${searchHref(at)}" data-search aria-label="Search">${icon("search", 20)}</a>
 <a class="iconbutton" href="#nav" data-nav-open aria-label="Open the navigation">${icon("menu", 20)}</a>
 </header>
@@ -364,11 +363,16 @@ function headingsOf(tree: Root): { id: string; text: string; level: number }[] {
   return out;
 }
 
-/** A light, dark or system choice, as three buttons. Drawn hidden: only the script can keep a choice. */
+/**
+ * A light, dark or system choice: three buttons on a wide screen, and on a phone one button that
+ * goes to the next choice, showing the one in force. Drawn hidden: only the script can keep a choice.
+ */
 function themeControl(): string {
   const one = (choice: string, shape: string, words: string) =>
     `<button type="button" data-theme-choice="${choice}" aria-pressed="false" aria-label="${words}" title="${words}">${icon(shape, 16)}</button>`;
-  return `<div class="themes" role="group" aria-label="Color theme" data-themes hidden>${one("system", "monitor", "System")}${one("light", "sun", "Light")}${one("dark", "moon", "Dark")}</div>`;
+  const shown = (choice: string, shape: string) =>
+    `<span data-shows="${choice}">${icon(shape, 18)}</span>`;
+  return `<div class="themes" role="group" aria-label="Color theme" data-themes hidden>${one("system", "monitor", "System")}${one("light", "sun", "Light")}${one("dark", "moon", "Dark")}</div><button type="button" class="iconbutton themecycle" data-theme-cycle data-current="system" aria-label="Color theme: System. Change it" hidden>${shown("system", "monitor")}${shown("light", "sun")}${shown("dark", "moon")}</button>`;
 }
 
 /**

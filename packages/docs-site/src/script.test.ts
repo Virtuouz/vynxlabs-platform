@@ -410,6 +410,60 @@ describe("the theme control (phase 33)", () => {
     expect(localStorage.getItem("vx-pref:theme")).toBeNull();
   });
 
+  test("a phone has one button that goes to the next choice and says the one in force (P33)", () => {
+    document
+      .querySelector("main")
+      ?.insertAdjacentHTML(
+        "beforeend",
+        '<button type="button" data-theme-cycle data-current="system" aria-label="Color theme: System. Change it" hidden></button>',
+      );
+    const cycle = document.querySelector("[data-theme-cycle]") as HTMLElement;
+    run();
+    expect(cycle.hasAttribute("hidden")).toBe(false);
+    expect(cycle.getAttribute("aria-label")).toBe("Color theme: System. Change it to Light");
+    cycle.click();
+    expect(document.documentElement.dataset.theme).toBe("light");
+    expect(cycle.getAttribute("data-current")).toBe("light");
+    cycle.click();
+    expect(document.documentElement.dataset.theme).toBe("dark");
+    expect(cycle.getAttribute("aria-label")).toBe("Color theme: Dark. Change it to System");
+    cycle.click();
+    expect(document.documentElement.dataset.theme).toBeUndefined();
+    expect(localStorage.getItem("vd-theme")).toBeNull();
+  });
+
+  test("on the product's pages a choice is kept with a signed-in member's settings too (P33)", async () => {
+    (document.getElementById("docs-data") as HTMLElement).textContent =
+      '{"base":"/","themeKey":"vx-pref:theme"}';
+    const sent: { url: string; method: string; body?: string }[] = [];
+    vi.stubGlobal("fetch", async (url: string, init: RequestInit = {}) => {
+      sent.push({ url, method: init.method ?? "GET", ...(init.body ? { body: String(init.body) } : {}) });
+      return answer({});
+    });
+    control();
+    run();
+    press("dark");
+    press("system");
+    await settle();
+    expect(sent).toEqual([
+      { url: "/api/v1/me/preferences/theme", method: "PUT", body: '{"value":"dark"}' },
+      { url: "/api/v1/me/preferences/theme", method: "DELETE" },
+    ]);
+  });
+
+  test("a tenant's site keeps the choice in the browser only (P33)", async () => {
+    const sent: string[] = [];
+    vi.stubGlobal("fetch", async (url: string) => {
+      sent.push(url);
+      return answer({});
+    });
+    control();
+    run();
+    press("dark");
+    await settle();
+    expect(sent.filter((url) => url.includes("preferences"))).toEqual([]);
+  });
+
   test("a storage that refuses still changes this page", () => {
     control();
     run();

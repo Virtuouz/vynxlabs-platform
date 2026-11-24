@@ -225,8 +225,12 @@ main { min-width: 0; padding: 20px 18px 64px; }
 .themes button:hover { color: var(--vx-ink); }
 .themes button[aria-pressed="true"] { background: var(--vx-action-soft); color: var(--vx-action); }
 .sidefoot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: auto; padding: 0 8px; }
-.side .themes { display: none; }
-@media (min-width: 1024px) { .side .themes:not([hidden]) { display: inline-flex; } }
+/* A phone has the one button that goes to the next choice; a wide screen the three. */
+.themecycle[hidden] { display: none; }
+.themecycle [data-shows] { display: none; }
+.themecycle[data-current="system"] [data-shows="system"], .themecycle[data-current="light"] [data-shows="light"], .themecycle[data-current="dark"] [data-shows="dark"] { display: inline-grid; }
+.themes:not([hidden]) { display: none; }
+@media (min-width: 1024px) { .themes:not([hidden]) { display: inline-flex; } .themecycle:not([hidden]) { display: none; } }
 .homebar .themes { margin-left: 8px; }
 
 /* A description with code in it. */

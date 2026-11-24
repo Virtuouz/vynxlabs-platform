@@ -93,6 +93,12 @@ export const COMMANDS = [
     "types",
     "Write .platform/volvel-env.d.ts, which gives your tables, events, variables and connections to @volvel/sdk, so that scripts are typed by their names. `build` and `dev` write it too.",
   ),
+  entry(
+    "convert",
+    REPOSITORY,
+    "convert [--dry-run] [--only <kind>,…] [--keep-references] [--entry <file>] [--resources <folder>]",
+    'Turn the definitions in your code that are only data (tables, events, variables, schedules, roles and the like, written with literal values) into resource files, and take them out of the TypeScript. Scripts, connectors, apps made of files, and anything computed stay, each with the reason. A definition that stays may name one that moves: that name becomes its path (ctx.table(visits) becomes ctx.table("visits"), typed by .platform/volvel-env.d.ts), each change listed; --keep-references leaves such definitions in the code instead. It builds again and compiles the code that is left, and refuses to leave anything changed if the bundle is not the same or the code has new errors. --dry-run says what would change and writes nothing.',
+  ),
   entry("run", REPOSITORY, "run <script> [--input <json>]", "Run one script on this machine."),
   entry(
     "run",

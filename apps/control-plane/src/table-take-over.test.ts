@@ -161,6 +161,18 @@ describe("a table defined in code, taken over in the console", () => {
     expect(await ownerOf(id, "notes")).toBe("code");
   });
 
+  test("a change made in the same save that takes it over is the console's, and a deploy of the code is refused", async () => {
+    const id = await workspace();
+    expect((await deploy(id, [code("notes", sells)])).status).toBe(201);
+    expect((await takeOver(id, "notes", { ...sells, body: { type: "text" } })).status).toBe(200);
+    const refused = await deploy(id, [code("notes", sells)]);
+    expect(refused.status).toBe(409);
+    expect(refused.body.code).toBe("console_changed");
+    expect(await ownerOf(id, "notes")).toBe("ui");
+    const columns = (await alice.get(`${ws(id)}/tables/notes`)).body.columns as { name: string }[];
+    expect(columns.map((c) => c.name)).toContain("body");
+  });
+
   test("is refused in production, and so is retiring it", async () => {
     const prod = (
       await alice.post(`/tenants/${tenant}/workspaces`, {
@@ -249,6 +261,12 @@ describe("what a pull brings of a resource taken over from code", () => {
     const after = await files(id);
     expect(after.files.map((file) => file.path)).toEqual(["f/one.flow.yaml"]);
     expect(after.inCode).toEqual([{ path: "f/one", kind: "flow" }]);
+    // A deploy that still defines it in code is refused, not a silent take-back.
+    const refused = await deploy(id, [
+      { kind: "flow", schemaVersion: 1, path: "f/one", ownership: "code", body: flowBody },
+    ]);
+    expect(refused.status).toBe(409);
+    expect(refused.body.code).toBe("console_changed");
     // The console edits it again: still named.
     expect((await alice.get(`${ws(id)}/drafts/f/one`)).status).toBe(404);
     const again = await alice.put(`${ws(id)}/drafts/f/one`, {

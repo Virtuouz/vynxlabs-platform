@@ -613,8 +613,16 @@ describe("deploying drafts", () => {
     expect((await run("repo/greet")).output).toEqual({ from: "console" });
     // A resource of the repository's is not removed from the console.
     const upload = await alice.post(`${ws()}/bundles`, fromRepository(2));
-    await alice.post(`${ws()}/deployments`, { bundleId: upload.body.id });
-    // The repository defines the path again, so it is the repository's again.
+    // The repository still defines the path: a deploy is refused, not a silent take-back, until
+    // it is pulled or forced.
+    const refused = await alice.post(`${ws()}/deployments`, { bundleId: upload.body.id });
+    expect(refused.status).toBe(409);
+    expect(refused.body.code).toBe("console_changed");
+    expect((await resources())["repo/greet"]).toBe("ui");
+    expect(
+      (await alice.post(`${ws()}/deployments`, { bundleId: upload.body.id, force: true })).status,
+    ).toBe(201);
+    // Forced, the repository defines the path again, so it is the repository's again.
     expect((await resources())["repo/greet"]).toBe("code");
     expect((await run("repo/greet")).output).toEqual({ from: "repository", version: 2 });
   });

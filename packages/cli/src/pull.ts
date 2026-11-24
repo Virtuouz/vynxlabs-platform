@@ -328,7 +328,7 @@ export async function pull(args: string[], io: Io): Promise<number> {
     io.err(
       `${one.path} (${one.kind}) was taken over in the console, and is still defined in code${
         one.file ? ` at ${one.file}` : `, by the name ${one.path}`
-      }. Remove it from the TypeScript: until then a deploy is refused, as defined in the code and again in ${resources}/.`,
+      }. Remove it from the TypeScript: until you do, a deploy is refused as defined twice, in the code and in ${resources}/.`,
     );
   }
   if (files.length > 0) {

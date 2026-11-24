@@ -581,6 +581,15 @@ export async function deployBundle(
       switchOwnership: true,
       takenOver,
     });
+    // What it was in code is what the repository has: a deploy that still defines it is refused
+    // for the console's change, and does not take it back unseen.
+    if (takenOver && stored?.ownership === "code") {
+      await trx
+        .updateTable("resource")
+        .set({ basis_hash: contentHash(stored) })
+        .where("id", "=", stored.id)
+        .execute();
+    }
     // Positions saved from the flow page are older than a layout this deploy brings: the
     // newer one is read, by the flow page, the run's page and the editor alike.
     if (

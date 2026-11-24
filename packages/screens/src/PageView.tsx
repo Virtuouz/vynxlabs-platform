@@ -155,7 +155,11 @@ export interface PageViewProps {
      */
     askLayout?(device: "tablet" | "phone"): Promise<boolean>;
     selected: string | undefined;
-    onSelect(id: string | undefined): void;
+    /**
+     * `via: "focus"` is a widget chosen only because the keyboard arrived on it, which the host may
+     * leave alone when the focus was handed back (a sheet closing returns it to a widget).
+     */
+    onSelect(id: string | undefined, via?: "focus"): void;
     /** Every change of place or size, or a removal or duplicate, as a new widget list, with words for Undo ("Moved Invoices"). */
     onChange(widgets: PageWidget[], label: string): void;
     onRename(id: string, title: string): void;
@@ -641,7 +645,8 @@ function Cell({
               : {}),
             onFocus: (event: React.FocusEvent<HTMLElement>) => {
               oneStop.props.onFocus?.(event);
-              if (event.target === event.currentTarget && !selected) editing?.onSelect(widget.id);
+              if (event.target === event.currentTarget && !selected)
+                editing?.onSelect(widget.id, "focus");
             },
             onBlur: oneStop.props.onBlur,
             onPointerDown: (event: React.PointerEvent<HTMLElement>) => {

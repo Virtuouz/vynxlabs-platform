@@ -10,6 +10,7 @@ import { ENV_TYPES_FILE, resourceOfFile } from "@volvel/manifest";
 import { ACCESS_ACTIONS, tenantAccess } from "./access.js";
 import { BuildError, type Built, buildRepository, describeBundle } from "./build.js";
 import { type CommandName, usage } from "./commands.js";
+import { convertRepository, describeConvert } from "./convert.js";
 import { startDevServer } from "./dev.js";
 import { CliError } from "./errors.js";
 import { type Followed, followRun, Stopped } from "./follow.js";
@@ -284,6 +285,27 @@ async function types(args: string[], io: Io) {
   io.out(
     'Scripts are typed by them when tsconfig.json includes ".platform/*.d.ts". Run this again, or `volvel build`, after a definition changes.',
   );
+}
+
+async function convert(args: string[], io: Io) {
+  const { values } = parseArgs({
+    args,
+    options: {
+      ...placesOption,
+      "dry-run": { type: "boolean" as const },
+      only: { type: "string" as const },
+    },
+  });
+  const only = values.only
+    ?.split(",")
+    .map((kind) => kind.trim())
+    .filter((kind) => kind !== "");
+  const result = await convertRepository({
+    ...buildOptionsOf(values),
+    ...(only && only.length > 0 ? { only } : {}),
+    dryRun: values["dry-run"] === true,
+  });
+  for (const line of describeConvert(result)) io.out(line);
 }
 
 async function schemas(args: string[], io: Io) {
@@ -1352,6 +1374,10 @@ const HANDLERS: Record<CommandName, (rest: string[], io: Io) => Promise<number>>
   },
   types: async (rest, io) => {
     await types(rest, io);
+    return 0;
+  },
+  convert: async (rest, io) => {
+    await convert(rest, io);
     return 0;
   },
   run: async (rest, io) => {

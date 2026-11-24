@@ -87,6 +87,12 @@ export const COMMANDS = [
     "types",
     "Write .platform/volvel-env.d.ts, which gives your tables, events, variables and connections to @volvel/sdk, so that scripts are typed by their names. `build` and `dev` write it too.",
   ),
+  entry(
+    "convert",
+    REPOSITORY,
+    "convert [--dry-run] [--only <kind>,…] [--entry <file>] [--resources <folder>]",
+    "Turn the definitions in your code that are only data (tables, events, variables, schedules, roles and the like, written with literal values) into resource files, and take them out of the TypeScript. Scripts, connectors, apps made of files, and anything computed stay, each with the reason. It builds again and refuses to leave anything changed if the bundle is not the same. --dry-run says what would change and writes nothing.",
+  ),
   entry("run", REPOSITORY, "run <script> [--input <json>]", "Run one script on this machine."),
   entry(
     "run",

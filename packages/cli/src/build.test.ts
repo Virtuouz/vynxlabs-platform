@@ -85,11 +85,27 @@ describe("building the example repository", () => {
       "binding access/public-notices",
       "binding access/public-page",
     ]);
-    // Its contact flow is made of core nodes, which the build adds as the platform has them. They
-    // are the only resources in it that the repository's own code does not define.
+    // Acme is YAML first: what the code still defines is the scripts and the two apps made of files.
+    // The rest is files (the core steps its contact flow is made of are added by the build as well).
+    expect(
+      bundle.manifests
+        .filter((manifest) => manifest.ownership === "code")
+        .map((m) => `${m.kind} ${m.path}`)
+        .sort(),
+    ).toEqual([
+      "app portal",
+      "app public",
+      "script alerts/run-failed",
+      "script orders/check",
+      "script orders/receive",
+      "script orders/record",
+      "script orders/request",
+      "script orders/send-to-erp",
+      "script orders/sync",
+    ]);
     expect(
       bundle.manifests.filter((manifest) => manifest.ownership === "ui").map((m) => m.path),
-    ).toEqual(["core/publish-event", "core/table-write"]);
+    ).toEqual(expect.arrayContaining(["orders", "contact", "orders/handle", "core/table-write"]));
     // A bundle that carries them is written as format 3.
     expect(bundle).toMatchObject({
       formatVersion: 3,

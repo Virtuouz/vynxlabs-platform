@@ -238,6 +238,7 @@ export {
 } from "./page.js";
 export {
   APP_FACING_KINDS,
+  BUILTIN_ROLE_NAMES,
   grants,
   isExplicitKind,
   isGrantablePermission,

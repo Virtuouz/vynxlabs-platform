@@ -110,7 +110,7 @@ A new connection is first declared in a draft and then set up. It shows **Draft,
 
 ## Connection groups
 
-Under the list the screen shows **Connection groups**: "A group holds many connections of one kind, and a script picks one by its key when it runs. Add a member for each customer or account. It is used from the next run, with no deploy." A group is declared in code with `defineConnectionGroup`. Its members, and their credentials, are added here.
+Under the list the screen shows **Connection groups**: "A group holds many connections of one kind, and a script picks one by its key when it runs. Add a member for each customer or account. It is used from the next run, with no deploy." A group is declared in a `<path>.connection_group.yaml` file, or in code with `defineConnectionGroup`. Its members, and their credentials, are added here.
 
 | Control | What it does |
 | --- | --- |

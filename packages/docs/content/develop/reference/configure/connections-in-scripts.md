@@ -8,18 +8,21 @@ Code names what a script needs from the outside and reads it at run time. The ad
 
 ## Declare
 
-| Function | Declares | Options |
-| --- | --- | --- |
-| `defineConnection(options)` | A connection: a name and a kind. | `path` (required), `connector`, `description` |
-| `defineConnectionGroup(options)` | A group of connections of one kind. Members are added per workspace. | `path` (required), `connector`, `description` |
-| `defineVariable(options)` | A variable with an optional default. | `path` (required), `description`, `default` (a string) |
-| `defineConnector(options)` | A connector of your own. See [Connectors](../connectors). | `path`, `configSchema`, `create`, `test`, `description` |
+A connection, a connection group, a variable and a connector are resources. Each is a YAML file in the console's folder of the repository: `<path>.connection.yaml`, `<path>.connection_group.yaml`, `<path>.variable.yaml` and `<path>.connector.yaml` (with the connector's code in a `.ts` file beside it). A file has `schemaVersion: 1` and a `body`:
 
-`connector` is `http`, `smtp` or `oauth2` for a connection, and `http`, `smtp` or your own for a group. It is `http` when left out. A group cannot hold an `oauth2` connector: "… /body/connector is oauth2, which a group cannot use yet. Declare a connection for each account." `connector` may also be the definition of a connector of your own.
+```yaml title=platform/stock-orders.connection.yaml
+schemaVersion: 1
+body:
+  connector: http
+  description: "VetSupply Direct: prices and orders for stock."
+```
 
-A secret is not declared. There is no `defineSecret` and no file for one. A script names a secret in `secrets`, and its value is set in the workspace.
-
-Each can instead be a YAML file in the console's folder of the repository: `<path>.connection.yaml`, `<path>.connection_group.yaml`, `<path>.variable.yaml` and `<path>.connector.yaml` (with the connector's code in a `.ts` file beside it). A file has `schemaVersion: 1` and a `body`:
+```yaml title=platform/clinics.connection_group.yaml
+schemaVersion: 1
+body:
+  connector: http
+  description: One supplier account for each clinic.
+```
 
 ```yaml title=loans/days.variable.yaml
 schemaVersion: 1
@@ -27,6 +30,21 @@ body:
   description: How many days a loan lasts unless the desk says otherwise.
   default: "14"
 ```
+
+`connector` is `http`, `smtp` or `oauth2` for a connection, and `http`, `smtp` or your own for a group. A file says it. With `defineConnection` it is `http` when left out. A group cannot hold an `oauth2` connector: "… /body/connector is oauth2, which a group cannot use yet. Declare a connection for each account." `connector` may also be the path of a connector of your own.
+
+A secret is not declared. There is no file for one and no `defineSecret`. A script names a secret in `secrets`, and its value is set in the workspace.
+
+### In TypeScript
+
+The same resources can be written with the SDK, and are then owned as Code. Do it when a value is shared with other definitions: see [Definitions in code](../../explanation/cli/definitions-in-code).
+
+| Function | Declares | Options |
+| --- | --- | --- |
+| `defineConnection(options)` | A connection: a name and a kind. | `path` (required), `connector`, `description` |
+| `defineConnectionGroup(options)` | A group of connections of one kind. Members are added per workspace. | `path` (required), `connector`, `description` |
+| `defineVariable(options)` | A variable with an optional default. | `path` (required), `description`, `default` (a string) |
+| `defineConnector(options)` | A connector of your own. See [Connectors](../connectors). | `path`, `configSchema`, `create`, `test`, `description` |
 
 The fields of each kind are in the generated reference: [connection](../kinds/connection), [connection group](../kinds/connection-group), [variable](../kinds/variable) and [connector](../kinds/connector).
 

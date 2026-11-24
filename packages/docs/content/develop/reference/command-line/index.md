@@ -3,6 +3,8 @@ title: The command line, in detail
 description: "What a repository holds and volvel.yaml says, which flags each command takes, what the commands print as JSON, the exit codes, and how the versions meet."
 pages:
   - repository-layout
+  - generated-types
+  - convert
   - flags-and-exit-codes
   - json-output
   - versions

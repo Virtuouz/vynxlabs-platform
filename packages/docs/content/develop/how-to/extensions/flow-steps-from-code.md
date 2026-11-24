@@ -28,15 +28,16 @@ By the end a script of your own will be a step in the flow editor's **Add step**
 :::
 ::::
 ::::tab{label=Code}
+A script is code, so the script stays TypeScript and says what it takes. The flow that uses it is a YAML file.
+
 :::steps
-1. In the script's `defineScript`, add `node`. Mark the input field that names the table with `"x-pick"` through `.meta`.
-2. Hand it the table in the flow with `step.script(..., { with: { tables: [...] } })`.
+1. In the script's `defineScript`, add `node`. Mark the input field that names the table with `"x-pick"` through `.meta`, and list `table` under `takes`.
+2. Write the flow as a file, `platform/reports/count-visits.flow.yaml`. The step's `script` is the script's path, and `with.tables` hands it the table by its path.
 3. Run `volvel deploy`.
 :::
 
-```ts title="src/steps.ts"
-import { defineFlow, defineScript, step, trigger, z } from "@volvel/sdk";
-import { appointments } from "./model.ts";
+```ts title="src/index.ts"
+import { defineScript, z } from "@volvel/sdk";
 
 export const countRows = defineScript({
   path: "reports/count-rows",
@@ -51,19 +52,30 @@ export const countRows = defineScript({
     return { rows: rows.length };
   },
 });
-
-export const countAppointments = defineFlow({
-  path: "reports/count-appointments",
-  nodes: {
-    by_hand: trigger.manual(),
-    count: step.script(countRows, {
-      inputs: { table: "'appointments'" },
-      with: { tables: [appointments] },
-    }),
-  },
-  edges: [["by_hand", "count"]],
-});
 ```
+
+```yaml title="platform/reports/count-visits.flow.yaml"
+schemaVersion: 1
+body:
+  nodes:
+    by_hand:
+      type: trigger
+      trigger:
+        type: manual
+    count:
+      type: script
+      script: reports/count-rows
+      inputs:
+        table: "'visits'"
+      with:
+        tables:
+          - visits
+  edges:
+    - from: by_hand
+      to: count
+```
+
+The table `visits` is a file of the repository too, `platform/visits.table.yaml`. A flow written in TypeScript with `defineFlow` builds the same file: see [Definitions in code](../../explanation/cli/definitions-in-code).
 ::::
 :::
 
@@ -98,7 +110,7 @@ Five steps are in the **Core** group. Their paths start with `core/`, which is k
 ## If it does not work
 
 - **The step is not in the list.** The script needs a **Step name**, and the script must be deployed.
-- **A deploy is refused with "which does not take one".** The refusal reads `/body/nodes/count/with/tables/0 hands a table to the script "reports/count-rows", which does not take one. A script says what it takes with `node.takes`.` The flow hands the script a connection, a table or an event the script does not list under `takes`. Add it under **A step may hand it**, or in `node.takes`.
-- **A deploy is refused with `refers to "<path>", which is not a table in this repository`.** The table named in `with` is not defined in the tenant's repository. A table made in the console is not one: a flow of the repository that hands one is refused with this text when it is deployed. Define the table with `defineTable`, or name another.
+- **The build fails with "which does not take one".** The refusal reads `/body/nodes/count/with/tables/0 hands a table to the script "reports/count-rows", which does not take one. A script says what it takes with `node.takes`.` The flow hands the script a connection, a table or an event the script does not list under `takes`. Add it under **A step may hand it**, or in `node.takes`.
+- **The build fails with `/body/nodes/count/with/tables/0 refers to "nope", which is not a table in this repository`.** The table named in `with` is not defined in the tenant's repository, as a file or in code. A table made in the console is not one: a flow of the repository that hands one is refused with this text. Write the table as a `<path>.table.yaml` file or with `defineTable`, or name another.
 - **The icon is a puzzle piece.** The name is not one the console knows. Choose one from the **Icon** list.
 - **The step form has no list of tables.** The input field has no `x-pick`, or the script's `takes` does not include it.

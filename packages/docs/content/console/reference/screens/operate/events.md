@@ -49,7 +49,7 @@ Choosing a row puts the event's ID in the address (`?item=`) and opens it. An ID
 
 **Publish an event** (or **Publish it**, on an event's own page, where the event is already chosen) opens a dialog titled **Publish an event** (or **Publish *name***).
 
-- **Event**: a list of the events declared in this workspace, each with its description. If there are none, the dialog says "No event is declared in this workspace yet. Declare one with defineEvent, or under Resources, and it can be published here."
+- **Event**: a list of the events declared in this workspace, each with its description. If there are none, the dialog says "No event is declared in this workspace yet. Declare one with defineEvent, or under Resources, and it can be published here." (An event is also declared by a `<path>.event.yaml` file.)
 - The payload, as fields drawn from the event's schema, or as JSON (**How to give it**: **Fields** or **JSON**). A fault the server finds in a field is shown at that field.
 - **Publish**. The notice says "Published. It started N run(s)." or "Published. Nothing listens for it, so it started nothing."
 
@@ -70,7 +70,7 @@ A platform event is stored only when an event trigger of the workspace listens f
 
 | State | What the screen shows |
 | --- | --- |
-| Empty | "No events yet" (or "No *name* events yet" when a name is applied) with "Declare an event with defineEvent, and publish it from a script with ctx.events.publish." |
+| Empty | "No events yet" (or "No *name* events yet" when a name is applied) with "Declare an event with defineEvent, and publish it from a script with ctx.events.publish." (A `<path>.event.yaml` file declares one too.) |
 | Error | The error with a retry. |
 | Loading more | **Load more** reads the next 100. |
 

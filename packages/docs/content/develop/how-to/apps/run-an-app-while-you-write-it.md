@@ -52,7 +52,7 @@ The page is built from `source` as Vite serves it. Its context says what a deplo
 
 ## An interface
 
-An interface app is drawn from the interface's file in your repository, with the screens the CLI carries. Edit the interface (`defineInterface`) and the page reloads with the change. Data comes from the workspace, as you.
+An interface app is drawn from the interface's file in your repository, with the screens the CLI carries. Edit the interface (its `<path>.interface.yaml` file, or `defineInterface`) and the page reloads with the change. Data comes from the workspace, as you.
 
 - The columns, and the names of the groups, come from the deployed interface when there is one. A table you have not deployed has none.
 - Field help is not drawn: the runtime is told there is none.

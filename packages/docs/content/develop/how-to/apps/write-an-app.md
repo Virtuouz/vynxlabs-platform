@@ -1,6 +1,6 @@
 ---
 title: Write an app as code
-description: Put an app in a tenant's repository with defineApp, build it with Vite, deploy it to a dev workspace and say who may open it.
+description: Put an app in a tenant's repository with defineApp, build it with Vite, deploy it to a dev workspace and say who may open it with YAML bindings.
 subjects: [apps, access]
 ---
 
@@ -19,7 +19,7 @@ By the end you will have an app in a tenant's repository that reads a table and 
 ## Steps
 
 :::steps
-1. Define what the app uses, in `src/index.ts`. The app reads `visits` and starts `check-in`. A script that writes a table lists it in `tables`, or its writes are refused with "This needs a declared use of the table".
+1. Define what the app uses, in `src/index.ts`. The app reads `visits` and starts `check-in`. The table is written in TypeScript here because the page's code imports its type in step 4; a table that nothing imports is a [file](../../explanation/cli/definitions-in-code). A script that writes a table lists it in `tables`, or its writes are refused with "This needs a declared use of the table".
 
    ```ts title=src/index.ts
    import { column, defineApp, defineScript, defineTable, z } from "@volvel/sdk";
@@ -142,46 +142,54 @@ By the end you will have an app in a tenant's repository that reads a table and 
    ```
 
    ```text
-   Bundle 863011aa323c, 770 KB of code, SDK 0.5.0
+   Bundle edff952930f5, 758 KB of code, SDK 0.5.0
      table      visits
      script     check-in
-     app        desk  (6 files, 658 KB)
+     app        desk  (6 files, 686 KB)
    ```
 
-6. Say who may open the app. Staff whose role lets them read the workspace need no binding. For end users, bind a role that holds `app:read` at the app, and bind the tables and scripts it uses too: a binding at the app gives no table. `portal_user` holds `app:read`, `data:read` and `data:write`; `portal_reader` holds `app:read` and `data:read`. To start a script or a flow, the role must hold `run:write` or `flow_run:write`, which no built-in portal role does, so the repository defines one.
+6. Say who may open the app. Staff whose role lets them read the workspace need no binding. For end users, bind a role that holds `app:read` at the app, and bind the tables and scripts it uses too: a binding at the app gives no table. `portal_user` holds `app:read`, `data:read` and `data:write`; `portal_reader` holds `app:read` and `data:read`. To start a script or a flow, the role must hold `run:write` or `flow_run:write`, which no built-in portal role does, so the repository defines one, `starts_runs`.
 
-   ```ts title=src/index.ts
-   import { defineBinding, defineRole } from "@volvel/sdk";
+   These are three files in the console's folder, `platform/`. They are YAML because nothing in the code imports them. A binding names the role by its name, the principal, and the resource it binds at by its path.
 
-   const FRONT_DESK = { type: "end_user_group", key: "front-desk" } as const;
+   ```yaml title=platform/access/desk-app.binding.yaml
+   schemaVersion: 1
+   body:
+     role: portal_user
+     principal:
+       type: end_user_group
+       key: front-desk
+     resource: desk
+   ```
 
-   export const deskStaffOpenDesk = defineBinding({
-     path: "access/desk-app",
-     role: "portal_user",
-     principal: FRONT_DESK,
-     resource: desk,
-   });
+   ```yaml title=platform/access/desk-visits.binding.yaml
+   schemaVersion: 1
+   body:
+     role: portal_user
+     principal:
+       type: end_user_group
+       key: front-desk
+     resource: visits
+   ```
 
-   export const deskStaffUseVisits = defineBinding({
-     path: "access/desk-visits",
-     role: "portal_user",
-     principal: FRONT_DESK,
-     resource: visits,
-   });
+   ```yaml title=platform/roles/starts-runs.role.yaml
+   schemaVersion: 1
+   body:
+     name: starts_runs
+     description: Starts a script or a flow it is bound at.
+     permissions:
+       - run:write
+       - flow_run:write
+   ```
 
-   export const startsRuns = defineRole({
-     path: "roles/starts-runs",
-     name: "starts_runs",
-     description: "Starts a script or a flow it is bound at.",
-     permissions: ["run:write", "flow_run:write"],
-   });
-
-   export const deskStaffStartCheckIn = defineBinding({
-     path: "access/desk-check-in",
-     role: startsRuns,
-     principal: FRONT_DESK,
-     resource: checkIn,
-   });
+   ```yaml title=platform/access/desk-check-in.binding.yaml
+   schemaVersion: 1
+   body:
+     role: starts_runs
+     principal:
+       type: end_user_group
+       key: front-desk
+     resource: check-in
    ```
 
    A group is named by its `key`, which stays when the group is renamed. The other principals are `member` (by email), `group`, `service_account`, `end_user` (by email), `end_user_group`, `end_users` (every signed-in end user) and `anonymous` (anyone, signed in or not). [How access to an app works](../../explanation/apps/app-access) says what each one gives.
@@ -194,7 +202,7 @@ By the end you will have an app in a tenant's repository that reads a table and 
 
    ```text
    App files: 6, 4 new.
-   Deployed version 1 to apps-docs (dev): 9 created, 0 updated, 0 deleted, 0 unchanged.
+   Deployed version 1 to apps-docs (dev): 7 created, 0 updated, 0 deleted, 0 unchanged.
    ```
 
    The command uploads only the files the instance does not already hold, six at a time, and says how many were new.

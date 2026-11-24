@@ -1035,7 +1035,7 @@ async function plan(options: ConvertOptions) {
       folder = "resources";
       newConfig = "resources: resources\n";
       notes.push(
-        `Wrote ${REPOSITORY_CONFIG} with \`resources: resources\`, the folder the files go to.`,
+        `${options.dryRun ? "Would write" : "Wrote"} ${REPOSITORY_CONFIG} with \`resources: resources\`, the folder the files go to.`,
       );
     }
   }
@@ -1181,10 +1181,12 @@ function typeErrors(directory: string): string[] | undefined {
 /** Converts a repository's declarative definitions to files, or says what it would. */
 export async function convertRepository(options: ConvertOptions): Promise<ConvertResult> {
   const made = await plan(options);
+  // With nothing to convert no file is written, so nothing is said of one.
+  const nothing = made.converted.length === 0;
   const result: ConvertResult = {
     converted: made.converted,
     left: made.left,
-    notes: made.notes,
+    notes: nothing ? made.notes.filter((note) => !note.includes(REPOSITORY_CONFIG)) : made.notes,
     droppedComments: made.droppedComments,
     rewrites: made.rewrites,
     dryRun: options.dryRun === true,

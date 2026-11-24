@@ -88,7 +88,7 @@ When the last attempt of a run fails, `onFailure.script` is started with `{ run:
 
 ## What starts a script
 
-A script has no schedule or trigger option of its own. These definitions name a script and start it:
+A script has no schedule or trigger option of its own. These resources name a script and start it. Each is a file, `<path>.schedule.yaml` and so on, or the `define*` call in TypeScript:
 
 | Definition | Starts the script |
 | --- | --- |

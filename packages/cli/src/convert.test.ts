@@ -152,6 +152,9 @@ export const plain = defineVariable({
     const result = await convertRepository({ directory: dir, dryRun: true });
     expect(await snapshot(dir)).toEqual(before);
     expect(result.dryRun).toBe(true);
+    // A dry run does not say it wrote the file it would make.
+    expect(result.notes.join("\n")).toContain("Would write volvel.yaml");
+    expect(result.notes.join("\n")).not.toContain("Wrote volvel.yaml");
     expect(result.converted.map((one) => one.export).sort()).toEqual(["note", "opened", "plain"]);
     const why = Object.fromEntries(result.left.map((one) => [one.export, one.reason]));
     expect(why.spread).toContain("spread");

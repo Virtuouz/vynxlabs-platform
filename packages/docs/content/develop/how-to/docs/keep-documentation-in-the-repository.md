@@ -37,18 +37,22 @@ By the end your pages are files in the repository, a docs app serves them, `volv
    ```
 
    The fields are listed in [the top of a page](../../reference/docs/frontmatter). A folder's own page is `index.md` and lists the order of what is in the folder with `pages:`.
-4. Serve the top-level folder with an app and let people open it. Write it in a file the entry file exports, such as `src/docs.ts` with `export * from "./docs.ts";` in `src/index.ts`: only what the entry file exports counts.
+4. Serve the top-level folder with an app and let people open it. Write the app and the binding as two files in the console's folder:
 
-   ```ts title=src/docs.ts
-   import { defineApp, defineBinding } from "@volvel/sdk";
+   ```yaml title=platform/handbook.app.yaml
+   schemaVersion: 1
+   body:
+     title: Handbook
+     docs: handbook
+   ```
 
-   export const handbook = defineApp({ path: "handbook", title: "Handbook", docs: "handbook" });
-   export const open = defineBinding({
-     path: "access/handbook",
-     role: "portal_user",
-     principal: { type: "anonymous" },
-     resource: handbook,
-   });
+   ```yaml title=platform/access/handbook.binding.yaml
+   schemaVersion: 1
+   body:
+     role: portal_user
+     principal:
+       type: anonymous
+     resource: handbook
    ```
 
    Every page whose path is under `handbook` is a page of the site. A site never serves a folder inside another. Who may open it is decided by bindings: nobody outside without one.

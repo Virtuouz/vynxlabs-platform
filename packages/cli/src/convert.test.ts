@@ -158,7 +158,8 @@ export const plain = defineVariable({
     expect(why.computed).toContain("`base`");
     expect(why.template).toContain("template");
     expect(why.call).toContain("`String`");
-    expect(why.clinics).toContain("src/rest.ts imports it");
+    expect(why.clinics).toContain("src/rest.ts:");
+    expect(why.clinics).toContain("where a path cannot stand for it");
     expect(why.clinics).toContain('ctx.table("path")');
   });
 
@@ -191,6 +192,91 @@ export const plain = defineVariable({
     // Nothing more converts.
     const again = await convertRepository({ directory: dir, dryRun: true });
     expect(again.converted).toEqual([]);
+  });
+
+  test("what a script that stays names becomes a path, listed, and the code still compiles", async () => {
+    const dir = await fixture({
+      "tsconfig.json": JSON.stringify({
+        extends: fileURLToPath(new URL("../../../tsconfig.base.json", import.meta.url)),
+        compilerOptions: {
+          composite: false,
+          declaration: false,
+          declarationMap: false,
+          noEmit: true,
+          allowImportingTsExtensions: true,
+        },
+        include: ["src", ".platform/*.d.ts"],
+      }),
+      "src/index.ts": 'export * from "./model.js";\nexport * from "./script.js";\n',
+      "src/model.ts": `import { column, defineConnection, defineEvent, defineTable, defineVariable, z } from "@volvel/sdk";
+export const visits = defineTable({ path: "visits", columns: { name: column.text({ required: true }) } });
+export const seen = defineEvent({ path: "visits/seen", payload: z.object({ id: z.string() }) });
+export const limit = defineVariable({ path: "limit", default: "5" });
+export const shop = defineConnection({ path: "shop" });
+`,
+      "src/script.ts": `import { defineScript, z } from "@volvel/sdk";
+import * as model from "./model.js";
+import { limit, seen, shop, visits } from "./model.js";
+
+export const count = defineScript({
+  path: "count",
+  input: z.object({}),
+  output: z.object({ n: z.number() }),
+  tables: [visits],
+  events: [seen],
+  variables: [model.limit],
+  connections: [shop],
+  async run(_input, ctx) {
+    const rows = await ctx.table(visits).find();
+    await ctx.events.publish(seen, { id: "x" });
+    return { n: rows.length + Number(limit.path.length) };
+  },
+});
+`,
+    });
+    const planned = await convertRepository({ directory: dir, dryRun: true });
+    expect(planned.left.map((one) => one.export)).toContain("count");
+    // limit.path is not a place a path can stand for it.
+    expect(planned.converted.map((one) => one.export).sort()).toEqual(["seen", "shop", "visits"]);
+    expect(planned.left.find((one) => one.export === "limit")?.reason).toContain("script.ts:");
+    expect(planned.rewrites.map((one) => one.after)).toContain('tables: ["visits"],');
+    expect(planned.rewrites.map((one) => one.after)).toContain(
+      'const rows = await ctx.table("visits").find();',
+    );
+    expect(planned.rewrites.map((one) => one.after)).toContain(
+      'await ctx.events.publish("visits/seen", { id: "x" });',
+    );
+    const was = await built(dir);
+    await convertRepository({ directory: dir });
+    const code = await readFile(join(dir, "src/script.ts"), "utf8");
+    expect(code).toContain('import { limit } from "./model.js";');
+    expect(code).toContain('connections: ["shop"]');
+    expect(await readFile(join(dir, "src/model.ts"), "utf8")).not.toContain("defineTable");
+    await sameBundle(was, dir);
+    expect(await readFile(join(dir, ".platform/volvel-env.d.ts"), "utf8")).toContain("visits");
+  }, 60000);
+
+  test("--keep-references leaves what a definition that stays names", async () => {
+    const dir = await fixture({
+      "src/index.ts": `import { defineConnection, defineScript, z } from "@volvel/sdk";
+export const shop = defineConnection({ path: "shop" });
+export const ping = defineScript({
+  path: "ping",
+  input: z.object({}),
+  output: z.object({}),
+  connections: [shop],
+  async run() {
+    return {};
+  },
+});
+`,
+    });
+    const kept = await convertRepository({ directory: dir, dryRun: true, keepReferences: true });
+    expect(kept.converted).toEqual([]);
+    expect(kept.left.find((one) => one.export === "shop")?.reason).toContain("--keep-references");
+    const result = await convertRepository({ directory: dir });
+    expect(result.converted.map((one) => one.export)).toEqual(["shop"]);
+    expect((await snapshot(dir))["src/index.ts"]).toContain('connections: ["shop"]');
   });
 
   test("--only keeps to the kinds named", async () => {
@@ -263,27 +349,56 @@ describe("the examples, as copies", () => {
     expect(await snapshot(dir)).toEqual(before);
     expect(keys(planned.converted)).toEqual([
       "app invoice-desk",
+      "binding access/customers-orders",
+      "binding access/customers-portal",
+      "binding access/customers-request",
+      "binding access/public-notices",
+      "binding access/public-page",
+      "connection alerts",
+      "connection erp",
+      "connection shop",
+      "event messages/received",
+      "event orders/synced",
+      "flow orders/handle",
       "interface screens/invoices",
+      "role roles/order-requester",
+      "role roles/public-reader",
+      "schedule orders/sync-every-five-minutes",
       "table invoices",
+      "table messages",
       "theme theme",
+      "trigger orders/placed",
+      "variable orders/batch-size",
     ]);
     const why = Object.fromEntries(planned.left.map((one) => [one.export, one.reason]));
-    expect(why.orders).toContain("uses `orders` again");
+    expect(why.orders).toContain("apps/portal/main.tsx:");
     expect(why.syncOrders).toContain("a script is code");
     expect(why.portal).toContain("made of files");
     expect(why.orderReceived).toContain("`Order`");
-    expect(why.handleOrder).toContain("`orderReceived`");
-    expect(why.orderPlaced).toContain("`receiveOrder`");
+    expect(why.contact).toContain("not a plain value");
+    // The script that stays names what moved by its path.
+    const syncs = planned.rewrites.filter((one) => one.after.includes("connections: [shop"));
+    expect(syncs.length).toBeGreaterThan(0);
+    expect(
+      planned.rewrites.some((one) => one.after.includes('variables: ["orders/batch-size"]')),
+    ).toBe(true);
 
     await convertRepository({ directory: dir });
     expect(await readFile(join(dir, "volvel.yaml"), "utf8")).toBe("resources: resources\n");
     const table = await readFile(join(dir, "resources/invoices.table.yaml"), "utf8");
     expect(table).toMatch(/^schemaVersion: 1\nbody:\n/);
     const code = await readFile(join(dir, "src/index.ts"), "utf8");
-    for (const gone of ["invoiceScreen", "invoiceApp", "defineInterface", "defineTheme"]) {
+    for (const gone of [
+      "invoiceScreen",
+      "invoiceApp",
+      "defineInterface",
+      "defineTheme",
+      "defineBinding",
+    ]) {
       expect(code, gone).not.toContain(gone);
     }
     expect(code).toContain("defineTable");
+    expect(code).toContain('variables: ["orders/batch-size"]');
     // The code that is left still compiles, with no import left over: no error that was not there.
     expect(diagnostics(dir)).toEqual(errors);
     const after = await sameBundle(was, dir);
@@ -304,21 +419,34 @@ describe("the examples, as copies", () => {
     const errors = diagnostics(dir);
     const planned = await convertRepository({ directory: dir, dryRun: true });
     expect(await snapshot(dir)).toEqual(before);
-    expect(keys(planned.converted)).toEqual([
-      "app operations",
-      "app performance",
-      "query reports/vet-workload",
-      "table visit_requests",
-      "theme theme",
-    ]);
+    expect(planned.converted).toHaveLength(34);
+    expect(keys(planned.converted)).toEqual(
+      expect.arrayContaining([
+        "app operations",
+        "app handbook",
+        "binding access/owners-book",
+        "connection sms",
+        "event inventory/low",
+        "query reports/vet-workload",
+        "role roles/runs-script",
+        "schedule reminders/hourly",
+        "table purchase_orders",
+        "table visit_requests",
+        "trigger payments/payfern",
+        "variable billing/exam-fee",
+      ]),
+    );
     const why = Object.fromEntries(planned.left.map((one) => [one.export, one.reason]));
-    expect(why.appointments).toContain("src/scripts.ts");
-    expect(why.appointments).toContain("apps/front-desk/shared.tsx");
-    expect(why.appointments).toContain('ctx.table("path")');
+    expect(why.appointments).toContain("apps/front-desk/shared.tsx:");
+    expect(why.appointments).toContain("typeof appointments");
     expect(why.myAccount).toContain("spread");
     expect(why.bookAppointment).toContain("script");
     expect(why.frontDesk).toContain("made of files");
-    expect(why.agentFinds).toContain("`runsScript`");
+    expect(why.agentFinds).toContain("`AGENT`");
+    // What scripts name by identifier is their path now.
+    const rewritten = planned.rewrites.map((one) => `${one.file} ${one.after}`);
+    expect(rewritten).toContain('src/scripts.ts connections: ["sms"],');
+    expect(rewritten.some((line) => line.includes('ctx.table("purchase_orders")'))).toBe(true);
 
     // Resources already go to platform/, which the repository has: no volvel.yaml is made.
     await convertRepository({ directory: dir });
@@ -336,11 +464,20 @@ describe("the examples, as copies", () => {
     const errors = diagnostics(dir);
     const planned = await convertRepository({ directory: dir, dryRun: true });
     expect(await snapshot(dir)).toEqual(before);
-    expect(keys(planned.converted)).toEqual(["role roles/starts-flow"]);
+    expect(keys(planned.converted)).toEqual([
+      "binding access/desk-approvals",
+      "event loans/overdue",
+      "role roles/connects",
+      "role roles/decides-approvals",
+      "role roles/opens-app",
+      "role roles/reads-data",
+      "role roles/runs-script",
+      "role roles/starts-flow",
+    ]);
     const why = Object.fromEntries(planned.left.map((one) => [one.export, one.reason]));
-    expect(why.devices).toContain("src/scripts.ts imports it");
+    expect(why.devices).toContain("typeof devices.__row");
     expect(why.requestSubmitted).toContain("`Kind`");
-    expect(why.review).toContain("`requestSubmitted`");
+    expect(why.review).toContain("template");
     await convertRepository({ directory: dir });
     const code = await readFile(join(dir, "src/apps.ts"), "utf8");
     expect(code).not.toContain("startsFlow = defineRole");

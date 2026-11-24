@@ -1,8 +1,11 @@
+import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdir, readdir, readFile, rmdir, unlink, writeFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import {
   type BundleManifest,
+  ENV_TYPES_FILE,
   platformKinds,
   REPOSITORY_CONFIG,
   RESOURCE_FOLDER,
@@ -10,6 +13,7 @@ import {
 } from "@volvel/manifest";
 import { authoredDefinitions, buildRepository, placesOf } from "./build.js";
 import { BuildError } from "./errors.js";
+import { writeEnvTypes } from "./types.js";
 
 /*
  * `volvel convert`: the declarative `define*` exports of a repository become resource
@@ -173,7 +177,7 @@ interface Statement {
 }
 
 /** Why a run of tokens is not a literal value, or undefined when it is one. */
-function notLiteral(tokens: Token[]): string | undefined {
+function notLiteral(tokens: Token[], definitions: ReadonlySet<string>): string | undefined {
   let at = 0;
   const fail = (reason: string): string => reason;
   const value = (): string | undefined => {
@@ -200,6 +204,21 @@ function notLiteral(tokens: Token[]): string | undefined {
       }
       if (token.text === "undefined") return fail("has `undefined`");
       if (HELPERS.has(token.text) && tokens[at + 1]?.text === ".") return helper(token.text);
+      // Another definition: the manifest has it as a path, and the file is written from the manifest.
+      const ends = (index: number) => [undefined, ",", "}", "]", ")"].includes(tokens[index]?.text);
+      if (definitions.has(token.text) && ends(at + 1)) {
+        at++;
+        return undefined;
+      }
+      if (
+        tokens[at + 1]?.text === "." &&
+        tokens[at + 2]?.type === "id" &&
+        definitions.has(tokens[at + 2]?.text ?? "") &&
+        ends(at + 3)
+      ) {
+        at += 3;
+        return undefined;
+      }
       return fail(`uses \`${token.text}\`, a value computed in code`);
     }
     if (token.text === "...") return fail("has a spread (`...`) of shared values");
@@ -235,6 +254,14 @@ function notLiteral(tokens: Token[]): string | undefined {
       }
       at++;
       if (tokens[at]?.text !== ":") {
+        if (
+          key.type === "id" &&
+          definitions.has(key.text) &&
+          [",", "}"].includes(tokens[at]?.text ?? "")
+        ) {
+          if (tokens[at]?.text === ",") at++;
+          continue;
+        }
         return key.type === "id" && (tokens[at]?.text === "," || tokens[at]?.text === "}")
           ? fail(`uses \`${key.text}\`, a value computed in code`)
           : fail(`has a method or accessor named ${key.text}`);
@@ -332,8 +359,6 @@ function statementsOf(text: string, tokens: Token[]): Statement[] {
       end,
       argument,
       ...(problem ? { problem } : {}),
-      ...(argument.length === 0 ? { notLiteral: "has no argument" } : {}),
-      ...(argument.length > 0 && !problem ? { notLiteral: notLiteral(argument) } : {}),
     });
   }
   return found;
@@ -364,6 +389,8 @@ interface Source {
   tokens: Token[];
   comments: Comment[];
   statements: Statement[];
+  /** For each token, the index of the bracket it is inside, or -1. */
+  inside: number[];
 }
 
 /** The file a relative module name stands for, among the repository's files. */
@@ -392,6 +419,10 @@ interface ModuleLink {
   kind: "import" | "export";
   /** The names taken by name; undefined for `*`, a namespace, or a side-effect import. */
   names?: string[];
+  /** Of those, the ones taken under another name (`a as b`). */
+  aliased?: string[];
+  /** The local names of `import * as ns` and `export * as ns`. */
+  namespaces?: string[];
   /** From the keyword to the end of the statement. */
   start: number;
   end: number;
@@ -412,6 +443,8 @@ function linksOf(tokens: Token[]): ModuleLink[] {
       continue;
     let at = index + 1;
     const names: string[] = [];
+    const aliased: string[] = [];
+    const namespaces: string[] = [];
     let named = true;
     let module: string | undefined;
     while (at < tokens.length) {
@@ -428,7 +461,12 @@ function linksOf(tokens: Token[]): ModuleLink[] {
         break;
       }
       if (here.text === ";") break;
-      if (here.text === "*") named = false;
+      if (here.text === "*") {
+        named = false;
+        if (tokens[at + 1]?.text === "as" && tokens[at + 2]?.type === "id") {
+          namespaces.push((tokens[at + 2] as Token).text);
+        }
+      }
       if (here.text === "{") {
         const end = closing(tokens, at);
         if (end === -1) break;
@@ -445,6 +483,7 @@ function linksOf(tokens: Token[]): ModuleLink[] {
             first = tokens[part] as Token;
           }
           names.push(first.text);
+          if (tokens[part + 1]?.text === "as") aliased.push(first.text);
           while (part < end && tokens[part]?.text !== ",") part++;
           part++;
         }
@@ -462,7 +501,11 @@ function linksOf(tokens: Token[]): ModuleLink[] {
       start: token.start,
       end,
     };
-    if (named) link.names = names;
+    if (named) {
+      link.names = names;
+      if (aliased.length > 0) link.aliased = aliased;
+    }
+    if (namespaces.length > 0) link.namespaces = namespaces;
     links.push(link);
   }
   return links;
@@ -478,6 +521,8 @@ export interface ConvertOptions {
   only?: string[];
   /** Say what would change and change nothing. */
   dryRun?: boolean;
+  /** Leave a reference in the code as it is, so that what is referred to stays in the code. */
+  keepReferences?: boolean;
   /** More to hold the rebuilt bundle to, which refuses the change by its answer. For tests. */
   verify?: (manifests: readonly BundleManifest[]) => string[];
 }
@@ -506,7 +551,16 @@ export interface ConvertResult {
   notes: string[];
   /** The comments above the removed exports, which a resource file cannot hold. */
   droppedComments: number;
+  /** The references in the code that became the path of what was converted. */
+  rewrites: Rewrite[];
   dryRun: boolean;
+}
+
+export interface Rewrite {
+  file: string;
+  line: number;
+  before: string;
+  after: string;
 }
 
 /** A kind that is code, or that no `volvel.yaml` can say: never converted. */
@@ -526,12 +580,21 @@ const USE_BY_NAME: Record<string, string> = {
   event: 'ctx.events.publish("path", …)',
 };
 
-/** Takes the names a removed statement used out of the imports that no longer need them. */
-function dropUnusedImports(text: string, names: ReadonlySet<string>): string {
+/**
+ * Takes names out of the specifiers of a file's imports (those no longer used, unless `force`)
+ * or of its `export { … } from` lines (always), and the statement with the last one.
+ */
+function dropSpecifiers(
+  text: string,
+  kind: "import" | "export",
+  names: ReadonlySet<string>,
+  force = false,
+): string {
+  if (names.size === 0) return text;
   let result = text;
   for (;;) {
     const { tokens } = scan(result);
-    const links = linksOf(tokens).filter((link) => link.kind === "import");
+    const links = linksOf(tokens).filter((link) => link.kind === kind);
     let changed = false;
     for (const link of links) {
       const slice = result.slice(link.start, link.end);
@@ -545,18 +608,19 @@ function dropUnusedImports(text: string, names: ReadonlySet<string>): string {
         .filter((part) => part !== "");
       const local = (part: string) => {
         const bare = part.replace(/^type\s+/, "");
-        return (bare.split(/\s+as\s+/).at(-1) ?? bare).trim();
+        const [first = bare, last = first] = bare.split(/\s+as\s+/);
+        return (kind === "import" ? last : first).trim();
       };
-      const used = (name: string) => {
-        const outside = tokens.filter(
+      const used = (name: string) =>
+        tokens.some(
           (token) =>
             token.type === "id" &&
             token.text === name &&
             (token.end <= link.start || token.start >= link.end),
         );
-        return outside.length > 0;
-      };
-      const kept = parts.filter((part) => !names.has(local(part)) || used(local(part)));
+      const kept = parts.filter(
+        (part) => !names.has(local(part)) || (kind === "import" && !force && used(local(part))),
+      );
       if (kept.length === parts.length) continue;
       const before = slice.slice(0, open);
       const defaultImport = /^import\s+(?:type\s+)?[A-Za-z_$][\w$]*\s*,/.test(before);
@@ -575,15 +639,23 @@ function dropUnusedImports(text: string, names: ReadonlySet<string>): string {
   }
 }
 
-/** Removes a statement, with the comments written for it, from a file's text. */
-function removeRanges(
+interface Cut {
+  start: number;
+  end: number;
+  /** What stands in its place. A removal, with the comments written for it, when absent. */
+  to?: string;
+}
+
+/** Removes statements, with the comments written for them, and replaces ranges, in a file's text. */
+function cutText(
   text: string,
   comments: Comment[],
-  ranges: { start: number; end: number }[],
+  cuts: Cut[],
 ): { text: string; dropped: number } {
   let dropped = 0;
-  const widened = ranges.map((range) => {
-    let start = range.start;
+  const widened = cuts.map((cut) => {
+    if (cut.to !== undefined) return cut;
+    let start = cut.start;
     // The comments directly above, with no blank line between, are about this export.
     for (;;) {
       const comment = [...comments].reverse().find((one) => one.end <= start);
@@ -598,7 +670,7 @@ function removeRanges(
       start = lineStart;
       dropped++;
     }
-    let end = range.end;
+    let end = cut.end;
     // A comment after it on the same line.
     const rest = /^[ \t]*(\/\/[^\n]*)?/.exec(text.slice(end));
     if (rest?.[1]) dropped++;
@@ -607,10 +679,34 @@ function removeRanges(
     return { start, end };
   });
   let result = text;
-  for (const range of widened.sort((a, b) => b.start - a.start)) {
-    result = result.slice(0, range.start) + result.slice(range.end);
+  for (const cut of widened.sort((a, b) => b.start - a.start)) {
+    const left = result.slice(0, cut.start);
+    let right = result.slice(cut.end);
+    if (cut.to !== undefined) {
+      result = left + cut.to + right;
+      continue;
+    }
+    // Not more than one blank line where something was taken out.
+    const before = /\n*$/.exec(left)?.[0].length ?? 0;
+    const after = /^\n*/.exec(right)?.[0].length ?? 0;
+    const room = left === "" ? 0 : Math.max(0, 2 - before);
+    if (after > room) right = right.slice(after - room);
+    result = left + right;
   }
-  return { text: result.replace(/\n{3,}/g, "\n\n").replace(/^\s*\n/, ""), dropped };
+  return { text: result, dropped };
+}
+
+/** The TypeScript files' own view of where a path string can stand for a definition. */
+function replaceable(source: Source, first: number, last: number): boolean {
+  const { tokens } = source;
+  const before = tokens[first - 1]?.text;
+  const after = tokens[last + 1]?.text;
+  if (!["(", ",", "[", ":"].includes(before ?? "")) return false;
+  if (![")", ",", "]", "}"].includes(after ?? "")) return false;
+  const around = tokens[source.inside[first] ?? -1]?.text;
+  // `{ orders }` is a field called orders, not a value to replace.
+  if (around === "{" && (before === "{" || before === ",") && last === first) return false;
+  return true;
 }
 
 /** Works out what converts and what is left, and what each file of code becomes. Writes nothing. */
@@ -619,16 +715,33 @@ async function plan(options: ConvertOptions) {
   const { config, entry, resources } = await placesOf(options);
   const built = await buildRepository({ ...options, withoutAppSources: true });
   const authored = await authoredDefinitions({ ...options, entry, resources });
+  const definitionNames = new Set(authored.map((one) => one.name));
   const paths = await typescriptFiles(directory);
   const fileSet = new Set(paths);
   const sources = new Map<string, Source>();
   for (const path of paths) {
     const text = await readFile(path, "utf8");
     const { tokens, comments } = scan(text);
-    sources.set(path, { path, text, tokens, comments, statements: statementsOf(text, tokens) });
+    const inside: number[] = [];
+    const open: number[] = [];
+    tokens.forEach((token, index) => {
+      if (token.type === "punct" && CLOSE.has(token.text)) open.pop();
+      inside.push(open.at(-1) ?? -1);
+      if (token.type === "punct" && OPEN.has(token.text)) open.push(index);
+    });
+    sources.set(path, {
+      path,
+      text,
+      tokens,
+      comments,
+      statements: statementsOf(text, tokens),
+      inside,
+    });
   }
   const entryPath = resolve(directory, entry);
   const nameOf = (path: string) => relative(directory, path).split(sep).join("/");
+  const lineOf = (source: Source, offset: number) =>
+    source.text.slice(0, offset).split("\n").length;
 
   // Which files re-export which: an import of a name from one can be a use of a name made in another.
   const reexports = new Map<string, Set<string>>();
@@ -640,7 +753,7 @@ async function plan(options: ConvertOptions) {
       const module = resolveModule(source.path, link.module, fileSet);
       if (!module) continue;
       if (link.kind === "export") sends.add(module);
-      else takes.push({ module, link });
+      takes.push({ module, link });
     }
     reexports.set(source.path, sends);
     importsOf.set(source.path, takes);
@@ -667,19 +780,25 @@ async function plan(options: ConvertOptions) {
       sameName.set(statement.name, (sameName.get(statement.name) ?? 0) + 1);
     }
   }
-
-  const converted: Converted[] = [];
-  const left: Left[] = [];
-  const removals = new Map<string, { start: number; end: number; names: string[] }[]>();
   const bundleManifests = new Map(
     built.bundle.manifests.map((manifest) => [`${manifest.kind} ${manifest.path}`, manifest]),
   );
-  const toWrite: BundleManifest[] = [];
 
-  for (const definition of authored) {
+  // What can be written as a file, by what the definition itself is.
+  interface Candidate {
+    kind: string;
+    path: string;
+    name: string;
+    source: Source;
+    statement: Statement;
+    manifest: BundleManifest;
+  }
+  const candidates = new Map<string, Candidate>();
+  const reasons = new Map<string, string>();
+  const asked = authored.filter((one) => !only || only.has(one.kind));
+  for (const definition of asked) {
     const { kind, path, name } = definition;
-    if (only && !only.has(kind)) continue;
-    const say = (reason: string) => left.push({ kind, path, export: name, reason });
+    const say = (reason: string) => reasons.set(name, reason);
     if (NOT_DECLARATIVE[kind]) {
       say(`${NOT_DECLARATIVE[kind]}, and stays in the repository`);
       continue;
@@ -689,7 +808,7 @@ async function plan(options: ConvertOptions) {
       continue;
     }
     const manifest = bundleManifests.get(`${kind} ${path}`);
-    const candidates = [...sources.values()].flatMap((source) =>
+    const found = [...sources.values()].flatMap((source) =>
       source.statements
         .filter((one) => one.name === name)
         .map((statement) => ({ source, statement })),
@@ -698,82 +817,210 @@ async function plan(options: ConvertOptions) {
       say("it is not in the built bundle");
       continue;
     }
-    if (candidates.length === 0) {
+    if (found.length === 0) {
       say(`${name} is not written as a top-level \`export const ${name} = define…({ … })\``);
       continue;
     }
-    if (candidates.length > 1 || (sameName.get(name) ?? 0) > 1) {
+    if (found.length > 1 || (sameName.get(name) ?? 0) > 1) {
       say(`${name} is exported by more than one file`);
       continue;
     }
-    const { source, statement } = candidates[0] as (typeof candidates)[number];
-    if (statement.problem) {
-      say(statement.problem);
+    const { source, statement } = found[0] as (typeof found)[number];
+    const problem =
+      statement.problem ??
+      (statement.argument.length === 0
+        ? "has no argument"
+        : notLiteral(statement.argument, definitionNames));
+    if (problem) {
+      say(problem);
       continue;
     }
-    if (statement.notLiteral) {
-      say(statement.notLiteral);
-      continue;
-    }
-    // Used by other code as a value?
-    const here = source.tokens.filter(
-      (token, index) =>
-        token.type === "id" &&
-        token.text === name &&
-        (token.end <= statement.start || token.start >= statement.end) &&
-        source.tokens[index - 1]?.text !== "." &&
-        !(
-          source.tokens[index + 1]?.text === ":" &&
-          [",", "{"].includes(source.tokens[index - 1]?.text ?? "")
-        ),
-    );
-    if (here.length > 0) {
-      say(`${nameOf(source.path)} uses \`${name}\` again, as a value`);
-      continue;
-    }
-    const providing = providers(source.path);
-    const users = [...importsOf].flatMap(([file, takes]) =>
-      takes
-        .filter(
-          ({ module, link }) =>
-            providing.has(module) && (link.names === undefined || link.names.includes(name)),
-        )
-        .map(() => file),
-    );
-    // A bare `import "./x"` or a namespace import is a use of everything. A named import of
-    // another name is not.
-    if (users.length > 0) {
-      const instead = USE_BY_NAME[kind];
-      say(
-        `${[...new Set(users)].map(nameOf).join(", ")} import${users.length === 1 ? "s" : ""} it${
-          instead
-            ? `; scripts import it, and with generated types (.platform/volvel-env.d.ts) they can use ${instead} instead`
-            : ""
-        }`,
+    candidates.set(name, { kind, path, name, source, statement, manifest });
+  }
+
+  /** What each reference to a converted definition is, from the code that stays. */
+  interface Use {
+    file: string;
+    line: number;
+    /** Set when a path can stand for it. */
+    cut?: Cut;
+    problem?: string;
+  }
+  const usesOf = (target: Candidate, converting: ReadonlySet<string>): Use[] => {
+    const uses: Use[] = [];
+    const home = target.source.path;
+    const providing = providers(home);
+    const inRemoved = (source: Source, offset: number) =>
+      source.statements.some(
+        (one) =>
+          converting.has(one.name) &&
+          candidates.get(one.name)?.source === source &&
+          offset >= one.start &&
+          offset < one.end,
       );
-      continue;
+    const to = JSON.stringify(
+      target.kind === "role"
+        ? ((target.manifest.body as { name?: string }).name ?? target.path)
+        : target.path,
+    );
+    for (const source of sources.values()) {
+      const takes = importsOf.get(source.path) ?? [];
+      const direct = source.path === home;
+      const imported = takes.filter(
+        ({ module, link }) =>
+          link.kind === "import" && providing.has(module) && link.names?.includes(target.name),
+      );
+      const spaces = new Set(
+        takes
+          .filter(({ module }) => providing.has(module))
+          .flatMap(({ link }) => link.namespaces ?? []),
+      );
+      if (imported.some(({ link }) => link.aliased?.includes(target.name))) {
+        uses.push({
+          file: nameOf(source.path),
+          line: 1,
+          problem: `${nameOf(source.path)} imports it under another name`,
+        });
+      }
+      const visible = direct || imported.length > 0;
+      const links = takes.map(({ link }) => link);
+      const inLink = (offset: number) =>
+        links.some((link) => offset >= link.start && offset < link.end);
+      source.tokens.forEach((token, index) => {
+        if (token.type !== "id" || token.text !== target.name) return;
+        if (inLink(token.start) || inRemoved(source, token.start)) return;
+        if (
+          source === target.source &&
+          token.start >= target.statement.start &&
+          token.start < target.statement.end
+        ) {
+          return;
+        }
+        const previous = source.tokens[index - 1]?.text;
+        const next = source.tokens[index + 1]?.text;
+        let first = index;
+        if (previous === ".") {
+          // `ns.name` of a namespace import of the file; any other member is somebody else's.
+          const owner = source.tokens[index - 2];
+          if (!(owner?.type === "id" && spaces.has(owner.text))) return;
+          first = index - 2;
+        } else if (!visible) return;
+        else if (next === ":" && ["{", ","].includes(previous ?? "")) return;
+        const line = lineOf(source, token.start);
+        const text = source.text.split("\n")[line - 1]?.trim() ?? "";
+        if (options.keepReferences) {
+          uses.push({
+            file: nameOf(source.path),
+            line,
+            problem: `${nameOf(source.path)}:${line} refers to it, and --keep-references leaves references as they are`,
+          });
+        } else if (replaceable(source, first, index)) {
+          uses.push({
+            file: nameOf(source.path),
+            line,
+            cut: {
+              start: (source.tokens[first] as Token).start,
+              end: token.end,
+              to,
+            },
+          });
+        } else {
+          uses.push({
+            file: nameOf(source.path),
+            line,
+            problem: `${nameOf(source.path)}:${line} uses it in \`${text.length > 70 ? `${text.slice(0, 67)}…` : text}\`, where a path cannot stand for it`,
+          });
+        }
+      });
     }
-    converted.push({
-      kind,
-      path,
-      export: name,
-      from: nameOf(source.path),
-      file: "",
-    });
+    return uses;
+  };
+
+  // A definition converts when everything that refers to it can say its path instead. What
+  // refers to it may itself be taken out, so this is worked out until nothing changes.
+  const converting = new Set(candidates.keys());
+  let uses = new Map<string, Use[]>();
+  for (let changed = true; changed; ) {
+    changed = false;
+    uses = new Map();
+    for (const name of [...converting]) {
+      const target = candidates.get(name) as Candidate;
+      const found = usesOf(target, converting);
+      const problem = found.find((use) => use.problem)?.problem;
+      if (problem) {
+        reasons.set(
+          name,
+          options.keepReferences || !problem.includes("where a path")
+            ? problem
+            : `${problem}${USE_BY_NAME[target.kind] ? `; with generated types (.platform/volvel-env.d.ts) use ${USE_BY_NAME[target.kind]}` : ""}`,
+        );
+        converting.delete(name);
+        changed = true;
+      } else uses.set(name, found);
+    }
+  }
+
+  const converted: Converted[] = [];
+  const toWrite: BundleManifest[] = [];
+  const removals = new Map<string, Cut[]>();
+  const helpers = new Map<string, Set<string>>();
+  const replacements = new Map<string, Cut[]>();
+  const rewrites: Rewrite[] = [];
+  const cleanImports = new Map<string, Set<string>>();
+  const cleanExports = new Map<string, Set<string>>();
+  const mark = (map: Map<string, Set<string>>, file: string, name: string) =>
+    map.set(file, (map.get(file) ?? new Set<string>()).add(name));
+  for (const name of converting) {
+    const { kind, path, source, statement, manifest } = candidates.get(name) as Candidate;
+    converted.push({ kind, path, export: name, from: nameOf(source.path), file: "" });
     toWrite.push(manifest);
     const list = removals.get(source.path) ?? [];
-    list.push({
-      start: statement.start,
-      end: statement.end,
-      names: [
-        statement.fn,
-        ...statement.argument
-          .filter((one) => one.type === "id" && HELPERS.has(one.text))
-          .map((one) => one.text),
-      ],
-    });
+    list.push({ start: statement.start, end: statement.end });
     removals.set(source.path, list);
+    for (const word of [
+      statement.fn,
+      ...statement.argument
+        .filter((one) => one.type === "id" && HELPERS.has(one.text))
+        .map((one) => one.text),
+    ]) {
+      mark(helpers, source.path, word);
+    }
+    for (const use of uses.get(name) ?? []) {
+      const file = [...sources.values()].find((one) => nameOf(one.path) === use.file) as Source;
+      const cut = use.cut as Cut;
+      const list = replacements.get(file.path) ?? [];
+      list.push(cut);
+      replacements.set(file.path, list);
+      const line = lineOf(file, cut.start);
+      const lines = file.text.split("\n");
+      const startOfLine = file.text.lastIndexOf("\n", cut.start - 1) + 1;
+      rewrites.push({
+        file: use.file,
+        line,
+        before: (lines[line - 1] ?? "").trim(),
+        after:
+          `${file.text.slice(startOfLine, cut.start)}${cut.to}${file.text.slice(cut.end, startOfLine + (lines[line - 1] ?? "").length)}`.trim(),
+      });
+    }
+    // The imports and re-exports of it go, wherever they are.
+    for (const [file, takes] of importsOf) {
+      for (const { module, link } of takes) {
+        if (!providers(source.path).has(module) || !link.names?.includes(name)) continue;
+        mark(link.kind === "import" ? cleanImports : cleanExports, file, name);
+      }
+    }
   }
+  rewrites.sort((a, b) => (a.file === b.file ? a.line - b.line : a.file < b.file ? -1 : 1));
+  converted.sort((a, b) => (a.kind + a.path < b.kind + b.path ? -1 : 1));
+  for (const name of reasons.keys()) if (converting.has(name)) reasons.delete(name);
+  const left: Left[] = asked
+    .filter((one) => !converting.has(one.name))
+    .map((one) => ({
+      kind: one.kind,
+      path: one.path,
+      export: one.name,
+      reason: reasons.get(one.name) ?? "it stays in the code",
+    }));
 
   // Where the resources are kept, and whether volvel.yaml has to be made.
   const notes: string[] = [];
@@ -810,11 +1057,22 @@ async function plan(options: ConvertOptions) {
   // The new text of each file of code.
   const edits = new Map<string, string | null>();
   let droppedComments = 0;
-  for (const [path, ranges] of removals) {
+  const touched = new Set([
+    ...removals.keys(),
+    ...replacements.keys(),
+    ...cleanImports.keys(),
+    ...cleanExports.keys(),
+  ]);
+  for (const path of touched) {
     const source = sources.get(path) as Source;
-    const cut = removeRanges(source.text, source.comments, ranges);
+    const cut = cutText(source.text, source.comments, [
+      ...(removals.get(path) ?? []),
+      ...(replacements.get(path) ?? []),
+    ]);
     droppedComments += cut.dropped;
-    edits.set(path, dropUnusedImports(cut.text, new Set(ranges.flatMap((range) => range.names))));
+    const names = new Set([...(helpers.get(path) ?? []), ...(cleanImports.get(path) ?? [])]);
+    const imports = dropSpecifiers(cut.text, "import", names);
+    edits.set(path, dropSpecifiers(imports, "export", cleanExports.get(path) ?? new Set(), true));
   }
   // A file left with nothing goes, and what re-exported it stops; that can empty another.
   for (let again = true; again; ) {
@@ -857,6 +1115,7 @@ async function plan(options: ConvertOptions) {
     left,
     notes,
     droppedComments,
+    rewrites,
     built,
     config,
   };
@@ -885,6 +1144,40 @@ function comparable(manifests: readonly BundleManifest[]): Map<string, string> {
   );
 }
 
+/** The `tsc` the repository has, or one of ours. */
+function findTsc(directory: string): string | undefined {
+  for (let folder = directory; ; folder = dirname(folder)) {
+    const candidate = join(folder, "node_modules", ".bin", "tsc");
+    if (existsSync(candidate)) return candidate;
+    if (dirname(folder) === folder) break;
+  }
+  try {
+    const own = createRequire(import.meta.url).resolve("typescript/package.json");
+    const candidate = join(dirname(own), "bin", "tsc");
+    return existsSync(candidate) ? candidate : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * What the TypeScript compiler says of the repository, one line for each error, without where
+ * (what moves when code is taken out). None when it has no `tsconfig.json`, or there is no compiler.
+ */
+function typeErrors(directory: string): string[] | undefined {
+  if (!existsSync(join(directory, "tsconfig.json"))) return undefined;
+  const tsc = findTsc(directory);
+  if (!tsc) return undefined;
+  const out = spawnSync(tsc, ["-p", directory, "--noEmit", "--pretty", "false"], {
+    encoding: "utf8",
+    maxBuffer: 64 * 1024 * 1024,
+  });
+  return `${out.stdout}${out.stderr}`
+    .split("\n")
+    .filter((line) => /error TS\d+/.test(line))
+    .map((line) => line.replace(/\(\d+,\d+\)/, ""));
+}
+
 /** Converts a repository's declarative definitions to files, or says what it would. */
 export async function convertRepository(options: ConvertOptions): Promise<ConvertResult> {
   const made = await plan(options);
@@ -893,6 +1186,7 @@ export async function convertRepository(options: ConvertOptions): Promise<Conver
     left: made.left,
     notes: made.notes,
     droppedComments: made.droppedComments,
+    rewrites: made.rewrites,
     dryRun: options.dryRun === true,
   };
   if (options.dryRun || made.converted.length === 0) return result;
@@ -901,9 +1195,15 @@ export async function convertRepository(options: ConvertOptions): Promise<Conver
   const originals = new Map<string, string>();
   for (const path of made.edits.keys()) originals.set(path, await readFile(path, "utf8"));
   const created: string[] = [];
+  const typesFile = join(directory, ENV_TYPES_FILE);
+  const typesWas = await readFile(typesFile, "utf8").catch(() => null);
+  // What the compiler says before, to know afterwards what is new.
+  const errorsWas = typeErrors(directory);
   const configFile = join(directory, REPOSITORY_CONFIG);
   const undo = async () => {
     for (const [path, text] of originals) await writeFile(path, text);
+    if (typesWas === null) await unlink(typesFile).catch(() => {});
+    else await writeFile(typesFile, typesWas);
     for (const path of created.reverse()) {
       await unlink(path).catch(() => {});
       let folder = dirname(path);
@@ -952,6 +1252,22 @@ export async function convertRepository(options: ConvertOptions): Promise<Conver
       problems.push(`${manifest.kind} ${manifest.path} is still owned by the code`);
     problems.push(...(options.verify?.(after.bundle.manifests) ?? []));
     if (problems.length > 0) throw new BuildError(problems);
+    // The code that is left has to compile as well as it did, with the names the files give it.
+    await writeEnvTypes(directory, after.bundle.manifests);
+    const errorsNow = typeErrors(directory);
+    if (errorsWas === undefined || errorsNow === undefined) {
+      result.notes.push("TypeScript was not found, so the code that is left was not type-checked.");
+    } else {
+      const known = [...errorsWas];
+      const fresh = errorsNow.filter((error) => {
+        const at = known.indexOf(error);
+        if (at === -1) return true;
+        known.splice(at, 1);
+        return false;
+      });
+      if (fresh.length > 0)
+        throw new BuildError(["It does not compile after the change:", ...fresh]);
+    }
   } catch (error) {
     // Nothing is left half done.
     for (const [path, text] of made.edits)
@@ -959,7 +1275,7 @@ export async function convertRepository(options: ConvertOptions): Promise<Conver
     await undo();
     const problems = error instanceof BuildError ? error.problems : [(error as Error).message];
     throw new BuildError([
-      "The repository built differently after converting, so nothing was changed:",
+      "The repository built differently after converting, or no longer compiles, so nothing was changed:",
       ...problems,
     ]);
   }
@@ -982,6 +1298,14 @@ export function describeConvert(result: ConvertResult): string[] {
     lines.push(`Left in the code (${result.left.length}):`);
     for (const item of result.left) {
       lines.push(`  ${item.kind.padEnd(10)} ${item.path}  ${item.export}: ${item.reason}`);
+    }
+  }
+  if (result.rewrites.length > 0) {
+    lines.push(
+      `${result.dryRun ? "Would rewrite" : "Rewrote"} ${result.rewrites.length} reference${result.rewrites.length === 1 ? "" : "s"} in the code to the path of what is now a file:`,
+    );
+    for (const one of result.rewrites) {
+      lines.push(`  ${one.file}:${one.line}  ${one.before}  ->  ${one.after}`);
     }
   }
   for (const note of result.notes) lines.push(note);

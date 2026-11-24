@@ -307,6 +307,7 @@ async function convert(args: string[], io: Io) {
       ...placesOption,
       "dry-run": { type: "boolean" as const },
       only: { type: "string" as const },
+      "keep-references": { type: "boolean" as const },
     },
   });
   const only = values.only
@@ -317,6 +318,7 @@ async function convert(args: string[], io: Io) {
     ...buildOptionsOf(values),
     ...(only && only.length > 0 ? { only } : {}),
     dryRun: values["dry-run"] === true,
+    keepReferences: values["keep-references"] === true,
   });
   for (const line of describeConvert(result)) io.out(line);
 }

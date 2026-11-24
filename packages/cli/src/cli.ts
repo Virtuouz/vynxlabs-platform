@@ -8,10 +8,12 @@ import { pipeline } from "node:stream/promises";
 import { parseArgs } from "node:util";
 import { ENV_TYPES_FILE, resourceOfFile } from "@volvel/manifest";
 import { ACCESS_ACTIONS, tenantAccess } from "./access.js";
-import { BuildError, type Built, buildRepository, describeBundle } from "./build.js";
+import { appSources, BuildError, type Built, buildRepository, describeBundle } from "./build.js";
 import { type CommandName, usage } from "./commands.js";
 import { convertRepository, describeConvert } from "./convert.js";
 import { startDevServer } from "./dev.js";
+import { siteApps } from "./dev-site.js";
+import { startWidgetServer, widgetsOf } from "./dev-widgets.js";
 import { CliError } from "./errors.js";
 import { type Followed, followRun, Stopped } from "./follow.js";
 import { inputOf } from "./input.js";
@@ -657,9 +659,32 @@ async function dev(args: string[], io: Io) {
       ...targetOptions,
       port: { type: "string" as const },
       "no-strict": { type: "boolean" as const },
+      widgets: { type: "boolean" as const },
     },
   });
   const port = values.port === undefined ? 5174 : wholeNumber("--port", values.port, 1, 65535);
+  // A repository of widgets and no app, or --widgets, is previewed without an instance.
+  if (values.widgets || positionals[0] === undefined) {
+    const places = buildOptionsOf(values);
+    const found = await widgetsOf(places);
+    const apps =
+      values.widgets || found.length === 0
+        ? 1
+        : (await appSources(places)).length + (await siteApps(places)).length;
+    if (values.widgets || (found.length > 0 && apps === 0)) {
+      const preview = await startWidgetServer({ ...places, port });
+      io.out(`${found.length} widget${found.length === 1 ? "" : "s"} previewed at ${preview.url}`);
+      io.out(
+        "Each runs in the sandboxed frame and under the content policy it has once deployed, given the data of its fixture.json. A saved file rebuilds it. Press Ctrl+C to stop.",
+      );
+      await new Promise<void>((done) => {
+        process.once("SIGINT", done);
+        process.once("SIGTERM", done);
+      });
+      await preview.close();
+      return;
+    }
+  }
   const settings = await loadSettings(io.env);
   const { workspace, tenant } = await locate(settings, values.tenant, values.workspace);
   const me = await whoami(settings);

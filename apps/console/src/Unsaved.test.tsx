@@ -8,11 +8,6 @@ import { answer, show } from "./testing.tsx";
 
 configure({ asyncUtilTimeout: 6000 });
 
-// The editor falls back to a plain text box, as it does wherever Monaco cannot load.
-vi.mock("./editor/monaco.ts", () => {
-  throw new Error("Monaco is not loaded in tests.");
-});
-
 const base = "/tenants/t1/workspaces/w1";
 const me: Me = {
   principal: { type: "member", id: "m1", name: "Ada", email: "ada@acme.test" },

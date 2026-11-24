@@ -10,6 +10,8 @@ export default defineConfig({
     // A CI runner has four cores: more files at once than that only makes each slower, and
     // tests that wait on processes, builds and threads then pass on time or not by luck.
     maxWorkers: process.env.CI ? 4 : 8,
+    // The console tests run on the editor's plain text box, never on Monaco (see the file).
+    setupFiles: ["apps/console/src/vitest.setup.ts"],
     testTimeout: 30_000,
     hookTimeout: 30_000,
   },

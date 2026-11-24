@@ -46,9 +46,22 @@ function literal(value: unknown): string {
   throw new Error(`A ${typeof value} cannot be a const or an enum member in a generated type.`);
 }
 
-/** `A | B`, or `A[]` of it, needs its parentheses. */
-const wrapUnion = (type: string) =>
-  /[|&]/.test(type) && !/^[({[]/.test(type) ? `(${type})` : type;
+/** Whether a type has a `|` or an `&` outside any brackets or quotes, and so needs parentheses to be a list's items. */
+function wrapUnion(type: string): string {
+  let depth = 0;
+  let quote = "";
+  for (let at = 0; at < type.length; at += 1) {
+    const char = type.charAt(at);
+    if (quote) {
+      if (char === "\\") at += 1;
+      else if (char === quote) quote = "";
+    } else if (char === '"') quote = char;
+    else if ("{[(".includes(char)) depth += 1;
+    else if ("}])".includes(char)) depth -= 1;
+    else if (depth === 0 && (char === "|" || char === "&")) return `(${type})`;
+  }
+  return type;
+}
 
 export function schemaToType(schema: Schema, root: Schema = schema, depth = 0): string {
   if (schema.$ref !== undefined) {

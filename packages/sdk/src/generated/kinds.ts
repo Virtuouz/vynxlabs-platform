@@ -236,7 +236,7 @@ export type DashboardBody = {
           }[];
         };
         /** What it does, in order. Steps that change data or start work run on the server first, and the ones that move the reader run in the browser after. */
-        steps: {
+        steps: ({
           /** Always `update`. */
           do: "update";
           /** The record to change. `this` is the record the page was opened on, and `event` is the one the event gave: the row clicked, or the row whose action was pressed. */
@@ -384,9 +384,9 @@ export type DashboardBody = {
         } | {
           /** Always `rows`. */
           do: "rows";
-        }[];
+        })[];
         /** When it may be pressed: all must hold, for the record it acts on. They are checked again on the server. */
-        when?: {
+        when?: ({
           /** The column's name. */
           field: string;
           /** Which record: `this`, the one the page was opened on, or `event`, the one the event gave. Left out, `this`. */
@@ -405,7 +405,7 @@ export type DashboardBody = {
           record: "exists" | "missing";
           /** Which record: `this`, the one the page was opened on, or `event`, the one the event gave. Left out, `this`. */
           of?: "this" | "event";
-        }[];
+        })[];
         /** What is said when it worked, if the steps say nothing themselves. */
         done?: string;
         /** Who may run it. Left out, whoever may open the app may. With groups named, only their members may, which the server checks, and a call to the API too. */
@@ -418,7 +418,7 @@ export type DashboardBody = {
     /** When the widget is shown. Hiding a widget isn't security: the rows a person gets are decided by the tables' row rules. */
     rules?: {
       /** The widget is shown only while all of these hold. */
-      showWhen?: {
+      showWhen?: ({
         /** The column's name. */
         field: string;
         /** Which record: `this`, the one the page was opened on, or `event`, the one the event gave. Left out, `this`. */
@@ -437,7 +437,7 @@ export type DashboardBody = {
         record: "exists" | "missing";
         /** Which record: `this`, the one the page was opened on, or `event`, the one the event gave. Left out, `this`. */
         of?: "this" | "event";
-      }[];
+      })[];
       /** Shown only to members of these groups. Drawing only: hiding a widget is not security. */
       seenBy?: {
         /** The groups, each by its path. */
@@ -945,7 +945,7 @@ export type InterfaceBody = {
             }[];
           };
           /** What it does, in order. Steps that change data or start work run on the server first, and the ones that move the reader run in the browser after. */
-          steps: {
+          steps: ({
             /** Always `update`. */
             do: "update";
             /** The record to change. `this` is the record the page was opened on, and `event` is the one the event gave: the row clicked, or the row whose action was pressed. */
@@ -1093,9 +1093,9 @@ export type InterfaceBody = {
           } | {
             /** Always `rows`. */
             do: "rows";
-          }[];
+          })[];
           /** When it may be pressed: all must hold, for the record it acts on. They are checked again on the server. */
-          when?: {
+          when?: ({
             /** The column's name. */
             field: string;
             /** Which record: `this`, the one the page was opened on, or `event`, the one the event gave. Left out, `this`. */
@@ -1114,7 +1114,7 @@ export type InterfaceBody = {
             record: "exists" | "missing";
             /** Which record: `this`, the one the page was opened on, or `event`, the one the event gave. Left out, `this`. */
             of?: "this" | "event";
-          }[];
+          })[];
           /** What is said when it worked, if the steps say nothing themselves. */
           done?: string;
           /** Who may run it. Left out, whoever may open the app may. With groups named, only their members may, which the server checks, and a call to the API too. */
@@ -1127,7 +1127,7 @@ export type InterfaceBody = {
       /** When the widget is shown. Hiding a widget isn't security: the rows a person gets are decided by the tables' row rules. */
       rules?: {
         /** The widget is shown only while all of these hold. */
-        showWhen?: {
+        showWhen?: ({
           /** The column's name. */
           field: string;
           /** Which record: `this`, the one the page was opened on, or `event`, the one the event gave. Left out, `this`. */
@@ -1146,7 +1146,7 @@ export type InterfaceBody = {
           record: "exists" | "missing";
           /** Which record: `this`, the one the page was opened on, or `event`, the one the event gave. Left out, `this`. */
           of?: "this" | "event";
-        }[];
+        })[];
         /** Shown only to members of these groups. Drawing only: hiding a widget is not security. */
         seenBy?: {
           /** The groups, each by its path. */

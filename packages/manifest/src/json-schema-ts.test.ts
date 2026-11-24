@@ -29,6 +29,20 @@ describe("a JSON Schema as a TypeScript type", () => {
     expect(schemaToType({ type: "object" })).toBe("Record<string, unknown>");
     expect(schemaToType({ type: "array", items: { enum: ["a", "b"] } })).toBe('("a" | "b")[]');
     expect(schemaToType({ type: "array" })).toBe("unknown[]");
+    // A list of a union that starts with an object is a list of the union, not a union with a list.
+    expect(
+      squash(
+        schemaToType({
+          type: "array",
+          items: {
+            oneOf: [
+              { type: "object", properties: { a: { type: "string" } } },
+              { type: "object", properties: { b: { type: "string" } } },
+            ],
+          },
+        }),
+      ),
+    ).toBe("({ a?: string; } | { b?: string; })[]");
   });
 
   test("oneOf is a union; branches that only say what is required add nothing", () => {

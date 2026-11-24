@@ -21,8 +21,12 @@ Lines are current at commit `5ebf1c80` (branch phase-31-write-the-docs). Paths a
 
 ## Phase 34, A7 (YAML first), 2026-11-24
 
-Commit `d619bfbd` plus the working tree. Written by the A7 writer; second agent's check pending. Run on the throwaway instance of lane a7 (http://localhost:8712, Fernhill seeded).
+Commit `d619bfbd` plus the working tree. Written by the A7 writer; second agent checked 2026-11-24 (a7r). Run on the throwaway instance of lane a7 (http://localhost:8712, Fernhill seeded).
 
 | Claim | Source (file:line) | Checked by | Result |
 | --- | --- | --- | --- |
 | Labels **Code** and **Files**; a draft takes a Code resource over; `console_changed`. | `apps/console/src/kit/ownership.ts:11`; `Authoring.tsx:1031` | writer, 2026-11-24 | holds as read |
+
+### Second check (a7r), 2026-11-24, second agent
+
+Lane a7r build, `pnpm docs:check` passes. Second agent, 2026-11-24. The editor string is in `apps/console/src/kit/ownership.ts`; the take-over button run in a browser (see how-tables-work); `console_changed` as in keep-in-step. CORRECTED the page's 'until `volvel pull`, or `--force`' is true for files and drafts, not for a taken-over table (the table note is in definitions-in-code).

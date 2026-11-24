@@ -24,7 +24,7 @@ body:
   description: One supplier account for each clinic.
 ```
 
-```yaml title=loans/days.variable.yaml
+```yaml title=platform/loans/days.variable.yaml
 schemaVersion: 1
 body:
   description: How many days a loan lasts unless the desk says otherwise.

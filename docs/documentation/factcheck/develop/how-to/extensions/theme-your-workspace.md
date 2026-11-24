@@ -21,8 +21,12 @@ Checked by: second agent, 2026-11-23. Run on a dev workspace of my own (`ext31-d
 
 ## Phase 34, A7 (YAML first), 2026-11-24
 
-Commit `d619bfbd` plus the working tree. Written by the A7 writer; second agent's check pending. Run on the throwaway instance of lane a7 (http://localhost:8712, Fernhill seeded).
+Commit `d619bfbd` plus the working tree. Written by the A7 writer; second agent checked 2026-11-24 (a7r). Run on the throwaway instance of lane a7 (http://localhost:8712, Fernhill seeded).
 
 | Claim | Source (file:line) | Checked by | Result |
 | --- | --- | --- | --- |
 | Theme file deploys as `theme`; stylesheet has `--vx-action: #1f6f5c;`, `--vx-radius-panel: 12px;` and the dark values; `shiny` fails the build. | run on `walk6`: `GET .../theme.css` | writer, 2026-11-24 | holds as run |
+
+### Second check (a7r), 2026-11-24, second agent
+
+Lane a7r build (a7 merged), throwaway instance http://localhost:8722 (database a7r34, Fernhill seeded), lane CLI `packages/cli/dist/bin.js`. `pnpm docs:check` passes. The theme file validates and builds.

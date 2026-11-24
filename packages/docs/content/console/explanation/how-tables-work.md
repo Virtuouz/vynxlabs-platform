@@ -27,7 +27,7 @@ A definition in code is worth having when a table shares values with other defin
 
 ### Take over a table of Code
 
-In a dev workspace, **Take over in the console** on the **Definition** tab makes a table of Code a table of Files. Its rows stay. The console manages it from then on. A later deploy of a repository that still defines it takes it back, and is refused first if you changed it in the console since, until `volvel pull` or `--force`. To keep it in the console, remove its definition from the code. A production workspace has no take-over: a table of Code there changes by a deploy only.
+In a dev workspace, **Take over in the console** on the **Definition** tab makes a table of Code a table of Files. Its rows stay. The console manages it from then on. A later deploy of a repository that still defines it takes it back, and is refused first if you changed it in the console since, until you deploy with `--force`. To keep it in the console, remove its definition from the code. To keep it in the repository, put the console's change into the definition by hand: `volvel pull` brings in no file for a table taken over, and the deploy after a pull would replace the change. See [Definitions in code](../../develop/explanation/cli/definitions-in-code). A production workspace has no take-over: a table of Code there changes by a deploy only.
 
 ## Why a deploy never drops data
 

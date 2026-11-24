@@ -27,8 +27,12 @@ Lines are current at commit `5ebf1c80` (branch phase-31-write-the-docs). Paths a
 
 ## Phase 34, A7 (YAML first), 2026-11-24
 
-Commit `d619bfbd` plus the working tree. Written by the A7 writer; second agent's check pending. Run on the throwaway instance of lane a7 (http://localhost:8712, Fernhill seeded).
+Commit `d619bfbd` plus the working tree. Written by the A7 writer; second agent checked 2026-11-24 (a7r). Run on the throwaway instance of lane a7 (http://localhost:8712, Fernhill seeded).
 
 | Claim | Source (file:line) | Checked by | Result |
 | --- | --- | --- | --- |
 | The `console_changed` refusal text and exit code 1. | `packages/cli/src/cli.ts:138-160`; `apps/control-plane/src/kernel/execution/basis.ts:49-52` | writer, 2026-11-24 | holds as run |
+
+### Second check (a7r), 2026-11-24, second agent
+
+Lane a7r build, `pnpm docs:check` passes. Second agent, 2026-11-24. The `console_changed` text, the two line forms, the `--force` line and exit 1 were seen in the keep-in-step run on this build. Holds.

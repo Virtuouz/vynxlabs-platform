@@ -39,8 +39,12 @@ Checked by: second agent, 2026-11-24. The line "Each page has **On this page**, 
 
 ## Phase 34, A7 (YAML first), 2026-11-24
 
-Commit `d619bfbd` plus the working tree. Written by the A7 writer; second agent's check pending. Run on the throwaway instance of lane a7 (http://localhost:8712, Fernhill seeded).
+Commit `d619bfbd` plus the working tree. Written by the A7 writer; second agent checked 2026-11-24 (a7r). Run on the throwaway instance of lane a7 (http://localhost:8712, Fernhill seeded).
 
 | Claim | Source (file:line) | Checked by | Result |
 | --- | --- | --- | --- |
 | A binding is a file or `defineBinding`. | run on `walk6` | writer, 2026-11-24 | holds as run |
+
+### Second check (a7r), 2026-11-24, second agent
+
+Lane a7r build, `pnpm docs:check` passes. Second agent, 2026-11-24. `<path>.binding.yaml` as in define-roles-and-bindings-in-code (validated and built). Holds.

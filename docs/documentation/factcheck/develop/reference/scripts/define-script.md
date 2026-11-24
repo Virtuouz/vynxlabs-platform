@@ -20,8 +20,12 @@ Lines are current at commit `5ebf1c80` (branch phase-31-write-the-docs), 2026-11
 
 ## Phase 34, A7 (YAML first), 2026-11-24
 
-Commit `d619bfbd` plus the working tree. Written by the A7 writer; second agent's check pending. Run on the throwaway instance of lane a7 (http://localhost:8712, Fernhill seeded).
+Commit `d619bfbd` plus the working tree. Written by the A7 writer; second agent checked 2026-11-24 (a7r). Run on the throwaway instance of lane a7 (http://localhost:8712, Fernhill seeded).
 
 | Claim | Source (file:line) | Checked by | Result |
 | --- | --- | --- | --- |
 | Schedules and triggers are files or `define*`. | `schemas/files/schedule.v1.schema.json`, `trigger.v1.schema.json` | writer, 2026-11-24 | holds as read |
+
+### Second check (a7r), 2026-11-24, second agent
+
+Lane a7r build, `pnpm docs:check` passes. Second agent, 2026-11-24. The added sentence names `<path>.schedule.yaml`; `schemas/files/` holds a schema for schedule, trigger and trigger_source. Holds.

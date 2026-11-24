@@ -26,7 +26,7 @@ Checked by: second agent (again), 2026-11-23, whole page in one pass on the curr
 
 ## Phase 34, A7 (YAML first), 2026-11-24
 
-Commit `d619bfbd` plus the working tree. Written by the A7 writer; second agent's check pending. Run on the throwaway instance of lane a7 (http://localhost:8712, Fernhill seeded).
+Commit `d619bfbd` plus the working tree. Written by the A7 writer; second agent checked 2026-11-24 (a7r). Run on the throwaway instance of lane a7 (http://localhost:8712, Fernhill seeded).
 
 | Claim | Source (file:line) | Checked by | Result |
 | --- | --- | --- | --- |
@@ -35,3 +35,7 @@ Commit `d619bfbd` plus the working tree. Written by the A7 writer; second agent'
 | Remote run keeps a row `Ada`; a local run keeps none. | `examples/fernhill-cli/scripts/hello.ts` (init output); run | writer, 2026-11-24 | holds as run (run output; the row itself not read back) |
 | Variable as a file; local run `Hello`, with `.platform/local.json` `Good morning, Ada`; deploy `1 created, 1 updated, 0 deleted, 2 unchanged`. | run | writer, 2026-11-24 | holds as run |
 | Promote preview and promote: 4 created. | run | writer, 2026-11-24 | holds as run |
+
+### Second check (a7r), 2026-11-24, second agent
+
+Lane a7r build (a7 merged), throwaway instance http://localhost:8722 (database a7r34, Fernhill seeded), lane CLI `packages/cli/dist/bin.js`. `pnpm docs:check` passes. All 15 steps as written on the instance, with Maya's key and the lane CLI, `node_modules` linked to the example's (nothing is published): outputs match except digests, run IDs and times. The folder lists `.platform/schemas/` as the page says. Two small differences left as they are: the promote command prints a `Bundle ..., version 2 here, to cli-start-live (production).` line first, which step 14 does not show (step 13 does). The console dialogs were not repeated (done in the 2026-11-23 passes).

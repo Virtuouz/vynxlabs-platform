@@ -41,3 +41,7 @@ Instance http://localhost:8712 (throwaway, lane a7's build, commit `d619bfbd` pl
 - Workspaces `cli-start-live` (production) and `cli-start-dev` (dev, promotes to it) made through the API; key `My laptop`. `volvel init fernhill-cli`, `login`, `run hello`, `build`, `deploy --preview`, `deploy`, `run hello --remote`, the variable file and script edit, local runs, `deploy --message`, remote run, `promote --preview`, `promote --message`, `runs`: each as the page shows (outputs copied into it).
 - `npm install` was not run: `node_modules` was linked to the example's, since nothing is published.
 - The page got wrong: the old starter (`src/index.ts`, two resources) and step 11's diff.
+
+## Second check (a7r), 2026-11-24
+
+All 15 steps on http://localhost:8722 (lane a7r, Fernhill seeded) with the lane CLI; workspaces and the key made through the API; `node_modules` linked to the example's. Outputs match the page except digests, run IDs and times.

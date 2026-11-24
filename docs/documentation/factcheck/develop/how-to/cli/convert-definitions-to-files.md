@@ -13,3 +13,7 @@ Run: instance on lane a7's build, database a734, port 8712, Fernhill seeded by `
 | Checks put everything back and say `The repository built differently after converting, or no longer compiles, so nothing was changed:`. | `packages/cli/src/convert.ts:1195-1290`; `convert.test.ts` (rollback on a failing check) | writer, 2026-11-24 | holds as read and by the lane a4 test |
 | `resources/<path> exists already. Nothing was changed.` | `packages/cli/src/convert.ts:1056` | writer, 2026-11-24 | holds as read |
 | `TypeScript was not found, so the code that is left was not type-checked.` | `packages/cli/src/convert.ts:1259` | writer, 2026-11-24 | holds as read |
+
+### Second check (a7r), 2026-11-24, second agent
+
+Lane a7r build (a7 merged), throwaway instance http://localhost:8722 (database a7r34, Fernhill seeded), lane CLI `packages/cli/dist/bin.js`. `pnpm docs:check` passes. Ran `volvel convert --dry-run`, `convert`, a second `convert` (`Converted 0 definitions`) and `--only table` on a copy of `examples/higher-ed-devices` (8 converted, 26 left, 12 references rewritten; the rebuild passed) and the page's own example earlier by a7; the dry run says `Would write`. The page's table file validates against `table.v1.schema.json`.

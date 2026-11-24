@@ -849,6 +849,10 @@ export async function importTenant(
             `The import was undone: ${name} should have ${expected} rows and has ${counts[name] ?? 0}.`,
           );
         }
+        // The report counts what the file brought. A table that is never deleted may hold older
+        // rows of the same tenant (its audit entries, when it was here before), which the file did
+        // not bring: the same file would otherwise report more rows the second time it is imported.
+        if (kept.has(name)) counts[name] = expected;
       }
 
       // The tenant came from another instance, which may still be pushing to the same

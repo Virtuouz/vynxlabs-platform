@@ -75,6 +75,7 @@ const RENAMED: Record<string, string> = {
   tabindex: "tabIndex",
   checked: "defaultChecked",
   srcset: "srcSet",
+  datetime: "dateTime",
 };
 
 function style(text: string): Record<string, string> {
@@ -227,4 +228,11 @@ export function renderReact(tree: Node, options: ReactOptions = {}): ReactNode {
   return toReact(draw(tree, ctx));
 }
 
-export type { FieldInfo, FolderItem, GlossaryItem, RenderOptions, TermInfo } from "./render.js";
+export type {
+  ChangelogItem,
+  FieldInfo,
+  FolderItem,
+  GlossaryItem,
+  RenderOptions,
+  TermInfo,
+} from "./render.js";

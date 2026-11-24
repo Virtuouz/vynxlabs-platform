@@ -13,6 +13,7 @@
 import {
   asDirectory,
   type Collection,
+  changelogOf,
   DOC_TYPE_LABELS,
   DOC_TYPE_PLURALS,
   DOC_TYPES,
@@ -284,6 +285,17 @@ function tabTitle(title: string, section: string | undefined, site: string): str
   return parts.join(" · ");
 }
 
+/** Whether a site has a changelog to subscribe to. Asked for every page, so it is asked once for each set. */
+const feeds = new WeakMap<object, boolean>();
+export function hasChangelog(set: DocSet): boolean {
+  let known = feeds.get(set);
+  if (known === undefined) {
+    known = changelogOf(set).length > 0;
+    feeds.set(set, known);
+  }
+  return known;
+}
+
 function head(at: SiteView, title: string, noindex: boolean, section?: string): string {
   const { look, title: site } = at;
   const platform = at.platform ?? "/_platform/";
@@ -294,7 +306,7 @@ function head(at: SiteView, title: string, noindex: boolean, section?: string): 
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <script src="${attr(themeScriptHref(platform))}"></script>${noindex || at.notice ? '\n<meta name="robots" content="noindex">' : ""}
 <title>${escapeHtml(tabTitle(title, section, site))}</title>
-<link rel="stylesheet" href="${attr(look.themeHref)}">
+<link rel="stylesheet" href="${attr(look.themeHref)}">${hasChangelog(at.set) ? `\n<link rel="alternate" type="application/rss+xml" title="${attr(`${site}: changelog`)}" href="${attr(`${at.base}changelog.xml`)}">` : ""}
 <link rel="stylesheet" href="${attr(docsAssetHref(platform, "css"))}">${iconLinks(look.iconsHref)}
 <script src="${attr(docsAssetHref(platform, "js"))}" defer></script>
 </head>`;
@@ -397,6 +409,14 @@ function draw(at: SiteView, path: string, tree: Root): string {
       href: `${at.base}${slashed(at, urlOf(term.path))}`,
       page: set.pages.get(term.path)?.frontmatter.title ?? term.path,
     }));
+  const changelog = (query: { folder?: string; subject?: string }) =>
+    changelogOf(set, query).map((entry) => ({
+      id: entry.path.replace(/[^a-z0-9_-]+/g, "-"),
+      title: entry.title,
+      href: `${at.base}${slashed(at, urlOf(entry.path))}`,
+      ...(entry.date ? { date: entry.date } : {}),
+      tree: entry.page.tree,
+    }));
   return renderHtml(asDirectory(path, tree), {
     profile: at.profile ?? "docs",
     ...(at.productName ? { productName: at.productName } : {}),
@@ -409,6 +429,7 @@ function draw(at: SiteView, path: string, tree: Root): string {
     headingShift: 1,
     folder,
     glossary,
+    changelog,
     link: (writtenHref) => {
       if (linkKind(writtenHref) !== "relative") return undefined;
       const target = resolveLink(set, path, writtenHref);

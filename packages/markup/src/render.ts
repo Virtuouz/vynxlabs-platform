@@ -1,7 +1,7 @@
 import { splitCode } from "./code.js";
 import { imageKind, isExternal, safeHref, topicOf } from "./links.js";
 import { PROFILES, type ProfileName, REGISTRY, type Registry } from "./registry.js";
-import { type Component, type Node, plain } from "./tree.js";
+import { type Component, type Node, plain, type Root, walk } from "./tree.js";
 
 /**
  * What a tree is drawn as, before it is HTML or React: elements with a tag,
@@ -62,6 +62,16 @@ export interface RenderOptions {
   lines?: boolean;
   /** The terms `::glossary` lists, for its scope. Nothing draws nothing. */
   glossary?: (scope: "collection" | "site") => readonly GlossaryItem[] | null | undefined;
+  /**
+   * The changelog entries `::changelog` draws, newest first, for what it was narrowed to. Nothing
+   * draws nothing. The component shows the first `limit` and says how many more there are.
+   */
+  changelog?:
+    | ((query: {
+        folder?: string;
+        subject?: string;
+      }) => readonly ChangelogItem[] | null | undefined)
+    | undefined;
   /** What is in the folder the page is in, for `::pages`. Nothing draws nothing. */
   folder?: () => readonly FolderItem[] | null | undefined;
   /**
@@ -90,6 +100,19 @@ export interface GlossaryItem {
   /** The page that defines it, already resolved, and what that page is called. */
   href?: string;
   page?: string;
+}
+
+/** One entry of a changelog, as `::changelog` draws it. */
+export interface ChangelogItem {
+  /** Names the entry's heading, and prefixes the ids of its own. */
+  id: string;
+  title: string;
+  /** Where the entry's page is, already resolved. */
+  href?: string;
+  /** `YYYY-MM-DD`. An entry nothing dates is drawn without one. */
+  date?: string;
+  /** The page's body. */
+  tree: Root;
 }
 
 /** One page or folder of a folder, as `::pages` lists it. */
@@ -184,6 +207,29 @@ export function srcOf(src: string, ctx: Context): string | undefined {
   if (mapped === null) return undefined;
   const final = mapped ?? src.trim();
   return imageKind(final) === "refused" ? undefined : final;
+}
+
+const DAYS = new Intl.DateTimeFormat("en-GB", {
+  day: "numeric",
+  month: "long",
+  year: "numeric",
+  timeZone: "UTC",
+});
+
+/** A `YYYY-MM-DD` as a reader says it: 24 November 2026. */
+function dayOf(day: string): string | undefined {
+  const at = new Date(`${day}T00:00:00Z`);
+  return Number.isNaN(at.getTime()) ? undefined : DAYS.format(at);
+}
+
+/** A tree with each heading's id put under `prefix`, so that entries drawn on one page never share one. */
+function prefixed<T extends Node>(node: T, prefix: string): T {
+  const copy = { ...node } as T & { children?: Node[]; id?: string };
+  if ("children" in node && Array.isArray(node.children)) {
+    copy.children = (node.children as Node[]).map((child) => prefixed(child, prefix));
+  }
+  if (node.type === "heading") copy.id = `${prefix}-${node.id}`;
+  return copy;
 }
 
 export function drawAll(nodes: readonly Node[], ctx: Context): Drawn[] {
@@ -581,6 +627,70 @@ function component(node: Component, ctx: Context): Drawn[] {
             ]),
           ),
         ),
+      ];
+    }
+    case "changelog": {
+      const found = ctx.options.changelog?.({
+        ...(node.props.folder ? { folder: node.props.folder } : {}),
+        ...(node.props.subject ? { subject: node.props.subject } : {}),
+      });
+      const items = [...(found ?? [])];
+      if (items.length === 0) return [];
+      const limit = Math.max(1, Math.min(50, Number(node.props.limit) || 10));
+      const shift = Math.max(0, ctx.options.headingShift ?? 0);
+      // The entry's title is a heading under the page's own; its body's headings go under that.
+      const level = Math.min(6, 2 + shift);
+      const prefix = ctx.options.idPrefix ?? "vd";
+      const shown = items.slice(0, limit).map((item) => {
+        const own = `${prefix}-changelog-${item.id}`;
+        // Its shallowest heading, whichever it is, goes directly under the entry's title.
+        let shallowest = 6;
+        for (const { node: one } of walk(item.tree)) {
+          if (one.type === "heading") shallowest = Math.min(shallowest, one.depth);
+        }
+        const body = drawAll(prefixed(item.tree, own).children, {
+          ...ctx,
+          // An entry that holds a changelog of its own is not drawn again inside itself.
+          options: {
+            ...ctx.options,
+            headingShift: level + 1 - shallowest,
+            idPrefix: own,
+            changelog: undefined,
+            // Another page's lines are not this page's.
+            lines: false,
+          },
+        });
+        const href = item.href ? hrefOf(item.href, { ...ctx, profile: "docs" }, true) : undefined;
+        const when = item.date ? dayOf(item.date) : undefined;
+        return el("article", { class: "vd-changelog-entry", id: own }, [
+          el("header", { class: "vd-changelog-head" }, [
+            el(`h${level}`, { class: "vd-changelog-title" }, [
+              href ? el("a", { href }, [item.title]) : item.title,
+            ]),
+            ...(when
+              ? [el("time", { class: "vd-changelog-date", datetime: item.date as string }, [when])]
+              : []),
+          ]),
+          el("div", { class: "vd-changelog-body" }, body),
+        ]);
+      });
+      const rest = items.slice(limit);
+      const next = rest[0]?.href
+        ? hrefOf(rest[0].href, { ...ctx, profile: "docs" }, true)
+        : undefined;
+      return [
+        el("div", { class: "vd-changelog" }, [
+          ...shown,
+          ...(rest.length > 0 && next
+            ? [
+                el("p", { class: "vd-changelog-more" }, [
+                  el("a", { href: next }, [
+                    `${rest.length} older ${rest.length === 1 ? "entry" : "entries"}, from ${rest[0]?.title}`,
+                  ]),
+                ]),
+              ]
+            : []),
+        ]),
       ];
     }
     case "pages": {

@@ -159,6 +159,17 @@ export function PageDetails({
               onChange={(icon) => set({ icon })}
             />
           ) : null}
+          <div className="max-w-[16rem]">
+            <TextField
+              name="date"
+              label="Date"
+              type="date"
+              required={false}
+              value={text(now.date)}
+              hint={SAYS.date.description}
+              onChange={(date) => set({ date })}
+            />
+          </div>
         </div>
       </div>
 

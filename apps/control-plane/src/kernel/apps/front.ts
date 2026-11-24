@@ -10,6 +10,7 @@ import {
   urlOf,
 } from "@volvel/docs-engine";
 import {
+  changelogFeed,
   DOCS_ASSET_PATH,
   docPage,
   docsAsset,
@@ -1120,6 +1121,27 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
       .send(JSON.stringify(body));
   }
 
+  /** A docs app's changelog as RSS, with whole addresses, or nothing where it has no entries. */
+  function sendFeed(
+    request: FastifyRequest,
+    reply: FastifyReply,
+    drawn: SiteView,
+    preview = false,
+  ) {
+    const feed = changelogFeed(drawn.set, {
+      title: drawn.title,
+      base: drawn.base,
+      origin: kernel.hosts.originOf(request),
+    });
+    if (feed === undefined) return undefined;
+    return reply
+      .code(200)
+      .header("content-type", "application/rss+xml; charset=utf-8")
+      .header("x-content-type-options", "nosniff")
+      .header("cache-control", preview ? "no-store" : "private, no-cache")
+      .send(feed);
+  }
+
   /** A page's Markdown, for whoever may read the page. */
   function sendMarkdown(reply: FastifyReply, body: string, preview = false) {
     return reply
@@ -1282,6 +1304,10 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
         ),
       );
     }
+    if (at.file === "changelog.xml") {
+      const sent = sendFeed(request, reply, drawn);
+      if (sent) return sent;
+    }
     const markdown = pageMarkdown(docs.built.set, at.file, (page) =>
       sourceIn(at.resources, `${at.app.docs}/${page}`),
     );
@@ -1417,6 +1443,10 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
         ),
         true,
       );
+    }
+    if (file === "changelog.xml") {
+      const sent = sendFeed(request, reply, drawn, true);
+      if (sent) return sent;
     }
     const markdown = pageMarkdown(set, file, (page) => sourceIn(resources, `${app.docs}/${page}`));
     if (markdown !== undefined) return sendMarkdown(reply, markdown, true);

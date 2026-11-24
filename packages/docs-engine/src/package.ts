@@ -45,6 +45,7 @@ export function setFromManifest(
       ...(page.description ? { description: page.description } : {}),
       ...(page.topic ? { topic: page.topic } : {}),
       ...(page.since ? { since: page.since } : {}),
+      ...(page.date ? { date: page.date } : {}),
       ...(page.subjects ? { subjects: page.subjects } : {}),
     };
     const entry = { path: page.path, frontmatter } as DocEntry;

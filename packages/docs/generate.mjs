@@ -12,6 +12,7 @@ import {
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { apiFiles } from "./generators/api.mjs";
+import { CHANGELOG_FOLDER, changelogFiles } from "./generators/changelog.mjs";
 import { LIST_LINKS, LIST_PAGES, listFiles } from "./generators/lists.mjs";
 import { generate, referenceIndex } from "./generators/reference.mjs";
 import { sdkFiles } from "./generators/sdk.mjs";
@@ -42,6 +43,8 @@ export function placeOf(name) {
   if (name === "settings.md") return "self-host/reference/settings.md";
   if (name === "metrics.md") return "self-host/reference/metrics.md";
   if (name === "audit-actions.md") return "administer/reference/audit-actions.md";
+  // The changelog's entries are Get started's reference: "What's new" there lists them.
+  if (name.startsWith(`${CHANGELOG_FOLDER}/`)) return `start/reference/${name}`;
   return `develop/reference/${name}`;
 }
 
@@ -82,6 +85,7 @@ export async function expected() {
   for (const [name, text] of await apiFiles()) made.set(name, text);
   for (const [name, text] of listFiles()) made.set(name, text);
   for (const [name, text] of sdkFiles()) made.set(name, text);
+  for (const [name, text] of changelogFiles()) made.set(name, text);
   made.set(
     "index.md",
     referenceIndex(
@@ -91,7 +95,9 @@ export async function expected() {
   );
   const files = new Map();
   for (const [name, text] of made) {
-    files.set(placeOf(name), name.endsWith(".md") ? withMoved(name, text) : text);
+    // A changelog entry was never at `reference/…`: nothing moved from there.
+    const moved = name.endsWith(".md") && !name.startsWith(`${CHANGELOG_FOLDER}/`);
+    files.set(placeOf(name), moved ? withMoved(name, text) : text);
   }
   return files;
 }

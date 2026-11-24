@@ -14,6 +14,7 @@ export interface Manifest {
     description?: string;
     topic?: string;
     since?: string;
+    date?: string;
     updated?: string;
     /** For a typed page: its type, and what it is about. */
     docType?: string;
@@ -55,7 +56,7 @@ export function manifestOf(set: DocSet, version: string): Manifest {
     pages: [...order, ...rest].flatMap((path) => {
       const entry = set.pages.get(path);
       if (!entry) return [];
-      const { title, description, topic, since } = entry.frontmatter;
+      const { title, description, topic, since, date } = entry.frontmatter;
       return [
         {
           path,
@@ -64,6 +65,7 @@ export function manifestOf(set: DocSet, version: string): Manifest {
           ...(description ? { description } : {}),
           ...(topic ? { topic } : {}),
           ...(since ? { since } : {}),
+          ...(date ? { date } : {}),
           ...(entry.updated ? { updated: entry.updated } : {}),
           ...(set.types[path] ? { docType: set.types[path] } : {}),
           ...(entry.frontmatter.subjects?.length ? { subjects: entry.frontmatter.subjects } : {}),

@@ -1,5 +1,16 @@
 export { type AmongOptions, checkPageAmong, type PageIndex } from "./among.js";
 export {
+  CHANGELOG_NAME,
+  type ChangelogEntry,
+  type ChangelogOptions,
+  changelogDate,
+  changelogOf,
+  dayInName,
+  isChangelogEntry,
+  isDay,
+} from "./changelog.js";
+export {
+  CHANGELOG_TEMPLATE,
   DIATAXIS_CODES,
   DOC_TEMPLATES,
   DOC_TYPE_LABELS,
@@ -15,6 +26,7 @@ export {
 } from "./diataxis.js";
 export {
   type Change,
+  changelogEntryName,
   childrenOf,
   inverseOf,
   NAME_PATTERN,
@@ -27,6 +39,7 @@ export {
   planDelete,
   planDuplicate,
   planMove,
+  planNewChangelogEntry,
   planNewFolder,
   planNewPage,
   planRename,

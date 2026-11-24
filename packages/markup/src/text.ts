@@ -43,6 +43,16 @@ export function renderText(tree: Node, options: RenderOptions = {}): string {
               .sort((a, b) => a.term.localeCompare(b.term, "en", { sensitivity: "base" }))
               .map((item) => `${item.term}: ${item.short}`)
               .join("\n");
+          case "changelog":
+            return (
+              ctx.options.changelog?.({
+                ...(node.props.folder ? { folder: node.props.folder } : {}),
+                ...(node.props.subject ? { subject: node.props.subject } : {}),
+              }) ?? []
+            )
+              .slice(0, Math.max(1, Math.min(50, Number(node.props.limit) || 10)))
+              .map((item) => `- ${item.title}${item.date ? ` (${item.date})` : ""}`)
+              .join("\n");
           case "pages":
             return (ctx.options.folder?.() ?? []).map((item) => `- ${item.title}`).join("\n");
           case "field":

@@ -1370,6 +1370,50 @@ describe("DOC-03 types and subjects in the docs editor", () => {
     expect(made?.source).toContain("## Fields");
   });
 
+  test("a new page can be a changelog entry: named with today's date, kept in the site's changelog folder, from its template, and no type", async () => {
+    typed();
+    docs();
+    fireEvent.click(await screen.findByRole("button", { name: "More for Limits" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: /New page here/ }));
+    const title = await screen.findByLabelText("Page title");
+    fireEvent.change(title, { target: { value: "Open on Fridays" } });
+    fireEvent.change(screen.getByLabelText("Type"), { target: { value: "changelog-entry" } });
+    const now = new Date();
+    const two = (n: number) => String(n).padStart(2, "0");
+    const today = `${now.getFullYear()}-${two(now.getMonth() + 1)}-${two(now.getDate())}`;
+    expect((screen.getByLabelText("File name") as HTMLInputElement).value).toBe(
+      `${today}-open-on-fridays`,
+    );
+    // The name follows the title until it is typed in, and keeps its date.
+    fireEvent.change(title, { target: { value: "Open on Saturdays" } });
+    expect((screen.getByLabelText("File name") as HTMLInputElement).value).toBe(
+      `${today}-open-on-saturdays`,
+    );
+    fireEvent.keyDown(title, { key: "Enter" });
+    await waitFor(() => expect(batches()).toHaveLength(1));
+    const made = (
+      batches()[0]?.body?.changes as { path: string; source: string }[] | undefined
+    )?.[0];
+    expect(made?.path).toBe(`handbook/changelog/${today}-open-on-saturdays`);
+    expect(made?.source).toContain("title: Open on Saturdays");
+    expect(made?.source).toContain("## What is new");
+    expect(made?.source).not.toContain("type:");
+  });
+
+  test("Page details has a Date, written as `date:` and taken out when it is cleared", async () => {
+    typed();
+    editor("handbook/support/refunds");
+    const box = await source();
+    const form = details();
+    const date = form.getByLabelText(/^Date/) as HTMLInputElement;
+    expect(date.type).toBe("date");
+    expect(date.value).toBe("");
+    fireEvent.change(date, { target: { value: "2026-11-24" } });
+    await waitFor(() => expect(box.value).toContain("date: 2026-11-24\n"));
+    fireEvent.change(form.getByLabelText(/^Date/), { target: { value: "" } });
+    await waitFor(() => expect(box.value).not.toContain("date:"));
+  });
+
   test("a new page with no type chosen is only its title", async () => {
     docs();
     fireEvent.click(await screen.findByRole("button", { name: "More for Customer support" }));

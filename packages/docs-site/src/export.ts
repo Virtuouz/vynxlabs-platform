@@ -11,6 +11,7 @@ import {
 } from "@volvel/docs-engine";
 import { build } from "esbuild";
 import { docsAsset, docsAssetHref } from "./assets.js";
+import { changelogFeed } from "./feed.js";
 import { escapeHtml } from "./html.js";
 import {
   crumbOf,
@@ -292,6 +293,14 @@ export async function* exportSite(options: ExportOptions): AsyncGenerator<Export
     "sitemap.xml",
     `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${entries.join("\n")}\n</urlset>\n`,
   );
+
+  // For readers who follow a changelog: the entries, newest first.
+  const feed = changelogFeed(set, {
+    title: options.title,
+    base,
+    ...(options.origin ? { origin: options.origin } : {}),
+  });
+  if (feed !== undefined) yield file("changelog.xml", feed);
 
   // For the website to list versions: this one, and those it was given.
   const mine: VersionEntry = { version, date, path: base };

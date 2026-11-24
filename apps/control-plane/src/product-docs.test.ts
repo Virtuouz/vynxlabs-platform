@@ -30,6 +30,9 @@ const PAGES: Record<string, string> = {
     "---\ntitle: Welcome\ndescription: How the product works.\npages: [start]\n---\n\nStart with [the first page](start/first).\n",
   "start/index":
     "---\ntitle: Getting started\ndescription: The first steps.\npages: [first]\n---\n",
+  "start/changelog/2026-11-24-first":
+    "---\ntitle: The first release\n---\n\nIt does the first thing.\n",
+  "start/news": "---\ntitle: News\n---\n\n::changelog\n",
   "start/first":
     '---\ntitle: The first page\ndescription: Do the first thing.\n---\n\n## A section\n\nWords about a zebra crossing.\n\n![A small picture](pic.png)\n\n::screenshot{name=table-help alt="The table"}\n\n::screenshot{name=never-taken alt="A table that was not photographed"}\n\n```js\nconst a = 1;\n```\n',
 };
@@ -271,6 +274,22 @@ describe("the product's documentation at /docs", () => {
     expect((await get(t, "/docs/assets/start/missing.png")).statusCode).toBe(404);
     expect((await get(t, "/docs/assets/%2e%2e/manifest.json")).statusCode).toBe(404);
     expect((await get(t, "/docs/assets/..%2f..%2fmanifest.json")).statusCode).toBe(404);
+  });
+
+  test("the changelog is drawn where ::changelog is, and is a feed at /docs/changelog.xml that every page's head names", async () => {
+    const news = await get(t, "/docs/start/news");
+    expect(news.body).toContain("It does the first thing.");
+    expect(news.body).toMatch(
+      /<link rel="alternate" type="application\/rss\+xml" title="[^"]+ documentation: changelog" href="\/docs\/changelog\.xml">/,
+    );
+    const feed = await get(t, "/docs/changelog.xml");
+    expect(feed.statusCode).toBe(200);
+    expect(feed.headers["content-type"]).toContain("application/rss+xml");
+    expect(feed.headers["content-security-policy"]).toContain("default-src 'none'");
+    expect(feed.body).toContain(
+      `<link>http://${MAIN}/docs/start/changelog/2026-11-24-first/</link>`,
+    );
+    expect(feed.body).toContain("<pubDate>Tue, 24 Nov 2026 00:00:00 GMT</pubDate>");
   });
 
   test("a page can be copied as Markdown", async () => {

@@ -25,6 +25,7 @@ import { CORE_NODES } from "../../nodes/dist/index.js";
 import { CORE_WIDGETS } from "../../widgets-core/dist/index.js";
 import { expected, GENERATED, stale, write } from "../generate.mjs";
 import { apiPages } from "../generators/api.mjs";
+import { changelogFiles, sectionsOf } from "../generators/changelog.mjs";
 import { listFiles, strayWords, wordlessSettings } from "../generators/lists.mjs";
 import { coverage, generate } from "../generators/reference.mjs";
 import { tablesOf } from "../generators/schema.mjs";
@@ -299,4 +300,95 @@ test("every field of every kind says what it is, and the floor is all of them (M
   expect(floor).toBe(1);
   const covered = coverage();
   expect(covered.described).toBe(covered.fields);
+});
+
+test("the changelog is one entry for each release and one for everything unreleased, drawn from CHANGELOG.md", () => {
+  const source = [
+    "# Changelog",
+    "",
+    "Intro.",
+    "",
+    "## Unreleased: phase 2, the second thing",
+    "",
+    "Second words with [a file](docs/a.md) and [a site](https://example.com).",
+    "",
+    "### For operators",
+    "",
+    "- **Done.**",
+    "",
+    "## Unreleased: phase 1, the first thing",
+    "",
+    "First.",
+    "",
+    "## 0.5.0, not yet released",
+    "",
+    "Authoring.",
+    "",
+    "### For operators",
+    "",
+    "- A change.",
+    "",
+    "## 0.1.0",
+    "",
+    "The kernel.",
+    "",
+  ].join("\n");
+  expect(sectionsOf(source).map((one) => one.title)).toEqual([
+    "Unreleased: phase 2, the second thing",
+    "Unreleased: phase 1, the first thing",
+    "0.5.0, not yet released",
+    "0.1.0",
+  ]);
+  const files = changelogFiles(source);
+  expect([...files.keys()].sort()).toEqual([
+    "changelog/0-1-0.md",
+    "changelog/0-5-0.md",
+    "changelog/index.md",
+    "changelog/unreleased.md",
+  ]);
+  const unreleased = files.get("changelog/unreleased.md") ?? "";
+  expect(unreleased).toContain('title: "Unreleased"');
+  // Each phase is a heading, newest first as the file has them; its own headings stay under it.
+  expect(unreleased.indexOf("## Phase 2, the second thing")).toBeLessThan(
+    unreleased.indexOf("## Phase 1, the first thing"),
+  );
+  expect(unreleased).toContain("### For operators");
+  // A link to a file of the repository leads nowhere here: its words stay. An address stays a link.
+  expect(unreleased).toContain("Second words with a file and [a site](https://example.com).");
+  const release = files.get("changelog/0-5-0.md") ?? "";
+  expect(release).toContain('title: "0.5.0"');
+  expect(release).toContain("which is not released yet");
+  expect(release).toContain("\n## For operators");
+  expect(files.get("changelog/0-1-0.md")).toContain('description: "What changed in 0.1.0."');
+  // None of them says a date: CHANGELOG.md has none, and none is made up.
+  for (const text of files.values()) expect(text).not.toMatch(/\ndate:/);
+});
+
+test("the changelog's pages are Get started's reference, and what is in CHANGELOG.md is what is generated", async () => {
+  const files = await expected();
+  expect(files.has("start/reference/changelog/unreleased.md")).toBe(true);
+  expect(files.has("start/reference/changelog/index.md")).toBe(true);
+  // They were never at reference/…, so nothing is said to have moved from there.
+  expect(files.get("start/reference/changelog/unreleased.md")).not.toContain("moved_from");
+  const source = readFileSync(join(__dirname, "../../../CHANGELOG.md"), "utf8");
+  for (const version of source.matchAll(/^## (\d+\.\d+\.\d+)/gm)) {
+    expect(
+      files.has(`start/reference/changelog/${(version[1] ?? "").replace(/\./g, "-")}.md`),
+    ).toBe(true);
+  }
+  // "What's new" is written by hand and lists them.
+  const whatsNew = readFileSync(join(__dirname, "../content/start/reference/whats-new.md"), "utf8");
+  expect(whatsNew).toContain("::changelog{limit=3 folder=start/reference/changelog}");
+  // docs:check's staleness check covers them: a changed entry is not what the code says now.
+  const file = join(GENERATED, "start/reference/changelog/unreleased.md");
+  await write();
+  const kept = readFileSync(file, "utf8");
+  try {
+    writeFileSync(file, `${kept}\nAn edit by hand.\n`);
+    expect(await stale()).toContain(
+      "generated/start/reference/changelog/unreleased.md is not what the code says now.",
+    );
+  } finally {
+    writeFileSync(file, kept);
+  }
 });

@@ -162,6 +162,13 @@ export const FRONTMATTER_SCHEMA = {
       uniqueItems: true,
       items: path("A path the page had, without .md."),
     },
+    date: {
+      type: "string",
+      description:
+        "For a changelog entry: the day it is about, as YYYY-MM-DD. Without it the entry takes a date that begins or ends its file name, else the day the page last changed.",
+      pattern: "^\\d{4}-\\d{2}-\\d{2}$",
+      maxLength: 10,
+    },
     since: {
       type: "string",
       description: "For the product's own pages: the version that brought what the page describes.",
@@ -195,6 +202,7 @@ export interface Frontmatter {
   subjects?: string[];
   moved_from?: string[];
   since?: string;
+  date?: string;
 }
 
 export interface SchemaProblem {

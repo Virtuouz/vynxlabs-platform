@@ -1,5 +1,6 @@
 import {
   buildDocSet,
+  changelogOf,
   childrenOf,
   type DocEntry,
   type DocSet,
@@ -366,4 +367,27 @@ export function glossaryFor(
       href: address(term.page.path),
       page: term.page.title,
     }));
+}
+
+/**
+ * The entries `::changelog` lists on a page in the console: the changelog of the page's own site,
+ * newest first, as the site will draw it. A page in the list carries no last-updated day, so an
+ * entry with no `date:` and none in its name is drawn without one here.
+ */
+export function changelogFor(
+  list: DocsList,
+  page: Pick<DocPage, "path">,
+  query: { folder?: string; subject?: string },
+  address: (path: string) => string,
+) {
+  const app = appFor(list.apps, page.path);
+  if (!app) return [];
+  const pages = new Map(entriesOf(list, app).map((entry) => [entry.path, entry]));
+  return changelogOf({ pages }, query).map((entry) => ({
+    id: entry.path.replace(/[^a-z0-9_-]+/g, "-"),
+    title: entry.title,
+    href: address(`${app.docs}/${entry.path}`),
+    ...(entry.date ? { date: entry.date } : {}),
+    tree: entry.page.tree,
+  }));
 }

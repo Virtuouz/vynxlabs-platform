@@ -41,6 +41,15 @@ function fixture(): ExportSource {
       "develop/index",
       "---\ntitle: Develop\ndescription: Build with code.\ntype: reference\npages: [cli]\n---\n\n::pages\n",
     ),
+    page("start/news", "---\ntitle: News\n---\n\nWhat changed lately.\n\n::changelog{limit=1}\n"),
+    page(
+      "changelog/2026-11-24-new-intake",
+      "---\ntitle: New intake\n---\n\nIntake takes a photo.\n\n## Details\n\nSee [the intro](../start/intro).\n",
+    ),
+    page(
+      "changelog/older-2026-10-02",
+      "---\ntitle: Older & <odd>\ndescription: Before.\n---\n\nOld.\n",
+    ),
     page(
       "develop/cli",
       "---\ntitle: The CLI\ndescription: Commands.\n---\n\nRun `volvel deploy` to ship. Back to [the start](../start/intro).\n",
@@ -253,6 +262,24 @@ describe.each(BASES)("the export served from %s", (base) => {
     expect([...found.visited].some((url) => url.endsWith("search/index.json"))).toBe(true);
   });
 
+  test("the changelog is a feed beside the pages, linked from every page's head, and valid RSS with whole links when there is an origin", async () => {
+    expect(written).toContain("changelog.xml");
+    const feed = readFileSync(join(root, "changelog.xml"), "utf8");
+    // Without an origin the links are paths, as the sitemap's are.
+    expect(feed).toContain(`<link>${base}changelog/2026-11-24-new-intake/</link>`);
+    const html = readFileSync(join(root, "start/intro/index.html"), "utf8");
+    expect(html).toContain(
+      `<link rel="alternate" type="application/rss+xml" title="Volvel documentation: changelog" href="${base}changelog.xml">`,
+    );
+    // The page that lists the entries draws the newest, with its date, its body and its link.
+    const news = readFileSync(join(root, "start/news/index.html"), "utf8");
+    expect(news).toContain(
+      '<time class="vd-changelog-date" datetime="2026-11-24">24 November 2026</time>',
+    );
+    expect(news).toContain("Intake takes a photo.");
+    expect(news).toContain("1 older entry, from Older &amp; &lt;odd&gt;");
+  });
+
   test("pages are folders with an index, and each has a copy as Markdown", () => {
     expect(written).toEqual(
       expect.arrayContaining([
@@ -302,7 +329,7 @@ describe.each(BASES)("the export served from %s", (base) => {
 
   test("search is asked of the indexes: one for each collection, and no server", async () => {
     const meta = JSON.parse(readFileSync(join(root, "search/index.json"), "utf8"));
-    expect(Object.keys(meta.files).sort()).toEqual(["", "develop", "start"]);
+    expect(Object.keys(meta.files).sort()).toEqual(["", "changelog", "develop", "start"]);
     expect(meta.crumbs["start/intro"]).toBe("Start");
     const html = readFileSync(join(root, "_search/index.html"), "utf8");
     expect(html).toContain("data-static-results");
@@ -334,6 +361,17 @@ describe.each(BASES)("the export served from %s", (base) => {
     }
   });
 
+  test("with an origin the feed's links are whole", async () => {
+    const root2 = mkdtempSync(join(tmpdir(), "volvel-export-feed-"));
+    await exportToDirectory(root2, options(base, { origin: "https://docs.example.com" }));
+    const feed = readFileSync(join(root2, "changelog.xml"), "utf8");
+    expect(feed).toContain(
+      `<link>https://docs.example.com${base}changelog/2026-11-24-new-intake/</link>`,
+    );
+    expect(feed).toContain(`<atom:link href="https://docs.example.com${base}changelog.xml"`);
+    rmSync(root2, { recursive: true, force: true });
+  });
+
   test("a moved page is a page that leads on, a line for a host that reads one, and not a 308", async () => {
     const stub = readFileSync(join(root, "start/old/index.html"), "utf8");
     expect(stub).toContain(`<meta http-equiv="refresh" content="0; url=${base}start/intro/">`);
@@ -359,7 +397,7 @@ describe.each(BASES)("the export served from %s", (base) => {
     });
     const sitemap = readFileSync(join(root, "sitemap.xml"), "utf8");
     expect(sitemap).toContain(`<loc>${base}start/intro/</loc>`);
-    expect(sitemap.match(/<loc>/g)).toHaveLength(5);
+    expect(sitemap.match(/<loc>/g)).toHaveLength(8);
   });
 });
 

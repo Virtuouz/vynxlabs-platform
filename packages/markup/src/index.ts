@@ -19,7 +19,14 @@ export {
   registry,
   TERM_RESOURCES,
 } from "./registry.js";
-export type { FieldInfo, FolderItem, GlossaryItem, RenderOptions, TermInfo } from "./render.js";
+export type {
+  ChangelogItem,
+  FieldInfo,
+  FolderItem,
+  GlossaryItem,
+  RenderOptions,
+  TermInfo,
+} from "./render.js";
 export { DOC_CSS, DOC_DARK_CSS } from "./style.js";
 export { renderText } from "./text.js";
 export * from "./tree.js";

@@ -453,6 +453,20 @@ test("an instance from before page types refuses the key by name, and the CLI sa
   );
   expect(older.message).toContain("the instance may be older than this CLI");
   expect(older.message).toContain('There is no "type" here');
+  // A changelog entry's date is as new as types are.
+  const dated = refusal(
+    {
+      status: 422,
+      body: {
+        detail: "The bundle was refused.",
+        errors: [
+          { message: 'handbook/changelog/a (doc): There is no "date" here. It can have: title.' },
+        ],
+      },
+    },
+    "deploy",
+  );
+  expect(dated.message).toContain("the instance may be older than this CLI");
   const other = refusal(
     {
       status: 422,

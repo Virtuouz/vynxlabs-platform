@@ -364,6 +364,17 @@ export const DOC_CSS = `
 .vd-doc .vd-glossary dt { font-weight: 600; }
 .vd-doc .vd-glossary dd { display: flex; flex-direction: column; gap: 0.15em; margin: 0.1em 0 0; }
 .vd-doc .vd-glossary-also, .vd-doc .vd-glossary-page { font-size: 0.875em; color: var(--vd-muted, #5c5c5c); }
+.vd-doc .vd-changelog { margin: 0 0 1.25em; }
+.vd-doc .vd-changelog-entry { padding: 1.25em 0 0.5em; border-top: 1px solid var(--vd-line, #dcdcdc); scroll-margin-top: var(--vd-scroll-margin, 5rem); }
+.vd-doc .vd-changelog-entry:first-child { border-top: 0; padding-top: 0.25em; }
+.vd-doc .vd-changelog-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 0.25em 1em; margin: 0 0 0.5em; }
+.vd-doc .vd-changelog-title { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.vd-doc .vd-changelog-title a { color: inherit; text-decoration: none; }
+.vd-doc .vd-changelog-title a:hover { text-decoration: underline; }
+.vd-doc .vd-changelog-date { font-size: 0.875em; color: var(--vd-muted, #5c5c5c); white-space: nowrap; }
+.vd-doc .vd-changelog-body { min-width: 0; overflow-wrap: anywhere; }
+.vd-doc .vd-changelog-body > :first-child { margin-top: 0; }
+.vd-doc .vd-changelog-more { margin: 0.5em 0 0; font-size: 0.9375em; }
 
 .vd-doc .vd-mermaid {
   position: relative;

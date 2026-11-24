@@ -129,8 +129,8 @@ export async function request(
   return { status: response.status, body };
 }
 
-/** What an instance from before types, subjects and moves says of a page that uses them. */
-const OLDER_INSTANCE = /There is no "(type|subjects|moved_from)" (here|in )/;
+/** What an instance from before types, subjects, moves and dates says of a page that uses them. */
+const OLDER_INSTANCE = /There is no "(type|subjects|moved_from|date)" (here|in )/;
 
 /** Explains a refused request in the server's own words, including each named problem. */
 export function refusal(reply: ApiReply, doing: string): CliError {

@@ -3,6 +3,7 @@ import { readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { type OpenedPackage, openPackage, urlOf } from "@volvel/docs-engine";
 import {
+  changelogFeed,
   docPage,
   docsAssetHref,
   notFoundPage,
@@ -255,6 +256,19 @@ export function productDocsRoutes(app: FastifyInstance, kernel: Kernel): void {
         undefined,
         false,
       );
+    }
+
+    if (sub === "changelog.xml") {
+      const feed = changelogFeed(pkg.set, {
+        title: view.title,
+        base: BASE,
+        origin: kernel.config.docsUrl ?? `${request.protocol}://${request.host}`,
+      });
+      if (feed !== undefined) {
+        return headers(reply, "application/rss+xml; charset=utf-8", tag())
+          .header("content-security-policy", "default-src 'none'; sandbox")
+          .send(feed);
+      }
     }
 
     const etag = tag();

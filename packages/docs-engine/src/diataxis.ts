@@ -194,3 +194,10 @@ export const DOC_TEMPLATES: Record<DocType, string> = {
   explanation:
     "Why this is the way it is, in prose, with the ideas in order.\n\n## The idea\n\nWhat it is for.\n\n## How it fits\n\nWhat it works with, and what it leaves to others.\n",
 };
+
+/**
+ * The source a new changelog entry starts from, under its frontmatter. An entry is not one of the
+ * four types: it says what changed, for whoever follows the site.
+ */
+export const CHANGELOG_TEMPLATE =
+  "One sentence on what changed and who it matters to.\n\n## What is new\n\n- What a person can do now that they could not, in plain words.\n\n## What to do\n\nWhat a reader needs to do about it, if anything. Delete this heading if nothing.\n";

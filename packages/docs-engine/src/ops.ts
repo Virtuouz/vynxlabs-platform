@@ -1,5 +1,6 @@
 import { linkKind, parse, topicOf, walk } from "@volvel/markup";
-import { DOC_TEMPLATES, type DocType, folderType } from "./diataxis.js";
+import { CHANGELOG_NAME } from "./changelog.js";
+import { CHANGELOG_TEMPLATE, DOC_TEMPLATES, type DocType, folderType } from "./diataxis.js";
 import { frontmatterOf, setFrontmatter, splitFrontmatter, titleOf } from "./page.js";
 import { resolveLink } from "./set.js";
 
@@ -130,6 +131,40 @@ export function newPageSource(title: string, type?: DocType, inherited?: DocType
   });
   const head = top ?? `---\ntitle: ${JSON.stringify(title)}\n---\n`;
   return type ? `${head}\n${DOC_TEMPLATES[type]}` : head;
+}
+
+/** A changelog entry's file name: the day it is made, then its title. `2026-11-24-new-intake`. */
+export function changelogEntryName(title: string, today: string): string {
+  const slug = slugOf(title);
+  return slug === "" ? today : `${today}-${slug}`.slice(0, 80);
+}
+
+/**
+ * A new changelog entry for the site `folder` is in: under its `changelog/` folder (or the one
+ * `folder` is already in), named with today's day, from the changelog template. It is no type of
+ * page, so it says none.
+ */
+export function planNewChangelogEntry(
+  pages: readonly PageSource[],
+  folder: string,
+  next: { title: string; today: string; name?: string },
+): Plan {
+  if (next.title.trim() === "") return { problem: "A title is needed." };
+  if (folder === "")
+    return { problem: "A page goes in a folder. Top-level folders are the sites." };
+  const parts = folder.split("/");
+  const at = parts.indexOf(CHANGELOG_NAME);
+  const into = at === -1 ? `${parts[0]}/${CHANGELOG_NAME}` : parts.slice(0, at + 1).join("/");
+  const name = next.name ?? changelogEntryName(next.title, next.today);
+  const problem = nameProblem(name);
+  if (problem) return { problem };
+  const path = join(into, name);
+  if (pages.some((page) => page.path === path)) {
+    return { problem: `There is already an entry named ${name}. Change its title or its name.` };
+  }
+  const top = setFrontmatter("", { title: next.title.trim() });
+  const head = top ?? `---\ntitle: ${JSON.stringify(next.title.trim())}\n---\n`;
+  return { changes: [{ path, source: `${head}\n${CHANGELOG_TEMPLATE}`, created: true }] };
 }
 
 /**

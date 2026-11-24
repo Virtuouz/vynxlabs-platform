@@ -1,6 +1,7 @@
 import {
   asDirectory,
   type Change,
+  changelogEntryName,
   DOC_TYPE_LABELS,
   DOC_TYPES,
   type DocType,
@@ -16,6 +17,7 @@ import {
   planDelete,
   planDuplicate,
   planMove,
+  planNewChangelogEntry,
   planNewFolder,
   planNewPage,
   planRename,
@@ -72,6 +74,7 @@ import { useTitleObject } from "../../kit/title.ts";
 import { navigate } from "../../router.tsx";
 import {
   appFor,
+  changelogFor,
   type DocPage,
   type DocRow,
   type DocsApp,
@@ -457,7 +460,13 @@ export function Docs({
       const plan =
         kind === "new-folder"
           ? planNewFolder(sourcesOf(data), parent, next)
-          : planNewPage(sourcesOf(data), parent, next);
+          : next.changelog
+            ? planNewChangelogEntry(sourcesOf(data), parent, {
+                title: next.title,
+                name: next.name,
+                today: today(),
+              })
+            : planNewPage(sourcesOf(data), parent, next);
       return apply(
         plan,
         kind === "new-folder" ? `Made the folder ${next.title}.` : `Made ${next.title}.`,
@@ -969,7 +978,7 @@ function toNodes(options: {
   commitNew: (
     kind: "new-page" | "new-folder",
     parent: string,
-    next: { title: string; name: string; type?: DocType },
+    next: { title: string; name: string; type?: DocType; changelog?: boolean },
   ) => Promise<string | undefined>;
   /** The type a folder gives the pages in it that say none. */
   folderTypeOf: (folder: string) => DocType | undefined;
@@ -1122,6 +1131,15 @@ const NAME_FIELD_KEYS = new Set([
   "F2",
 ]);
 
+/** What New page's type choice says for a changelog entry, which is no type of page. */
+const CHANGELOG_ENTRY = "changelog-entry";
+/** Today as the reader's own calendar says it, `YYYY-MM-DD`. */
+const today = () => {
+  const now = new Date();
+  const two = (n: number) => String(n).padStart(2, "0");
+  return `${now.getFullYear()}-${two(now.getMonth() + 1)}-${two(now.getDate())}`;
+};
+
 /**
  * A title and a file name, edited together in a row of the tree. Enter saves
  * and Escape cancels. A name made from a title follows it until it is typed
@@ -1149,7 +1167,13 @@ export function NameEditor({
   hint?: string | undefined;
   /** For a new page: offers its type, and says what the folder gives one that is left without. */
   types?: { inherited: DocType | undefined };
-  onSubmit: (next: { title: string; name: string; type?: DocType }) => Promise<string | undefined>;
+  onSubmit: (next: {
+    title: string;
+    name: string;
+    type?: DocType;
+    /** A changelog entry: named with today's day, kept in the site's changelog folder. */
+    changelog?: boolean;
+  }) => Promise<string | undefined>;
   onCancel: () => void;
 }) {
   const [title, setTitle] = useState(initialTitle);
@@ -1163,6 +1187,9 @@ export function NameEditor({
     first.current?.focus();
     first.current?.select();
   }, []);
+  const entry = type === CHANGELOG_ENTRY;
+  const named = (from: string, asEntry: boolean) =>
+    asEntry ? changelogEntryName(from, today()) : slugOf(from);
   const wrong = name === "" ? undefined : nameProblem(name);
   const fixed = wrong ? slugOf(name) : undefined;
   const submit = async () => {
@@ -1184,6 +1211,7 @@ export function NameEditor({
       title: title.trim(),
       name,
       ...(isDocType(type) ? { type } : {}),
+      ...(entry ? { changelog: true } : {}),
     });
     setBusy(false);
     setProblem(answer);
@@ -1212,7 +1240,7 @@ export function NameEditor({
         onChange={(event) => {
           const next = event.currentTarget.value;
           setTitle(next);
-          if (!own) setName(slugOf(next));
+          if (!own) setName(named(next, entry));
         }}
         className="h-7 w-full rounded-inner border border-action bg-surface px-2 text-ink outline-none"
       />
@@ -1248,8 +1276,17 @@ export function NameEditor({
               label: types.inherited ? `Folder: ${DOC_TYPE_LABELS[types.inherited]}` : "None",
             },
             ...DOC_TYPES.map((one) => ({ value: one, label: DOC_TYPE_LABELS[one] })),
+            { value: CHANGELOG_ENTRY, label: "Changelog entry" },
           ]}
-          onChange={setType}
+          {...(entry
+            ? {
+                hint: "Goes in the site's changelog folder, named with today's date. A ::changelog on any page lists it.",
+              }
+            : {})}
+          onChange={(next) => {
+            setType(next);
+            if (!own) setName(named(title, next === CHANGELOG_ENTRY));
+          }}
         />
       ) : null}
       {wrong ? (
@@ -1715,6 +1752,7 @@ function Reader({
             asServed
             folder={() => folderItems(rows, page, link)}
             glossary={(scope) => glossaryFor(list, page, scope, (to) => `${link}/docs/${to}`)}
+            changelog={(query) => changelogFor(list, page, query, (to) => `${link}/docs/${to}`)}
             {...drawn}
             components={{
               code: ({ value, lang }) =>

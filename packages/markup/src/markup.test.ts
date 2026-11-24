@@ -290,6 +290,7 @@ describe("components", () => {
       "code-tabs",
       "file-tree",
       "glossary",
+      "changelog",
       "pages",
     ]);
     const source = readFileSync(join(FIXTURES, "components.md"), "utf8");
@@ -617,6 +618,116 @@ test("an editor's preview is told which lines each block came from", () => {
   expect(html).toContain('<section class="vd-tab" data-line="6" data-end-line="8">');
   // A served page says nothing of where its words were.
   expect(renderHtml(parse(source), { profile: "docs" })).not.toContain("data-line");
+});
+
+describe("a changelog", () => {
+  const entry = (id: string, title: string, source: string, date?: string) => ({
+    id,
+    title,
+    href: `/handbook/changelog/${id}`,
+    ...(date ? { date } : {}),
+    tree: parse(source),
+  });
+  const items = [
+    entry(
+      "2026-11-24-new-intake",
+      "New intake",
+      "Intake takes a photo.\n\n# Details\n\nMore.\n\n## Deeper\n",
+      "2026-11-24",
+    ),
+    entry("old-2026-10-02", "Older", "Old words.\n", "2026-10-02"),
+    entry("oldest", "Oldest", "Oldest.\n"),
+  ];
+  const seen: unknown[] = [];
+  const changelog = (query: { folder?: string; subject?: string }) => {
+    seen.push(query);
+    return items;
+  };
+
+  test("::changelog draws each entry: its title linked, its date, its body with headings shifted down and ids prefixed", () => {
+    const html = renderHtml(parse("::changelog{limit=2}\n"), {
+      profile: "docs",
+      changelog,
+      headingShift: 1,
+      idPrefix: "page",
+    });
+    expect(html).toContain(
+      '<article class="vd-changelog-entry" id="page-changelog-2026-11-24-new-intake">',
+    );
+    // The entry's title sits under the page's own headings (h1 shifted to h2), and its body's under that.
+    expect(html).toContain(
+      '<h3 class="vd-changelog-title"><a href="/handbook/changelog/2026-11-24-new-intake">New intake</a></h3>',
+    );
+    expect(html).toContain(
+      '<time class="vd-changelog-date" datetime="2026-11-24">24 November 2026</time>',
+    );
+    expect(html).toContain("Intake takes a photo.");
+    expect(html).toMatch(
+      /<h4 id="page-changelog-2026-11-24-new-intake-[a-z-]*details">Details<\/h4>/,
+    );
+    expect(html).toMatch(
+      /<h5 id="page-changelog-2026-11-24-new-intake-[a-z-]*deeper">Deeper<\/h5>/,
+    );
+    // Written from ## as the template does, the first heading is still directly under the title.
+    const second = renderHtml(parse("::changelog\n"), {
+      profile: "docs",
+      changelog: () => [entry("b", "B", "## What is new\n\n### Settings\n")],
+    });
+    expect(second).toContain(
+      '<h2 class="vd-changelog-title"><a href="/handbook/changelog/b">B</a></h2>',
+    );
+    expect(second).toContain('<h3 id="vd-changelog-b-what-is-new">What is new</h3>');
+    expect(second).toContain('<h4 id="vd-changelog-b-settings">Settings</h4>');
+    // The next ones are a link, and not drawn.
+    expect(html).toContain("Old words.");
+    expect(html).not.toContain("Oldest.");
+    expect(html).toContain(
+      '<p class="vd-changelog-more"><a href="/handbook/changelog/oldest">1 older entry, from Oldest</a></p>',
+    );
+  });
+
+  test("a limit of 10 is the default, and an entry without a date is drawn without one", () => {
+    const html = renderHtml(parse("::changelog\n"), { profile: "docs", changelog });
+    expect(html).toContain("Oldest.");
+    expect(html).not.toContain("vd-changelog-more");
+    expect(html.match(/<time /g)).toHaveLength(2);
+    expect(html).toContain('<h2 class="vd-changelog-title">');
+  });
+
+  test("the folder and the subject are passed on to what draws the entries, and nothing draws nothing", () => {
+    seen.length = 0;
+    renderHtml(parse("::changelog{folder=handbook/changelog subject=intake}\n"), {
+      profile: "docs",
+      changelog,
+    });
+    expect(seen).toEqual([{ folder: "handbook/changelog", subject: "intake" }]);
+    expect(renderHtml(parse("::changelog\n"), { profile: "docs" })).toBe("");
+    expect(renderHtml(parse("::changelog\n"), { profile: "docs", changelog: () => [] })).toBe("");
+  });
+
+  test("an entry that has a changelog of its own is not drawn again inside itself", () => {
+    const loop = [entry("a", "A", "Before.\n\n::changelog\n")];
+    const html = renderHtml(parse("::changelog\n"), { profile: "docs", changelog: () => loop });
+    expect(html.match(/vd-changelog-entry/g)).toHaveLength(1);
+  });
+
+  test("is for the docs and the product, and refuses what is not a number or a name", () => {
+    const codes = (source: string, profile: ProfileName = "docs") =>
+      validate(parse(source), profile, { source }).map((one) => one.code);
+    expect(codes("::changelog{limit=5 folder=a/b subject=x}\n")).toEqual([]);
+    expect(codes("::changelog\n", "product")).toEqual([]);
+    expect(codes("::changelog\n", "description")).toEqual(["component_not_allowed"]);
+    expect(codes("::changelog{limit=0}\n")).not.toEqual([]);
+    expect(codes("::changelog{limit=51}\n")).not.toEqual([]);
+    expect(codes("::changelog{limit=many}\n")).not.toEqual([]);
+    expect(codes("::changelog{folder=A/B}\n")).not.toEqual([]);
+  });
+
+  test("as text it is the titles and days", () => {
+    expect(renderText(parse("::changelog{limit=2}\n"), { profile: "docs", changelog })).toBe(
+      "- New intake (2026-11-24)\n- Older (2026-10-02)",
+    );
+  });
 });
 
 describe("a glossary and a diagram", () => {

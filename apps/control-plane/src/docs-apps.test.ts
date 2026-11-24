@@ -503,6 +503,49 @@ describe("a folder of pages served as a docs app", () => {
     expect((await ivy.get("/portal/acme/")).body).toContain("/apps/acme/main/staff/");
   });
 
+  test("a changelog is entries drawn where ::changelog is, and an RSS feed with whole addresses that the head names", async () => {
+    // A site with no entries has no feed, and no head names one.
+    expect((await browser().get(`${HELP}changelog.xml`)).status).toBe(404);
+    expect((await browser().get(HELP)).body).not.toContain('rel="alternate"');
+    const deployed = await deploy([
+      ...handbook(),
+      page(
+        "handbook/changelog/2026-11-24-new-intake",
+        "title: New intake",
+        "Intake takes a photo.\n\n## Details\n\nMore.\n",
+      ),
+      page("handbook/changelog/older", "title: Older & <odd>\ndate: 2026-10-02", "Before.\n"),
+      page("handbook/news", "title: News", "Lately.\n\n::changelog{limit=1}\n"),
+    ]);
+    expect(deployed.status, JSON.stringify(deployed.body)).toBe(201);
+    const news = await browser().get(`${HELP}news`);
+    expect(news.status).toBe(200);
+    expect(news.body).toContain(
+      '<time class="vd-changelog-date" datetime="2026-11-24">24 November 2026</time>',
+    );
+    expect(news.body).toContain("Intake takes a photo.");
+    expect(news.body).not.toContain("Before.");
+    expect(news.body).toContain("1 older entry, from Older &amp; &lt;odd&gt;");
+    expect(news.body).toContain(
+      `<link rel="alternate" type="application/rss+xml" title="Shop handbook: changelog" href="${HELP}changelog.xml">`,
+    );
+    const feed = await browser().get(`${HELP}changelog.xml`);
+    expect(feed.status).toBe(200);
+    expect(feed.headers["content-type"]).toContain("application/rss+xml");
+    expect(feed.headers["x-content-type-options"]).toBe("nosniff");
+    expect(feed.body.startsWith('<?xml version="1.0" encoding="UTF-8"?>')).toBe(true);
+    // Whole addresses, newest first, and what is in a title does not break the document.
+    expect(feed.body).toContain(
+      `<link>http://${MAIN}${HELP}changelog/2026-11-24-new-intake/</link>`,
+    );
+    expect(feed.body.indexOf("New intake")).toBeLessThan(
+      feed.body.indexOf("Older &amp; &lt;odd&gt;"),
+    );
+    expect(feed.body).toContain("<pubDate>Fri, 02 Oct 2026 00:00:00 GMT</pubDate>");
+    // An app that is not for the caller answers nothing of itself.
+    expect((await browser().get("/apps/acme/main/staff/changelog.xml")).status).toBe(303);
+  });
+
   test("a page that is renamed keeps answering at its old address, which leads to the new one", async () => {
     const renamed = handbook().map((one) =>
       one.kind === "doc" && one.path === "handbook/support/returns"

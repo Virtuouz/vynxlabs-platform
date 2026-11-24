@@ -32,6 +32,7 @@ import { navigate, useNavigationGuard, useQueryValue } from "../../router.tsx";
 import { deletePage, folderItems, keepPage, MoveDialog, PATH, useProduct } from "./Docs.tsx";
 import {
   appFor,
+  changelogFor,
   type DocPage,
   type DocsList,
   entriesOf,
@@ -573,6 +574,9 @@ export function DocEditor({
                   folder={() => folderItems(rows, { path: where }, link)}
                   glossary={(scope) =>
                     glossaryFor(data, { path: where }, scope, (to) => `${link}/docs/${to}`)
+                  }
+                  changelog={(query) =>
+                    changelogFor(data, { path: where }, query, (to) => `${link}/docs/${to}`)
                   }
                   {...drawn}
                   components={{

@@ -233,7 +233,7 @@ const STARTER: Record<string, string> = {
         noEmit: true,
         skipLibCheck: true,
       },
-      include: ["src"],
+      include: ["src", ".platform/*.d.ts"],
     },
     null,
     2,

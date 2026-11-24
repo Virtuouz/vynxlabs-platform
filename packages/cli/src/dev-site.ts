@@ -35,6 +35,7 @@ import { appPolicy } from "@volvel/manifest";
 import { contentTypeOf } from "./apps.js";
 import { buildRepository } from "./build.js";
 import { BuildError } from "./errors.js";
+import { writeEnvTypes } from "./types.js";
 
 export interface SiteApp {
   path: string;
@@ -160,6 +161,8 @@ export async function startSiteServer(options: SiteServerOptions) {
         withoutAppSources: true,
       });
       const manifests = built.bundle.manifests as unknown as Manifest[];
+      // The editor's types follow the definitions, on each rebuild.
+      await writeEnvTypes(directory, built.bundle.manifests).catch(() => undefined);
       const found = appsIn(manifests).find((one) => one.path === app.path);
       if (!found) {
         throw new BuildError([`${app.path} is no longer defined by this repository.`]);

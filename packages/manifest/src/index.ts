@@ -43,6 +43,14 @@ export {
   type PlatformEventName,
 } from "./bundle-check.js";
 export {
+  columnValueType,
+  ENV_TYPES_FILE,
+  envDeclarations,
+  type TypedManifest,
+  tableTypes,
+  typeOfSchema,
+} from "./env-types.js";
+export {
   envelopeSchemas,
   KIND_PATTERN,
   Manifest,

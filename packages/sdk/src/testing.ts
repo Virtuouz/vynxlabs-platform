@@ -176,7 +176,7 @@ export function testContext(options: TestOptions = {}, declared?: Declared): Tes
       if (value === undefined) missing("variable", path, "variables");
       return value as string;
     },
-    table(table) {
+    table(table: string | { path: string }) {
       const path = pathOf(table);
       must("table", path, declared?.tables);
       const given = options.tables?.[path];
@@ -209,7 +209,7 @@ export function testContext(options: TestOptions = {}, declared?: Declared): Tes
       },
     },
     events: {
-      async publish(event, payload) {
+      async publish(event: string, payload: Record<string, unknown>) {
         must("event", event, declared?.events);
         recorded.events.push({ event, payload });
       },

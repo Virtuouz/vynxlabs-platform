@@ -110,6 +110,59 @@ test("an activation the server took for a rename done wrong can be allowed by na
   ]);
 });
 
+test("a rollback that would replace what was changed here says so in the console's words, and goes through only when asked again", async () => {
+  const done = vi.fn();
+  vi.stubGlobal("fetch", async (address: string, init: RequestInit = {}) => {
+    const body = init.body ? JSON.parse(init.body as string) : undefined;
+    calls.push({ method: init.method ?? "GET", url: address, body });
+    if (body && !body.force) {
+      return new Response(
+        JSON.stringify({
+          code: "console_changed",
+          detail: "Run `volvel pull`, review, commit, and deploy again.",
+          errors: [
+            {
+              path: "limit",
+              message:
+                "changed in the console since the repository last had it, and this deploy would replace it",
+            },
+            {
+              path: "extra",
+              message:
+                "made in the console since the repository last had it, and this deploy would remove it",
+            },
+          ],
+        }),
+        { status: 409 },
+      );
+    }
+    return new Response("{}", { status: 201 });
+  });
+  show(
+    <DeployVersion
+      root={root}
+      workspace={{ name: "Sandbox", type: "dev" }}
+      bundleId="b1"
+      version={1}
+      running={2}
+      onDone={done}
+    />,
+  );
+  fireEvent.click(await screen.findByRole("button", { name: "Roll back to this version" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Roll back" }));
+  const second = await screen.findByRole("dialog");
+  expect(within(second).getByText("Roll back Sandbox anyway?")).toBeTruthy();
+  expect(second.textContent).toContain("replaced by version 1: limit");
+  expect(second.textContent).toContain("removed by version 1: extra");
+  expect(second.textContent).not.toContain("volvel pull");
+  fireEvent.click(within(second).getByRole("button", { name: "Roll back anyway" }));
+  await waitFor(() => expect(done).toHaveBeenCalled());
+  expect(calls.filter((call) => call.method === "POST").map((call) => call.body)).toEqual([
+    { bundleId: "b1" },
+    { bundleId: "b1", force: true },
+  ]);
+});
+
 test("VOC-45: one function decides Deploy or Roll back from the numbers", () => {
   expect(versionMove(1, 2)).toBe("roll_back");
   expect(versionMove(3, 2)).toBe("deploy");

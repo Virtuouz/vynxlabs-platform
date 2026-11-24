@@ -686,11 +686,12 @@ export function DeployVersion({
           danger: workspace.type === "production",
         });
         if (!sure) return;
-        const activate = async (allowDelete?: string[]) => {
+        const activate = async (allowDelete?: string[], force?: boolean) => {
           try {
             await api.post(`${root}/deployments`, {
               bundleId,
               ...(allowDelete ? { allowDelete } : {}),
+              ...(force ? { force: true } : {}),
             });
             notify.success(`Version ${version} is what runs here now.`);
             onDone();
@@ -703,6 +704,14 @@ export function DeployVersion({
                 return;
               }
             }
+            // What was changed or made here since the repository last had it is replaced or removed.
+            if (error instanceof ApiError && error.code === "console_changed" && !force) {
+              if (await askToOverwrite(error.fields, workspace.name, back, version)) {
+                await activate(allowDelete, true);
+                return;
+              }
+              return;
+            }
             notify.error(error);
           }
         };
@@ -713,6 +722,36 @@ export function DeployVersion({
     </Button>
   );
 }
+
+/**
+ * Asks whether a version may replace what was changed in the console, and remove what was made
+ * there, since the repository last had it. Said in the console's terms; the CLI's "pull first"
+ * does not apply to a version chosen here.
+ */
+const askToOverwrite = (
+  fields: { path: string; message: string }[],
+  where: string,
+  back: boolean,
+  version: number,
+) => {
+  const changed = fields.filter((one) => one.message.startsWith("changed")).map((one) => one.path);
+  const made = fields.filter((one) => !one.message.startsWith("changed")).map((one) => one.path);
+  const parts = [
+    changed.length > 0
+      ? `Changed here since the repository last had it, and replaced by version ${version}: ${changed.join(", ")}.`
+      : "",
+    made.length > 0
+      ? `Made here since the repository last had it, and removed by version ${version}: ${made.join(", ")}.`
+      : "",
+    "Those changes are lost. Doing it anyway is written to the audit log.",
+  ].filter(Boolean);
+  return ask.confirm({
+    title: `${back ? "Roll back" : "Deploy"} ${where} anyway?`,
+    text: parts.join(" "),
+    action: back ? "Roll back anyway" : "Deploy anyway",
+    danger: true,
+  });
+};
 
 /**
  * Has one of the workspace's workers try a connection, from where scripts run,

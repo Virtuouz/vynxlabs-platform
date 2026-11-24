@@ -361,6 +361,8 @@ export function defineWidget<const D extends WidgetDefinition>(definition: D): D
 /** A set of widget definitions, by type. */
 export class WidgetRegistry {
   readonly #byType = new Map<string, WidgetDefinition>();
+  /** Every deployed version of a tenant's widget, oldest first. */
+  readonly #versions = new Map<string, DeployedWidgetVersion[]>();
 
   constructor(definitions: Iterable<WidgetDefinition> = []) {
     for (const definition of definitions) this.add(definition);
@@ -375,8 +377,41 @@ export class WidgetRegistry {
     return this;
   }
 
-  get(type: string): WidgetDefinition | undefined {
+  /**
+   * A registry of this one's widgets and the tenant widgets a workspace deployed (the answer
+   * of `GET .../widgets`). The one it is made from is left alone: the platform's registry is
+   * shared, a workspace's is its own. A tenant widget answers by its current version.
+   */
+  withDeployed(deployed: Iterable<DeployedWidget>): WidgetRegistry {
+    const next = new WidgetRegistry(this.list());
+    for (const [type, versions] of this.#versions) next.#versions.set(type, versions);
+    for (const widget of deployed) {
+      if (WidgetRegistry.packOf(widget.type) !== TENANT_PACK) {
+        throw new Error(`${widget.type} is not a tenant widget: those are "${TENANT_PACK}/<name>"`);
+      }
+      const versions = [...widget.versions].sort((a, b) => compareVersions(a.version, b.version));
+      const current = versions.find((one) => one.version === widget.current);
+      if (!current) {
+        throw new Error(`${widget.type} has no deployed version ${widget.current}`);
+      }
+      next.add(current.definition);
+      next.#versions.set(widget.type, versions);
+    }
+    return next;
+  }
+
+  /** A widget by its type: a tenant's at `version` when it is given, else its current one. */
+  get(type: string, version?: string): WidgetDefinition | undefined {
+    if (version !== undefined) {
+      const versions = this.#versions.get(type);
+      if (versions) return versions.find((one) => one.version === version)?.definition;
+    }
     return this.#byType.get(type);
+  }
+
+  /** The versions of a tenant's widget that are deployed, oldest first; none for a platform widget. */
+  versionsOf(type: string): string[] {
+    return (this.#versions.get(type) ?? []).map((one) => one.version);
   }
 
   /** In the order they were added; offered on `surface` when one is given. */
@@ -389,6 +424,59 @@ export class WidgetRegistry {
   static packOf(type: string): string {
     return type.split("/")[0] ?? "";
   }
+}
+
+/** One deployed version of a tenant's widget. */
+export interface DeployedWidgetVersion {
+  version: string;
+  definition: WidgetDefinition;
+}
+
+/**
+ * A tenant's widget as a workspace has it deployed: the versions kept (a page names the one
+ * it was built with), and which of them is the newest.
+ */
+export interface DeployedWidget {
+  /** `x/<name>`. */
+  type: string;
+  /** The newest deployed version: what "Add to page" places and "Update" moves to. */
+  current: string;
+  /** Every deployed version, with the definition each had. */
+  versions: DeployedWidgetVersion[];
+}
+
+/** The answer of `GET /tenants/:t/workspaces/:w/widgets`. */
+export interface WorkspaceWidgets {
+  widgets: DeployedWidget[];
+}
+
+/** Orders two `major.minor.patch` versions as numbers (a build or prerelease suffix is ignored). */
+export function compareVersions(a: string, b: string): number {
+  const parts = (version: string) =>
+    version
+      .split(/[-+]/)[0]!
+      .split(".")
+      .map((part) => Number.parseInt(part, 10) || 0);
+  const left = parts(a);
+  const right = parts(b);
+  for (let at = 0; at < Math.max(left.length, right.length); at += 1) {
+    const difference = (left[at] ?? 0) - (right[at] ?? 0);
+    if (difference !== 0) return difference;
+  }
+  return 0;
+}
+
+/** What moving a placed widget from one version to another changes in what it is configured with. */
+export function updateNotes(
+  from: WidgetDefinition,
+  to: WidgetDefinition,
+): { added: string[]; removed: string[] } {
+  const before = Object.keys(from.config.properties ?? {});
+  const after = Object.keys(to.config.properties ?? {});
+  return {
+    added: after.filter((name) => !before.includes(name)),
+    removed: before.filter((name) => !after.includes(name)),
+  };
 }
 
 // ---------------------------------------------------------------------------

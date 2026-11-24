@@ -116,3 +116,43 @@ describe("the widget kind", () => {
     ]);
   });
 });
+
+describe("a page that uses a widget of the repository", () => {
+  const page = (version?: string, type = "x/goal"): BundleManifest => ({
+    kind: "dashboard",
+    schemaVersion: 3,
+    path: "dash",
+    ownership: "code",
+    body: {
+      widgets: [
+        {
+          id: "g",
+          type,
+          ...(version ? { version } : {}),
+          at: { x: 0, y: 0, w: 3, h: 3 },
+          data: {
+            value: { source: { visual: { table: "t", measures: [{ fn: "count", as: "n" }] } } },
+          },
+        },
+      ],
+    },
+  });
+
+  test("is checked against the widget the bundle holds, at the version it holds", () => {
+    expect(
+      checkBundleManifests([widget(), page("1.0.0")]).filter((p) => p.startsWith("dash")),
+    ).toEqual([]);
+    expect(checkBundleManifests([widget(), page("0.9.0")])).toEqual([
+      expect.stringContaining('version 0.9.0 of "x/goal" is not deployed (deployed: 1.0.0)'),
+    ]);
+    expect(checkBundleManifests([widget(), page()])).toEqual([
+      expect.stringContaining("say the version it was made with"),
+    ]);
+  });
+
+  test("is refused when the bundle has no such widget", () => {
+    expect(checkBundleManifests([page("1.0.0")])).toEqual([
+      expect.stringContaining('there is no widget called "x/goal"'),
+    ]);
+  });
+});

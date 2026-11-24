@@ -98,6 +98,8 @@ export type DashboardBody = {
     id: string;
     /** The widget, by its pack and name, as core/chart. */
     type: string;
+    /** For a widget of your own (x/...): the version of it this page was made with. The page is drawn and checked with that version until you update it. A platform widget has none. */
+    version?: string;
     /** The heading drawn on the widget. Left out, it has none. */
     title?: string;
     /** A line under the heading. */
@@ -807,6 +809,8 @@ export type InterfaceBody = {
       id: string;
       /** The widget, by its pack and name, as core/chart. */
       type: string;
+      /** For a widget of your own (x/...): the version of it this page was made with. The page is drawn and checked with that version until you update it. A platform widget has none. */
+      version?: string;
       /** The heading drawn on the widget. Left out, it has none. */
       title?: string;
       /** A line under the heading. */

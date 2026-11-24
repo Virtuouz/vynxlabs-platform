@@ -6,6 +6,7 @@ import { refuseDirectProductionWrite } from "../kernel/authoring.js";
 import { boundInside, check } from "../kernel/authorize.js";
 import { refuseMissingTargets, refuseRetiringReferred } from "../kernel/data/apply.js";
 import { badRequest, conflict, HttpError, notFound } from "../kernel/errors.js";
+import { setBasis } from "../kernel/execution/basis.js";
 import { instanceTriggersPaused } from "../kernel/execution/control.js";
 import { access, reachedFromInside, type WorkspaceRef } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
@@ -755,11 +756,21 @@ export function workspaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                 description: "Refuse, with `path_taken`, to replace a resource that is there.",
               }),
             ),
+            takeOver: Type.Optional(
+              Type.Boolean({
+                description:
+                  "Take a table that is defined in code over, in a dev workspace: `ownership` is " +
+                  "`ui`, and the table is managed as files from then on. Refused in production, " +
+                  "as any write to a code-managed resource is. A deploy of a repository that " +
+                  "still defines the table takes it back, and is refused first if the console " +
+                  "changed it since (pull first).",
+              }),
+            ),
           }),
           response: { 200: Resource, 201: Resource },
         },
       },
-      async ({ ctx, params, body: { create, version, ...body } }, reply) => {
+      async ({ ctx, params, body: { create, version, takeOver, ...body } }, reply) => {
         const workspace = ctx.workspace as WorkspaceRef;
         const path = resourcePath(params);
         await refuseDirectProductionWrite(db, workspace, {
@@ -792,7 +803,15 @@ export function workspaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             ...body,
             path,
             ...(version !== undefined ? { expectedVersion: version } : {}),
+            ...(takeOver && body.kind === "table" && body.ownership === "ui"
+              ? { switchOwnership: true }
+              : {}),
           });
+          // What a table taken over from code was when it left is in step with the repository
+          // as far as that goes: a deploy that would replace what the console changed since is refused.
+          if (saved.resource && saved.ownershipFrom === "code") {
+            await setBasis(trx, workspace.id, { keys: [saved.resource.key] });
+          }
           // A deploy checks this once everything is in place; a table saved alone is checked now.
           if (body.kind === "table") {
             const { db: data } = await kernel.data.within(trx, workspace.tenantId);

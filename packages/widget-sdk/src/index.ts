@@ -361,6 +361,10 @@ export function defineWidget<const D extends WidgetDefinition>(definition: D): D
 /** A set of widget definitions, by type. */
 export class WidgetRegistry {
   readonly #byType = new Map<string, WidgetDefinition>();
+  /** Every deployed version of a tenant's widget, oldest first. */
+  readonly #versions = new Map<string, DeployedWidgetVersion[]>();
+  /** Tenant widgets the repository no longer defines: drawn where placed, never offered. */
+  readonly #retired = new Set<string>();
 
   constructor(definitions: Iterable<WidgetDefinition> = []) {
     for (const definition of definitions) this.add(definition);
@@ -375,13 +379,48 @@ export class WidgetRegistry {
     return this;
   }
 
-  get(type: string): WidgetDefinition | undefined {
+  /**
+   * A registry of this one's widgets and the tenant widgets a workspace deployed (the answer
+   * of `GET .../widgets`). The one it is made from is left alone: the platform's registry is
+   * shared, a workspace's is its own. A tenant widget answers by its current version.
+   */
+  withDeployed(deployed: Iterable<DeployedWidget>): WidgetRegistry {
+    const next = new WidgetRegistry(this.#byType.values());
+    for (const [type, versions] of this.#versions) next.#versions.set(type, versions);
+    for (const type of this.#retired) next.#retired.add(type);
+    for (const widget of deployed) {
+      if (WidgetRegistry.packOf(widget.type) !== TENANT_PACK) {
+        throw new Error(`${widget.type} is not a tenant widget: those are "${TENANT_PACK}/<name>"`);
+      }
+      const versions = [...widget.versions].sort((a, b) => compareVersions(a.version, b.version));
+      // A widget the repository dropped keeps its versions for the pages that place them, and is no longer offered.
+      const current =
+        versions.find((one) => one.version === widget.current) ?? versions[versions.length - 1];
+      if (!current) throw new Error(`${widget.type} has no deployed version`);
+      next.add(current.definition);
+      next.#versions.set(widget.type, versions);
+      if (widget.current === null) next.#retired.add(widget.type);
+    }
+    return next;
+  }
+
+  /** A widget by its type: a tenant's at `version` when it is given, else its current one. */
+  get(type: string, version?: string): WidgetDefinition | undefined {
+    if (version !== undefined) {
+      const versions = this.#versions.get(type);
+      if (versions) return versions.find((one) => one.version === version)?.definition;
+    }
     return this.#byType.get(type);
+  }
+
+  /** The versions of a tenant's widget that are deployed, oldest first; none for a platform widget. */
+  versionsOf(type: string): string[] {
+    return (this.#versions.get(type) ?? []).map((one) => one.version);
   }
 
   /** In the order they were added; offered on `surface` when one is given. */
   list(surface?: Surface): WidgetDefinition[] {
-    const all = [...this.#byType.values()];
+    const all = [...this.#byType.values()].filter((one) => !this.#retired.has(one.type));
     return surface ? all.filter((definition) => definition.surfaces.includes(surface)) : all;
   }
 
@@ -389,6 +428,64 @@ export class WidgetRegistry {
   static packOf(type: string): string {
     return type.split("/")[0] ?? "";
   }
+}
+
+/** One deployed version of a tenant's widget, as `GET .../widgets` lists it. */
+export interface DeployedWidgetVersion {
+  version: string;
+  definition: WidgetDefinition;
+  /** Whether it is the version the repository defines now. */
+  current?: boolean;
+  deployedAt?: string;
+  /** How many widgets on pages place this version. */
+  placements?: number;
+}
+
+/**
+ * A tenant's widget as a workspace has it deployed: the versions kept (a page names the one
+ * it was built with), and which of them is the newest.
+ */
+export interface DeployedWidget {
+  /** `x/<name>`. */
+  type: string;
+  /** The version the repository defines now: what "Add to page" places and "Update" moves to. Null once the widget is removed, while pages still place a version of it. */
+  current: string | null;
+  /** Every deployed version, with the definition each had. */
+  versions: DeployedWidgetVersion[];
+}
+
+/** The answer of `GET /tenants/:t/workspaces/:w/widgets`. */
+export interface WorkspaceWidgets {
+  items: DeployedWidget[];
+}
+
+/** Orders two `major.minor.patch` versions as numbers (a build or prerelease suffix is ignored). */
+export function compareVersions(a: string, b: string): number {
+  const parts = (version: string) =>
+    version
+      .split(/[-+]/)[0]!
+      .split(".")
+      .map((part) => Number.parseInt(part, 10) || 0);
+  const left = parts(a);
+  const right = parts(b);
+  for (let at = 0; at < Math.max(left.length, right.length); at += 1) {
+    const difference = (left[at] ?? 0) - (right[at] ?? 0);
+    if (difference !== 0) return difference;
+  }
+  return 0;
+}
+
+/** What moving a placed widget from one version to another changes in what it is configured with. */
+export function updateNotes(
+  from: WidgetDefinition,
+  to: WidgetDefinition,
+): { added: string[]; removed: string[] } {
+  const before = Object.keys(from.config.properties ?? {});
+  const after = Object.keys(to.config.properties ?? {});
+  return {
+    added: after.filter((name) => !before.includes(name)),
+    removed: before.filter((name) => !after.includes(name)),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -584,6 +681,8 @@ export interface WidgetViewProps<Config = Record<string, unknown>> {
   size: ViewSize;
   /** Raises a declared event. The host does what the page says, or nothing. */
   emit: (event: string, payload: EventPayload) => void;
+  /** For a tenant's widget (`x/...`): the version the page names. A platform widget has none. */
+  version?: string;
   /** Whether the page is being built. A view may draw hints for the builder, never different data. */
   building: boolean;
   /**

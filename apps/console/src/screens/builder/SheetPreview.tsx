@@ -6,7 +6,7 @@ import { count } from "../../kit/format.ts";
 import type { Catalog } from "../../kit/inspector/model.ts";
 import { useViewer } from "../../viewer.ts";
 import { pageClient } from "./client.ts";
-import { views } from "./registry.ts";
+import { useViews, useWorkspaceWidgets } from "./registry.ts";
 import { type FilterValues, PageView } from "./renderer.ts";
 import { useSampleRecords } from "./SampleRecord.tsx";
 
@@ -130,6 +130,8 @@ export function SheetPreviewHost({
   onEditLayout: () => void;
   onClose: () => void;
 }) {
+  useWorkspaceWidgets(root);
+  const views = useViews();
   const [chosen, setChosen] = useState<string>();
   // A row clicked on the canvas is the record shown; the stepper then goes on from it.
   useEffect(() => {

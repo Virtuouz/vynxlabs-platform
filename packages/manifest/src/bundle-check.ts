@@ -1,3 +1,4 @@
+import type { DeployedWidget, WidgetDefinition, WidgetRegistry } from "@volvel/widgets";
 import {
   assetPathProblem,
   type Bundle,
@@ -18,6 +19,7 @@ import {
   interfaceTables,
   widgetFlows,
   widgetTables,
+  workspaceRegistry,
 } from "./page.js";
 import { BUILTIN_ROLE_NAMES } from "./permissions.js";
 import { KindRegistry, validateJson } from "./registry.js";
@@ -137,6 +139,22 @@ interface ScriptUses {
 /** "a" or "an", by how the kind's name is said. */
 const article = (kind: string) => (/^[aeiou]/.test(kind) ? "an" : "a");
 
+/**
+ * The platform's widgets and those the bundle holds. A page of the bundle may place an older
+ * version than the bundle's, one the workspace still has deployed; the control plane checks the
+ * versions a page names against the workspace, so here only the type must be known.
+ */
+function bundleRegistry(manifests: readonly BundleManifest[]): WidgetRegistry {
+  const widgets = workspaceRegistry();
+  for (const manifest of manifests) {
+    if (manifest.kind !== "widget" || !registry.validateManifest(manifest).ok) continue;
+    const definition = manifest.body as unknown as WidgetDefinition;
+    if (checkWidget(manifest.path, definition as WidgetBody).length > 0) continue;
+    if (!widgets.get(definition.type)) widgets.add(definition);
+  }
+  return widgets;
+}
+
 export function checkBundleManifests(
   manifests: BundleManifest[],
   /**
@@ -147,6 +165,7 @@ export function checkBundleManifests(
 ): string[] {
   const problems: string[] = [];
   const byPath = new Map<string, BundleManifest>();
+  let bundleWidgets: WidgetRegistry | undefined;
   /** Paths used twice. That is reported once; references to them are not reported again. */
   const twice = new Set<string>();
 
@@ -405,6 +424,7 @@ export function checkBundleManifests(
       }
     }
     if (manifest.kind === "interface" || manifest.kind === "dashboard") {
+      const widgets = () => (bundleWidgets ??= bundleRegistry(manifests));
       const isInterface = manifest.kind === "interface";
       const body = manifest.body as unknown as InterfaceBody | DashboardBody;
       // A table made in the console is in no bundle, so a table that is not here is not
@@ -437,14 +457,17 @@ export function checkBundleManifests(
         return found?.kind === "table" ? (found.body as unknown as TableBody) : undefined;
       };
       const issues = isInterface
-        ? checkInterface(body as InterfaceBody, tableOf, undefined, (path) => {
+        ? checkInterface(body as InterfaceBody, tableOf, widgets(), (path) => {
             const found = byPath.get(path);
             return found?.kind === "flow"
               ? { nodes: Object.values((found.body as unknown as FlowBody).nodes ?? {}) }
               : undefined;
           })
-        : checkDashboard(body as DashboardBody, tableOf);
+        : checkDashboard(body as DashboardBody, tableOf, widgets());
       for (const issue of issues) {
+        // A widget of the workspace's own that this bundle does not carry may be one the workspace
+        // still has deployed for pages that place it: the control plane says whether it is.
+        if (issue.message.startsWith('there is no widget called "x/')) continue;
         problems.push(`${manifest.path} (${manifest.kind}): ${issue.path} ${issue.message}`);
       }
     }

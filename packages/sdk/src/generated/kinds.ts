@@ -98,7 +98,7 @@ export type DashboardBody = {
     id: string;
     /** The widget, by its pack and name, as core/chart. */
     type: string;
-    /** For a widget of your own (`x/<name>`): the version it was placed with. The page keeps drawing that version when a newer one is deployed, until someone updates it. The platform's own widgets have none. */
+    /** For a widget of your own (`x/<name>`): the version it was placed with. The page keeps drawing that version when a newer one is deployed, until someone updates it. Volvel's own widgets have none. */
     version?: string;
     /** The heading drawn on the widget. Left out, it has none. */
     title?: string;
@@ -809,7 +809,7 @@ export type InterfaceBody = {
       id: string;
       /** The widget, by its pack and name, as core/chart. */
       type: string;
-      /** For a widget of your own (`x/<name>`): the version it was placed with. The page keeps drawing that version when a newer one is deployed, until someone updates it. The platform's own widgets have none. */
+      /** For a widget of your own (`x/<name>`): the version it was placed with. The page keeps drawing that version when a newer one is deployed, until someone updates it. Volvel's own widgets have none. */
       version?: string;
       /** The heading drawn on the widget. Left out, it has none. */
       title?: string;
@@ -1696,7 +1696,7 @@ export type WidgetBody = {
   icon: string;
   /** Where it may be put: an app's page, a dashboard. */
   surfaces: ("app" | "dashboard")[];
-  /** What it reads, by input name: the platform reads it under the viewer's permissions and gives it to the view. */
+  /** What it reads, by input name: Volvel reads it under the viewer's permissions and gives it to the view. */
   data: {
     [name: string]: {
       /** What it is given: `rows`, `summary`, `record` or `approvals`. */

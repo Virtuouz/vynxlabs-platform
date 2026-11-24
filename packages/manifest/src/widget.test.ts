@@ -117,6 +117,39 @@ describe("the widget kind", () => {
   });
 });
 
+describe("a page that uses a widget of the repository", () => {
+  const page = (version?: string, type = "x/goal"): BundleManifest => ({
+    kind: "dashboard",
+    schemaVersion: 3,
+    path: "dash",
+    ownership: "code",
+    body: {
+      widgets: [
+        {
+          id: "g",
+          type,
+          ...(version ? { version } : {}),
+          at: { x: 0, y: 0, w: 3, h: 3 },
+          data: {
+            value: { source: { visual: { table: "t", measures: [{ fn: "count", as: "n" }] } } },
+          },
+        },
+      ],
+    },
+  });
+
+  test("is checked against the widgets the bundle holds, at any version: the workspace checks versions", () => {
+    const only = (problems: string[]) => problems.filter((one) => one.startsWith("dash"));
+    expect(only(checkBundleManifests([widget(), page("1.0.0")]))).toEqual([]);
+    expect(only(checkBundleManifests([widget(), page("0.9.0")]))).toEqual([]);
+    expect(only(checkBundleManifests([widget(), page()]))).toEqual([]);
+  });
+
+  test("naming a widget the bundle does not carry is left to the workspace, which may still have it", () => {
+    expect(checkBundleManifests([page("1.0.0")])).toEqual([]);
+  });
+});
+
 describe("the files of a widget in a bundle", () => {
   const file = (path: string) => ({
     app: "x/goal",

@@ -223,8 +223,6 @@ export {
   pageWidgetSchema,
   RELATIVE_RANGES,
   type RelativeRange,
-  registerWidgets,
-  resetWidgets,
   tabsOf,
   topLevel,
   VALUE_FORMAT_STYLES,
@@ -246,6 +244,7 @@ export {
   widgetQueries,
   widgetRegistry,
   widgetTables,
+  workspaceRegistry,
 } from "./page.js";
 export {
   APP_FACING_KINDS,

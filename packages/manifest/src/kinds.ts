@@ -1880,7 +1880,7 @@ export const widgetKind: KindDefinition = {
       data: {
         type: "object",
         description:
-          "What it reads, by input name: the platform reads it under the viewer's permissions and gives it to the view.",
+          "What it reads, by input name: Volvel reads it under the viewer's permissions and gives it to the view.",
         additionalProperties: {
           type: "object",
           properties: {

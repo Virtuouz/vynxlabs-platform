@@ -172,6 +172,8 @@ export type WidgetPack = SdkWidgetPack<ComponentType<WidgetViewProps<any>>>;
 
 export interface ViewEntry {
   definition: WidgetDefinition;
+  /** For a tenant's widget: the definition of each deployed version, by version. A page is drawn by the one it names. */
+  versions?: ReadonlyMap<string, WidgetDefinition>;
   // biome-ignore lint/suspicious/noExplicitAny: each view has the configuration type of its own widget
   View: ComponentType<WidgetViewProps<any>>;
 }

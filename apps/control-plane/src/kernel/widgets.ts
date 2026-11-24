@@ -6,6 +6,8 @@ import type {
   InterfaceBody,
   PageWidget,
 } from "@volvel/manifest";
+import { workspaceRegistry } from "@volvel/manifest";
+import type { DeployedWidget, WidgetRegistry } from "@volvel/widgets";
 import type { Db, Trx } from "./audit.js";
 import { HttpError } from "./errors.js";
 
@@ -227,4 +229,77 @@ export async function refuseWidgetInUse(
       message: `${where(use)} places ${use.widget}${use.version ? ` ${use.version}` : ""}`,
     })),
   );
+}
+
+// ---------------------------------------------------------------------------
+// The workspace's registry
+
+/** A deployed widget as the API says it: `DeployedWidget` of `@volvel/widgets`, its definition loosely typed. */
+export interface WireWidget {
+  type: string;
+  current: string | null;
+  versions: {
+    version: string;
+    definition: Record<string, unknown>;
+    current: boolean;
+    deployedAt: string;
+    placements: number;
+  }[];
+}
+
+/**
+ * The widgets a workspace has beside the platform's, every version of each: what its pages are
+ * checked and read against, and what a served app draws a page with. The listing route says the
+ * same, with each version's files.
+ */
+export async function deployedWidgets(db: Db | Trx, workspaceId: string): Promise<WireWidget[]> {
+  const rows = await db
+    .selectFrom("widget_version")
+    .select(["type", "version", "definition", "created_at"])
+    .where("workspace_id", "=", workspaceId)
+    .orderBy("type")
+    .orderBy("created_at")
+    .execute();
+  const defined = new Map(
+    (
+      await db
+        .selectFrom("resource")
+        .select(["path", "body"])
+        .where("workspace_id", "=", workspaceId)
+        .where("kind", "=", "widget")
+        .execute()
+    ).map((row) => [row.path, (row.body as { version: string }).version]),
+  );
+  const items = new Map<string, WireWidget>();
+  for (const row of rows) {
+    const widget = items.get(row.type) ?? {
+      type: row.type,
+      current: defined.get(row.type) ?? null,
+      versions: [],
+    };
+    widget.versions.push({
+      version: row.version,
+      definition: row.definition as Record<string, unknown>,
+      current: defined.get(row.type) === row.version,
+      deployedAt: new Date(row.created_at).toISOString(),
+      placements: 0,
+    });
+    items.set(row.type, widget);
+  }
+  return [...items.values()];
+}
+
+/** The platform's widgets and the workspace's own: what its pages are checked and read against. */
+export async function workspaceWidgets(db: Db | Trx, workspaceId: string): Promise<WidgetRegistry> {
+  return workspaceRegistry((await deployedWidgets(db, workspaceId)) as unknown as DeployedWidget[]);
+}
+
+/** The tenant widgets an interface's pages use, as a served app draws them. */
+export async function widgetsUsed(
+  db: Db | Trx,
+  workspaceId: string,
+  body: InterfaceBody,
+): Promise<WireWidget[]> {
+  const used = new Set(body.pages.flatMap((page) => page.widgets.map((widget) => widget.type)));
+  return (await deployedWidgets(db, workspaceId)).filter((widget) => used.has(widget.type));
 }

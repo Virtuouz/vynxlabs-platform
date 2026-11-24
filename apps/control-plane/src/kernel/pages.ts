@@ -6,7 +6,7 @@ import {
   type TableBody,
 } from "@volvel/manifest";
 import type { Kernel } from "./kernel.js";
-import { deployedVersions, versionProblems } from "./widgets.js";
+import { deployedVersions, versionProblems, workspaceWidgets } from "./widgets.js";
 
 /**
  * Pages of widgets as the workspace stands now: what their shape cannot show, checked against
@@ -58,6 +58,10 @@ export async function workspaceTables(
 
 type Problems = { path: string; message: string }[];
 
+/** The checker also says a version that is not deployed; `versionProblems` says it, with the workspace's own words. */
+const withoutVersions = (problems: Problems): Problems =>
+  problems.filter((one) => !one.path.endsWith("/version"));
+
 /** What is wrong with an interface as the workspace stands now. */
 export async function interfaceProblems(
   kernel: Kernel,
@@ -77,11 +81,13 @@ export async function interfaceProblems(
     ).map((row) => row.path),
   );
   return [
-    ...checkInterface(
-      body,
-      (path) => tables.get(path),
-      undefined,
-      (path) => (flows.has(path) ? { nodes: [] } : null),
+    ...withoutVersions(
+      checkInterface(
+        body,
+        (path) => tables.get(path),
+        await workspaceWidgets(kernel.db, workspace.id),
+        (path) => (flows.has(path) ? { nodes: [] } : null),
+      ),
     ),
     ...missingTables(body, tables, sources),
     ...versionProblems(body, await deployedVersions(kernel.db, workspace.id)),
@@ -97,7 +103,13 @@ export async function dashboardProblems(
   const tables = await workspaceTables(kernel, workspace);
   const sources = await sourcePaths(kernel, workspace);
   return [
-    ...checkDashboard(body, (path) => tables.get(path)),
+    ...withoutVersions(
+      checkDashboard(
+        body,
+        (path) => tables.get(path),
+        await workspaceWidgets(kernel.db, workspace.id),
+      ),
+    ),
     ...missingTables(body, tables, sources),
     ...versionProblems(body, await deployedVersions(kernel.db, workspace.id)),
   ];

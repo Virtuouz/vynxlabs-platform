@@ -4,7 +4,12 @@ import type { DeployedWidget, WidgetDefinition } from "@volvel/widgets";
 import { corePack } from "@volvel/widgets-core/views";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { setFrameSource } from "./frameSource.ts";
-import { FRAME_READY_MS, TenantWidgetHost, workspaceViews } from "./TenantWidgetHost.tsx";
+import {
+  FRAME_READY_MS,
+  frameHeight,
+  TenantWidgetHost,
+  workspaceViews,
+} from "./TenantWidgetHost.tsx";
 import { viewRegistry } from "./types.ts";
 
 beforeEach(() => setFrameSource({ origin: "https://apps.test", slug: "fernhill" }));
@@ -120,7 +125,7 @@ describe("the frame", () => {
       "https://apps.test/_widgets/fernhill/x/gauge@1.0.0/frame.html",
     );
     expect(frame.getAttribute("title")).toBe("Gauge");
-    expect(frame.style.maxHeight).toBe("100%");
+    expect(frame.className).toContain("absolute");
   });
 
   test("hears only its own window, and passes on a declared event", () => {
@@ -182,10 +187,12 @@ describe("the frame", () => {
     const frame = document.querySelector("iframe") as HTMLIFrameElement;
     windowOf(frame);
     said(frame.contentWindow as Window, message("size", { height: 90 }));
-    expect(frame.style.height).toBe("90px");
+    expect(screen.getByRole("region").getAttribute("data-frame-asked")).toBe("90");
+    expect(frameHeight(90)).toBe("min(90px, 100%)");
     said(frame.contentWindow as Window, message("size", { height: 9e6 }));
-    expect(frame.style.height).toBe("4000px");
-    expect(frame.style.maxHeight).toBe("100%");
+    expect(screen.getByRole("region").getAttribute("data-frame-asked")).toBe("4000");
+    expect(frameHeight(9e6)).toBe("min(4000px, 100%)");
+    expect(frameHeight(undefined)).toBe("100%");
   });
 
   test("a frame that floods is removed and replaced by a message, and it is logged", () => {
@@ -219,7 +226,7 @@ describe("the frame", () => {
     }
   });
 
-  test("says so where the instance serves no widgets", () => {
+  test("says so where the frame has no address", () => {
     setFrameSource(null);
     draw();
     expect(document.querySelector("iframe")).toBeNull();

@@ -1,6 +1,14 @@
 import type { DeployedWidget, WidgetDefinition, WidgetViewProps } from "@volvel/widgets";
 import { FRAME_PROTOCOL, type HostMessage, MAX_FRAME_HEIGHT } from "@volvel/widgets/frame";
-import { type ComponentType, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type ComponentType,
+  type CSSProperties,
+  type ReactNode,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { createChannel } from "./frameChannel.ts";
 import { frameUrl, useFrameSource } from "./frameSource.ts";
 import { useFrameTheme } from "./frameTheme.ts";
@@ -37,6 +45,13 @@ export interface TenantWidgetHostProps extends WidgetViewProps {
 
 /** How long a frame has to say it is ready. */
 export const FRAME_READY_MS = 10_000;
+
+/** How tall a cell of `rows` rows is: the page's rows are 2.5rem with 0.75rem between. */
+const cellHeight = (rows: number) => `${rows * 2.5 + (rows - 1) * 0.75}rem`;
+
+/** The height of the frame: the cell's, or what the frame asked for when that is less. */
+export const frameHeight = (asked: number | undefined) =>
+  asked === undefined ? "100%" : `min(${Math.min(asked, MAX_FRAME_HEIGHT)}px, 100%)`;
 
 type Phase = "loading" | "ready" | "failed" | "stopped";
 
@@ -156,7 +171,7 @@ export function TenantWidgetHost({
   if (!url) {
     body = say(
       "This widget cannot be shown here.",
-      "This instance serves no widgets yet. Ask whoever runs it to set APPS_URL.",
+      "Its address could not be found. Reload the page to try again.",
     );
   } else if (phase === "stopped") {
     body = say(
@@ -177,10 +192,12 @@ export function TenantWidgetHost({
           sandbox="allow-scripts"
           referrerPolicy="no-referrer"
           allow=""
-          className="block w-full border-0 bg-transparent"
+          // Laid over the cell, which is as tall as the rows it was given, so that it is that
+          // tall wherever the page is stacked as well as on the grid; a height it asks for is
+          // kept to that and to the most a frame may ask for.
+          className="absolute top-0 left-0 block w-full border-0 bg-transparent"
           style={{
-            height: height === undefined ? "100%" : `${Math.min(height, MAX_FRAME_HEIGHT)}px`,
-            maxHeight: "100%",
+            height: frameHeight(height),
             colorScheme: theme.scheme,
           }}
         />
@@ -202,7 +219,11 @@ export function TenantWidgetHost({
       data-tenant-widget-version={version}
       data-frame-phase={url ? phase : "unserved"}
       data-frame-dropped={dropped}
-      className="relative h-full min-h-16 w-full min-w-0 overflow-hidden"
+      {...(height === undefined ? {} : { "data-frame-asked": height })}
+      // On the grid the cell is as tall as its rows already; where the page is stacked, rows are
+      // as tall as what is in them, and the frame is given the height of the rows it was placed in.
+      className="relative h-full min-h-[var(--cell-height)] w-full min-w-0 overflow-hidden @2xl/page:@md/grid:min-h-16"
+      style={{ "--cell-height": cellHeight(size.h) } as CSSProperties}
     >
       {body}
     </section>

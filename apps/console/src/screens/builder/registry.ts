@@ -58,22 +58,16 @@ const subscribe = (listener: () => void) => {
 };
 
 /**
- * Where a tenant widget's frame is served from: the apps address, and the tenant's slug in it.
- * `null` where the instance serves apps nowhere, so a widget says so instead of waiting.
+ * Where a tenant widget's frame is served from: the instance's apps address when it has one,
+ * else the console's own, with the tenant's slug in it. `null` when it cannot be told.
  */
 async function frameSourceOf(root: string): Promise<FrameSource | null> {
   try {
     const [instance, tenant] = await Promise.all([
-      api.get<{ appsAddress?: "separate" | "console" | "none"; appsUrl?: string | null }>(
-        "/instance",
-      ),
+      api.get<{ appsUrl?: string | null }>("/instance"),
       api.get<{ slug: string }>(`/tenants/${root.split("/")[2]}`),
     ]);
-    if (instance.appsAddress === "separate" && instance.appsUrl)
-      return { origin: instance.appsUrl, slug: tenant.slug };
-    if (instance.appsAddress === "console")
-      return { origin: window.location.origin, slug: tenant.slug };
-    return null;
+    return { origin: instance.appsUrl ?? window.location.origin, slug: tenant.slug };
   } catch {
     return null;
   }

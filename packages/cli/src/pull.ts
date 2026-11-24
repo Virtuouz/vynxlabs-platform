@@ -250,12 +250,14 @@ export async function pull(args: string[], io: Io): Promise<number> {
     settings.token,
   );
   if (reply.status !== 200) throw refusal(reply, "read the workspace's console resources");
-  const { files, elsewhere, drafts, bundleVersion } = reply.body as {
+  const { files, elsewhere, drafts, bundleVersion, basis } = reply.body as {
     files: { path: string; content: string }[];
     /** Not sent by a server from before files were kept anywhere. */
     elsewhere?: { path: string; content: string; resource?: string }[];
     drafts: { path: string; revision: number; deleted: boolean }[];
     bundleVersion: number | null;
+    /** What each deployed resource is. Not sent by a server from before a deploy checked it. */
+    basis?: { path: string; hash: string }[];
   };
   const folder = join(directory, resources);
   // From the repository's root: a file in the folder, or one kept anywhere, written `/so`.
@@ -269,6 +271,28 @@ export async function pull(args: string[], io: Io): Promise<number> {
     drafts,
     { directory, files: elsewhere ?? [] },
   );
+  // What this pull took is what the repository has now: a deploy of it is not refused for the
+  // console's changes that it brought in. A file kept as it is here took nothing.
+  const left = new Set(
+    report.kept.map((one) =>
+      one.path.startsWith("/")
+        ? ((elsewhere ?? []).find((file) => `/${file.path}` === one.path)?.resource ?? one.path)
+        : resourceOfFile(one.path),
+    ),
+  );
+  const taken = (basis ?? []).filter((one) => !left.has(one.path));
+  if (taken.length > 0) {
+    const told = await request(settings.url, `${base}/resource-basis`, settings.token, {
+      method: "POST",
+      body: { resources: taken },
+    });
+    // Someone who may pull and may not deploy has no deploy to hold back; an older instance has no check.
+    if (told.status >= 500) {
+      io.err(
+        "Warning: the instance did not take what this pull brought in, so the next deploy may be refused as console_changed. Run pull again.",
+      );
+    }
+  }
   for (const file of report.written) io.out(`  ${file.how.padEnd(8)} ${shown(file.path)}`);
   for (const path of report.removed) io.out(`  removed  ${shown(path)}`);
   const from = [

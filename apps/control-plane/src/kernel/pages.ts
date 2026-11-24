@@ -6,6 +6,7 @@ import {
   type TableBody,
 } from "@volvel/manifest";
 import type { Kernel } from "./kernel.js";
+import { deployedVersions, versionProblems } from "./widgets.js";
 
 /**
  * Pages of widgets as the workspace stands now: what their shape cannot show, checked against
@@ -83,6 +84,7 @@ export async function interfaceProblems(
       (path) => (flows.has(path) ? { nodes: [] } : null),
     ),
     ...missingTables(body, tables, sources),
+    ...versionProblems(body, await deployedVersions(kernel.db, workspace.id)),
   ];
 }
 
@@ -97,6 +99,7 @@ export async function dashboardProblems(
   return [
     ...checkDashboard(body, (path) => tables.get(path)),
     ...missingTables(body, tables, sources),
+    ...versionProblems(body, await deployedVersions(kernel.db, workspace.id)),
   ];
 }
 
@@ -106,11 +109,14 @@ export async function unknownTables(
   workspace: { id: string; tenantId: string },
   body: DashboardBody,
 ): Promise<Problems> {
-  return missingTables(
-    body,
-    await workspaceTables(kernel, workspace),
-    await sourcePaths(kernel, workspace),
-  );
+  return [
+    ...missingTables(
+      body,
+      await workspaceTables(kernel, workspace),
+      await sourcePaths(kernel, workspace),
+    ),
+    ...versionProblems(body, await deployedVersions(kernel.db, workspace.id)),
+  ];
 }
 
 /** The paths of the workspace's bound data sources: `<source>/<table>` reads a table there. */

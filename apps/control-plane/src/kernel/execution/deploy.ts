@@ -20,6 +20,12 @@ import type { WorkspaceRef } from "../http.js";
 import type { Kernel } from "../kernel.js";
 import { renamePathState, swapPath } from "../rename.js";
 import { deleteResource, putResource } from "../resources.js";
+import {
+  deployedVersions,
+  refuseWidgetInUse,
+  storeWidgetVersions,
+  versionProblems,
+} from "../widgets.js";
 import { loadBundle } from "./bundles.js";
 import { exportChanged } from "./code-slices.js";
 import { unfitBindings } from "./connectors.js";
@@ -290,6 +296,8 @@ export async function deployBundle(
     );
   }
   const content = await loadBundle(kernel, bundle);
+  // A version of a widget keeps its files for good: a changed one is refused before anything is applied.
+  await storeWidgetVersions(trx, workspace.tenantId, workspace.id, { id: bundle.id, content });
   const existing = await trx
     .selectFrom("resource")
     .select(["id", "key", "path", "title", "meta", "kind", "schema_version", "body", "ownership"])
@@ -546,6 +554,39 @@ export async function deployBundle(
 
   // What each dashboard widget names, by key: now that every query it may name is there.
   await recordWidgetQueries(trx, workspace);
+
+  // The widgets of a developer: a page places the version it was placed with, and that version
+  // is here; a widget that goes is one no page places any more.
+  const deployed = await deployedVersions(trx, workspace.id);
+  const unplaceable = content.manifests.flatMap((manifest) =>
+    manifest.kind === "interface" || manifest.kind === "dashboard"
+      ? versionProblems(manifest.body as never, deployed).map((problem) => ({
+          path: `/${manifest.kind === "interface" ? "interfaces" : "dashboards"}/${manifest.path}${problem.path.slice("/body".length)}`,
+          message: problem.message,
+        }))
+      : [],
+  );
+  if (unplaceable.length > 0) {
+    throw new HttpError(
+      409,
+      "widget_version_missing",
+      "A page places a version of a widget that this workspace has not deployed. Deploy the widget with the version, or place the page with one that is deployed.",
+      unplaceable,
+    );
+  }
+  const goneWidgets = removed.filter((row) => row.kind === "widget").map((row) => row.path);
+  await refuseWidgetInUse(
+    trx,
+    workspace.id,
+    goneWidgets.map((type) => ({ type })),
+  );
+  if (goneWidgets.length > 0) {
+    await trx
+      .deleteFrom("widget_version")
+      .where("workspace_id", "=", workspace.id)
+      .where("type", "in", goneWidgets)
+      .execute();
+  }
 
   // A binding or a role whose row is gone, though its definition did not change: a group
   // deleted and made again, for one. Its definition is applied again, so the access it gives

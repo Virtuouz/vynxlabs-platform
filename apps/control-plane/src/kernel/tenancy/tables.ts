@@ -291,6 +291,14 @@ export const OWNED_TABLES: OwnedTable[] = [
     export: "always",
     stored: ["storage_key"],
   },
+  // The versions of a tenant's widgets that each workspace deployed; their files are bundle_asset's.
+  {
+    table: "widget_version",
+    ofTenant: own,
+    ofWorkspace: inWorkspace,
+    key: ["workspace_id", "type", "version"],
+    export: "always",
+  },
   // The end-user pool travels, with the hash each person signs in with.
   { table: "end_user", ofTenant: own, key: ["id"], export: "always" },
   { table: "end_user_group", ofTenant: own, key: ["id"], export: "always" },

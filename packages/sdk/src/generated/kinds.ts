@@ -98,6 +98,8 @@ export type DashboardBody = {
     id: string;
     /** The widget, by its pack and name, as core/chart. */
     type: string;
+    /** For a widget of your own (`x/<name>`): the version it was placed with. The page keeps drawing that version when a newer one is deployed, until someone updates it. The platform's own widgets have none. */
+    version?: string;
     /** The heading drawn on the widget. Left out, it has none. */
     title?: string;
     /** A line under the heading. */
@@ -807,6 +809,8 @@ export type InterfaceBody = {
       id: string;
       /** The widget, by its pack and name, as core/chart. */
       type: string;
+      /** For a widget of your own (`x/<name>`): the version it was placed with. The page keeps drawing that version when a newer one is deployed, until someone updates it. The platform's own widgets have none. */
+      version?: string;
       /** The heading drawn on the widget. Left out, it has none. */
       title?: string;
       /** A line under the heading. */
@@ -1680,7 +1684,7 @@ export type VariableBody = {
 export type WidgetBody = {
   /** The widget's type, in the tenant's own namespace: `x/<name>`. The other namespaces are Volvel's. A resource's path is its type. */
   type: string;
-  /** Semver. A page names the type; a deploy pins the version it was built with. */
+  /** Semver. A page records the version it was placed with and keeps drawing that version until someone updates it. A version's files never change once deployed: change the widget, raise the version. */
   version: string;
   /** What it is called. */
   title: string;

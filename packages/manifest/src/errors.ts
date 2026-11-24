@@ -310,6 +310,23 @@ export const ERROR_CODES = {
     "The outside database did not answer in time. Try again, or ask it for less.",
   ),
 
+  // Widgets of your own.
+  widget_version_changed: code(
+    409,
+    "A deployed version of a widget has other files",
+    "A version's files never change, because pages are placed with it. Raise the widget's version, then deploy.",
+  ),
+  widget_version_missing: code(
+    409,
+    "A page places a version of a widget that is not deployed",
+    "Deploy the widget with that version, or place the page with a version that is deployed.",
+  ),
+  widget_in_use: code(
+    409,
+    "A page still places this widget",
+    "The response names each page. Move each to another version or take the widget off it, then remove it.",
+  ),
+
   // Moving a tenant.
   import_refused: code(
     400,

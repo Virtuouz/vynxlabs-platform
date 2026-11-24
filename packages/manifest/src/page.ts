@@ -428,6 +428,12 @@ export const pageWidgetSchema = {
       pattern: TYPE,
       description: "The widget, by its pack and name, as core/chart.",
     },
+    version: {
+      type: "string",
+      pattern: "^\\d+\\.\\d+\\.\\d+$",
+      description:
+        "For a widget of your own (`x/<name>`): the version it was placed with. The page keeps drawing that version when a newer one is deployed, until someone updates it. The platform's own widgets have none.",
+    },
     title: {
       type: "string",
       maxLength: 100,

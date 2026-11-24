@@ -1849,7 +1849,8 @@ export const widgetKind: KindDefinition = {
       version: {
         type: "string",
         pattern: "^\\d+\\.\\d+\\.\\d+$",
-        description: "Semver. A page names the type; a deploy pins the version it was built with.",
+        description:
+          "Semver. A page records the version it was placed with and keeps drawing that version until someone updates it. A version's files never change once deployed: change the widget, raise the version.",
       },
       title: { type: "string", minLength: 1, maxLength: 100, description: "What it is called." },
       description: {

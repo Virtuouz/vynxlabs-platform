@@ -224,6 +224,8 @@ export interface PageWidget {
   id: string;
   /** `pack/name`, from a registered pack. */
   type: string;
+  /** For a widget of the tenant's own (`x/<name>`): the version it was placed with. */
+  version?: string;
   title?: string;
   /** A line under the title: what the numbers are, or what to notice. */
   subtitle?: string;

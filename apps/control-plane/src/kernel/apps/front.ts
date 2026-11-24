@@ -21,7 +21,7 @@ import {
   searchAnswer,
   searchPage,
 } from "@volvel/docs-site";
-import { APP_POLICY, keyOf, readFormAnswer } from "@volvel/manifest";
+import { APP_POLICY, keyOf, readFormAnswer, WIDGET_POLICY } from "@volvel/manifest";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { MIN_PASSWORD_LENGTH } from "../../config.js";
 import { ANONYMOUS, type Db, type Principal, writeAudit } from "../audit.js";
@@ -1471,6 +1471,47 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
     return send(200, docPage(withWords(drawn, words), path));
   }
 
+  /** `/_widgets/<tenant>/x/<name>@<version>/<file>`. */
+  async function serveWidgetFile(
+    request: FastifyRequest,
+    reply: FastifyReply,
+    place: Place,
+    path: string,
+  ) {
+    const segments = decodeSegments(path.slice(1));
+    const gone = () => plain(reply, 404, "There is no such file.");
+    if (!segments || segments.length !== 5) return gone();
+    const [, slug, pack, named, file] = segments as [string, string, string, string, string];
+    const at = named.lastIndexOf("@");
+    if (pack !== "x" || at < 1) return gone();
+    if (!(await guestFiles.allow(request.ip))) {
+      return plain(reply, 429, "Too many requests. Wait a minute and try again.");
+    }
+    const row = await db
+      .selectFrom("widget_version")
+      .innerJoin("tenant", "tenant.id", "widget_version.tenant_id")
+      .select(["widget_version.files", "tenant.id as tenantId"])
+      .where("tenant.slug", "=", slug)
+      .where("widget_version.type", "=", `x/${named.slice(0, at)}`)
+      .where("widget_version.version", "=", named.slice(at + 1))
+      .executeTakeFirst();
+    // A hostname a tenant registered serves that tenant's widgets only.
+    if (!row || (place.kind === "domain" && place.domain.tenantId !== row.tenantId)) return gone();
+    const asset = row.files.find((one) => one.path === file);
+    if (!asset) return gone();
+    const content = await readAsset(kernel, row.tenantId, asset.sha256);
+    // A version's files never change, so a browser keeps them for good. No cookie is read, and
+    // none is set: the answer is the same for everyone.
+    return reply
+      .code(200)
+      .header("content-type", asset.contentType)
+      .header("content-security-policy", WIDGET_POLICY)
+      .header("x-content-type-options", "nosniff")
+      .header("referrer-policy", "no-referrer")
+      .header("cache-control", "public, max-age=31536000, immutable")
+      .send(request.method === "HEAD" ? undefined : content);
+  }
+
   // ----- Which is which -----
 
   app.addHook("onRequest", async (request, reply) => {
@@ -1542,6 +1583,19 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
         .header("x-content-type-options", "nosniff")
         .header("cache-control", "public, max-age=3600")
         .send(PORTAL_CSS);
+    }
+
+    // The files of a developer's widget: the frame page and its one script, which a sandboxed
+    // frame loads. Nothing here reads or sets a cookie, and nothing depends on who asks.
+    if (path.startsWith("/_widgets/")) {
+      if (!isPage) return plain(reply, 405, "Method not allowed.");
+      if (!kernel.hosts.runsCodeApps(place)) {
+        if (place.kind === "main" && kernel.hosts.hasAppsAddress) {
+          return redirect(reply, `${kernel.hosts.appsOrigin}${path}${url.search}`, 307);
+        }
+        return plain(reply, 404, "Not found.");
+      }
+      return serveWidgetFile(request, reply, place, path);
     }
 
     if (place.kind === "domain") {

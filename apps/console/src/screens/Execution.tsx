@@ -577,11 +577,16 @@ export function useLiveRun(root: string, runId: string) {
     (event) => (event.k === "run" || event.k === "log") && event.id === runId,
     () => void refresh(),
   );
+  // Until the run has ended it is asked for again: often while the stream is down, and now and then
+  // while it is up, since an event can be missed (the run ended before this page asked, or the
+  // event was lost) and nothing else would ever say the run ended.
   useEffect(() => {
-    if (streaming) return;
-    const timer = setInterval(() => {
-      if (!done.current && failures.current === 0) void refresh();
-    }, 1500);
+    const timer = setInterval(
+      () => {
+        if (!done.current && failures.current === 0) void refresh();
+      },
+      streaming ? 5000 : 1500,
+    );
     return () => clearInterval(timer);
   }, [streaming, refresh]);
   return { run, lines, earlier, error, reconnecting };

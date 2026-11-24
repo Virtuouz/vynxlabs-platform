@@ -32,6 +32,42 @@ The owner (2026-11-23): the browser suite "slows down development more than the 
 
 ## Findings
 
-(none yet)
+**Timings** (the same machine, 16 cores and 15 GB; the same seeded instance; nothing else running):
+
+| Run | Wall | Result |
+|---|---|---|
+| Before (phase 31), 1 worker | 20.8 min | 203 passed |
+| Lanes s1 and s2 merged, 4 workers | 13.0 min | 5 failed, 15 not run (Fernhill specs side by side) |
+| Fernhill one file at a time, 4 workers | 16.0 min | 1 failed |
+| Same, with a sampler | 15.3 min | all passed |
+| Main part only, 8 workers, with a timeline | 11.7 min | 1 failed (an animation sampled on an overloaded machine) |
+| Fernhill first, one polish tenant per run, 4 workers | **12.4 min** (9.2 main + 3.2 alone) | **all 270 passed** |
+
+**What limited each run, measured rather than guessed** (a sampler every 5 s: the instance's CPU in the window, Postgres's CPU, the load, runs queued; and Playwright's JSON report for each test's worker, start and end):
+
+1. **The instance was not the limit at 4 workers.** It averaged 31% of one core (peaks of 3.8 cores), Postgres 27%, the load 4.4 of 16, and no run waited. The machine was mostly idle while tests waited.
+2. **The scheduler started the longest chain last.** Playwright hands out work in the order of the projects. The Fernhill chain, which must run on one worker, was listed after the parallel specs, so it started 251 s in and then ran alone to the end. Listing it first made the main part's wall time the chain's own length.
+3. **Each worker built the same setup.** Every polish worker built a tenant of its own, 90 to 130 s each: deploying, running scripts, and waiting for a failed run and an approval. At 8 workers that was 8 at once. The measuring specs only look, so one tenant per run now serves every worker (polish specs: 4.6 to 3.6 min at 4 workers).
+4. **At 8 workers Postgres became the limit.** It held a full core (98% average), and up to 23 runs queued, almost all from the simultaneous polish setups. More workers than 4 do not help on this machine.
+5. **Shared data serialises.** Fernhill's specs share one seeded tenant. One spec's rows (`phase-28` adds invoices and appointments) change what another counts, so they must run one after another. That chain, about 8.7 min, is now the critical path of the main part. Splitting `phase-28.spec.ts` would not shorten it, since its parts would still queue on the one Fernhill worker.
+6. **A swallowed error leaked resources.** The old polish teardown's deletion was refused (a tenant with a run in progress is not deleted) and the refusal ignored, so every polish run left a tenant behind: 52 on the test instance. The teardown now cancels the waiting run first and says so if a deletion fails.
+7. **Retries had the wrong clock.** `sign-in.ts` waited 10.5 s for the old limit of 3 sign-ins per 10 s, while the instance now allows 20 a minute per address. Saved sessions removed most sign-ins, and the rest honour `Retry-After` from a worker's own address.
+8. **Timing assertions break under contention.** The drawer's opening animation, sampled frame by frame, failed only when the machine was overloaded (8 workers).
+
+**For an application that scales** (what the suite showed about Volvel itself):
+
+- **Vertical:** the first limit was Postgres, not the Node process. The control plane spread work over several cores at peaks while Postgres held one. Before adding replicas, look at what a deploy or a run costs the database (statements per deploy, per run start, per poll).
+- **Horizontal:** more control-plane replicas on one Postgres would not have helped at 8 workers, because they share the bottleneck. Replicas help request handling; the database needs its own plan (pooling, read replicas for read-heavy screens, fewer round trips per operation).
+- **Isolation is parallelism:** work that shares a tenant serialises (here Fernhill's tables; in the product, a tenant's deploys and drafts). Per-tenant boundaries are what let work run side by side.
+- **Do expensive setup once and share it read-only:** the same holds for a replica's cold start or a worker's warm-up.
+- **Schedule the longest chain first:** for a job queue, ordering by expected length shortens the total time.
+- **Rate limits keyed only by address** penalise many clients behind one address (the workers here; an office behind NAT in production). Key by account as well.
+- **Clean-up must not fail silently:** a refused deletion should be surfaced and retried.
+
+**Not reached:** the exit criterion's 10 minutes. The full run is 12.4 min. What would reach it:
+- seeding a Fernhill of its own per worker, so the 8.7-minute chain splits (the seed takes about a minute);
+- making `redesign`, `favicon` and `exit-criterion` stop changing the whole instance, or giving them a second instance, so the 3.2-minute alone part runs beside the main part.
+
+For daily work, the tags and `pnpm e2e:changed` run only what a change touches.
 
 **Polish gate.** Not applicable: no screen a person sees changes in this phase.

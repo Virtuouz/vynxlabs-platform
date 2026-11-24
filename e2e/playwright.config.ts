@@ -71,6 +71,8 @@ export default defineConfig({
   snapshotPathTemplate: "{testDir}/snapshots/{testFileName}/{arg}{ext}",
   // Files side by side, the tests in a file in order.
   fullyParallel: false,
+  // Deletes the polish tenant the run's workers shared (polish-setup.ts).
+  globalTeardown: "./polish-teardown.ts",
   workers: Number(process.env.E2E_WORKERS ?? 4),
   // A test that passes only on its retry is reported by `retry-report.ts`, not hidden.
   retries: process.env.CI ? 1 : 0,
@@ -97,10 +99,12 @@ function projects() {
   const phase = process.env.E2E_PHASE;
   const main = [
     { name: "setup", testMatch: "auth.setup.ts" },
-    { name: "parallel", ...only(parallel), dependencies: ["setup"] },
     // Fernhill's specs share its Sandbox (its apps, rows and feedback table): one worker, the
-    // files one after the other, beside the specs that make tenants of their own.
+    // files one after the other, beside the specs that make tenants of their own. Listed first:
+    // Playwright hands out work in the order of the projects, and this chain is the longest, so
+    // it starts at once rather than after every parallel spec has been taken.
     { name: "fernhill", ...only([...fernhill, ...feedback]), dependencies: ["setup"], workers: 1 },
+    { name: "parallel", ...only(parallel), dependencies: ["setup"] },
   ];
   // One worker, the files one after the other.
   const lone = { name: "alone", ...only(alone), workers: 1 };

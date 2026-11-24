@@ -1,12 +1,15 @@
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { signInWithPassword } from "./sign-in.ts";
 import { type Browser, test as base, expect, type Page } from "./test.ts";
 
 /**
  * What the polish specs (`polish-*.spec.ts`) share: one tenant seen through operator access,
  * as an operator would, with a long script path, a long error and a flow run waiting for
- * approval among its runs. Each worker builds one tenant of its own (the worker-scoped `polish`
- * fixture of `test`, below), so the specs' tests can run in parallel on different workers, and
- * tears it down when the worker ends.
+ * approval among its runs. One tenant serves every worker of a run (the worker-scoped `polish`
+ * fixture of `test`, below): the first worker that needs it builds it, under a lock, and leaves
+ * its ids in a file named for the run; the others read them. The measuring specs only look, so
+ * they can share it; `polish-behaviour`, which changes things, runs in another run (the `alone`
+ * phase) and so builds its own. The run's global teardown (`polish-teardown.ts`) deletes it.
  */
 
 const ADMIN = {
@@ -456,16 +459,49 @@ export async function open(page: Page, path: string) {
 
 export const WIDTHS = [390, 768, 1280, 1440];
 
+/** The file that names a run's shared tenant: the run is the process that started the workers. */
+export const sharedFile = (run: number) =>
+  new URL(`./.auth/polish-${run}.json`, import.meta.url).pathname;
+
+/** The run's tenant: built by the first worker to ask, under a lock; read by the others. */
+async function sharedTenant(browser: Browser): Promise<Polish> {
+  const file = sharedFile(process.ppid);
+  const lock = `${file}.lock`;
+  mkdirSync(new URL("./.auth/", import.meta.url).pathname, { recursive: true });
+  for (;;) {
+    if (existsSync(file)) {
+      const page = await (
+        await browser.newContext({ viewport: { width: 1440, height: 900 } })
+      ).newPage();
+      await signInWithPassword(page, ADMIN.email, ADMIN.password);
+      return { ...(JSON.parse(readFileSync(file, "utf8")) as Omit<Polish, "page">), page };
+    }
+    try {
+      mkdirSync(lock);
+    } catch {
+      await new Promise((done) => setTimeout(done, 1000));
+      continue;
+    }
+    try {
+      const built = await setUpPolishTenant(browser, "shared");
+      const { page: _page, ...ids } = built;
+      writeFileSync(file, JSON.stringify(ids));
+      return built;
+    } finally {
+      rmSync(lock, { recursive: true, force: true });
+    }
+  }
+}
+
 /**
- * `test` with a worker-scoped `polish`: one tenant for each worker, built on its first use and
- * deleted when the worker ends. The tests of a worker run one after another on its page.
+ * `test` with a worker-scoped `polish`: the run's one tenant (see above), and a page of the
+ * worker's own on it. The tests of a worker run one after another on its page.
  */
 export const test = base.extend<object, { polish: Polish }>({
   polish: [
-    async ({ browser }, use, workerInfo) => {
-      const polish = await setUpPolishTenant(browser, `w${workerInfo.workerIndex}`);
+    async ({ browser }, use) => {
+      const polish = await sharedTenant(browser);
       await use(polish);
-      await tearDownPolishTenant(polish);
       await polish.page.context().close();
     },
     { scope: "worker", timeout: 480_000 },

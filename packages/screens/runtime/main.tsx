@@ -10,6 +10,7 @@ import {
   SideSheet,
   ToastProvider,
 } from "@volvel/ui";
+import type { DeployedWidget } from "@volvel/widgets";
 import { corePack } from "@volvel/widgets-core/views";
 import { labsPack } from "@volvel/widgets-labs/views";
 import { StrictMode, useCallback, useEffect, useMemo, useState } from "react";
@@ -24,6 +25,7 @@ import {
   viewRegistry,
   WidgetReadError,
   type WireData,
+  workspaceViews,
 } from "../src/index.ts";
 
 /** What the platform gives for an interface: its body, and what each table it reads holds. */
@@ -31,10 +33,12 @@ interface InterfaceView {
   body: InterfaceBody;
   /** What each group the page names is called now, by the path it is named by. */
   groupNames?: Record<string, string>;
+  /** The widgets of the workspace's own pack that its pages use, with the versions deployed. */
+  widgets?: DeployedWidget[];
 }
 
 /** The platform's packs: what a page made in the console may hold. */
-const registry = viewRegistry(corePack, labsPack);
+const platform = viewRegistry(corePack, labsPack);
 
 function workspaceApi() {
   const context = appContext();
@@ -221,6 +225,8 @@ function App() {
         ...(view?.groupNames ? { groupNames: view.groupNames } : {}),
       }
     : undefined;
+  // The platform's packs and the widgets this workspace deployed that the app's pages use.
+  const registry = useMemo(() => workspaceViews(platform, view?.widgets ?? []), [view]);
   const clientForPage = useCallback(
     (page: string, record?: string) => clientFor(path ?? "", page, record),
     [path],

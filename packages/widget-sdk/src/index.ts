@@ -672,6 +672,8 @@ export interface WidgetViewProps<Config = Record<string, unknown>> {
   size: ViewSize;
   /** Raises a declared event. The host does what the page says, or nothing. */
   emit: (event: string, payload: EventPayload) => void;
+  /** For a tenant's widget (`x/...`): the version the page names. A platform widget has none. */
+  version?: string;
   /** Whether the page is being built. A view may draw hints for the builder, never different data. */
   building: boolean;
   /**

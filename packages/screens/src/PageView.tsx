@@ -393,7 +393,9 @@ function Cell({
     onClose,
     overRecord,
   } = ctx;
-  const definition = entry?.definition;
+  const definition =
+    (widget.version !== undefined ? entry?.versions?.get(widget.version) : undefined) ??
+    entry?.definition;
   // A container is drawn on the page as it is, its heading and what it holds, with no card.
   const container = place !== undefined;
   // A widget drawn on the page as it is, with no card: a button.
@@ -713,6 +715,7 @@ function Cell({
               building={building}
               {...(building && ctx.viewing ? { viewing: true } : {})}
               {...(widget.title ? { title: widget.title } : {})}
+              {...(widget.version ? { version: widget.version } : {})}
               {...extras}
               {...(place ? { place } : {})}
               {...tab}

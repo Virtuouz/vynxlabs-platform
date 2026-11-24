@@ -81,6 +81,11 @@ export {
   usePlacement,
 } from "./placement.ts";
 export {
+  TenantWidgetHost,
+  type TenantWidgetHostProps,
+  workspaceViews,
+} from "./TenantWidgetHost.tsx";
+export {
   ActionError,
   type ActResponse,
   type FilterValues,

@@ -4,11 +4,11 @@ import type {
   TypeBoxTypeProvider,
 } from "@fastify/type-provider-typebox";
 import { newId, sql } from "@volvel/db";
-import { PATH_PATTERN, validateJson } from "@volvel/manifest";
+import { envDeclarations, PATH_PATTERN, validateJson } from "@volvel/manifest";
 import { procProbe } from "@volvel/worker";
 import type { FastifyReply } from "fastify";
 import { Type } from "typebox";
-import { keepConsoleManaged } from "../kernel/authoring.js";
+import { keepConsoleManaged, namedResources } from "../kernel/authoring.js";
 import { forgetHealth } from "../kernel/data/health.js";
 import { badRequest, guestStart, HttpError, notFound } from "../kernel/errors.js";
 import { arrivingManifests } from "../kernel/execution/arriving.js";
@@ -1103,6 +1103,29 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     );
 
     // ----- Scripts and runs -----
+
+    app.get(
+      `${base}/types.d.ts`,
+      {
+        config: { access: access.workspace("script:read") },
+        schema: {
+          summary: "The workspace's names, as TypeScript declarations for its scripts",
+          description:
+            "A declaration file that gives `@volvel/sdk` the workspace's tables, events, variables, " +
+            'connections, flows and scripts, so that `ctx.table("orders")` is typed by name. ' +
+            "It is written from what is deployed with the saved drafts laid over it, the same " +
+            "file `volvel types` writes from a repository. The console's script editor loads it.",
+          tags: ["runs"],
+          params: WorkspaceParams,
+          response: { 200: Type.String({ description: "A TypeScript declaration file." }) },
+        },
+      },
+      async ({ params }, reply) =>
+        reply
+          .header("content-type", "text/plain; charset=utf-8")
+          .header("cache-control", "no-store")
+          .send(envDeclarations(await namedResources(kernel, db, params.w))),
+    );
 
     app.get(
       `${base}/scripts`,

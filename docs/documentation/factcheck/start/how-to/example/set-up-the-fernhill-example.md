@@ -5,7 +5,7 @@ Lines are current at commit `a2c970ae` (branch p33-d3, lane d3). Paths are from 
 | Claim | Source (file:line) | Checked by | Result |
 | --- | --- | --- | --- |
 | The example is in `examples/fernhill`; `pnpm stand-ins` runs the stand-ins there. | `examples/fernhill/package.json:8` | writer, run 2026-11-24 | holds as run |
-| The stand-ins listen on port 4020, on 127.0.0.1; they print "Fernhill's outside systems on http://127.0.0.1:4020/". | `examples/fernhill/stand-ins/server.mjs:10,135-136` | writer, 2026-11-24 (port 4020 was already served on the machine by another run of the stand-ins, and was used) | holds |
+| `PORT` chooses the stand-ins' port (4021 was run). They listen on port 4020 by default, on 127.0.0.1; they print "Fernhill's outside systems on http://127.0.0.1:4020/". | `examples/fernhill/stand-ins/server.mjs:10,135-136` | writer, 2026-11-24 (port 4020 was already served on the machine by another run of the stand-ins, and was used) | holds |
 | The script uses `STAND_INS` or `http://127.0.0.1:4020`. | `setup/setup.mjs:23` | writer, run (STAND_INS=http://127.0.0.1:4999 gave the refusal) | holds as run |
 | Refusal: "The stand-ins are not running at <address>. Start them: node stand-ins/server.mjs". | `setup/setup.mjs:100-103`; run | writer, run | holds as run |
 | `VOLVEL_URL` defaults to `http://localhost:8080`; email and password from `VOLVEL_ADMIN_EMAIL`, `VOLVEL_ADMIN_PASSWORD` (email defaults to admin@example.com). | `setup/setup.mjs:17-22` | writer, run | holds as run |
@@ -14,10 +14,10 @@ Lines are current at commit `a2c970ae` (branch p33-d3, lane d3). Paths are from 
 | A second run without `--reset` stops: `A tenant "fernhill" exists. Run again with --reset to delete it and start over.` | `setup/setup.mjs:115`; run | writer, run | holds as run |
 | `--reset` cancels running runs and flow runs under an access grant, then deletes the tenant, and the script makes everything again (35 s). | `setup/setup.mjs:116-149`; run (`Deleting the existing fernhill tenant`, then Done) | writer, run | holds as run |
 | People's accounts stay after `--reset` and are added again with one password. | `setup/setup.mjs:25-28` (comment), `addMember`; run (the second tenant signed in as Maya, Devi with the same password) | writer, run | holds as run |
-| `FERNHILL_SLUG` makes a copy; the copy's hostname is `<slug>.localhost`; a copy writes no `demo.json`; `--reset` deletes the tenant of the slug only. | `setup/setup.mjs:29-30,115,833,874-876` | writer, read only (a copy was not made) | holds, not run |
+| `FERNHILL_SLUG` makes a copy; the copy's hostname is `<slug>.localhost`; a copy writes no `demo.json`; `--reset` deletes the tenant of the slug only. | `setup/setup.mjs:29-30,115,833,874-876` | writer, run (copy made in 35.2 s; named "Fernhill Veterinary Group (fernhill-two)"; demo.json unchanged) | holds as run |
 | It takes about 40 seconds (38.6 s first run, 35.5 s with `--reset`), on a machine with a local Postgres and workers as the control plane's user. | run, `time` | writer, run | holds as run |
 | The workers need `MANAGED_WORKERS=process` and `MANAGED_WORKER_USER=same` on the instance that was used; `same` runs workers as the control plane's user for every tenant. | `d3.env` of the lane; `self-host/explanation/running/managed-workers-and-isolation.md:56`; `apps/control-plane/src/config.test.ts:139` | writer, read | holds |
-| Without `same` the seeding step does not finish. | the lane brief (owner's earlier runs) | not run | **not checked on this lane**: stated in the page as the cause when it stops there |
+| Without `same` the seeding step does not finish. | run on a second instance without the setting: seeding printed nothing for 180 s; log "no managed worker for this tenant..." | writer, run 2026-11-24 | holds as run, on a process that may not switch users |
 | The script needs the built CLI at `packages/cli/dist/bin.js` (`pnpm build`). | `setup/setup.mjs:15`; the file exists after the build | writer | holds |
 | Node 24. | `.nvmrc`; run on v24.15.0 | writer, run | holds as run |
 | The tenant is "Fernhill Veterinary Group", slug `fernhill`. | `setup/setup.mjs:153-155` | writer, run (tenants list) | holds as run |
@@ -34,4 +34,4 @@ Lines are current at commit `a2c970ae` (branch p33-d3, lane d3). Paths are from 
 | Portal at `/portal/fernhill/`; hostname `fernhill.localhost` registered for the portal and every app. | `setup/setup.mjs:830-838,860-870`; demo.json | writer, run | holds as run |
 | `.platform/demo.json` holds addresses, sign-ins, ids and the phone assistant's key; it is written each time for the first Fernhill and replaces an existing file. | `setup/setup.mjs:840-878` | writer, run | holds as run |
 | The script does not write the command line's settings; `XDG_CONFIG_HOME` is not needed. | `setup/setup.mjs:330-338` (VOLVEL_TOKEN per call); run with `XDG_CONFIG_HOME` set to an empty folder: still empty after | writer, run | holds as run |
-| Sign in as Maya at the instance's address; the bar shows Clinics. | not walked in a browser (API sign-in only) | writer | **not checked in a browser** |
+| Sign in as Maya (email, Continue, password); the console opens on Tenants; Workspaces lists Clinics and Sandbox; the portal and Clinic performance. | Playwright, 1440 and 390 px: two-step sign-in, console opens on Tenants; tenant overview, Workspaces (Clinics production, Sandbox dev, promotes to Clinics), 65 members; portal lists four apps for Maya; Clinic performance renders | writer, run 2026-11-24 | holds as run |

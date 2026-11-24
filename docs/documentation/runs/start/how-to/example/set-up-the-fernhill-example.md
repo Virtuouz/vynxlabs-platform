@@ -22,9 +22,14 @@
 - The first draft listed a failure for an unbuilt CLI. It was not reproduced, so it was taken out; the need for `pnpm build` stays under Before you start.
 - The brief said the command line's settings (`XDG_CONFIG_HOME`) are written. They are not: the script passes a key to the CLI in `VOLVEL_TOKEN`. The page says so.
 
+## Second run (coordinator's four checks, 2026-11-24)
+1. **Step 1 itself.** `PORT=4021 pnpm stand-ins` from `examples/fernhill` printed "Fernhill's outside systems on http://127.0.0.1:4021/" and answered 200. `STAND_INS=http://127.0.0.1:4021 node setup/setup.mjs` used them. The page now says how to choose another port (`PORT`, then `STAND_INS`).
+2. **A copy.** `FERNHILL_SLUG=fernhill-two` (with the first Fernhill present): 35.2 s, ended `Done. The copy "fernhill-two" is made; demo.json is the first Fernhill's, unchanged.` `.platform/demo.json` was byte-identical before and after. The tenants list showed "Fernhill Veterinary Group" and "Fernhill Veterinary Group (fernhill-two)", each with 2 workspaces; the copy's domain is `fernhill-two.localhost`. Maya signed in to both. The page now says this.
+3. **Without `MANAGED_WORKER_USER`.** A second empty database and an instance on port 8096, from `d3.env` without that line. At start it logged "managed workers cannot run as their own user: this process may not switch users ... Give the container CAP_SETUID and CAP_SETGID, or set MANAGED_WORKER_USER=same." The script ran to the deploy and promote, printed "Seeding six weeks of history", and printed nothing more for the 180 s I waited (08:51:30 to 08:54:30), when `timeout` stopped it. The instance log said, twice, "no managed worker for this tenant: its code is written outside the operator, and a worker started beside the control plane shares its network. Run a worker host (MANAGED_WORKERS=host), or give the tenant a standalone worker." So the page's claim holds on an instance whose process cannot switch users (this one: a normal user); it did not fail, it waited. The page now gives the log line and the three ways out. That instance was stopped, its database dropped and its env file removed. Not tried: the instance as root or with the capabilities, where `own` may work.
+4. **Step 3 in a browser** (Playwright, headless Chromium, light theme, 1440 and 390 px, screenshots read; in `/tmp/d3shots`). Sign-in is two steps (email and **Continue**, then password and **Sign in**). After it the console opens on **Tenants**, not on a workspace: the page was wrong ("The workspace bar shows Clinics") and was rewritten. Opening the tenant: overview with Clinics PRODUCTION and Sandbox DEV, 65 members; **Workspaces** lists Clinics (production) and Sandbox (dev, promotes to Clinics), the same after a reload. `/portal/fernhill/` lists Fernhill handbook, My Fernhill account, Clinic operations, Clinic performance; **Clinic performance** drew its charts ($190,862.00 invoiced) at 1440, and at 390 the same figures. Added to the page as step 4.
+
 ## Not run
-- Step 1 (`pnpm stand-ins` itself) and the page's own reading of its output.
-- `FERNHILL_SLUG` (a copy).
-- Without `MANAGED_WORKER_USER=same` (the claim that the seeding step does not finish comes from the lane brief).
-- A Compose instance; a browser, any width or theme; the real default `http://localhost:8080`.
-- The page is therefore not presented as finished until a browser walk of step 3 and a second agent's check.
+- Dark theme, 768 px, the keyboard-only walk.
+- A Compose instance; the real default `http://localhost:8080`.
+- The instance as a user that may switch workers' users.
+- A second agent's check of the fact-check record.

@@ -10,10 +10,10 @@ By the end the instance holds a tenant called Fernhill Veterinary Group, with it
 ## Before you start
 
 - **A checkout of the repository.** The example is in `examples/fernhill`, and no published package holds it. In the checkout, run `pnpm install` and `pnpm build` once: the script deploys with the built command line in `packages/cli/dist`. Use the Node version in the checkout's `.nvmrc` (24).
-- **An instance that runs workers for tenant code.** The script runs scripts in Fernhill's workspaces to seed them. On an instance started with `MANAGED_WORKERS=process` the setting `MANAGED_WORKER_USER=same` makes the workers run as the control plane's user. Without it the step **Seeding six weeks of history** does not finish. `same` means everyone who writes code works for you: use it on a machine of your own. See [Managed workers and isolation](../../../self-host/explanation/running/managed-workers-and-isolation). To make an instance, see [Install an instance with Compose](../../../self-host/how-to/running/install-with-compose).
+- **An instance that runs workers for tenant code.** The script runs scripts in Fernhill's workspaces to seed them. On an instance started with `MANAGED_WORKERS=process` the setting `MANAGED_WORKER_USER=same` makes the workers run as the control plane's user. Without it, where the control plane's process may not switch users, the step **Seeding six weeks of history** does not finish. `same` means everyone who writes code works for you: use it on a machine of your own. See [Managed workers and isolation](../../../self-host/explanation/running/managed-workers-and-isolation). To make an instance, see [Install an instance with Compose](../../../self-host/how-to/running/install-with-compose).
 - **The instance's address**, for example `http://localhost:8080`.
 - **The operator's email and password.** They are the ones the instance made at its first start (`BOOTSTRAP_ADMIN_EMAIL` and `BOOTSTRAP_ADMIN_PASSWORD`). The script signs in as the operator to make the tenant.
-- **A free port 4020** on the machine where you run the script, for Fernhill's outside systems (below).
+- **A free port**, 4020 unless you choose another, on the machine where you run the script, for Fernhill's outside systems (below).
 - An instance that has no tenant with the slug `fernhill`. If it has one, see "Run it again" below.
 
 ## Run the setup
@@ -25,7 +25,7 @@ By the end the instance holds a tenant called Fernhill Veterinary Group, with it
    pnpm stand-ins
    ```
 
-   It prints "Fernhill's outside systems on http://127.0.0.1:4020/". These are stand-ins for the SMS service TextLine, the supplier VetSupply and the payment service PayFern. Leave it running: some of the tutorials send a text and read it there. If something already answers on port 4020, the script uses it. To use another address, set `STAND_INS` to it in the next step.
+   It prints "Fernhill's outside systems on http://127.0.0.1:4020/". These are stand-ins for the SMS service TextLine, the supplier VetSupply and the payment service PayFern. Leave it running: some of the tutorials send a text and read it there. The script looks for them at `http://127.0.0.1:4020`. If port 4020 is taken, choose another with `PORT`, for example `PORT=4021 pnpm stand-ins`, and set `STAND_INS=http://127.0.0.1:4021` in the next step. If the stand-ins of an earlier run already answer on 4020, you can use those.
 
 2. **Run the script.** In a second terminal, from `examples/fernhill`, run:
 
@@ -38,7 +38,9 @@ By the end the instance holds a tenant called Fernhill Veterinary Group, with it
 
    `VOLVEL_URL` is your instance's address. Without it the script uses `http://localhost:8080`. It prints a line beginning with ▸ for each part and ends with "Done. Sign-ins and addresses are in" and the path of `.platform/demo.json`.
 
-3. **Sign in to the console as Maya Brooks.** Open the instance's address, and sign in as `maya.brooks@fernhill.example` with the password `fernhill-demo-2026`. The workspace bar shows **Clinics**, and **Sandbox** is in its menu.
+3. **Sign in to the console as Maya Brooks.** Open the instance's address. Type `maya.brooks@fernhill.example`, press **Continue**, type the password `fernhill-demo-2026` and press **Sign in**. The console opens on **Tenants**, which lists **Fernhill Veterinary Group**, slug `fernhill`, with 2 workspaces. Open it, then **Workspaces** in the menu beside it: the list shows **Clinics**, a production workspace, and **Sandbox**, a dev workspace that promotes to Clinics. The tenant's **Members & access** shows 65.
+
+4. **See an app and the portal.** Open `/portal/fernhill/` on the instance's address. The portal says **Apps** and lists the apps that Maya may open: **Fernhill handbook**, **My Fernhill account**, **Clinic operations** and **Clinic performance**. Open **Clinic performance**: it shows money, visits and stock for the three clinics. The front desk and pet portal apps are for end users: sign in as Jess Morgan or George Lewis to see them.
 :::
 
 ## The result
@@ -73,7 +75,7 @@ node setup/setup.mjs --reset
 
 `--reset` deletes the tenant `fernhill` with everything in it: its workspaces, tables, rows, scripts, flows, apps, groups and keys, and its members' places in it. It first cancels runs that are still going, under an access grant that it opens and ends. The people's accounts belong to the instance, not to the tenant, and stay: the new tenant adds them again with the same password. Then it makes everything again, in about the same time.
 
-To make a copy beside the first, set `FERNHILL_SLUG`, for example `FERNHILL_SLUG=fernhill-two`. The copy has the slug as its hostname (`fernhill-two.localhost`), uses the same people, and does not write `.platform/demo.json`. With `--reset` it deletes only the tenant of that slug.
+To make a copy beside the first, set `FERNHILL_SLUG`, for example `FERNHILL_SLUG=fernhill-two`. The copy takes the same time. It is named "Fernhill Veterinary Group (fernhill-two)", has the hostname `fernhill-two.localhost`, uses the same people, and ends with `Done. The copy "fernhill-two" is made; demo.json is the first Fernhill's, unchanged.` It does not write `.platform/demo.json`. In the console, **Tenants** then lists both. With `--reset` the script deletes only the tenant of that slug.
 
 ## If it does not work
 
@@ -81,5 +83,5 @@ To make a copy beside the first, set `FERNHILL_SLUG`, for example `FERNHILL_SLUG
 - **"The stand-ins are not running at http://127.0.0.1:4020. Start them: node stand-ins/server.mjs".** Do step 1, or set `STAND_INS` to the address where they run.
 - **"fetch failed" and `ECONNREFUSED`.** Nothing answers at `VOLVEL_URL`. Start the instance, or correct the address.
 - **A tenant `"fernhill"` exists.** Run again with `--reset`, as above, or use `FERNHILL_SLUG` for a copy.
-- **The script stops at "Seeding six weeks of history" and does not go on.** The instance has no worker that can run tenant code. Set `MANAGED_WORKER_USER=same` (with `MANAGED_WORKERS=process`), restart the instance, and run with `--reset`.
+- **The script stops printing at "Seeding six weeks of history" and does not go on.** The instance has no worker that can run Fernhill's code. Its log says "no managed worker for this tenant: its code is written outside the operator". Press :kbd[Ctrl+C], set `MANAGED_WORKER_USER=same` (with `MANAGED_WORKERS=process`) on the instance and restart it, or run a worker host (`MANAGED_WORKERS=host`), then run the script with `--reset`. At its start the instance also logs "managed workers cannot run as their own user".
 - **"Seeding failed: ..." or a message beginning `POST` or `GET` with a number.** The instance refused a call. The number and text are the instance's own: read the control plane's log, fix the cause, and run with `--reset`. A script that stops in the middle leaves a tenant that is not whole: do not use it.

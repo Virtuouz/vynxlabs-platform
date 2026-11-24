@@ -96,9 +96,22 @@ A person who has no repository at hand can take a definition in code over in a d
 - **An app:** the App Builder shows it as it is published, and says taking it over lets you change it there. The next publish makes it files.
 - **A script in code** cannot be taken over. Its code leans on the rest of the repository. Make a new one at the same path in the console, and a deploy of it takes the old one's place with its history and what is bound to it.
 
-A take-over does not remove the definition from the repository. The next deploy of a repository that still defines the resource takes it back, and is refused first if the console changed the resource since the take-over, until you deploy with `--force`. To keep it in the console, delete the definition from the code. To keep it in the repository, copy what the console changed into the definition by hand, and deploy.
+A take-over does not remove the definition from the repository. A deploy of the code alone, which still defines the resource, is refused if the console changed the resource since the take-over, until you run `volvel pull` or deploy with `--force`, which takes the resource back to the code's definition and loses the console's change.
 
-`volvel pull` does not help for a table taken over this way: a table has no draft, and the pull brings in only what a draft or a deployed file holds, so it writes no file for the table (`Pulled 0 files`). It still tells the workspace that it took the table, and the next deploy then passes and replaces the console's change, retiring a column added there. Put the change in the definition before you deploy. A flow, a query or another resource taken over through a draft is brought in by `volvel pull` as a file.
+`volvel pull` brings in what was taken over, a table too, as a file of the folder (`platform/<path>.table.yaml`), and says that the resource is still defined in code, at the file when the code's source is known and by its name when it is not:
+
+```text
+desk (table) was taken over in the console, and is still defined in code, by the name desk. Remove it from the TypeScript: until you do, a deploy is refused as defined twice, in the code and in platform/.
+```
+
+Until you remove the definition from the TypeScript, a deploy is refused at the build:
+
+```text
+The build failed:
+  - desk is defined in src/index.ts and again in platform/desk.table.yaml. Keep one. A resource taken over in the console is removed from the code.
+```
+
+Delete the `defineTable` (or the flow, query or other definition) from the code, and deploy: the file is the resource's definition from then on, and what the console changed, a column included, stays. The pull records only the resources whose file it wrote or already found the same: a resource it did not bring in is not marked as in step.
 
 ## Related
 

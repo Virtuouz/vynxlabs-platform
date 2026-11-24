@@ -161,6 +161,18 @@ describe("a table defined in code, taken over in the console", () => {
     expect(await ownerOf(id, "notes")).toBe("code");
   });
 
+  test("a change made in the same save that takes it over is the console's, and a deploy of the code is refused", async () => {
+    const id = await workspace();
+    expect((await deploy(id, [code("notes", sells)])).status).toBe(201);
+    expect((await takeOver(id, "notes", { ...sells, body: { type: "text" } })).status).toBe(200);
+    const refused = await deploy(id, [code("notes", sells)]);
+    expect(refused.status).toBe(409);
+    expect(refused.body.code).toBe("console_changed");
+    expect(await ownerOf(id, "notes")).toBe("ui");
+    const columns = (await alice.get(`${ws(id)}/tables/notes`)).body.columns as { name: string }[];
+    expect(columns.map((c) => c.name)).toContain("body");
+  });
+
   test("is refused in production, and so is retiring it", async () => {
     const prod = (
       await alice.post(`/tenants/${tenant}/workspaces`, {
@@ -178,5 +190,92 @@ describe("a table defined in code, taken over in the console", () => {
       expect(refused.body.code).toBe("production_workspace");
     }
     expect(await ownerOf(prod, "notes")).toBe("code");
+  });
+});
+
+describe("what a pull brings of a resource taken over from code", () => {
+  const files = async (id: string) =>
+    (await alice.get(`${ws(id)}/resource-files`)).body as {
+      files: { path: string; content: string }[];
+      basis: { path: string }[];
+      inCode: { path: string; kind: string; file?: string }[];
+    };
+  const flowBody = {
+    nodes: {
+      start: { type: "trigger", trigger: { type: "manual" } },
+      done: { type: "set", values: { ok: "true" } },
+    },
+    edges: [{ from: "start", to: "done" }],
+  };
+
+  test("a table taken over is a file, is named as still defined in code, and the basis is only of what is written", async () => {
+    const id = await workspace();
+    expect((await deploy(id, [code("notes", sells)])).status).toBe(201);
+    const before = await files(id);
+    expect(before.files).toEqual([]);
+    expect(before.basis).toEqual([]);
+
+    expect((await takeOver(id, "notes", { ...sells, body: { type: "text" } })).status).toBe(200);
+    const after = await files(id);
+    expect(after.files.map((file) => file.path)).toEqual(["notes.table.yaml"]);
+    expect(after.files[0]?.content).toContain("body:");
+    expect(after.basis.map((one) => one.path)).toEqual(["notes"]);
+    expect(after.inCode).toEqual([{ path: "notes", kind: "table" }]);
+
+    // What the pull wrote is what the repository has now, and with the code definition gone
+    // the next deploy carries the file: it is not in code any more, and the column is kept.
+    const taken = await alice.post(`${ws(id)}/resource-basis`, { resources: after.basis });
+    expect(taken.status).toBe(200);
+    const asFile: BundleManifest = {
+      kind: "table",
+      schemaVersion: 1,
+      path: "notes",
+      ownership: "ui",
+      body: { columns: { ...sells, body: { type: "text" } } },
+    };
+    expect((await deploy(id, [asFile])).status).toBe(201);
+    expect((await files(id)).inCode).toEqual([]);
+    const listed = (await alice.get(`${ws(id)}/tables/notes`)).body;
+    expect(listed.columns.map((c: { name: string }) => c.name)).toContain("body");
+  });
+
+  test("a flow taken over by a draft is a file, and is named as still defined in code", async () => {
+    const id = await workspace();
+    expect(
+      (
+        await deploy(id, [
+          { kind: "flow", schemaVersion: 1, path: "f/one", ownership: "code", body: flowBody },
+        ])
+      ).status,
+    ).toBe(201);
+    const put = await alice.put(`${ws(id)}/drafts/f/one`, {
+      kind: "flow",
+      schemaVersion: 1,
+      body: {
+        ...flowBody,
+        nodes: { ...flowBody.nodes, done: { type: "set", values: { ok: "false" } } },
+      },
+    });
+    expect(put.status, JSON.stringify(put.body)).toBeLessThan(300);
+    expect((await alice.post(`${ws(id)}/changes/deploy`, {})).status).toBeLessThan(300);
+    const after = await files(id);
+    expect(after.files.map((file) => file.path)).toEqual(["f/one.flow.yaml"]);
+    expect(after.inCode).toEqual([{ path: "f/one", kind: "flow" }]);
+    // A deploy that still defines it in code is refused, not a silent take-back.
+    const refused = await deploy(id, [
+      { kind: "flow", schemaVersion: 1, path: "f/one", ownership: "code", body: flowBody },
+    ]);
+    expect(refused.status).toBe(409);
+    expect(refused.body.code).toBe("console_changed");
+    // The console edits it again: still named.
+    expect((await alice.get(`${ws(id)}/drafts/f/one`)).status).toBe(404);
+    const again = await alice.put(`${ws(id)}/drafts/f/one`, {
+      kind: "flow",
+      schemaVersion: 1,
+      body: flowBody,
+    });
+    expect(again.status).toBeLessThan(300);
+    expect((await alice.post(`${ws(id)}/changes/deploy`, {})).status).toBeLessThan(300);
+    expect((await files(id)).inCode).toEqual([{ path: "f/one", kind: "flow" }]);
   });
 });

@@ -250,7 +250,7 @@ export async function pull(args: string[], io: Io): Promise<number> {
     settings.token,
   );
   if (reply.status !== 200) throw refusal(reply, "read the workspace's console resources");
-  const { files, elsewhere, drafts, bundleVersion, basis } = reply.body as {
+  const { files, elsewhere, drafts, bundleVersion, basis, inCode } = reply.body as {
     files: { path: string; content: string }[];
     /** Not sent by a server from before files were kept anywhere. */
     elsewhere?: { path: string; content: string; resource?: string }[];
@@ -258,6 +258,8 @@ export async function pull(args: string[], io: Io): Promise<number> {
     bundleVersion: number | null;
     /** What each deployed resource is. Not sent by a server from before a deploy checked it. */
     basis?: { path: string; hash: string }[];
+    /** Taken over from code in the console and possibly still defined there. Not sent by an older server. */
+    inCode?: { path: string; kind: string; file?: string }[];
   };
   const folder = join(directory, resources);
   // From the repository's root: a file in the folder, or one kept anywhere, written `/so`.
@@ -280,7 +282,12 @@ export async function pull(args: string[], io: Io): Promise<number> {
         : resourceOfFile(one.path),
     ),
   );
-  const taken = (basis ?? []).filter((one) => !left.has(one.path));
+  // Only a resource whose file this pull wrote, or holds already, is in step: never one it did not bring.
+  const brought = new Set([
+    ...files.map((file) => resourceOfFile(file.path)),
+    ...(elsewhere ?? []).flatMap((file) => (file.resource ? [file.resource] : [])),
+  ]);
+  const taken = (basis ?? []).filter((one) => brought.has(one.path) && !left.has(one.path));
   if (taken.length > 0) {
     const told = await request(settings.url, `${base}/resource-basis`, settings.token, {
       method: "POST",
@@ -316,6 +323,13 @@ export async function pull(args: string[], io: Io): Promise<number> {
       ].join("\n"),
     );
     return 1;
+  }
+  for (const one of (inCode ?? []).filter((one) => !left.has(one.path))) {
+    io.err(
+      `${one.path} (${one.kind}) was taken over in the console, and is still defined in code${
+        one.file ? ` at ${one.file}` : `, by the name ${one.path}`
+      }. Remove it from the TypeScript: until you do, a deploy is refused as defined twice, in the code and in ${resources}/.`,
+    );
   }
   if (files.length > 0) {
     io.out(

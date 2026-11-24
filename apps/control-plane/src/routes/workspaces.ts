@@ -6,7 +6,7 @@ import { refuseDirectProductionWrite } from "../kernel/authoring.js";
 import { boundInside, check } from "../kernel/authorize.js";
 import { refuseMissingTargets, refuseRetiringReferred } from "../kernel/data/apply.js";
 import { badRequest, conflict, HttpError, notFound } from "../kernel/errors.js";
-import { setBasis } from "../kernel/execution/basis.js";
+import { contentHash } from "../kernel/execution/basis.js";
 import { instanceTriggersPaused } from "../kernel/execution/control.js";
 import { access, reachedFromInside, type WorkspaceRef } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
@@ -799,18 +799,28 @@ export function workspaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                 `Something is already at "${path}". Choose another name, or change what is there.`,
               );
           }
+          const before = await trx
+            .selectFrom("resource")
+            .select(["id", "path", "key", "title", "body", "ownership"])
+            .where("workspace_id", "=", workspace.id)
+            .where("path", "=", path)
+            .executeTakeFirst();
           const saved = await putResource(kernel, trx, audit, workspace, {
             ...body,
             path,
             ...(version !== undefined ? { expectedVersion: version } : {}),
             ...(takeOver && body.kind === "table" && body.ownership === "ui"
-              ? { switchOwnership: true }
+              ? { switchOwnership: true, takenOver: true }
               : {}),
           });
-          // What a table taken over from code was when it left is in step with the repository
-          // as far as that goes: a deploy that would replace what the console changed since is refused.
-          if (saved.resource && saved.ownershipFrom === "code") {
-            await setBasis(trx, workspace.id, { keys: [saved.resource.key] });
+          // What a table taken over from code was when it left is what the repository has: a
+          // deploy that would replace what the console changed since, this save included, is refused.
+          if (before && saved.ownershipFrom === "code") {
+            await trx
+              .updateTable("resource")
+              .set({ basis_hash: contentHash(before) })
+              .where("id", "=", before.id)
+              .execute();
           }
           // A deploy checks this once everything is in place; a table saved alone is checked now.
           if (body.kind === "table") {

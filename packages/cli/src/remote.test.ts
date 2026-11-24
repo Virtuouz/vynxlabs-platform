@@ -425,3 +425,43 @@ describe("pulling the console's resources", () => {
     expect(audit.some((entry) => entry.action === "deployment.forced")).toBe(true);
   }, 120_000);
 });
+
+describe("a table defined in code and taken over in the console", () => {
+  const index = () => join(repo, "src", "index.ts");
+  const table = (extra = "") =>
+    `\nimport { column, defineTable } from "@volvel/sdk";\nexport const shelf = defineTable({ path: "shelf", columns: { title: column.text() ${extra}} });\n`;
+
+  test("a pull writes it and says where it is still defined; the deploy is refused until the code lets go, and the column stays", async () => {
+    const before = await readFile(index(), "utf8");
+    await writeFile(index(), before + table());
+    expect((await cli(["deploy", ...target, "--dir", repo])).code).toBe(0);
+    // A column added in the console, taking the table over.
+    const taken = await alice.put(`${base}/resources/shelf`, {
+      kind: "table",
+      schemaVersion: 1,
+      ownership: "ui",
+      body: { columns: { title: { type: "text" }, shelf: { type: "text" } } },
+      takeOver: true,
+    });
+    expect(taken.status, JSON.stringify(taken.body)).toBe(200);
+
+    const pulled = await cli(["pull", ...target, "--dir", repo]);
+    expect(pulled.out).toContain("platform/shelf.table.yaml");
+    expect(await readFile(join(repo, "platform", "shelf.table.yaml"), "utf8")).toContain("shelf:");
+    expect(pulled.err).toContain("shelf (table) was taken over in the console");
+    expect(pulled.err).toContain("still defined in code");
+
+    // Defined twice: refused, not silently taken back.
+    const refused = await cli(["deploy", ...target, "--dir", repo]);
+    expect(refused.code).not.toBe(0);
+    expect(refused.err).toContain("shelf is defined in");
+    expect(refused.err).toContain("and again in");
+
+    await writeFile(index(), before);
+    const passed = await cli(["deploy", ...target, "--dir", repo]);
+    expect(passed.code, passed.err).toBe(0);
+    const columns = (await alice.get(`${base}/tables/shelf`)).body.columns as { name: string }[];
+    expect(columns.map((c) => c.name)).toContain("shelf");
+    expect((await cli(["pull", ...target, "--dir", repo])).err).not.toContain("still defined");
+  }, 120_000);
+});

@@ -90,7 +90,7 @@ The workspace and the repository agree, or you chose which wins and the audit lo
 ## If it does not work
 
 - **`1 file was not overwritten` and exit 1 on a pull.** A file of yours differs from the last one a pull wrote. The deploy is still refused for it. Commit, run `volvel pull --force`, and re-apply your change.
-- **The deploy is refused after a take-over.** A table or another resource taken over from code has the basis it had when you took it over. A change after that is the console's, and `volvel pull` brings no file in for a table: copy the change into the definition, or deploy with `--force`. See [Definitions in code](../../explanation/cli/definitions-in-code).
+- **The deploy is refused after a take-over.** A table or another resource taken over from code has the basis it had when you took it over. A change after that is the console's, including a column added in the same save that took the table over. Run `volvel pull`: it writes the file of the resource and says it is still defined in code. Remove it from the TypeScript, since a deploy that has both is refused as defined twice, then deploy. Or deploy with `--force` to take it back to the code. See [Definitions in code](../../explanation/cli/definitions-in-code).
 - **`Warning: the instance did not take what this pull brought in, so the next deploy may be refused as console_changed. Run pull again.`** The pull wrote its files, and the instance did not record them. Run `volvel pull` again.
 
 ## Related

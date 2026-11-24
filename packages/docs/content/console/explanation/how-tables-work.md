@@ -19,7 +19,7 @@ Two things are kept apart. The table's **definition** is its columns and rules. 
 Each table has one owner. The list of tables says which, under **Managed in**:
 
 - **Files.** The table is a file: you made it with **Create table**, or the repository holds it as `<path>.table.yaml`. The console and the repository both edit it. You change its columns and rules on its **Definition** tab, and adding a column or a rule applies at once. A deploy of the repository that would replace what the console changed since is refused until `volvel pull`, or `--force`.
-- **Code.** It is written with `defineTable` in the tenant's repository, and it changes when a bundle is deployed. In the console its **Definition** tab shows a notice and no controls: "This table is defined in code, in the tenant's repository. To change it, change `defineTable` there and deploy, or take it over here: it is then managed as files, and a deploy that still defines it takes it back."
+- **Code.** It is written with `defineTable` in the tenant's repository, and it changes when a bundle is deployed. In the console its **Definition** tab shows a notice and no controls: "This table is defined in code, in the tenant's repository. To change it, change `defineTable` there and deploy, or take it over here: it is then managed as files, and you remove its definition from the code after a volvel pull."
 
 A table is of one owner or the other, never both. Rows of both kinds are added, changed and deleted on the **Rows** tab.
 
@@ -27,7 +27,7 @@ A definition in code is worth having when a table shares values with other defin
 
 ### Take over a table of Code
 
-In a dev workspace, **Take over in the console** on the **Definition** tab makes a table of Code a table of Files. Its rows stay. The console manages it from then on. A later deploy of a repository that still defines it takes it back, and is refused first if you changed it in the console since, until you deploy with `--force`. To keep it in the console, remove its definition from the code. To keep it in the repository, put the console's change into the definition by hand: `volvel pull` brings in no file for a table taken over, and the deploy after a pull would replace the change. See [Definitions in code](../../develop/explanation/cli/definitions-in-code). A production workspace has no take-over: a table of Code there changes by a deploy only.
+In a dev workspace, **Take over in the console** on the **Definition** tab makes a table of Code a table of Files. Its rows stay. The console manages it from then on. The definition stays in the code until you remove it there. `volvel pull` writes the table's file, `<path>.table.yaml`, and says that the table is still defined in code; while it is, a deploy of the repository is refused as defined twice. A deploy of the code alone, without a pull, is refused too if the console changed the table, until you pull or deploy with `--force`, which takes the table back to the code's definition. To keep the table in the console, pull, then delete its definition from the code and deploy. See [Definitions in code](../../develop/explanation/cli/definitions-in-code). A production workspace has no take-over: a table of Code there changes by a deploy only.
 
 ## Why a deploy never drops data
 

@@ -221,6 +221,11 @@ export interface ResourceTable {
 export interface ResourceMeta {
   mcp?: { name: string };
   source?: { file: string; generated: boolean };
+  /**
+   * Taken over from the repository's code in the console, and not yet handed over by a deploy of
+   * the repository: its TypeScript may still define it. `file` is where, when it was known.
+   */
+  inCode?: { file?: string };
 }
 
 /** One thing a tenant's access is made of, as a release and a file in `tenant/` have it. */

@@ -662,14 +662,38 @@ export async function composeDrafts(
   }
 }
 
-/** The console-managed resources a workspace is running, as its active bundle carries them. */
+/**
+ * The console-managed resources a workspace is running, as its registry holds them. Not as the
+ * active bundle does: a table taken over in the console is not in a bundle as the console's.
+ */
 export async function activeConsoleManaged(
-  kernel: Kernel,
+  _kernel: Kernel,
   db: Db | Trx,
   workspaceId: string,
 ): Promise<BundleManifest[]> {
-  const active = await activeBundle(kernel, db, workspaceId);
-  return active?.content.manifests.filter((manifest) => manifest.ownership === "ui") ?? [];
+  const rows = await db
+    .selectFrom("resource")
+    .select(["kind", "schema_version", "path", "key", "title", "meta", "body"])
+    .where("workspace_id", "=", workspaceId)
+    .where("ownership", "=", "ui")
+    .where("path", "not like", `${CORE_PREFIX}%`)
+    .orderBy("path")
+    .execute();
+  return rows.map((row) => ({
+    kind: row.kind,
+    schemaVersion: row.schema_version,
+    path: row.path,
+    ...(row.key !== row.path ? { key: row.key } : {}),
+    // An app's, an interface's and a form's title is in their body, and is not said twice.
+    ...(row.title && row.title !== (row.body as { title?: unknown }).title
+      ? { title: row.title }
+      : {}),
+    ...(row.meta.mcp ? { mcp: row.meta.mcp } : {}),
+    // Where the repository keeps its file, unless the file is the code's that was taken over.
+    ...(row.meta.source && !row.meta.inCode ? { source: row.meta.source } : {}),
+    ownership: "ui" as const,
+    body: row.body,
+  }));
 }
 
 /**

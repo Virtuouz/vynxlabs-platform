@@ -498,7 +498,20 @@ export async function deployBundle(
     // An app, an interface and a form have a title in their body: that is their title.
     const inBody = (manifest.body as { title?: unknown }).title;
     const title = manifest.title ?? (typeof inBody === "string" && inBody ? inBody : null);
-    const meta = metaOf(manifest);
+    // Taken over in the console and not handed over: a draft deploy keeps saying so.
+    const takenOver =
+      !options.repository &&
+      manifest.ownership === "ui" &&
+      (stored?.ownership === "code" || stored?.meta.inCode !== undefined);
+    const meta: ResourceMeta = {
+      ...metaOf(manifest),
+      ...(takenOver
+        ? {
+            inCode:
+              stored?.meta.inCode ?? (stored?.meta.source ? { file: stored.meta.source.file } : {}),
+          }
+        : {}),
+    };
     if (
       stored &&
       stored.path === manifest.path &&
@@ -566,7 +579,17 @@ export async function deployBundle(
       ...(stored && moving.has(stored.id) ? { movedFrom: stored.path } : {}),
       // A resource taken over in the console, or handed back to the repository.
       switchOwnership: true,
+      takenOver,
     });
+    // What it was in code is what the repository has: a deploy that still defines it is refused
+    // for the console's change, and does not take it back unseen.
+    if (takenOver && stored?.ownership === "code") {
+      await trx
+        .updateTable("resource")
+        .set({ basis_hash: contentHash(stored) })
+        .where("id", "=", stored.id)
+        .execute();
+    }
     // Positions saved from the flow page are older than a layout this deploy brings: the
     // newer one is read, by the flow page, the run's page and the editor alike.
     if (

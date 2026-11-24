@@ -22,6 +22,8 @@ export interface ResourceInput {
   title?: string | null | undefined;
   /** What a bundle says about it beside its body. Left as it is when not given. */
   meta?: ResourceMeta | undefined;
+  /** The console takes the resource over from code: it is said to be still defined in code. */
+  takenOver?: boolean | undefined;
   /** Move the resource at this path to `path`, keeping its ID. */
   renameFrom?: string | undefined;
   /**
@@ -133,13 +135,18 @@ export async function putResource(
   const id = existing?.id ?? newId();
   const version = (existing?.version ?? 0) + 1;
   const body = JSON.stringify(input.body);
+  const meta: ResourceMeta = { ...(input.meta ?? existing?.meta ?? {}) };
+  if (input.ownership === "code") delete meta.inCode;
+  if (existing?.ownership === "code" && input.ownership === "ui" && input.takenOver) {
+    meta.inCode = existing.meta.source ? { file: existing.meta.source.file } : {};
+  }
   const columns = {
     kind: input.kind,
     schema_version: input.schemaVersion,
     key: existing?.key ?? input.key ?? input.path,
     path: input.path,
     title: input.title !== undefined ? input.title : (existing?.title ?? null),
-    meta: JSON.stringify(input.meta ?? existing?.meta ?? {}),
+    meta: JSON.stringify(meta),
     ownership: input.ownership,
   };
   if (existing) {

@@ -117,14 +117,15 @@ export const scenes: Record<string, Scene> = {
       call("PUT", `${W}/drafts/${path}`, { kind, schemaVersion, create: true, body });
 
     // The flow: "Decide, then answer", with an approval after `large`.
+    // Made once in the run's tenant; another scene may have made it first (the flow names its key).
     const managers = await call("POST", `/tenants/${tenant.id}/groups`, {
       name: "Practice managers",
       description: "Decide stock orders over the threshold.",
-    });
+    }).catch(() => ({ slug: "practice-managers" }));
     const billing = await call("POST", `/tenants/${tenant.id}/groups`, {
       name: "Billing",
       description: "Mark invoices paid.",
-    });
+    }).catch(() => ({ slug: "billing" }));
     await draft("tut-approve", "flow", {
       nodes: {
         start: {

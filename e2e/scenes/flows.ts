@@ -68,7 +68,10 @@ const lab: Scene = async (given) => {
   // administrator has seen it, so that each look of the picture is the same however many came before.
   await given.call("PUT", "/me/preferences/seen:flows", { value: true });
   await given.call("PATCH", W, { triggersPaused: false });
-  await given.call("POST", `/tenants/${tenant.id}/groups`, { name: "Practice managers" });
+  // The group the flow names: made once in a tenant, found by the scenes after the first.
+  await given
+    .call("POST", `/tenants/${tenant.id}/groups`, { name: "Practice managers" })
+    .catch(() => undefined);
   const put = (path: string, body: unknown) => given.call("PUT", `${W}/drafts/${path}`, body);
   await put("orders/reorder", {
     kind: "flow",

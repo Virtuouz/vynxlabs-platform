@@ -13,7 +13,13 @@ export default [
     setup: "basics-fernhill",
     themes: THEMES,
     viewport: VIEW,
-    ready: [{ role: "link", name: "Fernhill Veterinary Group" }],
+    ready: [
+      {
+        within: { role: "grid", name: "Tenants" },
+        role: "link",
+        name: "Fernhill Veterinary Group",
+      },
+    ],
     steps: [],
     mask: TIMES,
   },

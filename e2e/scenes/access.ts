@@ -25,8 +25,16 @@ export const scenes: Record<string, Scene> = {
   },
 
   // A tenant with two admins and approval on, and a group made by one of them, waiting for the other.
+  // A tenant of its own: approval on in the run's shared tenant would hold every other scene's
+  // access change (a group, a binding) waiting too.
   "access-waiting": async (given) => {
-    const tenant = given.tenant.id;
+    const tenant = (
+      await given.call("POST", "/tenants", {
+        slug: `access-waiting-${given.stamp}`,
+        name: "Fernhill",
+        addCreator: true,
+      })
+    ).id as string;
     const roles = (await given.call("GET", `/tenants/${tenant}/roles?limit=200`)).items as {
       id: string;
       name: string;

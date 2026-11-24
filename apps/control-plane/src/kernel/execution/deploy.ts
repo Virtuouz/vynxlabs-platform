@@ -889,6 +889,7 @@ const KIND_ORDER = [
   "schedule",
   "trigger",
   "theme",
+  "widget",
   "interface",
   // After the tables and queries a dashboard asks, and the resources a page is about.
   "dashboard",

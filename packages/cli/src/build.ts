@@ -169,6 +169,7 @@ const KIND_ORDER = [
   "trigger",
   "flow",
   "theme",
+  "widget",
   "interface",
   // After the tables and queries a dashboard asks, and the resources a page is about.
   "dashboard",

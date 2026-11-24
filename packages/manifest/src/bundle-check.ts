@@ -21,6 +21,7 @@ import {
 } from "./page.js";
 import { KindRegistry, validateJson } from "./registry.js";
 import { checkTable, type TableBody } from "./table.js";
+import { checkWidget, type WidgetBody } from "./widget.js";
 
 /** Events the platform publishes itself. No repository declares them. */
 export const PLATFORM_EVENT_PREFIX = "platform/";
@@ -237,6 +238,11 @@ export function checkBundleManifests(manifests: BundleManifest[]): string[] {
       uses?: ScriptUses;
       onFailure?: { script?: string; notify?: string };
     };
+    if (manifest.kind === "widget") {
+      for (const problem of checkWidget(manifest.path, manifest.body as unknown as WidgetBody)) {
+        problems.push(`${manifest.path} (widget): ${problem.replace(`${manifest.path}: `, "")}`);
+      }
+    }
     if (manifest.kind === "schedule" || manifest.kind === "trigger") {
       expect(manifest, "script", body.script, "script");
     }

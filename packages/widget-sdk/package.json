@@ -13,6 +13,10 @@
       "types": "./dist/action.d.ts",
       "default": "./dist/action.js"
     },
+    "./frame": {
+      "types": "./dist/frame.d.ts",
+      "default": "./dist/frame.js"
+    },
     "./page": {
       "types": "./dist/page.d.ts",
       "default": "./dist/page.js"

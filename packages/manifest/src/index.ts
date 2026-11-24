@@ -158,6 +158,8 @@ export {
   triggerKind,
   triggerSourceKind,
   variableKind,
+  WIDGET_ENTRY_PATTERN,
+  widgetKind,
 } from "./kinds.js";
 export {
   type CheckContext,
@@ -300,3 +302,4 @@ export {
   tenantName,
   tenantOrder,
 } from "./tenant.js";
+export { checkWidget, type WidgetBody } from "./widget.js";

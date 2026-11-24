@@ -1,3 +1,10 @@
+import {
+  CATEGORIES as WIDGET_CATEGORIES,
+  DATA_SHAPES as WIDGET_DATA_SHAPES,
+  EVENT_GIVES as WIDGET_EVENT_GIVES,
+  SOURCE_KINDS as WIDGET_SOURCE_KINDS,
+  SURFACES as WIDGET_SURFACES,
+} from "@volvel/widgets";
 import { PATH_PATTERN } from "./envelope.js";
 import { FLOW_STARTS, FLOW_STEPS } from "./flow-words.js";
 import { dashboardKind, interfaceKind } from "./page.js";
@@ -1792,6 +1799,153 @@ export const appKind: KindDefinition = {
   },
 };
 
+/** Where a widget's view is, in the repository: a path that stays inside it. */
+export const WIDGET_ENTRY_PATTERN = "^(?!.*\\.\\.)[A-Za-z0-9_@.-]+(/[A-Za-z0-9_@.-]+)*$";
+
+const cellSize = {
+  type: "object",
+  properties: {
+    w: { type: "integer", minimum: 1, maximum: 12 },
+    h: { type: "integer", minimum: 1, maximum: 40 },
+  },
+  required: ["w", "h"],
+  additionalProperties: false,
+};
+
+const rangeOf = {
+  type: "object",
+  properties: { min: { type: "integer", minimum: 0 }, max: { type: "integer", minimum: 0 } },
+  required: ["min", "max"],
+  additionalProperties: false,
+};
+
+/**
+ * A widget a tenant wrote: what the page builder draws its inspector and "Add to page" from
+ * (the same declaration the platform's own widgets make, decision 0005), and the file of its
+ * view. The view runs in a sandboxed frame with no network; the definition is data.
+ */
+export const widgetKind: KindDefinition = {
+  kind: "widget",
+  schemaVersion: 1,
+  body: {
+    type: "object",
+    properties: {
+      type: {
+        type: "string",
+        pattern: "^x/[a-z][a-z0-9-]{0,40}$",
+        description:
+          "The widget's type, in the tenant's own namespace: `x/<name>`. The other namespaces are Volvel's. A resource's path is its type.",
+      },
+      version: {
+        type: "string",
+        pattern: "^\\d+\\.\\d+\\.\\d+$",
+        description: "Semver. A page names the type; a deploy pins the version it was built with.",
+      },
+      title: { type: "string", minLength: 1, maxLength: 100 },
+      description: {
+        type: "string",
+        minLength: 1,
+        maxLength: 200,
+        description: 'One line, said in "Add to page".',
+      },
+      category: { enum: [...WIDGET_CATEGORIES] },
+      icon: { type: "string", minLength: 1, maxLength: 40 },
+      surfaces: {
+        type: "array",
+        minItems: 1,
+        uniqueItems: true,
+        items: { enum: [...WIDGET_SURFACES] },
+        description: "Where it may be put: an app's page, a dashboard.",
+      },
+      data: {
+        type: "object",
+        description:
+          "What it reads, by input name: the platform reads it under the viewer's permissions and gives it to the view.",
+        additionalProperties: {
+          type: "object",
+          properties: {
+            shape: { enum: [...WIDGET_DATA_SHAPES] },
+            label: { type: "string", maxLength: 100 },
+            required: { type: "boolean" },
+            sources: { type: "array", items: { enum: [...WIDGET_SOURCE_KINDS] } },
+            values: rangeOf,
+            breakdowns: rangeOf,
+          },
+          required: ["shape"],
+          additionalProperties: false,
+        },
+      },
+      dataHints: {
+        type: "array",
+        maxItems: 20,
+        items: { type: "object" },
+        description: "The Data tab's controls for each input.",
+      },
+      config: {
+        ...jsonSchema,
+        description:
+          "A JSON Schema (draft 2020-12) for the widget's settings, an object with `properties`, each with an `x-volvel` hint saying how the inspector draws it from the fixed set of controls.",
+        properties: { type: { const: "object" }, properties: { type: "object" } },
+        required: ["type", "properties"],
+      },
+      words: { type: "object", additionalProperties: { type: "string" } },
+      defaults: { type: "object" },
+      events: {
+        type: "object",
+        description: "What can happen to the widget that an action may be attached to, by name.",
+        additionalProperties: {
+          type: "object",
+          properties: {
+            gives: { enum: [...WIDGET_EVENT_GIVES] },
+            label: { type: "string", minLength: 1, maxLength: 100 },
+            payload: {
+              ...jsonSchema,
+              description:
+                "A JSON Schema for what the frame sends with it. The host drops what does not fit.",
+            },
+          },
+          required: ["gives", "label"],
+          additionalProperties: false,
+        },
+      },
+      layout: {
+        type: "object",
+        properties: {
+          min: cellSize,
+          default: cellSize,
+          max: cellSize,
+          phone: { enum: ["stack", "list", "hide"] },
+          frame: { enum: ["card", "none"] },
+        },
+        required: ["min", "default"],
+        additionalProperties: false,
+      },
+      entry: {
+        type: "string",
+        pattern: WIDGET_ENTRY_PATTERN,
+        maxLength: 500,
+        description:
+          "The file in the repository that is the view: a module that draws it with `@volvel/widget-frame`. Built into one script at deploy.",
+      },
+    },
+    required: [
+      "type",
+      "version",
+      "title",
+      "description",
+      "category",
+      "icon",
+      "surfaces",
+      "data",
+      "config",
+      "events",
+      "layout",
+      "entry",
+    ],
+    additionalProperties: false,
+  },
+};
+
 /**
  * One page of documentation. Its body is its file, as it is: a few lines of
  * frontmatter, then Markdown. Nothing in it is code and nothing in it runs.
@@ -1835,6 +1989,7 @@ export const platformKinds: KindDefinition[] = [
   triggerKind,
   flowKind,
   themeKind,
+  widgetKind,
   interfaceKind,
   dashboardKind,
   docKind,

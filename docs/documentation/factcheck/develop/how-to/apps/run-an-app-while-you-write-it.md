@@ -24,3 +24,11 @@ Lines are current at commit `14f7d5b9` (branch phase-31-write-the-docs). Paths a
 - Messages "This repository defines no app.", "has no app at", "Say which app": `packages/cli/src/dev.ts:71-81`; "The instance at ... did not answer": `dev-site.ts:281`; SCREENS_DIR and the missing-screens text: `dev-site.ts:77-133`; ignored folders `dev-site.ts:113`; docs notice `dev-site.ts:118`. All run except the missing-screens text.
 - Port moves to the next free one (5181 busy, served on 5182): run.
 - fault fixed (fa): the nonce goes only to the dev server's own scripts, `app.title` is the app's title, the dev policy no longer lists `ws://[::1]:*` (`cli/dev.ts`, `build.ts`), confirmed in the code; the three sentences are removed or reworded. The inline refusal was unit-tested only, not seen in a browser.
+
+## Phase 34, A7 (YAML first), 2026-11-24
+
+Commit `d619bfbd` plus the working tree. Written by the A7 writer; second agent's check pending. Run on the throwaway instance of lane a7 (http://localhost:8712, Fernhill seeded).
+
+| Claim | Source (file:line) | Checked by | Result |
+| --- | --- | --- | --- |
+| An interface is a `<path>.interface.yaml` file or `defineInterface`. | `examples/higher-ed-devices/platform/screens/*.interface.yaml` | writer, 2026-11-24 | holds as read |

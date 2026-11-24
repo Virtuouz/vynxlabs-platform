@@ -22,9 +22,9 @@ volvel convert [--dry-run] [--only <kind>,…] [--keep-references] [--entry <fil
 
 ## Where the files go
 
-1. `resources` in `volvel.yaml`, or the `--resources` flag.
-2. Otherwise `platform/`, when the repository has that folder.
-3. Otherwise `resources/`, and `volvel.yaml` is written with `resources: resources`. The command says so: `Wrote volvel.yaml with `resources: resources`, the folder the files go to.` A dry run says `Would write`.
+- `resources` in `volvel.yaml`, or the `--resources` flag.
+- Otherwise `platform/`, when the repository has that folder.
+- Otherwise `resources/`, and `volvel.yaml` is written with `resources: resources`. The command says so: `Wrote volvel.yaml with `resources: resources`, the folder the files go to.` A dry run says `Would write`.
 
 A file is `<path>.<kind>.yaml`, written the way a pull and Git sync write it, with the key order and values the build made.
 

@@ -26,3 +26,11 @@ Checked by: second agent, 2026-11-23.
 - Corrected/added: the 202 of a failing flow, `x-flow-run` only on the flow's answer, an example of a respond flow, 413.
 - 415: the webhook route takes any content type as text (`application/xml` answered 202), so 415 is not an answer of this route.
 - fault fixed (fa): the token in `instance` is replaced by `:token` (`problem.ts` `publicPath`), confirmed in the code; the page never quoted the field
+
+## Phase 34, A7 (YAML first), 2026-11-24
+
+Commit `d619bfbd` plus the working tree. Written by the A7 writer; second agent's check pending. Run on the throwaway instance of lane a7 (http://localhost:8712, Fernhill seeded).
+
+| Claim | Source (file:line) | Checked by | Result |
+| --- | --- | --- | --- |
+| The flow YAML equals the TypeScript flow. | run: `volvel convert` of the TypeScript flow checks equal manifests; deployed to `walk6` | writer, 2026-11-24 | holds as run (the webhook was not called again) |

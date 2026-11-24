@@ -30,3 +30,9 @@
 - The page's step 7 now says what the command does ("a test run, nothing is deployed"). The CLI prints "from this build (preview, version N). Nothing was deployed." (`packages/cli/src/cli.ts:1170`), as in the first run.
 - 390 px dark and 768 px: the **Connections** screen (steps 3 and 4), **Secrets** and **Variables** show no page scroll; at 390 the sheet of a connection fits with its footer in view; Escape closes it and focus returns to the row's button.
 - Not run, and cannot be: nothing new. `volvel init` and `volvel login` stay as the first run left them (the repository was made by hand).
+
+## Phase 34, A7 run, 2026-11-24
+
+Instance http://localhost:8712 (throwaway, lane a7's build, commit `d619bfbd` plus the working tree), Fernhill seeded. Terminal only.
+
+- `examples/a7call`: deploy to `try-it` (`3 created`, the two notes), the connection, secret and variable set with the three `PUT` calls of `develop/how-to/configure/set-up-from-a-script`, `volvel run stock/reorder --remote`: `Succeeded`, `VSD-900002`. The console steps (3 to 6) were done through the API, not in a browser.

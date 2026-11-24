@@ -19,28 +19,28 @@ By the end you will have an app in a tenant's repository that reads a table and 
 ## Steps
 
 :::steps
-1. Define what the app uses, in `src/index.ts`. The app reads `visits` and starts `check-in`. The table is written in TypeScript here because the page's code imports its type in step 4; a table that nothing imports is a [file](../../explanation/cli/definitions-in-code). A script that writes a table lists it in `tables`, or its writes are refused with "This needs a declared use of the table".
+1. Define what the app uses. The app reads `visits` and starts `check-in`. The table is a file in the console's folder, `platform/visits.table.yaml`. The script is code, in `src/index.ts`; it lists the table in `tables`, or its writes are refused with "This needs a declared use of the table".
+
+   ```yaml title=platform/visits.table.yaml
+   schemaVersion: 1
+   body:
+     description: Pets that have been checked in.
+     columns:
+       pet: { type: text, required: true }
+       seen: { type: boolean, default: false }
+   ```
 
    ```ts title=src/index.ts
-   import { column, defineApp, defineScript, defineTable, z } from "@volvel/sdk";
-
-   export const visits = defineTable({
-     path: "visits",
-     description: "Pets that have been checked in.",
-     columns: {
-       pet: column.text({ required: true }),
-       seen: column.boolean({ default: false }),
-     },
-   });
+   import { defineApp, defineScript, z } from "@volvel/sdk";
 
    export const checkIn = defineScript({
      path: "check-in",
      description: "Adds a visit for a pet and says it is seen.",
      input: z.object({ pet: z.string() }),
      output: z.object({ id: z.string() }),
-     tables: [visits],
+     tables: ["visits"],
      async run(input, ctx) {
-       const row = await ctx.table(visits).insert({ pet: input.pet, seen: true });
+       const row = await ctx.table("visits").insert({ pet: input.pet, seen: true });
        return { id: row.id };
      },
    });
@@ -98,18 +98,18 @@ By the end you will have an app in a tenant's repository that reads a table and 
    declare module "*.css";
    ```
 
-4. Write the page. Import the tables as types only, so that none of the repository's server code reaches the browser. `useQuery` loads rows, and `runScript` starts the script as the person using the app. [The app client](../../reference/apps/app-client) lists everything `@volvel/app` gives you.
+4. Write the page. Import the table's types as types only, from `@volvel/sdk`, so that none of the repository's server code reaches the browser. `TableOf<"visits">` is typed by `.platform/volvel-env.d.ts`, which `volvel build` writes. `useQuery` loads rows, and `runScript` starts the script as the person using the app. [The app client](../../reference/apps/app-client) lists everything `@volvel/app` gives you.
 
    ```tsx title=apps/desk/main.tsx
    import { runScript, table, useQuery } from "@volvel/app";
+   import type { TableOf } from "@volvel/sdk";
    import { Button, PageShell, TextField } from "@volvel/ui";
    import { useState } from "react";
    import { createRoot } from "react-dom/client";
-   import type { visits } from "../../src/index.ts";
    import "./styles.css";
 
    function Desk() {
-     const found = useQuery(() => table<typeof visits>("visits").find({ sort: ["-created_at"] }));
+     const found = useQuery(() => table<TableOf<"visits">>("visits").find({ sort: ["-created_at"] }));
      const [pet, setPet] = useState("");
      return (
        <PageShell title="Desk">
@@ -142,7 +142,7 @@ By the end you will have an app in a tenant's repository that reads a table and 
    ```
 
    ```text
-   Bundle edff952930f5, 758 KB of code, SDK 0.5.0
+   Bundle fce0d864feb4, 757 KB of code, SDK 0.5.0
      table      visits
      script     check-in
      app        desk  (6 files, 686 KB)

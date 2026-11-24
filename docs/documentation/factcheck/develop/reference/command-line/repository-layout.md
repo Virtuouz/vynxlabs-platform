@@ -19,3 +19,11 @@ Lines are current at commit `5ebf1c80` (branch phase-31-write-the-docs). Paths a
 | App file names: one leading `_` or `.` then a letter or digit. | `docs/contracts/bundle.md:23` | second agent, 2026-11-23 (writer: writer, read from the code 2026-11-23 (not run)) | holds as read |
 | Pages: `<path>.md` under a docs root. | `files.ts:43-60` | second agent, 2026-11-23 (writer: writer, read from the code 2026-11-23 (not run)) | holds as read |
 | A page needs a title between two lines of `---` or the build fails (added). `volvel.yaml` with `roots`/`docs`/`ignore` as in the page lists `lending/items` and `support/refunds`; a bad key, `..` in `entry`, and a file outside the root give the quoted texts (the last names the roots, here `other`: corrected). | `packages/manifest/src/files.ts:583`; run | second agent, 2026-11-23, run | corrected, holds |
+
+## Phase 34, A7 (YAML first), 2026-11-24
+
+Commit `d619bfbd` plus the working tree. Written by the A7 writer; second agent's check pending. Run on the throwaway instance of lane a7 (http://localhost:8712, Fernhill seeded).
+
+| Claim | Source (file:line) | Checked by | Result |
+| --- | --- | --- | --- |
+| `platform/` is the console's folder, `volvel-env.d.ts` in `.platform/`, `volvel.yaml` written by convert. | `packages/cli/src/types.ts`; `convert.ts:1035`; run | writer, 2026-11-24 | holds as run |

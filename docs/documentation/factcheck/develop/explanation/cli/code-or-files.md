@@ -18,3 +18,11 @@ Lines are current at commit `5ebf1c80` (branch phase-31-write-the-docs). Paths a
 | References written as text with a key are rewritten. | `cli/build.ts:254-258` | second agent, 2026-11-23 (writer: writer, read from the code 2026-11-23 (not run)) | holds as read |
 | `volvel schemas` gives editors schemas; building runs the repository's code. | `cli/cli.ts:275`; `cli/build.ts:~396` | second agent, 2026-11-23 (writer: writer, read from the code 2026-11-23 (not run)) | holds as read |
 | Tool names: `run_<path>`/`start_<path>`, `/` as `__`, `-` as `_`, cut at 64; reserved `get_run`, `get_flow_run`, `list_approvals`, `decide_approval`; a rename with `key` prints `renamed  script     hello -> hello-there`; without it a script with no history is deleted and created. The `Managed in` label and `Saving a draft of this ... takes it over from the repository.` exist. | `packages/manifest/src/bundle.ts:32-38`; `apps/console/src/screens/ObjectPages.tsx:440`; run | second agent, 2026-11-23, run and read | holds |
+
+## Phase 34, A7 (YAML first), 2026-11-24
+
+Commit `d619bfbd` plus the working tree. Written by the A7 writer; second agent's check pending. Run on the throwaway instance of lane a7 (http://localhost:8712, Fernhill seeded).
+
+| Claim | Source (file:line) | Checked by | Result |
+| --- | --- | --- | --- |
+| Labels **Code** and **Files**; a draft takes a Code resource over; `console_changed`. | `apps/console/src/kit/ownership.ts:11`; `Authoring.tsx:1031` | writer, 2026-11-24 | holds as read |

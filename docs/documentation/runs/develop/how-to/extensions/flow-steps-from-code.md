@@ -15,3 +15,9 @@
 - In the flow editor of `ext31-dev` (**Flows > New flow > Add step**): the palette had **Starts**, **Steps**, **Logic**, **Core** (HTTP request, Send email, Read rows, Write a row, Publish an event), **Reports** with "Count rows" and **Scripts**; the page's order was corrected. **Test > Run a test** of the flow `reports/count-appointments` succeeded (`by_hand` 2 ms, `count` 199 ms).
 - Console tab run in Sandbox: a script `ext31/count-rows` with **Step name** "Count rows", **Icon** Table, **Group** "Reports", **A step may hand it** **A table**, input field marked `"x-pick": "table"`, deployed; a flow with that step: the **Table** field offered every table of the workspace (Repository and Console ones, a draft marked "A draft, not yet deployed."), chose `clinics`, saved and deployed, **Run a test** succeeded. In the same flow made in `ext31-dev` with the console-made table `ext31-things`, **Deploy > This change only** was refused: "The bundle's manifests are not valid. ext31/count-flow (flow) count_rows, with tables 0: refers to "ext31-things", which is not a table in this repository." The page's refusal bullet now says a console table is refused too. Product fault: the step form offers console tables that a deploy refuses.
 - Not run: 390 px and dark of the flow editor (another writer's screen).
+
+## Phase 34, A7 run, 2026-11-24
+
+Instance http://localhost:8712 (throwaway, lane a7's build, commit `d619bfbd` plus the working tree), Fernhill seeded. Terminal only.
+
+- The flow and script deployed (`walk1`); the flow was not started (the earlier run of the TypeScript form in phase 31 is the same manifest).

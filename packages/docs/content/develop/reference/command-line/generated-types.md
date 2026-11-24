@@ -1,7 +1,7 @@
 ---
 title: Generated types
 description: The file .platform/volvel-env.d.ts, which types ctx.table, ctx.events, ctx.variable and ctx.connection by name from your definitions, who writes it, and what the console's script editor does with it.
-subjects: [cli, sdk, types]
+subjects: [cli, sdk]
 ---
 
 The names of a workspace's tables, events, variables, connections, flows and scripts are in its definitions, whether those are YAML files or TypeScript. `volvel build` reads them and writes one declaration file, so that a script is typed by them: `ctx.table("visits")` knows the columns of `visits`, and a misspelled column is an error before a deploy.
@@ -43,6 +43,25 @@ declare module "@volvel/sdk" {
 | `VolvelScripts` | script | `input` and `output` | Declared. No `ctx` method takes it yet. |
 
 The interfaces are in `@volvel/sdk`, empty until the file is in the project. A description in the definition is the doc comment of its entry, so the editor shows it.
+
+## The types by name
+
+Three types of `@volvel/sdk` give a table's types by its path, for code that is not a `ctx.table` call:
+
+| Type | Is |
+| --- | --- |
+| `Row<"visits">` | A row of the table, as `ctx.table("visits")` returns it. |
+| `Insert<"visits">` | What `insert` takes for the table. |
+| `TableOf<"visits">` | The table's types in the form an app's `table<...>("visits")` takes where it took `typeof visits`, the table's `defineTable` export. |
+
+```ts
+import type { Insert, Row } from "@volvel/sdk";
+
+const next: Insert<"visits"> = { pet: "Biscuit" };
+const show = (row: Row<"visits">) => `${row.pet} at ${row.clinic ?? "no clinic"}`;
+```
+
+A name the generated file does not know is a type error here, unlike in `ctx.table`.
 
 ## What stays untyped
 

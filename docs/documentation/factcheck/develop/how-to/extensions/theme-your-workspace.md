@@ -18,3 +18,11 @@ Lines are current at commit `5ebf1c80` (branch phase-31-write-the-docs), 2026-11
 | Fernhill's theme values. | `examples/fernhill/src/apps.ts:1228-1236` | writer | holds |
 
 Checked by: second agent, 2026-11-23. Run on a dev workspace of my own (`ext31-dev`): the deploy, `theme.css` (all three blocks, `action-soft` kept from the tenant's branding), the second-theme, `url(`, `var(` and unknown-token refusals; the unknown-token text corrected on the page. The 27 tokens and their words checked against `packages/manifest/src/kinds.ts:1608-1636` (THEME_TOKENS, 27 entries, order differs from the page's table, which groups them; every name is in the table).
+
+## Phase 34, A7 (YAML first), 2026-11-24
+
+Commit `d619bfbd` plus the working tree. Written by the A7 writer; second agent's check pending. Run on the throwaway instance of lane a7 (http://localhost:8712, Fernhill seeded).
+
+| Claim | Source (file:line) | Checked by | Result |
+| --- | --- | --- | --- |
+| Theme file deploys as `theme`; stylesheet has `--vx-action: #1f6f5c;`, `--vx-radius-panel: 12px;` and the dark values; `shiny` fails the build. | run on `walk6`: `GET .../theme.css` | writer, 2026-11-24 | holds as run |

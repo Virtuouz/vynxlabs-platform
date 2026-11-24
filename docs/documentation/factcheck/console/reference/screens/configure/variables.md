@@ -31,3 +31,11 @@ Checked by: second agent, 2026-11-23. Source commit `87000022`.
 | 390 px dark and 768 px light: no page scroll. | walk | second agent, 2026-11-23 | holds |
 
 No sentence describes a listed fault.
+
+## Phase 34, A7 (YAML first), 2026-11-24
+
+Commit `d619bfbd` plus the working tree. Written by the A7 writer; second agent's check pending. Run on the throwaway instance of lane a7 (http://localhost:8712, Fernhill seeded).
+
+| Claim | Source (file:line) | Checked by | Result |
+| --- | --- | --- | --- |
+| A variable is a `.variable.yaml` file or `defineVariable`. | `schemas/files/variable.v1.schema.json` | writer, 2026-11-24 | holds as run (deployed) |

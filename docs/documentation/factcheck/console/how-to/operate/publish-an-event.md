@@ -19,3 +19,11 @@ Checked by: second agent, 2026-11-23. Run in a workspace of my own (Operate chec
 | A refused value in the JSON view is shown as "/count: Enter a number." | run | corrected: added to step 3 |
 | Production: "Publish opchk/pinged in production?", "Every trigger that listens for it starts its work now, with real data.", Publish in production. | run | holds as run |
 | Link to the platform events points to the generated page. | docs:check | done |
+
+## Phase 34, A7 (YAML first), 2026-11-24
+
+Commit `d619bfbd` plus the working tree. Written by the A7 writer; second agent's check pending. Run on the throwaway instance of lane a7 (http://localhost:8712, Fernhill seeded).
+
+| Claim | Source (file:line) | Checked by | Result |
+| --- | --- | --- | --- |
+| An event is a file or `defineEvent`. | `schemas/files/event.v1.schema.json` | writer, 2026-11-24 | holds as read |

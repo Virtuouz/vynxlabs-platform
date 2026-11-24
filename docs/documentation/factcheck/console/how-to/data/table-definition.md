@@ -32,3 +32,11 @@ Lines are current at commit `be324f78` (branch phase-31-write-the-docs). Paths a
 | At 390 px the Columns table hides the **Rules** and **When not given** columns, and each column's buttons are in one menu named "Actions for <column>" at the right end of the table (reached by scrolling the table sideways) | `Data.tsx:2760-2790`; run 2026-11-23 at 390 | second agent, 2026-11-23 | the page describes the wide screen; see the report for the product note |
 
 Checked by: second agent, 2026-11-23. Code re-read; key steps run on the instance (required with no default refused, unique refused with the repeated values, Change type choices, Values dialog, Add an index dialog, Retire, Undo). Corrected: a stray comma; "the server uses" now "the console uses".
+
+## Phase 34, A7 (YAML first), 2026-11-24
+
+Commit `d619bfbd` plus the working tree. Written by the A7 writer; second agent's check pending. Run on the throwaway instance of lane a7 (http://localhost:8712, Fernhill seeded).
+
+| Claim | Source (file:line) | Checked by | Result |
+| --- | --- | --- | --- |
+| Code table notice and take-over pointer. | `apps/console/src/screens/Data.tsx:2915-2922` | writer, 2026-11-24 | holds as read |

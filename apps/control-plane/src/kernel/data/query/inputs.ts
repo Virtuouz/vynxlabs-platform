@@ -18,6 +18,7 @@ import type { RequestContext } from "../../http.js";
 import type { Kernel } from "../../kernel.js";
 import { type ApprovalsWire, readApprovals } from "../../pages/approvals.js";
 import { principalEmail } from "../../pages/who.js";
+import { workspaceWidgets } from "../../widgets.js";
 import { todayIn } from "../../zones.js";
 import {
   describeTable,
@@ -418,8 +419,15 @@ export async function readWidget(
 ): Promise<Record<string, WireData>> {
   const { tenantId, workspaceId, ctx, widget } = request;
   const at = { tenantId, workspaceId };
-  const definition = widgetRegistry().get(widget.type);
-  if (!definition) throw badRequest(`There is no widget called "${widget.type}".`);
+  const widgets = await workspaceWidgets(kernel, workspaceId);
+  const definition = widgets.get(widget.type, widget.version);
+  if (!definition) {
+    throw badRequest(
+      widgets.get(widget.type)
+        ? `Version ${widget.version ?? "(none)"} of "${widget.type}" is not deployed here.`
+        : `There is no widget called "${widget.type}".`,
+    );
+  }
   const names = Object.keys(widget.data ?? {});
   if (request.only && !names.includes(request.only.input)) {
     throw notFound(`The data "${request.only.input}" of the widget`);

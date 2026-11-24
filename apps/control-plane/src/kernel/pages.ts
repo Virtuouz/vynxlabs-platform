@@ -6,6 +6,7 @@ import {
   type TableBody,
 } from "@volvel/manifest";
 import type { Kernel } from "./kernel.js";
+import { workspaceWidgets } from "./widgets.js";
 
 /**
  * Pages of widgets as the workspace stands now: what their shape cannot show, checked against
@@ -79,7 +80,7 @@ export async function interfaceProblems(
     ...checkInterface(
       body,
       (path) => tables.get(path),
-      undefined,
+      await workspaceWidgets(kernel, workspace.id),
       (path) => (flows.has(path) ? { nodes: [] } : null),
     ),
     ...missingTables(body, tables, sources),
@@ -95,7 +96,11 @@ export async function dashboardProblems(
   const tables = await workspaceTables(kernel, workspace);
   const sources = await sourcePaths(kernel, workspace);
   return [
-    ...checkDashboard(body, (path) => tables.get(path)),
+    ...checkDashboard(
+      body,
+      (path) => tables.get(path),
+      await workspaceWidgets(kernel, workspace.id),
+    ),
     ...missingTables(body, tables, sources),
   ];
 }

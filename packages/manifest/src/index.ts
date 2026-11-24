@@ -245,6 +245,7 @@ export {
   widgetQueries,
   widgetRegistry,
   widgetTables,
+  workspaceRegistry,
 } from "./page.js";
 export {
   APP_FACING_KINDS,

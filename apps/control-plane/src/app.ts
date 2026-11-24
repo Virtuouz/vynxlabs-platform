@@ -86,6 +86,7 @@ import { widgetChoicesRoutes } from "./routes/widget-choices.js";
 import { widgetDataRoutes } from "./routes/widget-data.js";
 import { workerRoutes } from "./routes/worker.js";
 import { workerHostRoutes } from "./routes/worker-host.js";
+import { workspaceWidgetRoutes } from "./routes/workspace-widgets.js";
 import { workspaceRoutes } from "./routes/workspaces.js";
 import type { ObjectStore } from "./storage.js";
 import { MemoryObjectStore } from "./storage.js";
@@ -323,6 +324,7 @@ export async function buildApp(options: AppOptions) {
       await api.register(docRoutes(kernel));
       await api.register(dashboardRoutes(kernel));
       await api.register(widgetDataRoutes(kernel));
+      await api.register(workspaceWidgetRoutes(kernel));
       await api.register(widgetChoicesRoutes(kernel));
       await api.register(pageActionRoutes(kernel));
       await api.register(pageApprovalRoutes(kernel));

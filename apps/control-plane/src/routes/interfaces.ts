@@ -6,8 +6,10 @@ import { forbiddenBecause, notFound } from "../kernel/errors.js";
 import { access, findWorkspace, guestLimit } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
 import { groupNamesFor } from "../kernel/pages/who.js";
+import { widgetsUsed } from "../kernel/widgets.js";
 import { wildPath } from "./data.js";
 import { AnyObject, Id } from "./shared.js";
+import { DeployedWidgetWire } from "./workspace-widgets.js";
 
 const TableView = Type.Object({
   found: Type.Boolean({ description: "False when the workspace has no such table." }),
@@ -216,6 +218,12 @@ export function interfaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                     "What each group the interface names (who may run, who sees) is called now, by the path it is named by.",
                 }),
               ),
+              widgets: Type.Optional(
+                Type.Array(DeployedWidgetWire, {
+                  description:
+                    "The widgets of the workspace's own pack (`x/...`) that its pages use, as `GET .../widgets` lists them: each with the versions deployed, for a page to be drawn with the version it names.",
+                }),
+              ),
             }),
           },
         },
@@ -373,6 +381,7 @@ export function interfaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           body: body as unknown as Record<string, unknown>,
           tables,
           groupNames: await groupNamesFor(kernel, params.t, body),
+          widgets: await widgetsUsed(kernel, params.w, body),
         };
       },
     );

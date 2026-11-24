@@ -10,6 +10,7 @@ import {
   type Step,
   widgetRegistry,
 } from "@volvel/manifest";
+import type { WidgetRegistry } from "@volvel/widgets";
 import { announceRows } from "../../routes/data.js";
 import { writeAudit } from "../audit.js";
 import {
@@ -32,6 +33,7 @@ import { checkFlowStart, kickFlow, startFlowRun } from "../flows/engine.js";
 import type { RequestContext } from "../http.js";
 import type { Kernel } from "../kernel.js";
 import { resolveResource } from "../resolve.js";
+import { workspaceWidgets } from "../widgets.js";
 import { dayIn, startOfDayIn } from "../zones.js";
 import { type LocatedPage, locatePage, type PageRequest } from "./locate.js";
 import { checkRunBy, principalEmail } from "./who.js";
@@ -75,14 +77,18 @@ const ACTIONS_CONTROL = "actions";
  * drawn with the `action` control, or `config/<property>/<index>/action` for one drawn with
  * `actions`. Nothing else names an action, so a made-up place is not found.
  */
-export function findAction(widget: PageWidget, at: string): Action | undefined {
+export function findAction(
+  widget: PageWidget,
+  at: string,
+  registry: WidgetRegistry = widgetRegistry(),
+): Action | undefined {
   const parts = at.split("/");
   let found: unknown;
   if (parts[0] === "on" && parts.length === 2) {
     found = widget.on?.[parts[1] as string];
   } else if (parts[0] === "config" && (parts.length === 2 || parts.length === 4)) {
     const property = parts[1] as string;
-    const definition = widgetRegistry().get(widget.type);
+    const definition = registry.get(widget.type, widget.version);
     const control = definition?.config.properties[property]?.["x-volvel"]?.control;
     const held = widget.config?.[property];
     if (parts.length === 2 && control === ACTION_CONTROL) {
@@ -255,7 +261,7 @@ export async function runAction(
           },
         ],
       }
-    : findAction(widget, request.at);
+    : findAction(widget, request.at, await workspaceWidgets(kernel, located.at.workspaceId));
   if (!action) throw notFound("The action");
   // ---- Who can run it: checked before anything is read or run.
   await checkRunBy(kernel, ctx, located.at.tenantId, action);

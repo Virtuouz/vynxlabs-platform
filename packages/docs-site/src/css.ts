@@ -7,7 +7,8 @@ import { DOC_CSS, DOC_DARK_CSS } from "@volvel/markup";
  */
 export const DOCS_CSS = `
 *, *::before, *::after { box-sizing: border-box; }
-html { scroll-behavior: smooth; --top: 0px; }
+/* Body text is 16px on a phone and grows with the window to 20px from about 1440px wide; the page's title, lead, contents and headings are steps of it. */
+html { scroll-behavior: smooth; --top: 0px; --body: clamp(1rem, 0.9rem + 0.45vw, 1.25rem); }
 body {
   margin: 0; background: var(--vx-canvas); color: var(--vx-ink); font-family: var(--vx-font);
   font-size: 16px; line-height: 1.5; -webkit-font-smoothing: antialiased;
@@ -52,7 +53,7 @@ kbd.key {
 }
 .side .brand { padding: 4px 8px 6px; }
 .side .close { display: none; }
-.side .version { margin: auto 0 0; padding: 0 8px; font-size: 12px; color: var(--vx-ink-subtle); }
+.side .version { margin: 0; font-size: 12px; color: var(--vx-ink-subtle); }
 .topbar {
   position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: 8px; height: 56px; padding: 0 12px 0 14px;
   background: var(--vx-canvas); border-bottom: 1px solid var(--vx-line);
@@ -94,7 +95,7 @@ main { min-width: 0; padding: 20px 18px 64px; }
 @media (min-width: 1280px) {
   .page { grid-template-columns: minmax(0, 56rem) 220px; gap: 48px; padding: 0 32px; }
   main { padding-left: 0; padding-right: 0; }
-  .toc { display: block; position: sticky; top: 0; align-self: start; max-height: 100vh; overflow-y: auto; padding: 56px 0 24px; font-size: 13px; }
+  .toc { display: block; position: sticky; top: 0; align-self: start; max-height: 100vh; overflow-y: auto; padding: 56px 0 24px; font-size: calc(var(--body) * 0.8125); }
   .tocbar { display: none; }
 }
 
@@ -153,11 +154,11 @@ main { min-width: 0; padding: 20px 18px 64px; }
 .crumbs li { display: flex; align-items: center; min-width: 0; }
 .crumbs li:not(:last-child)::after { content: ""; display: inline-block; flex: none; width: 6px; height: 6px; margin: 0 4px 0 10px; border-top: 1.5px solid currentColor; border-right: 1.5px solid currentColor; transform: rotate(45deg) translateY(-2px); opacity: 0.7; }
 .eyebrow { margin: 0 0 6px; font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--vx-action); }
-.lead h1 { margin: 0 0 8px; font-size: 34px; line-height: 1.15; letter-spacing: -0.02em; }
+.lead h1 { margin: 0 0 8px; font-size: calc(var(--body) * 2.4); line-height: 1.15; letter-spacing: -0.02em; }
 /* A name with no break in it (a package path such as @volvel/widgets/action) breaks at the edge of the page, never widens it. */
 .lead h1, .lead > p, .home h1, .home h2, .all-pages h2, .card h3, .related h3, .types h2, .related h2, .eyebrow, .crumbs a,
 .lead code, .card code, .recent code, .results code, .switcher code { overflow-wrap: anywhere; }
-.lead > p { margin: 0; color: var(--vx-ink-muted); font-size: 18px; }
+.lead > p { margin: 0; color: var(--vx-ink-muted); font-size: calc(var(--body) * 1.15); line-height: 1.5; }
 .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
 .button {
   display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 10px; border: 1px solid var(--vx-line);
@@ -165,7 +166,9 @@ main { min-width: 0; padding: 20px 18px 64px; }
 }
 .button:hover { color: var(--vx-ink); border-color: var(--vx-line-strong, var(--vx-line)); }
 .lead { padding-bottom: 24px; margin-bottom: 28px; border-bottom: 1px solid var(--vx-line); }
-.vd-doc { font-size: 16px; }
+.vd-doc { font-size: var(--body); line-height: 1.65; }
+/* Prose keeps to a line a reader can follow, whatever the window; tables, code and pictures use the page's width. */
+.vd-doc > :is(p, ul, ol, blockquote, h1, h2, h3, h4, h5, h6) { max-width: 72ch; }
 .foot { margin-top: 56px; display: grid; gap: 16px; }
 .updated, .since { margin: 0; font-size: 13px; color: var(--vx-ink-muted); }
 .pager { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
@@ -188,17 +191,43 @@ main { min-width: 0; padding: 20px 18px 64px; }
 .toc p { display: flex; align-items: center; gap: 8px; margin: 0 0 12px; font-weight: 600; color: var(--vx-ink); }
 .toc ul, .tocbar ul { margin: 0; padding: 0; list-style: none; border-left: 1px solid var(--vx-line); }
 .toc li a, .tocbar li a { display: block; margin-left: -1px; padding: 5px 0 5px 14px; border-left: 2px solid transparent; color: var(--vx-ink-muted); text-decoration: none; }
-.toc li.deep a, .tocbar li.deep a { padding-left: 26px; }
+.toc li[data-level="2"] a, .tocbar li[data-level="2"] a { padding-left: 26px; }
+.toc li[data-level="3"] a, .tocbar li[data-level="3"] a { padding-left: 38px; }
 .toc li a:hover { color: var(--vx-ink); }
 .toc li a[aria-current="true"], .tocbar li a[aria-current="true"] { border-left-color: var(--vx-action); color: var(--vx-action); }
 .toc .top { display: inline-flex; align-items: center; gap: 6px; margin-top: 18px; color: var(--vx-ink-muted); text-decoration: none; }
-.tocbar { position: sticky; top: 56px; z-index: 15; margin: -20px -18px 20px; background: var(--vx-canvas); border-bottom: 1px solid var(--vx-line); font-size: 14px; }
+.tocbar { position: sticky; top: 56px; z-index: 15; margin: -20px -18px 20px; background: var(--vx-canvas); border-bottom: 1px solid var(--vx-line); font-size: calc(var(--body) * 0.875); }
 .tocbar > summary { display: flex; align-items: center; gap: 10px; height: 44px; padding: 0 18px; list-style: none; cursor: pointer; color: var(--vx-ink-muted); }
 .tocbar > summary::-webkit-details-marker { display: none; }
 .tocbar .ring { width: 16px; height: 16px; flex: none; border-radius: 50%; background: conic-gradient(var(--vx-action) var(--read, 0%), var(--vx-line) 0); -webkit-mask: radial-gradient(circle, transparent 5px, #000 5.5px); mask: radial-gradient(circle, transparent 5px, #000 5.5px); }
 .tocbar .now { flex: 1; min-width: 0; overflow: hidden; color: var(--vx-ink); white-space: nowrap; text-overflow: ellipsis; }
 .tocbar ul { margin: 0 18px 12px; }
 @media (min-width: 1024px) { .tocbar { top: 0; margin: -48px -40px 32px; } .tocbar > summary { padding: 0 40px; } .tocbar ul { margin: 0 40px 12px; } }
+
+.vd-doc .anchor {
+  margin-left: 0.4em; font-size: 0.8em; font-weight: 400; font-variant-caps: normal; letter-spacing: 0; text-decoration: none;
+  color: var(--vx-ink-muted); opacity: 0; transition: opacity 0.12s;
+}
+.vd-doc :is(h2, h3, h4, h5, h6):hover > .anchor, .vd-doc .anchor:focus-visible { opacity: 1; }
+.vd-doc .anchor:hover { color: var(--vx-action); }
+/* A touch screen has no hover to reveal it with. */
+@media (hover: none) { .vd-doc .anchor { opacity: 1; } }
+.toast {
+  position: fixed; left: 50%; bottom: 24px; z-index: 60; transform: translateX(-50%); padding: 8px 14px; border-radius: 999px;
+  background: var(--vx-ink); color: var(--vx-canvas); font-size: 14px; pointer-events: none;
+}
+.toast:empty { display: none; }
+
+/* Light, dark or the system's: drawn hidden, shown by the script, which is what keeps the choice. */
+.themes { display: inline-flex; flex: none; gap: 2px; padding: 2px; border: 1px solid var(--vx-line); border-radius: 10px; background: var(--vx-surface); }
+.themes[hidden] { display: none; }
+.themes button { display: inline-grid; place-items: center; width: 32px; height: 32px; padding: 0; border: 0; border-radius: 8px; background: none; color: var(--vx-ink-muted); cursor: pointer; }
+.themes button:hover { color: var(--vx-ink); }
+.themes button[aria-pressed="true"] { background: var(--vx-action-soft); color: var(--vx-action); }
+.sidefoot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: auto; padding: 0 8px; }
+.side .themes { display: none; }
+@media (min-width: 1024px) { .side .themes:not([hidden]) { display: inline-flex; } }
+.homebar .themes { margin-left: 8px; }
 
 /* A description with code in it. */
 .lead code, .card code, .recent code, .results code, .switcher code { padding: 0.05em 0.3em; border-radius: 4px; background: color-mix(in srgb, var(--vx-ink) 11%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--vx-ink) 26%, transparent); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.9em; }

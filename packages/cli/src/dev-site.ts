@@ -18,6 +18,7 @@ import {
   type ResourceLike,
 } from "@volvel/docs-engine";
 import {
+  DOCS_ASSET_PATH,
   DOCS_POLICY,
   docPage,
   docsAsset,
@@ -384,7 +385,7 @@ export async function startSiteServer(options: SiteServerOptions) {
       }
 
       // A docs app.
-      const platformFile = /^\/_platform\/(docs(?:\.[0-9a-f]{10})?\.(?:css|js))$/.exec(path);
+      const platformFile = DOCS_ASSET_PATH.exec(path);
       if (platformFile) {
         const asset = docsAsset(platformFile[1] as string);
         if (!asset)

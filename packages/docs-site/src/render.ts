@@ -48,7 +48,7 @@ import {
   type TermInfo,
   walk,
 } from "@volvel/markup";
-import { docsAssetHref } from "./assets.js";
+import { docsAssetHref, themeScriptHref } from "./assets.js";
 import { described, escapeHtml, iconLinks } from "./html.js";
 import { icon } from "./icons.js";
 
@@ -80,8 +80,6 @@ export interface SiteLook {
   logoHref?: string | undefined;
   /** Where the icons are, by size. Without it a page names no icon. */
   iconsHref?: string | undefined;
-  /** A script of the host's own, run before the page is drawn: the reader's choice of light or dark. */
-  scriptHref?: string | undefined;
 }
 
 /**
@@ -247,9 +245,10 @@ function side(
 ${brand(at)}
 <a class="find" href="${searchHref(at)}" data-search>${icon("search", 16)}<span class="grow">Search</span><kbd class="key">⌘</kbd><kbd class="key">K</kbd></a>
 ${switcher}
-<nav aria-label="${attr(collection?.title ?? at.title)}">${tree}</nav>${
-    at.version ? `\n<p class="version">Version ${escapeHtml(at.version)}</p>` : ""
-  }
+<nav aria-label="${attr(collection?.title ?? at.title)}">${tree}</nav>
+<div class="sidefoot">${themeControl()}${
+    at.version ? `<p class="version">Version ${escapeHtml(at.version)}</p>` : ""
+  }</div>
 </aside>`;
 }
 
@@ -268,6 +267,8 @@ function data(at: SiteView, extra: Record<string, unknown>): string {
       ? { types: types.map((id) => ({ id, title: DOC_TYPE_PLURALS[id] })) }
       : {}),
     ...(at.platform ? { platform: at.platform } : {}),
+    // The product's own pages keep the choice where the console does, so the two stay in step.
+    ...(at.profile === "product" ? { themeKey: "vx-pref:theme" } : {}),
     ...(at.search?.kind === "static" ? { search: at.search } : {}),
     collections: collectionsOf(at.set).map((one) => ({ id: one.id, title: one.title })),
     ...extra,
@@ -290,9 +291,10 @@ function head(at: SiteView, title: string, noindex: boolean, section?: string): 
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">${noindex || at.notice ? '\n<meta name="robots" content="noindex">' : ""}
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="${attr(themeScriptHref(platform))}"></script>${noindex || at.notice ? '\n<meta name="robots" content="noindex">' : ""}
 <title>${escapeHtml(tabTitle(title, section, site))}</title>
-<link rel="stylesheet" href="${attr(look.themeHref)}">${look.scriptHref ? `\n<script src="${attr(look.scriptHref)}"></script>` : ""}
+<link rel="stylesheet" href="${attr(look.themeHref)}">
 <link rel="stylesheet" href="${attr(docsAssetHref(platform, "css"))}">${iconLinks(look.iconsHref)}
 <script src="${attr(docsAssetHref(platform, "js"))}" defer></script>
 </head>`;
@@ -321,6 +323,7 @@ function shell(
 <div class="layout">
 <header class="topbar">
 ${brand(at)}
+${themeControl()}
 <a class="iconbutton" href="${searchHref(at)}" data-search aria-label="Search">${icon("search", 20)}</a>
 <a class="iconbutton" href="#nav" data-nav-open aria-label="Open the navigation">${icon("menu", 20)}</a>
 </header>
@@ -339,14 +342,34 @@ ${data(at, { collection: options.collection?.id ?? "", ...(options.data ?? {}) }
 `;
 }
 
-/** The headings a page's contents list: those the author wrote as `#` and `##`. */
-function headingsOf(tree: Root): { id: string; text: string; deep: boolean }[] {
-  const out: { id: string; text: string; deep: boolean }[] = [];
+/** The headings a page's contents list: those the author wrote as `#` to `###`, drawn as h2 to h4. `level` is 1 to 3. */
+function headingsOf(tree: Root): { id: string; text: string; level: number }[] {
+  const out: { id: string; text: string; level: number }[] = [];
   for (const { node } of walk(tree)) {
-    if (node.type === "heading" && node.depth <= 2)
-      out.push({ id: node.id, text: plain(node), deep: node.depth === 2 });
+    if (node.type === "heading" && node.depth <= 3)
+      out.push({ id: node.id, text: plain(node), level: node.depth });
   }
   return out;
+}
+
+/** A light, dark or system choice, as three buttons. Drawn hidden: only the script can keep a choice. */
+function themeControl(): string {
+  const one = (choice: string, shape: string, words: string) =>
+    `<button type="button" data-theme-choice="${choice}" aria-pressed="false" aria-label="${words}" title="${words}">${icon(shape, 16)}</button>`;
+  return `<div class="themes" role="group" aria-label="Color theme" data-themes hidden>${one("system", "monitor", "System")}${one("light", "sun", "Light")}${one("dark", "moon", "Dark")}</div>`;
+}
+
+/**
+ * Each heading the author wrote gets a link to itself, shown while the heading is hovered or the
+ * link is focused. The Markdown renderer draws every heading as `<hN id="…">…</hN>`, and text
+ * inside a code block is escaped, so a heading can only be one the renderer made.
+ */
+function withAnchors(html: string): string {
+  return html.replace(
+    /<h([2-6]) id="([^"]+)">([\s\S]*?)<\/h\1>/g,
+    (_, level: string, id: string, inner: string) =>
+      `<h${level} id="${id}">${inner}<a class="anchor" href="#${id}" data-copy="#${id}" aria-label="Link to this section">#</a></h${level}>`,
+  );
 }
 
 function draw(at: SiteView, path: string, tree: Root): string {
@@ -476,7 +499,7 @@ export function docPage(at: SiteView, path: string): string {
   if (!entry) return notFoundPage(at);
   if (path === "index") return homePage(at);
   const collection = collectionOf(set, path);
-  const body = draw(at, path, entry.tree);
+  const body = withAnchors(draw(at, path, entry.tree));
 
   const { before, after } = neighboursOf(set.nav, path);
   const pager =
@@ -496,7 +519,7 @@ export function docPage(at: SiteView, path: string): string {
   const items = headings
     .map(
       (one) =>
-        `<li${one.deep ? ' class="deep"' : ""}><a href="#${attr(one.id)}">${escapeHtml(one.text)}</a></li>`,
+        `<li data-level="${one.level}"><a href="#${attr(one.id)}">${escapeHtml(one.text)}</a></li>`,
     )
     .join("");
   const toc =
@@ -571,7 +594,7 @@ export function homePage(at: SiteView): string {
     .at(-1);
   const own =
     home && home.tree.children.length > 0
-      ? `<article class="vd-doc own">${draw(at, "index", home.tree)}</article>`
+      ? `<article class="vd-doc own">${withAnchors(draw(at, "index", home.tree))}</article>`
       : "";
 
   const cards =
@@ -625,6 +648,7 @@ export function homePage(at: SiteView): string {
 ${brand(at)}
 <nav aria-label="Collections">${nav}</nav>
 <a class="find" href="${searchHref(at)}" data-search aria-label="Search">${icon("search", 16)}<span class="grow">Search</span><kbd class="key">⌘K</kbd></a>
+${themeControl()}
 </div></header>
 <main id="content" class="home">
 ${latest ? `<p class="pill">Updated ${DATE.format(new Date(latest))}</p>` : ""}

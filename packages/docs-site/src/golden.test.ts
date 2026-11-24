@@ -163,7 +163,7 @@ const staticSearch: Partial<SiteView> = {
 
 /** Hashed names of the platform's stylesheet and script are the one thing allowed to change. */
 const normal = (html: string) =>
-  html.replace(/\/_platform\/docs(\.[0-9a-f]{8,})?\.(css|js)/g, "/_platform/docs.$2");
+  html.replace(/\/_platform\/docs(-theme)?(\.[0-9a-f]{8,})?\.(css|js)/g, "/_platform/docs$1.$3");
 
 const cases: Record<string, () => string> = {
   home: () => homePage(site()),

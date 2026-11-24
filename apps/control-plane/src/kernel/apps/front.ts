@@ -10,6 +10,7 @@ import {
   urlOf,
 } from "@volvel/docs-engine";
 import {
+  DOCS_ASSET_PATH,
   docPage,
   docsAsset,
   notFoundPage,
@@ -1467,7 +1468,7 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
 
     // The stylesheet and the script of a docs site. A name with a hash in it is the file of one
     // release for ever; the names without are for a page an older release drew.
-    const platformFile = /^\/_platform\/(docs(?:\.[0-9a-f]{10})?\.(?:css|js))$/.exec(path);
+    const platformFile = DOCS_ASSET_PATH.exec(path);
     if (platformFile) {
       const file = docsAsset(platformFile[1] as string);
       if (!file) return plain(reply, 404, "There is no such file.");

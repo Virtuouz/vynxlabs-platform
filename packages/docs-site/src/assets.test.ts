@@ -1,5 +1,12 @@
 import { describe, expect, test } from "vitest";
-import { DOCS_CSS, DOCS_SCRIPT, docsAsset, docsAssetHref } from "./index.js";
+import {
+  DOCS_ASSET_PATH,
+  DOCS_CSS,
+  DOCS_SCRIPT,
+  docsAsset,
+  docsAssetHref,
+  THEME_SCRIPT,
+} from "./index.js";
 
 describe("the platform's files of a docs site", () => {
   test("a name holds the hash of its file, and answers for ever", () => {
@@ -17,6 +24,19 @@ describe("the platform's files of a docs site", () => {
       type: "text/javascript",
       immutable: true,
     });
+  });
+
+  test("the before-paint theme script is a platform file of its own, named by its hash", () => {
+    const href = docsAssetHref("/_platform/", "theme");
+    expect(href).toMatch(/^\/_platform\/docs-theme\.[0-9a-f]{10}\.js$/);
+    expect(docsAsset(href.slice("/_platform/".length))).toMatchObject({
+      body: THEME_SCRIPT,
+      type: "text/javascript",
+      immutable: true,
+    });
+    expect(DOCS_ASSET_PATH.test(href)).toBe(true);
+    expect(docsAsset("docs-theme.css")).toBeUndefined();
+    expect(docsAsset("docs-theme.0000000000.js")).toBeUndefined();
   });
 
   test("the old names answer with the file as it is, not as immutable", () => {

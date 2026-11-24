@@ -67,7 +67,7 @@ function View() {
     <button
       type="button"
       onClick={() => frame.emit("clicked", {})}
-      style={{ font: "inherit", color: "var(--volvel-foreground)", background: "var(--volvel-card)" }}
+      style={{ font: "inherit", color: "var(--volvel-ink)", background: "var(--volvel-surface)" }}
     >
       {config.label}: {summary?.rows.length ?? 0} rows
     </button>

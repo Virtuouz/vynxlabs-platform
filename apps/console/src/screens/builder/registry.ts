@@ -12,7 +12,7 @@
  */
 
 import type { PageWidget } from "@volvel/manifest";
-import { workspaceViews } from "@volvel/screens";
+import { type FrameSource, setFrameSource, workspaceViews } from "@volvel/screens";
 import {
   compareVersions,
   type DeployedWidget,
@@ -57,6 +57,22 @@ const subscribe = (listener: () => void) => {
   return () => listeners.delete(listener);
 };
 
+/**
+ * Where a tenant widget's frame is served from: the instance's apps address when it has one,
+ * else the console's own, with the tenant's slug in it. `null` when it cannot be told.
+ */
+async function frameSourceOf(root: string): Promise<FrameSource | null> {
+  try {
+    const [instance, tenant] = await Promise.all([
+      api.get<{ appsUrl?: string | null }>("/instance"),
+      api.get<{ slug: string }>(`/tenants/${root.split("/")[2]}`),
+    ]);
+    return { origin: instance.appsUrl ?? window.location.origin, slug: tenant.slug };
+  } catch {
+    return null;
+  }
+}
+
 /** Makes a workspace's widgets the ones this console offers and draws. */
 export function setWorkspaceWidgets(root: string, deployed: readonly DeployedWidget[]): void {
   state = {
@@ -85,9 +101,13 @@ export function useWorkspaceWidgets(root: string): boolean {
     let live = true;
     // Another workspace's widgets are not this one's while its own are on the way.
     if (state.root !== undefined) resetWorkspaceWidgets();
+    const frames = frameSourceOf(root);
     api.get<WorkspaceWidgets>(`${root}/widgets`).then(
-      (found) => {
-        if (live) setWorkspaceWidgets(root, found.items);
+      async (found) => {
+        const source = await frames;
+        if (!live) return;
+        setFrameSource(source);
+        setWorkspaceWidgets(root, found.items);
       },
       () => {
         if (live) setWorkspaceWidgets(root, []);

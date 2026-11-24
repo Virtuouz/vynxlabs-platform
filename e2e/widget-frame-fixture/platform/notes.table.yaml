@@ -1,0 +1,13 @@
+schemaVersion: 1
+body:
+  description: "What the server says to the hostile widget."
+  columns:
+    note:
+      type: text
+      required: true
+  policy:
+    type: rules
+    rules:
+      - allow: read
+        when:
+          everyone: true

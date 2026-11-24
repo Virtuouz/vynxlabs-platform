@@ -114,6 +114,7 @@ describe("routes", () => {
       apiVersion: "v1",
       migrationLevel: await database.migrationLevel(),
       appsAddress: "console",
+      appsUrl: null,
       mail: false,
       publicUrl: "http://localhost:8080",
     });

@@ -40,6 +40,11 @@ export function instanceRoutes(deps: {
                     "in every case.",
                 },
               ),
+              appsUrl: Type.Union([Type.String(), Type.Null()], {
+                description:
+                  "The address apps and widgets are served at when it is a second address of " +
+                  "its own, as an origin; null when they are served at the console's or nowhere.",
+              }),
               mail: Type.Boolean({
                 description:
                   "Whether the instance sends mail: approvers are told of what waits for them.",
@@ -59,6 +64,7 @@ export function instanceRoutes(deps: {
         migrationLevel: await deps.database.migrationLevel(),
         mail: Boolean(deps.config?.mail || deps.config?.mailCaptureDir),
         publicUrl: deps.config?.publicUrl ?? null,
+        appsUrl: deps.config?.appsUrl ? new URL(deps.config.appsUrl).origin : null,
         appsAddress: deps.config?.appsUrl
           ? ("separate" as const)
           : deps.config?.appsOnConsoleAddress

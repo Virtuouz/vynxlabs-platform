@@ -21,6 +21,7 @@ import {
   AppView,
   helpingPage,
   type PageDataClient,
+  setFrameSource,
   useAddress,
   viewRegistry,
   WidgetReadError,
@@ -39,6 +40,10 @@ interface InterfaceView {
 
 /** The platform's packs: what a page made in the console may hold. */
 const platform = viewRegistry(corePack, labsPack);
+
+// The frames of a tenant's widgets are served at the address this app is: the apps address, a
+// hostname of the tenant's own, or the console's when the instance has no other.
+setFrameSource({ origin: window.location.origin, slug: appContext().tenant.slug });
 
 function workspaceApi() {
   const context = appContext();

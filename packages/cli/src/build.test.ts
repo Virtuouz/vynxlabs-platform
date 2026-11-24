@@ -612,3 +612,37 @@ describe("a repository with documentation", () => {
     });
   });
 });
+
+describe("a widget in a repository", () => {
+  const widget = (extra = "") => `import { defineWidget } from "@volvel/sdk";
+export const goal = defineWidget({
+  type: "x/goal", version: "1.0.0", title: "Goal", description: "Progress toward a target",
+  category: "understand", icon: "target", surfaces: ["app"],
+  data: { value: { shape: "summary" } },
+  config: { type: "object", properties: { target: { type: "number", "x-volvel": { tab: "display", control: "number", label: "Target" } } } },
+  events: {}, layout: { min: { w: 2, h: 2 }, default: { w: 3, h: 3 } },
+  entry: "widgets/goal/view.tsx",${extra}
+});`;
+
+  test("is built as a widget manifest owned by the code, when its view is there", async () => {
+    const dir = await repository(widget());
+    await mkdir(join(dir, "widgets", "goal"), { recursive: true });
+    await writeFile(join(dir, "widgets", "goal", "view.tsx"), "export {};");
+    const bundle = await buildBundle({ directory: dir });
+    expect(bundle.manifests.map((m) => `${m.kind} ${m.path} ${m.ownership}`)).toEqual([
+      "widget x/goal code",
+    ]);
+  });
+
+  test("is refused when its view is not in the repository, naming the file", async () => {
+    expect(await problems(widget())).toEqual([
+      'x/goal (widget): the view "widgets/goal/view.tsx" is not a file in this repository.',
+    ]);
+  });
+
+  test("is refused by the definition's own checks, before anything is built", async () => {
+    expect(await problems(widget().replace('"x/goal"', '"acme/goal"'))).toEqual([
+      expect.stringContaining('a widget of your own is "x/<name>"'),
+    ]);
+  });
+});

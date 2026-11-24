@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -297,6 +297,22 @@ export async function buildRepository(given: BuildOptions): Promise<Built> {
     ...coreNodesFor(manifests).filter((node) => !present.has(node.path)),
   ]);
   if (problems.length > 0) throw new BuildError(problems);
+
+  // A widget's view is a file of the repository; the bundle of it is built at deploy.
+  const missingViews: string[] = [];
+  for (const manifest of fromCode.filter((one) => one.kind === "widget")) {
+    const entryFile = (manifest.body as { entry: string }).entry;
+    const there = await stat(join(directory, entryFile)).then(
+      (found) => found.isFile(),
+      () => false,
+    );
+    if (!there) {
+      missingViews.push(
+        `${manifest.path} (widget): the view "${entryFile}" is not a file in this repository.`,
+      );
+    }
+  }
+  if (missingViews.length > 0) throw new BuildError(missingViews);
 
   const apps = appSourcesOf(definitions);
 

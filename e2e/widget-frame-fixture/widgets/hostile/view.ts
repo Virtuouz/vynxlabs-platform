@@ -5,7 +5,7 @@ import { createFrame } from "@volvel/widget-frame";
  * props. What happened is written into #report as JSON for the test to read; the view itself
  * never reports to the page except through the one event it declares.
  */
-const frame = createFrame({ events: ["hello"] });
+const frame = createFrame({ events: ["hello", "wipe"] });
 const root = document.getElementById("root") as HTMLElement;
 document.body.style.cssText =
   "font:14px system-ui;background:var(--volvel-surface,#fff);color:var(--volvel-ink,#000)";
@@ -137,6 +137,16 @@ function render() {
   say.type = "button";
   say.textContent = "Say hello";
   say.onclick = () => frame.emit("hello", { note: "hello from the frame" });
+  // An event the page wired to a write. A frame can raise it with no click at all, as `autoWrite` does.
+  const write = document.createElement("button");
+  write.id = "write";
+  write.type = "button";
+  write.textContent = "Write a note";
+  write.onclick = () => frame.emit("wipe", {});
+  if (props?.config.autoWrite === true && !wrote) {
+    wrote = true;
+    frame.emit("wipe", {});
+  }
   const out = document.createElement("pre");
   out.id = "report";
   out.textContent = JSON.stringify(report);
@@ -157,9 +167,10 @@ function render() {
     };
     return button;
   });
-  root.append(shown, paging, more, sort, say, scheme, out, ...leakers);
+  root.append(shown, paging, more, sort, say, write, scheme, out, ...leakers);
 }
 
+let wrote = false;
 frame.onProps(() => {
   render();
   if (!tried) {

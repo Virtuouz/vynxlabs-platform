@@ -330,3 +330,45 @@ test("a widget given more than one page of rows draws, asks for the next page an
   await expect(page.locator("[data-tenant-widget]")).toHaveAttribute("data-frame-dropped", "6");
   await expect(page.getByText("could not be given its data")).toHaveCount(0);
 });
+
+test("an event a frame raises with no click, wired to a write, is confirmed on the page first: nothing runs until Confirm, and Cancel leaves the data @builder @access", async () => {
+  test.skip(appsAt !== null, "this instance serves apps at an address of their own");
+  const W = L.replace("/t/", "/tenants/");
+  const written = async () => {
+    const rows = await call(page, "GET", `${W}/rows/notes?limit=500`);
+    return (rows.rows ?? rows.items ?? rows).filter(
+      (row: { note: string }) => row.note === "frame-wrote",
+    ).length;
+  };
+  const writer = `/apps/${SLUG}/dev/writer/`;
+  expect(await written()).toBe(0);
+
+  // The frame raised the event on its own. The page asks, outside the frame, and has not run it.
+  await page.goto(writer);
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toContainText("Hostile");
+  await expect(dialog).toContainText("wipe");
+  await expect(dialog).toContainText("add a note");
+  await expect(dialog.getByRole("button", { name: "Cancel" })).toBeFocused();
+  expect(await written()).toBe(0);
+
+  // Cancel (here by Escape): the data is unchanged, and the dialog is gone.
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  expect(await written()).toBe(0);
+
+  // The frame asks again by a real press; a second event while the first is open is dropped.
+  await frameOf(page).getByRole("button", { name: "Write a note" }).click();
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("button", { name: "Confirm" }).click();
+  await expect(dialog).toBeHidden();
+  await expect.poll(written).toBe(1);
+
+  // A reload raises it again, and asks again: it was not remembered as agreed.
+  await page.reload();
+  await expect(page.getByRole("dialog")).toBeVisible();
+  await page.getByRole("dialog").getByRole("button", { name: "Cancel" }).click();
+  await expect(page.getByRole("dialog")).toBeHidden();
+  expect(await written()).toBe(1);
+});

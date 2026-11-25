@@ -1,0 +1,10 @@
+# The "slow per-minute scripts" scenario: each tick starts a script that takes longer than a
+# minute to finish, so runs pile up unless the machine limits them. The setup script
+# pauses it in a new tenant, and `--schedules on` resumes it. Deployed by hand it fires at once.
+schemaVersion: 1
+body:
+  description: Starts load/sleep every minute, for 90 seconds each.
+  script: load/sleep
+  cron: "* * * * *"
+  input: { seconds: 90 }
+  overlap: allow

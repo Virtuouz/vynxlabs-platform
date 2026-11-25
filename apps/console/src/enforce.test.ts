@@ -784,3 +784,33 @@ test("the top bar's items do not wrap at a larger type scale", () => {
   expect(search?.[1]).not.toMatch(/md:w-56/);
   expect(shell).toMatch(/min-w-0 flex-1 truncate text-left md:inline">\s*Search or jump to…/);
 });
+
+test("the trail keeps room for the workspace and the page at 1280 px: the tenant name and promotes-to wait for 1440", () => {
+  const shell = readFileSync(join(here, "Shell.tsx"), "utf8");
+  const trail = shell.slice(
+    shell.indexOf('aria-label="Where you are"'),
+    shell.indexOf("{here ? <Crumbs section={here}"),
+  );
+  expect(trail).not.toMatch(/\bxl:(inline|flex)\b/);
+  expect(trail.match(/min-\[1440px\]:(inline|flex)/g)?.length).toBe(2);
+  expect(trail.match(/min-\[1536px\]:flex/g)?.length).toBe(1);
+  // The workspace's name is whole before the page's name is cut.
+  expect(trail).toMatch(/triggerClassName="flex max-w-\[12rem\] shrink-0/);
+});
+
+test("p34-w3: below 1280 the top bar gives the names the room: Live, Paused, drafts and failed runs shrink to a mark and a count", () => {
+  const shell = readFileSync(join(here, "Shell.tsx"), "utf8");
+  const live = readFileSync(join(here, "kit/LiveIndicator.tsx"), "utf8");
+  expect(live).toMatch(/max-xl:sr-only/);
+  expect(shell).toMatch(/max-xl:\[&_\[data-label\]\]:sr-only/);
+  expect(shell.match(/max-xl:sr-only/g)?.length).toBeGreaterThanOrEqual(2);
+});
+
+test("p34-w3: a served app's content column grows with the type scale, as its text does", () => {
+  const root = join(here, "../../..");
+  const runtime = readFileSync(join(root, "packages/screens/runtime/main.tsx"), "utf8");
+  expect(runtime).toContain("max-w-[calc(1400px*var(--vx-type-growth,1))]");
+  expect(runtime).not.toContain("max-w-[1400px]");
+  const shell = readFileSync(join(root, "packages/ui/src/PageShell.tsx"), "utf8");
+  expect(shell).toContain("max-w-[calc(72rem*var(--vx-type-growth,1))]");
+});

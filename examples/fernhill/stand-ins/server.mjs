@@ -142,6 +142,6 @@ createServer((request, response) => {
     }
     return done(404, { error: "Not found." });
   });
-}).listen(PORT, "127.0.0.1", () =>
+}).listen(PORT, process.env.HOST ?? "127.0.0.1", () =>
   console.log(`Fernhill's outside systems on http://127.0.0.1:${PORT}/`),
 );

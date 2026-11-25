@@ -292,8 +292,10 @@ export async function saveDraft(
     });
     // A page is built a step at a time: a draft holds an action that has no steps yet, as it holds
     // other unfinished things. The checks of the page say it, and publishing refuses it.
+    // So does a step whose script, flow, page or table is not chosen yet: its field is empty.
     const unfinished = (issue: { path: string; message: string }) =>
-      /\/steps$/.test(issue.path) && issue.message === "must NOT have fewer than 1 items";
+      (/\/steps$/.test(issue.path) && issue.message === "must NOT have fewer than 1 items") ||
+      (/\/steps\/\d+\/[^/]+$/.test(issue.path) && issue.message === "is empty: it needs a value");
     // A flow is built a step at a time as well: one step with a field not yet chosen (the script
     // it runs, the event it waits for) is held in the draft, and a deploy refuses it. What is
     // refused here is a body that is not a flow at all, or a fault outside its steps.

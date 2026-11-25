@@ -533,6 +533,22 @@ export function problemWords(problem: { path: string; message: string }, body: I
   const more = /^must NOT have more than (\d+) items?$/.exec(problem.message);
   const required = /^must have required property '(.+)'$/.exec(problem.message);
   let what: string;
+  // A step made but not finished: its script, flow, page or table is not chosen yet.
+  const stepAt = rest.lastIndexOf("steps");
+  const stepNo = Number(rest[stepAt + 1]);
+  if (problem.message === "is empty: it needs a value" && stepAt >= 0 && stepNo >= 0) {
+    let step: unknown = widget;
+    for (const key of rest.slice(0, stepAt + 2))
+      step = (step as Record<string, unknown> | undefined)?.[key];
+    const chosen = ((step as { do?: string } | undefined)?.do ?? "") as string;
+    const noun =
+      { script: "script", flow: "flow", open: "page", create: "table", narrow: "page filter" }[
+        chosen
+      ] ?? wordsOfKey(last);
+    const event = rest[0] === "on" && rest[1] ? ` of ${wordsOfKey(rest[1])}` : "";
+    const where = own ? inside : place;
+    return `${where ? `${where}: ` : ""}step ${stepNo + 1}${own ? "" : event} needs a ${noun}`;
+  }
   if (fewer) {
     const count = Number(fewer[1]);
     what =

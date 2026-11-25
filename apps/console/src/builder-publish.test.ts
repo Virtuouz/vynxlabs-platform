@@ -173,6 +173,37 @@ test("a refusal names the thing, and says what it needs, never in the schema's w
   ).toBe("Action group on Edit invoice: needs fields");
 });
 
+test("a step that still needs a script, a flow, a page or a table says so in words, never as a path", () => {
+  const made = body({
+    id: "gauge",
+    type: "x/clinic-load",
+    title: "Northside",
+    at: { x: 0, y: 0, w: 4, h: 4 },
+    on: {
+      clinicChosen: {
+        steps: [
+          { do: "message", text: "Hi" },
+          { do: "script", path: "" },
+        ],
+      },
+    },
+    config: {
+      actions: [{ id: "a", label: "Do it", action: { steps: [{ do: "open", page: "" }] } }],
+    },
+  } as unknown as PageWidget);
+  const said = (path: string) =>
+    problemWords(
+      { path: `/body/pages/0/widgets/0/${path}`, message: "is empty: it needs a value" },
+      made,
+    );
+  expect(said("on/clinicChosen/steps/1/path")).toBe(
+    "Northside on Edit invoice: step 2 of clinic chosen needs a script",
+  );
+  expect(said("config/actions/0/action/steps/0/page")).toBe(
+    "Do it on Edit invoice: step 1 needs a page",
+  );
+});
+
 test("one refusal said by the save and by the deploy is one line, and it links to its widget", () => {
   const made = body(form(undefined));
   const at = problemAt({ path: "/body/pages/0/widgets/0/config/fields" }, made);

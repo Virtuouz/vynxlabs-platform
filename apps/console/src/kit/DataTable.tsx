@@ -532,7 +532,7 @@ export function DataTable<Row>(props: DataTableProps<Row>) {
                 const edges = edge(index, cells.length);
                 if (cell.kind === "check")
                   return (
-                    <th key="check" scope="col" className={`w-10 py-2 ${edges}`}>
+                    <th key="check" scope="col" className={`w-10 py-1 ${edges}`}>
                       <input
                         type="checkbox"
                         aria-label="Select all shown"
@@ -545,7 +545,7 @@ export function DataTable<Row>(props: DataTableProps<Row>) {
                   );
                 if (cell.kind === "actions")
                   return (
-                    <th key="actions" scope="col" className={`w-12 py-2 ${edges}`}>
+                    <th key="actions" scope="col" className={`w-12 py-1 ${edges}`}>
                       <span className="sr-only">Actions</span>
                     </th>
                   );
@@ -565,7 +565,7 @@ export function DataTable<Row>(props: DataTableProps<Row>) {
                         : undefined
                     }
                     // A width asked for is for a table with room: on a phone the columns take what they need, or the one beside it is squeezed.
-                    className={`whitespace-nowrap px-3 py-2 font-medium ${column.wide ? "w-[14rem]" : column.width ? `${column.width} max-sm:w-auto` : ""} ${shownAt(column.priority)} ${
+                    className={`px-3 py-1 font-medium ${column.wide ? "w-[14rem]" : column.width ? `${column.width} max-sm:w-auto` : ""} ${shownAt(column.priority)} ${
                       column.align === "end" ? "text-right" : ""
                     } ${edges}`}
                   >

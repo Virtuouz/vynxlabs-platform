@@ -36,3 +36,18 @@ test("w-limits 1: a text area says its limit the same way", () => {
   expect(screen.getByLabelText("About").hasAttribute("maxlength")).toBe(false);
   expect(screen.getByRole("alert").textContent).toBe("Use at most 5 characters. This is 7.");
 });
+
+test("a label that already says (optional) is not marked optional a second time", () => {
+  render(
+    <>
+      <TextField name="a" label="Note (optional)" required={false} value="" onChange={() => {}} />
+      <TextField name="b" label="Title" required={false} value="" onChange={() => {}} />
+    </>,
+  );
+  // The mark is seen, not read; one field draws it and the other, which says it in words, does not.
+  expect(document.body.textContent?.match(/optional/g)).toHaveLength(2);
+  const marks = [...document.querySelectorAll('[aria-hidden="true"]')].filter(
+    (one) => one.textContent === "optional",
+  );
+  expect(marks).toHaveLength(1);
+});

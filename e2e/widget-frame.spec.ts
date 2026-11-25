@@ -186,6 +186,40 @@ test("the frame is a sandbox with scripts only, and what its view tries from ins
   page.removeAllListeners("response");
 });
 
+/** Every request to the outside address is counted, and answered as if nobody were there. */
+async function watchOutside(on: Page) {
+  const hits: string[] = [];
+  await on.context().route("http://outside.example/**", (route) => {
+    hits.push(route.request().url());
+    return route.abort();
+  });
+  return hits;
+}
+
+const LEAKS = ["href", "meta", "form", "anchorSelf", "anchorBlank", "anchorTop"] as const;
+for (const where of ["the console's canvas", "a served app"] as const) {
+  test(`what the view was given cannot leave by sending the frame to another site, on ${where}: address, refresh, form, links @builder @access`, async () => {
+    if (where === "a served app")
+      test.skip(appsAt !== null, "this instance serves apps at an address of their own");
+    const hits = await watchOutside(page);
+    const popups: string[] = [];
+    page.on("popup", (popup) => popups.push(popup.url()));
+    const address = where === "a served app" ? appUrl() : `${L}/screens/screens/hostile`;
+    for (const how of LEAKS) {
+      // A way that works replaces the frame, so each is tried in a frame of its own.
+      await page.goto(address);
+      await attempted(page);
+      await frameOf(page).locator(`#leak-${how}`).click();
+      await page.waitForTimeout(1200);
+      expect(hits, how).toEqual([]);
+      expect(popups, how).toEqual([]);
+      expect(new URL(page.url()).pathname, how).toBe(new URL(address, page.url()).pathname);
+    }
+    page.removeAllListeners("popup");
+    await page.context().unroute("http://outside.example/**");
+  });
+}
+
 test("a message that is not a declared event, or does not fit it, is dropped; a declared one arrives; the data is the server's @builder @access", async () => {
   test.skip(appsAt !== null, "this instance serves apps at an address of their own");
   await page.goto(appUrl());

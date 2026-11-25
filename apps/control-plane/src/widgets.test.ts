@@ -60,7 +60,13 @@ const placed = (version?: string) => ({
 });
 
 /** A bundle with the widget at `version` (not at all with `version` null), and an interface placing some version of it. */
-function bundle(options: { version: string | null; script?: string; places?: string | null }) {
+function bundle(options: {
+  version: string | null;
+  script?: string;
+  places?: string | null;
+  /** What the bundle claims the files are, by path: a hostile one claims what it likes. */
+  claims?: (path: string) => string;
+}) {
   const manifests: BundleManifest[] = [];
   const files = options.version === null ? [] : filesOf(options.script ?? 'console.log("goal");');
   if (options.version !== null) {
@@ -92,7 +98,7 @@ function bundle(options: { version: string | null; script?: string; places?: str
       path: file.path,
       sha256: sha(file.content),
       size: file.content.length,
-      contentType: file.type,
+      contentType: options.claims ? options.claims(file.path) : file.type,
     })),
   };
   return { bundle: { ...unsigned, digest: bundleDigest(unsigned) } as Bundle, files };
@@ -395,6 +401,69 @@ describe("the files of a widget, served for its frame", () => {
       headers: { host: APPS, origin: `http://${APPS}` },
     });
     expect(post.statusCode).toBe(405);
+  });
+
+  test("p34-b4r no address under /_widgets is answered without the policy, and none by a way around the files", async () => {
+    const name = made(script);
+    for (const url of [
+      "/_widgets/acme/x/goal@3.0.0/%2e%2e/frame.html",
+      "/_widgets/acme/x/goal@3.0.0/%2E%2E%2Fframe.html",
+      "/_widgets/acme/x/goal@3.0.0/..%2Fgoal@3.0.0%2Fframe.html",
+      "/_widgets/acme/x/goal@3.0.0/%252e%252e/frame.html",
+      "/_widgets/acme/x/goal@3.0.0/frame.html%00",
+      "/_widgets/acme/x/goal@3.0.0/frame.html/",
+      "/_widgets/acme/x/goal@3.0.0//frame.html",
+      "/_widgets/acme/x/goal%403.0.0/frame.html/x",
+      "/_widgets/globex/x/goal@3.0.0/frame.html",
+      "/_widgets/acme/x/goal@3.0.0/%FF",
+      `/_widgets/acme/x/goal@3.0.0/${name}x`,
+      "/_widgets/acme/x/goal@3.0.0/FRAME.HTML",
+      "/_widgets/acme/x/goal@3.0.0/frame.html?x=1#y",
+    ]) {
+      const response = await get(APPS, url);
+      const served = url.includes("?x=1");
+      // A malformed escape is refused by the server before any route: text, never a page.
+      if (url.endsWith("%FF")) {
+        expect(response.statusCode, url).toBe(400);
+        expect(String(response.headers["content-type"]), url).not.toContain("html");
+        continue;
+      }
+      expect(response.statusCode, url).toBe(served ? 200 : 404);
+      expect(response.headers["content-security-policy"], url).toBe(WIDGET_POLICY);
+      expect(response.headers["set-cookie"], url).toBeUndefined();
+      expect(response.headers["x-content-type-options"], url).toBe("nosniff");
+    }
+    // A refusal of the method, and the redirect from the console's address, carry it too.
+    const post = await t.app.inject({
+      method: "POST",
+      url: "/_widgets/acme/x/goal@3.0.0/frame.html",
+      headers: { host: APPS, origin: `http://${APPS}` },
+    });
+    expect(post.headers["content-security-policy"]).toBe(WIDGET_POLICY);
+    const sent = await get(MAIN, "/_widgets/acme/x/goal@3.0.0/frame.html");
+    expect(sent.headers["content-security-policy"]).toBe(WIDGET_POLICY);
+  });
+
+  test("p34-b4r what a file is served as is said by its name, whatever the bundle that listed it claims", async () => {
+    const hostile = bundle({
+      version: "4.0.0",
+      script: 'console.log("four");',
+      claims: (path) => (path === "frame.html" ? "image/svg+xml" : "text/html"),
+    });
+    const at = `/tenants/${tenant}/workspaces/${prod}`;
+    for (const file of hostile.files)
+      await alice.put(`${at}/bundle-assets/${sha(file.content)}`, file.content);
+    const uploaded = await alice.post(`${at}/bundles`, hostile.bundle);
+    expect(uploaded.status, JSON.stringify(uploaded.body)).toBe(201);
+    const deployed = await alice.post(`${at}/deployments`, { bundleId: uploaded.body.id });
+    expect(deployed.status, JSON.stringify(deployed.body)).toBe(201);
+    const frame = await get(APPS, "/_widgets/acme/x/goal@4.0.0/frame.html");
+    expect(String(frame.headers["content-type"])).toMatch(/^text\/html/);
+    const code = await get(
+      APPS,
+      `/_widgets/acme/x/goal@4.0.0/${made(Buffer.from('console.log("four");'))}`,
+    );
+    expect(String(code.headers["content-type"])).toMatch(/^text\/javascript/);
   });
 
   test("the instance's own address sends it to the apps address, as an app is", async () => {

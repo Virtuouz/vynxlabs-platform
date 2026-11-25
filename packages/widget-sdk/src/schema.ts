@@ -42,6 +42,29 @@ const KNOWN = new Set([
 
 const MAX_DEPTH = 32;
 
+/** The longest string a pattern is run on, and the longest pattern: the page's thread runs it. */
+const MAX_PATTERN_INPUT = 256;
+const MAX_PATTERN_LENGTH = 200;
+
+/**
+ * Why a pattern is not run, or nothing when it is. A pattern is the tenant's and the string is
+ * its frame's, and the page that checks them has one thread, so a pattern that can backtrack
+ * without end (`^(a+)+$`) would stop the page for whoever views the widget. A group that is
+ * repeated, a back reference, and more than two unbounded repeats are refused; the rest is
+ * what a payload needs (`^[a-z]{2,5}-\d+$`).
+ */
+function patternProblem(pattern: string): string | undefined {
+  if (pattern.length > MAX_PATTERN_LENGTH) return `is longer than ${MAX_PATTERN_LENGTH} characters`;
+  if (/\\(?:[1-9]|k<)/.test(pattern)) return "refers back to a group, which is not run";
+  // What is left once escapes and character classes are out of the way.
+  const bare = pattern.replace(/\\./gsu, "_").replace(/\[(?:[^\]\\]|\\.)*\]/gsu, "_");
+  if (/\)\s*(?:[*+]|\{)/.test(bare)) return "repeats a group, which is not run";
+  if (/\((?:\?<?[=!])/.test(bare)) return "looks ahead or behind, which is not run";
+  const unbounded = bare.match(/[*+]|\{\d+,\}/g)?.length ?? 0;
+  if (unbounded > 2) return "repeats too freely to be run on text from a widget";
+  return undefined;
+}
+
 const isObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
@@ -77,6 +100,10 @@ function check(schema: unknown, value: unknown, at: string, depth: number): stri
     if (typeof schema.maxLength === "number" && value.length > schema.maxLength)
       return `${here} is longer than ${schema.maxLength}`;
     if (typeof schema.pattern === "string") {
+      const unsafe = patternProblem(schema.pattern);
+      if (unsafe) return `${here}: the pattern ${unsafe}`;
+      if (value.length > MAX_PATTERN_INPUT)
+        return `${here} is longer than ${MAX_PATTERN_INPUT} characters, the most a pattern is run on`;
       try {
         if (!new RegExp(schema.pattern, "u").test(value))
           return `${here} does not match its pattern`;
@@ -111,11 +138,12 @@ function check(schema: unknown, value: unknown, at: string, depth: number): stri
     const properties = isObject(schema.properties) ? schema.properties : {};
     if (Array.isArray(schema.required)) {
       for (const name of schema.required) {
-        if (typeof name === "string" && !(name in value)) return `${here} lacks "${name}"`;
+        if (typeof name === "string" && !Object.hasOwn(value, name))
+          return `${here} lacks "${name}"`;
       }
     }
     for (const [name, one] of Object.entries(value)) {
-      if (name in properties) {
+      if (Object.hasOwn(properties, name)) {
         const problem = check(properties[name], one, `${at}/${name}`, depth + 1);
         if (problem) return problem;
       } else if (schema.additionalProperties === false) {

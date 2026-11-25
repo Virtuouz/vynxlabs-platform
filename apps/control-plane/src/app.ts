@@ -422,6 +422,19 @@ export async function buildApp(options: AppOptions) {
         );
       },
     });
+    // The console holds a developer's widgets in frames, and a frame can send itself anywhere
+    // (`location.href = "https://x/?" + what it was given`): its own policy cannot stop that, the
+    // page that holds it can. A page of the console may frame the instance's own addresses only.
+    app.addHook("onSend", async (_request, reply, payload) => {
+      if (
+        String(reply.getHeader("content-type") ?? "").startsWith("text/html") &&
+        reply.getHeader("content-security-policy") === undefined
+      ) {
+        const own = new Set(["'self'", kernel.hosts.mainOrigin, kernel.hosts.appsOrigin]);
+        reply.header("content-security-policy", `frame-src ${[...own].join(" ")}`);
+      }
+      return payload;
+    });
     app.get(
       "/help/*",
       { config: { access: access.public }, schema: { hide: true } },

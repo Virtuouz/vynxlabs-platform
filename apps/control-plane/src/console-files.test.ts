@@ -78,3 +78,18 @@ test("DOC-10 a help picture named by its path is asked for afresh; DOC-11 a help
   // /help/ is a file of the documentation, and one that is not there is missing.
   expect((await get("/help/some-topic")).statusCode).toBe(404);
 });
+
+test("p34-b4r the console's page lets a frame be only the instance's own: a widget's frame cannot navigate itself to carry what it was given to another site", async () => {
+  // A sandboxed frame may send itself anywhere (`location.href = "https://x/?" + data`), and
+  // its own policy cannot stop that; only the page that holds it can, by `frame-src`.
+  for (const url of ["/", "/t/acme/workspaces/main/flows"]) {
+    const page = await get(url);
+    const policy = String(page.headers["content-security-policy"] ?? "");
+    expect(policy, url).toMatch(/(^|; )frame-src 'self'( |$|;)/);
+    expect(policy, url).not.toMatch(/frame-src[^;]*\*/);
+  }
+  // Files that are not the page carry no such policy.
+  expect(
+    (await get("/assets/index-Bof_UAWc.js")).headers["content-security-policy"],
+  ).toBeUndefined();
+});

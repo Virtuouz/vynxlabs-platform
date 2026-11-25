@@ -1,0 +1,34 @@
+/*
+ * The type scale of the console and of the served apps (owner, 2026-11-24): body text is 16 px up to 1920 CSS px wide, 18 px
+ * from 2560 (2K/QHD) and 20 px from 3840 (4K). Steps, not a ramp: min-width queries at 2560 and
+ * 3840, so 1921-2559 stays at 16 and 2561-3839 at 18. The roles in tokens.css are written for a
+ * 14 px body, so the scale is the body size over 14; headings and every other role follow by the
+ * same ratio. Spacing and icons do not scale. The served apps runtime imports this same file, so a page in the builder's canvas, an app's preview and a dashboard draw at the size the published app does. The browser reports CSS pixels: a 4K screen at 150%
+ * display scaling is 2560 wide and gets 18.
+ */
+:root {
+  --vx-type-scale: calc(16 / 14);
+  /* How much bigger than the 16 px step: for a fixed width that holds text, such as the console's rail. */
+  --vx-type-growth: 1;
+}
+@media (min-width: 2560px) {
+  :root {
+    --vx-type-scale: calc(18 / 14);
+    --vx-type-growth: calc(18 / 16);
+  }
+}
+@media (min-width: 3840px) {
+  :root {
+    --vx-type-scale: calc(20 / 14);
+    --vx-type-growth: calc(20 / 16);
+  }
+}
+
+/* A phone's text boxes are 16 px at least, or the browser zooms in when one takes focus. */
+@media (max-width: 640px) {
+  input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"]),
+  select,
+  textarea {
+    font-size: max(16px, 1em);
+  }
+}

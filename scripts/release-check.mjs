@@ -41,7 +41,7 @@ export const PUBLISHED = [
   {
     folder: "packages/ui",
     name: "@volvel/ui",
-    holds: ["dist/index.js", "dist/tokens.css"],
+    holds: ["dist/index.js", "dist/tokens.css", "dist/type-scale.css"],
     build: true,
   },
   { folder: "packages/app", name: "@volvel/app", holds: ["dist/index.js"], build: true },

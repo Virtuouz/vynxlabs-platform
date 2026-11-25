@@ -344,3 +344,17 @@ test("a draft someone else saved first offers to copy what was written before th
   expect(await screen.findByRole("button", { name: "Copy what I wrote" })).toBeTruthy();
   expect(screen.getByRole("button", { name: "Load their version" })).toBeTruthy();
 });
+
+test("a new trigger asked for as a form opens with a form to fill in, and saves", async () => {
+  history.replaceState(history.state, "", `${location.pathname}?type=form`);
+  show(<ResourceEditor root={root} link={link} kind="trigger" path={undefined} editable />);
+  expect(await screen.findByLabelText("Title of the form")).toHaveProperty("value", "Tell us");
+  expect(screen.getByLabelText("Question")).toHaveProperty("value", "Message");
+  fireEvent.change(screen.getByLabelText("Path of the new trigger"), {
+    target: { value: "forms/contact" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Save draft" }));
+  // A script is chosen first, so the save is refused before it is sent.
+  await screen.findByText("Choose the script it starts.");
+  expect(saved()).toBeUndefined();
+});

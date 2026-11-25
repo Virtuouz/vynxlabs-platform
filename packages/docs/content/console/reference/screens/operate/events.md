@@ -18,7 +18,7 @@ The screen is reached from **Operate**, then **Events**. F1 (**Help for this pag
 | Control | What it does |
 | --- | --- |
 | **Publish an event** | Opens the dialog described below. Needs `event:write`. |
-| **Exact event name** | A box with the placeholder "An event's name, such as orders/placed". The name must be exactly the event's. Kept in the address as `?name=`. |
+| **Exact event name** | A box with the placeholder "Event name, such as orders/placed". The name must be exactly the event's. Kept in the address as `?name=`. |
 | **Show** | Applies the name. |
 | **Show every event** | Appears when a name is applied; clears it. |
 | **Saved views** | The bookmark menu of the [Runs](runs) screen: it keeps the name filter. Your own, up to 50 for this list. |

@@ -839,7 +839,7 @@ export function EventsWorkbench({
               labelHidden
               name="event"
               value={name}
-              placeholder="An event's name, such as orders/placed"
+              placeholder="Event name, such as orders/placed"
               onChange={setName}
             />
           </div>

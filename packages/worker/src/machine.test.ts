@@ -137,3 +137,15 @@ describe("memory as a container has it (HOST-24)", () => {
     expect(unlimited?.totalMb).toBeCloseTo(16339968 / 1024);
   });
 });
+
+describe("memory spoken for by what has just started", () => {
+  it("is held for a while, then let go", async () => {
+    const { Reservations } = await import("./machine.js");
+    const held = new Reservations(10_000);
+    held.add(128, 0);
+    held.add(128, 4000);
+    expect(held.mb(5000)).toBe(256);
+    expect(held.mb(10_001)).toBe(128);
+    expect(held.mb(14_001)).toBe(0);
+  });
+});

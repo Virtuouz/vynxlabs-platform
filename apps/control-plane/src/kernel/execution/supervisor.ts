@@ -11,6 +11,7 @@ import {
   machineShare,
   PLANNED_WORKER_MB,
   procProbe,
+  Reservations,
 } from "@volvel/worker";
 import type { Kernel } from "../kernel.js";
 import {
@@ -161,6 +162,8 @@ export class WorkerSupervisor {
   readonly #guard: MemoryGuard;
   /** What the managed workers on this machine share. */
   readonly machine: MachineShare;
+  /** Workers started a moment ago, whose memory does not show yet. */
+  readonly #starting = new Reservations(10_000);
   #mode: Promise<WorkerUserMode> | undefined;
   #stopped = false;
   /** Whether "too many workers" or "short of memory" was last said, so each is said once. */
@@ -193,7 +196,13 @@ export class WorkerSupervisor {
     if (this.#workers.size >= this.maxWorkers) return "workers";
     const memory = this.#memory.memory();
     // One more worker must leave the floor standing: a worker is memory too.
-    if (memory && memory.availableMb < this.machine.floorMb + PLANNED_WORKER_MB) return "memory";
+    // Those started a moment ago have not taken theirs yet.
+    if (
+      memory &&
+      memory.availableMb - this.#starting.mb() < this.machine.floorMb + PLANNED_WORKER_MB
+    ) {
+      return "memory";
+    }
     return undefined;
   }
 
@@ -334,6 +343,7 @@ export class WorkerSupervisor {
     // Handed over once, on a pipe, and kept out of the worker's environment and command line.
     child.stdin?.end(`${credential.token}\n`);
     this.#workers.set(tenantId, { child, credentialId: credential.row.id });
+    this.#starting.add(PLANNED_WORKER_MB);
     log.info({ tenantId, pid: child.pid }, "started a managed worker");
 
     for (const stream of [child.stdout, child.stderr]) {

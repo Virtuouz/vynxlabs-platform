@@ -372,6 +372,14 @@ export class Worker {
     for (const claim of this.#claims) claim.abort();
   }
 
+  /** What the control plane is told with a claim, so it hands out a script only where one fits. */
+  #memoryNow(): { availableMb?: number; floorMb?: number } {
+    const floorMb = this.#options.machine?.floorMb;
+    const availableMb = this.#probe.memory()?.availableMb;
+    if (!floorMb || availableMb === undefined) return {};
+    return { availableMb: Math.round(availableMb), floorMb };
+  }
+
   /** Whether to give the machine this worker's memory back: only a worker that would exit when idle does. */
   #leavesWhenShort(): boolean {
     if (this.#options.idleExitSeconds === undefined || this.#inFlight > 0) return false;
@@ -431,6 +439,7 @@ export class Worker {
                 machine: {
                   name: this.#options.machine.name,
                   slots: this.#options.machine.slots,
+                  ...this.#memoryNow(),
                 },
               }
             : {}),

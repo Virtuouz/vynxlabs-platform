@@ -1,5 +1,12 @@
 import { randomBytes } from "node:crypto";
 import { newId, sql } from "@volvel/db";
+import {
+  type MachineProbe,
+  machineName,
+  PLANNED_START_MB,
+  procProbe,
+  Reservations,
+} from "@volvel/worker";
 import type { FastifyRequest } from "fastify";
 import type { Db, Trx } from "../audit.js";
 import { badRequest, unauthenticated } from "../errors.js";
@@ -98,6 +105,41 @@ export async function seeWorker(
 export interface MachineClaim {
   name: string;
   slots: number;
+  /** Free memory as the worker read it when it asked, and the floor it keeps. */
+  availableMb?: number | undefined;
+  floorMb?: number | undefined;
+}
+
+/** Scripts handed to each machine a moment ago, whose memory does not show yet. */
+const starting = new Map<string, Reservations>();
+const OWN_MACHINE = machineName();
+
+/**
+ * Whether one more script would take the machine below its memory floor, counting those
+ * handed out in the last seconds. Every worker of a machine reads the same free memory, so
+ * without the count a burst of claims was all granted on the same reading. On the control
+ * plane's own machine the memory is read now; elsewhere it is what the worker said.
+ */
+export function machineShortOfMemory(
+  machine: MachineClaim,
+  probe: MachineProbe = procProbe,
+  now = Date.now(),
+): boolean {
+  if (machine.floorMb === undefined) return false;
+  const own = machine.name === OWN_MACHINE ? probe.memory()?.availableMb : undefined;
+  const available = own ?? machine.availableMb;
+  if (available === undefined) return false;
+  return available - (starting.get(machine.name)?.mb(now) ?? 0) < machine.floorMb;
+}
+
+/** A script was handed to this machine. */
+export function noteStarted(machine: MachineClaim, now = Date.now()): void {
+  let held = starting.get(machine.name);
+  if (!held) {
+    held = new Reservations(3000);
+    starting.set(machine.name, held);
+  }
+  held.add(PLANNED_START_MB, now);
 }
 
 /** A worker that has not been heard from for this long no longer counts as on its machine. */

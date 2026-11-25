@@ -279,6 +279,20 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                 {
                   name: Type.String({ minLength: 1, maxLength: 120 }),
                   slots: Type.Integer({ minimum: 1, maximum: 1000 }),
+                  availableMb: Type.Optional(
+                    Type.Number({
+                      minimum: 0,
+                      description: "Free memory on the machine as the worker read it, in MB.",
+                    }),
+                  ),
+                  floorMb: Type.Optional(
+                    Type.Number({
+                      minimum: 0,
+                      description:
+                        "Free memory below which the machine takes no more scripts. With " +
+                        "`availableMb`, a script is handed out only where one more fits above it.",
+                    }),
+                  ),
                 },
                 {
                   description:

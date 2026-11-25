@@ -550,7 +550,8 @@ describe("a machine shared with other workers", () => {
     expect(state.ended[0]).toMatchObject({ kind: "complete" });
     // Each claim names the machine and its slots, so the control plane can hold all its workers to them.
     const claim = state.bodies[state.requests.indexOf("POST /claim")];
-    expect(claim?.machine).toEqual({ name: "m1", slots: 4 });
+    // It also says what memory it saw, so a burst of claims is not all granted on one reading.
+    expect(claim?.machine).toEqual({ name: "m1", slots: 4, availableMb: 1000, floorMb: 200 });
   });
 
   it("leaves when the machine stays short of memory and it holds no run, if it is one that exits when idle", async () => {

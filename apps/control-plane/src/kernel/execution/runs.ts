@@ -10,7 +10,13 @@ import { traceFor, traceRun } from "../trace.js";
 import { bundleManifest, payloadSchemas } from "./bundles.js";
 import { redactError, summarize } from "./redact.js";
 import { servedValues } from "./served.js";
-import { type MachineClaim, machineHasRoom, onMachine } from "./workers.js";
+import {
+  type MachineClaim,
+  machineHasRoom,
+  machineShortOfMemory,
+  noteStarted,
+  onMachine,
+} from "./workers.js";
 
 /** Input and output above this size go to file storage, and the run keeps a reference. */
 export const INLINE_PAYLOAD_BYTES = 256 * 1024;
@@ -414,11 +420,16 @@ export async function claimRun(
   /** The machine the worker shares with others, whose slots it must keep within. */
   machine?: MachineClaim,
 ) {
-  return (
-    (await onMachine(machine, (noteFull) =>
-      claimNext(kernel, scope, workerId, abandoned, machine, noteFull),
-    )) ?? null
-  );
+  // A machine that says what memory it has is handed a script only where one more fits.
+  if (machine && machineShortOfMemory(machine)) return null;
+  const run =
+    (await onMachine(machine, async (noteFull) => {
+      if (machine && machineShortOfMemory(machine)) return undefined;
+      const claimed = await claimNext(kernel, scope, workerId, abandoned, machine, noteFull);
+      if (machine && claimed) noteStarted(machine);
+      return claimed;
+    })) ?? null;
+  return run;
 }
 
 async function claimNext(

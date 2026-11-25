@@ -348,7 +348,7 @@ test("an event a frame raises with no click, wired to a write, is confirmed on t
   const dialog = page.getByRole("dialog");
   await expect(dialog).toBeVisible();
   await expect(dialog).toContainText("Hostile");
-  await expect(dialog).toContainText("wipe");
+  await expect(dialog).toContainText("asks to write a note");
   await expect(dialog).toContainText("add a note");
   await expect(dialog.getByRole("button", { name: "Cancel" })).toBeFocused();
   expect(await written()).toBe(0);

@@ -218,7 +218,7 @@ export function PageDetails({
               would look for first.
             </p>
           ) : null}
-          <div className="flex max-w-[24rem] items-end gap-2">
+          <div className="flex max-w-[24rem] items-start gap-2">
             <div className="min-w-0 flex-1">
               <TextField
                 name="subject-add"
@@ -244,6 +244,8 @@ export function PageDetails({
             </div>
             <Button
               size="small"
+              // Level with the box, not with the hint under it: the label above is about this tall.
+              className="mt-[calc(1.5rem*var(--vx-type-scale,1))]"
               disabled={full || subjectOf(typedSubject) === ""}
               onClick={() => addSubject(typedSubject)}
             >

@@ -135,7 +135,7 @@ export function DrawerTabs({
             tabIndex={on ? 0 : -1}
             onClick={() => onChange(tab.id)}
             onKeyDown={(event) => move(event, at)}
-            className={`inline-flex h-8 min-w-0 flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-inner px-2 text-body-sm font-medium outline-offset-1 focus-visible:outline-2 focus-visible:outline-focus ${
+            className={`inline-flex h-8 flex-auto cursor-pointer items-center justify-center gap-1.5 rounded-inner px-2 text-body-sm font-medium outline-offset-1 focus-visible:outline-2 focus-visible:outline-focus ${
               on ? "bg-raised text-ink ring-1 ring-line" : "text-ink-muted hover:text-ink"
             }`}
           >

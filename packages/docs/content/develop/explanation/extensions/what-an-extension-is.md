@@ -58,7 +58,7 @@ A trigger source's answer is passed on whole or not at all. If it gives more tha
 
 ## What is not there
 
-- A widget a developer writes for their own users is not an extension a tenant can ship. Volvel's widgets are built into the product. See [Write a widget](../../how-to/writing-a-widget).
+- A widget is not an extension of this kind. It is code in your repository that runs in a sandboxed frame on a page, and it has its own definition and deploy. See [Write a widget for your tenant](../../how-to/writing-a-widget).
 - A trigger source cannot start a run itself. It answers, and Volvel starts the runs.
 - There is no test pane for a connector or a trigger source in the console. They are tried by deploying them and using them.
 

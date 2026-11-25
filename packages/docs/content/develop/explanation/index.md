@@ -10,6 +10,7 @@ pages:
   - cli
   - operate
   - extensions
+  - widgets
 ---
 
 Why things work the way they do.

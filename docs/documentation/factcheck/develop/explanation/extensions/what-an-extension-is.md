@@ -19,3 +19,4 @@ Lines are current at commit `5ebf1c80` (branch phase-31-write-the-docs), 2026-11
 | Developer widgets not built. | `packages/widgets-labs/src/index.ts`; `apps/console/src/screens/builder/registry.ts:8-20` | writer | holds |
 
 Checked by: second agent, 2026-11-23. Run on `ext31-dev`: a webhook source that refuses and lets through, a poll source from a schedule, "refused alone" for an input that does not fit (the run's output holds `refused`). In code: up to 100 inputs (`triggers.ts:711, 801-803`), 256 KiB (`packages/manifest/src/kinds.ts:132`), an OAuth 2.0 connector refused in a connection group (`bundle-check.ts:334`), the source reads only the connections, secrets and variables it lists (`packages/sdk/src/index.ts:455-470`).
+| A widget is code in a repository that runs in a sandboxed frame; it is not an extension (D60 changed). | `packages/docs/content/develop/how-to/writing-a-widget.md`; B6 records | writer | holds |

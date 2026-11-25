@@ -1,6 +1,7 @@
 import { createFrame } from "@volvel/widget-frame";
 import { useWidgetProps } from "@volvel/widget-frame/react";
 import { createRoot } from "react-dom/client";
+import { bookedFor } from "./booked.ts";
 
 type Config = { clinic: string; perHour: number; busyAt: number; fullAt: number };
 
@@ -27,8 +28,7 @@ function View() {
   if (!clinic) {
     return <p style={{ margin: 8 }}>No clinic has the code "{config.clinic}".</p>;
   }
-  const row = visits?.rows.find((candidate) => candidate.clinic === config.clinic);
-  const booked = Number(row?.visits ?? 0);
+  const booked = bookedFor(visits, config.clinic);
   const capacity = Math.max(
     1,
     Math.round(((minutes(clinic.closes) - minutes(clinic.opens)) / 60) * config.perHour),

@@ -469,7 +469,12 @@ const domain = {
   checkedAt: null,
   checkError: null,
   recordGoneAt: null,
-  challenge: { name: "_vx-challenge.orders.acme.example", value: "vx-domain=0123abcd" },
+  challenge: {
+    name: "_vx-challenge.orders.acme.example",
+    host: "_vx-challenge.orders",
+    zone: "acme.example",
+    value: "vx-domain=0123abcd",
+  },
   createdAt: "2026-11-12T00:00:00.000Z",
 };
 
@@ -495,7 +500,7 @@ test("adding a hostname shows its TXT record, a check shows what is missing, and
     return [201, domain];
   };
   const missing =
-    "No TXT record _vx-challenge.orders.acme.example with the value vx-domain=0123abcd was found.";
+    "Found the record at _vx-challenge.orders.acme.example.acme.example: your DNS provider added acme.example to the host. Set the host to _vx-challenge.orders.";
   routes[`POST /api/v1${base}/domains/d1/checks`] = () => {
     domains = [{ ...domain, checkedAt: "2026-11-12T10:00:00.000Z", checkError: missing } as never];
     return [200, domains[0]];
@@ -535,7 +540,7 @@ test("adding a hostname shows its TXT record, a check shows what is missing, and
   );
   fireEvent.submit(screen.getByLabelText("Hostname").closest("form") as HTMLFormElement);
 
-  await screen.findByText("_vx-challenge.orders.acme.example");
+  await screen.findByText("_vx-challenge.orders");
   expect(sent("POST")[0]?.body).toEqual({
     workspaceId: "w1",
     app: "portal/orders",
@@ -545,8 +550,17 @@ test("adding a hostname shows its TXT record, a check shows what is missing, and
   const details = () => screen.getAllByRole("dialog").at(-1)?.textContent ?? "";
   expect(details()).toContain("vx-domain=0123abcd");
   expect(details()).toContain("Not checked yet.");
-  expect(screen.getByRole("button", { name: "Copy record name" })).toBeTruthy();
-  expect(screen.getByRole("button", { name: "Copy record value" })).toBeTruthy();
+  // The host as most providers want it, the full name beside it, the zone it is relative to.
+  expect(details()).toContain("Type");
+  expect(details()).toContain("TXT");
+  expect(details()).toContain("Host");
+  expect(details()).toContain("_vx-challenge.orders.acme.example");
+  expect(details()).toContain("full name");
+  expect(details()).toContain("acme.example");
+  expect(details()).toContain("use the full name");
+  expect(screen.getByRole("button", { name: "Copy host" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Copy full name" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Copy value" })).toBeTruthy();
 
   fireEvent.click(screen.getByRole("button", { name: "Check now" }));
   await waitFor(() => expect(details()).toContain(missing));

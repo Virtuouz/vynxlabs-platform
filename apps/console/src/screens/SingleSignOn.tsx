@@ -19,6 +19,7 @@ import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, failureText, notify } from "../ask.tsx";
 import { Can, useCan } from "../kit/Can.tsx";
 import { DataTable } from "../kit/DataTable.tsx";
+import { type ChallengeRecord, DnsRecord } from "../kit/DnsRecord.tsx";
 import { listOf } from "../kit/format.ts";
 import { ErrorState, Loading } from "../kit/LoadState.tsx";
 import { Stepper } from "../kit/layout.tsx";
@@ -104,7 +105,7 @@ interface Domain {
   problem: string | null;
   /** When a check first missed the record of a proved domain: it stays proved, and this says so. */
   recordGoneAt?: string | null;
-  record: { name: string; value: string } | null;
+  record: ChallengeRecord | null;
 }
 interface GroupMap {
   value: string;
@@ -549,8 +550,7 @@ function Domains({ root, instance }: { root: string; instance: boolean }) {
               <p className="m-0 text-ink-muted">
                 Create this TXT record where the domain's DNS is managed, then check.
               </p>
-              <CopyLine label="Record name" value={row.record.name} />
-              <CopyLine label="Record value" value={row.record.value} />
+              <DnsRecord record={row.record} />
             </div>
           ) : null}
           {row.problem ? <Notice tone="attention">{row.problem}</Notice> : null}

@@ -254,6 +254,12 @@ test("it cannot draw outside its cell: a huge box and a request for a huge heigh
 });
 
 test("on a dashboard and in the builder's canvas it is the same frame, and it follows light and dark @builder", async () => {
+  // The operator's theme is a setting the server keeps, and other specs set it: follow the system here.
+  await page.evaluate(async () => {
+    await fetch("/api/v1/me/preferences/theme", { method: "DELETE" });
+    for (const key of Object.keys(localStorage))
+      if (key === "vx-theme" || key === "vx-pref:theme") localStorage.removeItem(key);
+  });
   for (const scheme of ["light", "dark"] as const) {
     await page.emulateMedia({ colorScheme: scheme });
     await page.goto(`${L}/dashboards/${board}`);

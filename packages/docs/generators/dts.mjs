@@ -184,8 +184,10 @@ function statementsLike(body) {
         end = body.indexOf("*/", end + 2) + 2;
         continue;
       }
-      if (char === "{" || char === "(" || char === "[") depth++;
+      // A type's arguments, `Pick<Window, "a">`, hold a comma too; the `>` of `=>` closes nothing.
+      if (char === "{" || char === "(" || char === "[" || char === "<") depth++;
       else if (char === "}" || char === ")" || char === "]") depth--;
+      else if (char === ">" && body[end - 1] !== "=") depth--;
       else if ((char === ";" || char === ",") && depth === 0) {
         end++;
         break;

@@ -102,3 +102,10 @@ test("each entry point has a page that lists every export of it (D58, API-22)", 
   expect(sdk).toContain("### defineScript");
   expect(sdk).toContain("Everything `@volvel/widgets` exports is exported from here too.");
 });
+
+test("a type with arguments is not split at the comma between them (p34-b7)", () => {
+  const files = sdkFiles();
+  const text = files.get("sdk/widget-frame.md") ?? "";
+  expect(text).toContain('Pick<Window, "postMessage">');
+  expect(text).not.toMatch(/Pick<Window[^,]/);
+});

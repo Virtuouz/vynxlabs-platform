@@ -1,7 +1,7 @@
 import { Appear } from "@volvel/ui";
 import { useEffect, useRef } from "react";
 import { ErrorBoundary } from "../kit/ErrorBoundary.tsx";
-import { useInspectorDocked, useWide, WIDE } from "../kit/layout.tsx";
+import { Docking, useInspectorDocked, useWide, WIDE } from "../kit/layout.tsx";
 import { useUrlParam } from "../router.tsx";
 import { HelpPanel } from "./HelpPanel.tsx";
 import { closeHelp, openHelp, takeOpener, useHelp } from "./store.ts";
@@ -11,8 +11,9 @@ const THREE_ACROSS = 1680;
 
 /**
  * Where the help panel sits. On a wide screen it is docked beside the work
- * and takes room from it. Narrower, or while an inspector is already beside
- * a list, it lies over the right edge. On a phone it takes the screen.
+ * and takes room from it, the room given and taken back smoothly. Narrower, or
+ * while an inspector is already beside a list, it slides over the right edge
+ * on a scrim. On a phone it takes the screen.
  *
  * It is never a dialog: nothing behind it is dimmed or put out of reach, and
  * the keyboard is not held in it. Escape closes it while focus is inside.
@@ -53,35 +54,68 @@ export function HelpDock({
   }, [open]);
 
   const docked = wide && (!inspector || widest);
-  const place = docked
-    ? "relative w-[380px] shrink-0 border-line border-l"
-    : tablet
-      ? "absolute inset-y-0 right-0 layer-sheet w-[380px] max-w-full border-line border-l shadow-overlay"
-      : "fixed inset-0 layer-sheet";
-  // It arrives and leaves as the other panels do (`Appear`, the shell's flyout), from the edge it sits on.
-  return (
-    <Appear
-      open={open}
-      ref={shell}
-      className={`flex min-h-0 flex-col transition-[opacity,translate] motion-slow data-[ending-style]:translate-x-6 data-[starting-style]:translate-x-6 data-[ending-style]:opacity-0 data-[starting-style]:opacity-0 ${place}`}
+  const panel = (leaving: boolean) => (
+    <aside
+      aria-label="Help"
+      data-help-panel={docked ? "docked" : tablet ? "over" : "full"}
+      inert={leaving}
+      className="flex min-h-0 flex-1 flex-col"
+      onKeyDown={(event) => {
+        if (event.key !== "Escape" || event.defaultPrevented) return;
+        // A popover inside the panel closes itself first.
+        if ((event.target as HTMLElement).closest("[role=dialog]")) return;
+        event.stopPropagation();
+        closeHelp();
+      }}
     >
-      <aside
-        aria-label="Help"
-        data-help-panel={docked ? "docked" : tablet ? "over" : "full"}
-        className="flex min-h-0 flex-1 flex-col"
-        onKeyDown={(event) => {
-          if (event.key !== "Escape" || event.defaultPrevented) return;
-          // A popover inside the panel closes itself first.
-          if ((event.target as HTMLElement).closest("[role=dialog]")) return;
-          event.stopPropagation();
-          closeHelp();
-        }}
+      <ErrorBoundary what="The help" compact>
+        <HelpPanel tenantId={tenantId} workspaceId={workspaceId} />
+      </ErrorBoundary>
+    </aside>
+  );
+  if (docked) {
+    // Beside the work: the room it takes is given and taken back over the same time and curve
+    // as the inspector's (`Docking`), so the page reflows as the panel moves, not after it.
+    return (
+      <Docking open={open}>
+        {(leaving) => (
+          <div
+            ref={shell}
+            className="flex min-h-0 w-[380px] shrink-0 flex-col border-line border-l"
+          >
+            {panel(leaving)}
+          </div>
+        )}
+      </Docking>
+    );
+  }
+  // Over the work, it slides in from its edge as the other sheets do, over a scrim that is not a
+  // trap: a click on it closes the panel, but the keyboard and the page behind stay as they were.
+  return (
+    <>
+      {tablet ? (
+        <Appear
+          open={open}
+          data-help-scrim=""
+          aria-hidden="true"
+          onClick={() => closeHelp()}
+          className="fixed inset-0 layer-sheet bg-scrim transition-opacity motion-slow data-[ending-style]:opacity-0 data-[starting-style]:opacity-0"
+        >
+          {null}
+        </Appear>
+      ) : null}
+      <Appear
+        open={open}
+        ref={shell}
+        className={`flex min-h-0 flex-col bg-surface transition-[translate] motion-slow data-[ending-style]:translate-x-full data-[starting-style]:translate-x-full ${
+          tablet
+            ? "fixed inset-y-0 right-0 layer-sheet w-[380px] max-w-full border-line border-l shadow-overlay"
+            : "fixed inset-0 layer-sheet"
+        }`}
       >
-        <ErrorBoundary what="The help" compact>
-          <HelpPanel tenantId={tenantId} workspaceId={workspaceId} />
-        </ErrorBoundary>
-      </aside>
-    </Appear>
+        {panel(false)}
+      </Appear>
+    </>
   );
 }
 

@@ -9,6 +9,7 @@ import {
   type MachineShare,
   MemoryGuard,
   machineShare,
+  PLANNED_WORKER_MB,
   procProbe,
 } from "@volvel/worker";
 import type { Kernel } from "../kernel.js";
@@ -191,7 +192,8 @@ export class WorkerSupervisor {
   #full(): "workers" | "memory" | undefined {
     if (this.#workers.size >= this.maxWorkers) return "workers";
     const memory = this.#memory.memory();
-    if (memory && memory.availableMb < this.machine.floorMb) return "memory";
+    // One more worker must leave the floor standing: a worker is memory too.
+    if (memory && memory.availableMb < this.machine.floorMb + PLANNED_WORKER_MB) return "memory";
     return undefined;
   }
 

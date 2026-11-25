@@ -12,6 +12,7 @@ import {
   type MachineShare,
   MemoryGuard,
   machineShare,
+  PLANNED_WORKER_MB,
   procProbe,
 } from "./machine.js";
 import type { WorkerLog } from "./worker.js";
@@ -116,9 +117,10 @@ export class WorkerHost {
     this.#guard = new MemoryGuard({ probe: this.#probe, log: this.#log });
   }
 
-  #shortOfMemory(): boolean {
+  /** Whether one more worker would take the machine below its floor. */
+  #noRoomForAWorker(): boolean {
     const memory = this.#probe.memory();
-    return memory !== undefined && memory.availableMb < this.machine.floorMb;
+    return memory !== undefined && memory.availableMb < this.machine.floorMb + PLANNED_WORKER_MB;
   }
 
   /** Leases in progress, by lease. */
@@ -151,7 +153,7 @@ export class WorkerHost {
     this.#guard.start();
     let routeOffSaid = false;
     while (!this.#stopping) {
-      if (this.#workers.size >= max || this.#shortOfMemory()) {
+      if (this.#workers.size >= max || this.#noRoomForAWorker()) {
         await sleep(1000);
         continue;
       }

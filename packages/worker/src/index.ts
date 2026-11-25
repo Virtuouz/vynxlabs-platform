@@ -8,6 +8,7 @@ export {
   type MachineShare,
   MemoryGuard,
   machineShare,
+  PLANNED_WORKER_MB,
   parseMachine,
   procProbe,
 } from "./machine.js";

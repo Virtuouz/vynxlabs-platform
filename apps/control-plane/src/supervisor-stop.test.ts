@@ -78,4 +78,35 @@ describe("managed workers that cannot be started or stopped (process mode)", () 
     // Still ours: a refused signal is not an exit, so its credential is not revoked.
     expect(supervisor.tenants).toEqual([tenant]);
   });
+
+  test("no worker starts where one more would take the machine below its memory floor", async () => {
+    // STR-02: 13 idle workers of about 105 MB each left a 2 GB machine no room to run a script.
+    let started = 0;
+    const counting = (() => {
+      started += 1;
+      throw new Error("not started in a test");
+    }) as unknown as typeof spawn;
+    // A tenant of its own: the one above still holds the credential of a worker left running.
+    const other = (await t.admin.post("/tenants", { slug: "short", name: "Short" })).body.id;
+    const free = { mb: 300 };
+    const supervisor = new WorkerSupervisor(t.kernel, {
+      url: "http://127.0.0.1:1",
+      operatorCodeOnly: false,
+      spawn: counting,
+      memoryFloorMb: 200,
+      probe: {
+        memory: () => ({ totalMb: 2048, availableMb: free.mb }),
+        rssMb: () => undefined,
+        children: () => [],
+      },
+      waiting: async () => [{ tenant_id: other }],
+    });
+    // Above the floor, but a worker of its own would not fit above it.
+    await supervisor.tick();
+    expect(started).toBe(0);
+    free.mb = 400;
+    await supervisor.tick();
+    expect(started).toBe(1);
+    await supervisor.stop(0.01, 0.01);
+  });
 });

@@ -133,6 +133,13 @@ const RESERVED_MB = 512;
 /** What one run is planned at when slots are worked out from memory. Most use far less. */
 const PLANNED_RUN_MB = 160;
 
+/**
+ * What one more worker is planned at before it runs anything: a worker measured about 105 MB at
+ * rest. A worker is started only where this much stays above the memory floor, so that starting
+ * it is not what takes the machine below.
+ */
+export const PLANNED_WORKER_MB = 128;
+
 /** Runs one machine takes at once when nobody says: what its memory can hold. */
 export function defaultSlots(totalMb: number | undefined): number {
   if (totalMb === undefined) return 8;

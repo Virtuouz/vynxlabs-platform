@@ -552,4 +552,38 @@ describe("a machine shared with other workers", () => {
     const claim = state.bodies[state.requests.indexOf("POST /claim")];
     expect(claim?.machine).toEqual({ name: "m1", slots: 4 });
   });
+
+  it("leaves when the machine stays short of memory and it holds no run, if it is one that exits when idle", async () => {
+    const state = await platform([]);
+    const worker = new Worker({
+      url: state.url,
+      token: "token",
+      concurrency: 1,
+      claimWaitSeconds: 1,
+      idleExitSeconds: 600,
+      lowMemoryLeaveSeconds: 1,
+      machine: { name: "m1", slots: 4, floorMb: 200 },
+      probe: machine({ mb: 100 }),
+    });
+    // Its memory is part of what is short: it gives it back, long before it would count as idle.
+    expect(await worker.run()).toBe("idle");
+    expect(state.requests.filter((request) => request === "POST /claim")).toEqual([]);
+  }, 15_000);
+
+  it("stays through a shortage when it never exits by itself: nobody would start it again", async () => {
+    const state = await platform([]);
+    const worker = new Worker({
+      url: state.url,
+      token: "token",
+      concurrency: 1,
+      claimWaitSeconds: 1,
+      lowMemoryLeaveSeconds: 1,
+      machine: { name: "m1", slots: 4, floorMb: 200 },
+      probe: machine({ mb: 100 }),
+    });
+    const running = worker.run();
+    await pause(3500);
+    worker.stop();
+    expect(await running).toBe("stopped");
+  }, 15_000);
 });

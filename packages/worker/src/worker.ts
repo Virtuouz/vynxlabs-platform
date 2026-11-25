@@ -37,6 +37,13 @@ export interface WorkerOptions {
   /** Stop after this long with nothing to do. Default: never. */
   idleExitSeconds?: number;
   /**
+   * A worker that exits when idle also exits after this long below the machine's memory floor
+   * with nothing in progress: its own memory is part of what is short, and whoever started it
+   * starts another when there is room. Default: 8 to 16 seconds, differing by worker so that
+   * the workers of a machine do not all leave together.
+   */
+  lowMemoryLeaveSeconds?: number;
+  /**
    * A file touched each time the control plane answers a request for work, whether or not
    * there was any: what a health check reads. Default: `volvel-worker-alive` in the
    * system's temp directory.
@@ -273,6 +280,9 @@ export class Worker {
   #stopping = false;
   #inFlight = 0;
   #lastWork = Date.now();
+  /** Since when the machine has been below its memory floor, as this worker saw it. */
+  #shortSince: number | undefined;
+  readonly #leaveAfterMs: number;
   #claims = new Set<AbortController>();
 
   constructor(options: WorkerOptions) {
@@ -282,6 +292,10 @@ export class Worker {
     this.#cacheDir = options.cacheDir ?? join(tmpdir(), `volvel-worker-${this.id}`);
     this.#runner = options.runner ?? defaultRunner();
     this.#probe = options.probe ?? procProbe;
+    this.#leaveAfterMs =
+      options.lowMemoryLeaveSeconds !== undefined
+        ? options.lowMemoryLeaveSeconds * 1000
+        : 8000 + Math.random() * 8000;
   }
 
   /** Whether the machine has too little memory left to start another script. */
@@ -299,11 +313,23 @@ export class Worker {
     const slots = Array.from({ length: this.#options.concurrency ?? 4 }, async () => {
       while (!this.#stopping) {
         if (this.#shortOfMemory()) {
-          // Not idle: the work is there, the memory is not. Wait for it.
-          this.#lastWork = Date.now();
+          this.#shortSince ??= Date.now();
+          // A worker holding nothing is itself part of what is short. While it stayed, a
+          // machine full of idle workers never got its memory back, and every script that
+          // started was the one stopped for it.
+          if (this.#leavesWhenShort()) {
+            reason = "idle";
+            this.#stopping = true;
+            this.#log(
+              "info",
+              "Leaving: the machine is short of memory and this worker holds no run.",
+            );
+            break;
+          }
           await sleep(LOW_MEMORY_WAIT_MS);
           continue;
         }
+        this.#shortSince = undefined;
         try {
           const job = await this.#claim();
           if (job) {
@@ -344,6 +370,12 @@ export class Worker {
   stop(): void {
     this.#stopping = true;
     for (const claim of this.#claims) claim.abort();
+  }
+
+  /** Whether to give the machine this worker's memory back: only a worker that would exit when idle does. */
+  #leavesWhenShort(): boolean {
+    if (this.#options.idleExitSeconds === undefined || this.#inFlight > 0) return false;
+    return this.#shortSince !== undefined && Date.now() - this.#shortSince > this.#leaveAfterMs;
   }
 
   #idle(): boolean {

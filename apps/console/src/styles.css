@@ -15,6 +15,37 @@
   clip-path: polygon(0 0, calc(100% - 9px) 0, 100% 9px, 100% 100%, 0 100%);
 }
 
+/*
+ * The console's type scale (owner, 2026-11-24): body text is 16 px up to 1920 CSS px wide, 18 px
+ * from 2560 (2K/QHD) and 20 px from 3840 (4K). Steps, not a ramp: min-width queries at 2560 and
+ * 3840, so 1921-2559 stays at 16 and 2561-3839 at 18. The roles in tokens.css are written for a
+ * 14 px body, so the scale is the body size over 14; headings and every other role follow by the
+ * same ratio. Spacing and icons do not scale. The browser reports CSS pixels: a 4K screen at 150%
+ * display scaling is 2560 wide and gets 18.
+ */
+:root {
+  --vx-type-scale: calc(16 / 14);
+}
+@media (min-width: 2560px) {
+  :root {
+    --vx-type-scale: calc(18 / 14);
+  }
+}
+@media (min-width: 3840px) {
+  :root {
+    --vx-type-scale: calc(20 / 14);
+  }
+}
+
+/* A phone's text boxes are 16 px at least, or the browser zooms in when one takes focus. */
+@media (max-width: 640px) {
+  input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"]),
+  select,
+  textarea {
+    font-size: max(16px, 1em);
+  }
+}
+
 /* The console fills the window; each region scrolls on its own. */
 html,
 body,

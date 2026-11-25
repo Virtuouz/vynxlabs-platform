@@ -68,7 +68,7 @@ export function GoalView(props: WidgetViewProps<GoalConfig>) {
     >
       <span
         // Money to the cent fits a narrow cell only at the smaller size: by the cell's width, not its columns.
-        className="text-display font-semibold tracking-[-0.02em] whitespace-nowrap tabular-nums @[14rem]/cell:text-display-lg @[17rem]/cell:text-[28px]/[34px]"
+        className="text-display font-semibold tracking-[-0.02em] whitespace-nowrap tabular-nums @[14rem]/cell:text-display-lg @[17rem]/cell:text-[calc(28px*var(--vx-type-scale,1))] @[17rem]/cell:leading-[calc(34px*var(--vx-type-scale,1))]"
       >
         {formatNumber(value, config.format)}
       </span>
@@ -83,7 +83,7 @@ export function GoalView(props: WidgetViewProps<GoalConfig>) {
       >
         <span className={`block h-full ${FILL[band]}`} style={{ width: `${fill}%` }} />
       </span>
-      <span className="flex flex-wrap items-baseline justify-between gap-x-3 text-[12.5px] text-ink-muted">
+      <span className="flex flex-wrap items-baseline justify-between gap-x-3 text-[calc(12.5px*var(--vx-type-scale,1))] text-ink-muted">
         <span>{config.label ?? ""}</span>
         {config.percent === false ? null : <span className="tabular-nums">{shown}%</span>}
       </span>

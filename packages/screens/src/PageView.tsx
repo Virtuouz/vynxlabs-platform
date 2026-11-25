@@ -710,6 +710,7 @@ function Cell({
             <View
               config={config}
               data={reading.data}
+              {...(widget.type.startsWith("x/") ? { state: reading.state } : {})}
               size={{ w: at.w, h: at.h, narrow }}
               emit={emit}
               building={building}

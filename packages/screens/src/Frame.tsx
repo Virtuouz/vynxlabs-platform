@@ -270,6 +270,23 @@ export function Frame({
     if (!definition) {
       return <Notice tone="danger">There is no widget called "{widget.type}".</Notice>;
     }
+    // A widget of the tenant's own is told the state and draws it in its own frame, so it stays
+    // mounted (a frame that is taken down and made again would start over). A failed read still
+    // has its way to try again.
+    if (definition.type.startsWith("x/") && state.status !== "ready") {
+      return (
+        <>
+          {children}
+          {state.status === "failed" || state.status === "forbidden" ? (
+            <div>
+              <Button size="small" onClick={reading.retry}>
+                Try again
+              </Button>
+            </div>
+          ) : null}
+        </>
+      );
+    }
     switch (state.status) {
       case "loading":
         return <Skeleton lines={3} label={`Loading ${name}`} />;

@@ -1,5 +1,15 @@
-import type { DeployedWidget, WidgetDefinition, WidgetViewProps } from "@volvel/widgets";
-import { FRAME_PROTOCOL, type HostMessage, MAX_FRAME_HEIGHT } from "@volvel/widgets/frame";
+import type {
+  DeployedWidget,
+  WidgetDefinition,
+  WidgetState,
+  WidgetViewProps,
+} from "@volvel/widgets";
+import {
+  FRAME_PROTOCOL,
+  type HostMessage,
+  MAX_FRAME_HEIGHT,
+  toWireData,
+} from "@volvel/widgets/frame";
 import {
   type ComponentType,
   type CSSProperties,
@@ -21,7 +31,9 @@ import type { ViewEntry, ViewRegistry } from "./types.ts";
  * apps address, under a policy with no network. The host:
  *
  * - posts in the props the view is given, `{config, data, state, size, theme}`, once the
- *   frame says it is ready and again whenever any of them changes;
+ *   frame says it is ready and again whenever any of them changes. What is posted is plain data:
+ *   a rows input's `more()` and `sortBy()`, which a message cannot carry, are flags, and the
+ *   frame's `more` and `sort` requests, checked like events, make the host call the real ones;
  * - believes only messages whose `source` is this frame's own window (its origin is "null"),
  *   and of those only what `createChannel` lets through: a declared event with a payload that
  *   fits its schema, a size request, within a size and a rate;
@@ -53,6 +65,9 @@ const cellHeight = (rows: number) => `${rows * 2.5 + (rows - 1) * 0.75}rem`;
 export const frameHeight = (asked: number | undefined) =>
   asked === undefined ? "100%" : `min(${Math.min(asked, MAX_FRAME_HEIGHT)}px, 100%)`;
 
+/** What a viewer reads where the props could not be posted to the frame. */
+export const NOT_GIVEN = "This widget could not be given its data";
+
 type Phase = "loading" | "ready" | "failed" | "stopped";
 
 export function TenantWidgetHost({
@@ -63,6 +78,7 @@ export function TenantWidgetHost({
   data,
   size,
   emit,
+  state = { status: "ready" },
 }: TenantWidgetHostProps) {
   const source = useFrameSource();
   const theme = useFrameTheme();
@@ -70,13 +86,20 @@ export function TenantWidgetHost({
   const [phase, setPhase] = useState<Phase>("loading");
   const [height, setHeight] = useState<number>();
   const [dropped, setDropped] = useState(0);
+  const [notGiven, setNotGiven] = useState(false);
   const channel = useMemo(
-    () => createChannel({ events: definition.events }),
+    () =>
+      createChannel({
+        events: definition.events,
+        rows: Object.entries(definition.data ?? {})
+          .filter(([, input]) => input.shape === "rows")
+          .map(([name]) => name),
+      }),
     // A new frame (another widget or version) starts with a new count and a new rate.
     [definition],
   );
-  const latest = useRef({ config, data, size, theme, emit });
-  latest.current = { config, data, size, theme, emit };
+  const latest = useRef({ config, data, state, size, theme, emit });
+  latest.current = { config, data, state, size, theme, emit };
   const url = source ? frameUrl(source, type, version) : null;
 
   /** What the frame was last given, so that it is told again only when something changed. */
@@ -85,26 +108,38 @@ export function TenantWidgetHost({
     const target = frame.current?.contentWindow;
     if (!target) return;
     const now = latest.current;
-    given.current = JSON.stringify([now.config, now.data, now.size, now.theme]);
     const message: HostMessage = {
       protocol: FRAME_PROTOCOL,
       from: "host",
       type: "props",
       props: {
         config: now.config,
-        data: now.data,
-        state: { status: "ready" },
+        data: toWireData(now.data),
+        state: now.state,
         size: now.size,
         theme: now.theme,
       },
     };
+    given.current = JSON.stringify(message.props);
     // The frame's origin is opaque ("null"), so "*" is the only target a sandboxed frame has.
-    // What goes in is the props and nothing else.
+    // What goes in is the props and nothing else, as plain data.
     try {
       target.postMessage(message, "*");
-    } catch {
-      // Not cloneable: the frame keeps what it had.
+      setNotGiven(false);
+    } catch (error) {
+      // Never silent: the cell says so, and the console has why.
+      console.error(
+        `Widget ${type} v${version}: its props could not be posted to its frame.`,
+        error,
+      );
+      setNotGiven(true);
     }
+  };
+
+  /** The rows of one declared input, as the page has them now. */
+  const rowsOf = (input: string) => {
+    const one = latest.current.data[input];
+    return one?.shape === "rows" ? one : undefined;
   };
 
   // What the frame says. `post` reads the latest props from a ref, so it is no dependency.
@@ -124,6 +159,19 @@ export function TenantWidgetHost({
         case "size":
           setHeight(verdict.height);
           break;
+        case "more":
+          rowsOf(verdict.input)?.more?.();
+          break;
+        case "sort": {
+          const rows = rowsOf(verdict.input);
+          // Only a column the rows have is an order they can be read in.
+          if (
+            rows?.sortBy &&
+            (verdict.sort === null || rows.columns.some((one) => one.name === verdict.sort?.column))
+          )
+            rows.sortBy(verdict.sort ?? undefined);
+          break;
+        }
         case "event":
           latest.current.emit(verdict.event, verdict.payload);
           break;
@@ -146,8 +194,10 @@ export function TenantWidgetHost({
   // biome-ignore lint/correctness/useExhaustiveDependencies: `post` reads the latest props from a ref
   useEffect(() => {
     if (phase !== "ready") return;
-    if (JSON.stringify([config, data, size, theme]) !== given.current) post();
-  }, [phase, config, data, size, theme]);
+    const now = JSON.stringify({ config, data: toWireData(data), state, size, theme });
+    // `given` is in the order of the message's props; compare by the same keys.
+    if (now !== given.current) post();
+  }, [phase, config, data, state, size, theme]);
 
   // A frame that does not answer is a widget that did not load.
   useEffect(() => {
@@ -201,6 +251,14 @@ export function TenantWidgetHost({
             colorScheme: theme.scheme,
           }}
         />
+        {notGiven ? (
+          <div role="alert" className="absolute inset-0 bg-surface">
+            {say(
+              NOT_GIVEN,
+              "Reload the page to try again. If it stays, tell the widget's developer.",
+            )}
+          </div>
+        ) : null}
         {phase === "loading" ? (
           <span
             role="status"

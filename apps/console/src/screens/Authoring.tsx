@@ -1079,7 +1079,9 @@ export function ScriptEditor({
       {/* panel-allowed: a disclosure, drawn as a panel. */}
       <details
         className="rounded-panel border border-line bg-surface"
-        open={!opened || kind !== "script"}
+        // A script's settings wait (its code is what is written first, and it was below the fold at
+        // 1440x900); they open for what is not a script, and for a schema that was refused.
+        open={kind !== "script" || fieldError("/body/input") !== undefined}
       >
         <summary className="cursor-pointer px-4 py-2 font-medium">
           Settings

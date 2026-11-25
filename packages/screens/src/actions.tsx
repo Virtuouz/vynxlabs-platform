@@ -256,7 +256,7 @@ export interface Request {
    * Set when a tenant widget's frame sent the event: the frame can send one with no click, so an
    * action that changes anything is run only after a confirmation the page draws (decision 0005).
    */
-  gate?: { widget: string; event: string } | undefined;
+  gate?: { widget: string; event: string; label?: string | undefined } | undefined;
   /** The group a point or cell stands for. */
   group?: Readonly<Record<string, unknown>> | undefined;
   /** The summary input it came from, for the rows behind it. */
@@ -634,8 +634,10 @@ function Confirmation({
   const writes = asking.action.steps.filter((one) => STEP_EFFECT[one.do] === "write");
   const words = asking.gated
     ? gateWords({
-        widget: asking.request.gate?.widget ?? asking.request.widget.title ?? asking.request.widget.type,
+        widget:
+          asking.request.gate?.widget ?? asking.request.widget.title ?? asking.request.widget.type,
         event: asking.request.gate?.event ?? asking.request.at.replace(/^on\//, ""),
+        eventLabel: asking.request.gate?.label,
         writes: writes as { do: string; path?: string; table?: string }[],
         confirm: {
           table: asking.request.table,

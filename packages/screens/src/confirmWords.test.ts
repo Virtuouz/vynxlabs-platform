@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { confirmWords, DEFAULT_CONFIRM_TITLE, nounOf } from "./confirmWords.ts";
+import { confirmWords, DEFAULT_CONFIRM_TITLE, gateWords, nounOf } from "./confirmWords.ts";
 
 const visit = {
   id: "a1",
@@ -103,6 +103,27 @@ describe("several records", () => {
     expect(words.title).toBe("Remove 2 invoices?");
     expect(confirmWords({ label: "Mark paid", table: "categories", count: 3 }).title).toBe(
       "Mark paid for 3 categories?",
+    );
+  });
+});
+
+describe("the words of a confirmation for a widget's frame", () => {
+  const writes = [{ do: "script", path: "inventory/check" }];
+
+  test("say what the widget reported in the words of its event, not the event's name", () => {
+    const words = gateWords({
+      widget: "Clinic load",
+      event: "clinicChosen",
+      eventLabel: "When the gauge is pressed",
+      writes,
+    });
+    expect(words.text).toContain('The widget "Clinic load" reports that the gauge is pressed.');
+    expect(words.text).not.toContain("clinicChosen");
+  });
+
+  test("name the event when its definition gives no words", () => {
+    expect(gateWords({ widget: "Clinic load", event: "clinicChosen", writes }).text).toContain(
+      'sent "clinicChosen"',
     );
   });
 });

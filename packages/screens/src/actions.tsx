@@ -641,19 +641,19 @@ function Confirmation({
         },
       })
     : confirmWords({
-    label: labelAt(asking.request.widget, asking.request.at),
-    confirm: confirm
-      ? {
-          title: isDefaultTitle(confirm.title) ? undefined : confirm.title,
-          text: confirm.text,
-          button: confirm.button,
-        }
-      : undefined,
-    table: tableOfWidget(asking.request.widget) ?? asking.request.table,
-    row: several ? undefined : asking.request.row,
-    facts: asking.request.facts,
-    count: several ? asking.request.records?.length : undefined,
-  });
+        label: labelAt(asking.request.widget, asking.request.at),
+        confirm: confirm
+          ? {
+              title: isDefaultTitle(confirm.title) ? undefined : confirm.title,
+              text: confirm.text,
+              button: confirm.button,
+            }
+          : undefined,
+        table: tableOfWidget(asking.request.widget) ?? asking.request.table,
+        row: several ? undefined : asking.request.row,
+        facts: asking.request.facts,
+        count: several ? asking.request.records?.length : undefined,
+      });
   const text = words.text ? fillText(words.text, asking.request.row, label, several) : undefined;
   const ask = confirm?.ask ?? [];
   const go = async (inputs: Record<string, unknown>) => {

@@ -29,6 +29,11 @@ const PASSWORD = "fernhill-demo-2026";
 const SLUG = process.env.FERNHILL_SLUG ?? "fernhill";
 const IS_COPY = SLUG !== "fernhill";
 const PAYFERN_SECRET = "whsec_fernhill_demo";
+// The version of the repository's widget the dashboard places: read from its definition, so that
+// raising the version there does not leave the setup placing one that is not deployed.
+const CLINIC_LOAD_VERSION = /version:\s*"([^"]+)"/.exec(
+  readFileSync(join(HERE, "src/widgets/clinic-load/widget.ts"), "utf8"),
+)?.[1];
 const LOCUMS = 60;
 const SUPPLIERS = 220;
 
@@ -592,7 +597,7 @@ await draftInSandbox("boards/clinic-visits", "dashboard", {
     {
       id: "load",
       type: "x/clinic-load",
-      version: "1.0.0",
+      version: CLINIC_LOAD_VERSION,
       title: "Northside today",
       at: { x: 0, y: 2, w: 4, h: 4 },
       data: {

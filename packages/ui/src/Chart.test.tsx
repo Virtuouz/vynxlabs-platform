@@ -47,7 +47,7 @@ describe("chart theme", () => {
     expect(config.background).toBe("transparent");
     expect(config.font).toBe("Inter, sans-serif");
     expect(config.mark).toEqual({ color: "#0e5f7a" });
-    expect(config.text).toEqual({ color: "#16202e" });
+    expect(config.text).toEqual({ color: "#16202e", fontSize: 11 });
     // Quiet axes: muted labels, one rule color, no box, no axis lines.
     expect(config.axis).toMatchObject({
       labelColor: "#5b6777",
@@ -141,4 +141,35 @@ describe("chart", () => {
       finalize.mockRestore();
     }
   });
+});
+
+test("p34-w3: a chart's axis, legend and label text follow the type scale", async () => {
+  const { chartConfig } = await import("./chartTheme.ts");
+  const tokens = {
+    ink: "#111",
+    inkMuted: "#555",
+    line: "#ddd",
+    action: "#066",
+    actionSoft: "#cee",
+    attention: "#a60",
+    success: "#060",
+    danger: "#a00",
+    font: "sans-serif",
+  };
+  const plain = chartConfig(tokens);
+  const big = chartConfig({ ...tokens, typeScale: 20 / 14 });
+  expect(plain.axis?.labelFontSize).toBe(10);
+  expect(big.axis?.labelFontSize).toBe(14);
+  expect(big.axis?.titleFontSize).toBe(16);
+  expect(big.legend?.labelFontSize).toBe(16);
+  expect((big.text as { fontSize?: number }).fontSize).toBe(16);
+});
+
+test("p34-w3: the scale is read from the page's custom property", async () => {
+  const { readChartTokens } = await import("./chartTheme.ts");
+  const element = document.createElement("div");
+  element.style.setProperty("--vx-type-scale", "calc(18 / 14)");
+  document.body.append(element);
+  expect(readChartTokens(element).typeScale).toBeCloseTo(18 / 14, 3);
+  element.remove();
 });

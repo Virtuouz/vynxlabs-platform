@@ -13,9 +13,11 @@ export interface ChartTokens {
   font: string;
   /** What the chart sits on: the fill of a ring that marks a point, and the edge between slices. */
   surface?: string;
+  /** The console's type scale where the chart sits (body size over 14 px): 1 where nothing sets it. */
+  typeScale?: number;
 }
 
-const variables: Record<keyof ChartTokens, string> = {
+const variables: Record<Exclude<keyof ChartTokens, "typeScale">, string> = {
   ink: "--vx-ink",
   inkMuted: "--vx-ink-muted",
   line: "--vx-line",
@@ -43,9 +45,17 @@ export function readChartTokens(element: Element): ChartTokens {
   const style = getComputedStyle(element);
   const tokens = {} as ChartTokens;
   for (const [token, variable] of Object.entries(variables)) {
-    tokens[token as keyof ChartTokens] = style.getPropertyValue(variable).trim();
+    (tokens as unknown as Record<string, string>)[token] = style.getPropertyValue(variable).trim();
   }
+  tokens.typeScale = readTypeScale(style.getPropertyValue("--vx-type-scale"));
   return tokens;
+}
+
+/** `calc(18 / 14)` or `1.2857`, as the stylesheet gives the type scale: a number, 1 when there is none. */
+function readTypeScale(value: string): number {
+  const ratio = /calc\(\s*([\d.]+)\s*\/\s*([\d.]+)\s*\)/.exec(value);
+  const scale = ratio ? Number(ratio[1]) / Number(ratio[2]) : Number.parseFloat(value);
+  return Number.isFinite(scale) && scale > 0 ? scale : 1;
 }
 
 /** Whether a color is a light one: the ink of a dark theme is. */
@@ -85,6 +95,7 @@ export function seriesColors(tokens: ChartTokens): string[] {
  * A token with no value is left out, so the engine's default applies.
  */
 export function chartConfig(tokens: ChartTokens): Config {
+  const grow = (size: number) => Math.round(size * (tokens.typeScale ?? 1));
   const set = <Key extends string>(key: Key, value: string) =>
     (value === "" ? {} : { [key]: value }) as { [K in Key]?: string };
   const labels = { ...set("labelColor", tokens.inkMuted), ...set("titleColor", tokens.ink) };
@@ -94,11 +105,11 @@ export function chartConfig(tokens: ChartTokens): Config {
   const quiet = {
     ...set("labelColor", tokens.inkMuted),
     ...set("titleColor", tokens.inkMuted),
-    labelFontSize: 10,
+    labelFontSize: grow(10),
     labelPadding: 6,
     labelOverlap: "greedy" as const,
     labelSeparation: 8,
-    titleFontSize: 11,
+    titleFontSize: grow(11),
     titleFontWeight: "normal" as const,
     titlePadding: 10,
     domain: false,
@@ -111,7 +122,7 @@ export function chartConfig(tokens: ChartTokens): Config {
     background: "transparent",
     ...set("font", tokens.font),
     mark: set("color", tokens.action),
-    text: set("color", tokens.ink),
+    text: { ...set("color", tokens.ink), fontSize: grow(11) },
     rule: set("color", tokens.inkMuted),
     view: { stroke: null },
     axis: quiet,
@@ -126,8 +137,8 @@ export function chartConfig(tokens: ChartTokens): Config {
     legend: {
       ...labels,
       ...set("titleColor", tokens.inkMuted),
-      labelFontSize: 11,
-      titleFontSize: 11,
+      labelFontSize: grow(11),
+      titleFontSize: grow(11),
       titleFontWeight: "normal" as const,
       symbolType: "circle",
       symbolSize: 70,

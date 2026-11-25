@@ -181,3 +181,35 @@ test("an action that is not finished is told by the words of its event, not the 
   expect(found).toContain("When a row is clicked: it has no script chosen.");
   expect(found.join(" ")).not.toContain("rowClick");
 });
+
+test("a step with no script chosen is said once, in the inspector's words, not again as the save's refusal", () => {
+  const widget = {
+    id: "g",
+    type: "x/clinic-load",
+    title: "Gauge",
+    at,
+    on: { clinicChosen: { steps: [{ do: "script", path: "" }] } },
+  } as unknown as PageWidget;
+  const pages = [{ id: "home", title: "Home", widgets: [widget] }] as never;
+  const refused = refusalsFor(
+    [
+      {
+        path: "/body/pages/0/widgets/0/on/clinicChosen/steps/0/path",
+        message: "is empty: it needs a value",
+      },
+    ],
+    pages,
+    "home",
+    "g",
+  );
+  expect(refused).toHaveLength(1);
+  const definition = {
+    ...table,
+    events: { clinicChosen: { label: "When the gauge is pressed" } },
+  } as never;
+  const found = inTab(
+    tabProblems({ widget, definition, catalog, scripts: [], refusals: refused }),
+    "actions",
+  );
+  expect(found).toEqual(["When the gauge is pressed: it has no script chosen."]);
+});

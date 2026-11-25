@@ -280,7 +280,14 @@ export function tabProblems(input: TabProblemInput): TabProblem[] {
     const again = said.some(
       (other) => other.tab === tab && named.some((name) => other.text.includes(name)),
     );
-    if (!again) add(tab, one.text);
+    // A step still needing its script, flow, page or table is said by the action's own check
+    // above, in the words of the inspector; the save's refusal of it is that again.
+    const stepAgain =
+      tab === "actions" &&
+      one.rest.includes("steps") &&
+      /^Step \d+\b.* needs an? /.test(one.text) &&
+      said.some((other) => other.tab === "actions");
+    if (!again && !stepAgain) add(tab, one.text);
   }
   return found;
 }

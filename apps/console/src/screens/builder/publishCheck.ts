@@ -101,6 +101,8 @@ export function actionProblem(
 ): string | undefined {
   if (action.steps.length === 0) return NO_STEPS;
   for (const step of action.steps) {
+    if (step.do === "open" && !step.page) return "it has no page chosen";
+    if (step.do === "create" && !step.table) return "it has no table chosen";
     if (step.do === "open" && checkPages && !body.pages.some((page) => page.id === step.page))
       return "it opens a page that is gone";
     if (step.do === "create" && known.tables && !known.tables.has(step.table))

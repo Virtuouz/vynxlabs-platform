@@ -998,6 +998,22 @@ export function checkWidgets(
         say(at, "a dashboard only reads: it can narrow, say, or show the rows behind a number");
         return;
       }
+      // A step made but not finished (its script, flow, page or table not chosen yet) is kept in
+      // a draft and said here; the rest of its checks wait for the value.
+      const unchosen =
+        step.do === "script" || step.do === "flow"
+          ? ["path", step.path]
+          : step.do === "open"
+            ? ["page", step.page]
+            : step.do === "create"
+              ? ["table", step.table]
+              : step.do === "narrow"
+                ? ["filter", step.filter]
+                : undefined;
+      if (unchosen && unchosen[1] === "") {
+        say(`${at}/${unchosen[0]}`, "is empty: it needs a value");
+        return;
+      }
       const values =
         step.do === "update" || step.do === "create"
           ? step.set

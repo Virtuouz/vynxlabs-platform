@@ -8,6 +8,15 @@ type Config = { clinic: string; perHour: number; busyAt: number; fullAt: number 
 // Only the events the definition declares can be raised.
 const frame = createFrame<Config>({ events: ["clinicChosen"] });
 
+/** A line that never wraps or grows the gauge: what does not fit is cut with an ellipsis, and the whole is its title. */
+const oneLine = {
+  display: "block",
+  minWidth: 0,
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
+} as const;
+
 const minutes = (time: unknown) => {
   const [hours, mins] = String(time).split(":").map(Number);
   return (hours ?? 0) * 60 + (mins ?? 0);
@@ -52,19 +61,27 @@ function View() {
           display: "flex",
           flexDirection: "column",
           justifyContent: "center",
-          gap: 8,
+          gap: 6,
           width: "100%",
           height: "100%",
-          padding: 12,
+          minWidth: 0,
+          overflow: "hidden",
+          padding: 10,
           cursor: "pointer",
           fontFamily: "var(--volvel-font, system-ui)",
           color: "var(--volvel-ink)",
         }}
       >
-        <span style={{ color: "var(--volvel-ink-muted)", fontSize: 13 }}>
+        <span
+          title={String(clinic.name)}
+          style={{ ...oneLine, color: "var(--volvel-ink-muted)", fontSize: 13 }}
+        >
           {String(clinic.name)}
         </span>
-        <span style={{ fontSize: 28, fontWeight: 600 }}>
+        <span
+          title={`${booked} of ${capacity} visits today`}
+          style={{ ...oneLine, fontSize: "clamp(18px, 11vw, 28px)", fontWeight: 600 }}
+        >
           {booked} <span style={{ fontSize: 14, fontWeight: 400 }}>of {capacity} visits today</span>
         </span>
         <span
@@ -90,7 +107,7 @@ function View() {
             }}
           />
         </span>
-        <span style={{ fontSize: 13, color: `var(--volvel-${tone})` }}>
+        <span style={{ ...oneLine, fontSize: 13, color: `var(--volvel-${tone})` }}>
           {percent}% of capacity
           {tone === "danger" ? ", full" : tone === "attention" ? ", busy" : ""}
         </span>

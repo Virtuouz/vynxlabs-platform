@@ -55,8 +55,14 @@ export interface TenantWidgetHostProps extends WidgetViewProps {
   definition: WidgetDefinition;
 }
 
-/** How long a frame has to say it is ready. */
+/**
+ * How long a frame has to say it is ready once its page has arrived (its `load`), and how long
+ * before the cell says it is still loading when the page has not arrived yet.
+ */
 export const FRAME_READY_MS = 10_000;
+
+/** The most a frame is waited for from mount, however slow the network: then it did not load. */
+export const FRAME_HARD_MS = 60_000;
 
 /** How tall a cell of `rows` rows is: the page's rows are 2.5rem with 0.75rem between. */
 const cellHeight = (rows: number) => `${rows * 2.5 + (rows - 1) * 0.75}rem`;
@@ -79,11 +85,14 @@ export function TenantWidgetHost({
   size,
   emit,
   state = { status: "ready" },
+  title,
 }: TenantWidgetHostProps) {
   const source = useFrameSource();
   const theme = useFrameTheme();
   const frame = useRef<HTMLIFrameElement>(null);
   const [phase, setPhase] = useState<Phase>("loading");
+  const [loaded, setLoaded] = useState(false);
+  const [slow, setSlow] = useState(false);
   const [height, setHeight] = useState<number>();
   const [dropped, setDropped] = useState(0);
   const [notGiven, setNotGiven] = useState(false);
@@ -199,15 +208,22 @@ export function TenantWidgetHost({
     if (now !== given.current) post();
   }, [phase, config, data, state, size, theme]);
 
-  // A frame that does not answer is a widget that did not load.
+  // A frame that does not answer is a widget that did not load. A page that has not arrived
+  // yet is a slow network, not a failure: the cell says it is still loading, up to a hard limit.
+  // Once the page has arrived, it has FRAME_READY_MS from then to say it is ready.
   useEffect(() => {
     if (phase !== "loading" || !url) return;
-    const timer = window.setTimeout(
-      () => setPhase((now) => (now === "loading" ? "failed" : now)),
-      FRAME_READY_MS,
-    );
-    return () => window.clearTimeout(timer);
-  }, [phase, url]);
+    const fail = () => setPhase((now) => (now === "loading" ? "failed" : now));
+    const timers = loaded
+      ? [window.setTimeout(fail, FRAME_READY_MS)]
+      : [
+          window.setTimeout(() => setSlow(true), FRAME_READY_MS),
+          window.setTimeout(fail, FRAME_HARD_MS),
+        ];
+    return () => {
+      for (const timer of timers) window.clearTimeout(timer);
+    };
+  }, [phase, url, loaded]);
 
   const label = `${definition.title} v${version}`;
   const say = (words: string, detail?: string) => (
@@ -236,7 +252,9 @@ export function TenantWidgetHost({
         <iframe
           ref={frame}
           src={url}
-          title={definition.title}
+          // Named by the one placed (three gauges are three names), by its type when it has no title.
+          title={title || definition.title}
+          onLoad={() => setLoaded(true)}
           // Scripts only: no same origin (it would give the view this site's cookies and storage),
           // no navigation of the page, no pop-ups, no forms, no dialogs.
           sandbox="allow-scripts"
@@ -264,7 +282,7 @@ export function TenantWidgetHost({
             role="status"
             className="pointer-events-none absolute inset-0 flex items-center justify-center text-body-sm text-ink-muted"
           >
-            Loading {definition.title}
+            {slow ? "Still loading" : "Loading"} {definition.title}
           </span>
         ) : null}
       </>

@@ -912,6 +912,23 @@ describe("a draft", () => {
     expect(JSON.stringify(saved.body.problems)).toContain("must NOT have fewer than 1 items");
   });
 
+  test("holds a step whose script, flow, page or table is not chosen yet, and says so as a problem", async () => {
+    for (const step of [
+      { do: "script", path: "" },
+      { do: "flow", path: "" },
+      { do: "open", page: "" },
+      { do: "create", table: "", set: {} },
+    ]) {
+      const saved = await putSeen(alice, `${ws()}/drafts/screens/invoices`, {
+        kind: "interface",
+        schemaVersion: 2,
+        body: draftOf([button("halfmade", 8, { steps: [step] })]),
+      });
+      expect(saved.status, JSON.stringify(saved.body)).toBe(200);
+      expect(JSON.stringify(saved.body.problems)).toContain("/steps/0/");
+    }
+  });
+
   test("is refused to an end user and run by an editor", async () => {
     const saved = await putSeen(alice, `${ws()}/drafts/screens/invoices`, {
       kind: "interface",

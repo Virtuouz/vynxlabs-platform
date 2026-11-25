@@ -51,10 +51,18 @@
             "apps",
             "group-keys",
             `interfaces/${path}`,
-            `drafts/${path}`,
           ]) {
             ask(`${root}/${read}`);
           }
+          // The draft is asked for only when the list says there is one: asking for one that is
+          // not there is a 404 that every browser logs as an error in the console.
+          early[`${root}/interfaces`]
+            ?.then((answer) => answer.clone().json())
+            .then((list) => {
+              if ((list.items || []).some((item) => item.path === path && item.draft))
+                ask(`${root}/drafts/${path}`);
+            })
+            .catch(() => {});
         }
       })();
     </script>

@@ -431,11 +431,15 @@ export function useActions(host: ActionsHost): {
     (request: Request): Promise<ActOutcome> => {
       const action = actionAt(request.widget, request.at);
       if (!action) return Promise.resolve({ ok: false, message: "That can't be done here." });
-      const gated = request.gate !== undefined && changesAnything(action);
+      // Every action a tenant widget runs comes from its frame, which can send an event with no
+      // click: so its type decides, not whether the caller remembered to pass `gate`.
+      const gated =
+        (request.gate !== undefined || request.widget.type.startsWith("x/")) &&
+        changesAnything(action);
       if (gated && openNow.current) {
         // One question at a time: another change a frame asks for meanwhile is dropped, not queued.
         console.warn(
-          `Widget "${request.gate?.widget}": the event ${request.gate?.event} was dropped: a confirmation is already open.`,
+          `Widget "${request.gate?.widget ?? request.widget.title ?? request.widget.type}": the event ${request.gate?.event ?? request.at.replace(/^on\//, "")} was dropped: a confirmation is already open.`,
         );
         return Promise.resolve({ ok: false, cancelled: true });
       }
@@ -630,8 +634,8 @@ function Confirmation({
   const writes = asking.action.steps.filter((one) => STEP_EFFECT[one.do] === "write");
   const words = asking.gated
     ? gateWords({
-        widget: asking.request.gate?.widget ?? "",
-        event: asking.request.gate?.event ?? "",
+        widget: asking.request.gate?.widget ?? asking.request.widget.title ?? asking.request.widget.type,
+        event: asking.request.gate?.event ?? asking.request.at.replace(/^on\//, ""),
         writes: writes as { do: string; path?: string; table?: string }[],
         confirm: {
           table: asking.request.table,

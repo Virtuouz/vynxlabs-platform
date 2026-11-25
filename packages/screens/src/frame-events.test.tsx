@@ -60,9 +60,22 @@ function EmitView({ emit }: WidgetViewProps) {
     </div>
   );
 }
+/** A tenant view that runs an action by its config path, not through an event. */
+function ActView({ act }: WidgetViewProps) {
+  return (
+    <button type="button" onClick={() => void act?.("config/action")}>
+      Act
+    </button>
+  );
+}
+const actDef = defineWidget({ ...base, type: "x/actor", title: "Actor", data: {}, events });
 const registry = viewRegistry({
-  definitions: [tenantDef, coreDef],
-  views: { "x/clinic-load": EmitView as never, "core/table": EmitView as never },
+  definitions: [tenantDef, coreDef, actDef],
+  views: {
+    "x/clinic-load": EmitView as never,
+    "core/table": EmitView as never,
+    "x/actor": ActView as never,
+  },
 });
 
 const close: Action = {
@@ -110,6 +123,15 @@ describe("a tenant widget's event that would change something", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "Confirm" }));
     await waitFor(() => expect(client.act).toHaveBeenCalledTimes(1));
     expect(client.act).toHaveBeenCalledWith("w", "on/chosen", { records: { event: "a" } });
+  });
+
+  test("is asked whatever way a tenant widget runs it, not only through an event", async () => {
+    const client = clientOf();
+    show({ ...widget("x/actor", {}), config: { action: close } }, client);
+    fireEvent.click(await screen.findByText("Act"));
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog.textContent).toContain("x/actor");
+    expect(client.act).not.toHaveBeenCalled();
   });
 
   test("starts on Cancel, and Cancel runs nothing", async () => {

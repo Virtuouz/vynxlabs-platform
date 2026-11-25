@@ -102,7 +102,8 @@ export function readGauges(samples) {
   if (workers.length) out.workers = sum(workers);
   for (const s of by("volvel_tasks_queued")) out[`tasks_queued_${s.labels.kind}`] = s.value;
   out.tasks_queued = sum(by("volvel_tasks_queued"));
-  for (const s of by("volvel_machine_running")) out[`machine_running_${s.labels.machine}`] = s.value;
+  for (const s of by("volvel_machine_running"))
+    out[`machine_running_${s.labels.machine}`] = s.value;
   out.machine_running = sum(by("volvel_machine_running"));
   for (const s of by("volvel_flow_runs")) out[`flow_runs_${s.labels.state}`] = s.value;
   out.flow_runs = sum(by("volvel_flow_runs"));
@@ -134,10 +135,14 @@ export function readCounters(samples) {
 }
 
 /** Cumulative buckets of a histogram summed over every label set: `Map<le, count>`. */
+/** Routes that wait on purpose: a worker's claim holds for 20 s, a stream stays open. They are not how long a request takes. */
+const WAITS_ON_PURPOSE = /^\/api\/v1\/(worker\/|worker-host\/|tenants\/:t\/stream$|metrics$)/;
+
 export function readBuckets(samples, metric) {
   const map = new Map();
   for (const s of samples) {
     if (s.name !== `${metric}_bucket`) continue;
+    if (s.labels.route && WAITS_ON_PURPOSE.test(s.labels.route)) continue;
     const le = s.labels.le === "+Inf" ? Infinity : Number(s.labels.le);
     map.set(le, (map.get(le) ?? 0) + s.value);
   }
@@ -247,7 +252,9 @@ function ssh(flyBin, app, command, timeoutMs = 20_000) {
       { timeout: timeoutMs, killSignal: "SIGKILL", maxBuffer: 1 << 20 },
       (error, stdout, stderr) => {
         if (error)
-          reject(new Error(error.killed ? "timed out" : String(stderr || error.message).split("\n")[0]));
+          reject(
+            new Error(error.killed ? "timed out" : String(stderr || error.message).split("\n")[0]),
+          );
         else resolveRun(stdout);
       },
     );
@@ -270,7 +277,12 @@ class Stat {
   }
   out() {
     return this.n
-      ? { min: this.min, max: this.max, mean: Math.round((this.total / this.n) * 100) / 100, samples: this.n }
+      ? {
+          min: this.min,
+          max: this.max,
+          mean: Math.round((this.total / this.n) * 100) / 100,
+          samples: this.n,
+        }
       : null;
   }
 }
@@ -397,7 +409,10 @@ async function main() {
         );
     } catch (e) {
       record.metrics_ms ??= Math.round(performance.now() - t0);
-      record.scrape_error = { status: e.status ?? null, error: e.status ? null : (e.cause?.code ?? e.message) };
+      record.scrape_error = {
+        status: e.status ?? null,
+        error: e.status ? null : (e.cause?.code ?? e.message),
+      };
       summary.scrape_failures++;
       summary.scrape_failure_log.push({ at: record.t, ...record.scrape_error });
     }
@@ -465,12 +480,16 @@ async function main() {
         if (pct) {
           Object.assign(value, pct);
           if (kind === "app") latestSteal = pct.steal_pct;
-          track("highest_steal_pct", (v) => (v === null ? pct.steal_pct : Math.max(v, pct.steal_pct)));
+          track("highest_steal_pct", (v) =>
+            v === null ? pct.steal_pct : Math.max(v, pct.steal_pct),
+          );
         }
       }
       record[kind] = value;
-      for (const [k, v] of Object.entries(value)) if (typeof v === "number") stat(`${kind}.${k}`, v);
-      if (kind === "pg") for (const [s, n] of Object.entries(value.by_state)) stat(`pg.state_${s}`, n);
+      for (const [k, v] of Object.entries(value))
+        if (typeof v === "number") stat(`${kind}.${k}`, v);
+      if (kind === "pg")
+        for (const [s, n] of Object.entries(value.by_state)) stat(`pg.state_${s}`, n);
     }
   }
 
@@ -497,7 +516,9 @@ async function main() {
     console.log(
       [
         record.t.slice(11, 19),
-        record.scrape_error ? `SCRAPE-FAILED(${record.scrape_error.status ?? record.scrape_error.error})` : "",
+        record.scrape_error
+          ? `SCRAPE-FAILED(${record.scrape_error.status ?? record.scrape_error.error})`
+          : "",
         `queued=${f(g.runs_queued)}`,
         `running=${f(g.runs_running)}`,
         `oldest=${f(g.queue_oldest_s)}s`,

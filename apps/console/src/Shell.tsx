@@ -1145,7 +1145,7 @@ export function Shell({
                   {/* The whole name is the way to another workspace: nobody has to aim for the arrows. */}
                   <Menu
                     ariaLabel="Switch workspace"
-                    triggerClassName="flex min-w-0 items-center gap-1 rounded-control border border-line py-[3px] pr-1.5 pl-2 font-medium text-ink hover:bg-surface"
+                    triggerClassName="flex max-w-[12rem] shrink-0 items-center gap-1 rounded-control border border-line py-[3px] pr-1.5 pl-2 font-medium text-ink hover:bg-surface"
                     label={
                       <>
                         <span className="truncate">{workspace?.name ?? "Workspace"}</span>
@@ -1166,14 +1166,17 @@ export function Shell({
                   />
                   {workspace ? <EnvTag type={workspace.type} /> : null}
                   {workspace?.triggersPaused || workspace?.pausedByInstance ? (
-                    <span className="hidden lg:inline-flex">
+                    <span
+                      className="hidden lg:inline-flex max-xl:[&_[data-label]]:sr-only"
+                      title={workspace.pausedByInstance ? "Paused by the instance" : "Paused"}
+                    >
                       <StatePill state="paused">
                         {workspace.pausedByInstance ? "Paused by the instance" : "Paused"}
                       </StatePill>
                     </span>
                   ) : null}
                   {ws?.linked ? (
-                    <span className="hidden items-center gap-2 min-[1440px]:flex">
+                    <span className="hidden items-center gap-2 min-[1536px]:flex">
                       <span aria-hidden="true" className="flex items-center gap-1">
                         <Wire dashed width={14} />
                         <Junction
@@ -1269,8 +1272,9 @@ export function Shell({
                 className="hidden h-7 items-center gap-1.5 rounded-control border border-line px-3 text-meta text-ink no-underline hover:bg-surface lg:flex"
               >
                 <Junction kind="pending" size={5} />
-                <span className="font-mono">{drafts}</span> draft{drafts === 1 ? "" : "s"}
-                <span className="text-action">Review</span>
+                <span className="font-mono">{drafts}</span>
+                <span className="max-xl:sr-only">draft{drafts === 1 ? "" : "s"}</span>
+                <span className="text-action max-xl:sr-only">Review</span>
               </Link>
             ) : null}
             {tenantId && workspaceId && failed > 0 ? (
@@ -1279,7 +1283,8 @@ export function Shell({
                 className="hidden h-7 items-center gap-1.5 rounded-control border border-danger/40 px-3 text-meta text-ink no-underline hover:bg-danger-soft sm:flex"
               >
                 <CircleX aria-hidden="true" size={14} className="text-danger" />
-                <span className="font-mono">{failed}</span> failed run{failed === 1 ? "" : "s"}
+                <span className="font-mono">{failed}</span>
+                <span className="max-xl:sr-only">failed run{failed === 1 ? "" : "s"}</span>
               </Link>
             ) : null}
             <Tooltip label="Help for this page" keys="F1">

@@ -44,7 +44,7 @@ export function LiveIndicator() {
       ) : status === "offline" ? (
         <WifiOff aria-hidden="true" size={14} />
       ) : null}
-      {words}
+      {status === "live" ? <span className="max-xl:sr-only">{words}</span> : words}
     </span>
   );
 }

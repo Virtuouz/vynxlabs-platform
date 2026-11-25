@@ -99,6 +99,7 @@ export function HelpDock({
           data-help-scrim=""
           aria-hidden="true"
           onClick={() => closeHelp()}
+          // overlay-allowed: the scrim is drawn by the kit's Appear, which carries the motion.
           className="fixed inset-0 layer-sheet bg-scrim transition-opacity motion-slow data-[ending-style]:opacity-0 data-[starting-style]:opacity-0"
         >
           {null}

@@ -6,7 +6,8 @@ import { setPriority, tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
-import { type Bundle, type BundleManifest, bundleDigest } from "@volvel/manifest";
+import type { Bundle, BundleManifest } from "@volvel/manifest";
+import { bundleDigest } from "@volvel/manifest/digest";
 import {
   allowedCall,
   type Bound,

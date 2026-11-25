@@ -1,5 +1,12 @@
+import { fileURLToPath } from "node:url";
 import { expect, test } from "vitest";
-import { bookedFor } from "../../../examples/fernhill/src/widgets/clinic-load/booked.ts";
+
+// The example is not part of this package's project, so it is loaded by its path.
+const { bookedFor } = (await import(
+  fileURLToPath(
+    new URL("../../../examples/fernhill/src/widgets/clinic-load/booked.ts", import.meta.url),
+  )
+)) as { bookedFor(visits: unknown, clinic: string): number };
 
 const summary = (by: string, value: string) => ({
   breakdowns: [by],

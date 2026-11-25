@@ -384,8 +384,16 @@ describe("the examples, as copies", () => {
       name: "fernhill",
       resources: "platform",
       yaml: ["platform/appointments.table.yaml", "platform/access/agent-book.binding.yaml"],
-      code: ["frontDesk", "petPortal", "operations", "performance", "myAccount", "bookAppointment"],
-      definitions: 23,
+      code: [
+        "frontDesk",
+        "petPortal",
+        "operations",
+        "performance",
+        "myAccount",
+        "bookAppointment",
+        "clinicLoad",
+      ],
+      definitions: 24,
     },
   ])(
     "$name has nothing left to convert but what has to be code",
@@ -400,7 +408,7 @@ describe("the examples, as copies", () => {
         for (const name of one.code) expect(reasons[name], name).toBeDefined();
         expect(
           planned.left.every((left) =>
-            /a script is code|made of files|spread|computed in code/.test(left.reason),
+            /a (script|widget) is code|made of files|spread|computed in code/.test(left.reason),
           ),
         ).toBe(true);
       });

@@ -58,3 +58,17 @@ The core pack (`packages/widgets-core`) imports only `@volvel/widgets` and `@vol
 - **Developer widgets in the page's own document**, trusted as code apps are. Simpler and faster, but a widget would hold the viewer's session, and the spec keeps an operator's reach and a tenant's code apart.
 - **Web components.** No isolation; the same problem.
 - **A widget that fetches its own data.** Rejected: a widget could then ask any question the viewer may, and a published page would no longer say what it reads.
+
+## Amendment, 2026-11-24: a frame's event that changes anything is confirmed
+
+**Decision (the owner's).** A tenant widget runs in a sandboxed frame (`packages/screens/src/TenantWidgetHost.tsx`, `frameChannel.ts`). Its declared events reach the page, and a page author can wire an event to the same actions as a button. The page cannot tell a real click inside the frame from one the frame's script made. So an action wired to a tenant widget's (`x/`) event that changes anything (a `script`, `flow`, `create`, `update` or `delete` step: any server write) is run only after a confirmation the page draws outside the frame, in the runtime's own dialog. It names the widget, the event and what will happen, starts on Cancel, and Escape cancels. Actions that only narrow a filter, select, open a page, close or show a message run at once as before. Built-in (`core/`) widgets are drawn by the platform and keep their behavior. While one confirmation is open, further write events from the widget are dropped and logged, not queued. The frame's rate limits still apply.
+
+**Why.** The contract said "do something the page didn't say", and that held: the builder did attach the action. But the builder attached it to a press, and a frame can emit the event with no press. A tenant's developer, or a script they ship, could then run a flow as every viewer who opens the page.
+
+**Options considered.**
+
+- *Leave it.* The action is the builder's choice. Rejected: the viewer, not the builder, is the one who acts, and nothing they did asked for the change.
+- *Confirm writes* (chosen). The cost is one dialog for a legitimate press that writes. The viewer is the one place a script in the frame cannot reach.
+- *Forbid writes from a frame's events.* Safest, but it removes a use that works (a widget that is a control, such as a picker that closes orders), and a builder could not opt in.
+
+The step kinds are classified as writing or not in one place, `STEP_EFFECT` in `packages/widget-sdk/src/action.ts`, and a test fails when a kind is added without it. The inspector says, beside such an event, that members will be asked to confirm.

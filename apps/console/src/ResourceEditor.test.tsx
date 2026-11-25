@@ -186,7 +186,9 @@ test("a schedule the repository's code defines is moved to a file as it is, by a
   await screen.findByLabelText("When, as a cron line");
   // It says the file it becomes, and what to do in the code afterwards.
   expect(screen.getByText("orders/nightly.schedule.yaml")).toBeTruthy();
-  expect(screen.getByText(/Its definition stays in the code until you remove it there/)).toBeTruthy();
+  expect(
+    screen.getByText(/Its definition stays in the code until you remove it there/),
+  ).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Move to a file" }));
   await waitFor(() => expect(saved()).toBeTruthy());
   expect(saved()?.body?.body).toEqual({

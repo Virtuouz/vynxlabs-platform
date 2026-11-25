@@ -784,3 +784,13 @@ test("the top bar's items do not wrap at a larger type scale", () => {
   expect(search?.[1]).not.toMatch(/md:w-56/);
   expect(shell).toMatch(/min-w-0 flex-1 truncate text-left md:inline">\s*Search or jump to…/);
 });
+
+test("the trail keeps room for the workspace and the page at 1280 px: the tenant name and promotes-to wait for 1440", () => {
+  const shell = readFileSync(join(here, "Shell.tsx"), "utf8");
+  const trail = shell.slice(
+    shell.indexOf('aria-label="Where you are"'),
+    shell.indexOf("{here ? <Crumbs section={here}"),
+  );
+  expect(trail).not.toMatch(/\bxl:(inline|flex)\b/);
+  expect(trail.match(/min-\[1440px\]:(inline|flex)/g)?.length).toBe(3);
+});

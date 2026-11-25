@@ -1130,11 +1130,11 @@ export function Shell({
                 <>
                   <Link
                     to={`/t/${tenantId}`}
-                    className="hidden truncate text-ink-muted no-underline underline-offset-2 hover:text-ink hover:underline xl:inline"
+                    className="hidden truncate text-ink-muted no-underline underline-offset-2 hover:text-ink hover:underline min-[1440px]:inline"
                   >
                     {tenant?.name ?? "Tenant"}
                   </Link>
-                  <span aria-hidden="true" className="hidden items-center xl:flex">
+                  <span aria-hidden="true" className="hidden items-center min-[1440px]:flex">
                     <Wire />
                     <Junction
                       kind={workspace?.type === "production" ? "production" : "here"}
@@ -1173,7 +1173,7 @@ export function Shell({
                     </span>
                   ) : null}
                   {ws?.linked ? (
-                    <span className="hidden items-center gap-2 xl:flex">
+                    <span className="hidden items-center gap-2 min-[1440px]:flex">
                       <span aria-hidden="true" className="flex items-center gap-1">
                         <Wire dashed width={14} />
                         <Junction

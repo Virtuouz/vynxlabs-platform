@@ -1,5 +1,7 @@
 import { type DataInput, defineInterface } from "@volvel/sdk";
 import { REASONS } from "./constants.ts";
+import { clinicLoadData } from "./widgets/clinic-load/data.ts";
+import { clinicLoad } from "./widgets/clinic-load/widget.ts";
 
 /**
  * Clinic operations: the app that shows what the app builder can do, as a veterinary group
@@ -11,6 +13,9 @@ import { REASONS } from "./constants.ts";
  * Its one resource besides the app is a saved query, because that is a data source a page may
  * read and no table of Fernhill's could stand in for it.
  */
+
+/** The version of the Clinic load widget the gauges are placed with. */
+const CLINIC_LOAD_VERSION = clinicLoad.definition.version;
 
 // ----- Formats -----
 
@@ -623,10 +628,43 @@ export const operations = defineInterface({
           },
         },
         {
+          id: "load-northside",
+          type: "x/clinic-load",
+          version: CLINIC_LOAD_VERSION,
+          title: "Northside today",
+          at: at(0, 2, 4, 4),
+          data: clinicLoadData(),
+          config: { clinic: "northside" },
+          // Press a gauge and the page narrows to that clinic.
+          on: { clinicChosen: { steps: [{ do: "narrow", filter: "clinic", from: "clinic" }] } },
+        },
+        {
+          id: "load-riverside",
+          type: "x/clinic-load",
+          version: CLINIC_LOAD_VERSION,
+          title: "Riverside today",
+          at: at(4, 2, 4, 4),
+          data: clinicLoadData(),
+          config: { clinic: "riverside" },
+          // Press a gauge and the page narrows to that clinic.
+          on: { clinicChosen: { steps: [{ do: "narrow", filter: "clinic", from: "clinic" }] } },
+        },
+        {
+          id: "load-hilltop",
+          type: "x/clinic-load",
+          version: CLINIC_LOAD_VERSION,
+          title: "Hilltop today",
+          at: at(8, 2, 4, 4),
+          data: clinicLoadData(),
+          config: { clinic: "hilltop" },
+          // Press a gauge and the page narrows to that clinic.
+          on: { clinicChosen: { steps: [{ do: "narrow", filter: "clinic", from: "clinic" }] } },
+        },
+        {
           id: "charts",
           type: "core/tabs",
           title: "How visits go",
-          at: at(0, 2, 12, 12),
+          at: at(0, 6, 12, 12),
           config: {
             look: "pills",
             remember: true,
@@ -764,7 +802,7 @@ export const operations = defineInterface({
           type: "core/pivot",
           title: "Clinic by status",
           subtitle: "Press a cell to narrow the page to its clinic.",
-          at: at(0, 14, 12, 6),
+          at: at(0, 18, 12, 6),
           data: visitsBy([{ column: "clinic" }, { column: "status" }]),
           config: { shade: true, rowTotals: true, columnTotals: true, format: COUNT },
           on: { cellClick: { steps: [{ do: "narrow", filter: "clinic", from: "clinic" }] } },
@@ -775,7 +813,7 @@ export const operations = defineInterface({
           type: "core/table",
           title: "Vets",
           subtitle: "The same saved query, as a table.",
-          at: at(0, 20, 12, 6),
+          at: at(0, 24, 12, 6),
           data: {
             rows: {
               source: { query: "reports/vet-workload" },
@@ -799,7 +837,7 @@ export const operations = defineInterface({
           id: "every",
           type: "core/table",
           title: "Every visit",
-          at: at(0, 26, 12, 12),
+          at: at(0, 30, 12, 12),
           data: {
             rows: {
               source: {

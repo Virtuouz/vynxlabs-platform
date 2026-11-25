@@ -277,6 +277,9 @@ importers:
       '@volvel/ui':
         specifier: workspace:*
         version: link:../../packages/ui
+      '@volvel/widget-frame':
+        specifier: workspace:*
+        version: link:../../packages/widget-frame
       react:
         specifier: ^19.3.1
         version: 19.3.1

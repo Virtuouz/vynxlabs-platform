@@ -1,0 +1,36 @@
+{
+  "config": { "clinic": "northside", "perHour": 3, "busyAt": 70, "fullAt": 90 },
+  "data": {
+    "visits": {
+      "shape": "summary",
+      "columns": [
+        { "name": "clinic", "label": "Clinic", "type": "text" },
+        { "name": "visits", "label": "Visits", "type": "integer" }
+      ],
+      "breakdowns": ["clinic"],
+      "values": ["visits"],
+      "rows": [
+        { "clinic": "northside", "visits": 14 },
+        { "clinic": "riverside", "visits": 9 },
+        { "clinic": "hilltop", "visits": 5 }
+      ]
+    },
+    "clinics": {
+      "shape": "rows",
+      "columns": [
+        { "name": "code", "label": "Code", "type": "text" },
+        { "name": "name", "label": "Name", "type": "text" },
+        { "name": "opens", "label": "Opens", "type": "text" },
+        { "name": "closes", "label": "Closes", "type": "text" }
+      ],
+      "rows": [
+        { "code": "northside", "name": "Fernhill Northside", "opens": "08:00", "closes": "18:00" },
+        { "code": "riverside", "name": "Fernhill Riverside", "opens": "08:30", "closes": "18:30" },
+        { "code": "hilltop", "name": "Fernhill Hilltop", "opens": "09:00", "closes": "17:00" }
+      ]
+    }
+  },
+  "state": { "status": "ready" },
+  "size": { "w": 4, "h": 4, "narrow": false },
+  "theme": { "scheme": "light", "tokens": {} }
+}

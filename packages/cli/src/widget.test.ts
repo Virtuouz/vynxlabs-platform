@@ -54,6 +54,14 @@ describe("volvel widget new", () => {
     const bundle = await buildBundle({ directory: dir });
     expect(bundle.manifests.map((m) => `${m.kind} ${m.path}`)).toEqual(["widget x/daily-goal"]);
     expect(bundle.manifests[0]?.body).toMatchObject({ entry: "src/widgets/daily-goal/view.tsx" });
+    // Added to a page, it starts with its setting filled in.
+    expect(bundle.manifests[0]?.body).toMatchObject({ defaults: { label: "Daily goal" } });
+    // A builder chooses what the widget reads in the inspector's Data tab: it has the controls for it.
+    expect(bundle.manifests[0]?.body).toMatchObject({
+      dataHints: [
+        { of: "value", controls: expect.arrayContaining([{ control: "source", label: "Source" }]) },
+      ],
+    });
     // The fixture is the props a view is given, so a view can be tried with it.
     expect(
       JSON.parse(await readFile(join(dir, "src/widgets/daily-goal/fixture.json"), "utf8")),

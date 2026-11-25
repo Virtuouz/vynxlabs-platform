@@ -60,7 +60,7 @@ export * from "@volvel/other";
   });
 });
 
-test("every export of @volvel/sdk and @volvel/widgets says what it is in a comment (D58, API-22)", () => {
+test("every export of @volvel/sdk, @volvel/widgets and @volvel/widget-frame says what it is in a comment (D58, API-22)", () => {
   const entries = entryPoints();
   expect(entries.map((one) => one.specifier)).toEqual([
     "@volvel/sdk",
@@ -69,11 +69,13 @@ test("every export of @volvel/sdk and @volvel/widgets says what it is in a comme
     "@volvel/widgets/action",
     "@volvel/widgets/frame",
     "@volvel/widgets/page",
+    "@volvel/widget-frame",
+    "@volvel/widget-frame/react",
   ]);
   const gaps: string[] = [];
   for (const entry of entries) {
     const { names } = exportsOfEntry(entry);
-    expect(names.size, entry.specifier).toBeGreaterThan(5);
+    expect(names.size, entry.specifier).toBeGreaterThan(entry.specifier.endsWith("/react") ? 0 : 5);
     for (const one of names.values()) {
       if (one.kind === "unknown") gaps.push(`${entry.specifier}: ${one.name} could not be read`);
       else if (one.kind !== "reexport" && one.doc.text === "") {

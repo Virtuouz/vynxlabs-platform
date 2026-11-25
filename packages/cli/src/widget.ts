@@ -33,6 +33,18 @@ export const ${exported} = defineWidget({
   surfaces: ["app", "dashboard"],
   // What it reads. The builder chooses the table or query; the view is given the result.
   data: { value: { shape: "summary" } },
+  // The controls the Data tab offers for it: where it reads, what it counts, how it is grouped.
+  dataHints: [
+    {
+      of: "value",
+      controls: [
+        { control: "source", label: "Source" },
+        { control: "measure", label: "Value" },
+        { control: "breakdown", label: "Group by" },
+        { control: "conditions", label: "Only include" },
+      ],
+    },
+  ],
   // Its settings: a JSON Schema, with an x-volvel hint on each saying how the inspector draws it.
   config: {
     type: "object",
@@ -44,6 +56,8 @@ export const ${exported} = defineWidget({
       },
     },
   },
+  // What the widget is when a builder adds it: the inspector's first values.
+  defaults: { label: "${words(name)}" },
   // What can happen that an action may be attached to. The payload is checked by the page.
   events: { clicked: { gives: "nothing", label: "When it is clicked" } },
   layout: { min: { w: 2, h: 2 }, default: { w: 4, h: 3 } },
@@ -67,7 +81,7 @@ function View() {
     <button
       type="button"
       onClick={() => frame.emit("clicked", {})}
-      style={{ font: "inherit", color: "var(--volvel-ink)", background: "var(--volvel-surface)" }}
+      style={{ font: "inherit", fontFamily: "var(--volvel-font, inherit)", color: "var(--volvel-ink)", background: "var(--volvel-surface)" }}
     >
       {config.label}: {summary?.rows.length ?? 0} rows
     </button>

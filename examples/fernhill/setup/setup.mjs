@@ -587,11 +587,38 @@ await draftInSandbox("boards/clinic-visits", "dashboard", {
         reset: true,
       },
     },
+    // The repository's own widget (src/widgets/clinic-load), deployed to the sandbox above: one
+    // clinic's visits today against what it can take. Pressing it narrows the bar to the clinic.
+    {
+      id: "load",
+      type: "x/clinic-load",
+      version: "1.0.0",
+      title: "Northside today",
+      at: { x: 0, y: 2, w: 4, h: 4 },
+      data: {
+        visits: {
+          source: {
+            visual: {
+              table: "appointments",
+              filters: [
+                { column: "starts_at", op: "last", value: { count: 1, unit: "day" } },
+                { column: "status", op: "in", value: ["booked", "checked_in", "in_exam", "done"] },
+              ],
+              groupBy: [{ column: "clinic" }],
+              measures: [{ fn: "count", as: "visits" }],
+            },
+          },
+        },
+        clinics: { source: { visual: { table: "clinics" } } },
+      },
+      config: { clinic: "northside" },
+      on: { clinicChosen: { steps: [{ do: "narrow", filter: "clinic", from: "clinic" }] } },
+    },
     {
       id: "views",
       type: "core/tabs",
       title: "Visits",
-      at: { x: 0, y: 2, w: 12, h: 13 },
+      at: { x: 0, y: 6, w: 12, h: 13 },
       config: {
         tabs: [
           { id: "visits", title: "Visits" },

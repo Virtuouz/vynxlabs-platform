@@ -23,6 +23,12 @@ const PACKAGE_LIST = [
     about:
       "The widget contract: what a widget for pages and dashboards declares, what its view is given, and the types of a page's body and of an action.",
   },
+  {
+    name: "@volvel/widget-frame",
+    folder: "widget-frame",
+    about:
+      "The frame side of a widget a tenant wrote: receive what the page gives, raise a declared event, ask for a height, and take the theme as CSS variables. It makes no network request.",
+  },
 ];
 
 const slugOf = (specifier) => specifier.replace(/^@volvel\//, "").replace(/\//g, "-");

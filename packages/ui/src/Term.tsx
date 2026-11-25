@@ -236,6 +236,26 @@ export function TermText({ children }: { children: string }) {
   );
 }
 
+/** Text whose names between backticks are set as code, without the glossary. For a dialog's words. */
+export function CodeText({ children }: { children: string }) {
+  const pieces = children.split(/`([^`\n]+)`/);
+  if (pieces.length === 1) return <>{children}</>;
+  return (
+    <>
+      {pieces.map((piece, at) =>
+        at % 2 === 1 ? (
+          // biome-ignore lint/suspicious/noArrayIndexKey: the pieces never reorder.
+          <code key={at} className="font-mono text-code">
+            {piece}
+          </code>
+        ) : (
+          piece
+        ),
+      )}
+    </>
+  );
+}
+
 function TermWords({ children }: { children: string }) {
   const glossary = useContext(GlossaryContext);
   if (!glossary?.find) return <>{children}</>;

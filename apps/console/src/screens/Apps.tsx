@@ -1,5 +1,5 @@
 import { type PageWidget, widgetTables } from "@volvel/manifest";
-import { Button, Notice, SelectField, SideSheet, Tabs } from "@volvel/ui";
+import { Button, Notice, SelectField, SideSheet, Tabs, TermText } from "@volvel/ui";
 import { ArrowUpRight } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api, useLoad } from "../api.ts";
@@ -377,11 +377,17 @@ function ShareDialog({
     <div className="flex flex-col gap-4 pt-4">
       {tablePaths.length === 0 ? (
         <p className="m-0 text-ink-muted">
-          {app?.builtWith === "code"
-            ? "Its code declares no tables. Ask its developer to list them with `reads` in defineApp."
-            : app?.builtWith === "docs"
-              ? "It serves pages of documentation, and reads no table."
-              : "It shows no table."}
+          {app?.builtWith === "code" ? (
+            <TermText>
+              {
+                "Its code declares no tables. Ask its developer to list them with `reads` in defineApp."
+              }
+            </TermText>
+          ) : app?.builtWith === "docs" ? (
+            "It serves pages of documentation, and reads no table."
+          ) : (
+            "It shows no table."
+          )}
         </p>
       ) : (
         tablePaths.map((table) => {

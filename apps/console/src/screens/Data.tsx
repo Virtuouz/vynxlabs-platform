@@ -2516,6 +2516,7 @@ export function ColumnsTable({
       columns={[
         {
           header: "Column",
+          width: "w-[18%]",
           cell: (row) => (
             <span className="flex flex-col gap-0.5">
               <Code>{row.name}</Code>
@@ -2547,6 +2548,7 @@ export function ColumnsTable({
         },
         {
           header: "Holds",
+          width: "w-[13%]",
           cell: (row) =>
             row.references ? (
               <span className="flex flex-col">
@@ -2579,11 +2581,13 @@ export function ColumnsTable({
         {
           header: "Rules",
           priority: 2,
+          width: "w-[15%]",
           cell: rulesOf,
         },
         {
           header: "When not given",
           priority: 3,
+          width: "w-[12%]",
           cell: defaultOf,
         },
         ...(actionsOf && roomy
@@ -2591,8 +2595,9 @@ export function ColumnsTable({
               {
                 header: "",
                 align: "end" as const,
-                // Up to five buttons: they wrap inside the column, and it keeps room for two rows of them.
-                wide: true,
+                // Up to five buttons, in a line at 1440 (the table is table-layout: fixed, so widths are
+                // all the say a column has); narrower, they wrap inside the column.
+                width: "w-[42%]",
                 cell: (row: TableColumn) => (
                   <span className="flex flex-wrap justify-end gap-1">
                     {actionsOf(row).map((one) => (

@@ -571,7 +571,7 @@ test("a row's unsaved edits are not dropped by choosing another row without aski
   expect(screen.queryByText("Leave without saving?")).toBeNull();
 });
 
-test("a table's Definition keeps room for a column's actions, and they wrap rather than run past the card (r-build)", async () => {
+test("a table's Definition keeps room for a column's actions in a line, and they wrap rather than run past the card (r-build)", async () => {
   const body = {
     columns: { number: { type: "text" }, total: { type: "number" } },
     policy: { type: "owner", column: "owner_id" },
@@ -590,7 +590,8 @@ test("a table's Definition keeps room for a column's actions, and they wrap rath
   const cell = describe.closest("td") as HTMLElement;
   const index = [...(cell.parentElement as HTMLElement).children].indexOf(cell);
   const header = (describe.closest("table") as HTMLElement).querySelectorAll("thead th")[index];
-  expect(header?.className).toContain("w-[14rem]");
+  // Room for the five in a line at 1440; narrower, they wrap inside it.
+  expect(header?.className).toContain("w-[42%]");
 });
 
 test("a table made in the console is renamed and described where it is edited", async () => {

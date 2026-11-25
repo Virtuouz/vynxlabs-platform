@@ -372,3 +372,27 @@ test("an event a frame raises with no click, wired to a write, is confirmed on t
   await expect(page.getByRole("dialog")).toBeHidden();
   expect(await written()).toBe(1);
 });
+
+// Base UI's focus guards (a span at each end of the dialog) take the focus for an instant, then
+// send it on into the dialog; a sample taken in that instant, or the frame behind it taking the
+// focus before the guard's handler runs, reads as an escape. The focus settles inside, so the
+// assertion waits for it: what must never happen is a focus that stays outside.
+for (const width of [390, 768, 1440]) {
+  test(`focus settles inside a confirmation dialog over Tab and Shift+Tab, with a frame behind it, at ${width} px @builder @access`, async () => {
+    test.skip(appsAt !== null, "this instance serves apps at an address of their own");
+    await page.setViewportSize({ width, height: width === 390 ? 800 : 900 });
+    await page.goto(`/apps/${SLUG}/dev/writer/`);
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toBeVisible();
+    const inside = () => page.evaluate(() => !!document.activeElement?.closest('[role="dialog"]'));
+    await expect.poll(inside).toBe(true);
+    for (const key of ["Tab", "Shift+Tab"]) {
+      for (let i = 0; i < 8; i++) {
+        await page.keyboard.press(key);
+        await expect.poll(inside, { message: `${key} press ${i + 1}` }).toBe(true);
+      }
+    }
+    await page.keyboard.press("Escape");
+    await expect(dialog).toBeHidden();
+  });
+}

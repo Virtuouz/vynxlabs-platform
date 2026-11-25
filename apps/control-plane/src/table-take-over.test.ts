@@ -140,8 +140,14 @@ describe("a table defined in code, taken over in the console", () => {
     expect((await deploy(id, [code("notes", sells)])).status).toBe(201);
     expect((await takeOver(id, "notes", sells)).status).toBe(200);
     // Nothing changed since: the repository's definition simply takes it back.
-    expect((await deploy(id, [code("notes", sells)])).status).toBe(201);
+    const handedBack = await deploy(id, [code("notes", sells)]);
+    expect(handedBack.status).toBe(201);
     expect(await ownerOf(id, "notes")).toBe("code");
+    // Said, so that a take-over undone by a deploy is not undone unseen.
+    expect(handedBack.body.summary.warnings).toContainEqual({
+      path: "notes",
+      message: "table notes is defined in code again: the console's take-over is undone.",
+    });
 
     expect((await takeOver(id, "notes", sells)).status).toBe(200);
     const edited = { ...sells, body: { type: "text" } };

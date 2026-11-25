@@ -5,6 +5,7 @@ import { corePack } from "@volvel/widgets-core/views";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { setFrameSource } from "./frameSource.ts";
 import {
+  FRAME_HARD_MS,
   FRAME_READY_MS,
   frameHeight,
   TenantWidgetHost,
@@ -218,7 +219,10 @@ describe("the frame", () => {
     try {
       draw();
       expect(screen.getByRole("status").textContent).toContain("Loading");
+      // A frame whose page has not arrived is late, not failed, until the hard limit.
       act(() => void vi.advanceTimersByTime(FRAME_READY_MS + 1));
+      expect(screen.queryByText("This widget did not load")).toBeNull();
+      act(() => void vi.advanceTimersByTime(FRAME_HARD_MS));
       expect(screen.getByText("This widget did not load")).toBeDefined();
       expect(document.querySelector("iframe")).toBeNull();
     } finally {

@@ -1,0 +1,11 @@
+# The "per-minute flow over 1,000 items" scenario. The setup script pauses it in a new tenant,
+# and `--schedules on` resumes it. Deployed by hand it fires at once. With `overlap: skip` a tick is passed over while the last run is going, as a
+# flow's own schedule does by default. Change it to `allow` to see runs stack, as they did
+# before phase 11.
+schemaVersion: 1
+body:
+  description: Starts load/fan-out every minute over 1,000 items.
+  flow: load/fan-out
+  cron: "* * * * *"
+  input: { count: 1000 }
+  overlap: skip

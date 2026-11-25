@@ -1,3 +1,4 @@
+import { Appear } from "@volvel/ui";
 import { useEffect, useRef } from "react";
 import { ErrorBoundary } from "../kit/ErrorBoundary.tsx";
 import { useInspectorDocked, useWide, WIDE } from "../kit/layout.tsx";
@@ -30,6 +31,7 @@ export function HelpDock({
   const tablet = useWide(WIDE.rail);
   const inspector = useInspectorDocked();
   const wasOpen = useRef(false);
+  const shell = useRef<HTMLDivElement>(null);
 
   // Closed: put focus back where it was when the panel opened, if it was in the panel. What had
   // focus is kept by the store when it opens, as the panel's own mount moves focus to its heading
@@ -42,35 +44,44 @@ export function HelpDock({
     if (!wasOpen.current) return;
     wasOpen.current = false;
     const was = takeOpener();
-    if (was instanceof HTMLElement && was.isConnected && document.activeElement === document.body) {
+    // Focus is on the body once the leaving panel is put out of reach, or still in it before then.
+    const here = document.activeElement;
+    const lost = !here || here === document.body || shell.current?.contains(here);
+    if (was instanceof HTMLElement && was.isConnected && lost) {
       was.focus();
     }
   }, [open]);
 
-  if (!open) return null;
   const docked = wide && (!inspector || widest);
   const place = docked
     ? "relative w-[380px] shrink-0 border-line border-l"
     : tablet
       ? "absolute inset-y-0 right-0 layer-sheet w-[380px] max-w-full border-line border-l shadow-overlay"
       : "fixed inset-0 layer-sheet";
+  // It arrives and leaves as the other panels do (`Appear`, the shell's flyout), from the edge it sits on.
   return (
-    <aside
-      aria-label="Help"
-      data-help-panel={docked ? "docked" : tablet ? "over" : "full"}
-      className={`flex min-h-0 flex-col ${place}`}
-      onKeyDown={(event) => {
-        if (event.key !== "Escape" || event.defaultPrevented) return;
-        // A popover inside the panel closes itself first.
-        if ((event.target as HTMLElement).closest("[role=dialog]")) return;
-        event.stopPropagation();
-        closeHelp();
-      }}
+    <Appear
+      open={open}
+      ref={shell}
+      className={`flex min-h-0 flex-col transition-[opacity,translate] motion-slow data-[ending-style]:translate-x-6 data-[starting-style]:translate-x-6 data-[ending-style]:opacity-0 data-[starting-style]:opacity-0 ${place}`}
     >
-      <ErrorBoundary what="The help" compact>
-        <HelpPanel tenantId={tenantId} workspaceId={workspaceId} />
-      </ErrorBoundary>
-    </aside>
+      <aside
+        aria-label="Help"
+        data-help-panel={docked ? "docked" : tablet ? "over" : "full"}
+        className="flex min-h-0 flex-1 flex-col"
+        onKeyDown={(event) => {
+          if (event.key !== "Escape" || event.defaultPrevented) return;
+          // A popover inside the panel closes itself first.
+          if ((event.target as HTMLElement).closest("[role=dialog]")) return;
+          event.stopPropagation();
+          closeHelp();
+        }}
+      >
+        <ErrorBoundary what="The help" compact>
+          <HelpPanel tenantId={tenantId} workspaceId={workspaceId} />
+        </ErrorBoundary>
+      </aside>
+    </Appear>
   );
 }
 

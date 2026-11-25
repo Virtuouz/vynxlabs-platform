@@ -106,7 +106,7 @@ export function PageShell({
           ) : null}
         </header>
         <main
-          className={`mx-auto w-full px-4 py-5 sm:px-6 ${width === "full" ? "max-w-none" : "max-w-6xl"}`}
+          className={`mx-auto w-full px-4 py-5 sm:px-6 ${width === "full" ? "max-w-none" : "max-w-[calc(72rem*var(--vx-type-growth,1))]"}`}
         >
           {children}
         </main>

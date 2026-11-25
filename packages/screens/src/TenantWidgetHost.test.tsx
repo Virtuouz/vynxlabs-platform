@@ -5,7 +5,7 @@ import type { WidgetDefinition } from "@volvel/widgets";
 import { FRAME_PROTOCOL } from "@volvel/widgets/frame";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { setFrameSource } from "./frameSource.ts";
-import { TenantWidgetHost } from "./TenantWidgetHost.tsx";
+import { FRAME_READY_MS, TenantWidgetHost } from "./TenantWidgetHost.tsx";
 
 // happy-dom loads no frame, and says so in the console unless that is taken as done.
 (
@@ -225,5 +225,33 @@ describe("p34-b7 what the host gives the frame", () => {
     );
     expect(logged).toHaveBeenCalled();
     expect(frame.isConnected).toBe(true);
+  });
+});
+
+describe("a frame that never answers", () => {
+  test("says how to try again in a narrow cell too, where a phone has nothing else to go on", () => {
+    vi.useFakeTimers();
+    try {
+      setFrameSource({ origin: "https://apps.example", slug: "acme" });
+      const view = render(
+        <TenantWidgetHost
+          type="x/hello"
+          version="1.0.0"
+          definition={definition}
+          config={{}}
+          data={{}}
+          size={{ w: 12, h: 4, narrow: true } as never}
+          building={false}
+          emit={vi.fn()}
+        />,
+      );
+      act(() => {
+        vi.advanceTimersByTime(FRAME_READY_MS + 1);
+      });
+      expect(view.container.textContent).toContain("This widget did not load");
+      expect(view.container.textContent).toContain("Reload to try again.");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

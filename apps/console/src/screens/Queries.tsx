@@ -782,7 +782,7 @@ export function Queries({
               </div>
             </details>
           ) : null}
-          <div className="w-48">
+          <div className="w-[calc(12rem*var(--vx-type-scale,1))]">
             <TextField
               name="rows"
               label="Rows to return"

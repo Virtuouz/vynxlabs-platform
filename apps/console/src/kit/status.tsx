@@ -233,7 +233,7 @@ const TAGS: Record<TagTone, string> = {
 export function Tag({ tone = "neutral", children }: { tone?: TagTone; children: ReactNode }) {
   return (
     <span
-      className={`inline-flex shrink-0 items-center rounded-inner border px-1.5 py-1 font-mono text-tag uppercase ${TAGS[tone]}`}
+      className={`inline-flex shrink-0 items-center whitespace-nowrap rounded-inner border px-1.5 py-1 font-mono text-tag uppercase ${TAGS[tone]}`}
     >
       {children}
     </span>

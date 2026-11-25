@@ -1130,11 +1130,11 @@ export function Shell({
                 <>
                   <Link
                     to={`/t/${tenantId}`}
-                    className="hidden truncate text-ink-muted no-underline underline-offset-2 hover:text-ink hover:underline lg:inline"
+                    className="hidden truncate text-ink-muted no-underline underline-offset-2 hover:text-ink hover:underline xl:inline"
                   >
                     {tenant?.name ?? "Tenant"}
                   </Link>
-                  <span aria-hidden="true" className="hidden items-center lg:flex">
+                  <span aria-hidden="true" className="hidden items-center xl:flex">
                     <Wire />
                     <Junction
                       kind={workspace?.type === "production" ? "production" : "here"}
@@ -1173,7 +1173,7 @@ export function Shell({
                     </span>
                   ) : null}
                   {ws?.linked ? (
-                    <span className="hidden items-center gap-2 lg:flex">
+                    <span className="hidden items-center gap-2 xl:flex">
                       <span aria-hidden="true" className="flex items-center gap-1">
                         <Wire dashed width={14} />
                         <Junction
@@ -1260,7 +1260,7 @@ export function Shell({
               )}
             </nav>
           </div>
-          <div className="flex shrink-0 items-center gap-2">
+          <div className="flex shrink-0 items-center gap-2 whitespace-nowrap">
             {tenantId ? <OperatorMark /> : null}
             {tenantId ? <LiveIndicator /> : null}
             {tenantId && workspaceId && drafts > 0 ? (
@@ -1299,11 +1299,13 @@ export function Shell({
               type="button"
               onClick={openPalette}
               aria-label="Search or jump to"
-              className="flex h-8 items-center gap-2 rounded-control text-meta text-ink-subtle hover:text-ink md:h-7 md:w-56 md:border md:border-line md:bg-structure md:pr-1.5 md:pl-3"
+              className="flex h-8 items-center gap-2 rounded-control text-meta whitespace-nowrap text-ink-subtle hover:text-ink md:h-7 md:w-[calc(14rem*var(--vx-type-scale,1))] md:min-w-0 md:shrink md:border md:border-line md:bg-structure md:pr-1.5 md:pl-3"
             >
               <Search aria-hidden="true" size={16} className="mx-1.5 md:mx-0" />
-              <span className="hidden flex-1 text-left md:inline">Search or jump to…</span>
-              <kbd className="hidden rounded-inner border border-line px-1 font-mono text-tag md:inline">
+              <span className="hidden min-w-0 flex-1 truncate text-left md:inline">
+                Search or jump to…
+              </span>
+              <kbd className="hidden shrink-0 rounded-inner border border-line px-1 font-mono text-tag md:inline">
                 {formatCombo("Mod+K")}
               </kbd>
             </button>

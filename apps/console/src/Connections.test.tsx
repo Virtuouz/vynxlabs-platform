@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { testText } from "./screens/ConnectionWizard.tsx";
 import { Connections } from "./screens/Execution.tsx";
 import { show } from "./testing.tsx";
 
@@ -391,4 +392,19 @@ test("WLK-17g: in production with nothing arriving, Set up a connection says so 
   fireEvent.click(await screen.findByRole("button", { name: "Set up a connection" }));
   expect(await screen.findByText(/Nothing waits to be set up here/)).toBeTruthy();
   expect(screen.queryByRole("dialog", { name: /New connection/ })).toBeNull();
+});
+
+test("a test that got a 404 or a refusal is not said as a success", () => {
+  const ended = (result: unknown) =>
+    ({ status: "succeeded", result }) as unknown as Parameters<typeof testText>[0];
+  expect(testText(ended({ ok: true, status: 200, latencyMs: 42 }))).toEqual({
+    ok: true,
+    text: "Reached (200) in 42 ms.",
+  });
+  const missing = testText(
+    ended({ ok: false, status: 404, message: "https://x.example answered 404: nothing is there." }),
+  );
+  expect(missing.ok).toBe(false);
+  expect(missing.text).toMatch(/^Failed \(HTTP 404\)/);
+  expect(missing.text).not.toMatch(/Reached/);
 });

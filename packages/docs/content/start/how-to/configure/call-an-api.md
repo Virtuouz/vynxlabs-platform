@@ -76,7 +76,7 @@ Deployed version 1 to try-it (dev): 3 created, 0 updated, 0 deleted, 0 unchanged
 ```
 
 3. In the console, open **Configure**, then **Connections**. The row `stock-orders` says **Not set up here** and its **Used by** is `stock/reorder`. Press **Set up**.
-4. In the sheet, type `http://127.0.0.1:4020` as the **Address**, choose **Authorization: Bearer** under **How the credential is sent**, and type `vs_demo_51be22` as the **Token or key**. Press **Save**. The sheet shows **Reached (200)** with the time it took. Press **Close**.
+4. In the sheet, type `http://127.0.0.1:4020` as the **Address** and `/vetsupply/ping` as the **Test path**, choose **Authorization: Bearer** under **How the credential is sent**, and type `vs_demo_51be22` as the **Token or key**. Press **Save**. The sheet shows **Reached (200)** with the time it took. Press **Close**.
 5. Open **Secrets** and press **New secret**. Type `SUPPLIER_ACCOUNT` as the **Name** and `FERNHILL-CFG` as the **Value**, and press **New secret**. The row shows who set it and, under **Used by**, `stock/reorder`.
 6. Open **Variables**. The row `stock/reorder-quantity` shows **Default: 10**. Press **Set**, type `12` and press **Save**. The row shows `12`.
 7. Run this build of the script in the workspace. It is a test run, and nothing is deployed.

@@ -49,6 +49,7 @@ Each issue found, by number, with what was seen, the cause, the fix and the reru
 | ID | Found in | What | Fix |
 |---|---|---|---|
 | STR-01 | Seeding, M1 | The app's shared CPU is throttled once its burst is spent. The first Fernhill seeded in 138 s; the eleven copies after it took 389 to 823 s each, with the app machine at 86 % steal and a load of 5 on two shared CPUs, while the database sat 93 % idle. Phase 11 saw 52 % steal on the same size | Hardware, not code. Every scenario is run on this size for comparison, then again with the app on a performance CPU. `sizing-and-scaling.md` is to say what a shared CPU sustains |
+| STR-02 | Filling a table, M1 | With 24 tenants, the 2 GB machine had under 100 MB free with no script running: 13 managed workers held about 105 MB each (1.35 GB), and the control plane 470 MB resident and 330 MB in swap. Below the floor a worker counted itself as never idle (`packages/worker/src/worker.ts`, "Not idle: the work is there, the memory is not"), so none left; nothing was claimed, 8 runs sat queued with none running, and each script that did start, down to one of 31 MB, was stopped as the machine's largest. The slot arithmetic plans 160 MB a run and 512 MB kept back, and nothing for a worker | A worker that exits when idle now leaves after 8 to 16 s below the floor with no run in progress, and a worker is started only where 128 MB stays above the floor, in the supervisor and in the worker host. Tests in `worker.test.ts` and `supervisor-stop.test.ts`. Rerun: pending |
 
 ## Findings
 

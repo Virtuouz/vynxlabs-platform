@@ -249,6 +249,8 @@ export function scimRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             .selectAll()
             .where("provider_id", "=", found.id)
             .orderBy("occurred_at", "desc")
+            // Refusals pushed in the same moment keep the order they came in: ids are time-ordered.
+            .orderBy("id", "desc")
             .execute();
           return {
             nextCursor,

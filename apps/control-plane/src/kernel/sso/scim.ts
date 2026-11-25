@@ -946,6 +946,8 @@ async function refuseTakeover(trx: Trx, provider: Provider, displayName: string,
     .select("reason")
     .where("provider_id", "=", provider.id)
     .orderBy("occurred_at", "desc")
+    // Refusals pushed in the same moment keep the order they came in: ids are time-ordered.
+    .orderBy("id", "desc")
     .limit(1)
     .executeTakeFirst();
   if (latest?.reason === reason) return;

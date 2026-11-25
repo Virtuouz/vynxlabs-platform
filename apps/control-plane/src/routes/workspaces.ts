@@ -799,6 +799,7 @@ export function workspaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                 `Something is already at "${path}". Choose another name, or change what is there.`,
               );
           }
+          // Exact path on purpose: what is saved over is what is at the path now (a take-over's basis).
           const before = await trx
             .selectFrom("resource")
             .select(["id", "path", "key", "title", "body", "ownership"])

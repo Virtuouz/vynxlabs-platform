@@ -814,3 +814,34 @@ test("p34-w3: a served app's content column grows with the type scale, as its te
   const shell = readFileSync(join(root, "packages/ui/src/PageShell.tsx"), "utf8");
   expect(shell).toContain("max-w-[calc(72rem*var(--vx-type-growth,1))]");
 });
+
+/**
+ * A string with a name between backticks ("list them with `reads`") shows its backticks where it
+ * is set as plain text. `TermText` and `CodeText` (and a dialog's or side sheet's description,
+ * which uses `CodeText`) draw them as code. A string that is one of those, or is markdown, says
+ * so on a line near it with `backticks-allowed:`, or has `TermText` or `CodeText` beside it.
+ */
+test("a string with a name between backticks is set by TermText or CodeText, not shown plain", () => {
+  const sources = (dir: string): string[] =>
+    readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+      const path = join(dir, entry.name);
+      if (entry.isDirectory()) return sources(path);
+      return /\.tsx?$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name) ? [path] : [];
+    });
+  const found: string[] = [];
+  for (const path of [
+    ...sources(join(here, "screens")),
+    ...sources(join(here, "kit")),
+    ...sources(join(here, "../../../packages/screens/src")),
+  ]) {
+    const lines = readFileSync(path, "utf8").split("\n");
+    lines.forEach((line, index) => {
+      if (!/"[^"`\n]*`[A-Za-z/_.~-][^`\n$]*`[^"\n]*"/.test(line)) return;
+      if (/^\s*(\/\/|\*|\/\*)/.test(line)) return;
+      const near = lines.slice(Math.max(0, index - 3), index + 3).join("\n");
+      if (/TermText|CodeText|backticks-allowed:/.test(near)) return;
+      found.push(`${where(path)}:${index + 1} shows its backticks`);
+    });
+  }
+  expect(found).toEqual([]);
+});

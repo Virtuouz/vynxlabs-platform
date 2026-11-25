@@ -266,3 +266,21 @@ test("NARROW-1: a table keeps a width its columns can be read in and wraps long 
   const cell = table.querySelector("tbody td") as HTMLElement;
   expect(cell.className).toContain("[overflow-wrap:anywhere]");
 });
+
+test("POLISH-002: a list that is empty says so as the screens made by ListScreen do, left and in a dashed box", () => {
+  render(
+    <DataTable
+      label="Triggers"
+      columns={COLUMNS}
+      rows={[]}
+      rowKey={(row) => row.id}
+      empty={{ title: "Nothing starts by itself yet", text: "A schedule starts work." }}
+    />,
+  );
+  const box = document.querySelector("[data-empty-state]") as HTMLElement;
+  expect(box.textContent).toContain("Nothing starts by itself yet");
+  // Not the centered canvas with a glyph: that one is for a whole page.
+  expect(box.className).not.toContain("text-center");
+  expect(box.querySelector("svg")).toBeNull();
+  expect(box.className).toContain("border-dashed");
+});

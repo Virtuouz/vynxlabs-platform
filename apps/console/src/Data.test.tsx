@@ -571,7 +571,7 @@ test("a row's unsaved edits are not dropped by choosing another row without aski
   expect(screen.queryByText("Leave without saving?")).toBeNull();
 });
 
-test("a table's Definition keeps room for a column's actions, and they wrap rather than run past the card (r-build)", async () => {
+test("a table's Definition keeps room for a column's actions in a line, and they wrap rather than run past the card (r-build)", async () => {
   const body = {
     columns: { number: { type: "text" }, total: { type: "number" } },
     policy: { type: "owner", column: "owner_id" },
@@ -590,7 +590,8 @@ test("a table's Definition keeps room for a column's actions, and they wrap rath
   const cell = describe.closest("td") as HTMLElement;
   const index = [...(cell.parentElement as HTMLElement).children].indexOf(cell);
   const header = (describe.closest("table") as HTMLElement).querySelectorAll("thead th")[index];
-  expect(header?.className).toContain("w-[14rem]");
+  // Room for the five in a line at 1440; narrower, they wrap inside it.
+  expect(header?.className).toContain("w-[42%]");
 });
 
 test("a table made in the console is renamed and described where it is edited", async () => {
@@ -2396,4 +2397,27 @@ test("a table in code cannot be taken over in a production workspace", async () 
   fireEvent.click(await screen.findByRole("button", { name: "Definition" }));
   await screen.findByText(/A production workspace changes by a deploy only/);
   expect(screen.queryByRole("button", { name: "Take over in the console" })).toBeNull();
+});
+
+test("a table's description that names a column between backticks shows it as code, in the list", async () => {
+  routes[`GET /api/v1${root}/tables`] = () => [
+    200,
+    {
+      items: [
+        {
+          name: "clients",
+          status: "active",
+          managedIn: "ui",
+          description: "Pet owners. `code` is what their account holds.",
+          columnCount: 1,
+          rowCount: 3,
+          policy: { type: "open" },
+        },
+      ],
+    },
+  ];
+  show(<Tables root={root} link="/t/t1/workspaces/w1" />);
+  await screen.findByRole("link", { name: "clients" });
+  expect(await screen.findByText("code", { selector: "code" })).toBeTruthy();
+  expect(document.body.textContent).not.toContain("`");
 });

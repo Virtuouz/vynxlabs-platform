@@ -1488,6 +1488,7 @@ export function Workers({ base }: { base: string }) {
           <CreateDialog
             config={{
               action: "Add pool",
+              // backticks-allowed: a dialog's description is set by CodeText.
               description:
                 "Scripts name the pool with `worker`. Then make a credential for it and start a worker there.",
               fields: [

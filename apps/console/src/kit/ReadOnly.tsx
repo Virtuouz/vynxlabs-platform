@@ -7,7 +7,7 @@ interface Readiness {
 
 /** What a person is told wherever a change would be refused: said once, here. */
 export const READ_ONLY_WORDS =
-  "The database is taking no changes for now: its disk may be full, or it is in maintenance. Reading still works. An operator of this instance can look at its Health screen or run `volvel status`.";
+  "The database is taking no changes for now: its disk may be full, or it is in maintenance. Reading still works. An operator of this instance can look at its Health screen or run volvel status.";
 
 /**
  * Whether the instance's database takes no writes right now, asked of `/readyz` every

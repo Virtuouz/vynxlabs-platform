@@ -366,7 +366,8 @@ export function ConnectionWizard({
         </div>
       }
     >
-      <div className="flex flex-col gap-6">
+      {/* As wide as the settings form (SchemaForm's max-w-xl), so the token and the result line up with it. */}
+      <div className="flex max-w-xl flex-col gap-6">
         <section className="flex flex-col gap-3">
           <SectionLabel>1 · What it is</SectionLabel>
           {row ? (

@@ -20,6 +20,7 @@ import {
   SelectField,
   SideSheet,
   showValue,
+  TermText,
   TextAreaField,
   TextField,
   useFlip,
@@ -1650,6 +1651,9 @@ export function Tables({ root, link }: { root: string; link: string }) {
       columns={[
         {
           header: "Table",
+          // The list is table-layout: fixed, so widths are the only say a column has. A name is not cut:
+          // the longest real ones (purchase_orders, supplier_contacts) fit.
+          width: "w-[12rem]",
           cell: (row) => (
             <span className="inline-flex items-center gap-2">
               <Link
@@ -1670,7 +1674,13 @@ export function Tables({ root, link }: { root: string; link: string }) {
         {
           header: "What it holds",
           priority: 2,
-          cell: (row) => <span className="text-ink-muted">{row.description}</span>,
+          // The words get the room the short columns leave: at 1440 they were four lines in a quarter.
+          width: "w-[34%]",
+          cell: (row) => (
+            <span className="text-ink-muted">
+              {row.description ? <TermText>{row.description}</TermText> : null}
+            </span>
+          ),
         },
         {
           header: "Managed in",
@@ -2506,11 +2516,14 @@ export function ColumnsTable({
       columns={[
         {
           header: "Column",
+          width: "w-[18%]",
           cell: (row) => (
             <span className="flex flex-col gap-0.5">
               <Code>{row.name}</Code>
               {row.description ? (
-                <span className="max-w-measure text-meta text-ink-muted">{row.description}</span>
+                <span className="max-w-measure text-meta text-ink-muted">
+                  <TermText>{row.description}</TermText>
+                </span>
               ) : null}
               {roomy ? null : (
                 <span data-column-stack className="flex flex-col gap-1 text-meta">
@@ -2535,6 +2548,7 @@ export function ColumnsTable({
         },
         {
           header: "Holds",
+          width: "w-[13%]",
           cell: (row) =>
             row.references ? (
               <span className="flex flex-col">
@@ -2567,11 +2581,13 @@ export function ColumnsTable({
         {
           header: "Rules",
           priority: 2,
+          width: "w-[15%]",
           cell: rulesOf,
         },
         {
           header: "When not given",
           priority: 3,
+          width: "w-[12%]",
           cell: defaultOf,
         },
         ...(actionsOf && roomy
@@ -2579,8 +2595,9 @@ export function ColumnsTable({
               {
                 header: "",
                 align: "end" as const,
-                // Up to five buttons: they wrap inside the column, and it keeps room for two rows of them.
-                wide: true,
+                // Up to five buttons, in a line at 1440 (the table is table-layout: fixed, so widths are
+                // all the say a column has); narrower, they wrap inside the column.
+                width: "w-[42%]",
                 cell: (row: TableColumn) => (
                   <span className="flex flex-wrap justify-end gap-1">
                     {actionsOf(row).map((one) => (
@@ -3698,7 +3715,11 @@ export function Sources({ root, link }: { root: string; link: string }) {
         {
           header: "For",
           priority: 3,
-          cell: (row) => <span className="text-ink-muted">{row.description}</span>,
+          cell: (row) => (
+            <span className="text-ink-muted">
+              {row.description ? <TermText>{row.description}</TermText> : null}
+            </span>
+          ),
         },
         {
           header: "Points to",

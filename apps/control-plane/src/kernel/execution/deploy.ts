@@ -606,6 +606,13 @@ export async function deployBundle(
     for (const message of result.warnings) {
       summary.warnings.push({ path: manifest.path, message });
     }
+    // Handed back by a deploy that still defines it: said, not done unseen.
+    if (result.ownershipFrom === "ui" && manifest.ownership === "code") {
+      summary.warnings.push({
+        path: manifest.path,
+        message: `${manifest.kind} ${manifest.path} is defined in code again: the console's take-over is undone.`,
+      });
+    }
     if (result.aliasRemoved) summary.aliasesRemoved.push(manifest.path);
     if (result.aliasRemoved && (manifest.kind === "script" || manifest.kind === "flow")) {
       summary.breaking.push({

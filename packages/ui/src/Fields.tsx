@@ -123,6 +123,8 @@ export function FieldFrame({
 }: Common & { required?: boolean | undefined; children: ReactNode }) {
   const beside = useContext(Beside);
   const marks = useContext(Marks);
+  // A label that says "(optional)" in its words is not marked again: the console showed both.
+  const says = typeof label === "string" && /\(optional\)/i.test(label);
   return (
     <Field.Root invalid={error !== undefined} className="flex flex-col gap-1">
       <div className={labelHidden ? "sr-only" : "flex items-baseline gap-1 text-body-sm"}>
@@ -138,7 +140,7 @@ export function FieldFrame({
           <span aria-hidden="true" className="text-danger">
             *
           </span>
-        ) : required === false && marks === "both" ? (
+        ) : required === false && marks === "both" && !says ? (
           <span aria-hidden="true" className="text-ink-subtle">
             optional
           </span>

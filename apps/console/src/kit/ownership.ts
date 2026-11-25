@@ -19,7 +19,7 @@ export const ownershipSentence = (ownership: string, past = false): string =>
 export const ownershipMeaning = (ownership: string): string =>
   ownership === "code"
     ? "Defined in TypeScript in the repository. Change it there and deploy."
-    : "Files, edited in the console and in the repository. A deploy of the repository is refused if the console changed it since the last `volvel pull`.";
+    : "Files, edited in the console and in the repository. A deploy of the repository is refused if the console changed it since the last volvel pull.";
 
 /**
  * What taking a resource over from code says, in one place, so that the places that offer it

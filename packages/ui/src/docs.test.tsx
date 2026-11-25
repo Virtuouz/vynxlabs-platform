@@ -333,6 +333,28 @@ describe("a glossary around a screen", () => {
     expect(underlined()).toEqual(["Dev Workspace", "rma", "order"]);
   });
 
+  test("a name between backticks is set as code, with or without a glossary, and the backticks do not show", () => {
+    const { container, rerender } = render(
+      <p>
+        <TermText>A path such as `/health`. Left out, the Test asks for the address.</TermText>
+      </p>,
+    );
+    expect(container.querySelector("code")?.textContent).toBe("/health");
+    expect(container.textContent).toBe(
+      "A path such as /health. Left out, the Test asks for the address.",
+    );
+    rerender(
+      <GlossaryProvider terms={terms}>
+        <p>
+          <TermText>The `code` is what a workspace holds</TermText>
+        </p>
+      </GlossaryProvider>,
+    );
+    expect(container.querySelector("code")?.textContent).toBe("code");
+    expect(container.textContent).not.toContain("`");
+    expect(underlined()).toEqual(["workspace"]);
+  });
+
   test("a term is underlined once on a screen, by whichever of its spellings comes first", () => {
     render(
       <GlossaryProvider terms={terms}>

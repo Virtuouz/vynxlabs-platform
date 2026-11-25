@@ -59,6 +59,13 @@ export interface CodeEditorProps {
   frontmatter?: { hint: string } | undefined;
 }
 
+/** Whether a text field outside the editor is being typed in. */
+function otherFieldHasFocus(inside: HTMLElement | null): boolean {
+  const now = document.activeElement;
+  if (!(now instanceof HTMLElement) || inside?.parentElement?.contains(now)) return false;
+  return now.matches("input, textarea, select, [contenteditable='true']");
+}
+
 /** The editor, worked from outside. Every change it makes is a step that Undo takes back. */
 export interface CodeEditorHandle {
   undo(): void;
@@ -289,7 +296,9 @@ export function CodeEditor({
             },
             apply: (next, at) => {
               replace.current(next, at);
-              created.focus();
+              // A field beside the editor, such as a page's details, writes through here as it is
+              // typed in: the editor takes the focus for a button's change, never from a field.
+              if (!otherFieldHasFocus(host.current)) created.focus();
             },
             focus: () => created.focus(),
           };

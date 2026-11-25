@@ -1651,6 +1651,9 @@ export function Tables({ root, link }: { root: string; link: string }) {
       columns={[
         {
           header: "Table",
+          // The list is table-layout: fixed, so widths are the only say a column has. A name is not cut:
+          // the longest real ones (purchase_orders, supplier_contacts) fit.
+          width: "w-[12rem]",
           cell: (row) => (
             <span className="inline-flex items-center gap-2">
               <Link
@@ -1671,6 +1674,8 @@ export function Tables({ root, link }: { root: string; link: string }) {
         {
           header: "What it holds",
           priority: 2,
+          // The words get the room the short columns leave: at 1440 they were four lines in a quarter.
+          width: "w-[34%]",
           cell: (row) => (
             <span className="text-ink-muted">
               {row.description ? <TermText>{row.description}</TermText> : null}

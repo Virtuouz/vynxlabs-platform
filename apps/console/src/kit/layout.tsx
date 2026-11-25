@@ -640,7 +640,7 @@ export function FilterChips<T extends string>({
             role="radio"
             aria-checked={on}
             onClick={() => onChange(option.value)}
-            className={`inline-flex h-7 items-center gap-1.5 rounded-full border px-3 text-meta ${
+            className={`inline-flex h-7 items-center gap-1.5 rounded-full border px-2.5 text-meta ${
               on
                 ? "border-action/60 bg-action-soft text-action"
                 : "border-line text-ink-muted hover:border-line-strong hover:text-ink"

@@ -27,11 +27,11 @@ A column in `columns` has a `name`, a `label`, and a `type` (`text`, `integer`, 
 
 In a `summary`, a row of the result has one key for each breakdown and each value, named by `breakdowns` and `values`: for Fernhill's `visits` input, `{ clinic: "northside", visits: 25 }`. A date breakdown arrives as the day.
 
-A `rows` input arrives as one page. A `rows` input that reads more than one page of rows is not given to the view: the widget stays blank. Narrow it with a condition or a limit, or read a summary.
+A `rows` input arrives as one page, with `total` (how many rows there are in all, when there is a next page) and, when there is one, `more()`: it asks the page for the next page, and the view is given the rows so far again. `sortBy(sort)` asks for the rows in the order of a column, read over all of them and not only the page; `sortBy(undefined)` asks for the order they come in, and `sorted` says which order the rows are in. Both are functions in the view, and in the frame they send a request to the page, which answers by giving the props again. The page only answers for an input the definition declares as `rows`, for a column the rows have, and at most four requests a second; it drops the rest. The page's rows are limited by its own rule, so a view that needs every row should read a summary.
 
 ## State
 
-`state.status` is `ready`, `loading`, `empty`, `failed` or `forbidden`; the last three carry a `message`. On a page, the view is given `ready`: the page draws loading, failed and forbidden around the widget itself, the same for every widget. `volvel dev --widgets` posts the state you choose, so a view can be tried with each.
+`state.status` is `ready`, `loading`, `empty`, `failed` or `forbidden`; the last three carry a `message`. On a page, the view is given the state of the page's read of its data: `loading` before the first rows arrive, `empty` (with the page's words) when the inputs read nothing, `failed` or `forbidden` (each with a message the viewer may see) when the read did not work or the viewer may not see it, and `ready` otherwise. The view stays in its cell through each, and draws them; for a failed or forbidden read the page also draws a **Try again** button under it. `volvel dev --widgets` posts the state you choose, so a view can be tried with each.
 
 ## Size
 

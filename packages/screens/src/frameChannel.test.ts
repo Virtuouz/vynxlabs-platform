@@ -106,4 +106,38 @@ describe("what the host believes of a frame", () => {
     for (now = 2000; now <= 4600; now += 20) kinds.add(channel.receive(click).kind);
     expect(kinds.has("flood")).toBe(true);
   });
+
+  test("a request for the next page or an order is passed on for a declared rows input alone", () => {
+    const channel = createChannel({ events, rows: ["visits"] });
+    expect(channel.receive(say("more", { input: "visits" }))).toEqual({
+      kind: "more",
+      input: "visits",
+    });
+    expect(
+      channel.receive(say("sort", { input: "visits", sort: { column: "a", descending: true } })),
+    ).toEqual({ kind: "sort", input: "visits", sort: { column: "a", descending: true } });
+    expect(channel.receive(say("sort", { input: "visits", sort: null }))).toEqual({
+      kind: "sort",
+      input: "visits",
+      sort: null,
+    });
+    // Not declared, not a rows input, or named like something every object has.
+    for (const input of ["other", "constructor", "__proto__"])
+      expect(channel.receive(say("more", { input })).kind).toBe("dropped");
+    expect(createChannel({ events }).receive(say("more", { input: "visits" })).kind).toBe(
+      "dropped",
+    );
+  });
+
+  test("requests for rows are limited to a few a second, whatever else the frame sends", () => {
+    let now = 0;
+    const channel = createChannel({ events, rows: ["visits"], now: () => now });
+    const kinds = [];
+    for (let i = 0; i < FRAME_LIMITS.requestsPerSecond + 3; i++)
+      kinds.push(channel.receive(say("more", { input: "visits" })).kind);
+    expect(kinds.filter((kind) => kind === "more")).toHaveLength(FRAME_LIMITS.requestsPerSecond);
+    expect(kinds.at(-1)).toBe("dropped");
+    now = 1100;
+    expect(channel.receive(say("more", { input: "visits" })).kind).toBe("more");
+  });
 });

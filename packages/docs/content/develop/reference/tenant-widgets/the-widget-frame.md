@@ -21,6 +21,8 @@ Install `@volvel/widget-frame`, and `react` and `react-dom` for a view in React.
 | `useWidgetProps(frame)` | `@volvel/widget-frame/react` | The props as React state: `undefined` until the first message, then every change. |
 | `THEME_VARIABLE_PREFIX` | `@volvel/widget-frame` | `--volvel-`. |
 
+A message cannot carry a function, so the page posts a rows input as plain data (its rows, `total`, `sorted`, and the flags `hasMore` and `canSort`), and the package makes `more()` and `sortBy()` from the flags: each posts a `more` or a `sort` request to the page, which checks it the way it checks an event (the input must be a `rows` input of the definition, the column one the rows have, at most four requests a second) and answers with the props again.
+
 `FrameProps<Config>` is what the page gives:
 
 | Prop | What it is |
@@ -66,10 +68,11 @@ An event's `payload` is a JSON Schema. The page reads `type`, `enum`, `const`, `
 | --- | --- |
 | The frame has not said `ready` | "Loading" and the widget's title. |
 | No frame address can be found | "This widget cannot be shown here." and "Its address could not be found. Reload the page to try again." |
+| The page could not post the data to the frame | "This widget could not be given its data" and "Reload the page to try again. If it stays, tell the widget's developer." The frame stays under it, and the console of the browser has why. |
 | No `ready` in 10 seconds | "This widget did not load" and "Its page did not answer. Reload to try again." |
 | A flood | "This widget was stopped: it sent too many messages" and "Reload the page to try again." |
 
-The widget's own loading, empty, failed and forbidden states are in `state`, and the view draws them. The scaffold draws `Loading` and `Nothing to show`.
+The widget's own loading, empty, failed and forbidden states are in `state`, as the page reads them, and the view draws them. The scaffold draws `Loading` and `Nothing to show`.
 
 ## Theme variables
 

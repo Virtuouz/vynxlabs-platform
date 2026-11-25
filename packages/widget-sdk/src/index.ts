@@ -678,6 +678,12 @@ export interface WidgetViewProps<Config = Record<string, unknown>> {
   config: Config;
   /** Each data input, read, by name. An input not yet read is absent. */
   data: Readonly<Record<string, WidgetData>>;
+  /**
+   * For a tenant's widget (`x/...`): what the page's read of the data is, so the view can draw
+   * its own loading, empty and failed states. Left out: ready. A platform widget is drawn by
+   * the frame around it only when ready.
+   */
+  state?: WidgetState;
   size: ViewSize;
   /** Raises a declared event. The host does what the page says, or nothing. */
   emit: (event: string, payload: EventPayload) => void;

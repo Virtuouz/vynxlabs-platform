@@ -45,7 +45,7 @@ A widget is code, so it is the one part of a page that is not YAML. Its definiti
    {config.label}: {String(summary?.rows[0]?.[summary.values[0] ?? ""] ?? 0)}
    ```
 
-   The view is a React component. `createFrame` connects it to the page, and `useWidgetProps(frame)` gives it `config`, `data`, `state`, `size` and `theme` each time any changes. It draws only when `state.status` is `ready`. See [The widget frame](../reference/tenant-widgets/the-widget-frame) for all of it.
+   The view is a React component. `createFrame` connects it to the page, and `useWidgetProps(frame)` gives it `config`, `data`, `state`, `size` and `theme` each time any changes. It draws its own loading, empty and failed states from `state.status`. See [The widget frame](../reference/tenant-widgets/the-widget-frame) for all of it.
 
 4. **Give it sample data.** `fixture.json` is what `volvel dev` gives the view. Change `data.value` to one number:
 
@@ -84,7 +84,7 @@ A widget is code, so it is the one part of a page that is not YAML. Its definiti
 3. **Save a change.** Edit `view.tsx` and save. The preview rebuilds in a moment and reloads the frame, with your settings kept. A view that does not build shows its error on the page.
 :::
 
-The preview is not the page. The page's own loading, empty and error states are drawn around your view, the same for every widget, and the preview only posts the state you choose.
+The preview is not the page. On the page, `state` is what the page's read of the data is, and the page adds a **Try again** button under a view whose read failed; the preview only posts the state you choose.
 
 ## Deploy it
 

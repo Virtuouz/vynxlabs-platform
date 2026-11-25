@@ -6,7 +6,12 @@
  * `contentWindow`, is made before anything is passed in.
  */
 import type { EventDeclaration, EventPayload } from "@volvel/widgets";
-import { isFrameMessage, MAX_FRAME_HEIGHT, payloadProblem } from "@volvel/widgets/frame";
+import {
+  isFrameMessage,
+  MAX_FRAME_HEIGHT,
+  payloadProblem,
+  type WireSort,
+} from "@volvel/widgets/frame";
 
 /** What a frame may send. */
 export const FRAME_LIMITS = {
@@ -14,6 +19,8 @@ export const FRAME_LIMITS = {
   maxBytes: 64 * 1024,
   /** The most messages a second. */
   perSecond: 20,
+  /** The most requests for rows (`more`, `sort`) a second: each one is a read from the server. */
+  requestsPerSecond: 4,
   /** A frame that keeps going over the rate for this long is stopped. */
   floodMs: 2000,
 } as const;
@@ -22,6 +29,8 @@ export type Verdict =
   | { kind: "ready" }
   | { kind: "event"; event: string; payload: EventPayload }
   | { kind: "size"; height: number }
+  | { kind: "more"; input: string }
+  | { kind: "sort"; input: string; sort: WireSort }
   | { kind: "dropped"; reason: string }
   | { kind: "flood" };
 
@@ -34,6 +43,8 @@ export interface Channel {
 
 interface ChannelOptions {
   events: Readonly<Record<string, EventDeclaration>>;
+  /** The names of the rows inputs the definition declares: the only ones a frame may ask rows of. */
+  rows?: readonly string[];
   now?: () => number;
   limits?: Partial<typeof FRAME_LIMITS>;
 }
@@ -59,6 +70,8 @@ export function createChannel(options: ChannelOptions): Channel {
   const now = options.now ?? Date.now;
   const limits = { ...FRAME_LIMITS, ...options.limits };
   const recent: number[] = [];
+  const requests: number[] = [];
+  const declaredRows = new Set(options.rows ?? []);
   let overSince: number | undefined;
   let dropped = 0;
   const drop = (reason: string): Verdict => {
@@ -101,6 +114,23 @@ export function createChannel(options: ChannelOptions): Channel {
       if (!isFrameMessage(message)) return drop("the message is not part of the protocol");
       if (message.type === "ready") return { kind: "ready" };
       if (message.type === "size") return { kind: "size", height: Math.round(message.height) };
+
+      if (message.type === "more" || message.type === "sort") {
+        if (!declaredRows.has(message.input))
+          return drop(`the widget does not declare a rows input "${message.input}"`);
+        while (requests.length > 0 && at - (requests[0] as number) >= 1000) requests.shift();
+        if (requests.length >= limits.requestsPerSecond) return drop("too many requests for rows");
+        requests.push(at);
+        return message.type === "more"
+          ? { kind: "more", input: message.input }
+          : {
+              kind: "sort",
+              input: message.input,
+              sort: message.sort
+                ? { column: message.sort.column, descending: message.sort.descending }
+                : null,
+            };
+      }
 
       const declaration = Object.hasOwn(options.events, message.event)
         ? options.events[message.event]

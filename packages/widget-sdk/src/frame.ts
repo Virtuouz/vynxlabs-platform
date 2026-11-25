@@ -7,13 +7,17 @@
  *
  * - The host posts `props` whenever anything in them changes, and once the frame says `ready`.
  * - The frame posts `ready` once it is listening, `event` for an event its definition
- *   declares, and `size` to ask for a height.
+ *   declares, `size` to ask for a height, and, for a rows input, `more` (the next page) and
+ *   `sort` (rows in the order of a column). The host answers with props again.
+ * - What crosses is plain data. A rows input arrives with `hasMore` and `canSort` where a view
+ *   in the page has `more()` and `sortBy()`; the frame's runtime makes those two functions
+ *   again, and each sends its request.
  * - Nothing else is part of the protocol. Whoever receives a message checks it with
  *   `isHostMessage` / `isFrameMessage` and drops what fails. The host checks an event again
  *   against the definition and its payload schema; the frame's own check is a courtesy.
  */
 
-import type { ViewSize, WidgetData, WidgetState } from "./index.js";
+import type { RowsData, ViewSize, WidgetData, WidgetState } from "./index.js";
 
 /** The protocol's name and version, on every message. */
 export const FRAME_PROTOCOL = "volvel-widget/1" as const;
@@ -41,12 +45,74 @@ export interface FrameProps<Config = Record<string, unknown>> {
   theme: FrameTheme;
 }
 
+/** A rows input as it crosses: `RowsData` with no functions, and two flags where they were. */
+export type WireRows = Omit<RowsData, "more" | "sortBy"> & {
+  /** There is a next page: the view's `more()` asks for it. */
+  hasMore?: boolean;
+  /** The rows can be read in the order of a column over all of them: the view's `sortBy()` asks. */
+  canSort?: boolean;
+};
+
+/** One data input as it crosses a frame: plain data only, since `postMessage` cannot clone a function. */
+export type WireData = Exclude<WidgetData, RowsData> | WireRows;
+
+/** `FrameProps` as it is posted: the same, with plain data. */
+export interface WireProps<Config = Record<string, unknown>>
+  extends Omit<FrameProps<Config>, "data"> {
+  data: Readonly<Record<string, WireData>>;
+}
+
+/** The rows' order a frame asks for; `null` is the order the rows come in. */
+export type WireSort = { column: string; descending: boolean } | null;
+
 /** Host to frame. */
 export interface HostMessage {
   protocol: typeof FRAME_PROTOCOL;
   from: "host";
   type: "props";
-  props: FrameProps;
+  props: WireProps;
+}
+
+/** Plain data from what a page's view is given: the functions of a rows input become flags. */
+export function toWireData(data: Readonly<Record<string, WidgetData>>): Record<string, WireData> {
+  const wire: Record<string, WireData> = {};
+  for (const [name, one] of Object.entries(data)) {
+    if (one.shape !== "rows") {
+      wire[name] = one;
+      continue;
+    }
+    const { more, sortBy, ...plain } = one;
+    wire[name] = {
+      ...plain,
+      ...(more ? { hasMore: true } : {}),
+      ...(sortBy ? { canSort: true } : {}),
+    };
+  }
+  return wire;
+}
+
+/** What a frame's view is given from what was posted: the two functions of a rows input, made from its flags. */
+export function fromWireData(
+  wire: Readonly<Record<string, WireData>>,
+  ask: {
+    more: (input: string) => void;
+    sort: (input: string, sort: WireSort) => void;
+  },
+): Record<string, WidgetData> {
+  const data: Record<string, WidgetData> = {};
+  for (const [name, one] of Object.entries(wire)) {
+    if (one.shape !== "rows") {
+      data[name] = one;
+      continue;
+    }
+    const { hasMore, canSort, ...plain } = one;
+    data[name] = {
+      ...plain,
+      ...(hasMore ? { more: () => ask.more(name) } : {}),
+      ...(canSort ? { sortBy: (sort) => ask.sort(name, sort ?? null) } : {}),
+    };
+  }
+  return data;
 }
 
 /** Frame to host. */
@@ -59,7 +125,15 @@ export type FrameMessage =
       event: string;
       payload: unknown;
     }
-  | { protocol: typeof FRAME_PROTOCOL; from: "frame"; type: "size"; height: number };
+  | { protocol: typeof FRAME_PROTOCOL; from: "frame"; type: "size"; height: number }
+  | { protocol: typeof FRAME_PROTOCOL; from: "frame"; type: "more"; input: string }
+  | {
+      protocol: typeof FRAME_PROTOCOL;
+      from: "frame";
+      type: "sort";
+      input: string;
+      sort: WireSort;
+    };
 
 const isObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -75,7 +149,7 @@ export function isHostMessage(value: unknown): value is HostMessage {
   );
 }
 
-/** Whether a message received by the host is one of the three a frame may send. */
+/** Whether a message received by the host is one of the five a frame may send. */
 export function isFrameMessage(value: unknown): value is FrameMessage {
   if (!isObject(value) || value.protocol !== FRAME_PROTOCOL || value.from !== "frame") return false;
   switch (value.type) {
@@ -90,6 +164,20 @@ export function isFrameMessage(value: unknown): value is FrameMessage {
         value.height >= 0 &&
         value.height <= MAX_FRAME_HEIGHT
       );
+    case "more":
+      return typeof value.input === "string" && value.input !== "";
+    case "sort": {
+      if (typeof value.input !== "string" || value.input === "") return false;
+      if (value.sort === null) return true;
+      return (
+        isObject(value.sort) &&
+        typeof value.sort.column === "string" &&
+        value.sort.column !== "" &&
+        value.sort.column.length <= 200 &&
+        typeof value.sort.descending === "boolean" &&
+        Object.keys(value.sort).length === 2
+      );
+    }
     default:
       return false;
   }

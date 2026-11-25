@@ -137,6 +137,39 @@ describe("the frame's side of the protocol", () => {
     expect(frame.props()).toBeDefined();
   });
 
+  test("a rows input arrives with its more() and sortBy(), and each asks the host", () => {
+    const { frame, sent } = start();
+    host(
+      propsMessage(
+        props({
+          data: {
+            visits: {
+              shape: "rows",
+              columns: [],
+              rows: [],
+              hasMore: true,
+              canSort: true,
+            } as never,
+          },
+        }) as never,
+      ),
+    );
+    const rows = frame.props()?.data.visits;
+    if (rows?.shape !== "rows") throw new Error("rows");
+    rows.more?.();
+    rows.sortBy?.({ column: "a", descending: true });
+    expect(sent.slice(1)).toEqual([
+      { protocol: FRAME_PROTOCOL, from: "frame", type: "more", input: "visits" },
+      {
+        protocol: FRAME_PROTOCOL,
+        from: "frame",
+        type: "sort",
+        input: "visits",
+        sort: { column: "a", descending: true },
+      },
+    ]);
+  });
+
   test("after close, hears nothing", () => {
     const { frame } = start();
     frame.close();

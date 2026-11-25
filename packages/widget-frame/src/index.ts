@@ -12,10 +12,12 @@ import {
   FRAME_PROTOCOL,
   type FrameMessage,
   type FrameProps,
+  fromWireData,
   isHostMessage,
   MAX_FRAME_HEIGHT,
   THEME_VARIABLE_PREFIX,
   themeVariables,
+  type WireProps,
 } from "@volvel/widgets/frame";
 
 export type { FrameProps, FrameTheme } from "@volvel/widgets/frame";
@@ -74,7 +76,15 @@ export function createFrame<Config = Record<string, unknown>>(
     // Only the page that holds this frame is believed.
     if (event.source !== parent) return;
     if (!isHostMessage(event.data)) return;
-    current = event.data.props as FrameProps<Config>;
+    const wire = event.data.props as unknown as WireProps<Config>;
+    current = {
+      ...wire,
+      data: fromWireData(wire.data ?? {}, {
+        more: (input) => post({ protocol: FRAME_PROTOCOL, from: "frame", type: "more", input }),
+        sort: (input, sort) =>
+          post({ protocol: FRAME_PROTOCOL, from: "frame", type: "sort", input, sort }),
+      }),
+    };
     applyTheme(current.theme);
     for (const listener of [...listeners]) listener(current);
   };

@@ -9,8 +9,8 @@ Lines are current at commit `aabf96af` (branch p34-b6) plus the docs of this lan
 | A widget added in the builder starts with `defaults`; the schema's `default` is not applied (a placed scaffold without `defaults` drew ": 3699"). | run; `packages/cli/src/widget.ts` | writer, run | holds as run |
 | Row shapes and their fields; column fields and types. | `packages/widget-sdk/src/index.ts:496-615` | writer | holds |
 | A summary row has one key for each breakdown and value. | run (`{clinic, visits}`) | writer, run | holds as run |
-| A rows input over one page leaves the widget blank. | run; see the how-to's record | writer, run | holds as run; a defect |
+| A rows input is one page, with `more()` and `sortBy()` that ask the page; `total`, `sorted`. | `packages/widget-sdk/src/frame.ts` `toWireData`, `fromWireData`; `TenantWidgetHost.tsx:160-175`; `e2e/widget-frame.spec.ts` | b7, run | holds |
 | Sizes in cells: 12 columns, 40-pixel rows; `narrow`. | `packages/widget-sdk/src/page.ts:150-160`; `index.ts:637-643` | writer | holds |
-| `state` values; the host posts ready. | `packages/widget-sdk/src/index.ts:625-630`; `TenantWidgetHost.tsx:96` | writer | holds |
-| Not given: only the props are posted. | `TenantWidgetHost.tsx:85-100` (b4r) | writer | holds |
+| `state` values; the page's read gives loading, empty, failed, forbidden or ready, and the view stays in its cell for each, with Try again under a failed or forbidden one. | `packages/widget-sdk/src/index.ts:625-630`; `TenantWidgetHost.tsx:118`; `Frame.tsx` (tenant widget branch); `PageView.tsx` (`state`) | b7 | holds |
+| Not given: only the props are posted. | `TenantWidgetHost.tsx:109-126` (b4r) | writer, b7 | holds |
 | The server reads each input for the viewer under the table's rules. | `apps/control-plane/src/kernel/data/query/inputs.ts` (`readWidget`); `apps/control-plane/src/tenant-widgets.test.ts` | writer | holds |

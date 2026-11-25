@@ -11,7 +11,7 @@ Lines are current at commit `aabf96af` (branch p34-b6) plus the docs of this lan
 | The package applies the theme as CSS variables, `data-theme`, `color-scheme`, and removes variables the next theme lacks. | `packages/widget-frame/src/index.ts:58-68` | writer | holds |
 | Protocol `volvel-widget/1`, messages props, ready, event, size; guards. | `packages/widget-sdk/src/frame.ts:19,62-96` | writer | holds |
 | The view posts with target `*`; the page believes only the frame's own window; the view only its parent. | `packages/widget-frame/src/index.ts:56,72`; `TenantWidgetHost.tsx:101-117` (b4r) | writer | holds |
-| 64 KB, 20 a second, flood after 2 s. | `packages/screens/src/frameChannel.ts:12-18` (b4r) | writer | holds |
+| 64 KB, 20 a second, flood after 2 s. | `packages/screens/src/frameChannel.ts:17-25` (b4r) | writer, b7 | holds |
 | A height over 4000 is read as 4000. | `frameChannel.ts:96-104` | writer | holds |
 | 10 seconds to say ready; the cell's four messages. | `TenantWidgetHost.tsx:47,172-183,209` (b4r) | writer | holds |
 | 512 KB script limit. | `packages/cli/src/widget-build.ts:8` | writer | holds |
@@ -20,4 +20,6 @@ Lines are current at commit `aabf96af` (branch p34-b6) plus the docs of this lan
 | A variable's name and value are checked: pattern, 200 characters, forbidden words. | `packages/widget-sdk/src/frame.ts:98-113` | writer | holds |
 | A token the page does not define is not sent. | `packages/screens/src/frameTheme.ts:48-52` | writer | holds |
 | The preview gives the platform's own token values in light and dark. | `packages/cli/src/dev-widgets-css.ts` | writer | holds |
-| On a page the host posts `state` as ready. | `TenantWidgetHost.tsx:96` (b4r) | writer | holds |
+| On a page the host posts the page's real `state`. | `TenantWidgetHost.tsx:118` | b7 | holds |
+| A rows input crosses as plain data with `hasMore` and `canSort`; the package makes `more()` and `sortBy()` that post `more` and `sort`. | `packages/widget-sdk/src/frame.ts` `toWireData`/`fromWireData`; `packages/widget-frame/src/index.ts`; `frame.test.ts` | b7 | holds |
+| A post that fails: "This widget could not be given its data", logged. | `TenantWidgetHost.tsx:128-137,225`; `TenantWidgetHost.test.tsx` | b7 | holds |

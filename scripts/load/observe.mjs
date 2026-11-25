@@ -177,7 +177,7 @@ const SYS_SCRIPT = [
   "echo LOAD $(cat /proc/loadavg)",
   "echo CPU $(grep -m1 ^cpu /proc/stat)",
   'grep -E "^(MemAvailable|MemFree|SwapTotal|SwapFree):" /proc/meminfo',
-  'echo NODES $(grep -lE "^Name:[[:space:]]+node$" /proc/[0-9]*/status 2>/dev/null | wc -l)',
+  'echo NODES $(grep -lE "^Name:[[:space:]]+(node|node-cp|MainThread)$" /proc/[0-9]*/status 2>/dev/null | wc -l)',
 ].join("; ");
 const DISK_SCRIPT = "echo DISK $(df -k /data | tail -1)";
 

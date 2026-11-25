@@ -1,0 +1,55 @@
+# Phase 35: an instance is loaded until it bends, broken on purpose, and attacked
+
+Status: in progress, on branch `phase-35-stress-and-red-team`, off `phase-34-yaml-first-and-widgets`.
+Last updated: 2026-11-25
+
+The owner asked, on 2026-11-25, for proof that phases 25 to 34 did not cost performance or the
+ability to recover a broken instance: a stress test of a freshly seeded Fly instance to find the
+limits of the application and the hardware, with issues noted and fixed along the way, then a
+red-team exercise. The last load test was [phase 11](phase-11-load.md), re-run on 2026-11-16.
+
+**Exit criterion.** On a fresh Fly instance seeded with `examples/fernhill` and `examples/stress`:
+
+- phase 11's criterion still holds: runs wait in the queue and the machine never freezes; a busy
+  read answers 503 with `Retry-After` or 422, never 500; reads and sign-in work while the database
+  takes no writes; flows do not stack; a clone does not hold up the instance;
+- every scenario has a measured limit, set beside phase 11's figure where there is one;
+- each fault (database disk full, a killed app machine, a killed database, exhausted memory, an
+  unreachable object store) is recovered from without SQL by hand, and the time it took is written
+  down;
+- a database dump taken under load is restored into a second instance, with its keys;
+- every confirmed finding of the red team has a proof that worked before its fix and fails after.
+
+## Owner decisions
+
+| Area | Decision |
+|---|---|
+| Target | A new, separate Fly app (`volvel-stress`). `volvel-test` is not touched. Asked 2026-11-25 |
+| Hardware | Phase 11's machines first (app shared-cpu-2x 2 GB, database shared-cpu-1x 512 MB), then the database on a performance CPU. Asked 2026-11-25 |
+| Faults | All four families: disk full, kill and restart, backup and restore, memory and object store loss. Asked 2026-11-25 |
+| Agents | Up to 20 Sonnet subagents |
+| Findings | An unfixed vulnerability is not written into git. Only fix records are committed |
+
+## Milestones
+
+| # | Milestone |
+|---|---|
+| M1 | The instance stands on Fly and is seeded; how it was made is written down |
+| M2 | The load tooling is in the repository |
+| M3 | The scenarios are run and the limits recorded |
+| M4 | The faults are injected and recovered from |
+| M5 | The database is stepped up and the scenarios it limited are run again |
+| M6 | The red team's findings are confirmed and fixed |
+| M7 | The full suites pass |
+
+## Issues
+
+Each issue found, by number, with what was seen, the cause, the fix and the rerun.
+
+| ID | Found in | What | Fix |
+|---|---|---|---|
+| STR-01 | Seeding, M1 | The app's shared CPU is throttled once its burst is spent. The first Fernhill seeded in 138 s; the eleven copies after it took 389 to 823 s each, with the app machine at 86 % steal and a load of 5 on two shared CPUs, while the database sat 93 % idle. Phase 11 saw 52 % steal on the same size | Hardware, not code. Every scenario is run on this size for comparison, then again with the app on a performance CPU. `sizing-and-scaling.md` is to say what a shared CPU sustains |
+
+## Findings
+
+What the phase as a whole found.

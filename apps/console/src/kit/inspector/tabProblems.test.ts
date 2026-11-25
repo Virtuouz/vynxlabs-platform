@@ -169,3 +169,15 @@ test("w-builder 3: a chart sorted by a breakdown through a join (its name has an
     "Sorted by: pet_breed is not in invoices any more.",
   ]);
 });
+
+test("an action that is not finished is told by the words of its event, not the event's name", () => {
+  const widget: PageWidget = {
+    id: "t",
+    type: "core/table",
+    at,
+    on: { rowClick: { steps: [{ do: "script", path: "" }] } as never },
+  };
+  const found = inTab(tabProblems({ widget, definition: table, catalog }), "actions");
+  expect(found).toContain("When a row is clicked: it has no script chosen.");
+  expect(found.join(" ")).not.toContain("rowClick");
+});

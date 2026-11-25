@@ -95,6 +95,14 @@ const ABOUT: Record<EditedKind, { noun: string; example: string; says: string; f
   },
 };
 
+/** What a trigger of each type begins as: a body its editor can draw. */
+export const freshStart = (type: string): StartSettings =>
+  type === "event"
+    ? { type, event: "" }
+    : type === "form"
+      ? (newForm() as unknown as StartSettings)
+      : { type: "webhook" };
+
 const PATH = /^[a-z0-9][a-z0-9_-]*(\/[a-z0-9][a-z0-9_-]*)*$/;
 
 /** A body with nothing in it that says nothing: no empty text, no undefined. */
@@ -241,7 +249,9 @@ export function ResourceEditor({
     if (!opened) {
       // The Triggers page says which kind of trigger it wants.
       open(
-        about.noun === "trigger" && askedType ? { ...about.fresh, type: askedType } : about.fresh,
+        about.noun === "trigger" && askedType
+          ? { ...about.fresh, ...freshStart(askedType) }
+          : about.fresh,
         "new",
       );
       return;
@@ -646,12 +656,7 @@ export function ResourceEditor({
                   startShelf.current,
                   { ...own, type: text("type") || "webhook" },
                   type,
-                  () =>
-                    type === "event"
-                      ? { type, event: "" }
-                      : type === "form"
-                        ? (newForm() as unknown as StartSettings)
-                        : { type: "webhook" },
+                  () => freshStart(type),
                 );
                 edit({ body: { ...made, ...kept } });
               }}

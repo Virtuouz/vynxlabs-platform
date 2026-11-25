@@ -768,3 +768,19 @@ test("the type scale is set at the root and every role follows it", () => {
   expect(bare).toEqual([]);
   expect(tokens).toMatch(/body \{[^}]*font-size: calc\(14px \* var\(--vx-type-scale, 1\)\)/);
 });
+
+/**
+ * The top bar's right side never wraps (owner, 2026-11-24, after the type scale): the search
+ * button's label truncates inside its pill, the pill's width follows the type scale, and the
+ * whole cluster is `whitespace-nowrap`.
+ */
+test("the top bar's items do not wrap at a larger type scale", () => {
+  const shell = readFileSync(join(here, "Shell.tsx"), "utf8");
+  const cluster = shell.match(/<div className="([^"]*)">\s*\{tenantId \? <OperatorMark \/>/);
+  expect(cluster?.[1]).toContain("whitespace-nowrap");
+  const search = shell.match(/aria-label="Search or jump to"\s*className="([^"]*)"/);
+  expect(search?.[1]).toContain("whitespace-nowrap");
+  expect(search?.[1]).toMatch(/md:w-\[calc\(14rem\*var\(--vx-type-scale,1\)\)\]/);
+  expect(search?.[1]).not.toMatch(/md:w-56/);
+  expect(shell).toMatch(/min-w-0 flex-1 truncate text-left md:inline">\s*Search or jump to…/);
+});

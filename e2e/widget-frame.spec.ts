@@ -298,3 +298,35 @@ test("the keyboard goes into the frame and out of it, and a reload draws it agai
   await page.keyboard.press("Tab");
   await expect(say).not.toBeFocused();
 });
+
+test("a widget given more than one page of rows draws, asks for the next page and an order, and is not blank @builder", async () => {
+  const W = L.replace("/t/", "/tenants/");
+  await page.evaluate(async (path) => {
+    const rows = Array.from({ length: 130 }, (_, i) => `bulk-${String(i).padStart(3, "0")}`);
+    for (let at = 0; at < rows.length; at += 10)
+      await Promise.all(
+        rows.slice(at, at + 10).map((note) =>
+          fetch(`/api/v1${path}/rows/notes`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ note }),
+          }),
+        ),
+      );
+  }, W);
+  await page.goto(`${L}/dashboards/${board}`);
+  await attempted(page);
+  const paging = frameOf(page).locator("#paging");
+  // The first page, with how many there are in all, and the page's own state.
+  await expect(paging).toContainText("100/131");
+  await expect(paging).toContainText("state=ready");
+  // An order read over all of the rows, not the page's: the first is the smallest of the 131.
+  await frameOf(page).getByRole("button", { name: "Sort notes" }).click();
+  await expect(paging).toContainText("sorted=note");
+  await expect(paging).toContainText("first=bulk-000");
+  await frameOf(page).getByRole("button", { name: "More rows" }).click();
+  await expect(paging).toContainText("131/131");
+  // The widget's own six hostile messages are dropped, and not one of its requests for rows.
+  await expect(page.locator("[data-tenant-widget]")).toHaveAttribute("data-frame-dropped", "6");
+  await expect(page.getByText("could not be given its data")).toHaveCount(0);
+});

@@ -114,6 +114,24 @@ function render() {
   shown.id = "shown";
   const rows = props?.data.rows;
   shown.textContent = rows && rows.shape === "rows" ? JSON.stringify(rows.rows) : "no data";
+  // Paging: what a view of more than one page of rows has, and the two requests it may make.
+  const paging = document.createElement("p");
+  paging.id = "paging";
+  const more = document.createElement("button");
+  more.type = "button";
+  more.id = "more";
+  more.textContent = "More rows";
+  more.hidden = !(rows?.shape === "rows" && rows.more);
+  const sort = document.createElement("button");
+  sort.type = "button";
+  sort.id = "sort";
+  sort.textContent = "Sort notes";
+  sort.hidden = !(rows?.shape === "rows" && rows.sortBy);
+  if (rows?.shape === "rows") {
+    paging.textContent = `${rows.rows.length}/${rows.total ?? rows.rows.length} first=${String(rows.rows[0]?.note)} sorted=${rows.sorted?.column ?? "none"} state=${props?.state.status}`;
+    more.onclick = () => rows.more?.();
+    sort.onclick = () => rows.sortBy?.({ column: "note", descending: false });
+  }
   const say = document.createElement("button");
   say.id = "say";
   say.type = "button";
@@ -139,7 +157,7 @@ function render() {
     };
     return button;
   });
-  root.append(shown, say, scheme, out, ...leakers);
+  root.append(shown, paging, more, sort, say, scheme, out, ...leakers);
 }
 
 frame.onProps(() => {

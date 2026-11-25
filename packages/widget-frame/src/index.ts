@@ -70,6 +70,9 @@ export function createFrame<Config = Record<string, unknown>>(
     applied = Object.keys(variables);
     root.dataset.theme = theme.scheme;
     root.style.colorScheme = theme.scheme;
+    // Text a view does not style draws in the page's font and ink, not the browser's serif.
+    root.style.fontFamily = "var(--volvel-font, system-ui, sans-serif)";
+    root.style.color = "var(--volvel-ink, CanvasText)";
   };
 
   const hear = (event: MessageEvent) => {

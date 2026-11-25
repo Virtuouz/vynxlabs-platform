@@ -213,7 +213,7 @@ export function TenantWidgetHost({
   const say = (words: string, detail?: string) => (
     <div className="flex h-full min-h-16 w-full min-w-0 flex-col items-center justify-center gap-1 overflow-hidden rounded-inner border border-dashed border-line bg-sunken/50 p-3 text-center text-body-sm text-ink-muted">
       <span className="max-w-full font-medium text-ink">{words}</span>
-      {detail && !size.narrow ? <span className="max-w-full text-caption">{detail}</span> : null}
+      {detail ? <span className="max-w-full text-caption">{detail}</span> : null}
     </div>
   );
 

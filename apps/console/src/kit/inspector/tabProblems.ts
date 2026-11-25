@@ -253,7 +253,9 @@ export function tabProblems(input: TabProblemInput): TabProblem[] {
     const why = actionProblem(one.action, body, world, (input.pages ?? []).length > 0);
     if (!why) continue;
     const own = nameAlong(widget, one.at.split("/").slice(1));
-    const name = own ?? (one.at.startsWith("on/") ? `When ${one.at.slice(3)}` : "An action");
+    const event = one.at.startsWith("on/") ? one.at.slice(3) : undefined;
+    const name =
+      own ?? (event ? (definition.events?.[event]?.label ?? `When ${event}`) : "An action");
     add("actions", why === "has no steps yet" ? `${name} has no steps yet.` : `${name}: ${why}.`);
   }
 

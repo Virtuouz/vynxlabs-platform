@@ -169,6 +169,8 @@ function stepWords(
 export function gateWords(input: {
   widget: string;
   event: string;
+  /** The event's own words in its definition ("When the gauge is pressed"), when it has them. */
+  eventLabel?: string | undefined;
   writes: readonly { do: string; path?: string; table?: string }[];
   confirm?: ConfirmInput;
 }): { title: string; text: string; button: string; dismiss: string } {
@@ -182,9 +184,11 @@ export function gateWords(input: {
       ? `${upper(words[0] as string)}${row && (only?.do === "script" || only?.do === "flow") ? ` for ${recordWords(input.confirm ?? {})}` : ""}?`
       : `Make ${words.length || input.writes.length} changes?`;
   const list = words.length > 1 ? `: ${words.join("; ")}` : words[0] ? ` ${words[0]}` : "";
+  const said = input.eventLabel?.replace(/^when\s+/i, "").trim();
+  const reported = said ? `reports that ${said}` : `sent "${input.event}"`;
   return {
     title,
-    text: `The widget "${input.widget}" sent "${input.event}". Confirming will${words.length > 1 ? " do these" : ""}${list}. Nothing runs until you confirm.`,
+    text: `The widget "${input.widget}" ${reported}. Confirming will${words.length > 1 ? " do these" : ""}${list}. Nothing runs until you confirm.`,
     button: "Confirm",
     dismiss: "Cancel",
   };

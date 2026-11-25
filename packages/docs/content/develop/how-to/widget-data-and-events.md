@@ -195,7 +195,7 @@ onClick={() => frame.emit("clinicChosen", { group: { clinic: config.clinic } })}
 
 ## When the action changes something
 
-The step above only narrows the page, so it runs at once. If you wire `clinicChosen` to a step that changes something (`script`, `flow`, `create`, `update` or `delete`), a person who presses the gauge is first asked to confirm, in a dialog the page draws outside the frame. It names the widget, the event and what will happen (for example "Run the script 'Close open orders'?"), and **Cancel** is where focus starts. Nothing runs until they choose **Confirm**. A frame can raise an event without a click, so the page asks, as it cannot tell the two apart. While one confirmation is open, a further event that would change something is dropped. The inspector's **Actions** tab says this beside such an event. Platform widgets are not asked about this way.
+The step above only narrows the page, so it runs at once. If you wire `clinicChosen` to a step that changes something (`script`, `flow`, `create`, `update` or `delete`), a person who presses the gauge is first asked to confirm, in a dialog the page draws outside the frame. It names the widget, what it reported (the words of the event's `label`) and what will happen (for example "Run the script 'Close open orders'?"), and **Cancel** is where focus starts. Nothing runs until they choose **Confirm**. A frame can raise an event without a click, so the page asks, as it cannot tell the two apart. While one confirmation is open, a further event that would change something is dropped. The inspector's **Actions** tab says this beside such an event. Platform widgets are not asked about this way.
 
 ## The result
 

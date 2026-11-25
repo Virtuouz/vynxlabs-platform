@@ -64,6 +64,8 @@ function bundle(options: {
   version: string | null;
   script?: string;
   places?: string | null;
+  /** The interface places the widget twice on its page. */
+  twice?: boolean;
   /** What the bundle claims the files are, by path: a hostile one claims what it likes. */
   claims?: (path: string) => string;
 }) {
@@ -84,7 +86,10 @@ function bundle(options: {
       schemaVersion: 2,
       path: "targets",
       ownership: "code",
-      body: page([placed(options.places ?? undefined)]),
+      body: page([
+        placed(options.places ?? undefined),
+        ...(options.twice ? [{ ...placed(options.places ?? undefined), id: "goal-again" }] : []),
+      ]),
     });
   }
   const unsigned = {
@@ -309,6 +314,24 @@ describe("removing a widget or a version that pages use", () => {
     expect(refused.body.code).toBe("widget_in_use");
     expect(refused.body.errors[0].message).toContain('the page "Sales" of the interface targets');
     expect((await widgets())[0].versions).toHaveLength(2);
+  });
+
+  test("a page that places the version twice is named once", async () => {
+    const twice = await deploy({
+      version: "2.0.0",
+      script: 'console.log("two");',
+      places: "1.0.0",
+      twice: true,
+    });
+    expect(twice.status, JSON.stringify(twice.body)).toBe(201);
+    const refused = await alice.delete(`${ws()}/widgets/goal/versions/1.0.0`);
+    expect(refused.status).toBe(409);
+    expect(refused.body.errors).toEqual([
+      {
+        path: "/interfaces/targets",
+        message: 'the page "Sales" of the interface targets places x/goal 1.0.0',
+      },
+    ]);
   });
 
   test("moved to the newer version, the older is removed, and nothing serves it any more", async () => {

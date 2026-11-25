@@ -49,8 +49,20 @@ export function DataControl({
           sort: rows.sort && !hide?.has("sort"),
           limit: rows.limit && !hide?.has("limit"),
         };
+        // Two inputs that read rows are told apart by the label the definition gives each
+        // ("Visits from", "Clinics from"); one is just "Source".
+        const readers = new Set(
+          dataParts(env.definition)
+            .filter((part) => part.control === "source")
+            .map((part) => part.input),
+        );
         return Object.values(show).some(Boolean) ? (
-          <RowsItUses env={env} input={input} show={show} />
+          <RowsItUses
+            env={env}
+            input={input}
+            show={show}
+            {...(readers.size > 1 ? { sourceLabel: label } : {})}
+          />
         ) : null;
       }
     case "conditions":

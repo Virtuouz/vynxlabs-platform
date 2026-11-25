@@ -123,6 +123,16 @@ describe("the frame's side of the protocol", () => {
     expect(frame.props()?.theme.scheme).toBe("light");
   });
 
+  test("text a view does not style takes the page's font and ink, so an unstyled message is not in the browser's serif", () => {
+    start();
+    host(
+      propsMessage(props({ theme: { scheme: "dark", tokens: { font: "Inter", ink: "#eee" } } })),
+    );
+    const root = document.documentElement;
+    expect(root.style.fontFamily).toContain("--volvel-font");
+    expect(root.style.color).toContain("--volvel-ink");
+  });
+
   test("uses no network: with fetch, XMLHttpRequest and WebSocket broken, all of it still runs", () => {
     const broken = () => {
       throw new Error("network");

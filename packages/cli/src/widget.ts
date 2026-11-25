@@ -75,15 +75,24 @@ function View() {
   const props = useWidgetProps(frame);
   if (!props) return null;
   const { config, data, state } = props;
-  if (state.status !== "ready") return <p>{state.status === "loading" ? "Loading" : "Nothing to show"}</p>;
+  if (state.status !== "ready") {
+    const words = {
+      loading: "Loading",
+      empty: "Nothing to show",
+      failed: "This could not be read",
+      forbidden: "You may not see this",
+    };
+    return <p>{words[state.status]}</p>;
+  }
   const summary = data.value?.shape === "summary" ? data.value : undefined;
+  const count = summary?.rows.length ?? 0;
   return (
     <button
       type="button"
       onClick={() => frame.emit("clicked", {})}
       style={{ font: "inherit", fontFamily: "var(--volvel-font, inherit)", color: "var(--volvel-ink)", background: "var(--volvel-surface)" }}
     >
-      {config.label}: {summary?.rows.length ?? 0} rows
+      {config.label}: {count} {count === 1 ? "row" : "rows"}
     </button>
   );
 }

@@ -265,10 +265,13 @@ test("POLISH-008: a Section takes what is dragged on it, from above and held by 
 test("POLISH-002: a Text is as tall as its words until its height is set, and then keeps it @fernhill @builder", async () => {
   await open("words");
   const tall = async () => (await cell("text").boundingBox())?.height ?? 0;
-  expect(await tall()).toBeGreaterThan(400);
+  const natural = await tall();
+  expect(natural).toBeGreaterThan(400);
   await cell("text").focus();
-  for (let step = 0; step < 6; step++) await owner.keyboard.press("Shift+ArrowUp");
-  await expect.poll(tall).toBeLessThan(500);
+  // One row a press, and a row is as tall as the type scale makes it: press until it is well short
+  // of what its words need, not for a count of rows that was true of one size of type.
+  for (let step = 0; step < 14; step++) await owner.keyboard.press("Shift+ArrowUp");
+  await expect.poll(tall).toBeLessThan(natural / 2);
   await expect
     .poll(
       async () => (await widgets()).find((one: { id: string }) => one.id === "text").config.height,

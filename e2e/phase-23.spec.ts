@@ -446,6 +446,13 @@ test("POLISH-002: Release is one list of deploys, and goes back from a row of it
     /(Deploy version \d+ to Sandbox|Roll back Sandbox to version \d+)\?/,
   );
   await dialog.getByRole("button", { name: /^(Deploy|Roll back)$/ }).click();
+  // What was made in the console since the repository last had it (the docs site deployed above)
+  // is named and asked about once more; going back anyway is the second answer.
+  const anyway = owner
+    .getByRole("dialog")
+    .getByRole("button", { name: /^(Deploy|Roll back) anyway$/ });
+  await expect(anyway.or(owner.getByText(/is what runs here now/))).toBeVisible();
+  if (await anyway.isVisible()) await anyway.click();
   await expect(owner.getByText(/is what runs here now/)).toBeVisible();
   const now = (
     (await ok(owner, "GET", `${W}/bundles`)).items as { id: string; active: boolean }[]

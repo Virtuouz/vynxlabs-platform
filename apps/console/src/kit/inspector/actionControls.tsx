@@ -13,6 +13,7 @@
  * groups), so a pack's widget with an `action` setting has this editor the day it is registered.
  */
 
+import { changesAnything } from "@volvel/manifest/action";
 import { confirmWords, DEFAULT_CONFIRM_TITLE, isDefaultTitle } from "@volvel/screens";
 import {
   Button,
@@ -1198,6 +1199,12 @@ export function ActionEditor({
         {when}
       </p>
       {count === 0 ? <p className="m-0 text-body-sm text-ink-muted">Nothing yet.</p> : null}
+      {/* A tenant widget's frame can send an event with no click: its writes are asked first. */}
+      {env.widget.type.startsWith("x/") && changesAnything(current) ? (
+        <p className="m-0 text-body-sm text-ink-muted">
+          This widget runs in a frame, so members are asked to confirm before this changes anything.
+        </p>
+      ) : null}
       <OpensPages env={env} action={current} />
       {/* Always drawn, so the first step added is a new card (it opens), not one that was there. */}
       {count >= 0 ? (

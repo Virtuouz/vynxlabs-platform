@@ -23,6 +23,7 @@ The owner (2026-11-24), on console- and repository-managed tables: "definitions 
 | Examples | Fernhill and acme YAML first; higher-ed-devices stays the example of definitions in code |
 | Widget authoring | In a repository only, previewed with `volvel dev`; no widget editor in the console |
 | Widget safety | Decision 0005 as designed: a sandboxed frame, no network, no cookies, data only through declared inputs read by the server under the viewer's rules, events out only as declared |
+| A widget's event wired to a write | Confirmed first (2026-11-24): an action that changes anything, wired to a tenant widget's event, runs only after a confirmation the page draws outside the frame, because the frame can send an event without a click. Filter, select and navigate run at once |
 | Agents | Sonnet, up to 20 at once |
 | Stops | After A2, A3, B3 and B4 (pull first, typed scripts, a tenant widget in its frame), and at the end |
 

@@ -141,6 +141,39 @@ async function activeBundle(kernel: Kernel, db: Db | Trx, workspaceId: string) {
   return row ? { ...row, content: await loadBundle(kernel, row) } : undefined;
 }
 
+/**
+ * What the workspace is running, code-managed and console-managed, with its saved drafts laid
+ * over it by key: the definitions a script written there may name. A draft that deletes a
+ * resource takes it out. Only what the type declarations are written from is read.
+ */
+export async function namedResources(
+  kernel: Kernel,
+  db: Db | Trx,
+  workspaceId: string,
+): Promise<{ kind: string; path: string; body: Record<string, unknown> }[]> {
+  const active = await activeBundle(kernel, db, workspaceId);
+  const byKey = new Map<string, { kind: string; path: string; body: Record<string, unknown> }>();
+  for (const manifest of active?.content.manifests ?? []) {
+    byKey.set(keyOf(manifest), { kind: manifest.kind, path: manifest.path, body: manifest.body });
+  }
+  const drafts = await db
+    .selectFrom("resource_draft")
+    .select(["key", "kind", "path", "body", "deleted"])
+    .where("workspace_id", "=", workspaceId)
+    .execute();
+  for (const draft of drafts) {
+    if (draft.deleted) byKey.delete(draft.key);
+    else {
+      byKey.set(draft.key, {
+        kind: draft.kind,
+        path: draft.path,
+        body: draft.body as Record<string, unknown>,
+      });
+    }
+  }
+  return [...byKey.values()];
+}
+
 /** A base for a workspace with no bundle yet: no resources and no code. */
 const emptyBase = (): UnsignedBundle => ({
   formatVersion: 1,
@@ -259,8 +292,10 @@ export async function saveDraft(
     });
     // A page is built a step at a time: a draft holds an action that has no steps yet, as it holds
     // other unfinished things. The checks of the page say it, and publishing refuses it.
+    // So does a step whose script, flow, page or table is not chosen yet: its field is empty.
     const unfinished = (issue: { path: string; message: string }) =>
-      /\/steps$/.test(issue.path) && issue.message === "must NOT have fewer than 1 items";
+      (/\/steps$/.test(issue.path) && issue.message === "must NOT have fewer than 1 items") ||
+      (/\/steps\/\d+\/[^/]+$/.test(issue.path) && issue.message === "is empty: it needs a value");
     // A flow is built a step at a time as well: one step with a field not yet chosen (the script
     // it runs, the event it waits for) is held in the draft, and a deploy refuses it. What is
     // refused here is a body that is not a flow at all, or a fault outside its steps.
@@ -629,14 +664,38 @@ export async function composeDrafts(
   }
 }
 
-/** The console-managed resources a workspace is running, as its active bundle carries them. */
+/**
+ * The console-managed resources a workspace is running, as its registry holds them. Not as the
+ * active bundle does: a table taken over in the console is not in a bundle as the console's.
+ */
 export async function activeConsoleManaged(
-  kernel: Kernel,
+  _kernel: Kernel,
   db: Db | Trx,
   workspaceId: string,
 ): Promise<BundleManifest[]> {
-  const active = await activeBundle(kernel, db, workspaceId);
-  return active?.content.manifests.filter((manifest) => manifest.ownership === "ui") ?? [];
+  const rows = await db
+    .selectFrom("resource")
+    .select(["kind", "schema_version", "path", "key", "title", "meta", "body"])
+    .where("workspace_id", "=", workspaceId)
+    .where("ownership", "=", "ui")
+    .where("path", "not like", `${CORE_PREFIX}%`)
+    .orderBy("path")
+    .execute();
+  return rows.map((row) => ({
+    kind: row.kind,
+    schemaVersion: row.schema_version,
+    path: row.path,
+    ...(row.key !== row.path ? { key: row.key } : {}),
+    // An app's, an interface's and a form's title is in their body, and is not said twice.
+    ...(row.title && row.title !== (row.body as { title?: unknown }).title
+      ? { title: row.title }
+      : {}),
+    ...(row.meta.mcp ? { mcp: row.meta.mcp } : {}),
+    // Where the repository keeps its file, unless the file is the code's that was taken over.
+    ...(row.meta.source && !row.meta.inCode ? { source: row.meta.source } : {}),
+    ownership: "ui" as const,
+    body: row.body,
+  }));
 }
 
 /**

@@ -1,0 +1,6 @@
+schemaVersion: 1
+body:
+  role: opens_app
+  principal:
+    type: end_users
+  resource: my-account

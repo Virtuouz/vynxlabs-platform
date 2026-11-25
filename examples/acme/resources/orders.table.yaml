@@ -1,0 +1,25 @@
+# Every order the flow has handled. Each member sees the orders they look after (the policy).
+# Changing this file and deploying changes the table: a column removed here is retired, and its data kept.
+schemaVersion: 1
+body:
+  description: Every order the flow has handled, and how it ended.
+  columns:
+    number:
+      type: text
+      required: true
+      unique: true
+    total:
+      type: number
+      required: true
+    currency:
+      type: text
+      required: true
+    status:
+      type: text
+      required: true
+      default: received
+    owner_id:
+      type: uuid
+  policy:
+    type: owner
+    column: owner_id

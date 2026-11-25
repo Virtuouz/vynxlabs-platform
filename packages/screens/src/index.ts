@@ -25,6 +25,7 @@ export {
   relativeRange,
   valueFor as filterValueOf,
 } from "./filters.ts";
+export { type FrameSource, frameUrl, setFrameSource } from "./frameSource.ts";
 export {
   copyId,
   duplicated,
@@ -80,6 +81,12 @@ export {
   type Placement,
   usePlacement,
 } from "./placement.ts";
+export {
+  FRAME_READY_MS,
+  TenantWidgetHost,
+  type TenantWidgetHostProps,
+  workspaceViews,
+} from "./TenantWidgetHost.tsx";
 export {
   ActionError,
   type ActResponse,

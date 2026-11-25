@@ -594,7 +594,7 @@ function NavigableGrid<Row extends Record<string, unknown>>(props: GridProps<Row
         <thead className="sticky top-0 layer-sticky">
           <tr>
             {checking ? (
-              <th scope="col" className={`${head} sticky left-0 w-8 ${pad}`} {...cellProps(0, 0)}>
+              <th scope="col" className={`${head} sticky left-0 w-8 py-1`} {...cellProps(0, 0)}>
                 <input
                   type="checkbox"
                   tabIndex={-1}
@@ -616,7 +616,7 @@ function NavigableGrid<Row extends Record<string, unknown>>(props: GridProps<Row
                   key={column.name}
                   scope="col"
                   aria-sort={sorted ? (sorted.descending ? "descending" : "ascending") : undefined}
-                  className={`${head} ${pad} whitespace-nowrap ${pinned} ${
+                  className={`${head} py-1 whitespace-nowrap ${pinned} ${
                     NUMERIC.has(column.type) ? "text-right" : ""
                   } ${column.sortable && props.onSort ? "cursor-pointer hover:text-ink" : ""}`}
                   onClick={(event) =>
@@ -638,11 +638,11 @@ function NavigableGrid<Row extends Record<string, unknown>>(props: GridProps<Row
           </tr>
           {filterable ? (
             <tr>
-              {checking ? <td className={`${head} sticky left-0 pb-1`} /> : null}
+              {checking ? <td className={`${head} sticky left-0 pb-0.5`} /> : null}
               {columns.map((column, index) => (
                 <td
                   key={column.name}
-                  className={`${head} pb-1 font-normal ${lockFirst && index === 0 ? `sticky ${checking ? "left-8" : "left-0"}` : ""}`}
+                  className={`${head} pb-0.5 font-normal ${lockFirst && index === 0 ? `sticky ${checking ? "left-8" : "left-0"}` : ""}`}
                 >
                   {column.filterable ? (
                     <input
@@ -789,7 +789,7 @@ function PlainGrid<Row extends Record<string, unknown>>(props: GridProps<Row>) {
       <table className="w-full border-collapse text-left" aria-label={props.label}>
         <thead>
           <tr>
-            {choosing ? <th className={`${head} w-8 py-2`} /> : null}
+            {choosing ? <th className={`${head} w-8 py-1`} /> : null}
             {columns.map((column) => {
               const sorted = sort?.column === column.name ? sort : undefined;
               const end = NUMERIC.has(column.type) ? "text-right" : "";
@@ -798,7 +798,7 @@ function PlainGrid<Row extends Record<string, unknown>>(props: GridProps<Row>) {
                   key={column.name}
                   scope="col"
                   aria-sort={sorted ? (sorted.descending ? "descending" : "ascending") : undefined}
-                  className={`${head} py-2 whitespace-nowrap ${end}`}
+                  className={`${head} py-1 whitespace-nowrap ${end}`}
                 >
                   {column.sortable && props.onSort ? (
                     <button
@@ -821,7 +821,7 @@ function PlainGrid<Row extends Record<string, unknown>>(props: GridProps<Row>) {
                 </th>
               );
             })}
-            {props.rowActions ? <th className={`${head} py-2`} /> : null}
+            {props.rowActions ? <th className={`${head} py-1`} /> : null}
           </tr>
           {filterable ? (
             <tr>

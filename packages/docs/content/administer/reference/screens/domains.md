@@ -48,7 +48,7 @@ The title is the hostname and the line under it says "The portal and every app" 
 | --- | --- |
 | **What it serves** | The same **Serves** and **App** fields, and **Change what it serves**, enabled once the choice differs. Works while the hostname is on. |
 | **1 · Point the name here** | "A CNAME or an address record to this instance, and a certificate for the name wherever TLS ends in front of it." |
-| **2 · Show the name agrees** | The **Record name** (`_vx-challenge.<hostname>`) and **Record value** (`vx-domain=` and 40 hexadecimal characters) of a TXT record, each with a copy button. |
+| **2 · Show the name agrees** | A TXT record: its **Type**, its **Host** (relative to the zone, taken to be the registrable domain), its **Full name** (`_vx-challenge.<hostname>`) and its **Value** (`vx-domain=` and 40 hexadecimal characters), each but the type with a copy button. |
 | **3 · Check and enable** | Two steps with their state: **Record created and found** (or "Record found when verified, and not since") and **Enabled**, each with a sentence. A failed check shows its reason in a notice. |
 
 The footer has **Remove**, **Disable** or **Enable**, and **Check now**.

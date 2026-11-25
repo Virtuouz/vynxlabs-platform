@@ -29,6 +29,11 @@ const PASSWORD = "fernhill-demo-2026";
 const SLUG = process.env.FERNHILL_SLUG ?? "fernhill";
 const IS_COPY = SLUG !== "fernhill";
 const PAYFERN_SECRET = "whsec_fernhill_demo";
+// The version of the repository's widget the dashboard places: read from its definition, so that
+// raising the version there does not leave the setup placing one that is not deployed.
+const CLINIC_LOAD_VERSION = /version:\s*"([^"]+)"/.exec(
+  readFileSync(join(HERE, "src/widgets/clinic-load/widget.ts"), "utf8"),
+)?.[1];
 const LOCUMS = 60;
 const SUPPLIERS = 220;
 
@@ -313,11 +318,11 @@ step("Connecting TextLine and VetSupply, and storing PayFern's signing secret");
 for (const ws of [prod, dev]) {
   const W = `${T}/workspaces/${ws.id}`;
   await admin.put(`${W}/connection-bindings/sms`, {
-    config: { baseUrl: `${STAND_INS}/textline`, auth: { type: "bearer" } },
+    config: { baseUrl: `${STAND_INS}/textline`, testPath: "/ping", auth: { type: "bearer" } },
     credential: "tl_demo_7f3a9c",
   });
   await admin.put(`${W}/connection-bindings/supplier`, {
-    config: { baseUrl: `${STAND_INS}/vetsupply`, auth: { type: "bearer" } },
+    config: { baseUrl: `${STAND_INS}/vetsupply`, testPath: "/ping", auth: { type: "bearer" } },
     credential: "vs_demo_51be22",
   });
   await admin.put(`${W}/secrets/PAYFERN_SIGNING_SECRET`, { value: PAYFERN_SECRET });
@@ -587,11 +592,38 @@ await draftInSandbox("boards/clinic-visits", "dashboard", {
         reset: true,
       },
     },
+    // The repository's own widget (src/widgets/clinic-load), deployed to the sandbox above: one
+    // clinic's visits today against what it can take. Pressing it narrows the bar to the clinic.
+    {
+      id: "load",
+      type: "x/clinic-load",
+      version: CLINIC_LOAD_VERSION,
+      title: "Northside today",
+      at: { x: 0, y: 2, w: 4, h: 4 },
+      data: {
+        visits: {
+          source: {
+            visual: {
+              table: "appointments",
+              filters: [
+                { column: "starts_at", op: "last", value: { count: 1, unit: "day" } },
+                { column: "status", op: "in", value: ["booked", "checked_in", "in_exam", "done"] },
+              ],
+              groupBy: [{ column: "clinic" }],
+              measures: [{ fn: "count", as: "visits" }],
+            },
+          },
+        },
+        clinics: { source: { visual: { table: "clinics" } } },
+      },
+      config: { clinic: "northside" },
+      on: { clinicChosen: { steps: [{ do: "narrow", filter: "clinic", from: "clinic" }] } },
+    },
     {
       id: "views",
       type: "core/tabs",
       title: "Visits",
-      at: { x: 0, y: 2, w: 12, h: 13 },
+      at: { x: 0, y: 6, w: 12, h: 13 },
       config: {
         tabs: [
           { id: "visits", title: "Visits" },

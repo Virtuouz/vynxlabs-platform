@@ -30,3 +30,15 @@ Checked by: second agent, 2026-11-23. Source commit `87000022`.
 | Up to 5 redirects, same origin only; 301/302 POST and 303 become GET. | `packages/sdk/src/http.ts:71,195-225` | second agent, 2026-11-23 | holds |
 | `.platform/local.json` shape (connections, groups, secrets, variables). | `packages/cli/src/local.ts:12-14,72` | second agent, 2026-11-23 | holds |
 | "To run in a workspace, use `volvel run … --remote`" runs this build as a test run, nothing deployed. | `packages/cli/src/cli.ts:1112-1170`, `commands.ts:89` | second agent, 2026-11-23 | holds as a command; the page now says what it runs. not a fault: `volvel run --remote` is meant to run this build as a test run, nothing deployed (fa); the help line now says "not the deployed version"; the page already says it |
+
+## Phase 34, A7 (YAML first), 2026-11-24
+
+Commit `d619bfbd` plus the working tree. Written by the A7 writer; second agent checked 2026-11-24 (a7r). Run on the throwaway instance of lane a7 (http://localhost:8712, Fernhill seeded).
+
+| Claim | Source (file:line) | Checked by | Result |
+| --- | --- | --- | --- |
+| Connection, group and variable files deploy as shown; a file must say `connector`. | `schemas/files/connection.v1.schema.json`; run on `walk3` | writer, 2026-11-24 | holds as run |
+
+### Second check (a7r), 2026-11-24, second agent
+
+Lane a7r build (a7 merged), throwaway instance http://localhost:8722 (database a7r34, Fernhill seeded), lane CLI `packages/cli/dist/bin.js`. `pnpm docs:check` passes. The connection, group and variable files validate and build. CORRECTED the variable file's title (`loans/days.variable.yaml` was outside the console's folder and fails the build: 'is outside every folder that gives a resource its path'); now `platform/loans/days.variable.yaml`.

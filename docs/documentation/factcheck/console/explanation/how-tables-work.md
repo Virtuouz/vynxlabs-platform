@@ -44,3 +44,19 @@ Code as of commit `be324f78` (branch `phase-31-write-the-docs`), 2026-11-23. Wri
 The API text for PATCH row and DELETE row now says "Not written to the audit log" (`routes/data.ts:988,1146`), so the inventory's open item about "Audited." no longer applies.
 
 Checked by: second agent, 2026-11-23. Code re-read; the retire, bring back and delete for good behavior run on the instance. Corrected: row rules are one step of undo once saved (the page said they were not part of Undo); the claim that the catalog keeps a retired column's default to put back is replaced, because the console's Bring back does not restore it.
+
+## Phase 34, A7 (YAML first), 2026-11-24
+
+Commit `d619bfbd` plus the working tree. Written by the A7 writer; second agent checked 2026-11-24 (a7r). Run on the throwaway instance of lane a7 (http://localhost:8712, Fernhill seeded).
+
+| Claim | Source (file:line) | Checked by | Result |
+| --- | --- | --- | --- |
+| Files and Code owners; take-over; production has no take-over. | `apps/console/src/screens/Data.tsx:2619-2630,2768-2790,2905-2925` | writer, 2026-11-24 | holds as read; walked by a6 (p34-a6.md) |
+
+### Second check (a7r), 2026-11-24, second agent
+
+Lane a7r build (a7 merged), throwaway instance http://localhost:8722 (database a7r34, Fernhill seeded), lane CLI `packages/cli/dist/bin.js`. `pnpm docs:check` passes. Browser (Playwright, 1440 px, light): a Code table shows 'Managed as code.' and the notice; **Take over in the console** asks the quoted question; after it the Definition tab is editable, a reload keeps it, **Retire table** appears. Rows untouched (read). CORRECTED: the page said `volvel pull` brings a taken-over table back as a file. It does not: `pull` wrote `Pulled 0 files` because `resource-files` reads the active bundle's manifests (`apps/control-plane/src/kernel/authoring.ts:672`, ownership `ui`) and a take-over changes only the resource row; the pull still records the basis (`routes/authoring.ts:498` reads the rows), so the deploy after it passes and retires the column added in the console. The page now says to put the change into the definition by hand or deploy with `--force`. Product bug for the owner: pull should write the file for a taken-over table, or not record its basis.
+
+### Fix check (a9), 2026-11-24
+
+Lane a9 build, throwaway instance http://localhost:8729 (database a934), lane CLI `packages/cli/dist/bin.js`. The page now describes the fixed behaviour, run as written: a table in code deployed, taken over in the console with a column added in the same save (`PUT resources/desk`, `takeOver: true`); `volvel deploy` without a pull refused (`desk: changed in the console since the repository last had it`); `volvel pull` wrote `platform/desk.table.yaml` with the column, and printed `desk (table) was taken over in the console, and is still defined in code, by the name desk. Remove it from the TypeScript: until you do, a deploy is refused as defined twice, in the code and in platform/.`; `volvel deploy` then failed at the build with `desk is defined in src/index.ts and again in platform/desk.table.yaml`; with the definition removed from the code the deploy passed and the table kept the column (read). CORRECTED the passages that said a pull brings nothing in for a table (product bug fixed by lane a9).

@@ -20,6 +20,19 @@ import type { WorkspaceRef } from "../http.js";
 import type { Kernel } from "../kernel.js";
 import { renamePathState, swapPath } from "../rename.js";
 import { deleteResource, putResource } from "../resources.js";
+import {
+  deployedVersions,
+  refuseWidgetInUse,
+  storeWidgetVersions,
+  versionProblems,
+} from "../widgets.js";
+import {
+  type ConsoleChange,
+  consoleChangeMessage,
+  contentHash,
+  hasBasis,
+  setBasis,
+} from "./basis.js";
 import { loadBundle } from "./bundles.js";
 import { exportChanged } from "./code-slices.js";
 import { unfitBindings } from "./connectors.js";
@@ -252,6 +265,13 @@ export async function deployBundle(
      * remove the name of a tool an agent calls.
      */
     confirmBreaking?: boolean;
+    /**
+     * A deploy of repository files, from the CLI or CI. It is refused if it would replace a
+     * resource owned as files that was changed in the console since the repository last had it,
+     * or remove one made there since, unless `force` says it may: that is audited. What it
+     * deploys is the repository's from then on.
+     */
+    repository?: { force?: boolean };
   } = {},
 ) {
   // What the apps no longer name is swept soon after: a deploy is what stops naming it.
@@ -290,9 +310,22 @@ export async function deployBundle(
     );
   }
   const content = await loadBundle(kernel, bundle);
+  // A version of a widget keeps its files for good: a changed one is refused before anything is applied.
+  await storeWidgetVersions(trx, workspace.tenantId, workspace.id, { id: bundle.id, content });
   const existing = await trx
     .selectFrom("resource")
-    .select(["id", "key", "path", "title", "meta", "kind", "schema_version", "body", "ownership"])
+    .select([
+      "id",
+      "key",
+      "path",
+      "title",
+      "meta",
+      "kind",
+      "schema_version",
+      "body",
+      "ownership",
+      "basis_hash",
+    ])
     .where("workspace_id", "=", workspace.id)
     .execute();
   const byPath = new Map(existing.map((row) => [row.path, row]));
@@ -358,6 +391,43 @@ export async function deployBundle(
     // Bindings and triggers before the roles and scripts they refer to.
     .sort((a, b) => order(b.kind) - order(a.kind));
   const leaving = new Set(removed.map((row) => row.id));
+  // What the console did since the repository last had it is not overwritten by surprise.
+  const overridden: ConsoleChange[] = [];
+  if (options.repository && (await hasBasis(trx, workspace.id))) {
+    const found: ConsoleChange[] = [];
+    for (const [manifest, row] of matched) {
+      if (row.ownership !== "ui" || row.basis_hash === null) continue;
+      const inBody = (manifest.body as { title?: unknown }).title;
+      const title = manifest.title ?? (typeof inBody === "string" && inBody ? inBody : null);
+      const replaced =
+        row.path !== manifest.path || row.title !== title || !same(row.body, manifest.body);
+      if (replaced && contentHash(row) !== row.basis_hash) {
+        found.push({ path: row.path, change: "changed" });
+      }
+    }
+    // A removal asked for by name, or by a pull that took the resource's deletion, is not a surprise.
+    const asked = new Set(options.settle?.map((one) => one.path));
+    for (const row of removed) {
+      if (row.ownership !== "ui") continue;
+      if (options.allowDelete === "all" || options.allowDelete?.includes(row.path)) continue;
+      if (asked.has(row.path)) continue;
+      if (row.basis_hash === null) found.push({ path: row.path, change: "made" });
+      else if (contentHash(row) !== row.basis_hash)
+        found.push({ path: row.path, change: "changed" });
+    }
+    if (found.length > 0 && !options.repository.force) {
+      throw new HttpError(
+        409,
+        "console_changed",
+        "The console changed or made resources that this deploy would overwrite or remove. " +
+          "Run `volvel pull`, review, commit, and deploy again.",
+        found
+          .sort((a, b) => (a.path < b.path ? -1 : 1))
+          .map((one) => ({ path: one.path, message: consoleChangeMessage(one.change) })),
+      );
+    }
+    overridden.push(...found);
+  }
   if (options.allowDelete !== "all") {
     const suspected = await suspectedRenames(
       trx,
@@ -428,7 +498,20 @@ export async function deployBundle(
     // An app, an interface and a form have a title in their body: that is their title.
     const inBody = (manifest.body as { title?: unknown }).title;
     const title = manifest.title ?? (typeof inBody === "string" && inBody ? inBody : null);
-    const meta = metaOf(manifest);
+    // Taken over in the console and not handed over: a draft deploy keeps saying so.
+    const takenOver =
+      !options.repository &&
+      manifest.ownership === "ui" &&
+      (stored?.ownership === "code" || stored?.meta.inCode !== undefined);
+    const meta: ResourceMeta = {
+      ...metaOf(manifest),
+      ...(takenOver
+        ? {
+            inCode:
+              stored?.meta.inCode ?? (stored?.meta.source ? { file: stored.meta.source.file } : {}),
+          }
+        : {}),
+    };
     if (
       stored &&
       stored.path === manifest.path &&
@@ -496,7 +579,17 @@ export async function deployBundle(
       ...(stored && moving.has(stored.id) ? { movedFrom: stored.path } : {}),
       // A resource taken over in the console, or handed back to the repository.
       switchOwnership: true,
+      takenOver,
     });
+    // What it was in code is what the repository has: a deploy that still defines it is refused
+    // for the console's change, and does not take it back unseen.
+    if (takenOver && stored?.ownership === "code") {
+      await trx
+        .updateTable("resource")
+        .set({ basis_hash: contentHash(stored) })
+        .where("id", "=", stored.id)
+        .execute();
+    }
     // Positions saved from the flow page are older than a layout this deploy brings: the
     // newer one is read, by the flow page, the run's page and the editor alike.
     if (
@@ -512,6 +605,13 @@ export async function deployBundle(
     }
     for (const message of result.warnings) {
       summary.warnings.push({ path: manifest.path, message });
+    }
+    // Handed back by a deploy that still defines it: said, not done unseen.
+    if (result.ownershipFrom === "ui" && manifest.ownership === "code") {
+      summary.warnings.push({
+        path: manifest.path,
+        message: `${manifest.kind} ${manifest.path} is defined in code again: the console's take-over is undone.`,
+      });
     }
     if (result.aliasRemoved) summary.aliasesRemoved.push(manifest.path);
     if (result.aliasRemoved && (manifest.kind === "script" || manifest.kind === "flow")) {
@@ -546,6 +646,39 @@ export async function deployBundle(
 
   // What each dashboard widget names, by key: now that every query it may name is there.
   await recordWidgetQueries(trx, workspace);
+
+  // The widgets of a developer: a page places the version it was placed with, and that version
+  // is here; a widget that goes is one no page places any more.
+  const deployed = await deployedVersions(trx, workspace.id);
+  const unplaceable = content.manifests.flatMap((manifest) =>
+    manifest.kind === "interface" || manifest.kind === "dashboard"
+      ? versionProblems(manifest.body as never, deployed).map((problem) => ({
+          path: `/${manifest.kind === "interface" ? "interfaces" : "dashboards"}/${manifest.path}${problem.path.slice("/body".length)}`,
+          message: problem.message,
+        }))
+      : [],
+  );
+  if (unplaceable.length > 0) {
+    throw new HttpError(
+      409,
+      "widget_version_missing",
+      "A page places a version of a widget that this workspace has not deployed. Deploy the widget with the version, or place the page with one that is deployed.",
+      unplaceable,
+    );
+  }
+  const goneWidgets = removed.filter((row) => row.kind === "widget").map((row) => row.path);
+  await refuseWidgetInUse(
+    trx,
+    workspace.id,
+    goneWidgets.map((type) => ({ type })),
+  );
+  if (goneWidgets.length > 0) {
+    await trx
+      .deleteFrom("widget_version")
+      .where("workspace_id", "=", workspace.id)
+      .where("type", "in", goneWidgets)
+      .execute();
+  }
 
   // A binding or a role whose row is gone, though its definition did not change: a group
   // deleted and made again, for one. Its definition is applied again, so the access it gives
@@ -687,6 +820,22 @@ export async function deployBundle(
   await reconcileReferences(data, workspace.id, true);
   summary.data = describeChanges(dataBefore, await loadCatalog(data, workspace.id));
 
+  // What a repository deployed is in step with the repository, the console's changes it forced included.
+  if (options.repository) {
+    await setBasis(trx, workspace.id, {
+      keys: content.manifests.filter((manifest) => manifest.ownership === "ui").map(keyOf),
+    });
+    if (overridden.length > 0) {
+      await audit({
+        action: "deployment.forced",
+        targetType: "workspace",
+        targetId: workspace.id,
+        tenantId: workspace.tenantId,
+        workspaceId: workspace.id,
+        details: { bundleId: bundle.id, paths: overridden },
+      });
+    }
+  }
   const id = newId();
   await trx
     .updateTable("workspace")
@@ -889,6 +1038,7 @@ const KIND_ORDER = [
   "schedule",
   "trigger",
   "theme",
+  "widget",
   "interface",
   // After the tables and queries a dashboard asks, and the resources a page is about.
   "dashboard",

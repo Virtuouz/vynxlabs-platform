@@ -20,6 +20,7 @@ import {
   SelectField,
   SideSheet,
   showValue,
+  TermText,
   TextAreaField,
   TextField,
   useFlip,
@@ -40,6 +41,7 @@ import { useHistory } from "../kit/history.ts";
 import { useShortcut } from "../kit/keys.ts";
 import { ErrorState, Loading, Pending } from "../kit/LoadState.tsx";
 import { Inspector, useWide } from "../kit/layout.tsx";
+import { ownershipSentence, ownershipWord, takeOverConsequence } from "../kit/ownership.ts";
 import { UsedBy, useReferences } from "../kit/references.tsx";
 import { Code, StatePill, Tag } from "../kit/status.tsx";
 import { UndoRedo } from "../kit/UndoRedo.tsx";
@@ -1649,6 +1651,9 @@ export function Tables({ root, link }: { root: string; link: string }) {
       columns={[
         {
           header: "Table",
+          // The list is table-layout: fixed, so widths are the only say a column has. A name is not cut:
+          // the longest real ones (purchase_orders, supplier_contacts) fit.
+          width: "w-[12rem]",
           cell: (row) => (
             <span className="inline-flex items-center gap-2">
               <Link
@@ -1669,12 +1674,18 @@ export function Tables({ root, link }: { root: string; link: string }) {
         {
           header: "What it holds",
           priority: 2,
-          cell: (row) => <span className="text-ink-muted">{row.description}</span>,
+          // The words get the room the short columns leave: at 1440 they were four lines in a quarter.
+          width: "w-[34%]",
+          cell: (row) => (
+            <span className="text-ink-muted">
+              {row.description ? <TermText>{row.description}</TermText> : null}
+            </span>
+          ),
         },
         {
           header: "Managed in",
           priority: 3,
-          cell: (row) => (row.managedIn === "code" ? "Repository" : "Console"),
+          cell: (row) => ownershipWord(row.managedIn),
         },
         { header: "Who sees rows", priority: 3, cell: (row) => policyText(row.policy) },
         { header: "Columns", priority: 2, cell: (row) => row.columnCount, align: "end" },
@@ -1682,12 +1693,12 @@ export function Tables({ root, link }: { root: string; link: string }) {
       ]}
       empty={{
         title: "No tables yet",
-        text: "Define a table in the tenant's repository with defineTable and deploy it, or create one here to try things out.",
+        text: "Write a <path>.table.yaml file in your repository's resources folder (or use defineTable in code) and deploy it, or create one here to try things out.",
       }}
       create={{
         action: "Create table",
         description:
-          "A table made here is managed in the console. Every table also gets an ID and the times each row was created and changed.",
+          "A table made here is managed as files, which the console and the repository both edit. Every table also gets an ID and the times each row was created and changed.",
         fields: [
           {
             name: "name",
@@ -1863,7 +1874,7 @@ export function TableView({ root, name, link }: { root: string; name: string; li
       fill
       helpKey="table"
       title={data.name}
-      description={`${data.description ? `${data.description.replace(/\.?\s*$/, ".")} ` : ""}${counted(data.rowCount, "row")}. ${policyText(data.policy)}.${retired ? ` Was managed in the ${data.managedIn === "code" ? "repository" : "console"}.` : ` Managed in the ${data.managedIn === "code" ? "repository" : "console"}.`}`}
+      description={`${data.description ? `${data.description.replace(/\.?\s*$/, ".")} ` : ""}${counted(data.rowCount, "row")}. ${policyText(data.policy)}. ${ownershipSentence(data.managedIn, retired)}`}
     >
       <AttachedPages {...workspaceOf(root)} kind="table" path={data.name} />
       {retired ? (
@@ -2505,11 +2516,14 @@ export function ColumnsTable({
       columns={[
         {
           header: "Column",
+          width: "w-[18%]",
           cell: (row) => (
             <span className="flex flex-col gap-0.5">
               <Code>{row.name}</Code>
               {row.description ? (
-                <span className="max-w-measure text-meta text-ink-muted">{row.description}</span>
+                <span className="max-w-measure text-meta text-ink-muted">
+                  <TermText>{row.description}</TermText>
+                </span>
               ) : null}
               {roomy ? null : (
                 <span data-column-stack className="flex flex-col gap-1 text-meta">
@@ -2534,6 +2548,7 @@ export function ColumnsTable({
         },
         {
           header: "Holds",
+          width: "w-[13%]",
           cell: (row) =>
             row.references ? (
               <span className="flex flex-col">
@@ -2566,11 +2581,13 @@ export function ColumnsTable({
         {
           header: "Rules",
           priority: 2,
+          width: "w-[15%]",
           cell: rulesOf,
         },
         {
           header: "When not given",
           priority: 3,
+          width: "w-[12%]",
           cell: defaultOf,
         },
         ...(actionsOf && roomy
@@ -2578,8 +2595,9 @@ export function ColumnsTable({
               {
                 header: "",
                 align: "end" as const,
-                // Up to five buttons: they wrap inside the column, and it keeps room for two rows of them.
-                wide: true,
+                // Up to five buttons, in a line at 1440 (the table is table-layout: fixed, so widths are
+                // all the say a column has); narrower, they wrap inside the column.
+                width: "w-[42%]",
                 cell: (row: TableColumn) => (
                   <span className="flex flex-wrap justify-end gap-1">
                     {actionsOf(row).map((one) => (
@@ -2621,6 +2639,9 @@ function Definition({
     what: "this table's definition",
   });
   const editable = table.managedIn === "ui" && table.status === "active" && mayDefine.can;
+  // A production workspace changes by a deploy only: a table in code is not taken over there.
+  const production = useLoad<{ type?: string }>(root).data?.type === "production";
+  const [takingOver, setTakingOver] = useState(false);
   // `/tenants/<id>`, the part of the workspace's address the tenant's people are listed under.
   const tenantBase = root.split("/workspaces/")[0];
   const [adding, setAdding] = useState(false);
@@ -2760,6 +2781,46 @@ function Definition({
   };
   const quietly = (run: Promise<unknown>) => run.catch(() => undefined);
 
+  /** Takes a table defined in code over: saves its definition as files, which the console edits. */
+  const takeOver = async () => {
+    const sure = await ask.confirm({
+      title: `Take over ${table.name} in the console?`,
+      text: (
+        <>
+          {takeOverConsequence("table")} Scripts typed against its <Code>{"defineTable"}</Code>{" "}
+          export should use <Code>{`ctx.table("${table.name}")`}</Code>, which is typed from the
+          generated types.
+        </>
+      ),
+      action: "Take over",
+    });
+    if (!sure) return;
+    setTakingOver(true);
+    setFailure(undefined);
+    try {
+      const resource = await api.get<{ body: TableBody; version?: number }>(
+        `${root}/resources/${table.name}`,
+      );
+      const saved = await api.put<{ version?: number }>(`${root}/resources/${table.name}`, {
+        kind: "table",
+        schemaVersion: 1,
+        ownership: "ui",
+        takeOver: true,
+        body: resource.body,
+        ...(resource.version !== undefined ? { version: resource.version } : {}),
+      });
+      held.current = saved.version;
+      stored.current = resource.body;
+      notify.success(`${table.name} is managed in the console now.`);
+      reload();
+    } catch (error) {
+      const caught = error as ApiError;
+      setFailure(withCode(caught.message, caught));
+    } finally {
+      setTakingOver(false);
+    }
+  };
+
   /** What can be done to a column, as buttons where there is room and as one menu on a phone. */
   const columnActions = (row: TableColumn): ColumnAction[] => [
     ...(row.values || row.references
@@ -2860,12 +2921,24 @@ function Definition({
   return (
     <div className="flex flex-col gap-5">
       {table.status === "active" && table.managedIn !== "ui" ? (
-        <Notice tone="attention">
-          This table is defined in the tenant's repository. To change it, change{" "}
-          <Code>{"defineTable"}</Code> there and deploy.
+        <Notice
+          tone="attention"
+          action={
+            production || !mayDefine.can ? undefined : (
+              <Button size="small" loading={takingOver} onClick={() => void takeOver()}>
+                Take over in the console
+              </Button>
+            )
+          }
+        >
+          This table is defined in code, in the tenant's repository. To change it, change{" "}
+          <Code>{"defineTable"}</Code> there and deploy
+          {production
+            ? ". A production workspace changes by a deploy only."
+            : ", or take it over here: it is then managed as files, and you remove its definition from the code after a volvel pull."}
         </Notice>
       ) : null}
-      {table.managedIn === "ui" ? mayDefine.line : null}
+      {table.managedIn === "ui" || table.status === "active" ? mayDefine.line : null}
       {failure ? <Notice tone="danger">{failure}</Notice> : null}
       {editable ? (
         <section className="flex flex-wrap items-center gap-2" aria-label="About this table">
@@ -3642,7 +3715,11 @@ export function Sources({ root, link }: { root: string; link: string }) {
         {
           header: "For",
           priority: 3,
-          cell: (row) => <span className="text-ink-muted">{row.description}</span>,
+          cell: (row) => (
+            <span className="text-ink-muted">
+              {row.description ? <TermText>{row.description}</TermText> : null}
+            </span>
+          ),
         },
         {
           header: "Points to",

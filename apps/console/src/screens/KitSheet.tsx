@@ -27,7 +27,7 @@ import {
   type TreeNode,
 } from "@volvel/ui";
 import { Ellipsis, GitCompareArrows, Table2 } from "lucide-react";
-import { useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { Identifier } from "../kit/copy.tsx";
 import { DataTable } from "../kit/DataTable.tsx";
 import { DiffView } from "../kit/DiffView.tsx";
@@ -56,6 +56,32 @@ import { Time } from "../kit/Time.tsx";
 import { Truncate } from "../kit/Truncate.tsx";
 import { ColumnsMenu } from "../kit/views.tsx";
 import { KitDrawer } from "./KitDrawer.tsx";
+
+/**
+ * A line set in a type role, naming the size it is drawn at now. The size is read from the
+ * element, so it follows the type scale and cannot go stale when the scale changes.
+ */
+function TypeRole({ className, children }: { className: string; children: ReactNode }) {
+  const ref = useRef<HTMLParagraphElement>(null);
+  const [size, setSize] = useState("");
+  useEffect(() => {
+    const read = () => {
+      const px = ref.current
+        ? Number.parseFloat(getComputedStyle(ref.current).fontSize)
+        : Number.NaN;
+      setSize(Number.isFinite(px) ? `, ${Math.round(px * 10) / 10} px` : "");
+    };
+    read();
+    window.addEventListener("resize", read);
+    return () => window.removeEventListener("resize", read);
+  }, []);
+  return (
+    <p ref={ref} className={`m-0 ${className}`}>
+      {children}
+      {size}
+    </p>
+  );
+}
 
 const SWATCHES = [
   "canvas",
@@ -105,6 +131,7 @@ const KIT_DOC = parse(
   [
     "# Deploying",
     "",
+    // backticks-allowed: this is markdown, which draws them as code.
     "Press :kbd[Ctrl+K] and choose **Deploy**, or run `volvel deploy`.",
     "",
     ":::alert[Before you deploy]{type=warning}",
@@ -167,18 +194,18 @@ export function KitSheet() {
       <section className="flex flex-col gap-3">
         <SectionLabel>Type roles</SectionLabel>
         <Panel className="flex flex-col gap-3 p-4">
-          <p className="m-0 text-display-lg">Display large: an overview's title, 26 px</p>
-          <p className="m-0 text-display">Display: a screen's title, 20 px</p>
-          <p className="m-0 text-title">Title: a section, panel or dialog, 16 px</p>
-          <p className="m-0 text-emphasis">Emphasis: a row's main line, 15 px</p>
-          <p className="m-0 text-body">Body: what people read, 14 px</p>
-          <p className="m-0 text-body-sm text-ink-muted">
-            Body small: labels, hints, errors, 13 px
-          </p>
-          <p className="m-0 text-meta text-ink-muted">Meta: when, who, how long, 12 px</p>
-          <p className="m-0 text-label text-ink-subtle uppercase">
-            Label: a group's heading, 11 px
-          </p>
+          <TypeRole className="text-display-lg">Display large: an overview's title</TypeRole>
+          <TypeRole className="text-display">Display: a screen's title</TypeRole>
+          <TypeRole className="text-title">Title: a section, panel or dialog</TypeRole>
+          <TypeRole className="text-emphasis">Emphasis: a row's main line</TypeRole>
+          <TypeRole className="text-body">Body: what people read</TypeRole>
+          <TypeRole className="text-body-sm text-ink-muted">
+            Body small: labels, hints, errors
+          </TypeRole>
+          <TypeRole className="text-meta text-ink-muted">Meta: when, who, how long</TypeRole>
+          <TypeRole className="text-label text-ink-subtle uppercase">
+            Label: a group's heading
+          </TypeRole>
           <p className="m-0 font-mono text-code">code · orders/sync · run_8812 · 2.41 s</p>
           <p className="m-0 font-mono text-code-sm">
             code small · 10:42:07 started step place_order

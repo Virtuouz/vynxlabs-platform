@@ -157,7 +157,7 @@ test("a schedule from the repository opens with its settings, and saving takes i
   expect(((await screen.findByLabelText("When, as a cron line")) as HTMLInputElement).value).toBe(
     "0 2 * * *",
   );
-  expect(screen.getByText(/defined by the code in the tenant's repository/)).toBeTruthy();
+  expect(screen.getByText(/defined in code, in the tenant's repository/)).toBeTruthy();
   // The input is a form drawn from the script's schema.
   expect(((await screen.findByLabelText("Full")) as HTMLInputElement).checked).toBe(true);
   // The next times are shown.
@@ -186,7 +186,9 @@ test("a schedule the repository's code defines is moved to a file as it is, by a
   await screen.findByLabelText("When, as a cron line");
   // It says the file it becomes, and what to do in the code afterwards.
   expect(screen.getByText("orders/nightly.schedule.yaml")).toBeTruthy();
-  expect(screen.getByText(/remove its definition from the code/)).toBeTruthy();
+  expect(
+    screen.getByText(/Its definition stays in the code until you remove it there/),
+  ).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Move to a file" }));
   await waitFor(() => expect(saved()).toBeTruthy());
   expect(saved()?.body?.body).toEqual({
@@ -343,4 +345,18 @@ test("a draft someone else saved first offers to copy what was written before th
   fireEvent.click(screen.getByRole("button", { name: "Save draft" }));
   expect(await screen.findByRole("button", { name: "Copy what I wrote" })).toBeTruthy();
   expect(screen.getByRole("button", { name: "Load their version" })).toBeTruthy();
+});
+
+test("a new trigger asked for as a form opens with a form to fill in, and saves", async () => {
+  history.replaceState(history.state, "", `${location.pathname}?type=form`);
+  show(<ResourceEditor root={root} link={link} kind="trigger" path={undefined} editable />);
+  expect(await screen.findByLabelText("Title of the form")).toHaveProperty("value", "Tell us");
+  expect(screen.getByLabelText("Question")).toHaveProperty("value", "Message");
+  fireEvent.change(screen.getByLabelText("Path of the new trigger"), {
+    target: { value: "forms/contact" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Save draft" }));
+  // A script is chosen first, so the save is refused before it is sent.
+  await screen.findByText("Choose the script it starts.");
+  expect(saved()).toBeUndefined();
 });

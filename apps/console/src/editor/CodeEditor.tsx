@@ -14,6 +14,12 @@ export interface CodeEditorProps {
   readOnly?: boolean;
   /** A CSS length. */
   height?: string;
+  /**
+   * For code that uses the SDK: declarations that give it the workspace's own names (its tables,
+   * events, variables and connections), so that `ctx.table("orders")` completes and is checked.
+   * The same for every editor on the page: the last given are used.
+   */
+  declarations?: string | undefined;
   /** A line to scroll to and select when the document opens, such as where something is defined. */
   revealLine?: number | undefined;
   /**
@@ -51,6 +57,13 @@ export interface CodeEditorProps {
    * says beside it what it holds. The top is still the text's, and opens again.
    */
   frontmatter?: { hint: string } | undefined;
+}
+
+/** Whether a text field outside the editor is being typed in. */
+function otherFieldHasFocus(inside: HTMLElement | null): boolean {
+  const now = document.activeElement;
+  if (!(now instanceof HTMLElement) || inside?.parentElement?.contains(now)) return false;
+  return now.matches("input, textarea, select, [contenteditable='true']");
 }
 
 /** The editor, worked from outside. Every change it makes is a step that Undo takes back. */
@@ -91,6 +104,7 @@ export function CodeEditor({
   path,
   readOnly = false,
   height = "28rem",
+  declarations,
   revealLine,
   onRun,
   onSave,
@@ -156,6 +170,16 @@ export function CodeEditor({
   const replace = useRef<(next: string, select?: { start: number; end: number }) => void>(() => {});
 
   useEffect(() => {
+    if (declarations === undefined || plainEditorOnly()) return;
+    let gone = false;
+    import("./monaco.ts").then(({ setEnvTypes }) => {
+      if (!gone) setEnvTypes(declarations);
+    });
+    return () => {
+      gone = true;
+    };
+  }, [declarations]);
+  useEffect(() => {
     let gone = false;
     let cleanup = () => {};
     if (plainEditorOnly()) {
@@ -176,7 +200,12 @@ export function CodeEditor({
           readOnly,
           automaticLayout: true,
           minimap: { enabled: false },
-          fontSize: 13,
+          fontSize: Math.round(
+            13 *
+              (Number.parseFloat(
+                getComputedStyle(document.documentElement).getPropertyValue("--vx-type-scale"),
+              ) || 1),
+          ),
           scrollBeyondLastLine: false,
           tabSize: 2,
           wordWrap: wrap ? "on" : "off",
@@ -272,7 +301,9 @@ export function CodeEditor({
             },
             apply: (next, at) => {
               replace.current(next, at);
-              created.focus();
+              // A field beside the editor, such as a page's details, writes through here as it is
+              // typed in: the editor takes the focus for a button's change, never from a field.
+              if (!otherFieldHasFocus(host.current)) created.focus();
             },
             focus: () => created.focus(),
           };

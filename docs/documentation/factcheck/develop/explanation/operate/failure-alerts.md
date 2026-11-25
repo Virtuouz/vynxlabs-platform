@@ -19,3 +19,15 @@ Checked by: second agent, 2026-11-23. kernel/execution/alerts.ts read whole: han
 | --- | --- | --- |
 | New section "Doing more than the default": platform/run-failed published at a last failure; the event trigger example (moved here from the removed platform events page); a failing filter records a refusal shown as Last refused. | kernel/execution/runs.ts:596-690; kernel/flows/events.ts:183-214; packages/sdk/src/index.ts:720-745 | holds as read |
 | Link to the generated Platform events page. | docs:check | done |
+
+## Phase 34, A7 (YAML first), 2026-11-24
+
+Commit `d619bfbd` plus the working tree. Written by the A7 writer; second agent checked 2026-11-24 (a7r). Run on the throwaway instance of lane a7 (http://localhost:8712, Fernhill seeded).
+
+| Claim | Source (file:line) | Checked by | Result |
+| --- | --- | --- | --- |
+| Event trigger file shape. | run: `volvel convert` output; deployed to `walk6` | writer, 2026-11-24 | holds as run |
+
+### Second check (a7r), 2026-11-24, second agent
+
+Lane a7r build (a7 merged), throwaway instance http://localhost:8722 (database a7r34, Fernhill seeded), lane CLI `packages/cli/dist/bin.js`. `pnpm docs:check` passes. The trigger file validates and builds with a script at the path it names.

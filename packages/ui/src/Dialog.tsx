@@ -4,6 +4,7 @@ import { type ReactNode, useEffect, useRef } from "react";
 import { InOverlay } from "./overlay.ts";
 import { useOpening } from "./presence.tsx";
 import { useReturnFocus } from "./returnFocus.ts";
+import { CodeText } from "./Term.tsx";
 
 export interface DialogProps {
   open: boolean;
@@ -199,7 +200,7 @@ export function Dialog({
             >
               {description ? (
                 <Base.Description className="mt-0 mb-4 text-ink-muted">
-                  {description}
+                  <CodeText>{description}</CodeText>
                 </Base.Description>
               ) : null}
               {size === "table" ? (

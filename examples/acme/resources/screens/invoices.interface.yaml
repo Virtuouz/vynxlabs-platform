@@ -1,0 +1,107 @@
+schemaVersion: 2
+body:
+  title: Invoices
+  pages:
+    - id: invoices
+      title: Invoices
+      widgets:
+        - id: list
+          type: core/table
+          title: Invoices
+          at:
+            x: 0
+            y: 0
+            w: 8
+            h: 9
+          data:
+            rows:
+              source:
+                visual:
+                  table: invoices
+                  sort:
+                    - by: number
+          config:
+            columns:
+              - column: number
+              - column: customer_id
+                label: Customer
+              - column: total
+          on:
+            rowClick:
+              steps:
+                - do: open
+                  page: invoice
+                  record: event
+        - id: latest
+          type: core/list
+          title: Latest invoices
+          at:
+            x: 8
+            y: 0
+            w: 4
+            h: 9
+          data:
+            rows:
+              source:
+                visual:
+                  table: invoices
+                  sort:
+                    - by: created_at
+                      descending: true
+                  limit: 10
+          config:
+            title: number
+            subtitle: customer_id
+            right: total
+          on:
+            rowClick:
+              steps:
+                - do: open
+                  page: invoice
+                  record: event
+        - id: owed
+          type: core/chart
+          title: Owed by customer
+          at:
+            x: 0
+            y: 9
+            w: 12
+            h: 8
+          data:
+            rows:
+              source:
+                visual:
+                  table: invoices
+                  groupBy:
+                    - column: customer_id
+                  measures:
+                    - fn: sum
+                      column: total
+                      as: owed
+          config:
+            mark: bar
+    - id: invoice
+      title: The invoice chosen
+      kind: sheet
+      record:
+        table: invoices
+      widgets:
+        - id: detail
+          type: core/detail
+          at:
+            x: 0
+            y: 0
+            w: 12
+            h: 8
+          data:
+            record:
+              source:
+                record: this
+          config:
+            heading: number
+            fields:
+              - column: customer_id
+                label: Customer
+              - column: total
+              - column: visible_to
+                label: Shown to

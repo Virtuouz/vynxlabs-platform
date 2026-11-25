@@ -1,0 +1,4 @@
+schemaVersion: 1
+body:
+  description: An order costing more than this, in cents, waits for a practice manager.
+  default: "30000"

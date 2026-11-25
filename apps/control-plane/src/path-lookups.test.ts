@@ -35,10 +35,12 @@ const ALLOWED: Record<string, number> = {
   "routes/flows.ts": 3,
   "routes/interfaces.ts": 1,
   "routes/search.ts": 1,
+  // The widget of this exact path that the repository defines now: a version it defines is not removed.
+  "routes/widgets.ts": 1,
   "routes/worker.ts": 3,
   // A failure alert's connection as declared now; a create refused only where something is at the
   // path now; a delete of the resource at exactly this path.
-  "routes/workspaces.ts": 3,
+  "routes/workspaces.ts": 4,
 };
 
 const root = fileURLToPath(new URL("../src", import.meta.url));

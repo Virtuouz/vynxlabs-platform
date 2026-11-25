@@ -11,22 +11,21 @@ By the end you will have started a script by sending a signed request to its web
 ## Before you start
 
 - A script and a webhook trigger that starts it, deployed in a workspace. The trigger's address is shown with the trigger to those who may manage it; through the API it is `url` in `GET /api/v1/tenants/<t>/workspaces/<w>/triggers`. It ends in a token that begins `vxh_`. See [the webhook address and its key](../../explanation/flows/webhook-address-and-key).
-- The sender's shared secret, saved as a secret of the workspace, and its name in the trigger's `verify`. The example trigger is:
+- The sender's shared secret, saved as a secret of the workspace, and its name in the trigger's `verify`. The example trigger is a file of the repository, `platform/hooks/orders.trigger.yaml`:
 
-  ```json
-  {
-    "type": "webhook",
-    "script": "hooks/echo",
-    "verify": {
-      "scheme": "hmac-sha256",
-      "header": "X-Signature",
-      "secret": "HOOK_SECRET",
-      "prefix": "sha256=",
-      "timestampHeader": "X-Timestamp",
-      "signed": "{timestamp}.{body}",
-      "toleranceSeconds": 300
-    }
-  }
+  ```yaml title=platform/hooks/orders.trigger.yaml
+  schemaVersion: 1
+  body:
+    type: webhook
+    script: hooks/echo
+    verify:
+      scheme: hmac-sha256
+      header: X-Signature
+      secret: HOOK_SECRET
+      prefix: "sha256="
+      timestampHeader: X-Timestamp
+      signed: "{timestamp}.{body}"
+      toleranceSeconds: 300
   ```
 
 - The triggers of the workspace are not paused. A dev workspace starts with them paused.
@@ -94,17 +93,33 @@ By the end you will have started a script by sending a signed request to its web
 
 A flow can answer the request itself. The trigger says `respond: "flow"` and a respond step gives the `status`, `headers` and `body`, each an expression over `trigger`. The first respond step that runs is the answer, and the flow carries on after it.
 
-```ts
-export const answerNow = defineFlow({
-  path: "check/answer-now",
-  nodes: {
-    hook: trigger.webhook({ respond: "flow" }),
-    answer: step.respond({ status: 201, headers: { "x-check": "'yes'" }, body: "{'got': trigger.a}" }),
-    after: step.set({ after: "'carried on'" }),
-  },
-  edges: [["hook", "answer"], ["answer", "after"]],
-});
+```yaml title="platform/check/answer-now.flow.yaml"
+schemaVersion: 1
+body:
+  nodes:
+    hook:
+      type: trigger
+      trigger:
+        type: webhook
+        respond: flow
+    answer:
+      type: respond
+      status: 201
+      headers:
+        x-check: "'yes'"
+      body: "{'got': trigger.a}"
+    after:
+      type: set
+      values:
+        after: "'carried on'"
+  edges:
+    - from: hook
+      to: answer
+    - from: answer
+      to: after
 ```
+
+In TypeScript the same flow is `defineFlow` with `trigger.webhook({ respond: "flow" })`, `step.respond({ status, headers, body })` and `step.set(...)`, and `edges: [["hook", "answer"], ["answer", "after"]]`. The build writes the same flow from either.
 
 A request of `{"a": 1}` answers `201` with the body `{"got":1}`, the header `x-check: yes` and `x-flow-run`. A form body `a=7` gives `{"got":"7"}`, because a form's fields are text. A flow that waits longer than 25 seconds before it answers gets the 202 at 25 seconds.
 

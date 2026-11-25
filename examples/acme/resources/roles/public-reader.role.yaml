@@ -1,0 +1,7 @@
+schemaVersion: 1
+body:
+  name: public_reader
+  description: Opens an app and reads rows, where it is bound.
+  permissions:
+    - app:read
+    - data:read

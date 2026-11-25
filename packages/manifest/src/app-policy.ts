@@ -24,3 +24,14 @@ export function appPolicy(
 
 /** The policy of an app as deployed. */
 export const APP_POLICY = appPolicy();
+
+/**
+ * What the frame of a developer's widget may load and do (decision 0005): its own script and
+ * inline styles, images it is given, and nothing else. No `connect-src`, so `default-src 'none'`
+ * leaves it no network: it cannot fetch, open a socket or send a beacon. `sandbox
+ * allow-scripts` is the host's iframe attribute said again by the page itself: opened on its
+ * own, not in a frame, it still has no origin, so it never holds the cookies of the address that
+ * serves it and the files may be served at the console's address when an instance has no other.
+ */
+export const WIDGET_POLICY =
+  "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src data: blob:; sandbox allow-scripts";

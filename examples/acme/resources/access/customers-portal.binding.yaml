@@ -1,0 +1,6 @@
+schemaVersion: 1
+body:
+  role: portal_user
+  principal:
+    type: end_users
+  resource: portal

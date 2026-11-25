@@ -32,3 +32,19 @@ Lines are current at commit `be324f78` (branch phase-31-write-the-docs). Paths a
 | At 390 px the Columns table hides the **Rules** and **When not given** columns, and each column's buttons are in one menu named "Actions for <column>" at the right end of the table (reached by scrolling the table sideways) | `Data.tsx:2760-2790`; run 2026-11-23 at 390 | second agent, 2026-11-23 | the page describes the wide screen; see the report for the product note |
 
 Checked by: second agent, 2026-11-23. Code re-read; key steps run on the instance (required with no default refused, unique refused with the repeated values, Change type choices, Values dialog, Add an index dialog, Retire, Undo). Corrected: a stray comma; "the server uses" now "the console uses".
+
+## Phase 34, A7 (YAML first), 2026-11-24
+
+Commit `d619bfbd` plus the working tree. Written by the A7 writer; second agent checked 2026-11-24 (a7r). Run on the throwaway instance of lane a7 (http://localhost:8712, Fernhill seeded).
+
+| Claim | Source (file:line) | Checked by | Result |
+| --- | --- | --- | --- |
+| Code table notice and take-over pointer. | `apps/console/src/screens/Data.tsx:2915-2922` | writer, 2026-11-24 | holds as read |
+
+### Second check (a7r), 2026-11-24, second agent
+
+Lane a7r build (a7 merged), throwaway instance http://localhost:8722 (database a7r34, Fernhill seeded), lane CLI `packages/cli/dist/bin.js`. `pnpm docs:check` passes. Browser as above. CORRECTED the sentence that a deploy is refused 'until `volvel pull`': for a taken-over table the pull brings nothing in (see how-tables-work).
+
+### Fix check (a9), 2026-11-24
+
+Lane a9 build, throwaway instance http://localhost:8729 (database a934), lane CLI `packages/cli/dist/bin.js`. The page now describes the fixed behaviour, run as written: a table in code deployed, taken over in the console with a column added in the same save (`PUT resources/desk`, `takeOver: true`); `volvel deploy` without a pull refused (`desk: changed in the console since the repository last had it`); `volvel pull` wrote `platform/desk.table.yaml` with the column, and printed `desk (table) was taken over in the console, and is still defined in code, by the name desk. Remove it from the TypeScript: until you do, a deploy is refused as defined twice, in the code and in platform/.`; `volvel deploy` then failed at the build with `desk is defined in src/index.ts and again in platform/desk.table.yaml`; with the definition removed from the code the deploy passed and the table kept the column (read). CORRECTED the passages that said a pull brings nothing in for a table (product bug fixed by lane a9).

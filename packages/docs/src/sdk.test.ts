@@ -60,19 +60,22 @@ export * from "@volvel/other";
   });
 });
 
-test("every export of @volvel/sdk and @volvel/widgets says what it is in a comment (D58, API-22)", () => {
+test("every export of @volvel/sdk, @volvel/widgets and @volvel/widget-frame says what it is in a comment (D58, API-22)", () => {
   const entries = entryPoints();
   expect(entries.map((one) => one.specifier)).toEqual([
     "@volvel/sdk",
     "@volvel/sdk/testing",
     "@volvel/widgets",
     "@volvel/widgets/action",
+    "@volvel/widgets/frame",
     "@volvel/widgets/page",
+    "@volvel/widget-frame",
+    "@volvel/widget-frame/react",
   ]);
   const gaps: string[] = [];
   for (const entry of entries) {
     const { names } = exportsOfEntry(entry);
-    expect(names.size, entry.specifier).toBeGreaterThan(5);
+    expect(names.size, entry.specifier).toBeGreaterThan(entry.specifier.endsWith("/react") ? 0 : 5);
     for (const one of names.values()) {
       if (one.kind === "unknown") gaps.push(`${entry.specifier}: ${one.name} could not be read`);
       else if (one.kind !== "reexport" && one.doc.text === "") {
@@ -98,4 +101,11 @@ test("each entry point has a page that lists every export of it (D58, API-22)", 
   const sdk = files.get("sdk/sdk.md") ?? "";
   expect(sdk).toContain("### defineScript");
   expect(sdk).toContain("Everything `@volvel/widgets` exports is exported from here too.");
+});
+
+test("a type with arguments is not split at the comma between them (p34-b7)", () => {
+  const files = sdkFiles();
+  const text = files.get("sdk/widget-frame.md") ?? "";
+  expect(text).toContain('Pick<Window, "postMessage">');
+  expect(text).not.toMatch(/Pick<Window[^,]/);
 });

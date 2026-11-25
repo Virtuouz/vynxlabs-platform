@@ -204,6 +204,8 @@ test("she writes a script and a flow of core nodes in the console, and deploys t
   // A script, in the editor.
   await ada.goto(`${link}/scripts/new`);
   await ada.getByLabel("Path").fill("orders/greet");
+  // A script's settings wait folded, its code is written first.
+  await ada.locator("summary", { hasText: "Settings" }).click();
   await ada.getByLabel("What it does").fill("Greets someone by name.");
   await ada
     .getByRole("region", { name: /Source of/ })

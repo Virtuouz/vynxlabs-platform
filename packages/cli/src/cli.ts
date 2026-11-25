@@ -6,17 +6,22 @@ import { dirname, join, resolve } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { parseArgs } from "node:util";
-import { resourceOfFile } from "@volvel/manifest";
+import { ENV_TYPES_FILE, resourceOfFile } from "@volvel/manifest";
 import { ACCESS_ACTIONS, tenantAccess } from "./access.js";
-import { BuildError, type Built, buildRepository, describeBundle } from "./build.js";
+import { appSources, BuildError, type Built, buildRepository, describeBundle } from "./build.js";
 import { type CommandName, usage } from "./commands.js";
+import { convertRepository, describeConvert } from "./convert.js";
 import { startDevServer } from "./dev.js";
+import { siteApps } from "./dev-site.js";
+import { startWidgetServer, widgetsOf } from "./dev-widgets.js";
 import { CliError } from "./errors.js";
 import { type Followed, followRun, Stopped } from "./follow.js";
 import { inputOf } from "./input.js";
 import { init, runLocally } from "./local.js";
 import { pull, pulledFile, readPulled } from "./pull.js";
 import { SCHEMA_FOLDER, writeEditorSchemas } from "./schemas.js";
+import { writeEnvTypes } from "./types.js";
+import { widgetCommand } from "./widget.js";
 
 export { CliError };
 
@@ -133,15 +138,27 @@ export async function request(
 const OLDER_INSTANCE = /There is no "(type|subjects|moved_from|date)" (here|in )/;
 
 /** Explains a refused request in the server's own words, including each named problem. */
+/** One problem of a refusal. What the console changed is named by its path: the path is the point. */
+function problemLine(code: unknown, problem: { path?: string; message: string }): string {
+  return code === "console_changed" && problem.path
+    ? `  - ${problem.path}: ${problem.message}`
+    : `  - ${problem.message}`;
+}
+
 export function refusal(reply: ApiReply, doing: string): CliError {
   if (reply.status === 401) {
     return new CliError("The API key was not accepted. Create a new one and run login again.");
   }
-  const problems = ((reply.body?.errors ?? []) as { message: string }[]).map(
-    (problem) => `  - ${problem.message}`,
+  const problems = ((reply.body?.errors ?? []) as { path?: string; message: string }[]).map(
+    (problem) => problemLine(reply.body?.code, problem),
   );
   const detail = reply.body?.detail ?? `The instance answered ${reply.status}.`;
   const lines = [`Could not ${doing}. ${detail}`, ...problems];
+  if (reply.body?.code === "console_changed") {
+    lines.push(
+      "To overwrite them on purpose, deploy again with --force. That is written to the audit log.",
+    );
+  }
   // An instance from before a page could say these refuses the key, and says it by name.
   const older = ((reply.body?.errors ?? []) as { message: string }[]).some((problem) =>
     OLDER_INSTANCE.test(problem.message),
@@ -268,8 +285,44 @@ async function build(args: string[], io: Io) {
   const file = join(directory, ".platform", "bundle.json");
   await mkdir(dirname(file), { recursive: true });
   await writeFile(file, JSON.stringify(bundle));
+  await writeEnvTypes(directory, bundle.manifests);
   for (const line of describeBundle(bundle)) io.out(line);
   io.out(`Written to ${file}`);
+}
+
+async function types(args: string[], io: Io) {
+  const { values } = parseArgs({ args, options: placesOption });
+  const directory = resolve(values.dir ?? ".");
+  const built = await buildRepository({ ...buildOptionsOf(values), withoutAppSources: true });
+  for (const warning of built.warnings) io.err(`Warning: ${warning}`);
+  await writeEnvTypes(directory, built.bundle.manifests);
+  io.out(`Wrote the types of your tables, events, variables and connections to ${ENV_TYPES_FILE}.`);
+  io.out(
+    'Scripts are typed by them when tsconfig.json includes ".platform/*.d.ts". Run this again, or `volvel build`, after a definition changes.',
+  );
+}
+
+async function convert(args: string[], io: Io) {
+  const { values } = parseArgs({
+    args,
+    options: {
+      ...placesOption,
+      "dry-run": { type: "boolean" as const },
+      only: { type: "string" as const },
+      "keep-references": { type: "boolean" as const },
+    },
+  });
+  const only = values.only
+    ?.split(",")
+    .map((kind) => kind.trim())
+    .filter((kind) => kind !== "");
+  const result = await convertRepository({
+    ...buildOptionsOf(values),
+    ...(only && only.length > 0 ? { only } : {}),
+    dryRun: values["dry-run"] === true,
+    keepReferences: values["keep-references"] === true,
+  });
+  for (const line of describeConvert(result)) io.out(line);
 }
 
 async function schemas(args: string[], io: Io) {
@@ -432,6 +485,7 @@ async function deploy(args: string[], io: Io) {
       ...jsonOption,
       preview: { type: "boolean" as const },
       message: { type: "string" as const },
+      force: { type: "boolean" as const },
     },
   });
   const say = spoken(io, values.json);
@@ -452,7 +506,7 @@ async function deploy(args: string[], io: Io) {
       : [];
   // A resource deleted in the console and pulled is meant to go: its file is gone on purpose.
   // A bundle with no console file at all leaves the console's resources as they are.
-  if (bundle.manifests.some((manifest) => manifest.ownership === "ui")) {
+  if (!values.force && bundle.manifests.some((manifest) => manifest.ownership === "ui")) {
     await refuseToDropConsoleResources(
       settings,
       base,
@@ -472,7 +526,7 @@ async function deploy(args: string[], io: Io) {
     const allowed: string[] = values["allow-delete"] ?? [];
     const answer = await request(
       settings.url,
-      `${base}/deployment-preview?bundleId=${tried.body.id}${allowed.length > 0 ? `&allowDelete=${encodeURIComponent(allowed.join(","))}` : ""}`,
+      `${base}/deployment-preview?bundleId=${tried.body.id}${allowed.length > 0 ? `&allowDelete=${encodeURIComponent(allowed.join(","))}` : ""}${values.force ? "&force=true" : ""}`,
       settings.token,
     );
     if (answer.status >= 300) throw refusal(answer, `check a deploy to ${values.workspace}`);
@@ -481,7 +535,12 @@ async function deploy(args: string[], io: Io) {
       throw new CliError(
         [
           `It cannot be deployed. ${why.detail}`,
-          ...(why.errors as { message: string }[]).map((problem) => `  - ${problem.message}`),
+          ...(why.errors as { path?: string; message: string }[]).map((problem) =>
+            problemLine(why.code, problem),
+          ),
+          ...(why.code === "console_changed"
+            ? ["To overwrite them on purpose, deploy again with --force."]
+            : []),
         ].join("\n"),
       );
     }
@@ -508,6 +567,7 @@ async function deploy(args: string[], io: Io) {
       ...(message ? { message } : {}),
       ...(carried.length > 0 ? { settleDrafts: carried } : {}),
       ...(values["allow-delete"]?.length ? { allowDelete: values["allow-delete"] } : {}),
+      ...(values.force ? { force: true } : {}),
     },
   });
   if (deployed.status >= 300) throw refusal(deployed, `deploy to ${values.workspace}`);
@@ -599,12 +659,39 @@ async function dev(args: string[], io: Io) {
       ...targetOptions,
       port: { type: "string" as const },
       "no-strict": { type: "boolean" as const },
+      widgets: { type: "boolean" as const },
     },
   });
   const port = values.port === undefined ? 5174 : wholeNumber("--port", values.port, 1, 65535);
+  // A repository of widgets and no app, or --widgets, is previewed without an instance.
+  if (values.widgets || positionals[0] === undefined) {
+    const places = buildOptionsOf(values);
+    const found = await widgetsOf(places);
+    const apps =
+      values.widgets || found.length === 0
+        ? 1
+        : (await appSources(places)).length + (await siteApps(places)).length;
+    if (values.widgets || (found.length > 0 && apps === 0)) {
+      const preview = await startWidgetServer({ ...places, port });
+      io.out(`${found.length} widget${found.length === 1 ? "" : "s"} previewed at ${preview.url}`);
+      io.out(
+        "Each runs in the sandboxed frame and under the content policy it has once deployed, given the data of its fixture.json. A saved file rebuilds it. Press Ctrl+C to stop.",
+      );
+      await new Promise<void>((done) => {
+        process.once("SIGINT", done);
+        process.once("SIGTERM", done);
+      });
+      await preview.close();
+      return;
+    }
+  }
   const settings = await loadSettings(io.env);
   const { workspace, tenant } = await locate(settings, values.tenant, values.workspace);
   const me = await whoami(settings);
+  // The editor's types follow the definitions from the first start, as they do on each rebuild.
+  await buildRepository({ ...buildOptionsOf(values), withoutAppSources: true })
+    .then((built) => writeEnvTypes(resolve(values.dir ?? "."), built.bundle.manifests))
+    .catch(() => undefined);
   const server = await startDevServer({
     ...buildOptionsOf(values),
     app: positionals[0],
@@ -1324,12 +1411,24 @@ const HANDLERS: Record<CommandName, (rest: string[], io: Io) => Promise<number>>
     await init(rest, io);
     return 0;
   },
+  widget: async (rest, io) => {
+    await widgetCommand(rest, io);
+    return 0;
+  },
   build: async (rest, io) => {
     await build(rest, io);
     return 0;
   },
   schemas: async (rest, io) => {
     await schemas(rest, io);
+    return 0;
+  },
+  types: async (rest, io) => {
+    await types(rest, io);
+    return 0;
+  },
+  convert: async (rest, io) => {
+    await convert(rest, io);
     return 0;
   },
   run: async (rest, io) => {

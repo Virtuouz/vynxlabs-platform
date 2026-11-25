@@ -1,4 +1,9 @@
-import { type WidgetDefinition, WidgetRegistry } from "@volvel/widgets";
+import {
+  type DeployedWidget,
+  TENANT_PACK,
+  type WidgetDefinition,
+  WidgetRegistry,
+} from "@volvel/widgets";
 import {
   DASHBOARD_REFRESH,
   type DashboardBody,
@@ -428,6 +433,12 @@ export const pageWidgetSchema = {
       pattern: TYPE,
       description: "The widget, by its pack and name, as core/chart.",
     },
+    version: {
+      type: "string",
+      pattern: "^\\d+\\.\\d+\\.\\d+$",
+      description:
+        "For a widget of your own (`x/<name>`): the version it was placed with. The page keeps drawing that version when a newer one is deployed, until someone updates it. Volvel's own widgets have none.",
+    },
     title: {
       type: "string",
       maxLength: 100,
@@ -636,23 +647,19 @@ export const dashboardKind: KindDefinition = {
 
 /** The widgets the platform knows: the core pack and the platform's other packs (labs). */
 const platformPacks = (): WidgetRegistry => new WidgetRegistry([...CORE_WIDGETS, ...LABS_WIDGETS]);
-let platformWidgets: WidgetRegistry = platformPacks();
+const platformWidgets: WidgetRegistry = platformPacks();
 
-/** The registry pages are checked against. A pack the platform ships is added once, at start. */
+/**
+ * A registry of the platform's packs, and the tenant widgets a workspace (or a bundle) has
+ * deployed besides. One per workspace: what is offered, drawn and checked there.
+ */
+export function workspaceRegistry(deployed: Iterable<DeployedWidget> = []): WidgetRegistry {
+  return platformPacks().withDeployed(deployed);
+}
+
+/** The platform's own widgets: what a page is checked against where no workspace is in play. */
 export function widgetRegistry(): WidgetRegistry {
   return platformWidgets;
-}
-
-/** Adds a pack's definitions to the registry pages are checked against. */
-export function registerWidgets(definitions: Iterable<WidgetDefinition>): void {
-  for (const definition of definitions) {
-    if (!platformWidgets.get(definition.type)) platformWidgets.add(definition);
-  }
-}
-
-/** For tests: back to the platform's packs alone. */
-export function resetWidgets(): void {
-  platformWidgets = platformPacks();
 }
 
 const configAjv = new Ajv2020({ allErrors: true, strict: false });
@@ -991,6 +998,22 @@ export function checkWidgets(
         say(at, "a dashboard only reads: it can narrow, say, or show the rows behind a number");
         return;
       }
+      // A step made but not finished (its script, flow, page or table not chosen yet) is kept in
+      // a draft and said here; the rest of its checks wait for the value.
+      const unchosen =
+        step.do === "script" || step.do === "flow"
+          ? ["path", step.path]
+          : step.do === "open"
+            ? ["page", step.page]
+            : step.do === "create"
+              ? ["table", step.table]
+              : step.do === "narrow"
+                ? ["filter", step.filter]
+                : undefined;
+      if (unchosen && unchosen[1] === "") {
+        say(`${at}/${unchosen[0]}`, "is empty: it needs a value");
+        return;
+      }
       const values =
         step.do === "update" || step.do === "create"
           ? step.set
@@ -1086,11 +1109,30 @@ export function checkWidgets(
       );
     }
 
-    const definition = registry.get(widget.type);
-    if (!definition) {
+    const definition = registry.get(widget.type, widget.version);
+    if (!registry.get(widget.type)) {
       say("/type", `there is no widget called "${widget.type}"`);
       return;
     }
+    const deployed = registry.versionsOf(widget.type);
+    if (deployed.length > 0) {
+      const list = deployed.join(", ");
+      if (widget.version === undefined) {
+        say(
+          "/version",
+          `"${widget.type}" is a tenant widget: say the version it was made with (deployed: ${list})`,
+        );
+        return;
+      }
+      if (!definition) {
+        say(
+          "/version",
+          `version ${widget.version} of "${widget.type}" is not deployed (deployed: ${list})`,
+        );
+        return;
+      }
+    }
+    if (!definition) return;
     if (!definition.surfaces.includes(context.surface)) {
       say(
         "/type",
@@ -1469,6 +1511,9 @@ export function newWidget(
   return {
     id,
     type: definition.type,
+    ...(WidgetRegistry.packOf(definition.type) === TENANT_PACK
+      ? { version: definition.version }
+      : {}),
     title: definition.title,
     at: { x: 0, y, w: definition.layout.default.w, h: definition.layout.default.h },
     ...(definition.initialData

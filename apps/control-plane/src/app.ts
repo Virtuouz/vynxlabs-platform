@@ -84,6 +84,7 @@ import { tenantRoutes } from "./routes/tenants.js";
 import { termRoutes } from "./routes/terms.js";
 import { widgetChoicesRoutes } from "./routes/widget-choices.js";
 import { widgetDataRoutes } from "./routes/widget-data.js";
+import { widgetRoutes } from "./routes/widgets.js";
 import { workerRoutes } from "./routes/worker.js";
 import { workerHostRoutes } from "./routes/worker-host.js";
 import { workspaceRoutes } from "./routes/workspaces.js";
@@ -323,6 +324,7 @@ export async function buildApp(options: AppOptions) {
       await api.register(docRoutes(kernel));
       await api.register(dashboardRoutes(kernel));
       await api.register(widgetDataRoutes(kernel));
+      await api.register(widgetRoutes(kernel));
       await api.register(widgetChoicesRoutes(kernel));
       await api.register(pageActionRoutes(kernel));
       await api.register(pageApprovalRoutes(kernel));
@@ -419,6 +421,19 @@ export async function buildApp(options: AppOptions) {
           hashed ? "public, max-age=31536000, immutable" : "no-cache",
         );
       },
+    });
+    // The console holds a developer's widgets in frames, and a frame can send itself anywhere
+    // (`location.href = "https://x/?" + what it was given`): its own policy cannot stop that, the
+    // page that holds it can. A page of the console may frame the instance's own addresses only.
+    app.addHook("onSend", async (_request, reply, payload) => {
+      if (
+        String(reply.getHeader("content-type") ?? "").startsWith("text/html") &&
+        reply.getHeader("content-security-policy") === undefined
+      ) {
+        const own = new Set(["'self'", kernel.hosts.mainOrigin, kernel.hosts.appsOrigin]);
+        reply.header("content-security-policy", `frame-src ${[...own].join(" ")}`);
+      }
+      return payload;
     });
     app.get(
       "/help/*",

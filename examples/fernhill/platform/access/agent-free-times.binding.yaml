@@ -1,0 +1,7 @@
+schemaVersion: 1
+body:
+  role: runs_script
+  principal:
+    type: service_account
+    key: phone-assistant
+  resource: appointments/free-times

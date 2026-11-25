@@ -1,158 +1,182 @@
 ---
-title: Write a widget
-description: "How a widget is declared and drawn in Volvel's own source, taking the Goal widget from its definition to its test."
-subjects: [widgets, apps]
+title: Write a widget for your tenant
+description: "Make a widget of your own in your repository with volvel widget new, preview it with volvel dev, deploy it, place it on a dashboard, update the page to a new version, and see when a removal is refused."
+subjects: [widgets, widget-frame, apps]
 moved_from:
   - build/writing-a-widget
 ---
 
-:::alert[Developer widgets are not available]{type=info}
-This page is for contributors to Volvel's own source. A widget a developer writes for their own users, packaged in a tenant's repository, is not built: a repository cannot add a widget, and no page loads one. Every widget is declared in a pack that is compiled into the console and into the app runtime. The widgets Volvel ships are in the **core** pack. A second pack, **labs**, exists for tests and holds no widget that "Add to page" offers.
-:::
+## Write a widget for your tenant
 
-## Write a widget
+By the end you will have a widget called Waiting room, written in Fernhill's repository: a number of visits that have checked in, drawn by your own code, deployed to Fernhill's Sandbox workspace and placed on a dashboard. You will also have changed it, raised its version and moved the dashboard to it. It takes about 30 minutes.
 
-By the end you will have declared a widget, drawn it, added it to the core pack, tested it, and seen it in **Add to page**. The worked example is the Goal widget, `core/goal`, which shows how far a number is toward a target.
+A widget is code, so it is the one part of a page that is not YAML. Its definition says what it reads, what can be set and what it can tell the page. Its view draws the result in a sandboxed frame. A builder places it with **Add to page**, sets it in the inspector and attaches actions to its events, the same as for a widget Volvel ships. To see what a widget can and cannot do on the page, read [How widgets are kept safe](../explanation/widgets/how-widgets-are-kept-safe).
 
 ## Before you start
 
-- A checkout of Volvel's source, with its dependencies installed.
-- The widget needs a name of the form `pack/name`, in small letters: `core/goal`.
-- Read how the contract keeps two kinds of people apart. A **developer** declares what a widget reads, what can be set, what it can tell the page and how big it may be. A **builder** adds it to a page, points it at data, sets it in the inspector and says what its events do, and writes no code. A widget cannot add a control to the inspector, read data nobody gave it or do anything the page did not say.
+- You are Devi Shah, a developer at Fernhill (`devi.shah@fernhill.example`). You need `deployment:write` in the Sandbox workspace to deploy, and `dashboard:write` to make a dashboard. The developer role has both there.
+- Fernhill is set up: see [Set up the Fernhill example](../../start/how-to/example/set-up-the-fernhill-example).
+- A checkout of the repository, built with `pnpm build`, and its dependencies installed. The commands below write `volvel` for what you run as `node packages/cli/dist/bin.js` from the checkout's root. Run them from `examples/fernhill`. Fernhill already depends on `@volvel/widget-frame`, `react` and `react-dom`, which the view uses. In another repository, install them first: `npm install @volvel/widget-frame react react-dom`.
+- The CLI is signed in as you: `volvel login --url <instance address> --token "$KEY"`, with an API key made under your own **Account**. `volvel whoami` lists `Fernhill Veterinary Group (fernhill)`.
+- If the Sandbox workspace holds resources made in the console that the repository has no file for, run `volvel pull --tenant fernhill --workspace sandbox` once first. The deploy below refuses otherwise (see the end of this page).
 
-A widget is two halves. The **definition** is data and holds no browser code: the CLI, the control plane and the builder all read it. The **view** is a React component that is given the widget's configuration and data and draws them. A view is given no token and no way to fetch.
-
-## Steps
+## Make the widget
 
 :::steps
-1. **Declare what it reads.** In `packages/widgets-core/src/index.ts`, call `defineWidget` with a `type`, a `version` (`x.y.z`), a `title`, a one-line `description`, a `category`, an `icon` and the `surfaces` it is offered on. Under `data`, name each input and its shape. Goal reads one summary: one or two values and no breakdown.
+1. **Scaffold it.** From `examples/fernhill`:
 
-   ```ts
-   data: { value: { shape: "summary", values: { min: 1, max: 2 }, breakdowns: { min: 0, max: 0 } } },
-   dataHints: [
-     {
-       of: "value",
-       controls: [
-         { control: "source", label: "Source" },
-         { control: "measure", label: "Value" },
-         { control: "conditions", label: "Only include", help: "For example: Status is Paid." },
-       ],
-     },
-   ],
+   ```bash
+   volvel widget new waiting-room
    ```
 
-2. **Declare what can be set.** `config` is a JSON Schema with an `x-volvel` hint on each property. The inspector is drawn from the hints alone. Goal puts "Goal" (`target`) and "Goal from a column" (`goalFrom`) in the Data tab under the group "Progress", and its looks in the Display tab.
+   It prints "Created the widget x/waiting-room in src/widgets/waiting-room: widget.ts, view.tsx and fixture.json." and "src/index.ts now exports it." It also adds `export * from "./widgets/waiting-room/widget.js";` to the repository's entry file, because a build reads only what the entry exports. The name is small letters, digits and `-`, starting with a letter, at most 41 characters.
+
+2. **Say what it is.** Open `src/widgets/waiting-room/widget.ts`. Change `description`, which **Add to page** shows under the title:
 
    ```ts
-   target: {
-     type: "number",
-     exclusiveMinimum: 0,
-     "x-volvel": hint({
-       tab: "data",
-       group: "Progress",
-       control: "number",
-       label: "Goal",
-       help: "A fixed amount. Or take it from a column below.",
-       order: 1,
-     }),
+   description: "How many visits are waiting to be seen.",
+   ```
+
+   Leave the rest as it is for now. It declares one data input, `value`, a summary: rows gathered into groups with a value for each. It declares one setting, `label`, a text field in the inspector's **Display** tab, with `Waiting room` as the value a new widget starts with. It declares one event, `clicked`. It is 4 cells wide and 3 high to start, and `version` is `0.1.0`. The definition is the whole of what a builder can see and set: see [The widget kind](../reference/kinds/widget) for every field.
+
+3. **Draw it.** Open `src/widgets/waiting-room/view.tsx`. The scaffold counts rows. Change the line that shows the number to read the value the page worked out:
+
+   ```tsx
+   {config.label}: {String(summary?.rows[0]?.[summary.values[0] ?? ""] ?? 0)}
+   ```
+
+   The view is a React component. `createFrame` connects it to the page, and `useWidgetProps(frame)` gives it `config`, `data`, `state`, `size` and `theme` each time any changes. It draws its own loading, empty and failed states from `state.status`. See [The widget frame](../reference/tenant-widgets/the-widget-frame) for all of it.
+
+4. **Give it sample data.** `fixture.json` is what `volvel dev` gives the view. Change `data.value` to one number:
+
+   ```json
+   "value": {
+     "shape": "summary",
+     "columns": [{ "name": "waiting", "label": "Waiting", "type": "integer" }],
+     "breakdowns": [],
+     "values": ["waiting"],
+     "rows": [{ "waiting": 4 }]
+   }
+   ```
+
+5. **Check it builds.**
+
+   ```bash
+   volvel build
+   ```
+
+   The list has a line `widget     x/waiting-room`. The build bundles the view with its dependencies into one script. It refuses a view that does not compile, one that imports from `http://` or `https://`, one that calls `import()`, and one whose script is over 512 KB. The message names the widget.
+:::
+
+## Preview it
+
+:::steps
+1. **Start the preview.** Fernhill has apps, so name the mode:
+
+   ```bash
+   volvel dev --widgets
+   ```
+
+   It prints "2 widgets previewed at" an address ending in `/_dev/widgets`, and says each runs in the sandboxed frame under the content policy it has once deployed. It needs no instance and no sign-in. Open the address, then **Waiting room**.
+
+2. **Try it.** The page shows the widget in the production frame. In the left column: the size (**1440**, **768**, **390**, or a width and height), the **Theme** (light or dark), the **State** (`ready`, `loading`, `empty`, `failed`, `forbidden`), a field for each setting, the data as JSON, and below the widget a log of the events it raises, each marked as passed or dropped with the reason. Press the widget: the log says `clicked passed the host's checks`.
+
+3. **Save a change.** Edit `view.tsx` and save. The preview rebuilds in a moment and reloads the frame, with your settings kept. A view that does not build shows its error on the page.
+:::
+
+The preview is not the page. On the page, `state` is what the page's read of the data is, and the page adds a **Try again** button under a view whose read failed; the preview only posts the state you choose.
+
+## Deploy it
+
+:::steps
+1. **Preview the deploy.**
+
+   ```bash
+   volvel deploy --tenant fernhill --workspace sandbox --preview
+   ```
+
+   The list has `widget     x/waiting-room`, and it ends "Nothing was changed."
+
+2. **Deploy.**
+
+   ```bash
+   volvel deploy --tenant fernhill --workspace sandbox
+   ```
+
+   It prints a line like "Deployed version 4 to sandbox (dev): 3 created, 6 updated, 0 deleted, 96 unchanged." and, among the lines under it, `created  widget     x/waiting-room`. The first number is the workspace's own version. The widget's version is the one in `widget.ts`.
+:::
+
+A deployed version never changes. It is kept by its type and version, and the same files serve every workspace of the tenant. If you change a file and deploy again with the same `version`, the deploy is refused: "x/waiting-room 0.1.0 is already deployed with other files. A version's files never change, because pages are placed with it: raise the widget's version."
+
+## Place it on a dashboard
+
+You make a dashboard of your own, which only you see until you share it. A widget placed in an app's page is the same, in **App Builder**.
+
+:::steps
+1. In the Sandbox workspace, open **Data**, then **Dashboards**, and press **New dashboard**. Type `Waiting now` in **Name** and press **Make the dashboard**.
+2. Press **Add to page**, type `waiting`, and press :kbd[↵]. **Waiting room** is listed under **Understand data**, with "Your widget" beside its title and "How many visits are waiting to be seen." under it. It is placed, drawn by your code, and the inspector opens with **Data**, **Display**, **Actions** and **Rules**.
+3. In **Data**, press the row **Source** (it says "Not set") and choose **Appointments**.
+4. Under **Only include**, press **Condition**. Choose the field **Status**, leave **is**, tick **Checked in** and press **Add**.
+5. Press **Done**.
+:::
+
+The dashboard shows a card **Waiting room** with a button reading "Waiting room: 6": the number of Fernhill's visits that are checked in. Reload: it is still there. Every viewer sees the rows they may read, because the server reads the data for each viewer; your view is only given the result.
+
+## Change it and update the page
+
+A page keeps the version it was placed with. Your dashboard uses `0.1.0` until someone moves it.
+
+:::steps
+1. In `widget.ts` raise `version` to `0.2.0` and add a setting to `config.properties`:
+
+   ```ts
+   loud: {
+     type: "boolean",
+     default: false,
+     "x-volvel": { tab: "display", control: "switch", label: "Big type" },
    },
    ```
 
-3. **Declare what it tells the page, and its size.** Goal has one event, `click`, which gives nothing. It may be as small as 2 by 2 cells and starts at 3 by 3, and it stacks on a phone.
-
-   ```ts
-   defaults: { goodWhen: "up", bands: false, reached: "green", percent: true },
-   events: { click: { gives: "nothing", label: "When it is clicked" } },
-   layout: { min: { w: 2, h: 2 }, default: { w: 3, h: 3 }, phone: "stack" },
-   ```
-
-4. **Add it to the pack.** Put the definition in the `CORE_WIDGETS` list at the foot of `packages/widgets-core/src/index.ts`. `defineWidget` throws when the definition is wrong, so a pack fails when it is built, not when a page is drawn. Write `words` for every setting the schema does not explain: the generated documentation draws a widget's page from the hints and the words, and a setting with neither is a gap there.
-
-5. **Write the view.** Make `packages/widgets-core/views/goal.tsx`. It reads the one value it was given, works out the share, and draws the number, a bar that never passes its end with a label for a screen reader, the share, which can pass 100%, and the line under it. It uses only `react`, `@volvel/widgets` and `@volvel/ui`. Use the kit's color classes and no raw colors, so it follows light and dark. Size what you draw by the cell's width with a container query such as `@[14rem]/cell:`, not by the window.
-
-   The view does not draw loading, empty, failed or forbidden: the frame around the widget does, the same way for every widget. It does not know where its data came from or what a click does. It is a button (`role="button"`) only when the page does something on `click`, which `listens("click")` says.
-
-6. **Register the view.** In `packages/widgets-core/views/index.ts` add the view to `corePack.views`, under its type: `"core/goal": GoalView`. A definition with no view, or a type in two packs, throws when the registry is built.
-
-7. **Test it.** Copy `packages/screens/src/goal.test.tsx`. Check the definition with `definitionProblems`, which returns each fault as a sentence, and draw the view with sample data in happy-dom. Run it.
-
-   ```bash
-   npx vitest run packages/screens/src/goal.test.tsx
-   ```
-
-8. **Look at it.** Open an app in **App Builder**, press **Add to page** (or :kbd[A]), and find the widget under its category. Goal is in **Understand data** with "How far a number is toward a target". Add it, point it at a table, and set it up in the inspector. Reload, and look at it in light and dark and at phone width.
+   Add `loud: false` to `defaults`. In `view.tsx` add `loud: boolean` to the config type of `createFrame`, and `fontSize: config.loud ? 32 : undefined` after `font: "inherit"` in the button's style.
+2. Run `volvel deploy --tenant fernhill --workspace sandbox`. Both versions are now kept.
+3. Open the dashboard, press **Edit** and choose the widget. The inspector says "Version 0.2.0 is deployed. This page uses 0.1.0." and "Adds Big type." Nothing is written yet. Press **Update to v0.2.0**.
+4. The notice goes, **Big type** is in **Display**, and the dashboard uses `0.2.0` once it saves.
 :::
+
+Pages that are not updated keep drawing `0.1.0`. Press **Update to v0.2.0** on each. In a page kept as a file, the placed widget has a `version` field: write the new one there.
+
+## Remove a widget
+
+A widget that a page still places is not removed. Delete the widget's folder and its `export` line in the entry file, and deploy:
+
+```text
+Could not deploy to sandbox. A page still places this widget. Move each to another version or take the widget off it, then remove it.
+  - the dashboard "Waiting now" places x/waiting-room 0.2.0
+```
+
+Take the widget off the dashboard, or delete the dashboard, and deploy again. The widget and its versions go.
+
+To drop one old version while the widget stays, give the version to remove: `DELETE /api/v1/tenants/<tenant>/workspaces/<workspace>/widgets/waiting-room/versions/0.1.0`. It needs `deployment:write`. It is refused for a version a page places, and for the version the repository defines now.
 
 ## The result
 
-The widget is in **Add to page**, drawn from its definition, and its settings are in the inspector's tabs: **Data**, **Display**, **Actions** and **Rules**. The builder sets it up the way they set any widget. The widget's page in the generated reference is drawn from the definition.
-
-The Goal widget in the builder has a Data tab with a source, a **Value** and **Only include**, and a group **Progress** with **Goal** and **Goal from a column**, which wins when both are set. Its Display tab has **A line under it**, **Numbers**, **Show the percentage**, **When reached, the bar** (**Turns green** or **Stays**), and under **More**, **Good news is** and **Color by how close**.
-
-## What the contract offers
-
-### The definition
-
-| Field | Says |
-| --- | --- |
-| `type`, `version` | `pack/name` and `x.y.z`. |
-| `title`, `description`, `category`, `icon` | What **Add to page** shows. A category is `records`, `action`, `understand`, `organize` or `content`. **Add to page** groups them as **Work with records**, **Understand data**, **Take action** and **Organize and explain**, which holds both `organize` and `content`. The icon is the name of a widget that comes with Volvel, a page icon, or `globe`, `radio` or `table-2`; any other name draws a puzzle piece. |
-| `surfaces` | `app`, `dashboard`, or both. |
-| `data`, `dataHints` | What it reads, and the Data tab's controls for each input, in order. |
-| `config`, `words`, `defaults`, `initialData` | What can be set, what each setting is, what the widget is when it is added, and a source a widget starts with. |
-| `events` | What it can tell the page, each with the words the Actions tab shows. |
-| `layout` | `min`, `default` and `max` sizes in the page's grid of 12 columns and rows of 40 pixels, `phone` (`stack`, `list` or `hide`), and `frame` (`card` or `none`). |
-| `role` | `container` or `filters`. Only the core pack may set it. |
-
-A type is `pack/name` in small letters, at most 31 characters before the slash and 41 after. A version is `x.y.z`. A data input's name and an event's name start with a small letter, and are up to 41 characters of letters and digits. Sizes are 1 to 12 wide and 1 to 40 high, and the default may not be smaller than the minimum or larger than the maximum. `version` is checked for its shape. This page does not say that a deploy pins it.
-
-### Data
-
-A widget does not fetch. Volvel reads each input under the viewer's permissions and hands it over.
-
-| Shape | What the view gets |
-| --- | --- |
-| `rows` | Rows of a table or a query, a page at a time, with `more`, `total`, `groups`, `sortBy` and `sorted`. |
-| `summary` | Rows gathered into groups with a value for each group, or one line of values with no groups. It may carry `previous` and a `trend`. A summary says how many values it takes and how many breakdowns. |
-| `record` | One row. |
-| `approvals` | The steps of the workspace's flows that wait for a decision. A widget that reads it is read for a member only. |
-
-An input may come from a table, a query, SQL or the workspace's approvals. SQL is never offered on an app's page.
-
-### Settings and controls
-
-Each setting has a hint with a `tab` (`data`, `display`, `actions` or `rules`), an optional `group`, a `level` (`main`, or `more` under "More options"), a `control`, a `label`, and optionally `help`, `of`, `types`, `choices`, `when` and `order`. A setting with no hint, or a hint with a control that does not exist, is refused when the pack is built.
-
-There are 28 controls. For a setting: `text`, `markdown`, `number`, `switch`, `choice`, `segmented`, `format`, `column`, `columns`, `filter`, `action`, `actions`, `page`, `tabs`, `pageFilters`, `position`, `tiles`, `slots`, `icon`, `groups`, `fields` and `groupRows`. For a data input: `source`, `measure`, `breakdown`, `conditions`, `sort` and `limit`.
-
-A widget cannot add a control, and a pack cannot add a custom inspector section. The console registers its own sections for some widgets, among them Goal, Chart, Stat and Pivot, in its own source. For a `slots` setting a pack gets only "its places are drawn by the widget" unless the console registers a drawer for it.
-
-### What a view is given
-
-| Prop | What it is |
-| --- | --- |
-| `config` | The settings, with `defaults` filled in. |
-| `data` | Each input, read, by name. |
-| `size` | `w` and `h` in cells, and whether the page is a phone's width. |
-| `emit(event, payload)` | Raises a declared event. The host checks the payload against the declaration. |
-| `building`, `viewing` | Whether the page is being built, and whether it is viewed as a group. A view may draw a hint for the builder and never different data. |
-| `title`, `viewer`, `selectedRecord` | The widget's title, the person looking, and the record whose sheet is open. |
-| `act`, `can`, `why` | Runs an action the widget holds, says whether one may be pressed, and why not. Absent while building. |
-| `decide`, `refresh` | Decides a waiting approval, and reads the data again. |
-| `listens`, `choices`, `close` | Whether the page does something when an event is raised, what a reference or choice column offers, and a way to close the sheet or modal the widget is shown in. |
-| `place`, `tab`, `filters` | A container's (`role: "container"`) drawing of the widgets placed in it, its open tab, and a filter widget's (`role: "filters"`) values and how to set them. |
-
-There are no hooks to call. Actions are data: a step is `update`, `create`, `delete`, `flow`, `script`, `open`, `close`, `message`, `narrow` or `rows`, and the server runs the first five.
-
-### Helpers
-
-`@volvel/widgets` exports `formatValue`, `formatNumber`, `formatDay`, `numberOf`, `sentenceCase`, `choiceWords`, `mustGive`, `countText`, `readerLocale`, `moneyFormatOf`, `parseMoney`, `moneyText` and `FORMAT_SCHEMA`. Numbers follow the reader's browser language, and use en-US when it gives none.
+`src/widgets/waiting-room` holds a definition, a view and a fixture. The Sandbox workspace has two versions of `x/waiting-room`. A dashboard of yours places the newest and shows the number of visits that are checked in. The widget is in **Add to page** for anyone who can edit a page in that workspace.
 
 ## If it does not work
 
-- **The pack throws "`<type>` has a definition but no view".** Add the view to `corePack.views`.
-- **The pack throws "`<type>` is declared twice" or "is in two packs".** A type is one widget.
-- **`definitionProblems` says a config has no `x-volvel` hint.** Give every property a hint, or the inspector cannot draw it.
-- **A view fails the import check.** A pack's views may import `react`, `@volvel/widgets`, `@volvel/ui` and their own files, and nothing else: `apps/console/src/enforce.test.ts` holds this.
-- **The widget is not in "Add to page".** Its `surfaces` do not include the page's surface, or it is not in `CORE_WIDGETS`.
-- **A widget needs something the contract does not offer.** The contract grows, for every widget. A widget does not reach around it.
+- **"Could not deploy to sandbox. x/waiting-room 0.1.0 is already deployed with other files."** You changed a view or a definition without raising `version`. Raise it.
+- **"This deploy would delete 8 resources made in the console, because this repository has no file for them."** The workspace has resources the repository does not. Run `volvel pull --tenant fernhill --workspace sandbox`, or deploy with `--allow-delete <path>` for each one that should go.
+- **The build says a widget's `entry` is not a file of the repository.** `entry` is a path from the repository's root, such as `src/widgets/waiting-room/view.tsx`.
+- **The build says a view imports from the network or uses `import()`.** A view has no network: bundle what it needs, and give it its data through a data input.
+- **The widget is not in Add to page.** Its `surfaces` do not include the page's (`app` or `dashboard`), or the workspace has not been deployed since you wrote it.
+- **The card says "This widget did not load".** The frame sent no `ready` within 10 seconds. Reload. If it stays, the view throws before `createFrame` runs: open the browser's console.
+- **The card says "This widget was stopped: it sent too many messages".** A view raised more than 20 messages a second for 2 seconds. Look for an event raised on every render.
+- **`frame.emit` throws.** The event is not in the widget's `events`, or the definition and the view disagree about its name. Event names start with a small letter and hold letters and digits.
+
+## Related
+
+- [The widget frame](../reference/tenant-widgets/the-widget-frame)
+- [The widget kind](../reference/kinds/widget)
+- [Give a widget data and events](widget-data-and-events)
+- [How widgets are kept safe](../explanation/widgets/how-widgets-are-kept-safe)
+- [Add a widget to the core pack](add-a-core-widget)

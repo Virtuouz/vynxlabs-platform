@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { testText } from "./screens/ConnectionWizard.tsx";
 import { Connections } from "./screens/Execution.tsx";
 import { show } from "./testing.tsx";
 
@@ -359,8 +360,10 @@ test("a stored credential is removed from the connection's sheet: Save sends cre
 test("WLK-17a: at a phone's width the health, used-by and kind cells keep room, and a header never wraps into the next", async () => {
   show(<Connections root={root} />);
   await screen.findByText("HTTP 401: answered 401.");
+  // A heading wraps inside its own cell, so it can never run into the next one: held on one
+  // line it drew over its neighbour at the larger type (polish-layout measures this in a browser).
   for (const header of screen.getAllByRole("columnheader")) {
-    expect(header.className).toContain("whitespace-nowrap");
+    expect(header.className).not.toMatch(/whitespace-nowrap|truncate/);
   }
   const health = document.querySelector("[data-health]");
   expect(health?.className).toContain("min-w-0");
@@ -391,4 +394,19 @@ test("WLK-17g: in production with nothing arriving, Set up a connection says so 
   fireEvent.click(await screen.findByRole("button", { name: "Set up a connection" }));
   expect(await screen.findByText(/Nothing waits to be set up here/)).toBeTruthy();
   expect(screen.queryByRole("dialog", { name: /New connection/ })).toBeNull();
+});
+
+test("a test that got a 404 or a refusal is not said as a success", () => {
+  const ended = (result: unknown) =>
+    ({ status: "succeeded", result }) as unknown as Parameters<typeof testText>[0];
+  expect(testText(ended({ ok: true, status: 200, latencyMs: 42 }))).toEqual({
+    ok: true,
+    text: "Reached (200) in 42 ms.",
+  });
+  const missing = testText(
+    ended({ ok: false, status: 404, message: "https://x.example answered 404: nothing is there." }),
+  );
+  expect(missing.ok).toBe(false);
+  expect(missing.text).toMatch(/^Failed \(HTTP 404\)/);
+  expect(missing.text).not.toMatch(/Reached/);
 });

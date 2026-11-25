@@ -15,6 +15,7 @@ function copy() {
   const files = [
     ...[
       "widget-sdk",
+      "widget-frame",
       "markup",
       "docs-engine",
       "docs-site",

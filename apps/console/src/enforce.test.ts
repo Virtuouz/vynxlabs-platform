@@ -278,6 +278,13 @@ test("every transition is timed by a motion token, and reduced motion stops all 
     });
   }
   expect(found).toEqual([]);
+  // The console and the served apps runtime import the one file, so the builder's canvas, an app's
+  // preview and a dashboard are drawn at the size the published app is.
+  for (const sheet of ["styles.css", "../../../packages/screens/runtime/styles.css"]) {
+    expect(readFileSync(join(here, sheet), "utf8")).toContain(
+      '@import "@volvel/ui/type-scale.css";',
+    );
+  }
   const tokens = readFileSync(join(kit, "tokens.css"), "utf8");
   expect(tokens).toMatch(
     /@media \(prefers-reduced-motion: reduce\) \{\s*\* \{\s*transition: none !important;\s*animation: none !important;/,
@@ -736,6 +743,105 @@ test("no string of the console, screens, widgets or ui says workflow", () => {
             found.push(`${path.slice(root.length + 1)}:${index + 1} says workflow`);
         });
     }
+  }
+  expect(found).toEqual([]);
+});
+
+/**
+ * The console's type scale is set once, at the root (owner, 2026-11-24): body 16 px to 1920,
+ * 18 from 2560, 20 from 3840. The kit's roles are all multiplied by `--vx-type-scale`, so a size
+ * written in px beside them would not follow.
+ */
+test("the type scale is set at the root and every role follows it", () => {
+  const styles = readFileSync(join(here, "../../../packages/ui/src/type-scale.css"), "utf8");
+  const tokens = readFileSync(join(here, "../../../packages/ui/src/tokens.css"), "utf8");
+  expect(styles).toMatch(/:root\s*\{\s*--vx-type-scale: calc\(16 \/ 14\);/);
+  expect(styles).toMatch(
+    /@media \(min-width: 2560px\)\s*\{\s*:root\s*\{\s*--vx-type-scale: calc\(18 \/ 14\);/,
+  );
+  expect(styles).toMatch(
+    /@media \(min-width: 3840px\)\s*\{\s*:root\s*\{\s*--vx-type-scale: calc\(20 \/ 14\);/,
+  );
+  const bare = tokens
+    .split("\n")
+    .filter((line) => /^\s*--text-[a-z-]+(--line-height)?:\s*[\d.]+px;/.test(line));
+  expect(bare).toEqual([]);
+  expect(tokens).toMatch(/body \{[^}]*font-size: calc\(14px \* var\(--vx-type-scale, 1\)\)/);
+});
+
+/**
+ * The top bar's right side never wraps (owner, 2026-11-24, after the type scale): the search
+ * button's label truncates inside its pill, the pill's width follows the type scale, and the
+ * whole cluster is `whitespace-nowrap`.
+ */
+test("the top bar's items do not wrap at a larger type scale", () => {
+  const shell = readFileSync(join(here, "Shell.tsx"), "utf8");
+  const cluster = shell.match(/<div className="([^"]*)">\s*\{tenantId \? <OperatorMark \/>/);
+  expect(cluster?.[1]).toContain("whitespace-nowrap");
+  const search = shell.match(/aria-label="Search or jump to"\s*className="([^"]*)"/);
+  expect(search?.[1]).toContain("whitespace-nowrap");
+  expect(search?.[1]).toMatch(/md:w-\[calc\(14rem\*var\(--vx-type-scale,1\)\)\]/);
+  expect(search?.[1]).not.toMatch(/md:w-56/);
+  expect(shell).toMatch(/min-w-0 flex-1 truncate text-left md:inline">\s*Search or jump to…/);
+});
+
+test("the trail keeps room for the workspace and the page at 1280 px: the tenant name and promotes-to wait for 1440", () => {
+  const shell = readFileSync(join(here, "Shell.tsx"), "utf8");
+  const trail = shell.slice(
+    shell.indexOf('aria-label="Where you are"'),
+    shell.indexOf("{here ? <Crumbs section={here}"),
+  );
+  expect(trail).not.toMatch(/\bxl:(inline|flex)\b/);
+  expect(trail.match(/min-\[1440px\]:(inline|flex)/g)?.length).toBe(2);
+  expect(trail.match(/min-\[1536px\]:flex/g)?.length).toBe(1);
+  // The workspace's name is whole before the page's name is cut.
+  expect(trail).toMatch(/triggerClassName="flex max-w-\[12rem\] shrink-0/);
+});
+
+test("p34-w3: below 1280 the top bar gives the names the room: Live, Paused, drafts and failed runs shrink to a mark and a count", () => {
+  const shell = readFileSync(join(here, "Shell.tsx"), "utf8");
+  const live = readFileSync(join(here, "kit/LiveIndicator.tsx"), "utf8");
+  expect(live).toMatch(/max-xl:sr-only/);
+  expect(shell).toMatch(/max-xl:\[&_\[data-label\]\]:sr-only/);
+  expect(shell.match(/max-xl:sr-only/g)?.length).toBeGreaterThanOrEqual(2);
+});
+
+test("p34-w3: a served app's content column grows with the type scale, as its text does", () => {
+  const root = join(here, "../../..");
+  const runtime = readFileSync(join(root, "packages/screens/runtime/main.tsx"), "utf8");
+  expect(runtime).toContain("max-w-[calc(1400px*var(--vx-type-growth,1))]");
+  expect(runtime).not.toContain("max-w-[1400px]");
+  const shell = readFileSync(join(root, "packages/ui/src/PageShell.tsx"), "utf8");
+  expect(shell).toContain("max-w-[calc(72rem*var(--vx-type-growth,1))]");
+});
+
+/**
+ * A string with a name between backticks ("list them with `reads`") shows its backticks where it
+ * is set as plain text. `TermText` and `CodeText` (and a dialog's or side sheet's description,
+ * which uses `CodeText`) draw them as code. A string that is one of those, or is markdown, says
+ * so on a line near it with `backticks-allowed:`, or has `TermText` or `CodeText` beside it.
+ */
+test("a string with a name between backticks is set by TermText or CodeText, not shown plain", () => {
+  const sources = (dir: string): string[] =>
+    readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+      const path = join(dir, entry.name);
+      if (entry.isDirectory()) return sources(path);
+      return /\.tsx?$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name) ? [path] : [];
+    });
+  const found: string[] = [];
+  for (const path of [
+    ...sources(join(here, "screens")),
+    ...sources(join(here, "kit")),
+    ...sources(join(here, "../../../packages/screens/src")),
+  ]) {
+    const lines = readFileSync(path, "utf8").split("\n");
+    lines.forEach((line, index) => {
+      if (!/"[^"`\n]*`[A-Za-z/_.~-][^`\n$]*`[^"\n]*"/.test(line)) return;
+      if (/^\s*(\/\/|\*|\/\*)/.test(line)) return;
+      const near = lines.slice(Math.max(0, index - 3), index + 3).join("\n");
+      if (/TermText|CodeText|backticks-allowed:/.test(near)) return;
+      found.push(`${where(path)}:${index + 1} shows its backticks`);
+    });
   }
   expect(found).toEqual([]);
 });

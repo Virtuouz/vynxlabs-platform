@@ -120,7 +120,9 @@ describe("the console's resources, as files", () => {
     expect(await files()).toEqual({
       files: [],
       elsewhere: [],
+      inCode: [],
       bundleVersion: null,
+      basis: [],
       drafts: [],
     });
     for (const [path, value] of [

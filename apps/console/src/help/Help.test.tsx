@@ -41,10 +41,14 @@ const DOCS = join(dirname(fileURLToPath(import.meta.url)), "../../../../packages
 const manifest = JSON.parse(readFileSync(join(DOCS, "manifest.json"), "utf8"));
 
 let width = 1440;
+let still = false;
 beforeEach(() => {
   width = 1440;
+  still = false;
   vi.stubGlobal("matchMedia", (query: string) => ({
-    matches: width >= Number(/min-width: (\d+)px/.exec(query)?.[1] ?? 0),
+    matches: query.includes("prefers-reduced-motion")
+      ? still
+      : width >= Number(/min-width: (\d+)px/.exec(query)?.[1] ?? 0),
     addEventListener: () => {},
     removeEventListener: () => {},
   }));
@@ -225,7 +229,7 @@ describe("the help panel", () => {
     width = 390;
     show(<Screen />);
     expect(panel().getAttribute("data-help-panel")).toBe("full");
-    expect(panel().className).toContain("fixed inset-0");
+    expect(panel().parentElement?.className).toContain("fixed inset-0");
   });
 
   test("a page says which version brought what it describes (DOC-MP2)", async () => {
@@ -259,7 +263,7 @@ describe("the help panel", () => {
     await within(panel()).findByText(/A table holds rows the workspace owns/);
     expect(document.activeElement).toBe(within(panel()).getByRole("heading", { name: "Tables" }));
     fireEvent.keyDown(within(panel()).getByRole("heading", { name: "Tables" }), { key: "Escape" });
-    expect(screen.queryByRole("complementary")).toBeNull();
+    await waitFor(() => expect(screen.queryByRole("complementary")).toBeNull());
     expect(document.activeElement).toBe(opener);
   });
 
@@ -267,6 +271,55 @@ describe("the help panel", () => {
     show(<Screen />);
     act(() => openHelp("data-tables"));
     fireEvent.keyDown(within(panel()).getByRole("heading"), { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("complementary")).toBeNull());
+  });
+
+  test("beside the work, the room it takes is given and taken back over the sheets' time, as the inspector's is", async () => {
+    show(<Screen />);
+    act(() => openHelp("data-tables"));
+    const shell = panel().parentElement as HTMLElement;
+    const wrap = shell.parentElement as HTMLElement;
+    // The column that makes room is the one that moves, from none to the panel's own width.
+    expect(wrap.hasAttribute("data-drawer")).toBe(true);
+    expect(wrap.style.width).toBe("0px");
+    expect(wrap.className).toContain("transition-[width] motion-slow");
+    expect(wrap.className).toContain("overflow-hidden");
+    act(() => closeHelp());
+    expect(wrap.hasAttribute("data-ending-style")).toBe(true);
+    expect(panel().hasAttribute("inert")).toBe(true);
+    await waitFor(() => expect(screen.queryByRole("complementary")).toBeNull());
+  });
+
+  test("over the work it slides the whole way in from its edge on a scrim, and is out of reach while it leaves", async () => {
+    width = 768;
+    show(<Screen />);
+    act(() => openHelp("data-tables"));
+    const shell = panel().parentElement as HTMLElement;
+    expect(shell.hasAttribute("data-drawer")).toBe(true);
+    expect(shell.className).toContain("transition-[translate] motion-slow");
+    expect(shell.className).toContain("data-[starting-style]:translate-x-full");
+    const scrim = document.querySelector("[data-help-scrim]") as HTMLElement;
+    expect(scrim.className).toContain("bg-scrim");
+    expect(scrim.className).toContain("transition-opacity motion-slow");
+    act(() => closeHelp());
+    expect(shell.hasAttribute("data-ending-style")).toBe(true);
+    expect(shell.hasAttribute("inert")).toBe(true);
+    await waitFor(() => expect(screen.queryByRole("complementary")).toBeNull());
+  });
+
+  test("a click on the scrim closes it", async () => {
+    width = 768;
+    show(<Screen />);
+    act(() => openHelp("data-tables"));
+    fireEvent.click(document.querySelector("[data-help-scrim]") as HTMLElement);
+    await waitFor(() => expect(screen.queryByRole("complementary")).toBeNull());
+  });
+
+  test("with reduced motion it goes at once", async () => {
+    still = true;
+    show(<Screen />);
+    act(() => openHelp("data-tables"));
+    act(() => closeHelp());
     expect(screen.queryByRole("complementary")).toBeNull();
   });
 

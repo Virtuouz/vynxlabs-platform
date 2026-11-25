@@ -1,3 +1,4 @@
+import type { DeployedWidget, WidgetDefinition, WidgetRegistry } from "@volvel/widgets";
 import {
   assetPathProblem,
   type Bundle,
@@ -18,9 +19,12 @@ import {
   interfaceTables,
   widgetFlows,
   widgetTables,
+  workspaceRegistry,
 } from "./page.js";
+import { BUILTIN_ROLE_NAMES } from "./permissions.js";
 import { KindRegistry, validateJson } from "./registry.js";
 import { checkTable, type TableBody } from "./table.js";
+import { checkWidget, type WidgetBody } from "./widget.js";
 
 /** Events the platform publishes itself. No repository declares them. */
 export const PLATFORM_EVENT_PREFIX = "platform/";
@@ -135,9 +139,33 @@ interface ScriptUses {
 /** "a" or "an", by how the kind's name is said. */
 const article = (kind: string) => (/^[aeiou]/.test(kind) ? "an" : "a");
 
-export function checkBundleManifests(manifests: BundleManifest[]): string[] {
+/**
+ * The platform's widgets and those the bundle holds. A page of the bundle may place an older
+ * version than the bundle's, one the workspace still has deployed; the control plane checks the
+ * versions a page names against the workspace, so here only the type must be known.
+ */
+function bundleRegistry(manifests: readonly BundleManifest[]): WidgetRegistry {
+  const widgets = workspaceRegistry();
+  for (const manifest of manifests) {
+    if (manifest.kind !== "widget" || !registry.validateManifest(manifest).ok) continue;
+    const definition = manifest.body as unknown as WidgetDefinition;
+    if (checkWidget(manifest.path, definition as WidgetBody).length > 0) continue;
+    if (!widgets.get(definition.type)) widgets.add(definition);
+  }
+  return widgets;
+}
+
+export function checkBundleManifests(
+  manifests: BundleManifest[],
+  /**
+   * `tenantRoles`: the names of the roles the tenant has made, which a bundle's bindings may name
+   * too. A caller that does not know them leaves it out, and a name that may be one is let through.
+   */
+  known: { tenantRoles?: readonly string[] } = {},
+): string[] {
   const problems: string[] = [];
   const byPath = new Map<string, BundleManifest>();
+  let bundleWidgets: WidgetRegistry | undefined;
   /** Paths used twice. That is reported once; references to them are not reported again. */
   const twice = new Set<string>();
 
@@ -228,6 +256,32 @@ export function checkBundleManifests(manifests: BundleManifest[]): string[] {
     }
   };
 
+  /** A binding names a role by its name: a built-in one, one of the repository, or the tenant's. */
+  const roleNames = new Map(
+    manifests
+      .filter((one) => one.kind === "role")
+      .map((one) => [(one.body as { name?: string }).name, one.path] as const),
+  );
+  const checkRole = (binding: BundleManifest) => {
+    const name = (binding.body as { role?: unknown }).role;
+    if (typeof name !== "string") return;
+    const field = `${binding.path} (binding): /body/role refers to "${name}"`;
+    const defined = byPath.get(name);
+    const named = (defined?.body as { name?: string } | undefined)?.name;
+    if (defined?.kind === "role" && named !== name) {
+      problems.push(
+        `${field}, which is a role's path. A binding names a role by its name: "${named}".`,
+      );
+      return;
+    }
+    if (BUILTIN_ROLE_NAMES.includes(name) || roleNames.has(name)) return;
+    if (known.tenantRoles?.includes(name)) return;
+    if (known.tenantRoles === undefined) return;
+    problems.push(
+      `${field}, which is not a role in this repository, a built-in role or one of the tenant's.`,
+    );
+  };
+
   for (const manifest of manifests) {
     if (!registry.validateManifest(manifest).ok) continue;
     const body = manifest.body as {
@@ -237,6 +291,11 @@ export function checkBundleManifests(manifests: BundleManifest[]): string[] {
       uses?: ScriptUses;
       onFailure?: { script?: string; notify?: string };
     };
+    if (manifest.kind === "widget") {
+      for (const problem of checkWidget(manifest.path, manifest.body as unknown as WidgetBody)) {
+        problems.push(`${manifest.path} (widget): ${problem.replace(`${manifest.path}: `, "")}`);
+      }
+    }
     if (manifest.kind === "schedule" || manifest.kind === "trigger") {
       expect(manifest, "script", body.script, "script");
     }
@@ -365,6 +424,7 @@ export function checkBundleManifests(manifests: BundleManifest[]): string[] {
       }
     }
     if (manifest.kind === "interface" || manifest.kind === "dashboard") {
+      const widgets = () => (bundleWidgets ??= bundleRegistry(manifests));
       const isInterface = manifest.kind === "interface";
       const body = manifest.body as unknown as InterfaceBody | DashboardBody;
       // A table made in the console is in no bundle, so a table that is not here is not
@@ -397,17 +457,21 @@ export function checkBundleManifests(manifests: BundleManifest[]): string[] {
         return found?.kind === "table" ? (found.body as unknown as TableBody) : undefined;
       };
       const issues = isInterface
-        ? checkInterface(body as InterfaceBody, tableOf, undefined, (path) => {
+        ? checkInterface(body as InterfaceBody, tableOf, widgets(), (path) => {
             const found = byPath.get(path);
             return found?.kind === "flow"
               ? { nodes: Object.values((found.body as unknown as FlowBody).nodes ?? {}) }
               : undefined;
           })
-        : checkDashboard(body as DashboardBody, tableOf);
+        : checkDashboard(body as DashboardBody, tableOf, widgets());
       for (const issue of issues) {
+        // A widget of the workspace's own that this bundle does not carry may be one the workspace
+        // still has deployed for pages that place it: the control plane says whether it is.
+        if (issue.message.startsWith('there is no widget called "x/')) continue;
         problems.push(`${manifest.path} (${manifest.kind}): ${issue.path} ${issue.message}`);
       }
     }
+    if (manifest.kind === "binding") checkRole(manifest);
     if (manifest.kind === "app") {
       expect(
         manifest,
@@ -505,6 +569,9 @@ export function checkBundleManifests(manifests: BundleManifest[]): string[] {
   return problems;
 }
 
+/** The page a widget's frame is opened at: a widget's files are this and one script. */
+export const WIDGET_FRAME_FILE = "frame.html";
+
 /** Paths inside an app that the platform keeps for its own pages. */
 const RESERVED_ASSET_PREFIX = "_/";
 
@@ -519,6 +586,7 @@ export function checkBundleAssets(
   const problems: string[] = [];
   const assets = bundle.assets ?? [];
   const apps = bundle.manifests.filter((manifest) => manifest.kind === "app");
+  const widgets = bundle.manifests.filter((manifest) => manifest.kind === "widget");
   if (bundle.formatVersion < 4) {
     for (const manifest of bundle.manifests.filter(needsFormat4)) {
       problems.push(
@@ -540,9 +608,10 @@ export function checkBundleAssets(
     const key = `${asset.app}\n${asset.path}`;
     if (seen.has(key)) problems.push(`${asset.app} (app): the file ${asset.path} is listed twice.`);
     seen.add(key);
-    if (!apps.some((app) => app.path === asset.app)) {
+    const owner = [...apps, ...widgets].find((one) => one.path === asset.app);
+    if (!owner) {
       problems.push(
-        `assets: ${asset.path} belongs to "${asset.app}", which is not an app in this bundle.`,
+        `assets: ${asset.path} belongs to "${asset.app}", which is not an app or a widget in this bundle.`,
       );
     }
     const unnamed = assetPathProblem(asset.path);
@@ -557,6 +626,23 @@ export function checkBundleAssets(
     const entry = (app.body as { entry?: unknown }).entry;
     if (typeof entry === "string" && !seen.has(`${app.path}\n${entry}`)) {
       problems.push(`${app.path} (app): its entry ${entry} is not among the app's files.`);
+    }
+  }
+  // A widget is its frame page and the one script that page loads: both are built with it.
+  for (const widget of widgets) {
+    const files = assets.filter((asset) => asset.app === widget.path).map((asset) => asset.path);
+    if (!files.includes(WIDGET_FRAME_FILE)) {
+      problems.push(
+        `${widget.path} (widget): its frame page ${WIDGET_FRAME_FILE} is not among its files.`,
+      );
+    }
+    if (!files.some((file) => /^view-[0-9a-f]{8}\.js$/.test(file))) {
+      problems.push(`${widget.path} (widget): its script is not among its files.`);
+    }
+    if (files.length !== 2) {
+      problems.push(
+        `${widget.path} (widget): a widget is its frame page and one script, and has ${files.length} files.`,
+      );
     }
   }
   return problems;

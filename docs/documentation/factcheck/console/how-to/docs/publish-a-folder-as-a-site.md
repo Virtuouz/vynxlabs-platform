@@ -36,3 +36,15 @@ Lines are current at commit `661a2ceb`. Paths are under `packages/` unless state
 ## Phase 33, second check, 2026-11-24
 
 Checked by: second agent, 2026-11-24. The line "Each page has **On this page**, **Previous** and **Next**" read against `docs-site/src/render.ts:543-556` (the contents are drawn only when the page has a `##`/`###` heading; a page without one has none) and seen on a served site (the entries page has none). The publish steps were run again: the Address starts as `<folder>-site`, **Publish** says the folder will be a site once deployed, a site with no binding sends a request with no sign-in to the sign-in page. No correction.
+
+## Phase 34, A7 (YAML first), 2026-11-24
+
+Commit `d619bfbd` plus the working tree. Written by the A7 writer; second agent checked 2026-11-24 (a7r). Run on the throwaway instance of lane a7 (http://localhost:8712, Fernhill seeded).
+
+| Claim | Source (file:line) | Checked by | Result |
+| --- | --- | --- | --- |
+| A binding is a file or `defineBinding`. | run on `walk6` | writer, 2026-11-24 | holds as run |
+
+### Second check (a7r), 2026-11-24, second agent
+
+Lane a7r build, `pnpm docs:check` passes. Second agent, 2026-11-24. `<path>.binding.yaml` as in define-roles-and-bindings-in-code (validated and built). Holds.

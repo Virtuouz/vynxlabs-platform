@@ -197,3 +197,45 @@ describe("a script's worker pool", () => {
     expect(checkBundleManifests([script("clients-lan")])).toEqual([]);
   });
 });
+
+describe("a binding's role", () => {
+  const role = (path: string, name: string): BundleManifest => ({
+    kind: "role",
+    schemaVersion: 1,
+    path,
+    ownership: "code",
+    body: { name, permissions: ["data:read"] },
+  });
+  const binding = (roleName: string): BundleManifest => ({
+    kind: "binding",
+    schemaVersion: 1,
+    path: "bindings/a",
+    ownership: "code",
+    body: { role: roleName, principal: { type: "anonymous" } },
+  });
+
+  test("may be a built-in role, or one the repository defines, by its name", () => {
+    expect(checkBundleManifests([binding("portal_user")])).toEqual([]);
+    expect(
+      checkBundleManifests([role("roles/reader", "order_reader"), binding("order_reader")]),
+    ).toEqual([]);
+  });
+
+  test("is refused when it is the path of a role, not its name", () => {
+    expect(
+      checkBundleManifests([role("roles/reader", "order_reader"), binding("roles/reader")]),
+    ).toEqual([
+      'bindings/a (binding): /body/role refers to "roles/reader", which is a role\'s path. A binding names a role by its name: "order_reader".',
+    ]);
+  });
+
+  test("is refused when it is no role of the repository and no built-in, once the tenant's roles are known", () => {
+    const known = { tenantRoles: ["front_desk"] };
+    expect(checkBundleManifests([binding("front_desk")], known)).toEqual([]);
+    expect(checkBundleManifests([binding("portal_usr")], known)).toEqual([
+      'bindings/a (binding): /body/role refers to "portal_usr", which is not a role in this repository, a built-in role or one of the tenant\'s.',
+    ]);
+    // Without them, a name that may be a role made in the console is let through.
+    expect(checkBundleManifests([binding("portal_usr")])).toEqual([]);
+  });
+});

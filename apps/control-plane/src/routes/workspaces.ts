@@ -6,6 +6,7 @@ import { refuseDirectProductionWrite } from "../kernel/authoring.js";
 import { boundInside, check } from "../kernel/authorize.js";
 import { refuseMissingTargets, refuseRetiringReferred } from "../kernel/data/apply.js";
 import { badRequest, conflict, HttpError, notFound } from "../kernel/errors.js";
+import { contentHash } from "../kernel/execution/basis.js";
 import { instanceTriggersPaused } from "../kernel/execution/control.js";
 import { access, reachedFromInside, type WorkspaceRef } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
@@ -755,11 +756,21 @@ export function workspaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                 description: "Refuse, with `path_taken`, to replace a resource that is there.",
               }),
             ),
+            takeOver: Type.Optional(
+              Type.Boolean({
+                description:
+                  "Take a table that is defined in code over, in a dev workspace: `ownership` is " +
+                  "`ui`, and the table is managed as files from then on. Refused in production, " +
+                  "as any write to a code-managed resource is. A deploy of a repository that " +
+                  "still defines the table takes it back, and is refused first if the console " +
+                  "changed it since (pull first).",
+              }),
+            ),
           }),
           response: { 200: Resource, 201: Resource },
         },
       },
-      async ({ ctx, params, body: { create, version, ...body } }, reply) => {
+      async ({ ctx, params, body: { create, version, takeOver, ...body } }, reply) => {
         const workspace = ctx.workspace as WorkspaceRef;
         const path = resourcePath(params);
         await refuseDirectProductionWrite(db, workspace, {
@@ -788,11 +799,30 @@ export function workspaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                 `Something is already at "${path}". Choose another name, or change what is there.`,
               );
           }
+          // Exact path on purpose: what is saved over is what is at the path now (a take-over's basis).
+          const before = await trx
+            .selectFrom("resource")
+            .select(["id", "path", "key", "title", "body", "ownership"])
+            .where("workspace_id", "=", workspace.id)
+            .where("path", "=", path)
+            .executeTakeFirst();
           const saved = await putResource(kernel, trx, audit, workspace, {
             ...body,
             path,
             ...(version !== undefined ? { expectedVersion: version } : {}),
+            ...(takeOver && body.kind === "table" && body.ownership === "ui"
+              ? { switchOwnership: true, takenOver: true }
+              : {}),
           });
+          // What a table taken over from code was when it left is what the repository has: a
+          // deploy that would replace what the console changed since, this save included, is refused.
+          if (before && saved.ownershipFrom === "code") {
+            await trx
+              .updateTable("resource")
+              .set({ basis_hash: contentHash(before) })
+              .where("id", "=", before.id)
+              .execute();
+          }
           // A deploy checks this once everything is in place; a table saved alone is checked now.
           if (body.kind === "table") {
             const { db: data } = await kernel.data.within(trx, workspace.tenantId);

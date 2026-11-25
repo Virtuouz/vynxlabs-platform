@@ -70,6 +70,12 @@ export const COMMANDS = [
 
   entry("init", REPOSITORY, "init [directory]", "Write a starter repository."),
   entry(
+    "widget",
+    REPOSITORY,
+    "widget new <name>",
+    "Add a widget of your own to the repository: its definition (x/<name>), a view drawn with @volvel/widget-frame and a fixture of sample data, exported from the entry file.",
+  ),
+  entry(
     "build",
     REPOSITORY,
     "build [--entry <file>] [--resources <folder>]",
@@ -80,6 +86,18 @@ export const COMMANDS = [
     REPOSITORY,
     "schemas",
     "Write each kind's file schema into .platform/schemas, and tell VS Code which files each checks, so that <name>.<kind>.yaml completes and is checked as typed.",
+  ),
+  entry(
+    "types",
+    REPOSITORY,
+    "types",
+    "Write .platform/volvel-env.d.ts, which gives your tables, events, variables and connections to @volvel/sdk, so that scripts are typed by their names. `build` and `dev` write it too.",
+  ),
+  entry(
+    "convert",
+    REPOSITORY,
+    "convert [--dry-run] [--only <kind>,…] [--keep-references] [--entry <file>] [--resources <folder>]",
+    'Turn the definitions in your code that are only data (tables, events, variables, schedules, roles and the like, written with literal values) into resource files, and take them out of the TypeScript. Scripts, connectors, apps made of files, and anything computed stay, each with the reason. A definition that stays may name one that moves: that name becomes its path (ctx.table(visits) becomes ctx.table("visits"), typed by .platform/volvel-env.d.ts), each change listed; --keep-references leaves such definitions in the code instead. It builds again and compiles the code that is left, and refuses to leave anything changed if the bundle is not the same or the code has new errors. --dry-run says what would change and writes nothing.',
   ),
   entry("run", REPOSITORY, "run <script> [--input <json>]", "Run one script on this machine."),
   entry(
@@ -97,14 +115,14 @@ export const COMMANDS = [
   entry(
     "dev",
     REPOSITORY,
-    "dev [app] --tenant <slug> --workspace <slug> [--port <n>] [--no-strict]",
-    "Serve an app with reload, against that workspace's data, as yourself: an app made of files (built from its source), an interface (drawn from its file with Volvel's own screens) or a docs site (drawn from its pages with Volvel's own renderer, with search). With one app it needs no name; otherwise [app] is its path. An interface is drawn with Volvel's screens, which the CLI carries; set SCREENS_DIR to use another build of them. Field help is not drawn locally. What only the instance knows, such as the product's own terms in a docs page, is said on the page. The page is served under the content policy Volvel gives a deployed app, so what it would refuse fails here too; --no-strict leaves the policy off.",
+    "dev [app] --tenant <slug> --workspace <slug> [--port <n>] [--no-strict] | dev --widgets [--port <n>]",
+    "Serve an app with reload, against that workspace's data, as yourself: an app made of files (built from its source), an interface (drawn from its file with Volvel's own screens) or a docs site (drawn from its pages with Volvel's own renderer, with search). With one app it needs no name; otherwise [app] is its path. An interface is drawn with Volvel's screens, which the CLI carries; set SCREENS_DIR to use another build of them. Field help is not drawn locally. What only the instance knows, such as the product's own terms in a docs page, is said on the page. The page is served under the content policy Volvel gives a deployed app, so what it would refuse fails here too; --no-strict leaves the policy off. A repository that defines widgets and no app, or `dev --widgets`, previews each widget instead, with no instance: its frame and content policy are those of a deploy, with controls for its config, data, state, size and theme, a log of the events it raises, and a rebuild when a file is saved.",
   ),
   entry(
     "deploy",
     REPOSITORY,
-    "deploy --tenant <slug> --workspace <slug> [--preview] [--message <text>] [--json] [--allow-delete <path>]",
-    "Build, upload and deploy the bundle. Stops before uploading when it would delete console resources the repository has no file for, unless --allow-delete names each. With --preview, says what it would do and changes nothing. --message is kept with the version; in CI (CI is set) the subject of the last git commit is used when there is none. With --json, the one answer is a JSON document.",
+    "deploy --tenant <slug> --workspace <slug> [--preview] [--message <text>] [--json] [--allow-delete <path>] [--force]",
+    "Build, upload and deploy the bundle. Stops before uploading when it would delete console resources the repository has no file for, unless --allow-delete names each. It is refused when the console changed or made a resource it would replace or remove since the repository last had it (run pull first); --force deploys anyway, and is written to the audit log. With --preview, says what it would do and changes nothing. --message is kept with the version; in CI (CI is set) the subject of the last git commit is used when there is none. With --json, the one answer is a JSON document.",
   ),
   entry(
     "rollback",

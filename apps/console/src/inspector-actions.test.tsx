@@ -194,3 +194,56 @@ test("WLK-11: a message added after the sheet closes is said before it closes", 
     (last().config?.onSet as { steps: { do: string }[] } | undefined)?.steps.map((one) => one.do),
   ).toEqual(["create", "message", "close"]);
 });
+
+test("a tenant widget's event wired to a write says members are asked to confirm; a filter, or a platform widget, does not", () => {
+  const tenant = defineWidget({
+    type: "x/clinic-load",
+    version: "1.0.0",
+    title: "Clinic load",
+    description: "Load by clinic",
+    category: "understand",
+    icon: "gauge",
+    surfaces: ["app"],
+    data: {},
+    config: { type: "object", properties: {} },
+    events: { clinicChosen: { gives: "record", label: "When a clinic is chosen" } },
+    layout: { min: { w: 2, h: 2 }, default: { w: 3, h: 3 } },
+  });
+  const sentence = /members are asked to confirm/;
+  const widget = (type: string, steps: unknown[]): PageWidget =>
+    ({
+      id: "c",
+      type,
+      at: place,
+      on: { clinicChosen: { steps } },
+    }) as PageWidget;
+  show(
+    <Harness
+      start={widget("x/clinic-load", [{ do: "script", path: "close-open-orders" }])}
+      definition={tenant}
+      page={null}
+    />,
+  );
+  tab("Actions");
+  expect(screen.getByText(sentence)).toBeTruthy();
+  cleanup();
+  show(
+    <Harness
+      start={widget("x/clinic-load", [{ do: "message", text: "Hi", tone: "success" }])}
+      definition={tenant}
+      page={null}
+    />,
+  );
+  tab("Actions");
+  expect(screen.queryByText(sentence)).toBeNull();
+  cleanup();
+  show(
+    <Harness
+      start={widget("core/clinic-load", [{ do: "script", path: "close-open-orders" }])}
+      definition={{ ...tenant, type: "core/clinic-load" }}
+      page={null}
+    />,
+  );
+  tab("Actions");
+  expect(screen.queryByText(sentence)).toBeNull();
+});

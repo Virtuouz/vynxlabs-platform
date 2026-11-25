@@ -12,6 +12,8 @@ pages:
   - promote-a-version
   - roll-back-a-version
   - pull-console-changes
+  - keep-in-step
+  - convert-definitions-to-files
   - run-the-cli-in-ci
 ---
 

@@ -8,7 +8,7 @@ import { type InterfaceBody, interfaceTables } from "@volvel/manifest";
 import { Type } from "typebox";
 import { appUrl, domainUrl } from "../kernel/apps/address.js";
 import { MAX_ASSET_BYTES, storeAsset } from "../kernel/apps/assets.js";
-import { challengeMet, challengeOf as domainChallenge } from "../kernel/apps/challenge.js";
+import { challengeProblem, challengeOf as domainChallenge } from "../kernel/apps/challenge.js";
 import { hostnameOf } from "../kernel/apps/hosts.js";
 import { actorOf, createHandoff, startAppSession, takeHandoff } from "../kernel/apps/sessions.js";
 import { cleanTheme, resolveTheme, themeCss } from "../kernel/apps/theme.js";
@@ -58,7 +58,12 @@ const Domain = Type.Object({
   }),
   challenge: Type.Object(
     {
-      name: Type.String(),
+      name: Type.String({ description: "The full record name." }),
+      host: Type.String({
+        description:
+          "The name relative to `zone`: what most DNS providers want in their Host field.",
+      }),
+      zone: Type.String({ description: "The registrable domain the host is relative to." }),
       value: Type.String(),
     },
     {
@@ -896,12 +901,13 @@ export function appRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       },
       async ({ ctx, params }) => {
         const domain = await findDomain(params.t, params.id);
-        const challenge = challengeOf(params.t, domain.hostname);
-        const verified = await challengeMet(kernel, params.t, domain.hostname);
-        let problem: string | null = null;
-        if (!verified) {
-          problem = `No TXT record ${challenge.name} with the value ${challenge.value} was found.`;
-        } else {
+        const { met: verified, problem: missing } = await challengeProblem(
+          kernel,
+          params.t,
+          domain.hostname,
+        );
+        let problem: string | null = missing;
+        if (verified) {
           const reached = await guardedFetch(
             `${domainUrl(kernel, domain.hostname)}api/v1/domain-check`,
             {

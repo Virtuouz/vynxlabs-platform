@@ -4,6 +4,7 @@ import { keepConsoleManaged } from "../authoring.js";
 import { conflict, HttpError } from "../errors.js";
 import type { WorkspaceRef } from "../http.js";
 import type { Kernel } from "../kernel.js";
+import { carryBasis } from "./basis.js";
 import { deployBundle } from "./deploy.js";
 
 /**
@@ -169,6 +170,8 @@ export async function promote(
     // A preview shows what would break. Only the promotion itself has to be told it may.
     confirmBreaking: options.dryRun === true || options.confirmBreaking === true,
   });
+  // Production has the resources as the repository last had them, as the workspace promoted from does.
+  await carryBasis(trx, source.id, promotion.target.id);
   return { ...result, target: promotion.target };
 }
 
@@ -233,6 +236,7 @@ export async function previewDeployment(
   workspace: WorkspaceRef,
   bundleId: string,
   allowDelete?: readonly string[],
+  force = false,
 ) {
   let summary: Awaited<ReturnType<typeof deployBundle>>["summary"] | undefined;
   try {
@@ -251,6 +255,8 @@ export async function previewDeployment(
           // What would break is in the summary; only the deploy itself has to be told it may.
           confirmBreaking: true,
           ...(allowDelete ? { allowDelete } : {}),
+          // A preview is of a deploy from a repository, which is what it is held to.
+          repository: { force },
         })
       ).summary;
       throw new DryRun();

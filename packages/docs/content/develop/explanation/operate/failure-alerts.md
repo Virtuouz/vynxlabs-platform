@@ -46,15 +46,13 @@ The window is per script or flow path, in one workspace. A failure of another sc
 
 A run that fails for the last time also publishes the event `platform/run-failed`, with the run's `runId`, its `script` and its `error`; every payload is listed in [Platform events](../../reference/platform-events). An event trigger can listen for it and start a script of its own, with a `filter` to pick which failures count. This is separate from the alert: it fires for every last failure, with no ten-minute window, and only while the trigger is on and not paused.
 
-```ts title="src/alerts.ts"
-import { defineEventTrigger } from "@volvel/sdk";
-
-export const onFailed = defineEventTrigger({
-  path: "ops/on-run-failed",
-  event: "platform/run-failed",
-  script: "ops/tell-the-channel",
-  filter: "event.payload.script == 'billing/chase-one'",
-});
+```yaml title="platform/ops/on-run-failed.trigger.yaml"
+schemaVersion: 1
+body:
+  type: event
+  script: ops/tell-the-channel
+  event: platform/run-failed
+  filter: event.payload.script == 'billing/chase-one'
 ```
 
 The script is given the event's payload as its input. The `filter` is a CEL expression over `event`. A filter that fails, or a payload that does not fit the script's input, skips that trigger and records a refusal on it, shown as **Last refused** on the [Triggers](../../../console/reference/screens/operate/triggers) screen.

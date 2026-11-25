@@ -7,6 +7,7 @@ import { parseArgs } from "node:util";
 import { buildBundle } from "./build.js";
 import { CliError, type Io } from "./cli.js";
 import { inputOf } from "./input.js";
+import { writeEditorSchemas } from "./schemas.js";
 
 interface LocalBindings {
   connections?: Record<string, { config: unknown; credential?: string }>;
@@ -223,6 +224,8 @@ const STARTER: Record<string, string> = {
     2,
   )}\n`,
   ".gitignore": "node_modules/\n.platform/\n",
+  "volvel.yaml":
+    "# Where the definitions are: the code's entry file, and the folder of YAML resource files.\nentry: scripts/hello.ts\nresources: resources\n",
   "tsconfig.json": `${JSON.stringify(
     {
       compilerOptions: {
@@ -233,30 +236,40 @@ const STARTER: Record<string, string> = {
         noEmit: true,
         skipLibCheck: true,
       },
-      include: ["src"],
+      include: ["scripts", ".platform/*.d.ts"],
     },
     null,
     2,
   )}\n`,
-  "src/index.ts": `import { defineSchedule, defineScript, z } from "@volvel/sdk";
+  // Tables, schedules, access and the like are data: YAML files, checked in the editor against the schemas `volvel schemas` writes.
+  "resources/greetings.table.yaml": `schemaVersion: 1
+body:
+  description: Who the starter script has said hello to.
+  columns:
+    name: { type: text, required: true }
+`,
+  "resources/hello-every-morning.schedule.yaml": `schemaVersion: 1
+body:
+  script: hello
+  cron: "0 8 * * 1-5"
+`,
+  "scripts/hello.ts": `import { defineScript, z } from "@volvel/sdk";
 
-// Everything this file exports becomes a resource in the workspace you deploy to.
+// Code is for what runs. The table and the schedule are YAML files in resources/.
+// ctx.table("greetings") is typed by .platform/volvel-env.d.ts, which volvel build writes.
 
 export const hello = defineScript({
   path: "hello",
-  description: "Says hello. Replace it with your first integration.",
+  description: "Says hello and keeps a note of who. Replace it with your first integration.",
   input: z.object({ name: z.string().default("world") }),
   output: z.object({ greeting: z.string() }),
+  tables: ["greetings"],
   async run(input, ctx) {
     ctx.log.info("Saying hello", { name: input.name });
+    // A run on your machine has no workspace, so no tables; a run in one keeps the note.
+    if (ctx.run.trigger.type !== "local") await ctx.table("greetings").insert({ name: input.name });
     return { greeting: \`Hello, \${input.name}\` };
   },
-});
-
-export const helloEveryMorning = defineSchedule({
-  path: "hello-every-morning",
-  script: hello,
-  cron: "0 8 * * 1-5",
 });
 `,
 };
@@ -277,6 +290,8 @@ export async function init(args: string[], io: Io) {
     await mkdir(join(file, ".."), { recursive: true });
     await writeFile(file, contents);
   }
+  // The editor checks the YAML files as they are typed.
+  await writeEditorSchemas(directory);
   io.out(`Created a tenant repository in ${directory}`);
   io.out("Next:");
   io.out("  1. In that folder, install the repository's dependencies: npm install");

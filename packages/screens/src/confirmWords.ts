@@ -56,7 +56,7 @@ export interface ConfirmInput {
 }
 
 /** How the record is told apart, in words: its code, who it is for, and when. */
-function recordWords(input: ConfirmInput): string {
+export function recordWords(input: ConfirmInput): string {
   if (input.count !== undefined && input.count > 1) return `${input.count} ${nounsOf(input.table)}`;
   const noun = nounOf(input.table);
   const row = input.row;
@@ -130,5 +130,66 @@ export function confirmWords(input: ConfirmInput): {
     text: input.confirm?.text || undefined,
     button,
     dismiss: /^cancel\b/i.test(button) || /^cancel\b/i.test(label ?? "") ? "Go back" : "Cancel",
+  };
+}
+
+/** A path's last part as a name a person reads: `ops/close-open-orders` as "Close open orders". */
+export function nameOfPath(path: string): string {
+  const last = (path.split("/").pop() ?? path).replace(/[-_]+/g, " ").trim();
+  return last === "" ? path : last.charAt(0).toUpperCase() + last.slice(1);
+}
+
+/** What one step that writes will do, in words: "run the script 'Close open orders'". */
+function stepWords(
+  step: { do: string; path?: string; table?: string },
+  input: ConfirmInput,
+): string | undefined {
+  switch (step.do) {
+    case "script":
+      return `run the script '${nameOfPath(step.path ?? "")}'`;
+    case "flow":
+      return `start the flow '${nameOfPath(step.path ?? "")}'`;
+    case "update":
+      return `change ${recordWords(input)}`;
+    case "delete":
+      return `delete ${recordWords(input)}`;
+    case "create":
+      return `add ${/^[aeiou]/.test(nounOf(step.table)) ? "an" : "a"} ${nounOf(step.table)}`;
+    default:
+      return undefined;
+  }
+}
+
+/**
+ * The words of the confirmation a page draws when a tenant widget's frame sends an event that
+ * changes something: it names the widget, the event and what will happen ("Run the script
+ * 'Close open orders' for the client of Northside?"). `writes` are the action's steps that
+ * change anything.
+ */
+export function gateWords(input: {
+  widget: string;
+  event: string;
+  /** The event's own words in its definition ("When the gauge is pressed"), when it has them. */
+  eventLabel?: string | undefined;
+  writes: readonly { do: string; path?: string; table?: string }[];
+  confirm?: ConfirmInput;
+}): { title: string; text: string; button: string; dismiss: string } {
+  const words = input.writes.flatMap((one) => stepWords(one, input.confirm ?? {}) ?? []);
+  const row = input.confirm?.row !== undefined || input.confirm?.count !== undefined;
+  const upper = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
+  // A script or a flow runs on the record the event gave: the title says which.
+  const only = input.writes.length === 1 ? input.writes[0] : undefined;
+  const title =
+    words.length === 1
+      ? `${upper(words[0] as string)}${row && (only?.do === "script" || only?.do === "flow") ? ` for ${recordWords(input.confirm ?? {})}` : ""}?`
+      : `Make ${words.length || input.writes.length} changes?`;
+  const list = words.length > 1 ? `: ${words.join("; ")}` : words[0] ? ` ${words[0]}` : "";
+  const said = input.eventLabel?.replace(/^when\s+/i, "").trim();
+  const reported = said ? `reports that ${said}` : `sent "${input.event}"`;
+  return {
+    title,
+    text: `The widget "${input.widget}" ${reported}. Confirming will${words.length > 1 ? " do these" : ""}${list}. Nothing runs until you confirm.`,
+    button: "Confirm",
+    dismiss: "Cancel",
   };
 }

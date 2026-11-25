@@ -379,4 +379,89 @@ describe("pulling the console's resources", () => {
     const allowed = await cli(["deploy", ...target, "--dir", repo, "--allow-delete", "notes/keep"]);
     expect(allowed.code, allowed.err).toBe(0);
   }, 120_000);
+
+  test("a deploy after a change in the console is refused with the path until it is pulled, or forced and audited", async () => {
+    const editInConsole = async (said: string) => {
+      await putSeen(alice, `${base}/drafts/notes/stay`, {
+        kind: "flow",
+        schemaVersion: 1,
+        body: {
+          nodes: {
+            start: { type: "trigger", trigger: { type: "manual" } },
+            note: { type: "set", values: { said } },
+          },
+          edges: [{ from: "start", to: "note" }],
+        },
+      });
+      const done = await alice.post(`${base}/changes/deploy`, { paths: ["notes/stay"] });
+      expect(done.status, JSON.stringify(done.body)).toBe(201);
+    };
+    await editInConsole("'one'");
+
+    const refused = await cli(["deploy", ...target, "--dir", repo]);
+    expect(refused.code).toBe(1);
+    expect(refused.err).toContain("notes/stay: changed in the console");
+    expect(refused.err).toContain("Run `volvel pull`, review, commit, and deploy again.");
+    expect(refused.err).toContain("--force");
+    const preview = await cli(["deploy", ...target, "--dir", repo, "--preview"]);
+    expect(preview.code).toBe(1);
+    expect(preview.err).toContain("notes/stay: changed in the console");
+
+    // Pulled, reviewed, and deployed again.
+    expect((await cli(["pull", ...target, "--dir", repo])).code).toBe(0);
+    expect(await read("notes/stay.flow.yaml")).toContain("'one'");
+    const passed = await cli(["deploy", ...target, "--dir", repo]);
+    expect(passed.code, passed.err).toBe(0);
+
+    // Not pulled, and overwritten on purpose.
+    await editInConsole("'two'");
+    const forced = await cli(["deploy", ...target, "--dir", repo, "--force"]);
+    expect(forced.code, forced.err).toBe(0);
+    expect(JSON.stringify((await alice.get(`${base}/resources/notes/stay`)).body.body)).toContain(
+      "'one'",
+    );
+    const audit = (await alice.get(`/tenants/${base.split("/")[2]}/audit?limit=100`)).body
+      .items as { action: string }[];
+    expect(audit.some((entry) => entry.action === "deployment.forced")).toBe(true);
+  }, 120_000);
+});
+
+describe("a table defined in code and taken over in the console", () => {
+  const index = () => join(repo, "src", "index.ts");
+  const table = (extra = "") =>
+    `\nimport { column, defineTable } from "@volvel/sdk";\nexport const shelf = defineTable({ path: "shelf", columns: { title: column.text() ${extra}} });\n`;
+
+  test("a pull writes it and says where it is still defined; the deploy is refused until the code lets go, and the column stays", async () => {
+    const before = await readFile(index(), "utf8");
+    await writeFile(index(), before + table());
+    expect((await cli(["deploy", ...target, "--dir", repo])).code).toBe(0);
+    // A column added in the console, taking the table over.
+    const taken = await alice.put(`${base}/resources/shelf`, {
+      kind: "table",
+      schemaVersion: 1,
+      ownership: "ui",
+      body: { columns: { title: { type: "text" }, shelf: { type: "text" } } },
+      takeOver: true,
+    });
+    expect(taken.status, JSON.stringify(taken.body)).toBe(200);
+
+    const pulled = await cli(["pull", ...target, "--dir", repo]);
+    expect(pulled.out).toContain("platform/shelf.table.yaml");
+    expect(await readFile(join(repo, "platform", "shelf.table.yaml"), "utf8")).toContain("shelf:");
+    expect(pulled.err).toContain("shelf (table) was taken over in the console");
+    expect(pulled.err).toContain("still defined in code");
+
+    // Defined twice: refused, not silently taken back.
+    const refused = await cli(["deploy", ...target, "--dir", repo]);
+    expect(refused.code).not.toBe(0);
+    expect(refused.err).toContain("shelf is defined in");
+    expect(refused.err).toContain("and again in");
+
+    await writeFile(index(), before);
+    const passed = await cli(["deploy", ...target, "--dir", repo]);
+    expect(passed.code, passed.err).toBe(0);
+    const columns = (await alice.get(`${base}/tables/shelf`)).body.columns as { name: string }[];
+    expect(columns.map((c) => c.name)).toContain("shelf");
+    expect((await cli(["pull", ...target, "--dir", repo])).err).not.toContain("still defined");
+  }, 120_000);
 });

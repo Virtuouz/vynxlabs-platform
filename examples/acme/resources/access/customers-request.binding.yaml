@@ -1,0 +1,6 @@
+schemaVersion: 1
+body:
+  role: order_requester
+  principal:
+    type: end_users
+  resource: orders/request

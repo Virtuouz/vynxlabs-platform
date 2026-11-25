@@ -14,6 +14,7 @@ import { useEffect, useRef, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { failureText, takenText } from "../ask.tsx";
 import { CodeEditor, type Marker } from "../editor/CodeEditor.tsx";
+import { plainEditorOnly } from "../editor/plain.ts";
 import { InputForm, withoutMasked } from "../InputDialog.tsx";
 import { DataTable } from "../kit/DataTable.tsx";
 import { DeployMenu } from "../kit/DeployMenu.tsx";
@@ -25,6 +26,7 @@ import { ago } from "../kit/format.ts";
 import { formatCombo, useShortcut } from "../kit/keys.ts";
 import { ErrorState, Loading } from "../kit/LoadState.tsx";
 import { ProductionNotice } from "../kit/objects.tsx";
+import { takeOverNotice } from "../kit/ownership.ts";
 import { PageHeader } from "../kit/PageHeader.tsx";
 import { RemoveDraftButton } from "../kit/RemoveDraftButton.tsx";
 import { clearRecovery, useKeptCopy, useRecoveryCopy } from "../kit/recovery.ts";
@@ -383,6 +385,20 @@ export function ScriptEditor({
   const clearedStep = useRef<ScriptBody["node"]>(undefined);
   // Where the code lives in the editor, fixed for the editor's life, so a first save keeps its undo history.
   const [modelPath] = useState(() => `${about.list}/${kind}/${opened ?? "new"}.ts`);
+  // The workspace's own names for the editor, so `ctx.table("orders")` completes and is checked.
+  // The editor works without them, so a failure to read them is not shown.
+  const [declarations, setDeclarations] = useState<string>();
+  useEffect(() => {
+    if (plainEditorOnly()) return;
+    let live = true;
+    api.text(`${root}/types.d.ts`).then(
+      (text) => live && setDeclarations(text),
+      () => undefined,
+    );
+    return () => {
+      live = false;
+    };
+  }, [root]);
 
   useEffect(() => {
     let current = true;
@@ -829,6 +845,7 @@ export function ScriptEditor({
         label={`Source of ${path || `the new ${about.noun}`}`}
         path={modelPath}
         language="typescript"
+        declarations={declarations}
         value={body.source?.code ?? ""}
         readOnly={readOnly}
         height={height}
@@ -1011,9 +1028,7 @@ export function ScriptEditor({
           its history and what is bound to it.
         </Notice>
       ) : state === "repository" ? (
-        <Notice tone="attention">
-          Saving a draft of this {about.noun} takes it over from the repository.
-        </Notice>
+        <Notice tone="attention">{takeOverNotice(about.noun, "draft")}</Notice>
       ) : null}
       {draft.clashed ? (
         <DraftClash
@@ -1064,7 +1079,9 @@ export function ScriptEditor({
       {/* panel-allowed: a disclosure, drawn as a panel. */}
       <details
         className="rounded-panel border border-line bg-surface"
-        open={!opened || kind !== "script"}
+        // A script's settings wait (its code is what is written first, and it was below the fold at
+        // 1440x900); they open for what is not a script, and for a schema that was refused.
+        open={kind !== "script" || fieldError("/body/input") !== undefined}
       >
         <summary className="cursor-pointer px-4 py-2 font-medium">
           Settings

@@ -85,11 +85,27 @@ describe("building the example repository", () => {
       "binding access/public-notices",
       "binding access/public-page",
     ]);
-    // Its contact flow is made of core nodes, which the build adds as the platform has them. They
-    // are the only resources in it that the repository's own code does not define.
+    // Acme is YAML first: what the code still defines is the scripts and the two apps made of files.
+    // The rest is files (the core steps its contact flow is made of are added by the build as well).
+    expect(
+      bundle.manifests
+        .filter((manifest) => manifest.ownership === "code")
+        .map((m) => `${m.kind} ${m.path}`)
+        .sort(),
+    ).toEqual([
+      "app portal",
+      "app public",
+      "script alerts/run-failed",
+      "script orders/check",
+      "script orders/receive",
+      "script orders/record",
+      "script orders/request",
+      "script orders/send-to-erp",
+      "script orders/sync",
+    ]);
     expect(
       bundle.manifests.filter((manifest) => manifest.ownership === "ui").map((m) => m.path),
-    ).toEqual(["core/publish-event", "core/table-write"]);
+    ).toEqual(expect.arrayContaining(["orders", "contact", "orders/handle", "core/table-write"]));
     // A bundle that carries them is written as format 3.
     expect(bundle).toMatchObject({
       formatVersion: 3,
@@ -379,7 +395,7 @@ describe("resources managed in the console, as files in the repository", () => {
       path: "orders/check",
       input: z.object({}),
       output: z.object({}),
-      execute: async () => ({}),
+      run: async () => ({}),
     });
   `;
   const yaml =
@@ -610,5 +626,115 @@ describe("a repository with documentation", () => {
         ),
       ],
     });
+  });
+});
+
+describe("a widget in a repository", () => {
+  const widget = (extra = "") => `import { defineWidget } from "@volvel/sdk";
+export const goal = defineWidget({
+  type: "x/goal", version: "1.0.0", title: "Goal", description: "Progress toward a target",
+  category: "understand", icon: "target", surfaces: ["app"],
+  data: { value: { shape: "summary" } },
+  config: { type: "object", properties: { target: { type: "number", "x-volvel": { tab: "display", control: "number", label: "Target" } } } },
+  events: {}, layout: { min: { w: 2, h: 2 }, default: { w: 3, h: 3 } },
+  entry: "widgets/goal/view.tsx",${extra}
+});`;
+
+  test("is built as a widget manifest owned by the code, when its view is there", async () => {
+    const dir = await repository(widget());
+    await mkdir(join(dir, "widgets", "goal"), { recursive: true });
+    await writeFile(join(dir, "widgets", "goal", "view.tsx"), "export {};");
+    const bundle = await buildBundle({ directory: dir });
+    expect(bundle.manifests.map((m) => `${m.kind} ${m.path} ${m.ownership}`)).toEqual([
+      "widget x/goal code",
+    ]);
+  });
+
+  const view = `import { createFrame } from "@volvel/widget-frame";
+import { useWidgetProps } from "@volvel/widget-frame/react";
+import { createRoot } from "react-dom/client";
+const frame = createFrame({ events: [] });
+function View() { const props = useWidgetProps(frame); return <p>{props ? "ready" : "waiting"}</p>; }
+const root = document.getElementById("root");
+if (root) createRoot(root).render(<View />);
+`;
+
+  /** A repository whose widget has the given view, and React and the frame package to build it with. */
+  async function withView(source: string) {
+    const dir = await repository(widget());
+    await mkdir(join(dir, "widgets", "goal"), { recursive: true });
+    await writeFile(join(dir, "widgets", "goal", "view.tsx"), source);
+    const frameDir = fileURLToPath(new URL("../../widget-frame", import.meta.url));
+    await symlink(frameDir, join(dir, "node_modules", "@volvel", "widget-frame"));
+    for (const name of ["react", "react-dom"]) {
+      await symlink(join(frameDir, "node_modules", name), join(dir, "node_modules", name));
+    }
+    return dir;
+  }
+
+  test("its view is built into one script and a frame page, carried like an app's files", async () => {
+    const dir = await withView(view);
+    const built = await buildRepository({ directory: dir });
+    const files = (built.bundle.assets ?? []).filter((asset) => asset.app === "x/goal");
+    expect(files.map((file) => file.path).sort()).toEqual([
+      "frame.html",
+      expect.stringMatching(/^view-[0-9a-f]{8}\.js$/),
+    ]);
+    expect(built.bundle.formatVersion).toBeGreaterThanOrEqual(2);
+    const script = files.find((file) => file.path.endsWith(".js"));
+    const page = files.find((file) => file.path === "frame.html");
+    const text = built.files.get(script?.sha256 ?? "")?.toString() ?? "";
+    // React and the frame package are inside it: nothing is fetched when it runs.
+    expect(text.length).toBeGreaterThan(50_000);
+    expect(text).not.toMatch(/\bimport\s*\(/);
+    expect(built.files.get(page?.sha256 ?? "")?.toString()).toContain(`src="./${script?.path}"`);
+    for (const file of files) {
+      expect(built.files.get(file.sha256)?.length).toBe(file.size);
+    }
+  });
+
+  test("is refused when its view loads a module from the network, with the error", async () => {
+    const dir = await withView(`import x from "https://cdn.example.com/x.js";\nconsole.log(x);`);
+    await expect(buildRepository({ directory: dir })).rejects.toMatchObject({
+      problems: [expect.stringContaining("x/goal (widget): ")],
+    });
+    await expect(buildRepository({ directory: dir })).rejects.toThrow(/loaded from the network/);
+  });
+
+  test("is refused when its view loads code as it runs", async () => {
+    const dir = await withView(
+      `const name = String(Math.random());\nimport(name).then(console.log);`,
+    );
+    await expect(buildRepository({ directory: dir })).rejects.toThrow(/loads code when it runs/);
+    const local = await withView(`import("./other.js").then(console.log);`);
+    await writeFile(join(local, "widgets", "goal", "other.js"), "export default 1;");
+    await expect(buildRepository({ directory: local })).rejects.toThrow(/loads code when it runs/);
+  });
+
+  test("is refused when its view builds to more than the limit, saying how large", async () => {
+    const big = JSON.stringify("x".repeat(600 * 1024));
+    const dir = await withView(`console.log(${big});`);
+    await expect(buildRepository({ directory: dir })).rejects.toThrow(
+      /builds to 6\d\d KB, and a widget's script is at most 512 KB/,
+    );
+  });
+
+  test("is refused when its view does not build, with the compiler's error", async () => {
+    const dir = await withView("const = ;");
+    await expect(buildRepository({ directory: dir })).rejects.toThrow(
+      /x\/goal \(widget\): .*view\.tsx:1: /,
+    );
+  });
+
+  test("is refused when its view is not in the repository, naming the file", async () => {
+    expect(await problems(widget())).toEqual([
+      'x/goal (widget): the view "widgets/goal/view.tsx" is not a file in this repository.',
+    ]);
+  });
+
+  test("is refused by the definition's own checks, before anything is built", async () => {
+    expect(await problems(widget().replace('"x/goal"', '"acme/goal"'))).toEqual([
+      expect.stringContaining('a widget of your own is "x/<name>"'),
+    ]);
   });
 });

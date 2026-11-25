@@ -10,6 +10,7 @@ import {
   SideSheet,
   ToastProvider,
 } from "@volvel/ui";
+import type { DeployedWidget } from "@volvel/widgets";
 import { corePack } from "@volvel/widgets-core/views";
 import { labsPack } from "@volvel/widgets-labs/views";
 import { StrictMode, useCallback, useEffect, useMemo, useState } from "react";
@@ -20,10 +21,12 @@ import {
   AppView,
   helpingPage,
   type PageDataClient,
+  setFrameSource,
   useAddress,
   viewRegistry,
   WidgetReadError,
   type WireData,
+  workspaceViews,
 } from "../src/index.ts";
 
 /** What the platform gives for an interface: its body, and what each table it reads holds. */
@@ -31,10 +34,16 @@ interface InterfaceView {
   body: InterfaceBody;
   /** What each group the page names is called now, by the path it is named by. */
   groupNames?: Record<string, string>;
+  /** The widgets of the workspace's own pack that its pages use, with the versions deployed. */
+  widgets?: DeployedWidget[];
 }
 
 /** The platform's packs: what a page made in the console may hold. */
-const registry = viewRegistry(corePack, labsPack);
+const platform = viewRegistry(corePack, labsPack);
+
+// The frames of a tenant's widgets are served at the address this app is: the apps address, a
+// hostname of the tenant's own, or the console's when the instance has no other.
+setFrameSource({ origin: window.location.origin, slug: appContext().tenant.slug });
 
 function workspaceApi() {
   const context = appContext();
@@ -221,12 +230,14 @@ function App() {
         ...(view?.groupNames ? { groupNames: view.groupNames } : {}),
       }
     : undefined;
+  // The platform's packs and the widgets this workspace deployed that the app's pages use.
+  const registry = useMemo(() => workspaceViews(platform, view?.widgets ?? []), [view]);
   const clientForPage = useCallback(
     (page: string, record?: string) => clientFor(path ?? "", page, record),
     [path],
   );
   return (
-    <div className="mx-auto flex min-h-screen max-w-[1400px] flex-col gap-4 overflow-x-clip p-4">
+    <div className="mx-auto flex min-h-screen max-w-[calc(1400px*var(--vx-type-growth,1))] flex-col gap-4 overflow-x-clip p-4">
       <header className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="m-0 text-display font-semibold">{view?.body.title ?? context.app.title}</h1>
         <span className="flex flex-wrap items-center gap-3 text-body text-ink-muted">

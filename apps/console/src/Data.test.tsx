@@ -125,9 +125,7 @@ test("a table's rows are browsed with sorting, filters and paging", async () => 
   show(<TableView root={root} name="orders" link="/t/t1/workspaces/w1" />);
   await screen.findByText("A-1");
   expect(
-    screen.getByText(
-      /2 rows\. Each person sees their own rows \(owner_id\)\. Managed in the repository\./,
-    ),
+    screen.getByText(/2 rows\. Each person sees their own rows \(owner_id\)\. Managed as code\./),
   ).toBeTruthy();
   expect(screen.getByText(/^2 rows on this page/)).toBeTruthy();
 
@@ -234,7 +232,7 @@ test("a table from the repository is read-only in its definition, and shows what
   routes[`POST /api/v1${root}/table-purges`] = () => [200, { dropped: "orders.notes" }];
   show(<TableView root={root} name="orders" link="/t/t1/workspaces/w1" />);
   fireEvent.click(await screen.findByRole("button", { name: "Definition" }));
-  expect(screen.getByText(/defined in the tenant's repository/)).toBeTruthy();
+  expect(screen.getByText(/defined in code, in the tenant's repository/)).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Add column" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Retire" })).toBeNull();
   expect(screen.getByText("2 values")).toBeTruthy();
@@ -573,7 +571,7 @@ test("a row's unsaved edits are not dropped by choosing another row without aski
   expect(screen.queryByText("Leave without saving?")).toBeNull();
 });
 
-test("a table's Definition keeps room for a column's actions, and they wrap rather than run past the card (r-build)", async () => {
+test("a table's Definition keeps room for a column's actions in a line, and they wrap rather than run past the card (r-build)", async () => {
   const body = {
     columns: { number: { type: "text" }, total: { type: "number" } },
     policy: { type: "owner", column: "owner_id" },
@@ -592,7 +590,8 @@ test("a table's Definition keeps room for a column's actions, and they wrap rath
   const cell = describe.closest("td") as HTMLElement;
   const index = [...(cell.parentElement as HTMLElement).children].indexOf(cell);
   const header = (describe.closest("table") as HTMLElement).querySelectorAll("thead th")[index];
-  expect(header?.className).toContain("w-[14rem]");
+  // Room for the five in a line at 1440; narrower, they wrap inside it.
+  expect(header?.className).toContain("w-[42%]");
 });
 
 test("a table made in the console is renamed and described where it is edited", async () => {
@@ -1294,8 +1293,8 @@ test("WLK-09b: a retired table keeps its pill whole and says where it was manage
   const pill = (await screen.findAllByText("Retired"))[0] as HTMLElement;
   expect(pill.closest("span.shrink-0")).toBeTruthy();
   // Each says where it is managed, or where it was.
-  expect(screen.getAllByText("Repository")).toHaveLength(2);
-  expect(screen.getAllByText("Console")).toHaveLength(1);
+  expect(screen.getAllByText("Code")).toHaveLength(2);
+  expect(screen.getAllByText("Files")).toHaveLength(1);
   cleanup();
   history.replaceState(null, "", "/?id=id-2");
   routes[`GET /api/v1${root}/tables/orders`] = () => [
@@ -1304,7 +1303,7 @@ test("WLK-09b: a retired table keeps its pill whole and says where it was manage
   ];
   show(<TableView root={root} name="orders" link="/t/t1/workspaces/w1" />);
   await screen.findByText(/This table is retired/);
-  expect(screen.queryByText(/Managed in the/)).toBeNull();
+  expect(screen.queryByText(/\sManaged as/)).toBeNull();
   // A retired table that was made in the console can be brought back; one from the repository cannot.
   expect(screen.queryByRole("button", { name: /Bring back/ })).toBeNull();
   // Opened with its ID, the page asks for that table.
@@ -2354,4 +2353,71 @@ test("p31 fc: a source page whose read answers only 'Internal Server Error' whil
   show(<SourceView root={root} path="erp" link="/t/t1/workspaces/w1" />);
   await screen.findByText(/does not support encrypted connections|may not support encrypted/);
   expect(document.body.textContent).not.toContain("Internal Server Error");
+});
+
+test("a table in code is taken over in the console, after saying what that means, and then edited", async () => {
+  const body = { columns: { number: { type: "text", required: true } } };
+  let ownership = "code";
+  routes[`GET /api/v1${root}/tables/orders`] = () => [200, orders(ownership)];
+  routes[`GET /api/v1${root}`] = () => [200, { id: "w1", type: "dev" }];
+  routes[`GET /api/v1${root}/resources/orders`] = () => [200, { body, version: 3 }];
+  routes[`PUT /api/v1${root}/resources/orders`] = () => {
+    ownership = "ui";
+    return [200, { version: 4 }];
+  };
+  show(<TableView root={root} name="orders" link="/t/t1/workspaces/w1" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Definition" }));
+  expect(screen.queryByRole("button", { name: "Add column" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Take over in the console" }));
+  const dialog = await screen.findByRole("dialog");
+  expect(dialog.textContent).toContain("manages this table as files");
+  expect(dialog.textContent).toContain("as defined twice");
+  expect(dialog.textContent).toContain("volvel pull");
+  expect(dialog.textContent).toContain('ctx.table("orders")');
+  // Nothing is saved until it is confirmed.
+  expect(calls.some((call) => call.method === "PUT")).toBe(false);
+  fireEvent.click(within(dialog).getByRole("button", { name: "Take over" }));
+  await waitFor(() =>
+    expect(calls.find((call) => call.method === "PUT")?.body).toEqual({
+      kind: "table",
+      schemaVersion: 1,
+      ownership: "ui",
+      takeOver: true,
+      body,
+      version: 3,
+    }),
+  );
+  expect(await screen.findByRole("button", { name: "Add column" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Take over in the console" })).toBeNull();
+});
+
+test("a table in code cannot be taken over in a production workspace", async () => {
+  routes[`GET /api/v1${root}`] = () => [200, { id: "w1", type: "production" }];
+  show(<TableView root={root} name="orders" link="/t/t1/workspaces/w1" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Definition" }));
+  await screen.findByText(/A production workspace changes by a deploy only/);
+  expect(screen.queryByRole("button", { name: "Take over in the console" })).toBeNull();
+});
+
+test("a table's description that names a column between backticks shows it as code, in the list", async () => {
+  routes[`GET /api/v1${root}/tables`] = () => [
+    200,
+    {
+      items: [
+        {
+          name: "clients",
+          status: "active",
+          managedIn: "ui",
+          description: "Pet owners. `code` is what their account holds.",
+          columnCount: 1,
+          rowCount: 3,
+          policy: { type: "open" },
+        },
+      ],
+    },
+  ];
+  show(<Tables root={root} link="/t/t1/workspaces/w1" />);
+  await screen.findByRole("link", { name: "clients" });
+  expect(await screen.findByText("code", { selector: "code" })).toBeTruthy();
+  expect(document.body.textContent).not.toContain("`");
 });

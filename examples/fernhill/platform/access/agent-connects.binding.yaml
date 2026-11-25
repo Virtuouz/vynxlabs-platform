@@ -1,0 +1,6 @@
+schemaVersion: 1
+body:
+  role: connects
+  principal:
+    type: service_account
+    key: phone-assistant

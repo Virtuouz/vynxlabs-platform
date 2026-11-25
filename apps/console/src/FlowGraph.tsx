@@ -1,6 +1,6 @@
 import dagre from "@dagrejs/dagre";
 import { Panel } from "@volvel/ui";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { type RunState, STATE_STROKE, stateLabel } from "./kit/status.tsx";
 
 export interface GraphNode {
@@ -24,6 +24,56 @@ const NUDGE: Record<string, [number, number]> = {
 };
 const WIDTH = 176;
 const HEIGHT = 54;
+/** The most characters a label shows before it is cut (the whole of it is in the node's title). */
+const MOST = 44;
+
+/** The text a node draws: its name, and what it is. */
+function words(id: string, node: GraphNode): { head: string; sub: string } {
+  let what = "";
+  try {
+    what = describe(node);
+  } catch {
+    // A step that is not yet filled in has nothing to say about itself.
+  }
+  const sub = [KIND[node.type] ?? node.type, what].filter(Boolean).join(": ");
+  return { head: id, sub };
+}
+const cut = (text: string) => (text.length > MOST ? `${text.slice(0, MOST - 1)}…` : text);
+
+/** As wide as its longer line needs, never narrower than the plain node. */
+function widthOf(id: string, node: GraphNode): number {
+  const { head, sub } = words(id, node);
+  const need = 28 + Math.max(cut(head).length * 7.9, cut(sub).length * 6.9);
+  return Math.max(WIDTH, Math.ceil(need));
+}
+
+function readTypeScale(): number {
+  if (typeof window === "undefined" || !window.matchMedia) return 16 / 14;
+  if (window.matchMedia("(min-width: 3840px)").matches) return 20 / 14;
+  if (window.matchMedia("(min-width: 2560px)").matches) return 18 / 14;
+  return 16 / 14;
+}
+
+/**
+ * The console's type scale (16, 18, 20 px body over the 14 px the roles are written for), from
+ * the same two breakpoints as `type-scale.css`. The drawing is in its own units and is shown
+ * this much larger, so its text keeps pace with the page's.
+ */
+function useTypeScale(): number {
+  const [scale, setScale] = useState(readTypeScale);
+  useEffect(() => {
+    const queries = ["(min-width: 2560px)", "(min-width: 3840px)"].map((q) =>
+      window.matchMedia?.(q),
+    );
+    const update = () => setScale(readTypeScale());
+    for (const q of queries) q?.addEventListener?.("change", update);
+    update();
+    return () => {
+      for (const q of queries) q?.removeEventListener?.("change", update);
+    };
+  }, []);
+  return scale;
+}
 
 /** What each kind of node is called on the canvas. */
 const KIND: Record<string, string> = {
@@ -69,7 +119,8 @@ export function autoLayout(nodes: Record<string, GraphNode>, edges: GraphEdge[])
   const ranksep = Math.max(64, longest * 8 + 40);
   graph.setGraph({ rankdir: "LR", nodesep: 28, ranksep, marginx: 16, marginy: 16 });
   graph.setDefaultEdgeLabel(() => ({}));
-  for (const id of Object.keys(nodes).sort()) graph.setNode(id, { width: WIDTH, height: HEIGHT });
+  for (const id of Object.keys(nodes).sort())
+    graph.setNode(id, { width: widthOf(id, nodes[id] as GraphNode), height: HEIGHT });
   for (const edge of edges) {
     if (nodes[edge.from] && nodes[edge.to]) graph.setEdge(edge.from, edge.to);
   }
@@ -77,7 +128,13 @@ export function autoLayout(nodes: Record<string, GraphNode>, edges: GraphEdge[])
   return Object.fromEntries(
     Object.keys(nodes).map((id) => {
       const placed = graph.node(id);
-      return [id, { x: Math.round(placed.x - WIDTH / 2), y: Math.round(placed.y - HEIGHT / 2) }];
+      return [
+        id,
+        {
+          x: Math.round(placed.x - widthOf(id, nodes[id] as GraphNode) / 2),
+          y: Math.round(placed.y - HEIGHT / 2),
+        },
+      ];
     }),
   );
 }
@@ -110,17 +167,26 @@ export function FlowGraph({
   const positions: Positions = { ...automatic, ...layout, ...moved };
   const drag = useRef<{ id: string; dx: number; dy: number; moved: boolean } | null>(null);
   const svg = useRef<SVGSVGElement>(null);
-  // A graph that cannot be moved opens fitted to its frame, so a wide flow is seen whole.
-  // One that can be moved keeps its true size, so a drag lands where the pointer is.
-  const [fitted, setFitted] = useState(!onMove);
+  // A graph that cannot be moved opens fitted to its frame, so a wide flow is seen whole. One that
+  // can be moved is fitted too where the screen is wide, and keeps its true size, scrolled, on a
+  // phone or a tablet, where fitting would shrink its text past reading. A drag is measured
+  // against the size it is shown at, so it lands where the pointer is either way.
+  const [fitted, setFitted] = useState(() => !onMove || window.innerWidth >= 1024);
 
+  const scale = useTypeScale();
   const ids = Object.keys(nodes).filter((id) => positions[id]);
-  const width = Math.max(...ids.map((id) => (positions[id]?.x ?? 0) + WIDTH), 320) + 24;
+  const wide = (id: string) => widthOf(id, nodes[id] as GraphNode);
+  const width = Math.max(...ids.map((id) => (positions[id]?.x ?? 0) + wide(id)), 320) + 24;
   const height = Math.max(...ids.map((id) => (positions[id]?.y ?? 0) + HEIGHT), 120) + 24;
 
   const point = (event: { clientX: number; clientY: number }) => {
     const box = svg.current?.getBoundingClientRect();
-    return { x: event.clientX - (box?.left ?? 0), y: event.clientY - (box?.top ?? 0) };
+    // The drawing's units to the screen's: the type scale, less what fitting it to its frame took off.
+    const shown = box?.width ? box.width / width : scale;
+    return {
+      x: (event.clientX - (box?.left ?? 0)) / shown,
+      y: (event.clientY - (box?.top ?? 0)) / shown,
+    };
   };
 
   return (
@@ -137,14 +203,19 @@ export function FlowGraph({
       {/* biome-ignore lint/a11y/useSemanticElements: an SVG is grouped by role, it has no fieldset */}
       <svg
         ref={svg}
+        viewBox={`0 0 ${width} ${height}`}
         {...(fitted
           ? {
-              viewBox: `0 0 ${width} ${height}`,
               width: "100%",
               preserveAspectRatio: "xMidYMin meet",
-              style: { maxWidth: width, maxHeight: "70vh", display: "block", margin: "0 auto" },
+              style: {
+                maxWidth: width * scale,
+                maxHeight: "70vh",
+                display: "block",
+                margin: "0 auto",
+              },
             }
-          : { width, height })}
+          : { width: width * scale, height: height * scale })}
         role="group"
         aria-label="Flow graph"
         onPointerMove={(event) => {
@@ -197,7 +268,12 @@ export function FlowGraph({
           const from = positions[edge.from];
           const to = positions[edge.to];
           if (!from || !to) return null;
-          const [x1, y1, x2, y2] = [from.x + WIDTH, from.y + HEIGHT / 2, to.x, to.y + HEIGHT / 2];
+          const [x1, y1, x2, y2] = [
+            from.x + wide(edge.from),
+            from.y + HEIGHT / 2,
+            to.x,
+            to.y + HEIGHT / 2,
+          ];
           const bend = Math.max(32, Math.abs(x2 - x1) / 2);
           const label = edge.error ? "on error" : edge.output;
           // In a run, the way it went is drawn strong and the rest recedes.
@@ -292,7 +368,7 @@ export function FlowGraph({
                 className="hidden group-focus-visible:block"
                 x={-7}
                 y={-7}
-                width={WIDTH + 14}
+                width={wide(id) + 14}
                 height={HEIGHT + 14}
                 rx={node.type === "trigger" ? (HEIGHT + 14) / 2 : 12}
                 fill="none"
@@ -303,13 +379,13 @@ export function FlowGraph({
                 <g stroke="var(--vx-action)" strokeWidth="2" fill="none">
                   <polyline points="-5,5 -5,-5 5,-5" />
                   <polyline
-                    points={`${WIDTH + 5},${HEIGHT - 5} ${WIDTH + 5},${HEIGHT + 5} ${WIDTH - 5},${HEIGHT + 5}`}
+                    points={`${wide(id) + 5},${HEIGHT - 5} ${wide(id) + 5},${HEIGHT + 5} ${wide(id) - 5},${HEIGHT + 5}`}
                   />
                 </g>
               ) : null}
               <rect
                 opacity={statuses && !state ? 0.5 : 1}
-                width={WIDTH}
+                width={wide(id)}
                 height={HEIGHT}
                 rx={node.type === "trigger" ? HEIGHT / 2 : 8}
                 fill={state === "skipped" ? "var(--vx-canvas)" : "var(--vx-surface)"}
@@ -317,19 +393,15 @@ export function FlowGraph({
                 strokeWidth={isSelected ? 3 : look ? 2.5 : 1.5}
                 strokeDasharray={state === "skipped" ? "4 3" : undefined}
               />
+              <title>{`${words(id, node).head}, ${words(id, node).sub}`}</title>
               <text x={14} y={22} fontSize="13" fontWeight="600" fill="var(--vx-ink)">
-                {id.length > 20 ? `${id.slice(0, 19)}…` : id}
+                {cut(words(id, node).head)}
               </text>
               <text x={14} y={40} fontSize="12" fill="var(--vx-ink-muted)">
-                {(() => {
-                  const text = [KIND[node.type] ?? node.type, describe(node)]
-                    .filter(Boolean)
-                    .join(": ");
-                  return text.length > 26 ? `${text.slice(0, 25)}…` : text;
-                })()}
+                {cut(words(id, node).sub)}
               </text>
               {look ? (
-                <circle cx={WIDTH - 14} cy={16} r={5} fill={look.stroke}>
+                <circle cx={wide(id) - 14} cy={16} r={5} fill={look.stroke}>
                   <title>{look.label}</title>
                 </circle>
               ) : null}

@@ -254,7 +254,10 @@ export function cellOf(
   if (isJsonValue(type, value)) {
     const { text, full } = jsonWords(value);
     return (
-      <span title={full} className="font-mono text-[12.5px] text-ink-muted">
+      <span
+        title={full}
+        className="font-mono text-[calc(12.5px*var(--vx-type-scale,1))] text-ink-muted"
+      >
         {text}
       </span>
     );
@@ -319,7 +322,8 @@ export function cellOf(
   if (isNumeric(info) || format) {
     return <span className="tabular-nums">{formatNumber(value, format)}</span>;
   }
-  if (isCode(value)) return <span className="font-mono text-[12.5px]">{value}</span>;
+  if (isCode(value))
+    return <span className="font-mono text-[calc(12.5px*var(--vx-type-scale,1))]">{value}</span>;
   if (type === "date" && typeof value === "string") {
     const day = formatDay(value);
     if (day) return <span className="text-ink-muted">{day}</span>;

@@ -135,9 +135,9 @@ test("what the repository's code defines is renamed there, and a file is renamed
   );
   expect(cannotRename(filed)).toBeUndefined();
   expect([script, generated, filed].map(definedWhere)).toEqual([
-    "Console",
-    "Repository",
-    "Repository, src/lending/submit.script.yaml",
+    "Files",
+    "Code",
+    "Files, src/lending/submit.script.yaml",
   ]);
   show(<ResourceIdentity root={root} link="/x" row={generated} onDone={() => {}} />);
   expect((screen.getByRole("button", { name: "Rename" }) as HTMLButtonElement).disabled).toBe(true);

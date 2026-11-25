@@ -1,0 +1,7 @@
+schemaVersion: 1
+body:
+  role: opens_app
+  principal:
+    type: end_user_group
+    key: front-desk
+  resource: front-desk

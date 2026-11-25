@@ -1,33 +1,26 @@
 # Fact-check record: develop/how-to/writing-a-widget
 
-Lines are current at commit `5ebf1c80` (branch phase-31-write-the-docs), 2026-11-23. Paths are under `apps/console/src` unless they start with `apps/control-plane` or `packages`. `Au` = `screens/Authoring.tsx`, `CS` = `screens/CodeSettings.tsx`. Written by the writer; "Checked by" is for the second agent. `W` = `packages/widget-sdk/src/index.ts`, `Core` = `packages/widgets-core/src/index.ts`. Run log: `docs/documentation/runs/develop/how-to/writing-a-widget.md`.
+Lines are current at commit `aabf96af` (branch p34-b6) plus the docs of this lane, 2026-11-24. Written by the writer (B6); "Checked by" is for the second agent. Lane b4r reviews the frame host and the widget route at the same time: re-check the rows marked (b4r) after it merges. Run log: `docs/documentation/runs/develop/how-to/writing-a-widget.md`.
 
 | Claim | Source (file:line) | Checked by | Result |
 | --- | --- | --- | --- |
-| Core pack holds the shipped widgets; labs holds only labs/probe, not offered in Add to page. | `Core:2021-2038`; `packages/widgets-labs/src/index.ts` | writer | holds |
-| Packs are imported by hand in the console and the app runtime; no repository loading. | `apps/console/src/screens/builder/registry.ts:8-20`; `packages/screens/runtime/main.tsx:13,37` | writer | holds |
-| Goal definition: type, version, title, description, category understand, surfaces, summary 1-2 values 0 breakdowns, dataHints. | `Core:1711-1730` | writer | holds |
-| target and goalFrom in Data tab group Progress, labels Goal / Goal from a column; goalFrom wins. | `Core:1731-1760` | writer | holds |
-| Display settings: A line under it, Numbers, Show the percentage, When reached the bar (Turns green / Stays), Good news is, Color by how close; defaults. | `Core:1761-1830` (labels at 1767-1822) | writer | holds |
-| Event click, label; layout min 2x2, default 3x3, phone stack. | `Core:1846-1847` | writer | holds |
-| View: number, progressbar with aria, share can pass 100, line under; button only when listens click. | `packages/widgets-core/views/goal.tsx:56-100` | writer | holds |
-| View registered under core/goal. | `packages/widgets-core/views/index.ts:44` | writer | holds |
-| defineWidget throws; definitionProblems checks; type, version, name, size rules. | `W:282-340` | writer | holds |
-| Four data shapes; sources; SQL not on app pages. | `W:48-58` | writer | holds |
-| Categories and their titles. | `W:26-36` | writer | holds |
-| 28 controls. | `W:139-185` (counted: 22 config + 6 data) | writer | holds |
-| Hint keys and tabs. | `W:121-135, 188-212` | writer | holds |
-| View props. | `W:556-625` | writer | holds |
-| Action step kinds; server runs the first five. | `packages/widget-sdk/src/action.ts:39-76` | writer | not re-read in this pass; from the inventory |
-| Helpers exported. | `W:694-808`; `packages/widget-sdk/src/money.ts` | writer | holds |
-| viewRegistry errors. | `packages/screens/src/types.ts:183-193` | writer | holds |
-| WidgetRegistry error "declared twice". | `W:339-350` | writer | holds |
-| Views import only react, @volvel/widgets, @volvel/ui. | `apps/console/src/enforce.test.ts:555-575` | writer | holds |
-| Custom drawer for Goal registered in the console, not by a pack. | `apps/console/src/kit/inspector/widgets/registerCharts.ts:16-50` | writer | holds |
-| slots draws "its places are drawn by the widget" unless registered. | `apps/console/src/kit/inspector/controls.tsx:470` | writer | holds |
-| Test command and 15 tests pass. | run: `npx vitest run src/goal.test.tsx` in packages/screens | writer, run | holds as run |
-| Add to page dialog; Goal under Understand data. | `apps/console/src/screens/builder/AddToPage.tsx:268`; `W:31-36` | writer | holds in code; not walked |
-
-Checked by: second agent, 2026-11-23. Checked in the code: 28 controls (`widget-sdk/src/index.ts:138-174`), type/name/version patterns (`:282-284`), Goal's labels, group "Progress", defaults and layout (`widgets-core/src/index.ts:1711-1850`), `core/goal` in `views/index.ts:44`, `CORE_WIDGETS` (`:2021`), the test file `packages/screens/src/goal.test.tsx`, the icon rule (`:241-246`). On the instance: **Add to page** groups are Work with records, Understand data, Take action, Organize and explain (`apps/console/src/screens/builder/AddToPage.tsx:16-21`); the page's earlier list of five category titles came from `CATEGORY_TITLES` and is not what the screen shows: corrected.
-
-
+| `volvel widget new <name>` writes widget.ts, view.tsx, fixture.json, adds an export to the entry, prints the two lines quoted. | `packages/cli/src/widget.ts:169-171`; run | writer, run 2026-11-24 | holds as run |
+| A name is small letters, digits and "-", starting with a letter, up to 41 characters. | `packages/cli/src/widget.ts:7` (`^[a-z][a-z0-9-]{0,40}$`) | writer | holds |
+| The scaffold: data input `value` (summary), dataHints, setting `label` in Display with a default, event `clicked`, 4x3, version 0.1.0. | `packages/cli/src/widget.ts:28-60`; `packages/cli/src/widget.test.ts` | writer, run | holds |
+| `volvel build` lists `widget     x/<name>`. | run | writer, run | holds as run |
+| The build refuses a view that does not compile, imports from http(s), calls import(), or is over 512 KB. | `packages/cli/src/widget-build.ts:8,54`; `packages/cli/src/build.test.ts` ("a widget in a repository") | writer | holds |
+| `volvel dev --widgets` prints "N widgets previewed at <address>/_dev/widgets", needs no instance; controls: size presets 1440/768/390, width, height, theme, state (ready, loading, empty, failed, forbidden), config fields, data JSON, event log; passed/dropped. | `packages/cli/src/dev-widgets.ts`; `packages/screens/runtime/dev-widget-host.ts`; run | writer, run | holds as run |
+| Pressing the preview's button logs "clicked passed the host's checks". | run (`.entry` text) | writer, run | holds as run |
+| Deploy: `Deployed version N to sandbox (dev): …` and `created  widget     x/waiting-room`. | run | writer, run | holds as run |
+| Same version, other files: "x/waiting-room 0.1.0 is already deployed with other files. A version's files never change, because pages are placed with it: raise the widget's version." | `apps/control-plane/src/kernel/widgets.ts:103`; run | writer, run | holds as run |
+| Dashboard flow: **New dashboard**, **Name**, **Make the dashboard**, **Add to page**, tile "Waiting room" with "Your widget", **Source** "Not set", **Appointments**, **Only include** **Condition**, Status, **is**, **Checked in**, **Add**, **Done**. | `apps/console/src/screens/builder` (labels read in the run); run | writer, run | holds as run |
+| A needed permission: `dashboard:write` to make a dashboard; `deployment:write` to deploy and to remove a version. | `apps/control-plane/src/routes/dashboards.ts:286`; `routes/widgets.ts:108`; `routes/authoring.ts:537` | writer | holds |
+| A page keeps the version it was placed with; notice "Version 0.2.0 is deployed. This page uses 0.1.0." and "Adds Big type."; **Update to v0.2.0** writes nothing until pressed. | `apps/console/src/kit/inspector/Inspector.tsx:335-339`; `apps/console/src/tenant-widgets.test.tsx`; run | writer, run | holds as run |
+| `version` is a field of a placed widget in a page's file. | `packages/widget-sdk/src/page.ts:227` | writer | holds |
+| Removal while placed: "Could not deploy to sandbox. A page still places this widget. Move each to another version or take the widget off it, then remove it." and the line naming the dashboard. | `apps/control-plane/src/kernel/widgets.ts:226`; run | writer, run | holds as run |
+| Deleting a widget's last placement and deploying removes the widget and its versions. | run (versions list empty after the deploy) | writer, run | holds as run |
+| `DELETE …/widgets/<name>/versions/<version>` needs `deployment:write`; refused for a placed version ("widget_in_use") and the current one ("…is the version of x/<name> that the repository defines now. Deploy a newer version first."). | `routes/widgets.ts:108`; run | writer, run | holds as run |
+| "This deploy would delete 8 resources made in the console, because this repository has no file for them." and `volvel pull` / `--allow-delete`. | `packages/cli/src/cli.ts:471`; run | writer, run | holds as run |
+| Frame messages: "did not load" after 10 s; "was stopped" after over 20 a second for 2 s. | `packages/screens/src/TenantWidgetHost.tsx:47,178,182`; `frameChannel.ts:12-18` (b4r) | writer | holds |
+| The widget's page checks an event's name and payload; a name starts with a small letter, letters and digits, up to 41. | `packages/widget-sdk/src/index.ts:306`; `packages/manifest/src/widget.ts` | writer | holds |
+| Add to page lists a tenant widget in its category with "Your widget". | `apps/console/src/screens/builder/registry.ts`; run | writer, run | holds as run |

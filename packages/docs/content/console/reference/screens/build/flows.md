@@ -54,7 +54,7 @@ Choosing a row opens its inspector. A flow that has only a draft opens in the ed
 
 | State | What you see |
 | --- | --- |
-| Empty, dev workspace | "No flows yet", "Draw one here, or define one in the tenant's repository with defineFlow." and **New flow**. |
+| Empty, dev workspace | "No flows yet", "Draw one here, or define one in the tenant's repository with defineFlow." and **New flow**. A flow is also a `<path>.flow.yaml` file in the repository. |
 | Empty, production workspace | "No flows yet", "Flows reach a production workspace by promotion from its dev workspace." |
 | Nothing matches | "No flow matches", "Try another word, or show every flow." |
 | Read only | A line says you can see the workspace's flows and what is needed to change them (`resource:write`). |

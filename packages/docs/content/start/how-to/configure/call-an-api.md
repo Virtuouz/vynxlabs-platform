@@ -19,30 +19,35 @@ By the end a script will have called an API through a connection, signed in with
 ## Write and run the script
 
 :::steps
-1. Replace the contents of `src/index.ts`. Declare a connection and a variable, and write a script that reads them and a secret. The connection and the variable declare a name and a kind. Nothing about where the API is or how to sign in is in the code.
+1. Declare a connection and a variable as two files in the console's folder, `platform/`. They declare a name and a kind. Nothing about where the API is or how to sign in is in them.
+
+```yaml title=platform/stock-orders.connection.yaml
+schemaVersion: 1
+body:
+  connector: http
+  description: "VetSupply Direct: prices and orders for stock."
+```
+
+```yaml title=platform/stock/reorder-quantity.variable.yaml
+schemaVersion: 1
+body:
+  description: How many units one reorder asks for.
+  default: "10"
+```
+
+   Then replace the contents of `src/index.ts` with a script that reads them and a secret. A script is code, and names what it reads by path:
 
 ```ts title=src/index.ts
-import { defineConnection, defineScript, defineVariable, z } from "@volvel/sdk";
-
-export const supplier = defineConnection({
-  path: "stock-orders",
-  description: "VetSupply Direct: prices and orders for stock.",
-});
-
-export const reorderQuantity = defineVariable({
-  path: "stock/reorder-quantity",
-  description: "How many units one reorder asks for.",
-  default: "10",
-});
+import { defineScript, z } from "@volvel/sdk";
 
 export const reorder = defineScript({
   path: "stock/reorder",
   description: "Orders one product from the supplier.",
   input: z.object({ sku: z.string() }),
   output: z.object({ reference: z.string() }),
-  connections: [supplier],
+  connections: ["stock-orders"],
   secrets: ["SUPPLIER_ACCOUNT"],
-  variables: [reorderQuantity],
+  variables: ["stock/reorder-quantity"],
   async run(input, ctx) {
     const api = await ctx.connection("stock-orders");
     const account = await ctx.secret("SUPPLIER_ACCOUNT");
@@ -71,7 +76,7 @@ Deployed version 1 to try-it (dev): 3 created, 0 updated, 0 deleted, 0 unchanged
 ```
 
 3. In the console, open **Configure**, then **Connections**. The row `stock-orders` says **Not set up here** and its **Used by** is `stock/reorder`. Press **Set up**.
-4. In the sheet, type `http://127.0.0.1:4020` as the **Address**, choose **Authorization: Bearer** under **How the credential is sent**, and type `vs_demo_51be22` as the **Token or key**. Press **Save**. The sheet shows **Reached (200)** with the time it took. Press **Close**.
+4. In the sheet, type `http://127.0.0.1:4020` as the **Address** and `/vetsupply/ping` as the **Test path**, choose **Authorization: Bearer** under **How the credential is sent**, and type `vs_demo_51be22` as the **Token or key**. Press **Save**. The sheet shows **Reached (200)** with the time it took. Press **Close**.
 5. Open **Secrets** and press **New secret**. Type `SUPPLIER_ACCOUNT` as the **Name** and `FERNHILL-CFG` as the **Value**, and press **New secret**. The row shows who set it and, under **Used by**, `stock/reorder`.
 6. Open **Variables**. The row `stock/reorder-quantity` shows **Default: 10**. Press **Set**, type `12` and press **Save**. The row shows `12`.
 7. Run this build of the script in the workspace. It is a test run, and nothing is deployed.
@@ -81,14 +86,14 @@ volvel run stock/reorder --remote --tenant fernhill --workspace try-it --input '
 ```
 
 ```text
-Test run 01a20a4d-d2b7-738c-bdd0-40aa14e680f2 of stock/reorder in try-it, from this build (preview, version 1). Nothing was deployed.
-Succeeded in 188 ms.
+Test run 01a20fc7-0c2a-71d0-be1c-ceb7cd1007fb of stock/reorder in try-it, from this build (preview, version 1). Nothing was deployed.
+Succeeded in 279 ms.
 Output: {
-  "reference": "VSD-900108"
+  "reference": "VSD-900002"
 }
 ```
 
-8. Open `http://127.0.0.1:4020` in a browser. VetSupply's orders list a line with the reference `VSD-900108`, the account `FERNHILL-CFG`, the product `VAC-DHPP` and the quantity `12`.
+8. Open `http://127.0.0.1:4020` in a browser. VetSupply's orders list a line with the reference `VSD-900002`, the account `FERNHILL-CFG`, the product `VAC-DHPP` and the quantity `12`.
 :::
 
 ## The result
@@ -103,4 +108,4 @@ The script called an API it knows only by name. The address and the token came f
 - **"A connection can only call its own base URL, not X."** The script called an address outside the connection's. A connection reaches only its own origin.
 - **A deploy to a production workspace is refused with a list.** Production refuses a deploy or a promotion while a connection or a secret the code reads is not set up. Each entry has **Set up**.
 
-For all of the fields, see [Connections in code](../../../develop/reference/configure/connections-in-scripts) and the screens under [Configure](../../../console/reference/screens/configure/).
+To write the connection and the variable in TypeScript instead, see [Definitions in code](../../../develop/explanation/cli/definitions-in-code). For all of the fields, see [Connections in code](../../../develop/reference/configure/connections-in-scripts) and the screens under [Configure](../../../console/reference/screens/configure/).

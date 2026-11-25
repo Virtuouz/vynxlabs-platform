@@ -7,6 +7,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./tokens.css": "./src/tokens.css",
+    "./type-scale.css": "./src/type-scale.css",
     "./icons": "./src/icons.ts"
   },
   "files": [
@@ -14,7 +15,7 @@
     "fonts"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.build.json && node -e \"fs.copyFileSync('src/tokens.css', 'dist/tokens.css')\"",
+    "build": "tsc -p tsconfig.build.json && node -e \"fs.copyFileSync('src/tokens.css', 'dist/tokens.css'); fs.copyFileSync('src/type-scale.css', 'dist/type-scale.css')\"",
     "typecheck": "tsc -p ."
   },
   "publishConfig": {
@@ -24,6 +25,7 @@
         "default": "./dist/index.js"
       },
       "./tokens.css": "./dist/tokens.css",
+      "./type-scale.css": "./dist/type-scale.css",
       "./icons": {
         "types": "./dist/icons.d.ts",
         "default": "./dist/icons.js"

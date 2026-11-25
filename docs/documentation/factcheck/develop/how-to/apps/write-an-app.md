@@ -27,3 +27,15 @@ Lines are current at commit `14f7d5b9` (branch phase-31-write-the-docs). Paths a
 - SDK checks: `defineApp` message `packages/sdk/src/index.ts:1248`; title 100, reads 100, one of entry/interface/docs: `packages/manifest/src/kinds.ts:1715-1790`; vite message `packages/cli/src/apps.ts:71`; config files `apps.ts:49`; path rule `packages/manifest/src/bundle.ts:83-92`; 5,000 files `bundle.ts:120`; 25 MB `kernel/apps/assets.ts:10`; 20 MB `kernel/execution/bundles.ts:21`; six uploads at once `packages/cli/src/cli.ts:344-370`; sweep after 7 days `assets.ts:126`.
 - Deploy deletes: the console-made check is `cli.ts:405-425`; a repository-owned resource missing from the new repository is deleted without a prompt (run: board, guide and a flow deleted); sentence added to Before you start.
 - Run: build, deploy, `volvel dev`, TextField sample (invisible raw input corrected).
+
+## Phase 34, A7 (YAML first), 2026-11-24
+
+Commit `d619bfbd` plus the working tree. Written by the A7 writer; second agent checked 2026-11-24 (a7r). Run on the throwaway instance of lane a7 (http://localhost:8712, Fernhill seeded).
+
+| Claim | Source (file:line) | Checked by | Result |
+| --- | --- | --- | --- |
+| Table and bindings and role as YAML; `TableOf<"visits">` in the page; deploy `7 created`. | run: the page's files extracted and built, deployed to `apps-docs`; `volvel build` output copied | writer, 2026-11-24 | holds as run (the app was not opened in a browser) |
+
+### Second check (a7r), 2026-11-24, second agent
+
+Lane a7r build (a7 merged), throwaway instance http://localhost:8722 (database a7r34, Fernhill seeded), lane CLI `packages/cli/dist/bin.js`. `pnpm docs:check` passes. Rebuilt the repository from the page's snippets (table file, script, app, `apps/desk`, three bindings and the role) with the lane CLI: `volvel build` and `deploy` print what the page shows (`App files: 6, 4 new.`, `7 created`). The **Apps** screen lists the app with the tag REPOSITORY, the address `/apps/fernhill/<workspace>/desk/` and **Front desk** under Open to, and says repository apps are not served until `APPS_URL` is set, as the page says. Not run: the app's page in a browser (the instance has no `APPS_URL`).

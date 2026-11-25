@@ -1,5 +1,5 @@
 export * from "./action.js";
-export { APP_POLICY, appPolicy } from "./app-policy.js";
+export { APP_POLICY, appPolicy, WIDGET_POLICY } from "./app-policy.js";
 export {
   AUDIT_ACTIONS,
   AUDIT_AREAS,
@@ -41,7 +41,16 @@ export {
   type PlatformEventDefinition,
   type PlatformEventField,
   type PlatformEventName,
+  WIDGET_FRAME_FILE,
 } from "./bundle-check.js";
+export {
+  columnValueType,
+  ENV_TYPES_FILE,
+  envDeclarations,
+  type TypedManifest,
+  tableTypes,
+  typeOfSchema,
+} from "./env-types.js";
 export {
   envelopeSchemas,
   KIND_PATTERN,
@@ -158,6 +167,8 @@ export {
   triggerKind,
   triggerSourceKind,
   variableKind,
+  WIDGET_ENTRY_PATTERN,
+  widgetKind,
 } from "./kinds.js";
 export {
   type CheckContext,
@@ -212,8 +223,6 @@ export {
   pageWidgetSchema,
   RELATIVE_RANGES,
   type RelativeRange,
-  registerWidgets,
-  resetWidgets,
   tabsOf,
   topLevel,
   VALUE_FORMAT_STYLES,
@@ -235,9 +244,11 @@ export {
   widgetQueries,
   widgetRegistry,
   widgetTables,
+  workspaceRegistry,
 } from "./page.js";
 export {
   APP_FACING_KINDS,
+  BUILTIN_ROLE_NAMES,
   grants,
   isExplicitKind,
   isGrantablePermission,
@@ -300,3 +311,4 @@ export {
   tenantName,
   tenantOrder,
 } from "./tenant.js";
+export { checkWidget, type WidgetBody } from "./widget.js";

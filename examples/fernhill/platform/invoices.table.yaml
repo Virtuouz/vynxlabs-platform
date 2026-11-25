@@ -1,0 +1,54 @@
+schemaVersion: 1
+body:
+  description: One invoice per finished visit. Paid when the payment provider says so.
+  columns:
+    number:
+      type: text
+      required: true
+      unique: true
+    appointment:
+      type: reference
+      references: appointments
+    client_code:
+      type: text
+      required: true
+    clinic:
+      type: text
+      required: true
+    total:
+      type: integer
+      description: What is owed, in cents.
+      required: true
+    status:
+      type: text
+      description: Unpaid until the payment provider says it was paid.
+      required: true
+      default: unpaid
+    issued_on:
+      type: date
+      required: true
+    paid_at:
+      type: timestamp
+    payment_ref:
+      type: text
+    lines:
+      type: json
+    chased_at:
+      type: timestamp
+  policy:
+    type: rules
+    rules:
+      - allow: read
+        when:
+          column: clinic
+          in: groups
+      - allow: read
+        when:
+          column: client_code
+          equals:
+            attribute: client_id
+  indexes:
+    - - clinic
+      - issued_on
+    - - client_code
+    - - status

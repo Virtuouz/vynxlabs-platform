@@ -62,3 +62,15 @@ Sentences that described a fault, now closed:
 - "The workspace's **Overview** says 'N connection has nothing bound here'": fault fixed (fb): the Overview says "N connection is not set up here", confirmed in the code; the page says so.
 - Test of a Mail connection that is new and not deployed: fault fixed (fa): `boundConnection` uses the binding's own connector, confirmed in the code; the how-to page no longer states the workaround.
 - Connections' New connection panel offers HTTP, Mail and OAuth 2.0 only: fault fixed (fb): Kind lists the workspace's own connectors, confirmed on the instance; the page says so.
+
+## Phase 34, A7 (YAML first), 2026-11-24
+
+Commit `d619bfbd` plus the working tree. Written by the A7 writer; second agent checked 2026-11-24 (a7r). Run on the throwaway instance of lane a7 (http://localhost:8712, Fernhill seeded).
+
+| Claim | Source (file:line) | Checked by | Result |
+| --- | --- | --- | --- |
+| A group is a `.connection_group.yaml` file. | `schemas/files/connection_group.v1.schema.json`; run on `walk3` | writer, 2026-11-24 | holds as run |
+
+### Second check (a7r), 2026-11-24, second agent
+
+Lane a7r build, `pnpm docs:check` passes. Second agent, 2026-11-24. The quoted group text is in `apps/console/src/screens/Execution.tsx`; the file name `<path>.connection_group.yaml` is the one the schema `connection_group.v1` and a built example use (see connections-in-scripts). Holds.

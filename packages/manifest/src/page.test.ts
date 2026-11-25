@@ -1,4 +1,4 @@
-import { defineWidget, WidgetRegistry } from "@volvel/widgets";
+import { defineWidget, type WidgetDefinition, WidgetRegistry } from "@volvel/widgets";
 import { approvals, coreRegistry } from "@volvel/widgets-core";
 import { describe, expect, it } from "vitest";
 import { missingGroups } from "./groups.js";
@@ -223,6 +223,81 @@ describe("pages", () => {
       title: "Stat",
       at: { x: 0, y: 5, w: 3, h: 3 },
     });
+  });
+});
+
+describe("a tenant's widget on a page (phase 34)", () => {
+  const gauge = (version: string, properties: Record<string, unknown> = {}) =>
+    defineWidget({
+      type: "x/gauge",
+      version,
+      title: "Gauge",
+      description: "A needle",
+      category: "understand",
+      icon: "gauge",
+      surfaces: ["app", "dashboard"],
+      data: {},
+      config: {
+        type: "object",
+        properties: {
+          level: { type: "number", "x-volvel": { tab: "display", control: "number" } },
+          ...properties,
+        },
+        additionalProperties: false,
+      },
+      events: {},
+      layout: { min: { w: 2, h: 2 }, default: { w: 3, h: 3 } },
+    } as never);
+  const registry = coreRegistry().withDeployed([
+    {
+      type: "x/gauge",
+      current: "1.1.0",
+      versions: [
+        { version: "1.0.0", definition: gauge("1.0.0") },
+        { version: "1.1.0", definition: gauge("1.1.0") },
+      ],
+    },
+  ]);
+  const placed = (extra: Partial<PageWidget> = {}): PageWidget => ({
+    id: "g",
+    type: "x/gauge",
+    version: "1.0.0",
+    at: { x: 0, y: 0, w: 3, h: 3 },
+    ...extra,
+  });
+  const issues = (widget: PageWidget, using: WidgetRegistry = registry) =>
+    checkInterface(body([widget]), tableOf, using).map((one) => one.message);
+
+  it("is accepted at a deployed version, and drawn from that version's definition", () => {
+    expect(issues(placed())).toEqual([]);
+    expect(issues(placed({ version: "1.1.0" }))).toEqual([]);
+  });
+
+  it("is refused when the workspace has not deployed it, or not that version", () => {
+    expect(issues(placed(), coreRegistry())).toEqual(['there is no widget called "x/gauge"']);
+    expect(issues(placed({ version: "2.0.0" }))).toEqual([
+      'version 2.0.0 of "x/gauge" is not deployed (deployed: 1.0.0, 1.1.0)',
+    ]);
+    const { version: _, ...unpinned } = placed();
+    expect(issues(unpinned)).toEqual([
+      '"x/gauge" is a tenant widget: say the version it was made with (deployed: 1.0.0, 1.1.0)',
+    ]);
+  });
+
+  it("checks the configuration against the version it names", () => {
+    const withNew = registry.withDeployed([]);
+    expect(issues(placed({ config: { level: "high" } }))[0]).toMatch(/number/);
+    expect(withNew.get("x/gauge", "1.0.0")?.version).toBe("1.0.0");
+  });
+
+  it("is placed with the version it was added at", () => {
+    expect(newWidget(registry.get("x/gauge") as WidgetDefinition, "g", [])).toMatchObject({
+      type: "x/gauge",
+      version: "1.1.0",
+    });
+    expect(
+      newWidget(coreRegistry().get("core/stat") as WidgetDefinition, "s", []).version,
+    ).toBeUndefined();
   });
 });
 

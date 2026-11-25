@@ -1,36 +1,4 @@
-import {
-  column,
-  defineApp,
-  defineBinding,
-  defineConnection,
-  defineEvent,
-  defineFlow,
-  defineInterface,
-  defineRole,
-  defineSchedule,
-  defineScript,
-  defineTable,
-  defineTheme,
-  defineVariable,
-  defineWebhook,
-  step,
-  trigger,
-  z,
-} from "@volvel/sdk";
-
-// Where each connection points, and its credential, is set per workspace.
-export const shop = defineConnection({ path: "shop", description: "The web shop's order API." });
-export const erp = defineConnection({ path: "erp", description: "The ERP's import API." });
-export const alerts = defineConnection({
-  path: "alerts",
-  description: "Chat webhook for failures.",
-});
-
-export const batchSize = defineVariable({
-  path: "orders/batch-size",
-  description: "How many orders one sync sends to the ERP.",
-  default: "50",
-});
+import { defineApp, defineScript, z } from "@volvel/sdk";
 
 const Order = z.object({
   id: z.string(),
@@ -40,64 +8,32 @@ const Order = z.object({
   owner: z.uuid().optional(),
 });
 
-/**
- * Every order the flow has handled. Each member sees the orders they look
- * after. Changing this definition and deploying changes the table: a column
- * that is removed here is retired, and its data kept.
- */
-export const orders = defineTable({
-  path: "orders",
-  description: "Every order the flow has handled, and how it ended.",
-  columns: {
-    number: column.text({ required: true, unique: true }),
-    total: column.number({ required: true }),
-    currency: column.text({ required: true }),
-    status: column.text({ required: true, default: "received" }),
-    owner_id: column.uuid(),
-  },
-  policy: { owner: "owner_id" },
-});
-
-/** Published after each sync, for anything that wants to know. */
-export const ordersSynced = defineEvent({
-  path: "orders/synced",
-  description: "A sync from the shop to the ERP finished.",
-  payload: z.object({ sent: z.number(), skipped: z.number() }),
-});
-
-/** Published by anything that learns of a new order. The order flow listens for it. */
-export const orderReceived = defineEvent({
-  path: "orders/received",
-  description: "An order has arrived and needs handling.",
-  payload: Order,
-});
-
 /** Copies new orders from the shop into the ERP. */
 export const syncOrders = defineScript({
   path: "orders/sync",
   description: "Copies new orders from the shop into the ERP.",
   input: z.object({ since: z.iso.datetime().optional() }),
   output: z.object({ sent: z.number(), skipped: z.number() }),
-  connections: [shop, erp],
-  variables: [batchSize],
-  events: [ordersSynced],
+  connections: ["shop", "erp"],
+  variables: ["orders/batch-size"],
+  events: ["orders/synced"],
   timeoutSeconds: 120,
   retries: { limit: 3, delaySeconds: 30 },
   // Two syncs at once would send the same orders twice.
   concurrency: 1,
-  onFailure: { script: "alerts/run-failed", notify: alerts },
+  onFailure: { script: "alerts/run-failed", notify: "alerts" },
   async run(input, ctx) {
     const limit = Number(await ctx.variable("orders/batch-size"));
     const shopApi = await ctx.connection("shop");
     const erpApi = await ctx.connection("erp");
 
     const found = await shopApi.get("/orders", { query: { since: input.since, limit } });
-    const orders = z.array(Order).parse(found.json());
-    ctx.log.info("Fetched orders from the shop", { count: orders.length, limit });
+    const fetched = z.array(Order).parse(found.json());
+    ctx.log.info("Fetched orders from the shop", { count: fetched.length, limit });
 
     let sent = 0;
     let skipped = 0;
-    for (const order of orders) {
+    for (const order of fetched) {
       if (ctx.signal.aborted) break;
       // The ERP ignores an order it has already seen with this key, so a retry is safe.
       const response = await erpApi.post("/import/orders", order, {
@@ -114,20 +50,13 @@ export const syncOrders = defineScript({
   },
 });
 
-export const syncEveryFiveMinutes = defineSchedule({
-  path: "orders/sync-every-five-minutes",
-  script: syncOrders,
-  cron: "*/5 * * * *",
-  timezone: "America/New_York",
-});
-
 /** Receives an order the moment the shop takes it. */
 export const receiveOrder = defineScript({
   path: "orders/receive",
   description: "Sends one order to the ERP as soon as the shop reports it.",
   input: z.object({ secret: z.string(), order: Order }),
   output: z.object({ imported: z.boolean() }),
-  connections: [erp],
+  connections: ["erp"],
   secrets: ["SHOP_WEBHOOK_SECRET"],
   timeoutSeconds: 30,
   retries: { limit: 2, delaySeconds: 5 },
@@ -147,8 +76,6 @@ export const receiveOrder = defineScript({
     return { imported: response.ok };
   },
 });
-
-export const orderPlaced = defineWebhook({ path: "orders/placed", script: receiveOrder });
 
 /** Started when a run fails for the last time. */
 export const runFailed = defineScript({
@@ -183,7 +110,7 @@ export const sendToErp = defineScript({
   description: "Sends one checked order to the ERP.",
   input: z.object({ order: Order }),
   output: z.object({ imported: z.boolean() }),
-  connections: [erp],
+  connections: ["erp"],
   retries: { limit: 2, delaySeconds: 5 },
   async run(input, ctx) {
     const erpApi = await ctx.connection("erp");
@@ -204,9 +131,9 @@ export const recordOrder = defineScript({
   description: "Writes an order and how it ended to the orders table.",
   input: z.object({ order: Order, status: z.string() }),
   output: z.object({ id: z.string() }),
-  tables: [orders],
+  tables: ["orders"],
   async run(input, ctx) {
-    const table = ctx.table(orders);
+    const table = ctx.table("orders");
     const { order } = input;
     const [known] = await table.find({ filter: { column: "number", value: order.id }, limit: 1 });
     if (known) {
@@ -224,259 +151,9 @@ export const recordOrder = defineScript({
   },
 });
 
-/**
- * Handles one order: check it, ask a person about large ones, send it to the
- * ERP, write it to the orders table, and record what went wrong if the ERP refuses it.
- */
-export const handleOrder = defineFlow({
-  path: "orders/handle",
-  description: "Checks an order, asks for approval when it is large, and sends it to the ERP.",
-  nodes: {
-    // Two ways in. Both carry an order.
-    from_event: trigger.event(orderReceived),
-    by_hand: trigger.manual(),
-    check: step.script(checkOrder, { input: "{'order': trigger}" }),
-    route: step.branch({
-      invalid: "!steps.check.output.valid",
-      large: "trigger.total > 1000.0",
-    }),
-    refuse: step.fail("'Order ' + trigger.id + ' was refused: ' + steps.check.output.reason"),
-    approve: step.approval("Approve a large order", {
-      detail: "{'order': trigger.id, 'total': trigger.total, 'currency': trigger.currency}",
-    }),
-    send: step.script(sendToErp, { input: "{'order': trigger}" }),
-    record: step.script(recordOrder, { input: "{'order': trigger, 'status': 'sent'}" }),
-    report: step.set({ order: "trigger.id", problem: "steps.send.error.message" }),
-  },
-  edges: [
-    ["from_event", "check"],
-    ["by_hand", "check"],
-    ["check", "route"],
-    ["route", "refuse", { when: "invalid" }],
-    ["route", "approve", { when: "large" }],
-    ["route", "send", { when: "otherwise" }],
-    ["approve", "send"],
-    ["send", "record"],
-    ["send", "report", { error: true }],
-  ],
-});
-
 // ----- A form anyone can send, handled with no code of the repository's -----
 
-/** What people write to the company through the form below. */
-export const messages = defineTable({
-  path: "messages",
-  description: "Messages sent through the contact form.",
-  columns: {
-    name: column.text({ required: true }),
-    email: column.text(),
-    about: column.text(),
-    message: column.text({ required: true }),
-  },
-});
-
-/** Published for each message, for anything that wants to act on one. */
-export const messageReceived = defineEvent({
-  path: "messages/received",
-  description: "Someone sent the contact form.",
-  payload: z.object({ id: z.string(), about: z.string().optional() }),
-});
-
-/**
- * The contact form. The platform serves it as a page under the tenant's
- * portal, at an address shown with the workspace's triggers. Its two steps
- * are core nodes, which come with the platform: each is handed the one table
- * or event it works on, and reaches nothing else. A mail step would be
- * `core/send-email`, handed an `smtp` connection.
- */
-export const contact = defineFlow({
-  path: "contact",
-  description: "Takes a message from the contact form, keeps it, and says that it arrived.",
-  nodes: {
-    form: trigger.form({
-      title: "Get in touch",
-      description: "We answer within two working days.",
-      fields: [
-        { name: "name", label: "Your name", type: "text", required: true },
-        { name: "email", label: "Email", type: "email", help: "If you would like an answer." },
-        {
-          name: "about",
-          label: "What is it about?",
-          type: "select",
-          options: ["An order", "An invoice", "Something else"],
-        },
-        { name: "message", label: "Your message", type: "textarea", required: true },
-      ],
-      submitLabel: "Send",
-      success: "Thank you. Your message has reached us.",
-    }),
-    keep: step.script("core/table-write", {
-      inputs: {
-        table: "'messages'",
-        values:
-          "{'name': trigger.name, 'message': trigger.message, " +
-          "'email': has(trigger.email) ? trigger.email : null, " +
-          "'about': has(trigger.about) ? trigger.about : null}",
-      },
-      with: { tables: [messages] },
-    }),
-    tell: step.script("core/publish-event", {
-      inputs: {
-        event: "'messages/received'",
-        payload: "{'id': steps.keep.output.row.id}",
-      },
-      with: { events: [messageReceived] },
-    }),
-  },
-  edges: [
-    ["form", "keep"],
-    ["keep", "tell"],
-  ],
-});
-
 // ----- The portal: one app for staff and for customers -----
-
-/** Things customers should know, written by staff. Anyone may read them. */
-export const notices = defineTable({
-  path: "notices",
-  description: "Short messages for customers, shown on the public page.",
-  columns: {
-    title: column.text({ required: true }),
-    body: column.text(),
-  },
-});
-
-/**
- * Invoices, which two kinds of people see differently. Someone in the
- * `finance` group of end users sees every invoice marked for that group. A
- * customer sees the invoices of their own company: the rows whose
- * `customer_id` equals the `customer_id` attribute on their account. Groups
- * and attributes are set under End users in the console, or by the identity
- * provider people sign in through.
- */
-export const invoices = defineTable({
-  path: "invoices",
-  description: "Invoices, seen by the finance group and by each customer for their own company.",
-  columns: {
-    number: column.text({ required: true, unique: true }),
-    total: column.number({ required: true }),
-    customer_id: column.text({ required: true }),
-    visible_to: column.text({ default: "finance" }),
-  },
-  policy: {
-    rules: [
-      { allow: "all", when: { column: "visible_to", in: "groups" } },
-      { allow: "read", when: { column: "customer_id", equals: { attribute: "customer_id" } } },
-    ],
-  },
-});
-
-/**
- * An app with no code of its own: a screen over the invoices, as it would be
- * made in the console under "Apps made here". It is written here to show the
- * shape. A list of invoices, the latest beside it, and what is
- * owed by customer. Each person who opens it is given the rows the table's
- * rules give them, so finance and a customer see different invoices in the
- * same app.
- */
-export const invoiceScreen = defineInterface({
-  path: "screens/invoices",
-  title: "Invoices",
-  pages: [
-    {
-      id: "invoices",
-      title: "Invoices",
-      widgets: [
-        {
-          id: "list",
-          type: "core/table",
-          title: "Invoices",
-          at: { x: 0, y: 0, w: 8, h: 9 },
-          data: {
-            rows: {
-              source: { visual: { table: "invoices", sort: [{ by: "number" }] } },
-            },
-          },
-          config: {
-            columns: [
-              { column: "number" },
-              { column: "customer_id", label: "Customer" },
-              { column: "total" },
-            ],
-          },
-          on: { rowClick: { steps: [{ do: "open", page: "invoice", record: "event" }] } },
-        },
-        {
-          id: "latest",
-          type: "core/list",
-          title: "Latest invoices",
-          at: { x: 8, y: 0, w: 4, h: 9 },
-          data: {
-            rows: {
-              source: {
-                visual: {
-                  table: "invoices",
-                  sort: [{ by: "created_at", descending: true }],
-                  limit: 10,
-                },
-              },
-            },
-          },
-          config: { title: "number", subtitle: "customer_id", right: "total" },
-          on: { rowClick: { steps: [{ do: "open", page: "invoice", record: "event" }] } },
-        },
-        {
-          id: "owed",
-          type: "core/chart",
-          title: "Owed by customer",
-          at: { x: 0, y: 9, w: 12, h: 8 },
-          data: {
-            rows: {
-              source: {
-                visual: {
-                  table: "invoices",
-                  groupBy: [{ column: "customer_id" }],
-                  measures: [{ fn: "sum", column: "total", as: "owed" }],
-                },
-              },
-            },
-          },
-          config: { mark: "bar" },
-        },
-      ],
-    },
-    {
-      // The invoice chosen in the table or the list, beside the page.
-      id: "invoice",
-      title: "The invoice chosen",
-      kind: "sheet",
-      record: { table: "invoices" },
-      widgets: [
-        {
-          id: "detail",
-          type: "core/detail",
-          at: { x: 0, y: 0, w: 12, h: 8 },
-          data: { record: { source: { record: "this" } } },
-          config: {
-            heading: "number",
-            fields: [
-              { column: "customer_id", label: "Customer" },
-              { column: "total" },
-              { column: "visible_to", label: "Shown to" },
-            ],
-          },
-        },
-      ],
-    },
-  ],
-});
-
-export const invoiceApp = defineApp({
-  path: "invoice-desk",
-  title: "Invoices",
-  description: "Invoices, as each person may see them.",
-  interface: "screens/invoices",
-});
 
 /**
  * A customer asks for an order from the portal. The script runs as the
@@ -492,23 +169,17 @@ export const requestOrder = defineScript({
     currency: z.string().length(3),
   }),
   output: z.object({ id: z.string() }),
-  tables: [orders],
+  tables: ["orders"],
   async run(input, ctx) {
     const who = ctx.run.startedBy;
     if (who.id === null) throw new Error("An order is requested by a person.");
     const row = await ctx
-      .table(orders)
+      .table("orders")
       .as(who.id)
       .insert({ ...input, status: "requested" });
     ctx.log.info("Order requested", { number: input.number });
     return { id: row.id };
   },
-});
-
-/** Acme's colors, where they differ from the tenant's branding. */
-export const theme = defineTheme({
-  tokens: { action: "#0b6e4f", "action-soft": "#dff3ea", "radius-panel": "14px" },
-  dark: { action: "#5fd3a6", "action-ink": "#04261a", "action-soft": "#143a2c" },
 });
 
 /**
@@ -531,50 +202,3 @@ export const publicPage = defineApp({
 });
 
 // Who may open what. Staff need nothing here: their roles already let them read.
-
-/** Customers open the portal and read and write their own orders. */
-export const customersOpenPortal = defineBinding({
-  path: "access/customers-portal",
-  role: "portal_user",
-  principal: { type: "end_users" },
-  resource: portal,
-});
-export const customersReadOrders = defineBinding({
-  path: "access/customers-orders",
-  role: "portal_user",
-  principal: { type: "end_users" },
-  resource: orders,
-});
-
-export const orderRequester = defineRole({
-  path: "roles/order-requester",
-  name: "order_requester",
-  description: "May start a script it is bound at.",
-  permissions: ["run:write"],
-});
-export const customersRequestOrders = defineBinding({
-  path: "access/customers-request",
-  role: orderRequester,
-  principal: { type: "end_users" },
-  resource: requestOrder,
-});
-
-export const publicReader = defineRole({
-  path: "roles/public-reader",
-  name: "public_reader",
-  description: "Opens an app and reads rows, where it is bound.",
-  permissions: ["app:read", "data:read"],
-});
-/** Binding to `anonymous` is what makes the page and the notices public. */
-export const anyoneOpensPublicPage = defineBinding({
-  path: "access/public-page",
-  role: publicReader,
-  principal: { type: "anonymous" },
-  resource: publicPage,
-});
-export const anyoneReadsNotices = defineBinding({
-  path: "access/public-notices",
-  role: publicReader,
-  principal: { type: "anonymous" },
-  resource: notices,
-});

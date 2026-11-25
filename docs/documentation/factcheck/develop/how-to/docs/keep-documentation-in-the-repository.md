@@ -26,3 +26,15 @@ Checked by: second agent, 2026-11-23. Every label, quoted message and limit in t
 | `volvel build` refuses a missing picture and the product's own topic. | run: `volvel build` passed; `volvel deploy` refused both ("The picture "img/absent.png" is not there: no file at img/absent.png.", "The topic "build-docs" is one of the product's own.") | second agent, 2026-11-23 | corrected: the page said the build checks pictures and product names; the deploy does (packages/cli/src/build.ts:507 "which a build does not know") |
 | The deploy and the console's list: the pages show **repository**; the site and its picture answer 200. | run: `volvel deploy --tenant d31chk --workspace work` | second agent, 2026-11-23 | holds; the deploy refuses to delete console-made resources without --allow-delete, now in the page |
 | `moved_from` paths. | packages/docs-engine/src/set.ts:487-510, among.ts:149; run: `moved_from: [t1]` on page `handbook/t1` is its own path | second agent, 2026-11-23 | corrected: the paths are inside the site, not the whole path |
+
+## Phase 34, A7 (YAML first), 2026-11-24
+
+Commit `d619bfbd` plus the working tree. Written by the A7 writer; second agent checked 2026-11-24 (a7r). Run on the throwaway instance of lane a7 (http://localhost:8712, Fernhill seeded).
+
+| Claim | Source (file:line) | Checked by | Result |
+| --- | --- | --- | --- |
+| App and binding files build and deploy: app `handbook`, binding `access/handbook`. | run on `walk6` (`examples/a7conv2`) | writer, 2026-11-24 | holds as run |
+
+### Second check (a7r), 2026-11-24, second agent
+
+Lane a7r build (a7 merged), throwaway instance http://localhost:8722 (database a7r34, Fernhill seeded), lane CLI `packages/cli/dist/bin.js`. `pnpm docs:check` passes. The app and binding files validate against their schemas. The build of the app file alone is refused until a `handbook` folder has a page, as the page says.

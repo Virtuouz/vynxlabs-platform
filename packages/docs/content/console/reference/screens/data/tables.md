@@ -8,7 +8,7 @@ moved_from:
 
 The **Tables** screen lists the tables of one workspace. A table holds rows the workspace owns. Its columns have [types](../../column-types), and who may read or write its rows is decided by roles and by the table's rules for who sees rows. Opening a table shows its page, with two views, **Rows** and **Definition**.
 
-A table is **managed in** the repository or in the console. A table written with `defineTable` in the tenant's repository is managed in the repository and changes when a version is deployed. A table made on this screen is managed in the console. The console has no screen that changes a repository table's columns: it says "This table is defined in the tenant's repository. To change it, change `defineTable` there and deploy." Rows of either kind are edited here.
+A table is managed as **Files** or as **Code**. A table made on this screen, or written as a `<path>.table.yaml` file in the tenant's repository, is **Files**: the console and the repository both edit it. A table written with `defineTable` in the repository is **Code**: it changes when a version is deployed, and the console does not change its columns. In a dev workspace the console can take a table of Code over, from its **Definition** view, and then it is Files. Rows of either kind are edited here. See [Definitions in code](../../../../develop/explanation/cli/definitions-in-code).
 
 Nothing is dropped by a deploy. What leaves a definition is retired and its data is kept.
 
@@ -24,7 +24,7 @@ The list has a description line, a **Create table** button and a table with thes
 | --- | --- |
 | **Table** | The table's name, as a link to its page. A retired table has a **retired** pill after the name. |
 | **What it holds** | The table's description. |
-| **Managed in** | **Repository** or **Console**. A retired table says where it was managed. |
+| **Managed in** | **Files** or **Code**. A retired table says how it was managed. |
 | **Who sees rows** | **Everyone with access**, **Each person sees their own rows (column)**, or **By N rules**. |
 | **Columns** | How many columns the table has, not counting `id`, `created_at` and `updated_at`. |
 | **Rows** | How many rows it holds. |
@@ -33,7 +33,7 @@ Two retired tables can have had one name. The list opens the one you chose by it
 
 ### Create table
 
-**Create table** opens a dialog. A table made here is managed in the console. It needs `resource:write`; without it the button is disabled and its tooltip says what is needed.
+**Create table** opens a dialog. A table made here is managed as files, which the console and the repository both edit. It needs `resource:write`; without it the button is disabled and its tooltip says what is needed.
 
 | Field | What it takes |
 | --- | --- |
@@ -58,11 +58,11 @@ The dialog refuses, and sends nothing, for an empty column name ("Name every col
 
 ## A table's page
 
-The page's title is the table's name. Under it: its description, how many rows it holds, the sentence for who sees rows, and where it is managed ("Managed in the repository" or "Managed in the console"). A retired table says "Was managed in the …". Documentation pages that are about the table are shown under the title.
+The page's title is the table's name. Under it: its description, how many rows it holds, the sentence for who sees rows, and how it is managed ("Managed as files." or "Managed as code."). A retired table says "Was managed as files." or "Was managed as code.". Documentation pages that are about the table are shown under the title.
 
 The page fills the window. The rows are the one thing that scrolls, with the column headings pinned above them, and the page around them stays still. The **Rows** and **Definition** views both work this way, on a phone as on a desktop. The view is in the address (`?view=definition`).
 
-A retired table has no tabs. It shows a notice, "This table is retired. It left its definition, so nothing can read or write it, and its N rows are kept." (it goes on to say how the table comes back), with **Bring back** (only for a table managed in the console) and **Delete for good**, and its definition below, read only. See Retired tables below.
+A retired table has no tabs. It shows a notice, "This table is retired. It left its definition, so nothing can read or write it, and its N rows are kept." (it goes on to say how the table comes back), with **Bring back** (only for a table managed as files) and **Delete for good**, and its definition below, read only. See Retired tables below.
 
 ## Rows
 
@@ -135,7 +135,19 @@ Two fields have more to them:
 
 ## Definition
 
-The **Definition** view is where a table made in the console is changed. It is off for a table managed in the repository, which shows the notice quoted above, and for a person without `resource:write`, who sees a line that says what is needed. Everything else on the view is shown, read only.
+The **Definition** view is where a table managed as files is changed. A table of Code shows the notice below instead, and a person without `resource:write` sees a line that says what is needed. Everything else on the view is shown, read only.
+
+### Take over a table of Code
+
+A table that a deploy defines with `defineTable` shows this notice on its **Definition** view: "This table is defined in code, in the tenant's repository. To change it, change `defineTable` there and deploy, or take it over here: it is then managed as files, and you remove its definition from the code after a volvel pull."
+
+| Where | What you see |
+| --- | --- |
+| A dev workspace, with `resource:write` | The button **Take over in the console**. It asks "Take over *table* in the console?" The text says from then on the console manages the table as files and you can change it there, that its definition stays in the code until you remove it there, that `volvel pull` writes its file and says where it is defined, that a deploy that has both is refused as defined twice, and that a deploy of the code alone is refused too if you changed the table here, until you pull, or deploy with `--force`, which takes it back. It adds that scripts typed against the table's `defineTable` export should use `ctx.table("<name>")`, which is typed from the generated types. See [Definitions in code](../../../../develop/explanation/cli/definitions-in-code). The buttons are **Take over** and cancel. Done, the console says "*table* is managed in the console now." and the view is editable. |
+| A production workspace | The notice ends ". A production workspace changes by a deploy only." and there is no button. |
+| Without `resource:write` | The notice and the line that says what is needed, and no button. |
+
+The take-over saves at once: a table has no draft, so there is nothing to deploy. Its rows are not touched. **Retire table** is not offered for a table of Code: take it over first. See [Keep the console and the repository in step](../../../../develop/how-to/cli/keep-in-step) for what a later deploy does.
 
 Every change saves as you make it, and takes effect at once, except **Rename table**, which is a draft. It is a change to the table's definition, so what a change would lose is refused, with the reason on the dialog.
 

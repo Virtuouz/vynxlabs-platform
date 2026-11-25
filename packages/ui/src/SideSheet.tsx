@@ -5,6 +5,7 @@ import { firstField } from "./Dialog.tsx";
 import { InOverlay } from "./overlay.ts";
 import { useOpening } from "./presence.tsx";
 import { useReturnFocus } from "./returnFocus.ts";
+import { CodeText } from "./Term.tsx";
 
 export interface SideSheetProps {
   open: boolean;
@@ -205,7 +206,11 @@ export function SideSheet({
                   <Base.Title className="m-0 text-title font-semibold">{title}</Base.Title>
                   {description ? (
                     <Base.Description className="m-0 text-meta text-ink-muted">
-                      {description}
+                      {typeof description === "string" ? (
+                        <CodeText>{description}</CodeText>
+                      ) : (
+                        description
+                      )}
                     </Base.Description>
                   ) : null}
                 </div>

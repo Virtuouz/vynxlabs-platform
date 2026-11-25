@@ -1,5 +1,5 @@
 import { observeElementRect, useVirtualizer } from "@tanstack/react-virtual";
-import { Button, Menu, type MenuItem, Skeleton } from "@volvel/ui";
+import { Button, EmptyState, Menu, type MenuItem, Skeleton } from "@volvel/ui";
 import { MoreHorizontal, Rows3 } from "lucide-react";
 import {
   type CSSProperties,
@@ -17,7 +17,6 @@ import { usePreference } from "../prefs.ts";
 import { useRestoredScroll } from "../router.tsx";
 import { isTyping, singleKeysOn } from "./keys.ts";
 import { ErrorState, useDelayed } from "./LoadState.tsx";
-import { EmptyCanvas } from "./layout.tsx";
 import { Breakable, fullOnHover } from "./Truncate.tsx";
 
 /**
@@ -455,20 +454,25 @@ export function DataTable<Row>(props: DataTableProps<Row>) {
     );
   } else if (rows.length === 0) {
     if (!filtered && !isEmptyContent(empty)) return <>{empty}</>;
+    // The same empty state as the screens made by ListScreen (Tables, Scripts, Connections): left,
+    // in a dashed box, with its action under it.
     body = (
       <div className="p-4 md:p-6">
         {filtered ? (
-          <EmptyCanvas
+          <EmptyState
             title="Nothing matches these filters"
-            text="Change or clear the filters to see more."
             action={
               <Button size="small" onClick={filtered.onClear}>
                 Clear filters
               </Button>
             }
-          />
+          >
+            Change or clear the filters to see more.
+          </EmptyState>
         ) : isEmptyContent(empty) ? (
-          <EmptyCanvas title={empty.title} text={empty.text} action={empty.action} />
+          <EmptyState title={empty.title} action={empty.action}>
+            {empty.text}
+          </EmptyState>
         ) : (
           empty
         )}
@@ -528,7 +532,7 @@ export function DataTable<Row>(props: DataTableProps<Row>) {
                 const edges = edge(index, cells.length);
                 if (cell.kind === "check")
                   return (
-                    <th key="check" scope="col" className={`w-10 py-2 ${edges}`}>
+                    <th key="check" scope="col" className={`w-10 py-1 ${edges}`}>
                       <input
                         type="checkbox"
                         aria-label="Select all shown"
@@ -541,7 +545,7 @@ export function DataTable<Row>(props: DataTableProps<Row>) {
                   );
                 if (cell.kind === "actions")
                   return (
-                    <th key="actions" scope="col" className={`w-12 py-2 ${edges}`}>
+                    <th key="actions" scope="col" className={`w-12 py-1 ${edges}`}>
                       <span className="sr-only">Actions</span>
                     </th>
                   );
@@ -561,7 +565,7 @@ export function DataTable<Row>(props: DataTableProps<Row>) {
                         : undefined
                     }
                     // A width asked for is for a table with room: on a phone the columns take what they need, or the one beside it is squeezed.
-                    className={`whitespace-nowrap px-3 py-2 font-medium ${column.wide ? "w-[14rem]" : column.width ? `${column.width} max-sm:w-auto` : ""} ${shownAt(column.priority)} ${
+                    className={`px-3 py-1 font-medium ${column.wide ? "w-[14rem]" : column.width ? `${column.width} max-sm:w-auto` : ""} ${shownAt(column.priority)} ${
                       column.align === "end" ? "text-right" : ""
                     } ${edges}`}
                   >

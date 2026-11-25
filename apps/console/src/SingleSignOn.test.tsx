@@ -99,7 +99,12 @@ test("a provider is connected, tried out, given a domain, turned on and required
         verifiedAt: null,
         checkedAt: null,
         problem: null,
-        record: { name: "_vx-challenge.acme.example", value: "vx-domain=abc" },
+        record: {
+          name: "_vx-challenge.acme.example",
+          host: "_vx-challenge",
+          zone: "acme.example",
+          value: "vx-domain=abc",
+        },
       },
     ];
     return [201, domains[0]];
@@ -169,6 +174,11 @@ test("a provider is connected, tried out, given a domain, turned on and required
   });
   fireEvent.click(screen.getByRole("button", { name: "Add domain" }));
   await screen.findByText("vx-domain=abc");
+  expect(screen.getByText("_vx-challenge")).toBeTruthy();
+  expect(screen.getByText("_vx-challenge.acme.example")).toBeTruthy();
+  expect(screen.getByText("Full name")).toBeTruthy();
+  expect(screen.getByText(/use the full name/)).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Copy host" })).toBeTruthy();
   expect(screen.getByText("Not proved")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Check now" }));
   await screen.findByText("Proved");

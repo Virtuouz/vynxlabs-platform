@@ -393,7 +393,9 @@ function Cell({
     onClose,
     overRecord,
   } = ctx;
-  const definition = entry?.definition;
+  const definition =
+    (widget.version !== undefined ? entry?.versions?.get(widget.version) : undefined) ??
+    entry?.definition;
   // A container is drawn on the page as it is, its heading and what it holds, with no card.
   const container = place !== undefined;
   // A widget drawn on the page as it is, with no card: a button.
@@ -502,6 +504,10 @@ function Cell({
         row: id ? lookup(id) : undefined,
         group: groupOf(payload),
         input: groupInput,
+        // A tenant's frame can send an event with no click: what it would change is confirmed first.
+        ...(widget.type.startsWith("x/")
+          ? { gate: { widget: name, event, label: definition.events[event]?.label } }
+          : {}),
         ...amongOf(),
       });
     }
@@ -708,11 +714,13 @@ function Cell({
             <View
               config={config}
               data={reading.data}
+              {...(widget.type.startsWith("x/") ? { state: reading.state } : {})}
               size={{ w: at.w, h: at.h, narrow }}
               emit={emit}
               building={building}
               {...(building && ctx.viewing ? { viewing: true } : {})}
               {...(widget.title ? { title: widget.title } : {})}
+              {...(widget.version ? { version: widget.version } : {})}
               {...extras}
               {...(place ? { place } : {})}
               {...tab}

@@ -1,0 +1,7 @@
+schemaVersion: 1
+body:
+  role: runs_script
+  principal:
+    type: end_user_group
+    key: front-desk
+  resource: appointments/free-times

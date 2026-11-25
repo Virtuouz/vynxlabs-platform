@@ -1,0 +1,9 @@
+schemaVersion: 1
+body:
+  description: Short messages for customers, shown on the public page.
+  columns:
+    title:
+      type: text
+      required: true
+    body:
+      type: text

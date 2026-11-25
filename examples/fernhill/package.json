@@ -10,9 +10,10 @@
     "agent": "node setup/agent.mjs"
   },
   "dependencies": {
-    "@volvel/sdk": "workspace:*",
     "@volvel/app": "workspace:*",
+    "@volvel/sdk": "workspace:*",
     "@volvel/ui": "workspace:*",
+    "@volvel/widget-frame": "workspace:*",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"
   },

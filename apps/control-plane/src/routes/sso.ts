@@ -5,7 +5,7 @@ import type {
 import { newId } from "@volvel/db";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import { Type } from "typebox";
-import { challengeMet, challengeOf } from "../kernel/apps/challenge.js";
+import { challengeOf, challengeProblem } from "../kernel/apps/challenge.js";
 import { actorOf } from "../kernel/apps/sessions.js";
 import { ANONYMOUS } from "../kernel/audit.js";
 import { consolePath } from "../kernel/auth.js";
@@ -99,9 +99,20 @@ const DomainView = Type.Object({
     description:
       "When a check first did not find the record of a domain that was proved. It stays proved, from `verifiedAt`; this says it may no longer be. Empty while the record is found.",
   }),
-  record: Type.Union([Type.Object({ name: Type.String(), value: Type.String() }), Type.Null()], {
-    description: "The TXT record that proves the domain. Null for a provider of the instance.",
-  }),
+  record: Type.Union(
+    [
+      Type.Object({
+        name: Type.String(),
+        host: Type.String(),
+        zone: Type.String(),
+        value: Type.String(),
+      }),
+      Type.Null(),
+    ],
+    {
+      description: "The TXT record that proves the domain. Null for a provider of the instance.",
+    },
+  ),
 });
 const GroupMap = Type.Object({
   value: Type.String({
@@ -469,20 +480,16 @@ export function ssoRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         async ({ ctx, params }) => {
           const current = await provider(params as { p: string });
           const domain = await findDomain(db, current, (params as { d: string }).d);
-          const met =
-            current.tenantId === null ||
-            (await challengeMet(kernel, current.tenantId, domain.domain));
-          const record = current.tenantId
-            ? challengeOf(kernel, current.tenantId, domain.domain)
-            : null;
+          const { met, problem } =
+            current.tenantId === null
+              ? { met: true, problem: null }
+              : await challengeProblem(kernel, current.tenantId, domain.domain);
           const row = await ctx.mutate(async (trx, audit) => {
             const updated = await trx
               .updateTable("identity_domain")
               .set({
                 checked_at: new Date(),
-                check_error: met
-                  ? null
-                  : `No TXT record ${record?.name} with the value ${record?.value} was found.`,
+                check_error: met ? null : problem,
                 ...(met && !domain.verified_at ? { verified_at: new Date() } : {}),
                 // A record not found after it was proved is said apart, from the first time it was missed.
                 record_gone_at: met

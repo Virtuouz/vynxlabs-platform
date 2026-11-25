@@ -113,7 +113,7 @@ export function PageDetails({
   ];
 
   return (
-    <Panel className="flex flex-col gap-5 p-4 max-sm:border-0 max-sm:bg-transparent max-sm:p-0">
+    <Panel className="@container flex flex-col gap-5 p-4 max-sm:border-0 max-sm:bg-transparent max-sm:p-0">
       <div className="grid gap-4 md:grid-cols-2">
         <TextField
           name="title"
@@ -218,7 +218,7 @@ export function PageDetails({
               would look for first.
             </p>
           ) : null}
-          <div className="flex max-w-[24rem] items-end gap-2">
+          <div className="flex max-w-[24rem] items-start gap-2">
             <div className="min-w-0 flex-1">
               <TextField
                 name="subject-add"
@@ -244,6 +244,8 @@ export function PageDetails({
             </div>
             <Button
               size="small"
+              // Level with the box, not with the hint under it: the label above is about this tall.
+              className="mt-[calc(1.5rem*var(--vx-type-scale,1))]"
               disabled={full || subjectOf(typedSubject) === ""}
               onClick={() => addSubject(typedSubject)}
             >
@@ -288,12 +290,13 @@ export function PageDetails({
             <div
               // biome-ignore lint/suspicious/noArrayIndexKey: a term has no name of its own until its id is typed, and is changed in place.
               key={at}
-              className="grid items-start gap-2 md:grid-cols-[10rem_10rem_12rem_1fr_auto]"
+              // By the room the pane has, not the screen: beside the source (Split) it is about 600px, where
+              // four fields and a button in a line left "What it means" a few characters wide.
+              className="grid items-end gap-2 @xl:grid-cols-3 @4xl:grid-cols-[10rem_10rem_12rem_1fr_auto]"
             >
               <TextField
                 name={`term-${at}-term`}
                 label="Term"
-                labelHidden={at > 0}
                 value={text(term.term)}
                 placeholder="RMA"
                 onChange={(value) => change({ term: value })}
@@ -301,7 +304,6 @@ export function PageDetails({
               <TextField
                 name={`term-${at}-id`}
                 label="Id"
-                labelHidden={at > 0}
                 value={text(term.id)}
                 placeholder="rma"
                 onChange={(value) => change({ id: value })}
@@ -309,24 +311,24 @@ export function PageDetails({
               <TextField
                 name={`term-${at}-aliases`}
                 label="Also written"
-                labelHidden={at > 0}
                 required={false}
                 value={list<string>(term.aliases).join(", ")}
                 placeholder="RMAs, return number"
                 onChange={(value) => change({ aliases: parts(value) })}
               />
-              <TextField
-                name={`term-${at}-short`}
-                label="What it means"
-                labelHidden={at > 0}
-                value={text(term.short)}
-                maxLength={500}
-                onChange={(value) => change({ short: value })}
-              />
+              <div className="@xl:col-span-3 @4xl:col-span-1">
+                <TextField
+                  name={`term-${at}-short`}
+                  label="What it means"
+                  value={text(term.short)}
+                  maxLength={500}
+                  onChange={(value) => change({ short: value })}
+                />
+              </div>
               <Button
                 size="small"
                 variant="quiet"
-                className={at === 0 ? "md:mt-6" : ""}
+                className="@xl:col-span-3 @xl:justify-self-end @4xl:col-span-1"
                 aria-label={`Remove ${named}`}
                 onClick={() => set({ terms: terms.filter((_, index) => index !== at) })}
               >

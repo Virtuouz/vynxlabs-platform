@@ -7,6 +7,7 @@ import {
   PAGE_KINDS,
   PAGE_SIZES,
   widgetRegistry,
+  workspaceRegistry,
 } from "@volvel/manifest";
 import { expect, test } from "vitest";
 import { buildRepository } from "./build.js";
@@ -24,7 +25,27 @@ test("Clinic operations is a valid app that uses every widget, page kind and siz
   );
   expect(manifest).toBeDefined();
   const body = manifest?.body as unknown as InterfaceBody;
-  expect(checkInterface(body)).toEqual([]);
+  // The repository's own widgets are what the workspace has deployed.
+  const own = built.bundle.manifests
+    .filter((one) => one.kind === "widget")
+    .map((one) => {
+      const definition = one.body as unknown as Parameters<typeof workspaceRegistry>[0] extends
+        | Iterable<infer D>
+        | undefined
+        ? D extends { versions: (infer V)[] }
+          ? V extends { definition: infer X }
+            ? X
+            : never
+          : never
+        : never;
+      return {
+        type: definition.type,
+        current: definition.version,
+        versions: [{ version: definition.version, definition }],
+      };
+    });
+  expect(own.map((one) => one.type)).toEqual(["x/clinic-load"]);
+  expect(checkInterface(body, undefined, workspaceRegistry(own))).toEqual([]);
 
   expect(body.pages.length).toBeLessThanOrEqual(MAX_PAGES);
   for (const page of body.pages) {

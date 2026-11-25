@@ -530,7 +530,7 @@ function RailItem({
   onReveal?: () => void;
   revealed?: boolean;
 }) {
-  const look = `relative flex w-14 flex-col items-center gap-1 rounded-control pt-[7px] pb-1.5 no-underline ${
+  const look = `relative flex w-[calc(3.5rem*var(--vx-type-growth,1))] flex-col items-center gap-1 rounded-control pt-[7px] pb-1.5 no-underline ${
     current
       ? "bg-selected text-ink"
       : revealed
@@ -1033,7 +1033,7 @@ export function Shell({
       </a>
       <nav
         aria-label="Main"
-        className="hidden w-16 shrink-0 flex-col items-center gap-1 border-line border-r bg-structure py-3 md:flex"
+        className="hidden w-[calc(4rem*var(--vx-type-growth,1))] shrink-0 flex-col items-center gap-1 border-line border-r bg-structure py-3 md:flex"
       >
         <Link to="/" className="mb-4 flex no-underline">
           <BrandMark />
@@ -1049,7 +1049,7 @@ export function Shell({
       <Appear
         open={flyout}
         ref={flown}
-        className="absolute inset-y-0 left-16 layer-sheet hidden w-56 flex-col border-line border-r bg-structure shadow-overlay transition-[opacity,translate] motion-base data-[ending-style]:-translate-x-2 data-[starting-style]:-translate-x-2 data-[ending-style]:opacity-0 data-[starting-style]:opacity-0 md:flex"
+        className="absolute inset-y-0 left-[calc(4rem*var(--vx-type-growth,1))] layer-sheet hidden w-56 flex-col border-line border-r bg-structure shadow-overlay transition-[opacity,translate] motion-base data-[ending-style]:-translate-x-2 data-[starting-style]:-translate-x-2 data-[ending-style]:opacity-0 data-[starting-style]:opacity-0 md:flex"
       >
         <nav aria-label="Sections" className="flex min-h-0 flex-1 flex-col">
           <div className="flex h-12 shrink-0 items-center border-line border-b px-4">
@@ -1130,11 +1130,11 @@ export function Shell({
                 <>
                   <Link
                     to={`/t/${tenantId}`}
-                    className="hidden truncate text-ink-muted no-underline underline-offset-2 hover:text-ink hover:underline lg:inline"
+                    className="hidden truncate text-ink-muted no-underline underline-offset-2 hover:text-ink hover:underline min-[1440px]:inline"
                   >
                     {tenant?.name ?? "Tenant"}
                   </Link>
-                  <span aria-hidden="true" className="hidden items-center lg:flex">
+                  <span aria-hidden="true" className="hidden items-center min-[1440px]:flex">
                     <Wire />
                     <Junction
                       kind={workspace?.type === "production" ? "production" : "here"}
@@ -1145,7 +1145,7 @@ export function Shell({
                   {/* The whole name is the way to another workspace: nobody has to aim for the arrows. */}
                   <Menu
                     ariaLabel="Switch workspace"
-                    triggerClassName="flex min-w-0 items-center gap-1 rounded-control border border-line py-[3px] pr-1.5 pl-2 font-medium text-ink hover:bg-surface"
+                    triggerClassName="flex max-w-[12rem] shrink-0 items-center gap-1 rounded-control border border-line py-[3px] pr-1.5 pl-2 font-medium text-ink hover:bg-surface"
                     label={
                       <>
                         <span className="truncate">{workspace?.name ?? "Workspace"}</span>
@@ -1166,14 +1166,17 @@ export function Shell({
                   />
                   {workspace ? <EnvTag type={workspace.type} /> : null}
                   {workspace?.triggersPaused || workspace?.pausedByInstance ? (
-                    <span className="hidden lg:inline-flex">
+                    <span
+                      className="hidden lg:inline-flex max-xl:[&_[data-label]]:sr-only"
+                      title={workspace.pausedByInstance ? "Paused by the instance" : "Paused"}
+                    >
                       <StatePill state="paused">
                         {workspace.pausedByInstance ? "Paused by the instance" : "Paused"}
                       </StatePill>
                     </span>
                   ) : null}
                   {ws?.linked ? (
-                    <span className="hidden items-center gap-2 lg:flex">
+                    <span className="hidden items-center gap-2 min-[1536px]:flex">
                       <span aria-hidden="true" className="flex items-center gap-1">
                         <Wire dashed width={14} />
                         <Junction
@@ -1260,7 +1263,7 @@ export function Shell({
               )}
             </nav>
           </div>
-          <div className="flex shrink-0 items-center gap-2">
+          <div className="flex shrink-0 items-center gap-2 whitespace-nowrap">
             {tenantId ? <OperatorMark /> : null}
             {tenantId ? <LiveIndicator /> : null}
             {tenantId && workspaceId && drafts > 0 ? (
@@ -1269,8 +1272,9 @@ export function Shell({
                 className="hidden h-7 items-center gap-1.5 rounded-control border border-line px-3 text-meta text-ink no-underline hover:bg-surface lg:flex"
               >
                 <Junction kind="pending" size={5} />
-                <span className="font-mono">{drafts}</span> draft{drafts === 1 ? "" : "s"}
-                <span className="text-action">Review</span>
+                <span className="font-mono">{drafts}</span>
+                <span className="max-xl:sr-only">draft{drafts === 1 ? "" : "s"}</span>
+                <span className="text-action max-xl:sr-only">Review</span>
               </Link>
             ) : null}
             {tenantId && workspaceId && failed > 0 ? (
@@ -1279,7 +1283,8 @@ export function Shell({
                 className="hidden h-7 items-center gap-1.5 rounded-control border border-danger/40 px-3 text-meta text-ink no-underline hover:bg-danger-soft sm:flex"
               >
                 <CircleX aria-hidden="true" size={14} className="text-danger" />
-                <span className="font-mono">{failed}</span> failed run{failed === 1 ? "" : "s"}
+                <span className="font-mono">{failed}</span>
+                <span className="max-xl:sr-only">failed run{failed === 1 ? "" : "s"}</span>
               </Link>
             ) : null}
             <Tooltip label="Help for this page" keys="F1">
@@ -1299,11 +1304,13 @@ export function Shell({
               type="button"
               onClick={openPalette}
               aria-label="Search or jump to"
-              className="flex h-8 items-center gap-2 rounded-control text-meta text-ink-subtle hover:text-ink md:h-7 md:w-56 md:border md:border-line md:bg-structure md:pr-1.5 md:pl-3"
+              className="flex h-8 items-center gap-2 rounded-control text-meta whitespace-nowrap text-ink-subtle hover:text-ink md:h-7 md:w-[calc(14rem*var(--vx-type-scale,1))] md:min-w-0 md:shrink md:border md:border-line md:bg-structure md:pr-1.5 md:pl-3"
             >
               <Search aria-hidden="true" size={16} className="mx-1.5 md:mx-0" />
-              <span className="hidden flex-1 text-left md:inline">Search or jump to…</span>
-              <kbd className="hidden rounded-inner border border-line px-1 font-mono text-tag md:inline">
+              <span className="hidden min-w-0 flex-1 truncate text-left md:inline">
+                Search or jump to…
+              </span>
+              <kbd className="hidden shrink-0 rounded-inner border border-line px-1 font-mono text-tag md:inline">
                 {formatCombo("Mod+K")}
               </kbd>
             </button>

@@ -28,3 +28,15 @@ Checked by: second agent, 2026-11-23. Method: every label and quoted text search
 | An event's own page (events/opchk/pinged): Publish it, Change its declaration, who listens. | ObjectPages.tsx:395-425; run | holds as run |
 | In production: "This is production. Publishing starts what listens…" and the question "Publish opchk/pinged in production?" with "Every trigger that listens for it starts its work now, with real data.", Do not publish, Publish in production. | run | holds as run |
 | Links to the platform events point to the generated page develop/reference/platform-events. | docs:check | done |
+
+## Phase 34, A7 (YAML first), 2026-11-24
+
+Commit `d619bfbd` plus the working tree. Written by the A7 writer; second agent checked 2026-11-24 (a7r). Run on the throwaway instance of lane a7 (http://localhost:8712, Fernhill seeded).
+
+| Claim | Source (file:line) | Checked by | Result |
+| --- | --- | --- | --- |
+| Empty-state texts quoted as the console words them. | `apps/console/src/screens/Operate.tsx:923`; `PublishEvent.tsx:93` | writer, 2026-11-24 | holds as read |
+
+### Second check (a7r), 2026-11-24, second agent
+
+Lane a7r build, `pnpm docs:check` passes. Second agent, 2026-11-24. The quotes are in `apps/console/src/screens/Operate.tsx` and `PublishEvent.tsx` as written today (a8 is changing them). Holds for this build.

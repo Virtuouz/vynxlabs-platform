@@ -1,0 +1,14 @@
+schemaVersion: 1
+body:
+  description: A sync from the shop to the ERP finished.
+  payload:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    properties:
+      sent:
+        type: number
+      skipped:
+        type: number
+    required:
+      - sent
+      - skipped

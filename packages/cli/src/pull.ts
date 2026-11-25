@@ -250,12 +250,16 @@ export async function pull(args: string[], io: Io): Promise<number> {
     settings.token,
   );
   if (reply.status !== 200) throw refusal(reply, "read the workspace's console resources");
-  const { files, elsewhere, drafts, bundleVersion } = reply.body as {
+  const { files, elsewhere, drafts, bundleVersion, basis, inCode } = reply.body as {
     files: { path: string; content: string }[];
     /** Not sent by a server from before files were kept anywhere. */
     elsewhere?: { path: string; content: string; resource?: string }[];
     drafts: { path: string; revision: number; deleted: boolean }[];
     bundleVersion: number | null;
+    /** What each deployed resource is. Not sent by a server from before a deploy checked it. */
+    basis?: { path: string; hash: string }[];
+    /** Taken over from code in the console and possibly still defined there. Not sent by an older server. */
+    inCode?: { path: string; kind: string; file?: string }[];
   };
   const folder = join(directory, resources);
   // From the repository's root: a file in the folder, or one kept anywhere, written `/so`.
@@ -269,6 +273,33 @@ export async function pull(args: string[], io: Io): Promise<number> {
     drafts,
     { directory, files: elsewhere ?? [] },
   );
+  // What this pull took is what the repository has now: a deploy of it is not refused for the
+  // console's changes that it brought in. A file kept as it is here took nothing.
+  const left = new Set(
+    report.kept.map((one) =>
+      one.path.startsWith("/")
+        ? ((elsewhere ?? []).find((file) => `/${file.path}` === one.path)?.resource ?? one.path)
+        : resourceOfFile(one.path),
+    ),
+  );
+  // Only a resource whose file this pull wrote, or holds already, is in step: never one it did not bring.
+  const brought = new Set([
+    ...files.map((file) => resourceOfFile(file.path)),
+    ...(elsewhere ?? []).flatMap((file) => (file.resource ? [file.resource] : [])),
+  ]);
+  const taken = (basis ?? []).filter((one) => brought.has(one.path) && !left.has(one.path));
+  if (taken.length > 0) {
+    const told = await request(settings.url, `${base}/resource-basis`, settings.token, {
+      method: "POST",
+      body: { resources: taken },
+    });
+    // Someone who may pull and may not deploy has no deploy to hold back; an older instance has no check.
+    if (told.status >= 500) {
+      io.err(
+        "Warning: the instance did not take what this pull brought in, so the next deploy may be refused as console_changed. Run pull again.",
+      );
+    }
+  }
   for (const file of report.written) io.out(`  ${file.how.padEnd(8)} ${shown(file.path)}`);
   for (const path of report.removed) io.out(`  removed  ${shown(path)}`);
   const from = [
@@ -292,6 +323,13 @@ export async function pull(args: string[], io: Io): Promise<number> {
       ].join("\n"),
     );
     return 1;
+  }
+  for (const one of (inCode ?? []).filter((one) => !left.has(one.path))) {
+    io.err(
+      `${one.path} (${one.kind}) was taken over in the console, and is still defined in code${
+        one.file ? ` at ${one.file}` : `, by the name ${one.path}`
+      }. Remove it from the TypeScript: until you do, a deploy is refused as defined twice, in the code and in ${resources}/.`,
+    );
   }
   if (files.length > 0) {
     io.out(

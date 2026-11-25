@@ -8,6 +8,7 @@ import { access, type RequestContext, type WorkspaceRef } from "../kernel/http.j
 import type { Kernel } from "../kernel/kernel.js";
 import { requireStanding } from "../kernel/pages/standing.js";
 import { unknownTables, workspaceTables } from "../kernel/pages.js";
+import { workspaceWidgets } from "../kernel/widgets.js";
 import { AnyObject, Id, iso, NoContent, NullableString, Time, WorkspaceParams } from "./shared.js";
 
 /** The most dashboards one member may keep in one workspace. */
@@ -203,7 +204,7 @@ export function dashboardRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           checkDashboard(
             result.value.body as unknown as DashboardBody,
             (path) => tables.get(path),
-            undefined,
+            await workspaceWidgets(kernel.db, (ctx.workspace as WorkspaceRef).id),
             { incomplete: true },
           )
         : result.issues;

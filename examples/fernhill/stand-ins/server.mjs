@@ -94,6 +94,16 @@ createServer((request, response) => {
       return done(200, { outage });
     }
 
+    // What a connection's Test asks for: a service that answers nothing at its base address.
+    if (
+      (url.pathname === "/textline/ping" || url.pathname === "/vetsupply/ping") &&
+      request.method === "GET"
+    ) {
+      const which = url.pathname.startsWith("/textline") ? TOKENS.textline : TOKENS.vetsupply;
+      if (!authorized(request, which)) return done(401, { error: "Unknown API token." });
+      return done(200, { ok: true });
+    }
+
     if (url.pathname === "/textline/messages" && request.method === "POST") {
       if (!authorized(request, TOKENS.textline)) return done(401, { error: "Unknown API token." });
       if (outage) return done(503, { error: "TextLine is having an outage." });
@@ -132,6 +142,6 @@ createServer((request, response) => {
     }
     return done(404, { error: "Not found." });
   });
-}).listen(PORT, "127.0.0.1", () =>
+}).listen(PORT, process.env.HOST ?? "127.0.0.1", () =>
   console.log(`Fernhill's outside systems on http://127.0.0.1:${PORT}/`),
 );

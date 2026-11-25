@@ -502,3 +502,11 @@ test("SCR-08, EXT-MP3: a script's memory, concurrency, worker pool, the rest of 
   expect(screen.getByText("Events it may publish")).toBeTruthy();
   expect(screen.getByText("Connection groups it picks from")).toBeTruthy();
 });
+
+test("a new script opens with its settings folded, so the code is in view, and a refused schema opens them", async () => {
+  history.replaceState(null, "", "/t/t1/workspaces/w1/scripts/new");
+  show(<AtAddress />);
+  const summary = await screen.findByText("Settings");
+  const fold = summary.closest("details") as HTMLDetailsElement;
+  expect(fold.open).toBe(false);
+});

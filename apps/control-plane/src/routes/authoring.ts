@@ -25,6 +25,7 @@ import {
 import { dashboardsNaming } from "../kernel/dashboard-queries.js";
 import { describeChange } from "../kernel/describe.js";
 import { badRequest, forbidden, HttpError, notFound } from "../kernel/errors.js";
+import { contentHash, setBasisTo } from "../kernel/execution/basis.js";
 import { bundleManifest, storeBundle } from "../kernel/execution/bundles.js";
 import { readPayload, startRun } from "../kernel/execution/runs.js";
 import { downstreamOf, keptNodes, kickFlow, startFlowRun } from "../kernel/flows/engine.js";
@@ -424,6 +425,26 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                 },
               ),
               bundleVersion: Type.Union([Type.Integer(), Type.Null()]),
+              basis: Type.Array(Type.Object({ path: Type.String(), hash: Type.String() }), {
+                description:
+                  "What each deployed resource is, as a hash. A pull sends back the ones it took " +
+                  "(`resource-basis`), so a deploy of the repository knows the console has not changed them since.",
+              }),
+              inCode: Type.Optional(
+                Type.Array(
+                  Type.Object({
+                    path: Type.String(),
+                    kind: Type.String(),
+                    file: Type.Optional(Type.String()),
+                  }),
+                  {
+                    description:
+                      "Resources taken over from code in the console and not yet handed over by " +
+                      "a deploy: the repository's TypeScript may still define them, and a deploy " +
+                      "is refused as defined twice while it does. `file` is where, when known.",
+                  },
+                ),
+              ),
               drafts: Type.Array(
                 Type.Object({
                   path: Type.String(),
@@ -477,12 +498,77 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           .select("bundle.version")
           .where("workspace.id", "=", workspace.id)
           .executeTakeFirst();
+        const deployed = await db
+          .selectFrom("resource")
+          .select(["path", "key", "title", "body"])
+          .where("workspace_id", "=", workspace.id)
+          .where("ownership", "=", "ui")
+          .where("path", "not like", "core/%")
+          .orderBy("path")
+          .execute();
+        // Taken over from code and not handed over: the repository's TypeScript may still define it.
+        const inCode = await db
+          .selectFrom("resource")
+          .select(["path", "kind", "meta"])
+          .where("workspace_id", "=", workspace.id)
+          .where("ownership", "=", "ui")
+          .orderBy("path")
+          .execute();
         return {
+          inCode: inCode
+            .filter((row) => row.meta.inCode !== undefined)
+            .map((row) => ({
+              path: row.path,
+              kind: row.kind,
+              ...(row.meta.inCode?.file ? { file: row.meta.inCode.file } : {}),
+            })),
           files: files.map((file) => ({ path: file.path, content: file.content })),
           elsewhere,
           bundleVersion: active?.version ?? null,
+          basis: deployed.map((row) => ({ path: row.path, hash: contentHash(row) })),
           drafts,
         };
+      },
+    );
+
+    app.post(
+      `${base}/resource-basis`,
+      {
+        config: { access: access.workspace("deployment:write") },
+        schema: {
+          summary: "Say which resources a pull took",
+          description:
+            "What `volvel pull` does after it wrote the files: each resource it took is, from now on, " +
+            "what the repository has, so a deploy of the repository is not refused for the console's " +
+            "changes that the pull brought in. Send the `basis` that `resource-files` gave.",
+          tags: ["authoring"],
+          params: WorkspaceParams,
+          body: Type.Object({
+            resources: Type.Array(
+              Type.Object({
+                path: Type.String({ maxLength: 255 }),
+                hash: Type.String({ maxLength: 64 }),
+              }),
+              { maxItems: 5000 },
+            ),
+          }),
+          response: { 200: Type.Object({ taken: Type.Integer() }) },
+        },
+      },
+      async ({ ctx, params, body }) => {
+        const { workspace } = await enter(ctx, params, "deployment:write");
+        await ctx.mutate(async (trx, audit) => {
+          await setBasisTo(trx, workspace.id, body.resources);
+          await audit({
+            action: "resource.basis_set",
+            targetType: "workspace",
+            targetId: workspace.id,
+            tenantId: workspace.tenantId,
+            workspaceId: workspace.id,
+            details: { resources: body.resources.length },
+          });
+        });
+        return { taken: body.resources.length };
       },
     );
 

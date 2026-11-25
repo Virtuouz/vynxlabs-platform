@@ -566,7 +566,7 @@ test("QSD-MP2: a dashboard removed in a draft says so and offers to keep it", as
 test("QSD-MP2: a dashboard the repository defines says that changing it takes it over", async () => {
   keeping({}, { ...kept, ownership: "code" });
   show(<DashboardView root={root} link="/t/t1/workspaces/w1" id="at/boards/lending" editable />);
-  await screen.findByText(/defined by the code in the tenant's repository/);
+  await screen.findByText(/defined in code, in the tenant's repository/);
   screen.getByRole("button", { name: "Edit" });
   // Removed in the code, not here.
   expect(screen.queryByRole("button", { name: "Remove" })).toBeNull();

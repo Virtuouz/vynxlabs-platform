@@ -11,7 +11,7 @@ By the end you will have published an event with a payload, and seen what it sta
 ## Before you start
 
 - You hold `event:write` in the workspace. A workspace admin has it. See the [permissions reference](../../../administer/reference/permissions).
-- The event is declared in the workspace, with `defineEvent` in the repository or under **All resources**. An event that is not declared cannot be published here.
+- The event is declared in the workspace: as a `<path>.event.yaml` file in the repository, with `defineEvent`, or under **All resources**. An event that is not declared cannot be published here.
 - Events whose names begin `platform/` are Volvel's own. They are not offered: only Volvel publishes those.
 
 ## Publish it
@@ -34,7 +34,7 @@ From a script, `ctx.events.publish` does the same, and so does `POST …/events`
 
 ## If it does not work
 
-- **"No event is declared in this workspace yet."** Declare one with `defineEvent`, or under **Resources**, and deploy it.
+- **"No event is declared in this workspace yet."** Declare one as a file or with `defineEvent`, or under **Resources**, and deploy it.
 - **The button is disabled.** You need `event:write`. The tooltip says what is missing.
 - **"Nothing listens for it, so it started nothing."** No event trigger or flow start names this event and is on. Add one, then publish again.
 - **A listener started and refused it.** A trigger's **Only when** filter failed, or the payload does not fit what it starts. The trigger shows **Last refused** with the reason on the [Triggers](../../reference/screens/operate/triggers) screen.

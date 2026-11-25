@@ -231,38 +231,42 @@ html[data-theme="dark"] {
  * | code        | 13 / 20   | paths, IDs, inline code, JSON                          |
  * | code-sm     | 12 / 18   | log lines, dense JSON                                  |
  * | tag         | 10.5 / 12 | environment and classification tags                    |
+ *
+ * The px are the size at a scale of 1. Every size and line height is multiplied by
+ * `--vx-type-scale` (1 where nothing sets it, as in an app that imports this file), so
+ * one number scales body and headings together and the layout's spacing stays put.
  */
 @theme {
-  --text-display-lg: 26px;
-  --text-display-lg--line-height: 32px;
+  --text-display-lg: calc(26px * var(--vx-type-scale, 1));
+  --text-display-lg--line-height: calc(32px * var(--vx-type-scale, 1));
   --text-display-lg--letter-spacing: -0.015em;
   --text-display-lg--font-weight: 600;
-  --text-display: 20px;
-  --text-display--line-height: 28px;
+  --text-display: calc(20px * var(--vx-type-scale, 1));
+  --text-display--line-height: calc(28px * var(--vx-type-scale, 1));
   --text-display--letter-spacing: -0.01em;
   --text-display--font-weight: 600;
-  --text-title: 16px;
-  --text-title--line-height: 24px;
+  --text-title: calc(16px * var(--vx-type-scale, 1));
+  --text-title--line-height: calc(24px * var(--vx-type-scale, 1));
   --text-title--font-weight: 600;
-  --text-emphasis: 15px;
-  --text-emphasis--line-height: 22px;
+  --text-emphasis: calc(15px * var(--vx-type-scale, 1));
+  --text-emphasis--line-height: calc(22px * var(--vx-type-scale, 1));
   --text-emphasis--font-weight: 500;
-  --text-body: 14px;
-  --text-body--line-height: 20px;
-  --text-body-sm: 13px;
-  --text-body-sm--line-height: 18px;
-  --text-meta: 12px;
-  --text-meta--line-height: 16px;
-  --text-label: 11px;
-  --text-label--line-height: 16px;
+  --text-body: calc(14px * var(--vx-type-scale, 1));
+  --text-body--line-height: calc(20px * var(--vx-type-scale, 1));
+  --text-body-sm: calc(13px * var(--vx-type-scale, 1));
+  --text-body-sm--line-height: calc(18px * var(--vx-type-scale, 1));
+  --text-meta: calc(12px * var(--vx-type-scale, 1));
+  --text-meta--line-height: calc(16px * var(--vx-type-scale, 1));
+  --text-label: calc(11px * var(--vx-type-scale, 1));
+  --text-label--line-height: calc(16px * var(--vx-type-scale, 1));
   --text-label--letter-spacing: 0.06em;
   --text-label--font-weight: 600;
-  --text-code: 13px;
-  --text-code--line-height: 20px;
-  --text-code-sm: 12px;
-  --text-code-sm--line-height: 18px;
-  --text-tag: 10.5px;
-  --text-tag--line-height: 12px;
+  --text-code: calc(13px * var(--vx-type-scale, 1));
+  --text-code--line-height: calc(20px * var(--vx-type-scale, 1));
+  --text-code-sm: calc(12px * var(--vx-type-scale, 1));
+  --text-code-sm--line-height: calc(18px * var(--vx-type-scale, 1));
+  --text-tag: calc(10.5px * var(--vx-type-scale, 1));
+  --text-tag--line-height: calc(12px * var(--vx-type-scale, 1));
   --text-tag--letter-spacing: 0.06em;
   --text-tag--font-weight: 600;
 
@@ -332,8 +336,8 @@ body {
   background: var(--vx-canvas);
   color: var(--vx-ink);
   font-family: var(--vx-font);
-  font-size: 14px;
-  line-height: 20px;
+  font-size: calc(14px * var(--vx-type-scale, 1));
+  line-height: calc(20px * var(--vx-type-scale, 1));
   font-variant-numeric: tabular-nums;
 }
 

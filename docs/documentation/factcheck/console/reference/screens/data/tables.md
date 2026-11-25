@@ -97,3 +97,20 @@ Lines not re-read one by one: the server refusals for a unique rule with repeate
 ### Cuts after the second check, 2026-11-23
 
 Padding removed at the coordinator's request, with the page linking instead: the list of twelve types under Create table (now links to Column types); the "three columns it fills in" paragraph (in Column types); the keys-in-the-grid table (replaced by one sentence naming the keys the Keys popover lacks: Home, End, Ctrl+Home, Ctrl+End, PageUp, PageDown, Space, Enter on a cell that cannot be edited; `Grid.tsx:520-567`; the popover text is `Data:430-476`); the Sorting and Filtering bullets (shortened, with links to Column types and Filter syntax); the role sentence under Permissions (the table stays). The claims "Grid keys", "Sort", "JSON and list-of-values columns are not sortable" and "Type names (12)" now rest on the linked pages' records.
+
+## Phase 34, A7 (YAML first), 2026-11-24
+
+Commit `d619bfbd` plus the working tree. Written by the A7 writer; second agent checked 2026-11-24 (a7r). Run on the throwaway instance of lane a7 (http://localhost:8712, Fernhill seeded).
+
+| Claim | Source (file:line) | Checked by | Result |
+| --- | --- | --- | --- |
+| **Managed in** reads **Files** or **Code**; page line `Managed as files.`/`Managed as code.` | `apps/console/src/screens/Data.tsx:1676-1678,1867`; `kit/ownership.ts:11-17` | writer, 2026-11-24 | holds as read |
+| Take-over notice, button, confirmation, success text, production and permission cases; Retire not offered for Code. | `apps/console/src/screens/Data.tsx:2768-2800,2905-2925`; a6 notes | writer, 2026-11-24 | holds as read |
+
+### Second check (a7r), 2026-11-24, second agent
+
+Lane a7r build (a7 merged), throwaway instance http://localhost:8722 (database a7r34, Fernhill seeded), lane CLI `packages/cli/dist/bin.js`. `pnpm docs:check` passes. Browser: the notice, the dialog text word for word, the toast text `Data.tsx:2797`, no button in an editor-less state not tested (production workspace read from code). CORRECTED: a note that the dialog's mention of `volvel pull` does not hold for a table (product copy to fix: the dialog says 'until you run volvel pull').
+
+### Fix check (a9), 2026-11-24
+
+Lane a9 build, throwaway instance http://localhost:8729 (database a934), lane CLI `packages/cli/dist/bin.js`. The page now describes the fixed behaviour, run as written: a table in code deployed, taken over in the console with a column added in the same save (`PUT resources/desk`, `takeOver: true`); `volvel deploy` without a pull refused (`desk: changed in the console since the repository last had it`); `volvel pull` wrote `platform/desk.table.yaml` with the column, and printed `desk (table) was taken over in the console, and is still defined in code, by the name desk. Remove it from the TypeScript: until you do, a deploy is refused as defined twice, in the code and in platform/.`; `volvel deploy` then failed at the build with `desk is defined in src/index.ts and again in platform/desk.table.yaml`; with the definition removed from the code the deploy passed and the table kept the column (read). CORRECTED the passages that said a pull brings nothing in for a table (product bug fixed by lane a9).

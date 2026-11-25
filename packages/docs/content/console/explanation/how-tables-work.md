@@ -16,12 +16,18 @@ Two things are kept apart. The table's **definition** is its columns and rules. 
 
 ## Where a table is managed
 
-Each table is managed in one place. The list of tables says which, under **Managed in**:
+Each table has one owner. The list of tables says which, under **Managed in**:
 
-- **Console.** You made it with **Create table**. You change its columns and rules on its **Definition** tab. Adding a column or a rule applies at once.
-- **Repository.** It is written with `defineTable` in the tenant's repository, and it changes when a bundle is deployed. In the console its **Definition** tab shows a notice and no controls: "This table is defined in the tenant's repository. To change it, change `defineTable` there and deploy."
+- **Files.** The table is a file: you made it with **Create table**, or the repository holds it as `<path>.table.yaml`. The console and the repository both edit it. You change its columns and rules on its **Definition** tab, and adding a column or a rule applies at once. A deploy of the repository that would replace what the console changed since is refused until `volvel pull`, or `--force`.
+- **Code.** It is written with `defineTable` in the tenant's repository, and it changes when a bundle is deployed. In the console its **Definition** tab shows a notice and no controls: "This table is defined in code, in the tenant's repository. To change it, change `defineTable` there and deploy, or take it over here: it is then managed as files, and you remove its definition from the code after a volvel pull."
 
-A resource is managed in one place or the other, never both. Rows of both kinds are added, changed and deleted on the **Rows** tab.
+A table is of one owner or the other, never both. Rows of both kinds are added, changed and deleted on the **Rows** tab.
+
+A definition in code is worth having when a table shares values with other definitions, such as a list of kinds that is also in an event's payload. For a table that stands alone, the file is plainer, and a script is typed by it either way. See [Definitions in code](../../develop/explanation/cli/definitions-in-code).
+
+### Take over a table of Code
+
+In a dev workspace, **Take over in the console** on the **Definition** tab makes a table of Code a table of Files. Its rows stay. The console manages it from then on. The definition stays in the code until you remove it there. `volvel pull` writes the table's file, `<path>.table.yaml`, and says that the table is still defined in code; while it is, a deploy of the repository is refused as defined twice. A deploy of the code alone, without a pull, is refused too if the console changed the table, until you pull or deploy with `--force`, which takes the table back to the code's definition. To keep the table in the console, pull, then delete its definition from the code and deploy. See [Definitions in code](../../develop/explanation/cli/definitions-in-code). A production workspace has no take-over: a table of Code there changes by a deploy only.
 
 ## Why a deploy never drops data
 
@@ -29,13 +35,13 @@ The work of making a workspace's tables match a definition is planned before it 
 
 - A **retired table** cannot be read or written. Its rows are kept. If other tables hold references to it, the keys that tie them are dropped while it is away and put back when it returns.
 - A **retired column** keeps its values. It stops being required or unique, and its default is dropped from the database. Bringing a column back in the console restores its type and what its rows may hold, and not those settings: see [Retire a table or a column, and bring it back](../how-to/data/retired-data).
-- A deploy retires a table when the bundle no longer lists a table that the repository owned. A person with `resource:write` can also retire a table of the console by hand, with **Retire table** on its **Definition** tab.
+- A deploy retires a table when the bundle no longer lists a table that the repository owned, as a file or as code. A person with `resource:write` can also retire a table of the console by hand, with **Retire table** on its **Definition** tab.
 - A table that other tables refer to is not retired. The refusal names each table and column that refers to it, because no later deploy could succeed until they were changed.
 
 Retiring is undone in two ways:
 
-- **Bring back.** A retired table that was managed in the console shows **Bring back**, for a person with `resource:write`. It saves the definition the catalog kept: the active columns with their rules, defaults, references and values, who sees rows, what stands for a row and the indexes. Its rows are there again. Retired columns stay retired.
-- **Deploying a definition with that name.** For a table managed in the repository, the retired table's page says "Deploying a definition with this name brings it back."
+- **Bring back.** A retired table that was managed as files shows **Bring back**, for a person with `resource:write`. It saves the definition the catalog kept: the active columns with their rules, defaults, references and values, who sees rows, what stands for a row and the indexes. Its rows are there again. Retired columns stay retired.
+- **Deploying a definition with that name.** For a table managed as code, the retired table's page says "Deploying a definition with this name brings it back."
 
 The one way to destroy data is **Delete for good**, on a retired table or a retired column. You type its name to confirm, it needs the permission `table:write`, and it is written to the audit log as `table.purged`. Nothing a deploy does reaches it.
 

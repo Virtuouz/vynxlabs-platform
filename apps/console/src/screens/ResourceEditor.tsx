@@ -19,6 +19,7 @@ import { putDraft } from "../kit/draftApi.ts";
 import { useDraftSave } from "../kit/draftSave.ts";
 import { Loading } from "../kit/LoadState.tsx";
 import { EDITED_KINDS, type EditedKind, isEditedKind, ProductionNotice } from "../kit/objects.tsx";
+import { takeOverNotice } from "../kit/ownership.ts";
 import { PageHeader } from "../kit/PageHeader.tsx";
 import { listenChoices } from "../kit/platformEvents.ts";
 import { RemoveDraftButton } from "../kit/RemoveDraftButton.tsx";
@@ -93,6 +94,14 @@ const ABOUT: Record<EditedKind, { noun: string; example: string; says: string; f
     fresh: { type: "webhook", script: "" },
   },
 };
+
+/** What a trigger of each type begins as: a body its editor can draw. */
+export const freshStart = (type: string): StartSettings =>
+  type === "event"
+    ? { type, event: "" }
+    : type === "form"
+      ? (newForm() as unknown as StartSettings)
+      : { type: "webhook" };
 
 const PATH = /^[a-z0-9][a-z0-9_-]*(\/[a-z0-9][a-z0-9_-]*)*$/;
 
@@ -240,7 +249,9 @@ export function ResourceEditor({
     if (!opened) {
       // The Triggers page says which kind of trigger it wants.
       open(
-        about.noun === "trigger" && askedType ? { ...about.fresh, type: askedType } : about.fresh,
+        about.noun === "trigger" && askedType
+          ? { ...about.fresh, ...freshStart(askedType) }
+          : about.fresh,
         "new",
       );
       return;
@@ -507,11 +518,8 @@ export function ResourceEditor({
             </Button>
           }
         >
-          This {about.noun} is defined by the code in the tenant's repository. To change it here,
-          move it to a file: that saves a draft that takes it over. Once deployed it is{" "}
-          <code className="font-mono">{`${path}.${kind}.yaml`}</code>, which the console and the
-          repository both edit. Then remove its definition from the code, or the next deploy from
-          the repository takes it back.
+          {takeOverNotice(about.noun, "draft")} Moved to a file, it is{" "}
+          <code className="font-mono">{`${path}.${kind}.yaml`}</code>.
         </Notice>
       ) : null}
       {kept && state === "new" && !dirty ? (
@@ -648,12 +656,7 @@ export function ResourceEditor({
                   startShelf.current,
                   { ...own, type: text("type") || "webhook" },
                   type,
-                  () =>
-                    type === "event"
-                      ? { type, event: "" }
-                      : type === "form"
-                        ? (newForm() as unknown as StartSettings)
-                        : { type: "webhook" },
+                  () => freshStart(type),
                 );
                 edit({ body: { ...made, ...kept } });
               }}

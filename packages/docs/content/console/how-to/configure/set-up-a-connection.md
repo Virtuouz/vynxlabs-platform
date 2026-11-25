@@ -54,7 +54,7 @@ A connection is declared in a dev workspace and arrives in production with a pro
 
 ## If it does not work
 
-- **"Reached (404)".** The test asks for the address itself, and any answer counts as reached: an API with nothing at its base address answers 404 even though its paths work. Only 401, 403 and 407 fail.
+- **"Failed (HTTP 404)".** The test asks for the address itself, and only a 2xx or 3xx answer counts as reached. An API with nothing at its base address answers 404 even though its paths work: set **Test path** to a path it answers, such as `/health`, and press **Test** again. 401, 403 and 407 mean the credentials were refused.
 - **"Failed (HTTP 401)"** or another refusal. The system did not accept the credential. Press **Change the token or key** and type it again.
 - **"No worker took it in time. Start a worker for this workspace, or let the instance start one."** A test waits 2 minutes for a worker. The button says **Waiting for a worker…** after 20 seconds.
 - **"Name it with lowercase letters, digits, dashes and underscores, such as crm or google/sheets."** The name has a capital letter, a space or another character.

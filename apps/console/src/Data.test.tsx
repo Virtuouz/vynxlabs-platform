@@ -2397,3 +2397,26 @@ test("a table in code cannot be taken over in a production workspace", async () 
   await screen.findByText(/A production workspace changes by a deploy only/);
   expect(screen.queryByRole("button", { name: "Take over in the console" })).toBeNull();
 });
+
+test("a table's description that names a column between backticks shows it as code, in the list", async () => {
+  routes[`GET /api/v1${root}/tables`] = () => [
+    200,
+    {
+      items: [
+        {
+          name: "clients",
+          status: "active",
+          managedIn: "ui",
+          description: "Pet owners. `code` is what their account holds.",
+          columnCount: 1,
+          rowCount: 3,
+          policy: { type: "open" },
+        },
+      ],
+    },
+  ];
+  show(<Tables root={root} link="/t/t1/workspaces/w1" />);
+  await screen.findByRole("link", { name: "clients" });
+  expect(await screen.findByText("code", { selector: "code" })).toBeTruthy();
+  expect(document.body.textContent).not.toContain("`");
+});

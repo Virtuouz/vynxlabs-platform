@@ -214,6 +214,29 @@ export function useGlossaryMatch(text: string): GlossaryTerm | undefined {
  * something else.
  */
 export function TermText({ children }: { children: string }) {
+  // A name between backticks is set as code (a developer's description says `/health`), and
+  // the glossary reads the words around it.
+  const pieces = children.split(/`([^`\n]+)`/);
+  if (pieces.length === 1) return <TermWords>{children}</TermWords>;
+  return (
+    <>
+      {pieces.map((piece, at) =>
+        // Odd pieces are what was between backticks; a piece is told by where it stands.
+        at % 2 === 1 ? (
+          // biome-ignore lint/suspicious/noArrayIndexKey: the pieces never reorder.
+          <code key={at} className="font-mono text-code">
+            {piece}
+          </code>
+        ) : piece === "" ? null : (
+          // biome-ignore lint/suspicious/noArrayIndexKey: the pieces never reorder.
+          <TermWords key={at}>{piece}</TermWords>
+        ),
+      )}
+    </>
+  );
+}
+
+function TermWords({ children }: { children: string }) {
   const glossary = useContext(GlossaryContext);
   if (!glossary?.find) return <>{children}</>;
   const parts: ReactNode[] = [];

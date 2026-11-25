@@ -20,6 +20,7 @@ import {
   SelectField,
   SideSheet,
   showValue,
+  TermText,
   TextAreaField,
   TextField,
   useFlip,
@@ -1670,7 +1671,11 @@ export function Tables({ root, link }: { root: string; link: string }) {
         {
           header: "What it holds",
           priority: 2,
-          cell: (row) => <span className="text-ink-muted">{row.description}</span>,
+          cell: (row) => (
+            <span className="text-ink-muted">
+              {row.description ? <TermText>{row.description}</TermText> : null}
+            </span>
+          ),
         },
         {
           header: "Managed in",
@@ -2510,7 +2515,9 @@ export function ColumnsTable({
             <span className="flex flex-col gap-0.5">
               <Code>{row.name}</Code>
               {row.description ? (
-                <span className="max-w-measure text-meta text-ink-muted">{row.description}</span>
+                <span className="max-w-measure text-meta text-ink-muted">
+                  <TermText>{row.description}</TermText>
+                </span>
               ) : null}
               {roomy ? null : (
                 <span data-column-stack className="flex flex-col gap-1 text-meta">
@@ -3698,7 +3705,11 @@ export function Sources({ root, link }: { root: string; link: string }) {
         {
           header: "For",
           priority: 3,
-          cell: (row) => <span className="text-ink-muted">{row.description}</span>,
+          cell: (row) => (
+            <span className="text-ink-muted">
+              {row.description ? <TermText>{row.description}</TermText> : null}
+            </span>
+          ),
         },
         {
           header: "Points to",

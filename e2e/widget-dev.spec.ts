@@ -67,10 +67,7 @@ test("a widget is previewed in its frame, its events are logged, and a save rebu
 
   const path = join(dir, "src/widgets/gauge/view.tsx");
   const source = await readFile(path, "utf8");
-  await writeFile(
-    path,
-    source.replace("rows</button>", "lines</button>").replace("} rows", "} lines"),
-  );
+  await writeFile(path, source.replace('"row" : "rows"', '"line" : "lines"'));
   // The frame reloads with the settings the developer made.
   await expect(view.getByRole("button")).toContainText("Load: 2 lines");
 

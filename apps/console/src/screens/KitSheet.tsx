@@ -105,6 +105,7 @@ const KIT_DOC = parse(
   [
     "# Deploying",
     "",
+    // backticks-allowed: this is markdown, which draws them as code.
     "Press :kbd[Ctrl+K] and choose **Deploy**, or run `volvel deploy`.",
     "",
     ":::alert[Before you deploy]{type=warning}",

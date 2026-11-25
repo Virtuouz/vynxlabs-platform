@@ -155,10 +155,17 @@ const DOCKING_MS = 280;
 /**
  * Makes room for the docked inspector and takes it away again, over
  * `motion-slow`. The panel keeps its own width throughout and is uncovered,
- * so its text never reflows while it moves. Under reduced motion it is there
+ * so its text never reflows while it moves. The inspector and the help panel
+ * both dock through it, so what is beside them gives and takes room smoothly. Under reduced motion it is there
  * or it is not.
  */
-function Docking({ open, children }: { open: boolean; children: (leaving: boolean) => ReactNode }) {
+export function Docking({
+  open,
+  children,
+}: {
+  open: boolean;
+  children: (leaving: boolean) => ReactNode;
+}) {
   const wrap = useRef<HTMLDivElement>(null);
   const [present, setPresent] = useState(open);
   // How much room it is given: none, a number of pixels while it moves, or its own once open.

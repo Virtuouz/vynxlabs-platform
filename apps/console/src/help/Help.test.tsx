@@ -274,17 +274,44 @@ describe("the help panel", () => {
     await waitFor(() => expect(screen.queryByRole("complementary")).toBeNull());
   });
 
-  test("arrives and leaves with the motion the other panels have, and is out of reach while it leaves", async () => {
+  test("beside the work, the room it takes is given and taken back over the sheets' time, as the inspector's is", async () => {
+    show(<Screen />);
+    act(() => openHelp("data-tables"));
+    const shell = panel().parentElement as HTMLElement;
+    const wrap = shell.parentElement as HTMLElement;
+    // The column that makes room is the one that moves, from none to the panel's own width.
+    expect(wrap.hasAttribute("data-drawer")).toBe(true);
+    expect(wrap.style.width).toBe("0px");
+    expect(wrap.className).toContain("transition-[width] motion-slow");
+    expect(wrap.className).toContain("overflow-hidden");
+    act(() => closeHelp());
+    expect(wrap.hasAttribute("data-ending-style")).toBe(true);
+    expect(panel().hasAttribute("inert")).toBe(true);
+    await waitFor(() => expect(screen.queryByRole("complementary")).toBeNull());
+  });
+
+  test("over the work it slides the whole way in from its edge on a scrim, and is out of reach while it leaves", async () => {
+    width = 768;
     show(<Screen />);
     act(() => openHelp("data-tables"));
     const shell = panel().parentElement as HTMLElement;
     expect(shell.hasAttribute("data-drawer")).toBe(true);
-    expect(shell.className).toContain("transition-[opacity,translate] motion-slow");
-    expect(shell.className).toContain("data-[starting-style]:translate-x-6");
-    expect(shell.className).toContain("data-[ending-style]:opacity-0");
+    expect(shell.className).toContain("transition-[translate] motion-slow");
+    expect(shell.className).toContain("data-[starting-style]:translate-x-full");
+    const scrim = document.querySelector("[data-help-scrim]") as HTMLElement;
+    expect(scrim.className).toContain("bg-scrim");
+    expect(scrim.className).toContain("transition-opacity motion-slow");
     act(() => closeHelp());
     expect(shell.hasAttribute("data-ending-style")).toBe(true);
     expect(shell.hasAttribute("inert")).toBe(true);
+    await waitFor(() => expect(screen.queryByRole("complementary")).toBeNull());
+  });
+
+  test("a click on the scrim closes it", async () => {
+    width = 768;
+    show(<Screen />);
+    act(() => openHelp("data-tables"));
+    fireEvent.click(document.querySelector("[data-help-scrim]") as HTMLElement);
     await waitFor(() => expect(screen.queryByRole("complementary")).toBeNull());
   });
 

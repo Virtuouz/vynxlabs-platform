@@ -19,8 +19,8 @@ A provider of members signs in only people whose email is in a proved domain. By
 :::steps
 1. Open **Tenant**, then **Single sign-on**, open the provider and choose **Domains**.
 2. Type the domain in **Email domain**, for example `example.com`, and press **Add domain**. The message says "Prove it is yours with the record shown."
-3. The domain shows **Not proved** with a **Record name** and a **Record value**. The name is `_vx-challenge.<domain>` and the value is `vx-domain=` and 40 hexadecimal characters. Copy each.
-4. Where the domain's DNS is managed, create a TXT record with that name and value.
+3. The domain shows **Not proved** with a TXT record: a **Host** (the name relative to the zone, such as `_vx-challenge` for `example.com`), a **Full name** (`_vx-challenge.<domain>`) and a **Value** (`vx-domain=` and 40 hexadecimal characters). Copy each. Most DNS providers add the zone to what you type in **Host**, so type the **Host** as shown (for `desk.example.com`, `_vx-challenge.desk`) and not the **Full name**. If your provider's zone is different from the one shown, use the full name.
+4. Where the domain's DNS is managed, create a TXT record with that host and value.
 5. Wait for DNS to carry it, and press **Check now**. If it is found, the domain turns **Proved**.
 :::
 
@@ -46,6 +46,6 @@ A proved domain stays proved after its record is removed. The domain then shows 
 
 | You see | Cause and fix |
 | --- | --- |
-| "No TXT record _vx-challenge.<domain> with the value vx-domain=… was found." | The record is not there yet, or has another value. DNS may take time. Check the name, and that the value is exactly as shown. |
+| "No TXT record _vx-challenge.<domain> with the value vx-domain=… was found." | The record is not there yet, or has another value. DNS may take time. Check the host, and that the value is exactly as shown. A notice that says "Found the record at … your DNS provider added … to the host" means the host was typed in full: set it to the one the notice names. |
 | **Check now** is missing | A proved domain has no record to check. |
 | "Prove at least one email domain before turning this provider on." | Prove a domain first. |

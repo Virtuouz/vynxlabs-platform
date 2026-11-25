@@ -4,6 +4,7 @@ import { type ApiError, api, useLoad } from "../api.ts";
 import { ask } from "../ask.tsx";
 import { NotAllowed, useCan } from "../kit/Can.tsx";
 import { DataTable } from "../kit/DataTable.tsx";
+import { type ChallengeRecord, DnsRecord } from "../kit/DnsRecord.tsx";
 import { Loading } from "../kit/LoadState.tsx";
 import { SectionLabel } from "../kit/layout.tsx";
 import { Code, StatePill } from "../kit/status.tsx";
@@ -26,7 +27,7 @@ interface Domain {
   /** When a check first missed the record of a verified name: it stays verified, and this says so. */
   recordGoneAt: string | null;
   /** The DNS TXT record that shows whoever controls the name agrees. */
-  challenge: { name: string; value: string };
+  challenge: ChallengeRecord;
   createdAt: string;
 }
 interface WorkspaceName {
@@ -202,19 +203,6 @@ function AddDialog({
         </div>
       </form>
     </SideSheet>
-  );
-}
-
-/** One line of the DNS record, with a button to copy it. */
-function RecordLine({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex flex-wrap items-center justify-between gap-2">
-      <span className="min-w-0">
-        <span className="block text-body-sm text-ink-muted">{label}</span>
-        <Code wrap>{value}</Code>
-      </span>
-      <CopyButton value={value} label={`Copy ${label.toLowerCase()}`} />
-    </div>
   );
 }
 
@@ -432,10 +420,7 @@ function DetailsDialog({
               Create this TXT record where the hostname's DNS is managed. It shows that whoever
               controls the name agrees to this tenant using it.
             </p>
-            <div className="flex flex-col gap-3 rounded-control border border-line bg-sunken p-3">
-              <RecordLine label="Record name" value={domain.challenge.name} />
-              <RecordLine label="Record value" value={domain.challenge.value} />
-            </div>
+            <DnsRecord record={domain.challenge} />
           </section>
           <section className="flex flex-col gap-2">
             <SectionLabel>3 · Check and enable</SectionLabel>

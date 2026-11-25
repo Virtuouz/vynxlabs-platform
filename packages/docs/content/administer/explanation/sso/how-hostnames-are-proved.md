@@ -12,6 +12,8 @@ Anyone can type a name into the console. If Volvel served `bank.example` for who
 
 For each name Volvel works out a **record**: a TXT record at `_vx-challenge.<name>` with a value that begins `vx-domain=` and holds 40 hexadecimal characters. The value is a keyed hash of the tenant and the name, made with a secret of the instance. Only this tenant, on this instance, gets this value for this name. Publishing it says: whoever controls this name agrees that this tenant uses it. **Check now** asks DNS for the record. If it is there, the name is **Verified**.
 
+Volvel does not know which DNS zone holds a name, so it shows the record two ways: the **Host** most providers want, relative to the registrable domain (`_vx-challenge.desk` for `desk.example.com`), and the **Full name**. Providers that append the zone to what is typed turn a full name into a doubled one, such as `_vx-challenge.desk.example.com.example.com`. When the check finds nothing at the right name, it also looks at that doubled name, and says so in words if the record is there. If a record exists at the right name with another value, it says the value differs and shows both.
+
 One record serves both a hostname and an email domain, because both say the same thing about the same name. If the instance's secret is changed, every record changes, and names must be proved again.
 
 ## What verified means, and what it does not

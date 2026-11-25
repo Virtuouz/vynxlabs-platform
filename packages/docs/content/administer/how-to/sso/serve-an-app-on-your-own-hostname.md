@@ -21,7 +21,7 @@ By the end a name of your own opens an app, or the portal and every app of a wor
 1. Open **Tenant**, then **Domains**. The table lists each hostname with what it **Serves**, its **State** and its **Last check**. Press **Add a hostname**.
 2. Choose the **Workspace**. Under **Serves**, choose **One app, at the hostname's root** and then the **App**, or **The portal, and every app by its path**. Type the **Hostname**: the name alone, with no `https://` and no path, such as `desk.example.com`. The first workspace in the list is chosen for you. For the portal, the sign-in pages and the list of apps are at the root, and each app of the workspace is at `/its-path/`. Press **Add hostname**.
 3. The hostname's sheet opens, **Off** and **Not verified**. Under **1 · Point the name here**, create a CNAME or an address record from the name to the instance.
-4. Under **2 · Show the name agrees**, copy the **Record name** (`_vx-challenge.<hostname>`) and **Record value** (`vx-domain=` and 40 characters). Create a TXT record with them.
+4. Under **2 · Show the name agrees**, copy the record: its **Type** (`TXT`), its **Host** (the name relative to the zone, such as `_vx-challenge.desk` for `desk.example.com`), its **Full name** (`_vx-challenge.<hostname>`) and its **Value** (`vx-domain=` and 40 characters). Create a TXT record with them. Most DNS providers add the zone to what you type in **Host**, so type the **Host** as shown (for `desk.example.com`, `_vx-challenge.desk`) and not the **Full name**. If your provider's zone is different from the one shown, use the full name.
 5. Wait for DNS, then press **Check now**. The check looks for the record, and when it finds it, it also asks the instance, through the hostname, for its check address. Under **3 · Check and enable**, "Record created and found" then says "Verified" and when, the state is **Verified**, and the list's **Last check** says "Passed <time>". If the record is not found, it says "Not verified. Last checked <time>." and a notice says "No TXT record … with the value … was found."
 6. Press **Enable**. The step **Enabled** says "Serving." The name opens the app, and its row in **Domains** links to it.
 :::
@@ -50,7 +50,7 @@ The list shows the hostname **On** and **Verified**, and the name opens the app 
 
 | You see | Cause and fix |
 | --- | --- |
-| "No TXT record _vx-challenge.<hostname> with the value vx-domain=… was found." | The record is missing, not yet carried by DNS, or has another value. |
+| "No TXT record _vx-challenge.<hostname> with the value vx-domain=… was found." | The record is missing, not yet carried by DNS, or has another value. A notice that says "Found the record at … your DNS provider added … to the host" means the host was typed in full and the provider added the zone: set the host to the one it names. One that says the value differs shows the value found and the value expected. |
 | "This workspace has no apps. Deploy one first, or choose another workspace." | Choose another workspace, or serve the portal. |
 | "That is not a hostname." | The name is not written as a name with at least one dot, such as `desk.example.com`. |
 | "That is one of this instance's own addresses." | The name is the instance's own address, or its apps address. Choose another. |

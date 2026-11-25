@@ -360,8 +360,10 @@ test("a stored credential is removed from the connection's sheet: Save sends cre
 test("WLK-17a: at a phone's width the health, used-by and kind cells keep room, and a header never wraps into the next", async () => {
   show(<Connections root={root} />);
   await screen.findByText("HTTP 401: answered 401.");
+  // A heading wraps inside its own cell, so it can never run into the next one: held on one
+  // line it drew over its neighbour at the larger type (polish-layout measures this in a browser).
   for (const header of screen.getAllByRole("columnheader")) {
-    expect(header.className).toContain("whitespace-nowrap");
+    expect(header.className).not.toMatch(/whitespace-nowrap|truncate/);
   }
   const health = document.querySelector("[data-health]");
   expect(health?.className).toContain("min-w-0");

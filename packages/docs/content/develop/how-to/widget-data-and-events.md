@@ -193,6 +193,10 @@ onClick={() => frame.emit("clinicChosen", { group: { clinic: config.clinic } })}
 4. Press the **Riverside today** gauge, or focus it with :kbd[Tab] and press :kbd[↵]. The **Clinic** filter reads `riverside`, a **Clear** button appears beside it, and the table lists Riverside's visits only.
 :::
 
+## When the action changes something
+
+The step above only narrows the page, so it runs at once. If you wire `clinicChosen` to a step that changes something (`script`, `flow`, `create`, `update` or `delete`), a person who presses the gauge is first asked to confirm, in a dialog the page draws outside the frame. It names the widget, the event and what will happen (for example "Run the script 'Close open orders'?"), and **Cancel** is where focus starts. Nothing runs until they choose **Confirm**. A frame can raise an event without a click, so the page asks, as it cannot tell the two apart. While one confirmation is open, a further event that would change something is dropped. The inspector's **Actions** tab says this beside such an event. Platform widgets are not asked about this way.
+
 ## The result
 
 Each gauge is given the two inputs the file binds, as read for you. A press on a gauge raises `clinicChosen`. The page checks it against the payload schema, and the step `narrow` sets the page's `clinic` filter to the `clinic` of the group. Everything the filter narrows follows. The same file narrows a table, and could narrow a chart.

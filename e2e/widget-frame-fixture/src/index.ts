@@ -14,8 +14,22 @@ export const hostile = defineWidget({
   icon: "puzzle",
   surfaces: ["app", "dashboard"],
   data: { rows: { shape: "rows" } },
-  config: { type: "object", properties: {} },
+  config: {
+    type: "object",
+    properties: {
+      autoWrite: {
+        type: "boolean",
+        "x-volvel": { tab: "display", control: "switch", label: "Write on its own", order: 1 },
+      },
+    },
+  },
   events: {
+    // Wired to a write on the page: a frame can raise it with no click, so the page asks first.
+    wipe: {
+      gives: "nothing",
+      label: "When it asks to write a note",
+      payload: { type: "object", properties: {}, additionalProperties: false },
+    },
     hello: {
       gives: "nothing",
       label: "When it says hello",
@@ -52,4 +66,24 @@ export const board = defineDashboard({
   path: "boards/hostile",
   title: "Hostile board",
   widgets: [placed],
+});
+
+// A page that wires a frame's event to a write, and a frame that raises it on its own.
+const writer = {
+  ...placed,
+  id: "writer",
+  config: { autoWrite: true },
+  on: {
+    wipe: { steps: [{ do: "create", table: "notes", set: { note: { value: "frame-wrote" } } }] },
+  },
+} as const;
+export const writerScreen = defineInterface({
+  path: "screens/writer",
+  title: "Writer",
+  pages: [{ id: "main", title: "Writer", widgets: [writer] }],
+});
+export const writerApp = defineApp({
+  path: "writer",
+  title: "Writer",
+  interface: "screens/writer",
 });

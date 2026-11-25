@@ -42,6 +42,7 @@ A deployed version never changes. A page places a version, and the version's fil
 - **It cannot call the API.** It has no session and no network. A view that needs data declares an input, and the page reads it.
 - **It cannot use an outside service.** No font service, no analytics, no map tiles, no image from another site. Bundle what it needs, or send it as data.
 - **It cannot act without the page.** It can tell the page something happened. The page decides whether anything follows.
+- **It cannot change anything without the viewer's say.** A frame can send an event with no click, and the page cannot tell it from a real one. So an action a builder attached to a widget's event runs at once only when it moves the reader: narrowing a filter, choosing a row, opening a page, showing a message. When it changes anything (runs a script or a flow, adds, updates or deletes rows), the page draws a confirmation outside the frame, naming the widget, the event and what will happen, and runs the action only after the viewer chooses Confirm. One confirmation is open at a time: a further event that would change something is dropped meanwhile. The platform's own widgets are drawn by the platform and are not asked about this way.
 - **It cannot draw outside its cell.** It cannot open a window, a dialog or a form of its own.
 - **It cannot keep a secret from the developer's own repository.** A view is a script every viewer downloads. Do not put one in it.
 
@@ -49,9 +50,9 @@ These follow from the design above. They are the price of a widget that the deve
 
 ## The worst case
 
-A widget that is written badly or on purpose can draw wrong things inside its own box: a wrong number, a misleading label, a gauge that is always green, a button that raises an event the builder attached an action to. That last one is the builder's choice: they attached it. A widget can ask for a height and be refused. It can stop answering, and the cell says it did not load. It can spend the viewer's processor for as long as the page is open, as any script can; a frame that floods messages is removed, a loop that does not is not.
+A widget that is written badly or on purpose can draw wrong things inside its own box: a wrong number, a misleading label, a gauge that is always green, a button that raises an event the builder attached an action to, with no one pressing it. That last one is the builder's choice: they attached it. If the action changes anything, the viewer is asked before it runs, so a frame cannot make a change on its own. A widget can ask for a height and be refused. It can stop answering, and the cell says it did not load. It can spend the viewer's processor for as long as the page is open, as any script can; a frame that floods messages is removed, a loop that does not is not.
 
-It cannot read what the viewer may read, send it out, or do something the page did not say.
+It cannot read what the viewer may read, send it out, do something the page did not say, or change anything the viewer did not confirm.
 
 ## What this is not
 

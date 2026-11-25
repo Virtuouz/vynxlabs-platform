@@ -163,4 +163,26 @@ describe("the inspector of a tenant widget", () => {
     render(<Harness start={placed("1.1.0")} />);
     expect(screen.queryByRole("button", { name: /^Update to/ })).toBeNull();
   });
+
+  test("tells two inputs that read rows apart, by the labels its hints give", () => {
+    const twoInputs: WidgetDefinition = {
+      ...gauge("1.0.0"),
+      type: "x/two",
+      data: {
+        visits: { shape: "rows", label: "Visits", sources: ["table"] },
+        clinics: { shape: "rows", label: "Clinics", sources: ["table"] },
+      },
+      dataHints: [
+        { of: "visits", controls: [{ control: "source", label: "Visits from" }] },
+        { of: "clinics", controls: [{ control: "source", label: "Clinics from" }] },
+      ],
+    };
+    setWorkspaceWidgets("/w", [
+      { type: "x/two", current: "1.0.0", versions: [{ version: "1.0.0", definition: twoInputs }] },
+    ]);
+    render(<Harness start={{ ...placed("1.0.0"), type: "x/two", config: {} }} />);
+    fireEvent.click(screen.getByRole("tab", { name: /^Data/ }));
+    expect(screen.getByText("Visits from")).toBeTruthy();
+    expect(screen.getByText("Clinics from")).toBeTruthy();
+  });
 });

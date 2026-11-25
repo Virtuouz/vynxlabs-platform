@@ -116,10 +116,13 @@ export function RowsItUses({
   env,
   input,
   show,
+  sourceLabel,
 }: {
   env: Env;
   input: string;
   show?: Partial<RowsParts>;
+  /** What the source row is called, where a widget reads rows for more than one input. */
+  sourceLabel?: string;
 }) {
   const declared = rowsPartsOf(dataParts(env.definition), input);
   const rows = { ...declared, ...show };
@@ -129,7 +132,7 @@ export function RowsItUses({
   const [writing, setWriting] = useState(false);
   const showSql = kindOf(data) === "sql" || writing;
   const declaredInput = env.definition.data[input];
-  const label = rows.source ? "Source" : (declaredInput?.label ?? "Rows");
+  const label = rows.source ? (sourceLabel ?? "Source") : (declaredInput?.label ?? "Rows");
   return (
     <DrawerGroup label="Rows it uses">
       {rows.source ? (

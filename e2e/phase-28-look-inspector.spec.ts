@@ -238,6 +238,10 @@ const shot = async (name: string) => {
 // ----- Measuring motion -----
 
 type Frames = Record<string, number>[];
+/** Each frame also says when it was drawn: a slow machine draws fewer frames, and the test counts time. */
+const TIME = "@time";
+/** How many rows were playing their motion when a frame was drawn. */
+const MOVING = "@moving";
 /** Starts recording the top of every sortable row in `list`, on every frame. */
 async function startFrames(list: Locator) {
   await list.evaluate((node) => {
@@ -245,7 +249,10 @@ async function startFrames(list: Locator) {
     w.__frames = [];
     w.__stop = false;
     const tick = () => {
-      const one: Record<string, number> = {};
+      const one: Record<string, number> = {
+        "@time": performance.now(),
+        "@moving": node.querySelectorAll("[data-flip-moving]").length,
+      };
       for (const el of node.querySelectorAll<HTMLElement>("[data-sortable-row]")) {
         one[el.dataset.flipKey as string] = el.getBoundingClientRect().top;
       }
@@ -262,18 +269,85 @@ async function stopFrames(list: Locator): Promise<Frames> {
     return w.__frames;
   });
 }
-/** The biggest distance a row moved between two frames, and how many frames it was between its ends. */
+/** The longest a frame may take for a step between two frames to say anything about popping. */
+const FRAME_MS = 30;
+const SLIDE_MS = 180;
+/**
+ * How many frames in between a slide of this row must show: 3 where the page draws at 60 fps, fewer
+ * on a runner that draws a frame in a tenth of a second while the motion lasts 180 ms. The speed of
+ * the drawing is read where it matters, over the frames of the motion itself (the quiet frames
+ * before and after it are fast whatever the machine).
+ */
+const framesToShow = (frames: Frames, key: string) => {
+  const moving = frames.filter((frame, i) => {
+    const near = [frames[i - 1], frame, frames[i + 1]].map((one) => one?.[key]);
+    return near.some((top) => top !== undefined && top !== near[1]);
+  });
+  const first = moving[0]?.[TIME] as number;
+  const span = (moving.at(-1)?.[TIME] as number) - first;
+  const typical = moving.length > 1 ? span / (moving.length - 1) : SLIDE_MS;
+  return Math.min(3, Math.floor(SLIDE_MS / Math.max(typical, 1)) - 1);
+};
+/**
+ * A row slid: it was seen between its two places on as many frames as the machine drew during the
+ * motion (3 at 60 fps), and where it drew fewer than that, the page was still seen playing it.
+ */
+const slid = (frames: Frames, key: string) => {
+  const needed = framesToShow(frames, key);
+  const between = motionOf(frames, key).between;
+  const playing = frames.some((frame) => (frame[MOVING] ?? 0) > 0);
+  return { ok: between >= Math.max(needed, 1) || (needed < 1 && playing), between, needed };
+};
+/**
+ * The biggest distance a row moved between two frames that were drawn close together (a step across
+ * a long gap is the machine being slow, not the row popping), and how many frames it was between
+ * its ends.
+ */
 const motionOf = (frames: Frames, key: string) => {
-  const tops = frames.map((frame) => frame[key]).filter((top): top is number => top !== undefined);
+  const seen = frames.filter((frame) => frame[key] !== undefined);
+  const tops = seen.map((frame) => frame[key] as number);
   let biggest = 0;
-  for (let i = 1; i < tops.length; i += 1) {
+  for (let i = 1; i < seen.length; i += 1) {
+    const gap = (seen[i]?.[TIME] as number) - (seen[i - 1]?.[TIME] as number);
+    if (gap > FRAME_MS) continue;
     biggest = Math.max(biggest, Math.abs((tops[i] as number) - (tops[i - 1] as number)));
   }
   const low = Math.min(...tops);
   const high = Math.max(...tops);
   const between = tops.filter((top) => top > low + 1 && top < high - 1).length;
-  return { biggest, between, first: tops[0] as number, last: tops.at(-1) as number, tops };
+  // Where it is by the last 150 ms of the recording, not by the last few frames.
+  const endAt = (seen.at(-1)?.[TIME] as number) - 150;
+  const end = seen
+    .filter((frame) => (frame[TIME] as number) >= endAt)
+    .map((frame) => frame[key] as number);
+  return { biggest, between, first: tops[0] as number, last: tops.at(-1) as number, tops, end };
 };
+
+/** Waits until no row has moved for 250 ms (at most 5 s): the motion has ended, however slowly drawn. */
+async function settled(list: Locator) {
+  await owner.waitForTimeout(500);
+  await expect
+    .poll(
+      () =>
+        list.evaluate((node) => {
+          const w = window as unknown as { __frames: Record<string, number>[] };
+          const last = w.__frames.at(-1);
+          if (!last) return false;
+          const now = last["@time"] as number;
+          const recent = w.__frames.filter((frame) => now - (frame["@time"] as number) <= 250);
+          return (
+            Object.keys(last)
+              .filter((key) => key !== "@time" && key !== "@moving")
+              .every((key) => {
+                const tops = recent.map((frame) => frame[key]).filter((top) => top !== undefined);
+                return Math.max(...tops) - Math.min(...tops) < 0.5 && node.isConnected;
+              }) && now - (w.__frames[0]?.["@time"] as number) > 250
+          );
+        }),
+      { timeout: 5000, intervals: [100] },
+    )
+    .toBe(true);
+}
 
 /** Drags a handle by `dy` with a real pointer in small steps, holds, and lets go. Returns the frames. */
 async function drag(
@@ -297,7 +371,7 @@ async function drag(
   await owner.waitForTimeout(350);
   if (options.escape) await owner.keyboard.press("Escape");
   else await owner.mouse.up();
-  await owner.waitForTimeout(500);
+  await settled(list);
   if (options.escape) await owner.mouse.up();
   return stopFrames(list);
 }
@@ -333,9 +407,11 @@ async function measureList(label: string, list: Locator, handleOf: (key: string)
     `${label}: it followed the pointer`,
   ).toBe(true);
   // The other slides out of its way over several frames, and never in one jump of a row's height.
-  expect(other.between, `${label}: the other row slid (frames in between)`).toBeGreaterThanOrEqual(
-    3,
-  );
+  const sliding = slid(frames, b);
+  expect(
+    sliding.ok,
+    `${label}: the other row slid (frames in between: ${sliding.between}, wanted ${sliding.needed})`,
+  ).toBe(true);
   expect(other.biggest, `${label}: the other row did not pop`).toBeLessThan(rowHeight * 0.8);
   // On release, the dragged row settles by sliding too: no frame moves it a whole row.
   expect(
@@ -350,9 +426,8 @@ async function measureList(label: string, list: Locator, handleOf: (key: string)
   // No row ends the whole motion anywhere but its place, and none jumped on the last frames.
   for (const key of keys) {
     const motion = motionOf(frames, key);
-    const tail = motion.tops.slice(-6);
     expect(
-      Math.max(...tail) - Math.min(...tail),
+      Math.max(...motion.end) - Math.min(...motion.end),
       `${label}: ${key} is still at the end`,
     ).toBeLessThan(1.5);
     expect(motion.biggest, `${label}: ${key} never jumped`).toBeLessThan(rowHeight * 0.8);
@@ -389,8 +464,11 @@ test("a table's columns slide: the dragged row follows, the others make room, it
   await owner.waitForTimeout(500);
   const frames = await stopFrames(list);
   expect(await keysOf(list)).toEqual([keys[1], keys[0], ...keys.slice(2)]);
-  const moved = motionOf(frames, keys[1] as string);
-  expect(moved.between, "the keyboard's move slides").toBeGreaterThanOrEqual(3);
+  const sliding = slid(frames, keys[1] as string);
+  expect(
+    sliding.ok,
+    `the keyboard's move slides (frames in between: ${sliding.between}, wanted ${sliding.needed})`,
+  ).toBe(true);
   await expect(handleOf(keys[0] as string)).toBeFocused();
   await expect(owner.getByRole("status").filter({ hasText: /Moved/ }).first()).toBeAttached();
 

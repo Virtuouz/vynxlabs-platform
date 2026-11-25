@@ -220,14 +220,19 @@ export async function refuseWidgetInUse(
     ),
   );
   if (uses.length === 0) return;
+  // A page that places the widget twice is named once.
+  const named = new Map(
+    uses.map((use) => {
+      const path = `/${use.kind === "interface" ? "interfaces" : "dashboards"}/${use.resource}`;
+      const message = `${where(use)} places ${use.widget}${use.version ? ` ${use.version}` : ""}`;
+      return [`${path} ${message}`, { path, message }] as const;
+    }),
+  );
   throw new HttpError(
     409,
     "widget_in_use",
-    `A page still places ${uses.length === 1 ? "this widget" : "these widgets"}. Move each to another version or take the widget off it, then remove it.`,
-    uses.map((use) => ({
-      path: `/${use.kind === "interface" ? "interfaces" : "dashboards"}/${use.resource}`,
-      message: `${where(use)} places ${use.widget}${use.version ? ` ${use.version}` : ""}`,
-    })),
+    `A page still places ${named.size === 1 ? "this widget" : "these widgets"}. Move each to another version or take the widget off it, then remove it.`,
+    [...named.values()],
   );
 }
 

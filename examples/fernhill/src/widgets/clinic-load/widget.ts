@@ -8,7 +8,7 @@ import { defineWidget } from "@volvel/sdk";
  */
 export const clinicLoad = defineWidget({
   type: "x/clinic-load",
-  version: "1.0.0",
+  version: "1.0.1",
   title: "Clinic load",
   description: "One clinic's visits today against what it can take.",
   category: "understand",

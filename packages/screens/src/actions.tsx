@@ -6,7 +6,9 @@ import {
   type Action,
   type AskedField,
   type Condition,
+  changesAnything,
   conditionsHold,
+  STEP_EFFECT,
   type Step,
 } from "@volvel/manifest/action";
 import {
@@ -21,7 +23,7 @@ import {
 } from "@volvel/ui";
 import type { ActOutcome, EventPayload } from "@volvel/widgets";
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
-import { type ConfirmFacts, confirmWords, isDefaultTitle } from "./confirmWords.ts";
+import { type ConfirmFacts, confirmWords, gateWords, isDefaultTitle } from "./confirmWords.ts";
 import {
   ActionError,
   type FilterValues,
@@ -250,6 +252,11 @@ export interface Request {
   table?: string | undefined;
   /** What the widget read of its columns and the names references point at: for the confirmation's words. */
   facts?: ConfirmFacts | undefined;
+  /**
+   * Set when a tenant widget's frame sent the event: the frame can send one with no click, so an
+   * action that changes anything is run only after a confirmation the page draws (decision 0005).
+   */
+  gate?: { widget: string; event: string } | undefined;
   /** The group a point or cell stands for. */
   group?: Readonly<Record<string, unknown>> | undefined;
   /** The summary input it came from, for the rows behind it. */
@@ -264,6 +271,8 @@ export interface Request {
 interface Asking {
   request: Request;
   action: Action;
+  /** Asked because a frame's event would change something, in words the page makes. */
+  gated?: boolean;
   resolve(outcome: ActOutcome): void;
 }
 
@@ -303,6 +312,8 @@ export function useActions(host: ActionsHost): {
 } {
   const toast = useSay();
   const [asking, setAsking] = useState<Asking>();
+  // Whether a question is open now, read by an event that arrives before the page has drawn again.
+  const openNow = useRef(false);
   const [rows, setRows] = useState<{
     widget: string;
     input: string;
@@ -420,6 +431,23 @@ export function useActions(host: ActionsHost): {
     (request: Request): Promise<ActOutcome> => {
       const action = actionAt(request.widget, request.at);
       if (!action) return Promise.resolve({ ok: false, message: "That can't be done here." });
+      const gated = request.gate !== undefined && changesAnything(action);
+      if (gated && openNow.current) {
+        // One question at a time: another change a frame asks for meanwhile is dropped, not queued.
+        console.warn(
+          `Widget "${request.gate?.widget}": the event ${request.gate?.event} was dropped: a confirmation is already open.`,
+        );
+        return Promise.resolve({ ok: false, cancelled: true });
+      }
+      if (gated && !action.confirm) {
+        const held = latest.current.pages?.filter((page) => page.widgets.includes(request.widget));
+        const table =
+          tableOfWidget(request.widget) ?? held?.find((page) => page.record)?.record?.table;
+        openNow.current = true;
+        return new Promise((resolve) =>
+          setAsking({ request: { ...request, table }, action, gated: true, resolve }),
+        );
+      }
       if (action.confirm) {
         // A widget on a sheet or record page has no table of its own: the page's says what its record is.
         const held = latest.current.pages?.filter(
@@ -431,6 +459,7 @@ export function useActions(host: ActionsHost): {
         );
         const table =
           tableOfWidget(request.widget) ?? held?.find((page) => page.record)?.record?.table;
+        if (gated) openNow.current = true;
         return new Promise((resolve) =>
           setAsking({ request: { ...request, table }, action, resolve }),
         );
@@ -456,6 +485,7 @@ export function useActions(host: ActionsHost): {
   const asked = host.asked;
   useEffect(() => {
     if (!asking) {
+      openNow.current = false;
       if (told.current !== undefined) {
         told.current = undefined;
         if (latest.current.asked !== undefined) latest.current.onAsk?.(undefined);
@@ -593,10 +623,24 @@ function Confirmation({
 }) {
   const confirm = asking.action.confirm;
   const several = (asking.request.records?.length ?? 0) > 1;
-  const destroys = asking.action.steps.some((one) => one.do === "delete");
+  // Starts on the way back when the step removes a record, and when a frame, not a click, asked.
+  const destroys = asking.gated === true || asking.action.steps.some((one) => one.do === "delete");
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<ActionError | Error>();
-  const words = confirmWords({
+  const writes = asking.action.steps.filter((one) => STEP_EFFECT[one.do] === "write");
+  const words = asking.gated
+    ? gateWords({
+        widget: asking.request.gate?.widget ?? "",
+        event: asking.request.gate?.event ?? "",
+        writes: writes as { do: string; path?: string; table?: string }[],
+        confirm: {
+          table: asking.request.table,
+          row: several ? undefined : asking.request.row,
+          facts: asking.request.facts,
+          count: several ? asking.request.records?.length : undefined,
+        },
+      })
+    : confirmWords({
     label: labelAt(asking.request.widget, asking.request.at),
     confirm: confirm
       ? {

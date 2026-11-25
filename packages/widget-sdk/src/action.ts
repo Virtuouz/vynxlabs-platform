@@ -55,6 +55,30 @@ export type StepKind = (typeof STEP_KINDS)[number];
 /** Steps the server runs: they change data, or start work. */
 export const SERVER_STEPS: readonly StepKind[] = ["update", "create", "delete", "flow", "script"];
 
+/**
+ * What each kind of step does to the world, in one place: a step that "writes" changes data or
+ * starts work; one that "moves" only moves the reader (opens a page, narrows it, says something).
+ * A tenant widget's frame can emit an event with no click, so an action wired to one asks the
+ * person first when any of its steps writes (decision 0005, amendment of 2026-11-24). The record
+ * is typed by every kind, so a new kind does not compile until it is classified.
+ */
+export const STEP_EFFECT: Readonly<Record<StepKind, "write" | "moves">> = {
+  update: "write",
+  create: "write",
+  delete: "write",
+  flow: "write",
+  script: "write",
+  open: "moves",
+  close: "moves",
+  message: "moves",
+  narrow: "moves",
+  rows: "moves",
+};
+
+/** Whether running the action changes anything: any one step writes. */
+export const changesAnything = (action: { steps: readonly { do: StepKind }[] }): boolean =>
+  action.steps.some((one) => STEP_EFFECT[one.do] === "write");
+
 /** One thing an action does. Each kind of step is written with `do` and takes its own fields. */
 export type Step =
   /** Set fields of a record to named values. The fields named are all it may change. */

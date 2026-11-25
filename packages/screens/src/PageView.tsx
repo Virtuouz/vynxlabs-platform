@@ -504,6 +504,8 @@ function Cell({
         row: id ? lookup(id) : undefined,
         group: groupOf(payload),
         input: groupInput,
+        // A tenant's frame can send an event with no click: what it would change is confirmed first.
+        ...(widget.type.startsWith("x/") ? { gate: { widget: name, event } } : {}),
         ...amongOf(),
       });
     }

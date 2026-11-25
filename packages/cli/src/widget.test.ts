@@ -62,6 +62,12 @@ describe("volvel widget new", () => {
         { of: "value", controls: expect.arrayContaining([{ control: "source", label: "Source" }]) },
       ],
     });
+    // A view says what is wrong in each state it is given: a failed read is not "nothing to show",
+    // and one row is not "1 rows".
+    const view = await readFile(join(dir, "src/widgets/daily-goal/view.tsx"), "utf8");
+    for (const status of ["loading", "empty", "failed", "forbidden"])
+      expect(view).toContain(status);
+    expect(view).not.toContain("{summary?.rows.length ?? 0} rows");
     // The fixture is the props a view is given, so a view can be tried with it.
     expect(
       JSON.parse(await readFile(join(dir, "src/widgets/daily-goal/fixture.json"), "utf8")),

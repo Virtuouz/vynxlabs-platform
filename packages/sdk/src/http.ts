@@ -5,6 +5,8 @@ export interface HttpConfig {
   baseUrl: string;
   /** Sent with every request. Not for credentials. */
   headers?: Record<string, string>;
+  /** A path under the base address that a Test asks for, such as `/health`. Left out, the Test asks for the base address itself. */
+  testPath?: string;
   /** How the connection's credential is sent. */
   auth?:
     | { type: "bearer" }
@@ -89,6 +91,12 @@ export const httpConnector: Connector<HttpConfig, HttpClient> = {
         title: "Headers sent with every request",
         description:
           "Sent with every request. Not for credentials: the connection's secret has its own place.",
+      },
+      testPath: {
+        type: "string",
+        title: "Test path",
+        description:
+          "A path under the address that the Test asks for, such as `/health`. Left out, the Test asks for the address itself, and an API with nothing there answers 404.",
       },
       auth: {
         title: "How the credential is sent",
@@ -245,24 +253,29 @@ export const httpConnector: Connector<HttpConfig, HttpClient> = {
     };
   },
   /**
-   * Asks for the base URL. An answer means the service was reached, whatever the status: many
-   * services answer nothing at their base while every path works. Only a refusal of the
-   * credentials (401, 403, 407) fails, with its status.
+   * Asks for `testPath`, or for the base URL when there is none. Only a 2xx or 3xx answer is
+   * reached and working. Any other answer fails with its status and what to check: the server
+   * answered, but that is not a working connection.
    */
   async test(config, credential, signal) {
+    const target = config.testPath ?? "";
+    const where = `${config.baseUrl}${target ? `/${target.replace(/^\/+/, "")}` : ""}`;
     const response = await httpConnector
       .create(config, credential, signal)
-      .get("", { allowFailure: true });
-    if (response.status === 401 || response.status === 403 || response.status === 407) {
-      throw Object.assign(new Error(`${config.baseUrl} answered ${response.status}.`), {
-        status: response.status,
-      });
-    }
-    return {
-      status: response.status,
-      ...(response.ok
-        ? {}
-        : { message: `The base address answered ${response.status}. The service was reached.` }),
-    };
+      .get(target, { allowFailure: true });
+    if (response.ok) return { status: response.status };
+    const status = response.status;
+    const check = config.testPath
+      ? "Check the base URL and the test path."
+      : "Check the base URL, or set a test path the service answers.";
+    const said =
+      status === 401 || status === 403 || status === 407
+        ? `${where} answered ${status}: the service was reached and refused the credentials. Check the secret.`
+        : status === 404 || status === 410
+          ? `${where} answered ${status}: the service was reached, but nothing is at that address. ${check}`
+          : status >= 500
+            ? `${where} answered ${status}: the service was reached but is failing. Try again later.`
+            : `${where} answered ${status}: the service was reached but did not accept the request. ${check}`;
+    throw Object.assign(new Error(said), { status });
   },
 };

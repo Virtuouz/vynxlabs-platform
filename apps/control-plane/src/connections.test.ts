@@ -254,6 +254,24 @@ describe("a mail connection that is not deployed yet", () => {
 });
 
 describe("a connection's health is what its last Test found", () => {
+  test("an address that answers 404 is not reached, and a test path that answers well is", async () => {
+    const bind = (config: Record<string, unknown>) =>
+      alice.put(`${ws()}/connection-bindings/api404`, {
+        config: { baseUrl: `${outsideUrl}/nothing`, auth: { type: "bearer" }, ...config },
+        credential: "good",
+      });
+    expect((await bind({})).status).toBe(204);
+    expect((await tried("api404")).result).toMatchObject({ ok: false, status: 404 });
+    expect((await listed("api404")).health).toMatchObject({
+      ok: false,
+      problem: expect.stringMatching(/^HTTP 404: .*nothing is at that address.*test path/),
+    });
+    expect((await bind({ baseUrl: outsideUrl, testPath: "/api" })).status).toBe(204);
+    expect((await tried("api404")).result).toMatchObject({ ok: true, status: 200 });
+    expect((await listed("api404")).health).toMatchObject({ ok: true, problem: null });
+    await alice.delete(`${ws()}/connection-bindings/api404`);
+  });
+
   test("a wrong credential fails with the status, a right one is reached, and a change forgets it", async () => {
     const bind = (credential?: string) =>
       alice.put(`${ws()}/connection-bindings/api`, {

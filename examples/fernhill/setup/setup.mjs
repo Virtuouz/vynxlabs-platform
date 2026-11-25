@@ -313,11 +313,11 @@ step("Connecting TextLine and VetSupply, and storing PayFern's signing secret");
 for (const ws of [prod, dev]) {
   const W = `${T}/workspaces/${ws.id}`;
   await admin.put(`${W}/connection-bindings/sms`, {
-    config: { baseUrl: `${STAND_INS}/textline`, auth: { type: "bearer" } },
+    config: { baseUrl: `${STAND_INS}/textline`, testPath: "/ping", auth: { type: "bearer" } },
     credential: "tl_demo_7f3a9c",
   });
   await admin.put(`${W}/connection-bindings/supplier`, {
-    config: { baseUrl: `${STAND_INS}/vetsupply`, auth: { type: "bearer" } },
+    config: { baseUrl: `${STAND_INS}/vetsupply`, testPath: "/ping", auth: { type: "bearer" } },
     credential: "vs_demo_51be22",
   });
   await admin.put(`${W}/secrets/PAYFERN_SIGNING_SECRET`, { value: PAYFERN_SECRET });

@@ -24,7 +24,9 @@ beforeAll(async () => {
   secondUrl = await listen(second);
   first = createServer((request, response) => {
     seen.push({ server: "first", headers: request.headers });
-    if (request.headers["x-probe"]) {
+    if (request.headers["x-probe"] === "ok" && request.url === "/final") {
+      response.end("fine");
+    } else if (request.headers["x-probe"]) {
       // A service whose base address is nothing, whose paths work: the answer depends on the key.
       response.writeHead(request.headers["x-probe"] === "bad" ? 401 : 404).end();
     } else if (request.url === "/away") {
@@ -81,15 +83,28 @@ test("the connection's authorization replaces a caller's of another case", async
   expect(seen[0]?.headers.authorization).toBe("Bearer tok");
 });
 
-test("Test says an answer from the service means it was reached, and a refusal of the key does not", async () => {
-  const probe = (kind: string) =>
+test("Test fails on a 4xx or 5xx answer, and says what to check", async () => {
+  const probe = (kind: string, testPath?: string) =>
     httpConnector.test?.(
-      { baseUrl: firstUrl, headers: { "x-probe": kind }, auth: { type: "bearer" } },
+      {
+        baseUrl: firstUrl,
+        headers: { "x-probe": kind },
+        auth: { type: "bearer" },
+        ...(testPath ? { testPath } : {}),
+      },
       undefined,
       signal,
     );
-  // The base address answers 404, as many services' do: calls to its paths still work.
-  await expect(probe("missing")).resolves.toMatchObject({ status: 404 });
-  // The credentials were refused: that is a failure, with the status.
-  await expect(probe("bad")).rejects.toMatchObject({ status: 401 });
+  // The base address answers 404: the server was reached, but this is not a working address.
+  await expect(probe("missing")).rejects.toMatchObject({
+    status: 404,
+    message: expect.stringMatching(/answered 404.*base URL.*test path/i),
+  });
+  // The credentials were refused: a failure, with the status.
+  await expect(probe("bad")).rejects.toMatchObject({
+    status: 401,
+    message: expect.stringMatching(/refused the credentials/i),
+  });
+  // A test path that answers well is reached.
+  await expect(probe("ok", "/final")).resolves.toMatchObject({ status: 200 });
 });

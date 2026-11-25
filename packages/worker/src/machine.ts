@@ -135,13 +135,16 @@ const PLANNED_RUN_MB = 160;
 
 /**
  * What one more worker is planned at before it runs anything: a worker measured about 105 MB at
- * rest. A worker is started only where this much stays above the memory floor, so that starting
- * it is not what takes the machine below.
+ * rest until it loaded less, and about 65 MB since. A worker is started only where this much stays
+ * above the memory floor, so that starting it is not what takes the machine below.
  */
-export const PLANNED_WORKER_MB = 128;
+export const PLANNED_WORKER_MB = 96;
 
-/** What a script just started is planned at until its memory can be seen: most are well under. */
-export const PLANNED_START_MB = 96;
+/**
+ * What a script just started is planned at until it ends or its memory can be seen. Most take
+ * far less, and one that ends at once gives this back at once.
+ */
+export const PLANNED_START_MB = 160;
 
 /**
  * Memory spoken for by what was started a moment ago and has not taken it yet. Free memory is
@@ -150,14 +153,20 @@ export const PLANNED_START_MB = 96;
  */
 export class Reservations {
   readonly #holdMs: number;
-  #held: { until: number; mb: number }[] = [];
+  #held: { until: number; mb: number; key: string | undefined }[] = [];
 
   constructor(holdMs: number) {
     this.#holdMs = holdMs;
   }
 
-  add(mb: number, now = Date.now()): void {
-    this.#held.push({ until: now + this.#holdMs, mb });
+  /** Speaks for `mb`, for this long or until `key` is released, whichever is first. */
+  add(mb: number, now = Date.now(), key?: string, holdMs = this.#holdMs): void {
+    this.#held.push({ until: now + holdMs, mb, key });
+  }
+
+  /** What `key` stood for has ended, or its memory can be seen now. */
+  release(key: string): void {
+    this.#held = this.#held.filter((one) => one.key !== key);
   }
 
   /** What is still spoken for. */

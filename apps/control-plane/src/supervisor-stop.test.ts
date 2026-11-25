@@ -88,7 +88,7 @@ describe("managed workers that cannot be started or stopped (process mode)", () 
     }) as unknown as typeof spawn;
     // A tenant of its own: the one above still holds the credential of a worker left running.
     const other = (await t.admin.post("/tenants", { slug: "short", name: "Short" })).body.id;
-    const free = { mb: 300 };
+    const free = { mb: 280 };
     const supervisor = new WorkerSupervisor(t.kernel, {
       url: "http://127.0.0.1:1",
       operatorCodeOnly: false,

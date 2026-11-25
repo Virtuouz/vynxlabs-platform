@@ -16,6 +16,7 @@ import {
   machineShortOfMemory,
   noteStarted,
   onMachine,
+  runEnded,
 } from "./workers.js";
 
 /** Input and output above this size go to file storage, and the run keeps a reference. */
@@ -426,7 +427,7 @@ export async function claimRun(
     (await onMachine(machine, async (noteFull) => {
       if (machine && machineShortOfMemory(machine)) return undefined;
       const claimed = await claimNext(kernel, scope, workerId, abandoned, machine, noteFull);
-      if (machine && claimed) noteStarted(machine);
+      if (machine && claimed) noteStarted(machine, claimed.run.id);
       return claimed;
     })) ?? null;
   return run;
@@ -568,6 +569,7 @@ export async function completeRun(
   attempt: number,
   output: unknown,
 ) {
+  runEnded(runId);
   const run = await activeRun(kernel.db, scope, runId, attempt);
   const taken = await kernel.queue.complete(
     queueName(run.workspace_id, run.pool),
@@ -706,6 +708,7 @@ export async function failRun(
   /** False when another attempt would repeat work that was done: the run ends here. */
   retry = true,
 ) {
+  runEnded(runId);
   const run = await activeRun(kernel.db, scope, runId, attempt);
   // What the script was given never reaches the record, the alerts or the handler: an error
   // that quotes a URL with its key, or a header, is stored without it.

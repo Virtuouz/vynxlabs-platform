@@ -56,6 +56,8 @@ export const ${exported} = defineWidget({
       },
     },
   },
+  // What the widget is when a builder adds it: the inspector's first values.
+  defaults: { label: "${words(name)}" },
   // What can happen that an action may be attached to. The payload is checked by the page.
   events: { clicked: { gives: "nothing", label: "When it is clicked" } },
   layout: { min: { w: 2, h: 2 }, default: { w: 4, h: 3 } },

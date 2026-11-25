@@ -1,11 +1,11 @@
 // @vitest-environment happy-dom
 
-import { act, cleanup, render } from "@testing-library/react";
+import { act, cleanup, fireEvent, render } from "@testing-library/react";
 import type { WidgetDefinition } from "@volvel/widgets";
 import { FRAME_PROTOCOL } from "@volvel/widgets/frame";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { setFrameSource } from "./frameSource.ts";
-import { FRAME_READY_MS, TenantWidgetHost } from "./TenantWidgetHost.tsx";
+import { FRAME_HARD_MS, FRAME_READY_MS, TenantWidgetHost } from "./TenantWidgetHost.tsx";
 
 // happy-dom loads no frame, and says so in the console unless that is taken as done.
 (
@@ -228,6 +228,34 @@ describe("p34-b7 what the host gives the frame", () => {
   });
 });
 
+describe("a frame's name", () => {
+  test("is the placed widget's own title, so three gauges are three names; the type's title is the fallback", () => {
+    setFrameSource({ origin: "https://apps.example", slug: "acme" });
+    const one = (title?: string) => (
+      <TenantWidgetHost
+        type="x/hello"
+        version="1.0.0"
+        definition={definition}
+        config={{}}
+        data={{}}
+        size={size}
+        building={false}
+        emit={vi.fn()}
+        {...(title ? { title } : {})}
+      />
+    );
+    const view = render(
+      <>
+        {one("Northside today")}
+        {one("Riverside today")}
+        {one()}
+      </>,
+    );
+    const names = [...view.container.querySelectorAll("iframe")].map((f) => f.title);
+    expect(names).toEqual(["Northside today", "Riverside today", "Hello"]);
+  });
+});
+
 describe("a frame that never answers", () => {
   test("says how to try again in a narrow cell too, where a phone has nothing else to go on", () => {
     vi.useFakeTimers();
@@ -246,10 +274,73 @@ describe("a frame that never answers", () => {
         />,
       );
       act(() => {
-        vi.advanceTimersByTime(FRAME_READY_MS + 1);
+        vi.advanceTimersByTime(FRAME_HARD_MS + 1);
       });
       expect(view.container.textContent).toContain("This widget did not load");
       expect(view.container.textContent).toContain("Reload to try again.");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("a slow network is not a failure: it says it is still loading until the hard limit", () => {
+    vi.useFakeTimers();
+    try {
+      setFrameSource({ origin: "https://apps.example", slug: "acme" });
+      const view = render(
+        <TenantWidgetHost
+          type="x/hello"
+          version="1.0.0"
+          definition={definition}
+          config={{}}
+          data={{}}
+          size={size}
+          building={false}
+          emit={vi.fn()}
+        />,
+      );
+      act(() => {
+        vi.advanceTimersByTime(FRAME_READY_MS + 1);
+      });
+      expect(view.container.textContent).not.toContain("did not load");
+      expect(view.container.textContent).toContain("Still loading Hello");
+      act(() => {
+        vi.advanceTimersByTime(FRAME_HARD_MS);
+      });
+      expect(view.container.textContent).toContain("This widget did not load");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("once its page has arrived (load), it has the ready time from then, not from mount", () => {
+    vi.useFakeTimers();
+    try {
+      setFrameSource({ origin: "https://apps.example", slug: "acme" });
+      const view = render(
+        <TenantWidgetHost
+          type="x/hello"
+          version="1.0.0"
+          definition={definition}
+          config={{}}
+          data={{}}
+          size={size}
+          building={false}
+          emit={vi.fn()}
+        />,
+      );
+      act(() => {
+        vi.advanceTimersByTime(FRAME_READY_MS - 1000);
+      });
+      fireEvent.load(view.container.querySelector("iframe") as HTMLIFrameElement);
+      act(() => {
+        vi.advanceTimersByTime(FRAME_READY_MS - 1000);
+      });
+      expect(view.container.textContent).not.toContain("did not load");
+      act(() => {
+        vi.advanceTimersByTime(2000);
+      });
+      expect(view.container.textContent).toContain("This widget did not load");
     } finally {
       vi.useRealTimers();
     }

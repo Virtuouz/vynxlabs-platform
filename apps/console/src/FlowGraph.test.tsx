@@ -83,3 +83,42 @@ test("WLK-15: the step after a connection with a long word on it is placed far e
   const gap = (p: ReturnType<typeof autoLayout>) => (p.b?.x as number) - (p.a?.x as number);
   expect(gap(worded)).toBeGreaterThan(gap(plain) + 40);
 });
+
+test("p34-w3: a node's whole label is drawn and its box is as wide as the label needs", () => {
+  const long = {
+    "invoice-the-visit": { type: "script", script: "billing/create-invoice-for-visit" },
+    short: { type: "set", values: {} },
+  };
+  const { container } = render(<FlowGraph nodes={long as never} edges={[]} layout={{}} />);
+  const texts = [...container.querySelectorAll("text")].map((text) => text.textContent);
+  expect(texts).toContain("invoice-the-visit");
+  expect(texts).toContain("Script: billing/create-invoice-for-visit");
+  const widths = [...container.querySelectorAll("g[role] > rect:not(.hidden)")].map((rect) =>
+    Number(rect.getAttribute("width")),
+  );
+  expect(new Set(widths).size).toBe(2);
+});
+
+test("p34-w3: the drawing follows the console's type scale", () => {
+  const was = window.matchMedia;
+  const sized = (media: typeof window.matchMedia) => {
+    window.matchMedia = media;
+    const { container, unmount } = render(
+      <FlowGraph nodes={nodes as never} edges={edges} layout={{}} onMove={() => {}} />,
+    );
+    const svg = container.querySelector("svg") as SVGSVGElement;
+    const out = [Number.parseFloat(svg.style.maxWidth), svg.getAttribute("viewBox")];
+    unmount();
+    return out;
+  };
+  try {
+    const base = sized(() => ({ matches: false }) as MediaQueryList);
+    const big = sized(
+      ((query: string) => ({ matches: query.includes("2560") }) as MediaQueryList) as never,
+    );
+    expect(base[1]).toBe(big[1]);
+    expect(big[0] as number).toBeCloseTo((base[0] as number) * (18 / 16), 0);
+  } finally {
+    window.matchMedia = was;
+  }
+});

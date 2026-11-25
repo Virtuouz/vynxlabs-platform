@@ -833,13 +833,13 @@ export function EventsWorkbench({
             setApplied(name.trim() || undefined);
           }}
         >
-          <div className="w-72 max-w-full">
+          <div className="min-w-0 flex-1 sm:w-72 sm:flex-none">
             <TextField
               label="Exact event name"
               labelHidden
               name="event"
               value={name}
-              placeholder="An event's name, such as orders/placed"
+              placeholder="Event, e.g. orders/placed"
               onChange={setName}
             />
           </div>

@@ -651,7 +651,7 @@ export function RunsWorkbench({
     {
       header: "Target",
       // From 1920 px the path keeps what it needs, and the result takes the rest.
-      width: "3xl:w-[26rem]",
+      width: "3xl:w-[20rem]",
       cell: (one) => (
         <span className="flex min-w-0 items-center gap-1.5">
           <KindIcon kind={one.kind} />
@@ -679,6 +679,9 @@ export function RunsWorkbench({
     {
       header: "Result",
       priority: 2,
+      // What a run ended in reads whole where there is room: the column keeps 14rem, and the
+      // path above gives up what it does not need.
+      wide: true,
       truncate: true,
       cell: (one) =>
         one.errorSummary ? (

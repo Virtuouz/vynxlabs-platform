@@ -530,7 +530,7 @@ function RailItem({
   onReveal?: () => void;
   revealed?: boolean;
 }) {
-  const look = `relative flex w-14 flex-col items-center gap-1 rounded-control pt-[7px] pb-1.5 no-underline ${
+  const look = `relative flex w-[calc(3.5rem*var(--vx-type-growth,1))] flex-col items-center gap-1 rounded-control pt-[7px] pb-1.5 no-underline ${
     current
       ? "bg-selected text-ink"
       : revealed
@@ -1033,7 +1033,7 @@ export function Shell({
       </a>
       <nav
         aria-label="Main"
-        className="hidden w-16 shrink-0 flex-col items-center gap-1 border-line border-r bg-structure py-3 md:flex"
+        className="hidden w-[calc(4rem*var(--vx-type-growth,1))] shrink-0 flex-col items-center gap-1 border-line border-r bg-structure py-3 md:flex"
       >
         <Link to="/" className="mb-4 flex no-underline">
           <BrandMark />
@@ -1049,7 +1049,7 @@ export function Shell({
       <Appear
         open={flyout}
         ref={flown}
-        className="absolute inset-y-0 left-16 layer-sheet hidden w-56 flex-col border-line border-r bg-structure shadow-overlay transition-[opacity,translate] motion-base data-[ending-style]:-translate-x-2 data-[starting-style]:-translate-x-2 data-[ending-style]:opacity-0 data-[starting-style]:opacity-0 md:flex"
+        className="absolute inset-y-0 left-[calc(4rem*var(--vx-type-growth,1))] layer-sheet hidden w-56 flex-col border-line border-r bg-structure shadow-overlay transition-[opacity,translate] motion-base data-[ending-style]:-translate-x-2 data-[starting-style]:-translate-x-2 data-[ending-style]:opacity-0 data-[starting-style]:opacity-0 md:flex"
       >
         <nav aria-label="Sections" className="flex min-h-0 flex-1 flex-col">
           <div className="flex h-12 shrink-0 items-center border-line border-b px-4">

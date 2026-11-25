@@ -200,7 +200,12 @@ export function CodeEditor({
           readOnly,
           automaticLayout: true,
           minimap: { enabled: false },
-          fontSize: 13,
+          fontSize: Math.round(
+            13 *
+              (Number.parseFloat(
+                getComputedStyle(document.documentElement).getPropertyValue("--vx-type-scale"),
+              ) || 1),
+          ),
           scrollBeyondLastLine: false,
           tabSize: 2,
           wordWrap: wrap ? "on" : "off",

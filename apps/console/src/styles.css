@@ -1,4 +1,5 @@
 @import "@volvel/ui/tokens.css";
+@import "@volvel/ui/type-scale.css";
 @source "./";
 @source "../../../packages/screens/src";
 /* The platform's widget packs draw with the kit's classes too. */

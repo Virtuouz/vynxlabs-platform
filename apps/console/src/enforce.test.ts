@@ -278,6 +278,13 @@ test("every transition is timed by a motion token, and reduced motion stops all 
     });
   }
   expect(found).toEqual([]);
+  // The console and the served apps runtime import the one file, so the builder's canvas, an app's
+  // preview and a dashboard are drawn at the size the published app is.
+  for (const sheet of ["styles.css", "../../../packages/screens/runtime/styles.css"]) {
+    expect(readFileSync(join(here, sheet), "utf8")).toContain(
+      '@import "@volvel/ui/type-scale.css";',
+    );
+  }
   const tokens = readFileSync(join(kit, "tokens.css"), "utf8");
   expect(tokens).toMatch(
     /@media \(prefers-reduced-motion: reduce\) \{\s*\* \{\s*transition: none !important;\s*animation: none !important;/,
@@ -738,4 +745,26 @@ test("no string of the console, screens, widgets or ui says workflow", () => {
     }
   }
   expect(found).toEqual([]);
+});
+
+/**
+ * The console's type scale is set once, at the root (owner, 2026-11-24): body 16 px to 1920,
+ * 18 from 2560, 20 from 3840. The kit's roles are all multiplied by `--vx-type-scale`, so a size
+ * written in px beside them would not follow.
+ */
+test("the type scale is set at the root and every role follows it", () => {
+  const styles = readFileSync(join(here, "../../../packages/ui/src/type-scale.css"), "utf8");
+  const tokens = readFileSync(join(here, "../../../packages/ui/src/tokens.css"), "utf8");
+  expect(styles).toMatch(/:root\s*\{\s*--vx-type-scale: calc\(16 \/ 14\);/);
+  expect(styles).toMatch(
+    /@media \(min-width: 2560px\)\s*\{\s*:root\s*\{\s*--vx-type-scale: calc\(18 \/ 14\);/,
+  );
+  expect(styles).toMatch(
+    /@media \(min-width: 3840px\)\s*\{\s*:root\s*\{\s*--vx-type-scale: calc\(20 \/ 14\);/,
+  );
+  const bare = tokens
+    .split("\n")
+    .filter((line) => /^\s*--text-[a-z-]+(--line-height)?:\s*[\d.]+px;/.test(line));
+  expect(bare).toEqual([]);
+  expect(tokens).toMatch(/body \{[^}]*font-size: calc\(14px \* var\(--vx-type-scale, 1\)\)/);
 });

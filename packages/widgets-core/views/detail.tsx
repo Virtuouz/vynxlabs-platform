@@ -458,7 +458,7 @@ export function DetailView({
             </h3>
           ) : null}
           {figured && figure ? (
-            <span className="text-[22px] leading-7 font-semibold tracking-[-0.01em] tabular-nums">
+            <span className="text-[calc(22px*var(--vx-type-scale,1))] leading-[calc(28px*var(--vx-type-scale,1))] font-semibold tracking-[-0.01em] tabular-nums">
               {cellOf(
                 shown.find((field) => field.column === figure) ?? { column: figure },
                 infoOf(figure),

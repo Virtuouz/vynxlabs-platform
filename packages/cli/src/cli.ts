@@ -21,6 +21,7 @@ import { init, runLocally } from "./local.js";
 import { pull, pulledFile, readPulled } from "./pull.js";
 import { SCHEMA_FOLDER, writeEditorSchemas } from "./schemas.js";
 import { writeEnvTypes } from "./types.js";
+import { tenantExport, tenantImport } from "./tenant-move.js";
 import { widgetCommand } from "./widget.js";
 
 export { CliError };
@@ -31,6 +32,10 @@ export interface Io {
   env: Record<string, string | undefined>;
   /** Asks a yes or no question of whoever is at the terminal. Absent when nobody can answer. */
   confirm?: (question: string) => Promise<boolean>;
+  /** Shows a line that is replaced by the next one, as a count of bytes moved. Absent where there is no terminal. */
+  progress?: (line: string) => void;
+  /** Waits. Absent: a timer. Tests say so to wait no time. */
+  sleep?: (ms: number) => Promise<void>;
 }
 
 export interface Settings {
@@ -888,18 +893,7 @@ async function rollback(args: string[], io: Io): Promise<number> {
   return 0;
 }
 
-/** The passphrase for an export file. Kept out of the command line, where it would be visible to others. */
-function passphrase(io: Io): string {
-  const value = io.env.VOLVEL_EXPORT_PASSPHRASE;
-  if (!value) {
-    throw new CliError(
-      "Set VOLVEL_EXPORT_PASSPHRASE to the passphrase for the export file. It protects every secret the tenant has: make it long, and pass it on separately from the file.",
-    );
-  }
-  return value;
-}
-
-async function failure(response: Response, doing: string): Promise<CliError> {
+export async function failure(response: Response, doing: string): Promise<CliError> {
   const text = await response.text();
   let body: unknown = null;
   try {
@@ -920,114 +914,12 @@ async function tenant(args: string[], io: Io) {
   }
 
   if (action === "export") {
-    const { values } = parseArgs({
-      args: rest,
-      options: {
-        tenant: { type: "string" as const },
-        out: { type: "string" as const },
-        history: { type: "boolean" as const },
-      },
-    });
-    if (!values.tenant || !values.out) {
-      throw new CliError("This needs --tenant <slug> and --out <file>.");
-    }
-    const secret = passphrase(io);
-    const found = await findTenant(settings, values.tenant);
-    const response = await fetch(`${base}/tenants/${found.id}/exports`, {
-      method: "POST",
-      headers: { authorization, "content-type": "application/json" },
-      body: JSON.stringify({ passphrase: secret, history: values.history ?? false }),
-    }).catch(() => {
-      throw new CliError(
-        `Could not reach ${settings.url}. Check the URL and that the instance is running.`,
-      );
-    });
-    if (!response.ok || !response.body) throw await failure(response, `export ${values.tenant}`);
-    const file = resolve(values.out);
-    await pipeline(
-      Readable.fromWeb(response.body as never),
-      createWriteStream(file, { mode: 0o600 }),
-    );
-    const { size } = await stat(file);
-    io.out(`Exported ${values.tenant} to ${file} (${(size / 1024 / 1024).toFixed(1)} MB).`);
-    io.out(
-      values.history
-        ? "It includes run, flow and event history."
-        : "Run, flow and event history is not in it. Add --history to include it.",
-    );
-    io.out(
-      "API keys and worker credentials are never exported. Make new ones where the tenant goes.",
-    );
-    io.out(
-      "The passphrase protects the secrets in the file. Its rows, files and history are readable by anyone who has it: keep it somewhere safe.",
-    );
+    await tenantExport(rest, io, settings, { failure, refusal, findTenant, request });
     return;
   }
 
   if (action === "import") {
-    const { values, positionals } = parseArgs({
-      args: rest,
-      allowPositionals: true,
-      options: { slug: { type: "string" as const }, location: { type: "string" as const } },
-    });
-    const [path] = positionals;
-    if (!path) throw new CliError("This needs the export file: volvel tenant import <file>");
-    const secret = passphrase(io);
-    const file = resolve(path);
-    const { size } = await stat(file).catch(() => {
-      throw new CliError(`There is no file at ${file}.`);
-    });
-    const query = new URLSearchParams();
-    if (values.slug) query.set("slug", values.slug);
-    if (values.location) query.set("dataLocation", values.location);
-    // Asked first, because a key that is refused while a file is being sent cannot be told apart from a broken connection.
-    const me = await request(settings.url, "/me", settings.token);
-    if (me.status !== 200) throw refusal(me, "import the tenant");
-    const response = await fetch(`${base}/instance/tenant-imports?${query}`, {
-      method: "POST",
-      headers: {
-        authorization,
-        "content-type": "application/x-tar",
-        "content-length": String(size),
-        "x-export-passphrase": secret,
-      },
-      body: Readable.toWeb(createReadStream(file)) as never,
-      // Node needs this said to send a body as it is read.
-      duplex: "half",
-    } as RequestInit).catch((error: Error) => {
-      throw new CliError(
-        `The file could not be sent to ${settings.url}. ${(error.cause as Error | undefined)?.message ?? error.message}`,
-      );
-    });
-    if (!response.ok) throw await failure(response, "import the tenant");
-    const report = (await response.json()) as {
-      tenant: { slug: string; dataLocation: string | null };
-      counts: Record<string, number>;
-      objects: number;
-      members: { created: number; linked: number };
-      pausedWorkspaces: number;
-      cancelled: { runs: number; flowRuns: number };
-      notCarried: string[];
-    };
-    const rows = Object.values(report.counts).reduce((a, b) => a + b, 0);
-    io.out(
-      `Imported ${report.tenant.slug}: ${rows} rows, ${report.objects} stored objects, ` +
-        `${report.members.created} members created and ${report.members.linked} linked to accounts already here.`,
-    );
-    io.out(
-      report.tenant.dataLocation
-        ? `Its custom tables are in the database location "${report.tenant.dataLocation}".`
-        : "Its custom tables are in Volvel's own database.",
-    );
-    io.out(
-      `All ${report.pausedWorkspaces} workspaces arrived with their triggers paused. Resume each one when the instance it came from has stopped.`,
-    );
-    if (report.cancelled.runs + report.cancelled.flowRuns > 0) {
-      io.out(
-        `${report.cancelled.runs} runs and ${report.cancelled.flowRuns} flow runs were unfinished in the export and are recorded as canceled.`,
-      );
-    }
-    for (const line of report.notCarried) io.out(`Not carried: ${line}`);
+    await tenantImport(rest, io, settings, { failure, refusal, findTenant, request });
     return;
   }
   throw new CliError("Use: volvel tenant export ..., or: volvel tenant import <file>");

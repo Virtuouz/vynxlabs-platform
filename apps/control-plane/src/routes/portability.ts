@@ -32,19 +32,29 @@ const Passphrase = Type.String({ minLength: MIN_PASSPHRASE, maxLength: 500 });
  * takes to read the download. So that slow readers cannot take the connections the platform
  * needs, an instance writes a few exports at once, a tenant one, and an export whose reader
  * has stopped taking it for `stallMs` is ended and its connection given back.
+ *
+ * These are the one place the numbers are held. The instance's settings (EXPORTS_AT_ONCE,
+ * EXPORTS_PER_TENANT, EXPORT_STALL_SECONDS, EXPORT_MAX_MINUTES) are copied here when the routes
+ * are made; these are the defaults until then.
  */
 export const exportLimits = {
   atOnce: 3,
+  perTenant: 1,
   stallMs: 60_000,
-  /** One export is ended after this long, however it is read: a reader that takes a chunk now and then keeps no place for ever. */
+  /**
+   * One export is ended after this long, however it is read: a reader that takes a chunk now and
+   * then keeps no place for ever. 0 is no limit.
+   */
   totalMs: 30 * 60_000,
   retryAfterSeconds: 30,
 };
-const exporting = new Set<string>();
+/** How many exports of each tenant are being written. */
+const exporting = new Map<string, number>();
+const exportsRunning = () => [...exporting.values()].reduce((a, b) => a + b, 0);
 
 /** Takes a place for one export of this tenant, or says to come back later. */
 function takeExportPlace(tenantId: string): () => void {
-  if (exporting.has(tenantId)) {
+  if ((exporting.get(tenantId) ?? 0) >= exportLimits.perTenant) {
     throw new HttpError(
       429,
       "rate_limited",
@@ -53,7 +63,7 @@ function takeExportPlace(tenantId: string): () => void {
       { "retry-after": String(exportLimits.retryAfterSeconds) },
     );
   }
-  if (exporting.size >= exportLimits.atOnce) {
+  if (exportsRunning() >= exportLimits.atOnce) {
     throw new HttpError(
       429,
       "rate_limited",
@@ -62,12 +72,14 @@ function takeExportPlace(tenantId: string): () => void {
       { "retry-after": String(exportLimits.retryAfterSeconds) },
     );
   }
-  exporting.add(tenantId);
+  exporting.set(tenantId, (exporting.get(tenantId) ?? 0) + 1);
   let given = false;
   return () => {
     if (given) return;
     given = true;
-    exporting.delete(tenantId);
+    const left = (exporting.get(tenantId) ?? 1) - 1;
+    if (left > 0) exporting.set(tenantId, left);
+    else exporting.delete(tenantId);
   };
 }
 
@@ -86,11 +98,18 @@ export function readerBoundStream(source: AsyncIterable<Buffer>, release: () => 
     () => {
       if (stream.readableLength > 0 && Date.now() - lastTaken > exportLimits.stallMs) {
         stream.destroy(new Error("The reader stopped taking the export."));
-      } else if (Date.now() - startedAt > exportLimits.totalMs) {
+      } else if (exportLimits.totalMs > 0 && Date.now() - startedAt > exportLimits.totalMs) {
         stream.destroy(new Error("The export took longer than it is allowed."));
       }
     },
-    Math.max(50, Math.min(1000, exportLimits.stallMs / 4, exportLimits.totalMs / 4)),
+    Math.max(
+      50,
+      Math.min(
+        1000,
+        exportLimits.stallMs / 4,
+        exportLimits.totalMs > 0 ? exportLimits.totalMs / 4 : 1000,
+      ),
+    ),
   );
   watch.unref();
   stream.once("close", () => {
@@ -104,6 +123,11 @@ export function readerBoundStream(source: AsyncIterable<Buffer>, release: () => 
 export function portabilityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
   return async (app) => {
     const { db } = kernel;
+    const settings = kernel.config.limits;
+    exportLimits.atOnce = settings.exportsAtOnce;
+    exportLimits.perTenant = settings.exportsPerTenant;
+    exportLimits.stallMs = settings.exportStallSeconds * 1000;
+    exportLimits.totalMs = settings.exportMaxMinutes * 60_000;
 
     app.post(
       "/tenants/:t/exports",
@@ -149,15 +173,22 @@ export function portabilityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             }),
           );
           const stamp = new Date().toISOString().slice(0, 19).replaceAll(":", "");
-          return reply
-            .header("content-type", "application/x-tar")
-            .header("content-disposition", `attachment; filename="${tenant.slug}-${stamp}.tar"`)
-            .send(
-              readerBoundStream(
-                exportTenant(kernel, params.t, { passphrase: body.passphrase, history }),
-                release,
-              ),
-            );
+          return (
+            reply
+              .header("content-type", "application/x-tar")
+              // So that a command line that is cut off can say which limit it was.
+              .header(
+                "x-export-limits",
+                `max-minutes=${Math.round(exportLimits.totalMs / 60_000)}; stall-seconds=${Math.round(exportLimits.stallMs / 1000)}`,
+              )
+              .header("content-disposition", `attachment; filename="${tenant.slug}-${stamp}.tar"`)
+              .send(
+                readerBoundStream(
+                  exportTenant(kernel, params.t, { passphrase: body.passphrase, history }),
+                  release,
+                ),
+              )
+          );
         } catch (error) {
           release();
           throw error;

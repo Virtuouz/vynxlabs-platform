@@ -158,3 +158,70 @@ test("a reader that takes a chunk every so often, never stalling, is still ended
     Object.assign(exportLimits, before);
   }
 }, 15_000);
+
+test("a tenant may be given more than one export at once", async () => {
+  const before = { ...exportLimits };
+  exportLimits.perTenant = 2;
+  exportLimits.atOnce = 10;
+  try {
+    const who = people[1] as (typeof people)[0];
+    // Places held by the earlier tests' readers are ended by their stall time.
+    exportLimits.stallMs = 400;
+    await sleep(2500);
+    expect((await slowExport(who)).status).toBe(200);
+    expect((await slowExport(who)).status).toBe(200);
+    expect((await slowExport(who)).status).toBe(429);
+  } finally {
+    Object.assign(exportLimits, before);
+  }
+}, 30_000);
+
+test("with no time limit, a reader that takes a chunk every so often keeps its export", async () => {
+  const before = { ...exportLimits };
+  exportLimits.stallMs = 5000;
+  exportLimits.totalMs = 0;
+  try {
+    async function* chunks() {
+      for (;;) yield Buffer.alloc(64 * 1024);
+    }
+    let released = false;
+    const stream = readerBoundStream(chunks(), () => {
+      released = true;
+    });
+    stream.on("error", () => undefined);
+    const reader = setInterval(() => stream.read(), 100);
+    await sleep(1500);
+    clearInterval(reader);
+    expect(released).toBe(false);
+    stream.destroy();
+  } finally {
+    Object.assign(exportLimits, before);
+  }
+}, 15_000);
+
+test("the limits are the instance's settings", async () => {
+  const before = { ...exportLimits };
+  const other = await startTestApp({
+    config: {
+      limits: {
+        ...t.kernel.config.limits,
+        exportsAtOnce: 7,
+        exportsPerTenant: 2,
+        exportStallSeconds: 90,
+        exportMaxMinutes: 0,
+      },
+    },
+  });
+  try {
+    expect(exportLimits).toMatchObject({
+      atOnce: 7,
+      perTenant: 2,
+      stallMs: 90_000,
+      totalMs: 0,
+      retryAfterSeconds: 30,
+    });
+  } finally {
+    await other.stop();
+    Object.assign(exportLimits, before);
+  }
+}, 60_000);

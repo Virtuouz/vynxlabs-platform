@@ -117,6 +117,14 @@ export interface Limits {
   triggersPaused: boolean;
   /** Queued runs in a workspace past which its schedules skip their times. 0: no limit. */
   scheduleBacklogLimit: number;
+  /** Tenant exports written at once on this instance. */
+  exportsAtOnce: number;
+  /** Tenant exports written at once for one tenant. */
+  exportsPerTenant: number;
+  /** Seconds an export's reader may take nothing before the export is ended. */
+  exportStallSeconds: number;
+  /** Minutes one export may take, however it is read. 0: no limit. */
+  exportMaxMinutes: number;
 }
 
 export const MIN_PASSWORD_LENGTH = 12;
@@ -348,6 +356,10 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     sqlStatementTimeoutMs: whole("SQL_STATEMENT_TIMEOUT_MS", 1000, 600_000) ?? 15_000,
     triggersPaused: (value("TRIGGERS_PAUSED") ?? "false") === "true",
     scheduleBacklogLimit: whole("SCHEDULE_BACKLOG_LIMIT", 0, 1_000_000) ?? 200,
+    exportsAtOnce: whole("EXPORTS_AT_ONCE", 1, 100) ?? 3,
+    exportsPerTenant: whole("EXPORTS_PER_TENANT", 1, 100) ?? 1,
+    exportStallSeconds: whole("EXPORT_STALL_SECONDS", 1, 86_400) ?? 60,
+    exportMaxMinutes: whole("EXPORT_MAX_MINUTES", 0, 10_080) ?? 30,
   };
   const docsUrl = value("DOCS_URL");
   url("DOCS_URL", docsUrl, ["http:", "https:"]);

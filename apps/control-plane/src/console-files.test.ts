@@ -93,3 +93,10 @@ test("p34-b4r the console's page lets a frame be only the instance's own: a widg
     (await get("/assets/index-Bof_UAWc.js")).headers["content-security-policy"],
   ).toBeUndefined();
 });
+
+test("p35 the console's page is not drawn inside another site's page", async () => {
+  for (const url of ["/", "/t/acme/workspaces/main/flows"]) {
+    const policy = String((await get(url)).headers["content-security-policy"] ?? "");
+    expect(policy, url).toMatch(/(^|; )frame-ancestors 'self'( |$|;)/);
+  }
+});

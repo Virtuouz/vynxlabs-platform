@@ -357,6 +357,16 @@ describe("log lines of any size", () => {
     expect(state.requests.some((one) => one.endsWith("/fail"))).toBe(false);
   });
 
+  it.runIf(process.platform === "linux")(
+    "says what a script held, even one that ends at once",
+    async () => {
+      const state = await platform([{ entry: "consoler" }]);
+      await work(state, () => state.ended.length === 1);
+      // Looked at when it said it was done: a script over in a tenth of a second is still seen.
+      expect(state.ended[0]?.body.peakMb).toBeGreaterThan(10);
+    },
+  );
+
   it("refuses an output over its limit before reporting the run done", async () => {
     const state = await platform([{ entry: "bulky" }]);
     await work(state, () => state.ended.length === 1);

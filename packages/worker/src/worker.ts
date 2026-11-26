@@ -166,6 +166,8 @@ function defaultRunner(): string {
 
 /** How often a script's memory is looked at. */
 const MEMORY_CHECK_MS = 500;
+/** When a script's memory is first looked at. */
+const FIRST_LOOK_MS = 150;
 /** When a run's first heartbeat is sent, with what its script holds by then. */
 const FIRST_BEAT_MS = 1500;
 /** Long enough for a control plane or its database to restart; a run is waited for no longer. */
@@ -205,6 +207,8 @@ interface ScriptProcess {
   peakMb(): number | undefined;
   /** What it held when last looked at, in MB. */
   heldMb(): number | undefined;
+  /** Looks now at what it holds: called when it says it is done, which is when it holds most. */
+  look(): void;
   dispose(): void;
 }
 
@@ -235,18 +239,21 @@ function startScript(runner: string, memoryMb: number, probe: MachineProbe): Scr
   const limitMb = memoryMb + NODE_OVERHEAD_MB;
   let peak: number | undefined;
   let last: number | undefined;
-  const watching =
-    child.pid !== undefined && probe.rssMb(child.pid) !== undefined
-      ? setInterval(() => {
-          const held = child.pid === undefined ? undefined : probe.rssMb(child.pid);
-          if (held !== undefined) last = held;
-          if (held !== undefined && held > (peak ?? 0)) peak = held;
-          if (held !== undefined && held > limitMb && killed === undefined) {
-            killed = "memory";
-            child.kill("SIGKILL");
-          }
-        }, MEMORY_CHECK_MS)
-      : undefined;
+  const look = () => {
+    const held = child.pid === undefined ? undefined : probe.rssMb(child.pid);
+    if (held === undefined) return;
+    last = held;
+    if (held > (peak ?? 0)) peak = held;
+    if (held > limitMb && killed === undefined) {
+      killed = "memory";
+      child.kill("SIGKILL");
+    }
+  };
+  const watched = child.pid !== undefined && probe.rssMb(child.pid) !== undefined;
+  const watching = watched ? setInterval(look, MEMORY_CHECK_MS) : undefined;
+  // Once early as well: most scripts end before the first regular look, and one never looked
+  // at stays planned at the flat figure for ever.
+  const firstLook = watched ? setTimeout(look, FIRST_LOOK_MS) : undefined;
   return {
     child,
     kill() {
@@ -262,8 +269,12 @@ function startScript(runner: string, memoryMb: number, probe: MachineProbe): Scr
     heldMb() {
       return last;
     },
+    look() {
+      if (watched && child.exitCode === null && child.signalCode === null) look();
+    },
     dispose() {
       clearInterval(watching);
+      clearTimeout(firstLook);
     },
   };
 }
@@ -682,6 +693,7 @@ export class Worker {
 
       const outcome = new Promise<unknown>((resolve, reject) => {
         started.on("message", (message: FromRunner) => {
+          if (message.t !== "log") watched.look();
           if (message.t === "log") {
             pending.push(capped(message.entry));
             bound();

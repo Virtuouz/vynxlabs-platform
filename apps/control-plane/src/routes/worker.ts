@@ -635,6 +635,8 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         if (worker.workspaceId) query = query.where("workspace_id", "=", worker.workspaceId);
         const run = await query.executeTakeFirst();
         if (!run) throw notFound("The run");
+        // Only the worker the run was given to may add to its log.
+        await mustHold(db, worker, run.worker_id);
         if (body.entries.length > 0) {
           // A line is stored masked: the values the run was given, and secret-named fields.
           const known = await servedValues(kernel, db, run);

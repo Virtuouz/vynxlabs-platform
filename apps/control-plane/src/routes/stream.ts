@@ -101,6 +101,8 @@ export function streamRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             429,
             "too_many_streams",
             `At most ${ownOnly ? MAX_OWN_STREAMS : MAX_STREAMS} streams may be open at once. Close one first.`,
+            undefined,
+            { "retry-after": "5" },
           );
         }
 

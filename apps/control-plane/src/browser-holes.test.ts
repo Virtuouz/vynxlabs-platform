@@ -122,6 +122,23 @@ describe("p35 browser: a token in a console address is not written down", () => 
     );
     expect(publicPath({ url: "/portal/acme/forms/contact" })).toBe("/portal/acme/forms/contact");
   });
+
+  test("a route name written with percent escapes, or with a doubled slash, is masked all the same", () => {
+    for (const url of [
+      `/api/v1/%6Dember-password-links/${TOKEN}`,
+      `/api/v1/%61pproval-links/${TOKEN}`,
+      `/%72eset-password/${TOKEN}`,
+      `/api/v1/%68ooks/${TOKEN}`,
+      `/api/v1/hooks//${TOKEN}`,
+      `/portal/acme/forms/%76xf_${TOKEN}`,
+    ]) {
+      expect(publicPath({ url }), url).not.toContain(TOKEN);
+      expect(publicPath({ url }), url).toMatch(/:token$/);
+    }
+    // A malformed escape does not throw, and the rest is still masked.
+    expect(publicPath({ url: `/api/v1/hooks/${TOKEN}%zz%` })).toBe("/api/v1/hooks/:token");
+    expect(publicPath({ url: "/a%E0%A4%A/b" })).toContain("/b");
+  });
 });
 
 describe("p35 browser: a docs app's files run as no origin at the console's address", () => {

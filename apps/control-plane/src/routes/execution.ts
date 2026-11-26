@@ -76,9 +76,9 @@ import { eventSchema, publishPlatformEvent } from "../kernel/flows/events.js";
 import { pushRelease } from "../kernel/git.js";
 import { access, findWorkspace, guestLimit, type WorkspaceRef } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
-import { ownPath } from "../kernel/return-path.js";
 import { METRICS, metricHeader } from "../kernel/metric-list.js";
 import { labelText } from "../kernel/metrics.js";
+import { ownPath } from "../kernel/return-path.js";
 import { listOf, PageQuery, pageOf } from "../pagination.js";
 import { describeRequests, PromotionRequest, visibleRequests } from "./promotion-requests.js";
 import {

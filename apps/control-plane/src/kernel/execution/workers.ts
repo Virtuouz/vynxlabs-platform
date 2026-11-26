@@ -149,9 +149,45 @@ export function machineShortOfMemory(
   return available - machineReservedMb(machine.name, now) < machine.floorMb;
 }
 
+/** The least a script is planned at: a Node process that does nothing holds about this much. */
+const LEAST_START_MB = 48;
+/** How many scripts' memory is remembered. The oldest is forgotten first. */
+const PEAKS_KEPT = 5000;
+/** What each script's process held at most in its last runs, as its workers reported it. */
+const peaks = new Map<string, number[]>();
+
+/**
+ * A script's process held this much at most. A flat 160 MB for every start let two or three
+ * scripts run on a machine that had room for six: in the soak of phase 35 a script that slept
+ * five seconds in 50 MB was counted at 160 for all five.
+ */
+export function notePeak(script: string, mb: number | undefined): void {
+  if (mb === undefined || !Number.isFinite(mb) || mb <= 0) return;
+  const seen = peaks.get(script) ?? [];
+  peaks.delete(script);
+  peaks.set(script, [...seen.slice(-3), mb]);
+  if (peaks.size > PEAKS_KEPT) peaks.delete(peaks.keys().next().value as string);
+}
+
+/**
+ * What one more start of a script is planned at: a quarter over the most its last four runs
+ * held, and `PLANNED_START_MB` for one never seen. A worker's word can only lower it to
+ * `LEAST_START_MB`, and the memory floor and the guard stand whatever was planned.
+ */
+export function plannedStartMb(script: string | undefined): number {
+  const seen = script === undefined ? undefined : peaks.get(script);
+  if (!seen?.length) return PLANNED_START_MB;
+  return Math.max(LEAST_START_MB, Math.ceil(Math.max(...seen) * 1.25));
+}
+
 /** A script was handed to this machine. It is counted until `runEnded`, or until it shows. */
-export function noteStarted(machine: MachineClaim, runId?: string, now = Date.now()): void {
-  startingOn(machine.name).add(PLANNED_START_MB, now, runId);
+export function noteStarted(
+  machine: MachineClaim,
+  runId?: string,
+  now = Date.now(),
+  script?: string,
+): void {
+  startingOn(machine.name).add(plannedStartMb(script), now, runId);
 }
 
 /** A run ended: what was held for it is free again. A script that ends at once holds nothing back. */

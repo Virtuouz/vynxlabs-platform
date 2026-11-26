@@ -144,6 +144,14 @@ function cappedFields(fields: unknown): unknown {
 const DEFAULT_MEMORY_MB = 512;
 /** Log lines the worker held but could not deliver. The run says how many. */
 const LogsLost = Type.Optional(Type.Integer({ minimum: 0 }));
+const PeakMb = Type.Optional(
+  Type.Integer({
+    minimum: 0,
+    maximum: 1_000_000,
+    description:
+      "The most memory the script's process was seen to hold, in MB. The next start of the same script is planned at about this much. Absent from an older worker, or where the script ended before it was looked at.",
+  }),
+);
 
 /**
  * The worker protocol: the second language-neutral contract. A worker in any
@@ -1136,12 +1144,13 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             attempt: Attempt,
             output: Type.Optional(Type.Unknown()),
             logsLost: LogsLost,
+            peakMb: PeakMb,
           }),
           response: { 204: NoContent },
         },
       },
       async ({ worker, params, body }, reply) => {
-        await completeRun(kernel, worker, params.id, body.attempt, body.output ?? null);
+        await completeRun(kernel, worker, params.id, body.attempt, body.output ?? null, body.peakMb);
         await recordLostLogs(params.id, body.attempt, body.logsLost);
         return reply.code(204).send(null);
       },
@@ -1169,6 +1178,7 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               }),
             ),
             logsLost: LogsLost,
+            peakMb: PeakMb,
           }),
           response: { 200: Type.Object({ final: Type.Boolean() }) },
         },
@@ -1184,6 +1194,7 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             ...(body.error.stack ? { stack: body.error.stack } : {}),
           },
           body.retry !== false,
+          body.peakMb,
         );
         await recordLostLogs(params.id, body.attempt, body.logsLost);
         return result;

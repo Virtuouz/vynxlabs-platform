@@ -195,6 +195,8 @@ interface ScriptProcess {
   kill(): void;
   /** Why it ended, once it has. */
   ended(code: number | null, signal: NodeJS.Signals | null): Error;
+  /** The most the process was seen to hold, in MB, if it was seen at all. */
+  peakMb(): number | undefined;
   dispose(): void;
 }
 
@@ -223,10 +225,12 @@ function startScript(runner: string, memoryMb: number, probe: MachineProbe): Scr
   // The heap limit covers only what JavaScript holds. Buffers, and what native code holds,
   // are counted here instead, from what the process holds in all.
   const limitMb = memoryMb + NODE_OVERHEAD_MB;
+  let peak: number | undefined;
   const watching =
     child.pid !== undefined && probe.rssMb(child.pid) !== undefined
       ? setInterval(() => {
           const held = child.pid === undefined ? undefined : probe.rssMb(child.pid);
+          if (held !== undefined && held > (peak ?? 0)) peak = held;
           if (held !== undefined && held > limitMb && killed === undefined) {
             killed = "memory";
             child.kill("SIGKILL");
@@ -242,10 +246,19 @@ function startScript(runner: string, memoryMb: number, probe: MachineProbe): Scr
     ended(code, signal) {
       return processEnded(code, signal, stderr, memoryMb, killed);
     },
+    peakMb() {
+      return peak === undefined ? undefined : Math.ceil(peak);
+    },
     dispose() {
       clearInterval(watching);
     },
   };
+}
+
+/** What a script's process held at most, as the control plane is told it: it plans the next start by it. */
+function peakOf(script: ScriptProcess | undefined): { peakMb?: number } {
+  const peakMb = script?.peakMb();
+  return peakMb === undefined ? {} : { peakMb };
 }
 
 /** Ends a script's process with its attempt: now, or when the grace already given runs out. */
@@ -659,7 +672,12 @@ export class Worker {
         );
       }
       const logs = await settle();
-      await this.#call("POST", `${runPath}/complete`, { attempt: job.attempt, output, ...logs });
+      await this.#call("POST", `${runPath}/complete`, {
+        attempt: job.attempt,
+        output,
+        ...logs,
+        ...peakOf(script),
+      });
     } catch (error) {
       const logs = await settle();
       if (error instanceof CredentialRefused || ended instanceof CredentialRefused) {
@@ -671,6 +689,7 @@ export class Worker {
       failed = failure.message;
       await this.#call("POST", `${runPath}/fail`, {
         attempt: job.attempt,
+        ...peakOf(script),
         ...(error instanceof NoRetry ? { retry: false } : {}),
         ...logs,
         error: {

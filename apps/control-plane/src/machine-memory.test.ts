@@ -2,7 +2,9 @@ import { machineName } from "@volvel/worker";
 import { describe, expect, test } from "vitest";
 import {
   machineShortOfMemory,
+  notePeak,
   noteStarted,
+  plannedStartMb,
   noteWorkerStarted,
   runEnded,
 } from "./kernel/execution/workers.js";
@@ -55,5 +57,29 @@ describe("a machine is handed a script only where one more fits above its memory
     const machine = { name: machineName(), slots: 9, availableMb: 1500, floorMb: 200 };
     expect(machineShortOfMemory(machine, probe(150), 0)).toBe(true);
     expect(machineShortOfMemory(machine, probe(900), 0)).toBe(false);
+  });
+
+  test("a script seen before is planned at what it held, not at the flat figure", () => {
+    expect(plannedStartMb("ws:never-seen")).toBe(160);
+    notePeak("ws:sleeper", 52);
+    expect(plannedStartMb("ws:sleeper")).toBe(65);
+    // The most of its last four runs, so one light run does not hide a heavy one.
+    notePeak("ws:sleeper", 200);
+    notePeak("ws:sleeper", 50);
+    expect(plannedStartMb("ws:sleeper")).toBe(250);
+    for (let i = 0; i < 4; i += 1) notePeak("ws:sleeper", 50);
+    expect(plannedStartMb("ws:sleeper")).toBe(63);
+    // A worker cannot talk a script down to nothing, and nonsense is not kept.
+    notePeak("ws:liar", 1);
+    expect(plannedStartMb("ws:liar")).toBe(48);
+    notePeak("ws:nonsense", Number.NaN);
+    expect(plannedStartMb("ws:nonsense")).toBe(160);
+
+    const machine = { name: "elsewhere-d", slots: 9, availableMb: 440, floorMb: 200 };
+    for (let i = 0; i < 3; i += 1) noteStarted(machine, `seen-${i}`, 0, "ws:sleeper");
+    // Three at 63 MB leave 251 of the 440: a flat 160 each would have stopped at one.
+    expect(machineShortOfMemory(machine, probe(0), 1)).toBe(false);
+    noteStarted(machine, "seen-3", 0, "ws:sleeper");
+    expect(machineShortOfMemory(machine, probe(0), 1)).toBe(true);
   });
 });

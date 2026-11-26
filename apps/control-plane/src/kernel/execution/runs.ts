@@ -14,6 +14,7 @@ import {
   type MachineClaim,
   machineHasRoom,
   machineShortOfMemory,
+  notePeak,
   noteStarted,
   onMachine,
   runEnded,
@@ -25,6 +26,10 @@ export const INLINE_PAYLOAD_BYTES = 256 * 1024;
 /** Each workspace has a queue for the default pool, and one more for each named pool its scripts ask for. */
 export const queueName = (workspaceId: string, pool?: string | null) =>
   `ws_${workspaceId.replaceAll("-", "")}${pool ? `_p_${pool.replaceAll("-", "_")}` : ""}`;
+
+/** What a script's memory is remembered under: the script of one workspace. */
+const scriptKey = (run: { workspace_id: string; script_path: string }) =>
+  `${run.workspace_id}:${run.script_path}`;
 
 export interface ScriptBody {
   entry: string;
@@ -427,7 +432,9 @@ export async function claimRun(
     (await onMachine(machine, async (noteFull) => {
       if (machine && machineShortOfMemory(machine)) return undefined;
       const claimed = await claimNext(kernel, scope, workerId, abandoned, machine, noteFull);
-      if (machine && claimed) noteStarted(machine, claimed.run.id);
+      if (machine && claimed) {
+        noteStarted(machine, claimed.run.id, Date.now(), scriptKey(claimed.run));
+      }
       return claimed;
     })) ?? null;
   return run;
@@ -576,9 +583,11 @@ export async function completeRun(
   runId: string,
   attempt: number,
   output: unknown,
+  peakMb?: number,
 ) {
   runEnded(runId);
   const run = await activeRun(kernel.db, scope, runId, attempt);
+  notePeak(scriptKey(run), peakMb);
   const taken = await kernel.queue.complete(
     queueName(run.workspace_id, run.pool),
     run.queue_job_id as string,
@@ -715,9 +724,11 @@ export async function failRun(
   reported: RunFailure,
   /** False when another attempt would repeat work that was done: the run ends here. */
   retry = true,
+  peakMb?: number,
 ) {
   runEnded(runId);
   const run = await activeRun(kernel.db, scope, runId, attempt);
+  notePeak(scriptKey(run), peakMb);
   // What the script was given never reaches the record, the alerts or the handler: an error
   // that quotes a URL with its key, or a header, is stored without it.
   const error = redactError(reported, await servedValues(kernel, kernel.db, run));

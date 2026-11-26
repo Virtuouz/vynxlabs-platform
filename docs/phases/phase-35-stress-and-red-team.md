@@ -105,6 +105,25 @@ Each issue found, by number, with what was seen, the cause, the fix and the reru
 | STR-12 | Memory | **Counting a start for a fixed time was wrong both ways**: too long for a script that sleeps in 50 MB (STR-07), too short for one that takes ten seconds to reach 300, whose room was given away while it grew. And what was known of each script was in the control plane's memory, so every deploy forgot it | A worker says what each script holds now, with its claims and heartbeats and once a second and a half after the start, and only what a script has yet to take of its plan stays counted (`noteScriptsSeen`). One that outgrows its plan raises the plan at once. The most each run held is kept (`run.peak_memory_mb`, migration 0103) and read again for a script the first time it is claimed after a start. A script's memory is looked at 150 ms after it starts and when it says it is done, so one that ends at once is known too. Tests in `machine-memory.test.ts`, `machine-slots.test.ts` and `worker.test.ts`. Still so: a script never run is planned at 160 MB, and one whose input makes it take four times what it took before is planned by its past |
 | STR-13 | The object store | With Fly's health check on `/api/v1/readyz`, an object store that could not be reached made the whole instance unreachable, console and API with it: the check decides where Fly sends traffic, and there is one machine | The template's check is on `/api/v1/healthz`, and the README says why. The test instance's own configuration has the old check and no `kill_timeout`: for the owner to change |
 
+## The red team
+
+Fifteen reviewers each took one part of the product (the front door, sign-in, single sign-on, SCIM, the authorization core, the data plane, saved SQL, outbound requests, the worker protocol, isolation as deployed, flows, the browser side, secrets, imports), from the code first. Each finding was then proved by a test that failed on the code as it was, fixed, and attacked again by a second reviewer who was given the fixes. What is fixed is recorded in `docs/documentation/fixed/p35-rt-*.md`, one file for each group. A finding that is not fixed is not written here or anywhere in the repository: the register is kept outside it, with the owner.
+
+| Group | Fixed | Record |
+|---|---|---|
+| Isolation | A script could start the copy of node that may switch users, and become root in its container (critical; proved on the built image before and after) | `p35-rt-node-cp.md` |
+| Browser | A docs app's own files ran as the console's address; a tab in a return address sent a person to another site after sign-in; tokens of approval, password and form pages were written to the log and the trace; the console could be drawn inside another site's page | `p35-rt-browser.md` |
+| Authorization | An operator with no grant, or a member with `member:write`, could set a tenant admin's password through a password link; a role that deploys code without `code:write` was not counted as writing code; a developer could write role and binding resources; an operator's reads through six routes left no entry in the tenant's log | `p35-rt-authorization.md` |
+| Workers and queries | A tenant's own worker could name any machine and fill it; a script could publish the platform's own events; a credential could report on a run it did not hold; one SQL result could make the control plane hold about 2 GB; ten slow readers of an export took every database connection | `p35-rt-worker.md` |
+| Schemas and imports | A tenant's schema pattern could hold the control plane's one thread, two tenants' schemas with one `$id` collided, and each run start kept a compiled schema for ever; an archive could loop its reader, name its own key cost, call itself an older unsigned format, tie any account to an identity, and name another tenant's files | `p35-rt-import.md` |
+| Expressions, egress and smaller ones | One tenant's slow expression failed every tenant's; the widget pattern check missed bounded repeats; a refused outbound request named the private address; credentials followed a redirect to another site; a second reset request ended the first link; three statements of `SECURITY.md` that the code did not keep | `p35-rt-small.md` |
+
+**What held**, under both passes: no read or write across tenants was found in the authorization core, the data plane and its row policies, the worker protocol, the handling of SAML and OIDC, the read-only SQL guard, the outbound request guard or the cryptography. The two changes this phase made to the check (STR-04, STR-05) were reviewed by two reviewers and held.
+
+**The second pass** broke five of the first fixes and they were fixed again (the "Round two" section of each record). It also joined findings into chains; those rest on decisions that are the owner's, and are with the owner.
+
+**Dependencies.** `pnpm audit --prod` on 2026-11-26: 26 advisories, four of them high, all in `nodemailer` 7.0.13; none critical. Nothing was upgraded in this phase. CI has no audit step.
+
 ## Findings
 
 What the phase as a whole found.

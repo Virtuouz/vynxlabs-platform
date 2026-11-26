@@ -107,6 +107,8 @@ export function errorHandler(
 ) {
   // A destination a tenant gave that the egress guard refused: the tenant's to change.
   if (error instanceof EgressRefused) {
+    // The address a name resolved to is for the log, not for the tenant.
+    request.log.info({ host: error.host, address: error.address }, "egress refused");
     return sendProblem(request, reply, 400, { code: "egress_refused", detail: error.message });
   }
   // The database too busy to hand out a connection, or taking no writes: said as such,

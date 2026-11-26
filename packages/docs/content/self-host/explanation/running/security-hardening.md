@@ -33,6 +33,7 @@ Two rules hold the design:
 - **An operator with access to the database, the master key or the host.** Such a person can read everything. Use a dedicated instance where that matters.
 - **A lost master key.** Nothing encrypted can be recovered without it.
 - **Apps on the console's address**, if you set `APPS_ON_CONSOLE_ADDRESS=true`. An app then runs as whoever opens it.
+- **One tenant's app written as code, from another tenant's.** Every app written as code is served at one address, `APPS_URL` or the console's own, which a browser treats as one site. A page of tenant A's app can read and change what tenant B's app shows, as any visitor who is signed in to B's apps in that browser. This was run in a browser, for both addresses. On an instance whose tenants do not trust each other, give the right to deploy an app written as code (`deployment:write`) only to people you trust, until apps have addresses of their own. A hostname a tenant registers for an app is an origin of its own, and keeps the sign-in used there from other tenants' pages. It does not take the app off the shared address, where anyone who signs in is exposed again.
 - **A flood from many addresses.** Limits are per address and are counted in Postgres across every replica. The address is the one your proxy saw: set `TRUSTED_PROXIES` to match your proxies. Put a proxy with limits of its own in front of a public app.
 - **A column, from someone who may read the row.** Row rules decide which rows, not which columns.
 
@@ -41,7 +42,7 @@ Two rules hold the design:
 - A TLS-terminating proxy is in front. The control plane speaks plain HTTP and listens on `127.0.0.1:8080` in the Compose file. See [Put a proxy in front](../../how-to/running/put-a-proxy-in-front).
 - `TRUSTED_PROXIES` matches the proxies in front (`0` when none), and the proxy overwrites `X-Forwarded-For`, `X-Forwarded-Host` and `X-Forwarded-Proto`.
 - `PUBLIC_URL` is the address people type. Cookies are marked Secure by its scheme.
-- `APPS_URL` is a different host from `PUBLIC_URL`, if tenants write apps as code.
+- `APPS_URL` is a different host from `PUBLIC_URL`, if tenants write apps as code. It keeps the console's sign-in from an app, and does not keep one tenant's app from another's: see above.
 - `BOOTSTRAP_ADMIN_EMAIL` and `BOOTSTRAP_ADMIN_PASSWORD` are removed after the first start.
 - `MASTER_KEY` is kept in a second place, and every key is kept as long as the backups it sealed.
 - Backups run, and a restore has been tried. See [Restore an instance](../../how-to/running/restore-an-instance).

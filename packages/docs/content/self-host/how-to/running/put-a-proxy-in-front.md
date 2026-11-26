@@ -77,6 +77,8 @@ An app a tenant builds in the App Builder is served at `PUBLIC_URL/apps/<tenant>
 | `APPS_URL` | A second hostname that reaches the same instance, for example `https://apps.example.com`. Its host must differ from `PUBLIC_URL`'s. Apps and sign-in pages are then served only there, the console is not served there, and a member's console session is never sent there. Use it for an instance with more than one tenant. Point the second name at the same proxy, with a certificate for it. |
 | `APPS_ON_CONSOLE_ADDRESS` | `true` serves apps written as code at `PUBLIC_URL` too, when there is no `APPS_URL`. Only where everyone who writes code works for you. |
 
+Every app written as code shares the one address, `APPS_URL` or, if you set `APPS_ON_CONSOLE_ADDRESS`, the console's, and a browser treats that address as one site. A page of one tenant's app can read and change another tenant's app as any visitor who is signed in to that app in the same browser, staff and end users alike. Where tenants do not trust each other, give the right to deploy an app written as code (`deployment:write`) only to people you trust, until apps have addresses of their own. A separate `APPS_URL` keeps the console's sign-in from apps; it does not separate apps from each other.
+
 A tenant's admin can register a hostname for one app under **Domains**, such as `portal.example.com`. You do three things for it:
 
 1. Point the name at the instance: a CNAME to the instance's hostname, or an address record. For a name that exists only inside a network, an entry in that network's DNS.
@@ -92,6 +94,8 @@ A tenant's admin can register a hostname for one app under **Domains**, such as 
 3. The tenant creates the TXT record `_vx-challenge.<hostname>` the Domains page shows, and presses Check. An operator can enable a name without it, for a name with no public DNS. That is recorded in the audit log.
 
 The proxy must pass the `Host` header through unchanged, and say whether the request came over HTTPS.
+
+A registered hostname is an origin of its own. The sign-in a person makes there is sent only there, the API there answers for that tenant alone, and a page of another tenant's app cannot read it. What it does not do is take the app off the shared address, where the same app is still served by path: someone who signs in at that address is exposed to other tenants' apps again. A name registered for the whole workspace, rather than for one app, serves every app of that workspace, and those apps share it.
 
 Any hostname the instance does not recognize acts as the console's address: an IP address, or a proxy's own name. Do not point a name at the instance that you do not mean to be the console.
 

@@ -2,9 +2,14 @@ import { randomUUID } from "node:crypto";
 import { setTimeout as sleep } from "node:timers/promises";
 import { type Bundle, bundleDigest } from "@volvel/manifest";
 import { afterAll, beforeAll, expect, test } from "vitest";
-import { claimRun } from "./kernel/execution/runs.js";
+import { claimRun, completeRun } from "./kernel/execution/runs.js";
 import { claimTask, queueTask } from "./kernel/execution/tasks.js";
-import { createWorkerCredential, seeWorker } from "./kernel/execution/workers.js";
+import {
+  createWorkerCredential,
+  forgetPeaks,
+  plannedStartMb,
+  seeWorker,
+} from "./kernel/execution/workers.js";
 import { startTestApp, type TestApp } from "./testing.js";
 
 // Workers on one machine share its run slots: the scripts running there, across all
@@ -187,4 +192,31 @@ test("tasks count against the machine's slots too", async () => {
   ).toBeUndefined();
   await one.queue(1);
   expect(await claimRun(t.kernel, one.scope, worker, undefined, machine)).toBeNull();
+});
+
+test("what a script held is kept with its run, and found again after a restart", async () => {
+  const one = await place("slots-peak");
+  const machine = { name: `m-${randomUUID()}`, slots: 4, availableMb: 4000, floorMb: 200 };
+  const worker = await one.worker(machine);
+  const key = `${one.workspace}:greet`;
+  await one.queue(2);
+  const first = await claimRun(t.kernel, one.scope, worker, undefined, machine);
+  if (!first) throw new Error("nothing was claimed");
+  // Never seen: the flat figure.
+  expect(plannedStartMb(key)).toBe(160);
+  await completeRun(t.kernel, one.scope, first.run.id, first.run.attempt, {}, 320);
+  expect(plannedStartMb(key)).toBe(400);
+  const kept = await t.db
+    .selectFrom("run")
+    .select("peak_memory_mb")
+    .where("id", "=", first.run.id)
+    .executeTakeFirstOrThrow();
+  expect(kept.peak_memory_mb).toBe(320);
+
+  // A restart forgets what was in memory. The next claim of the script reads it from its runs.
+  forgetPeaks();
+  expect(plannedStartMb(key)).toBe(160);
+  const second = await claimRun(t.kernel, one.scope, worker, undefined, machine);
+  expect(second).not.toBeNull();
+  expect(plannedStartMb(key)).toBe(400);
 });

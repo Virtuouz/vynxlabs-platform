@@ -16,6 +16,8 @@ import {
   machineShortOfMemory,
   notePeak,
   noteStarted,
+  peakKnown,
+  recallPeaks,
   onMachine,
   runEnded,
 } from "./workers.js";
@@ -30,6 +32,56 @@ export const queueName = (workspaceId: string, pool?: string | null) =>
 /** What a script's memory is remembered under: the script of one workspace. */
 const scriptKey = (run: { workspace_id: string; script_path: string }) =>
   `${run.workspace_id}:${run.script_path}`;
+
+/** How many of a workspace's latest runs are looked through for what a script held before. */
+const PEAK_LOOKBACK_RUNS = 500;
+
+/**
+ * What a script held in its last runs, read once for each script after a start: what was known
+ * of it is in this process's memory, and a restart forgets that.
+ */
+async function rememberPeaks(kernel: Kernel, run: { workspace_id: string; script_path: string }) {
+  const key = scriptKey(run);
+  if (peakKnown(key)) return;
+  try {
+    const rows = await kernel.db
+      .selectFrom(
+        kernel.db
+          .selectFrom("run")
+          .select(["id", "script_path", "peak_memory_mb"])
+          .where("workspace_id", "=", run.workspace_id)
+          .orderBy("id", "desc")
+          .limit(PEAK_LOOKBACK_RUNS)
+          .as("recent"),
+      )
+      .select("peak_memory_mb")
+      .where("script_path", "=", run.script_path)
+      .where("peak_memory_mb", "is not", null)
+      .orderBy("id", "desc")
+      .limit(4)
+      .execute();
+    recallPeaks(key, rows.map((row) => row.peak_memory_mb as number).reverse());
+  } catch (error) {
+    // Not worth a claim: the script is planned at the flat figure, as one never seen is.
+    kernel.log.warn({ err: error }, "what a script held before could not be read");
+  }
+}
+
+/** Keeps what a run's script held at most, for this process and for the next. */
+async function keepPeak(
+  kernel: Kernel,
+  run: { id: string; workspace_id: string; script_path: string },
+  peakMb: number | undefined,
+) {
+  if (peakMb === undefined || !Number.isFinite(peakMb) || peakMb <= 0) return;
+  notePeak(scriptKey(run), peakMb);
+  await kernel.db
+    .updateTable("run")
+    .set({ peak_memory_mb: Math.min(Math.ceil(peakMb), 1_000_000) })
+    .where("id", "=", run.id)
+    .execute()
+    .catch((error) => kernel.log.warn({ err: error }, "what a script held could not be kept"));
+}
 
 export interface ScriptBody {
   entry: string;
@@ -443,6 +495,7 @@ export async function claimRun(
           noteShare,
         );
         if (machine && claimed) {
+          await rememberPeaks(kernel, claimed.run);
           noteStarted(machine, claimed.run.id, Date.now(), scriptKey(claimed.run), workerId);
         }
         return claimed;
@@ -601,7 +654,7 @@ export async function completeRun(
 ) {
   runEnded(runId);
   const run = await activeRun(kernel.db, scope, runId, attempt);
-  notePeak(scriptKey(run), peakMb);
+  await keepPeak(kernel, run, peakMb);
   const taken = await kernel.queue.complete(
     queueName(run.workspace_id, run.pool),
     run.queue_job_id as string,
@@ -742,7 +795,7 @@ export async function failRun(
 ) {
   runEnded(runId);
   const run = await activeRun(kernel.db, scope, runId, attempt);
-  notePeak(scriptKey(run), peakMb);
+  await keepPeak(kernel, run, peakMb);
   // What the script was given never reaches the record, the alerts or the handler: an error
   // that quotes a URL with its key, or a header, is stored without it.
   const error = redactError(reported, await servedValues(kernel, kernel.db, run));

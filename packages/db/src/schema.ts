@@ -650,6 +650,8 @@ export interface RunTable {
   started_at: Date | null;
   finished_at: Date | null;
   last_heartbeat_at: Date | null;
+  /** The most its script's process was seen to hold, in MB. Null when it was never looked at. */
+  peak_memory_mb: Generated<number | null>;
   tags: Generated<string[]>;
   /** The first line of the error, kept by the database. */
   error_summary: Generated<string | null>;

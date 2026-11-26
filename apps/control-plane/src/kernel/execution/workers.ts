@@ -179,6 +179,23 @@ export function notePeak(script: string, mb: number | undefined): void {
   if (peaks.size > PEAKS_KEPT) peaks.delete(peaks.keys().next().value as string);
 }
 
+/** Forgets what every script held, as a restart does. For tests. */
+export function forgetPeaks(): void {
+  peaks.clear();
+}
+
+/** Whether anything is remembered of a script: one that is not is looked up among its past runs. */
+export function peakKnown(script: string): boolean {
+  return peaks.has(script);
+}
+
+/** What past runs of a script held, oldest first, as the database kept it. None is remembered as none. */
+export function recallPeaks(script: string, mbs: readonly number[]): void {
+  if (peaks.has(script)) return;
+  peaks.set(script, mbs.filter((mb) => Number.isFinite(mb) && mb > 0).slice(-4));
+  if (peaks.size > PEAKS_KEPT) peaks.delete(peaks.keys().next().value as string);
+}
+
 /**
  * What one more start of a script is planned at: a quarter over the most its last four runs
  * held, and `PLANNED_START_MB` for one never seen. A worker's word can only lower it to

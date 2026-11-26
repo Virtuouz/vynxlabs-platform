@@ -10,7 +10,7 @@ import { contentHash } from "../kernel/execution/basis.js";
 import { instanceTriggersPaused } from "../kernel/execution/control.js";
 import { access, reachedFromInside, type WorkspaceRef } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
-import { requireStanding } from "../kernel/pages/standing.js";
+import { requireAccessKindStanding, requireStanding } from "../kernel/pages/standing.js";
 import { resolveResource } from "../kernel/resolve.js";
 import { deleteResource, putResource } from "../kernel/resources.js";
 import { setSecret } from "../kernel/secrets.js";
@@ -786,6 +786,18 @@ export function workspaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           paths: [path, ...(body.renameFrom ? [body.renameFrom] : [])],
           ownership: body.ownership,
         });
+        // A resource that is a role or a binding may be there already, to be replaced or moved.
+        const there = await db
+          .selectFrom("resource")
+          .select("kind")
+          .where("workspace_id", "=", workspace.id)
+          .where("path", "in", [path, ...(body.renameFrom ? [body.renameFrom] : [])])
+          .execute();
+        await requireAccessKindStanding(
+          ctx,
+          workspace,
+          there.map((row) => row.kind),
+        );
         await requireStanding(kernel, ctx, workspace, [{ kind: body.kind, path, body: body.body }]);
         const result = await ctx.mutate(async (trx, audit) => {
           if (create) {
@@ -968,6 +980,13 @@ export function workspaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             }),
           paths: [path],
         });
+        const there = await db
+          .selectFrom("resource")
+          .select("kind")
+          .where("workspace_id", "=", workspace.id)
+          .where("path", "=", path)
+          .executeTakeFirst();
+        await requireAccessKindStanding(ctx, workspace, [there?.kind]);
         await ctx.mutate(async (trx, audit) => {
           // A table that others refer to would leave every later deploy refused.
           // Exact path on purpose: the delete below removes the resource at this path, nothing else.

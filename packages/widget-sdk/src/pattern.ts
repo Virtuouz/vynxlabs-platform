@@ -13,7 +13,7 @@
  * look-around, a chain of optional atoms (`a?a?a?aaa`), a chain of alternations that share a
  * start (`(a|a)(a|a)...`), and repeats that can each take the same text (`a*a*a*b`: every way of
  * dividing the text between them is tried, one more power of its length for each pair). The first
- * four are refused whole. For the repeats, the rule is: two repeats that can take the same text,
+ * four are refused whole (an optional group that starts with one plain atom is let through). For the repeats, the rule is: two repeats that can take the same text,
  * with nothing between them that a text cannot pass (a letter that neither can take), are an
  * "overlapping pair"; at most one such pair is allowed, so the work is at most the square of the
  * length of the text, which the callers keep short (see their `MAX_PATTERN_INPUT`). What is left
@@ -40,7 +40,10 @@ export function patternProblem(pattern: string, maxLength = 200): string | undef
       const from = opened.pop();
       if (from === undefined) continue;
       const inside = bare.slice(from + 1, at);
-      if (bare[at + 1] === "?" && /[*+?]|\{\d+,/.test(inside))
+      // An optional group that starts with one plain atom (`(?:\.\d+)?`) is held in place by it;
+      // the repeats in it are counted with the others below.
+      const starts = /^[^|(){}*+?][^*+?{]/.test(inside);
+      if (bare[at + 1] === "?" && !starts && /[*+?]|\{\d+,/.test(inside))
         return "makes a group with a repeat in it optional, which is not run";
       if (inside.includes("|")) forks++;
     }

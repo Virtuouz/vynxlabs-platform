@@ -81,6 +81,11 @@ describe("p35 round two: the schema pattern guard", () => {
         "nope",
       ],
       ["^[a-z]{2,5}-\\d+$", "ab-12", "ab-"],
+      [
+        "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?Z$",
+        "2026-11-26T10:00:00.5Z",
+        "2026-11-26",
+      ],
     ];
     for (const [pattern, good, bad] of fine) {
       expect(patternProblem(pattern), pattern).toBeUndefined();

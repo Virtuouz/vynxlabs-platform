@@ -85,14 +85,18 @@ export async function tarIndex(file: FileHandle): Promise<TarIndexEntry[]> {
     let sum = 0;
     for (const byte of check) sum += byte;
     if (sum !== stored) throw new Error("The archive is damaged: a header does not add up.");
-    const size = Number.parseInt(text(header, 124, 12).trim(), 8);
+    // Octal digits only: "-1000" would parse as a negative size and the walk below would never move on.
+    const sizeText = text(header, 124, 12).trim();
+    if (!/^[0-7]{1,11}$/.test(sizeText))
+      throw new Error("The archive is damaged: a header has a size that is not a size.");
+    const size = Number.parseInt(sizeText, 8);
     const prefix = text(header, 345, 155);
     const name = text(header, 0, 100);
     if (header[156] !== 0x30 && header[156] !== 0) {
       throw new Error("The archive holds something other than plain files.");
     }
     const offset = position + BLOCK;
-    if (offset + size > total) throw new Error("The archive is cut short.");
+    if (size > total - offset) throw new Error("The archive is cut short.");
     entries.push({ path: prefix ? `${prefix}/${name}` : name, size, offset });
     position = offset + Math.ceil(size / BLOCK) * BLOCK;
   }

@@ -4,6 +4,7 @@ import {
   machineShortOfMemory,
   machineFull,
   notePeak,
+  noteScriptsSeen,
   noteStarted,
   plannedStartMb,
   noteWorkerStarted,
@@ -42,7 +43,7 @@ describe("a machine is handed a script only where one more fits above its memory
     noteStarted(machine, "run-4", 2);
     expect(machineShortOfMemory(machine, probe(0), 3)).toBe(true);
     // By then their memory shows, and the reading is believed again.
-    expect(machineShortOfMemory(machine, probe(0), 3003)).toBe(false);
+    expect(machineShortOfMemory(machine, probe(0), 8003)).toBe(false);
   });
 
   test("a worker just started counts against the scripts handed to its machine", () => {
@@ -109,5 +110,39 @@ describe("a machine is handed a script only where one more fits above its memory
     runEnded("any-run");
     await atShare();
     expect(asked).toBe(2);
+  });
+
+  test("a script is counted for what it has yet to take of its plan, as its worker says what it holds", () => {
+    const machine = { name: "elsewhere-f", slots: 9, availableMb: 700, floorMb: 200 };
+    for (let i = 0; i < 4; i += 1) notePeak("ws:grower", 320);
+    expect(plannedStartMb("ws:grower")).toBe(400);
+    noteStarted(machine, "grow-1", 0, "ws:grower", "worker-1");
+    // 700 less 400 planned leaves 300: one more of these does not fit, and is not started.
+    expect(machineShortOfMemory({ ...machine, availableMb: 700 }, probe(0), 1)).toBe(false);
+    noteStarted(machine, "grow-2", 0, "ws:grower", "worker-2");
+    expect(machineShortOfMemory({ ...machine, availableMb: 700 }, probe(0), 1)).toBe(true);
+    // Twenty seconds on they are still growing, and still counted: a timer had let them go.
+    noteScriptsSeen("worker-1", [{ runId: "grow-1", rssMb: 150 }], 20_000);
+    noteScriptsSeen("worker-2", [{ runId: "grow-2", rssMb: 150 }], 20_000);
+    // 400 MB free now, and 250 MB of each plan still to come.
+    expect(machineShortOfMemory({ ...machine, availableMb: 400 }, probe(0), 20_001)).toBe(true);
+    // Grown to their plan, they hold nothing back: what they took shows in the free memory.
+    noteScriptsSeen("worker-1", [{ runId: "grow-1", rssMb: 400 }], 30_000);
+    noteScriptsSeen("worker-2", [{ runId: "grow-2", rssMb: 400 }], 30_000);
+    expect(machineShortOfMemory({ ...machine, availableMb: 210 }, probe(0), 30_001)).toBe(false);
+    runEnded("grow-1");
+    runEnded("grow-2");
+  });
+
+  test("another worker cannot speak for a run, and a script that outgrows its plan raises the next one's", () => {
+    const machine = { name: "elsewhere-g", slots: 9, availableMb: 500, floorMb: 200 };
+    notePeak("ws:small", 60);
+    expect(plannedStartMb("ws:small")).toBe(75);
+    noteStarted(machine, "small-1", 0, "ws:small", "worker-1");
+    noteScriptsSeen("worker-2", [{ runId: "small-1", rssMb: 75 }], 1);
+    expect(machineShortOfMemory({ ...machine, availableMb: 270 }, probe(0), 2)).toBe(true);
+    noteScriptsSeen("worker-1", [{ runId: "small-1", rssMb: 300 }], 3);
+    expect(plannedStartMb("ws:small")).toBe(375);
+    runEnded("small-1");
   });
 });

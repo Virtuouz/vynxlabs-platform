@@ -53,7 +53,7 @@ import {
   MAX_RESULT_BYTES,
 } from "../kernel/execution/tasks.js";
 import { kickStarted } from "../kernel/execution/triggers.js";
-import { seeWorker } from "../kernel/execution/workers.js";
+import { noteScriptsSeen, seeWorker } from "../kernel/execution/workers.js";
 import { publishEvent } from "../kernel/flows/events.js";
 import { access } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
@@ -293,6 +293,22 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                       description: "Free memory on the machine as the worker read it, in MB.",
                     }),
                   ),
+                  scripts: Type.Optional(
+                    Type.Array(
+                      Type.Object({
+                        runId: Id,
+                        rssMb: Type.Number({ minimum: 0, maximum: 1_000_000 }),
+                      }),
+                      {
+                        maxItems: 64,
+                        description:
+                          "What each script this worker is running holds now, in MB. Only what a " +
+                          "script has yet to take of what it was planned at stays counted against " +
+                          "the machine. A worker that says nothing has each script counted in " +
+                          "full for eight seconds.",
+                      },
+                    ),
+                  ),
                   floorMb: Type.Optional(
                     Type.Number({
                       minimum: 0,
@@ -316,6 +332,7 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       },
       async ({ worker, body, raw }) => {
         await seeWorker(kernel, worker, body.workerId, body.version, body.machine);
+        noteScriptsSeen(body.workerId, body.machine?.scripts);
         const deadline = Date.now() + (body.waitSeconds ?? 20) * 1000;
         // A worker that hung up must not be handed a job.
         const gone = () => raw.socket.destroyed;
@@ -531,12 +548,26 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             "When `cancelled` is true, stop the script: the run is no longer this worker's.",
           tags: ["worker protocol"],
           params: RunParams,
-          body: Type.Object({ attempt: Attempt, workerId: Type.Optional(Id) }),
+          body: Type.Object({
+            attempt: Attempt,
+            workerId: Type.Optional(Id),
+            rssMb: Type.Optional(
+              Type.Number({
+                minimum: 0,
+                maximum: 1_000_000,
+                description:
+                  "What the script's process holds now, in MB. Needs `workerId`. See `machine.scripts` of a claim.",
+              }),
+            ),
+          }),
           response: { 200: Type.Object({ cancelled: Type.Boolean() }) },
         },
       },
       async ({ worker, params, body }) => {
         if (body.workerId) await seeWorker(kernel, worker, body.workerId);
+        if (body.workerId && body.rssMb !== undefined) {
+          noteScriptsSeen(body.workerId, [{ runId: params.id, rssMb: body.rssMb }]);
+        }
         let query = db
           .selectFrom("run")
           .selectAll()

@@ -443,7 +443,7 @@ export async function claimRun(
           noteShare,
         );
         if (machine && claimed) {
-          noteStarted(machine, claimed.run.id, Date.now(), scriptKey(claimed.run));
+          noteStarted(machine, claimed.run.id, Date.now(), scriptKey(claimed.run), workerId);
         }
         return claimed;
       },

@@ -166,6 +166,8 @@ function defaultRunner(): string {
 
 /** How often a script's memory is looked at. */
 const MEMORY_CHECK_MS = 500;
+/** When a run's first heartbeat is sent, with what its script holds by then. */
+const FIRST_BEAT_MS = 1500;
 /** Long enough for a control plane or its database to restart; a run is waited for no longer. */
 const REPORT_RETRY_SECONDS = 90;
 /** How long a worker waits before claiming again when its machine is short of memory. */
@@ -201,6 +203,8 @@ interface ScriptProcess {
   ended(code: number | null, signal: NodeJS.Signals | null): Error;
   /** The most the process was seen to hold, in MB, if it was seen at all. */
   peakMb(): number | undefined;
+  /** What it held when last looked at, in MB. */
+  heldMb(): number | undefined;
   dispose(): void;
 }
 
@@ -230,10 +234,12 @@ function startScript(runner: string, memoryMb: number, probe: MachineProbe): Scr
   // are counted here instead, from what the process holds in all.
   const limitMb = memoryMb + NODE_OVERHEAD_MB;
   let peak: number | undefined;
+  let last: number | undefined;
   const watching =
     child.pid !== undefined && probe.rssMb(child.pid) !== undefined
       ? setInterval(() => {
           const held = child.pid === undefined ? undefined : probe.rssMb(child.pid);
+          if (held !== undefined) last = held;
           if (held !== undefined && held > (peak ?? 0)) peak = held;
           if (held !== undefined && held > limitMb && killed === undefined) {
             killed = "memory";
@@ -252,6 +258,9 @@ function startScript(runner: string, memoryMb: number, probe: MachineProbe): Scr
     },
     peakMb() {
       return peak === undefined ? undefined : Math.ceil(peak);
+    },
+    heldMb() {
+      return last;
     },
     dispose() {
       clearInterval(watching);
@@ -302,6 +311,8 @@ export class Worker {
   #shortSince: number | undefined;
   readonly #leaveAfterMs: number;
   #claims = new Set<AbortController>();
+  /** The scripts in progress, by run, so the control plane can be told what each holds. */
+  #scripts = new Map<string, ScriptProcess>();
 
   constructor(options: WorkerOptions) {
     this.#options = options;
@@ -391,11 +402,23 @@ export class Worker {
   }
 
   /** What the control plane is told with a claim, so it hands out a script only where one fits. */
-  #memoryNow(): { availableMb?: number; floorMb?: number } {
+  #memoryNow(): {
+    availableMb?: number;
+    floorMb?: number;
+    scripts?: { runId: string; rssMb: number }[];
+  } {
     const floorMb = this.#options.machine?.floorMb;
     const availableMb = this.#probe.memory()?.availableMb;
     if (!floorMb || availableMb === undefined) return {};
-    return { availableMb: Math.round(availableMb), floorMb };
+    const scripts = [...this.#scripts].flatMap(([runId, script]) => {
+      const rssMb = script.heldMb();
+      return rssMb === undefined ? [] : [{ runId, rssMb: Math.round(rssMb) }];
+    });
+    return {
+      availableMb: Math.round(availableMb),
+      floorMb,
+      ...(scripts.length ? { scripts } : {}),
+    };
   }
 
   /** Whether to give the machine this worker's memory back: only a worker that would exit when idle does. */
@@ -617,12 +640,16 @@ export class Worker {
       return lost > 0 ? { logsLost: lost } : {};
     };
 
-    const heartbeat = setInterval(async () => {
+    const beat = async () => {
       await flush();
       try {
+        // What the script holds goes with it: the control plane counts against the machine only
+        // what a script has yet to take of what it was planned at.
+        const rssMb = this.#scripts.get(job.runId)?.heldMb();
         const reply = await this.#call<{ cancelled: boolean }>("POST", `${runPath}/heartbeat`, {
           attempt: job.attempt,
           workerId: this.id,
+          ...(rssMb === undefined ? {} : { rssMb: Math.round(rssMb) }),
         });
         if (reply.cancelled) {
           ended = new AttemptOver();
@@ -631,7 +658,10 @@ export class Worker {
       } catch {
         // A missed heartbeat is not fatal. The next one may get through.
       }
-    }, Math.max(1, job.heartbeatSeconds) * 1000);
+    };
+    const heartbeat = setInterval(beat, Math.max(1, job.heartbeatSeconds) * 1000);
+    // Once early, for a script still running then: its memory is known within two seconds, not ten.
+    const firstBeat = setTimeout(beat, FIRST_BEAT_MS);
     const timeout = setTimeout(
       () =>
         abort.abort(
@@ -648,6 +678,7 @@ export class Worker {
       script = startScript(this.#runner, memoryMb, this.#probe);
       const { child: started } = script;
       const watched = script;
+      this.#scripts.set(job.runId, script);
 
       const outcome = new Promise<unknown>((resolve, reject) => {
         started.on("message", (message: FromRunner) => {
@@ -736,7 +767,9 @@ export class Worker {
         }
       });
     } finally {
+      this.#scripts.delete(job.runId);
       clearInterval(heartbeat);
+      clearTimeout(firstBeat);
       clearTimeout(timeout);
       // Whatever the script left running ends with its attempt. An aborted one had its
       // grace to stop by itself; any other is ended now.

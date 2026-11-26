@@ -108,17 +108,23 @@ export interface MachineClaim {
   /** Free memory as the worker read it when it asked, and the floor it keeps. */
   availableMb?: number | undefined;
   floorMb?: number | undefined;
+  /** What each script the worker is running holds now. */
+  scripts?: readonly { runId: string; rssMb: number }[] | undefined;
 }
 
 /** What was started on each machine a moment ago, script or worker, whose memory does not show yet. */
 const starting = new Map<string, Reservations>();
 const OWN_MACHINE = machineName();
 /**
- * A script is counted until it ends, or for this long: by then what it holds can be seen in the
- * machine's free memory, and counting it longer counts it twice. At eight seconds, four scripts
- * ran on a machine with 700 MB free.
+ * A script nobody says anything about is counted until it ends, or for this long: by then what
+ * it holds can mostly be seen in the machine's free memory.
  */
-const SCRIPT_HOLD_MS = 3000;
+const SCRIPT_HOLD_MS = 8000;
+/**
+ * One whose worker says what it holds is counted for what it has yet to take, this long after it
+ * was last said: two heartbeats and a little.
+ */
+const SEEN_HOLD_MS = 25_000;
 const WORKER_HOLD_MS = 10_000;
 
 function startingOn(name: string): Reservations {
@@ -184,19 +190,63 @@ export function plannedStartMb(script: string | undefined): number {
   return Math.max(LEAST_START_MB, Math.ceil(Math.max(...seen) * 1.25));
 }
 
+/** What each script in progress was planned at, and where, so that what it is seen to hold can be taken off. */
+const planned = new Map<
+  string,
+  { machine: string; mb: number; script?: string; worker?: string }
+>();
+
 /** A script was handed to this machine. It is counted until `runEnded`, or until it shows. */
 export function noteStarted(
   machine: MachineClaim,
   runId?: string,
   now = Date.now(),
   script?: string,
+  workerId?: string,
 ): void {
-  startingOn(machine.name).add(plannedStartMb(script), now, runId);
+  const mb = plannedStartMb(script);
+  startingOn(machine.name).add(mb, now, runId);
+  if (runId) {
+    planned.set(runId, {
+      machine: machine.name,
+      mb,
+      ...(script ? { script } : {}),
+      ...(workerId ? { worker: workerId } : {}),
+    });
+  }
+}
+
+/**
+ * A worker says what its scripts hold now. What a script holds already shows in the machine's
+ * free memory, so only the rest of its plan stays counted: counting all of it for a fixed time
+ * was too long for a script that sleeps in 50 MB, which kept others waiting, and too short for
+ * one that takes ten seconds to reach 300 MB, whose room was given away while it grew (phase 35:
+ * fifteen of 24 such scripts were stopped for the machine's memory). One that holds more than
+ * its plan raises what the next start of that script is planned at, at once.
+ */
+export function noteScriptsSeen(
+  workerId: string,
+  scripts: readonly { runId: string; rssMb: number }[] | undefined,
+  now = Date.now(),
+): void {
+  for (const seen of scripts ?? []) {
+    const plan = planned.get(seen.runId);
+    // Only the worker a run was handed to speaks for it.
+    if (!plan || plan.worker !== workerId || !Number.isFinite(seen.rssMb) || seen.rssMb < 0) {
+      continue;
+    }
+    if (plan.script && seen.rssMb * 1.25 > plan.mb) notePeak(plan.script, seen.rssMb);
+    const held = startingOn(plan.machine);
+    held.release(seen.runId);
+    const left = plan.mb - seen.rssMb;
+    if (left > 0) held.add(left, now, seen.runId, SEEN_HOLD_MS);
+  }
 }
 
 /** A run ended: what was held for it is free again. A script that ends at once holds nothing back. */
 export function runEnded(runId: string): void {
   for (const held of starting.values()) held.release(runId);
+  planned.delete(runId);
   slotFreed();
 }
 

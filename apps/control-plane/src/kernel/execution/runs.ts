@@ -458,6 +458,8 @@ export interface WorkerScope {
   workspaceId: string | null;
   /** The pool this worker serves. Null for the default pool. */
   pool: string | null;
+  /** Whether the control plane or a worker host started this worker and named its machine. */
+  managed?: boolean;
 }
 
 class ClaimAbandoned extends Error {}

@@ -56,7 +56,7 @@ export async function resolveWorker(kernel: Kernel, request: FastifyRequest): Pr
   }
   const credential = await kernel.db
     .selectFrom("worker_credential")
-    .select(["id", "tenant_id", "workspace_id", "pool", "revoked_at", "expires_at"])
+    .select(["id", "tenant_id", "workspace_id", "pool", "managed", "revoked_at", "expires_at"])
     .where("token_hash", "=", hashApiKey(token))
     .executeTakeFirst();
   if (
@@ -71,7 +71,21 @@ export async function resolveWorker(kernel: Kernel, request: FastifyRequest): Pr
     tenantId: credential.tenant_id,
     workspaceId: credential.workspace_id,
     pool: credential.pool,
+    managed: credential.managed,
   };
+}
+
+/**
+ * The machine a worker names, as the control plane keeps it. A worker that was started by the
+ * control plane or a worker host was told its machine's name and is believed. Any other
+ * worker's word is kept apart under its tenant, so that it can only ever speak of machines
+ * of its own tenant: it cannot fill, mark full or reserve the memory of one that is shared.
+ */
+export function machineOf(scope: WorkerScope, machine: MachineClaim): MachineClaim;
+export function machineOf(scope: WorkerScope, machine?: MachineClaim): MachineClaim | undefined;
+export function machineOf(scope: WorkerScope, machine?: MachineClaim): MachineClaim | undefined {
+  if (!machine || scope.managed) return machine;
+  return { ...machine, name: `tenant:${scope.tenantId}/${machine.name}` };
 }
 
 /** Records that a worker is alive. */

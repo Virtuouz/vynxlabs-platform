@@ -117,9 +117,11 @@ export async function publishEvent(kernel: Kernel, trx: Trx, asked: PublishEvent
   for (const subscriber of subscribers) {
     if (subscriber.filter) {
       try {
-        const wanted = await kernel.expressions.evaluate(subscriber.filter, {
-          event: { name: event.name, payload: event.payload },
-        });
+        const wanted = await kernel.expressions.evaluate(
+          subscriber.filter,
+          { event: { name: event.name, payload: event.payload } },
+          event.tenantId,
+        );
         if (wanted !== true) continue;
       } catch (error) {
         if (!(error instanceof ExpressionError)) throw error;

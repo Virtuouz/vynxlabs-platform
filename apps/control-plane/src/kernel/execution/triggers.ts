@@ -696,7 +696,11 @@ async function triggerTags(
   const tags: string[] = [];
   for (const expression of expressions) {
     try {
-      const value = await kernel.expressions.evaluate(String(expression), { trigger: input });
+      const value = await kernel.expressions.evaluate(
+        String(expression),
+        { trigger: input },
+        state.tenant_id,
+      );
       const tag = String(value);
       if (TAG_PATTERN.test(tag)) tags.push(tag);
       else kernel.log.warn({ expression, tag }, "a trigger's tag is not a usable tag; left out");

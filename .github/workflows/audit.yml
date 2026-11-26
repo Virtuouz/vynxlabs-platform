@@ -1,0 +1,26 @@
+name: Audit
+
+# A pull request that brings in a dependency with a known high or critical advisory fails here.
+# The weekly run is for the other case: a new advisory about a tree nobody has changed.
+on:
+  pull_request:
+  schedule:
+    - cron: "17 5 * * 1"
+
+concurrency:
+  group: audit-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    name: Production dependencies have no high advisory
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm audit --prod --audit-level high

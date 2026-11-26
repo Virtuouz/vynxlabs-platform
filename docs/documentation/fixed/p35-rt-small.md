@@ -88,3 +88,46 @@ Checked in the code, then changed:
 **Fix.** `kernel/endusers.ts`: past the five, the oldest are replaced by the new one. Commit `3f450084`.
 
 **Left.** The trade the first fix tried to avoid is back in a smaller form: someone who keeps asking can cancel the person's older links by pushing them out (it takes six requests, and the newest link always works). The person is never without one.
+
+## Round three
+
+### The mail library: `nodemailer` 7.0.13 to 10.6.1 (commit `c65fdf37`)
+
+**Where it is used.** Dependencies: `apps/control-plane/package.json`, `packages/worker/package.json` (both were `^7`, now `^10.6.1`; `pnpm-lock.yaml`). Use: `apps/control-plane/src/kernel/mail.ts` (`createTransport(url)`, `sendMail({ from, to, subject, text })`) and `packages/worker/src/smtp.ts` (`createTransport` with host, port, `secure`, `requireTLS`, `ignoreTLS`, `auth`, three timeouts; `sendMail` with from, to, cc, bcc, replyTo, subject, text, html; `verify`; `close`).
+
+**Which version.** The patched ranges of the four high advisories are `>=9.0.1` (GHSA-p6gq-j5cr-w38f, `raw`), `>=8.0.8` (GHSA-r7g4-qg5f-qqm2, OAuth2 TLS), `>=9.1.0` (GHSA-2x7j-588g-ccc2, address parser) and `>=10.0.6` (GHSA-v53p-9fqp-m79j, address parser). So the lowest is 10.0.6, a new major version; I took the latest 10.x, 10.6.1, which also clears all 15 moderate ones.
+
+**Breaking changes read** (the package's `CHANGELOG.md`, 8.0.0, 9.0.0, 10.0.0) against how we call it:
+
+- 8.0.0: the error code `NoAuth` is now `ENOAUTH`. Nothing in the repo reads that code.
+- 9.0.0: HTTPS requests made to fetch remote content (attachment URLs, OAuth2 token endpoints, proxy CONNECT) now check the certificate. We send no attachments, use no OAuth2 and no proxy; the SMTP connection's own TLS options are as before.
+- 10.0.0: Node 20 or newer (the repo needs 24); the library is written in TypeScript and ships its own types, so `@types/nodemailer` was removed from both packages. The `createTransport` and `sendMail` options we pass are unchanged. No source change was needed.
+
+**Reachable in the control plane? Not by anyone but the operator.** The control plane mails only an address it stored: a member's (`routes/member-resets.ts:37`, `kernel/flows/approval-links.ts:132`), an end user's (`routes/endusers.ts:162`, `kernel/apps/front.ts:498`). Nothing mails a form's reply-to, an alert's recipients or an approval's free-typed address (no call to `kernel.mail.send` takes one). Every way an address is stored refuses a long list first: end users `cleanEmail` (`kernel/endusers.ts:16-24`: one `@`, no whitespace, at most 320 characters; used by sign-up, invitation, SCIM and sign-in providers, `kernel/sso/scim.ts:619-632`, `kernel/sso/people.ts:79-82`), members created by an admin `format: "email"` at most 254 (`routes/tenants.ts:709`, `routes/identity.ts:85`), and members from a provider the same 320-character check. A list needs many commas or colons, which that check lets through only up to 320 characters, a size where the parser takes microseconds. One path was not checked end to end: a tenant import (`kernel/tenancy/import.ts:591`) copies member emails from an export file without that check; it is run by someone who may import a tenant. In a tenant's worker the advisory was reachable by its own script, as the first review said; that costs that tenant's worker.
+
+**Test.** `apps/control-plane/src/kernel/mail-address.test.ts` sends the shape through `Mailer.send`, to a closed port, so the time is the library reading the addresses. Before the upgrade, a list of 400,000 characters: names with commas and no domain 87.3 s, a list of addresses 9.8 s, a run of groups 0.5 s (the third test failed: `expected 87.34 to be less than 1`). After: 0.32 s, 0.36 s, 0.06 s. The other two tests (our own check refuses such a list; the longest address our check accepts is read in a few milliseconds) pass before and after.
+
+**Checks.** `pnpm -s typecheck` clean. The mail tests (`arriving`, `extensions`, `connections`, `cfg-configure` in the control plane, `define-parity` in the worker, `local` in the CLI, and the new one): 7 files, 110 tests pass.
+
+**Audit, `pnpm audit --prod`.**
+
+- Before: 26 advisories: 7 low, 15 moderate, 4 high, 0 critical.
+- After: 6 advisories: 6 low, 0 moderate, 0 high, 0 critical.
+- Left that is high or critical: none. Moderate: none.
+- Left, low (all in the console's bundle): five in `dompurify` (`IN_PLACE` and hook cases, a SMIL attribute guard, a `SAFE_FOR_TEMPLATES` bypass), one in `katex` (prototype pollution that bypasses its trust settings).
+
+### An audit step in CI (commit `4d4b279a`)
+
+`.github/workflows/audit.yml`: runs `pnpm audit --prod --audit-level high` on pull requests and on Mondays at 05:17 UTC. Same set-up steps as `ci.yml` (`actions/checkout@v4`, `pnpm/action-setup@v4`, `actions/setup-node@v4` with `.nvmrc` and the pnpm cache, `pnpm install --frozen-lockfile`). Run on this tree it reports only the 6 low and passes. No Dependabot. The first review also noted that actions are pinned by tag, not by commit; that is left as it is, as asked.
+
+### Two things documented, not changed (commit `115302ed`)
+
+**`sso:write` is as much as tenant admin.** Written in the permissions reference (a note on the `sso:write` row, from `packages/docs/generators/reference.mjs`, since that page is generated), in `packages/docs/content/administer/reference/sso/permissions.md` (a section), and in `SECURITY.md` (a row after `export:write`'s). Verified in code:
+
+- Changing a provider needs `sso:write` (`routes/sso.ts:227-228`, patch `:321`). `updateProvider` (`kernel/sso/providers.ts:564-651`) removes the links tied to the old issuer and leaves `identity_domain` rows as they are. A domain of members belongs to one provider (`providers.ts:838-845`), so the existing provider is the one to edit.
+- A sign-in then takes the existing member whose email is in a proved domain (`kernel/sso/people.ts:95-111`), whatever the provider says; the only refusal for the person is a member who holds access at the instance (`people.ts:166`, `:283-290`).
+- A token for provisioning needs the same permission (`routes/scim.ts:110-111`, `:312-340`); a push creates or takes members in proved domains (`kernel/sso/scim.ts:663-700`) and a pushed group is put in the group an existing mapping names (`scim.ts:975-989`, `:1205-1225`). Saving a new mapping needs `group:write`, and `binding:write` for a group that holds a binding (`routes/sso.ts:278`), so the docs say it is the existing mappings that matter. Not run.
+
+**An app's end users are not proved by sign-up, with or without mail.** Written in `packages/docs/content/self-host/how-to/running/set-up-mail.md` (a section, and the "Before you start" lines), `packages/docs/content/develop/explanation/apps/app-access.md` (a section under "Who the person is") and `SECURITY.md` (one sentence in what it does not protect against). **The address is not verified even where mail is set up**: sign-up (`routes/endusers.ts:1013-1055`, `kernel/apps/front.ts:379-411`) calls `createEndUser` (`kernel/endusers.ts:40-75`), which only trims, lower-cases and shape-checks it, and signs the person in; `end_user` has no verified column. What mail adds: an invitation made in the console has no password until its emailed link is opened, and "Forgot your password" exists only with mail (`front.ts:465`), and using a link deletes the account's app sessions (`endusers.ts:205-262`), so the owner of an address can take back an account made with it. I did not build verification. What the docs tell an app author to do instead: invite end users from the console, or use an identity provider of end users (which refuses an email it says is not verified, `people.ts:89`; an answer that says nothing passes). There is no bulk import of end users. The console's row rules name people by ID, group or attribute, not by email, so the case that matters is an app, script or flow that reads the principal's `email`.
+
+Ledgers: rows added in `docs/documentation/factcheck/administer/reference/sso/permissions.md`, `.../self-host/how-to/running/set-up-mail.md` and `.../develop/explanation/apps/app-access.md`. `npx vitest run packages/docs` passes (303 tests), and `pnpm docs:check` too.

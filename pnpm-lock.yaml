@@ -198,8 +198,8 @@ importers:
         specifier: ^1.44.13
         version: 1.44.13
       nodemailer:
-        specifier: ^7
-        version: 7.0.13
+        specifier: ^10.6.1
+        version: 10.6.1
       openid-client:
         specifier: ^6
         version: 6.8.9
@@ -216,9 +216,6 @@ importers:
         specifier: ^7
         version: 7.30.2
     devDependencies:
-      '@types/nodemailer':
-        specifier: ^8.0.2
-        version: 8.0.2
       '@types/xml-encryption':
         specifier: ^1.2.4
         version: 1.2.4
@@ -687,12 +684,8 @@ importers:
         specifier: workspace:*
         version: link:../sdk
       nodemailer:
-        specifier: ^7
-        version: 7.0.13
-    devDependencies:
-      '@types/nodemailer':
-        specifier: ^8.0.2
-        version: 8.0.2
+        specifier: ^10.6.1
+        version: 10.6.1
 
 packages:
 
@@ -1741,9 +1734,6 @@ packages:
 
   '@types/node@24.19.2':
     resolution: {integrity: sha512-93d49wCWJkCyN87MxLpNN6KXPCwFw7bVUg79mGUV1OS40JGWwVCr8n61DXCSqz7CV6/VfPkb7xec7uP2M+QHWQ==}
-
-  '@types/nodemailer@8.0.2':
-    resolution: {integrity: sha512-c7M5ox8p0nEOfbJ2E9Qcmt8/QCu/VzsiAhzBiZbvky2PhKZDHpKB3sQHBM5MEZNkCfBOaS6S9//AGPRTNB7IaA==}
 
   '@types/pg@8.23.1':
     resolution: {integrity: sha512-fKVHpikPdg4GKks3JuLEhvwSyvwzF23hnabPy6DD8ljVbC7+6J5dQzdv4arV6jqq57djnMgs1HKBxX4P8aBI3A==}
@@ -2916,9 +2906,9 @@ packages:
     resolution: {integrity: sha512-NMPBRMJgiQHjbd8phG3Vebdx4kZ1H121rbl5IkMqeOsahptB9BKo/d7oJ3zTXqTgagn2bWlNSXkh0QUGM31RYg==}
     engines: {node: '>=18'}
 
-  nodemailer@7.0.13:
-    resolution: {integrity: sha512-PNDFSJdP+KFgdsG3ZzMXCgquO7I6McjY2vlqILjtJd0hy8wEvtugS9xKRF2NWlPNGxvLCXlTNIae4serI7dinw==}
-    engines: {node: '>=6.0.0'}
+  nodemailer@10.6.1:
+    resolution: {integrity: sha512-d7kfFfS/tR4Aca+SBvRaQ+MXKNv7d2JiRe5TxaRcFT/kYMh4GGPnW9aKksTIEvyEbA7d/7HYWE4YPDEHxzJj/g==}
+    engines: {node: '>=20.0.0'}
 
   non-error@0.1.0:
     resolution: {integrity: sha512-TMB1uHiGsHRGv1uYclfhivcnf0/PdFp2pNqRxXjncaAsjYMoisaQJI+SSZCqRq+VliwRTC8tsMQfmrWjDMhkPQ==}
@@ -4796,10 +4786,6 @@ snapshots:
     dependencies:
       undici-types: 7.24.6
 
-  '@types/nodemailer@8.0.2':
-    dependencies:
-      '@types/node': 24.19.2
-
   '@types/pg@8.23.1':
     dependencies:
       '@types/node': 24.19.2
@@ -5900,7 +5886,7 @@ snapshots:
     dependencies:
       content-type: 2.1.0
 
-  nodemailer@7.0.13: {}
+  nodemailer@10.6.1: {}
 
   non-error@0.1.0: {}
 

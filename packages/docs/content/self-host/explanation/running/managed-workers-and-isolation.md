@@ -8,7 +8,7 @@ A script runs on a worker. For a tenant with work and no worker of its own, the 
 
 ## The idea
 
-Each attempt of a script is a process of its own. It is ended at its time limit or when canceled, and held to the script's `memoryMb` (512 by default). Volvel does not run each script in a container, and it does not sandbox it. It gives each worker a user of its own and a network to stand on.
+Each attempt of a script is a process of its own. It is ended at its time limit or when canceled, and held to the script's `memoryMb` (512 by default). Volvel does not run each script in a container, and it does not sandbox it. In a worker host it gives each worker a user of its own and a network to stand on; workers started in process mode share one user (see below).
 
 `MANAGED_WORKERS` chooses where managed workers run:
 
@@ -51,9 +51,11 @@ A stopping host asks each worker to finish for up to 30 seconds, ends it, and gi
 
 Without a worker host, the control plane starts workers itself. They can reach whatever the control plane reaches. So it starts one only for a tenant whose code only the operator writes. A tenant whose code is written by anyone else, a member or a group with `code:write` who holds no instance-wide role, or any service account, gets none. Its Workers page says it runs on standalone workers only.
 
-Workers in this mode run as a user of their own where the container may switch users. The image starts the control plane on `node-cp` and workers on plain Node, which cannot switch back. Without `CAP_SETUID` and `CAP_SETGID` it starts the control plane on plain Node, says so, and workers run as the control plane's own user.
+Workers in this mode run as a user other than the control plane's where the container may switch users, but one user for all tenants. The image starts the control plane on `node-cp` and workers on plain Node, which cannot switch back. Without `CAP_SETUID` and `CAP_SETGID` it starts the control plane on plain Node, says so, and workers run as the control plane's own user.
 
 `MANAGED_WORKER_USER` has two values: `own` (the default) and `same`. `same` runs workers as the control plane's user for every tenant. By choosing it you say that everyone who writes code works for you.
+
+With `own`, workers run as one user that is not the control plane's, and that same user runs every tenant's workers. Only a worker host gives each worker a user and a directory of its own. In process mode, tenants can therefore signal each other's script processes and read each other's bundle cache directory, so the mode fits a site where everyone who writes code works for you.
 
 This is the mode for development, and for a single site where only the operator writes code.
 

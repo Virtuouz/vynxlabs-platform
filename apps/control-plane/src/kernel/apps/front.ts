@@ -35,7 +35,7 @@ import { workingDocs } from "../docs/working.js";
 import {
   checkEndUserPassword,
   createEndUser,
-  createPasswordToken,
+  createRequestedResetToken,
   endUserIdentity,
   readPasswordToken,
   setPasswordWithToken,
@@ -475,11 +475,11 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
         .executeTakeFirst();
       if (user) {
         const made = await db.transaction().execute(async (trx) => {
-          const token = await createPasswordToken(
-            trx,
-            { id: user.id, tenantId: tenant.id },
-            "reset",
-          );
+          const token = await createRequestedResetToken(trx, {
+            id: user.id,
+            tenantId: tenant.id,
+          });
+          if (!token) return undefined;
           await writeAudit(trx, actorOf(request, ANONYMOUS), {
             action: "end_user.reset_requested",
             targetType: "end_user",
@@ -494,11 +494,12 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
           place.kind === "domain" ? place.domain.hostname : undefined,
         );
         // Not awaited: how long sending takes must not tell an account from none.
-        void kernel.mail.send({
-          to: user.email,
-          subject: `Reset your password at ${tenant.name}`,
-          text: `Open this link to choose a new password for your account at ${tenant.name}:\n${address}/set-password?token=${made.token}\n\nThe link works once, until ${made.expiresAt.toUTCString()}. If you did not ask for it, you can ignore this message.\n`,
-        });
+        if (made)
+          void kernel.mail.send({
+            to: user.email,
+            subject: `Reset your password at ${tenant.name}`,
+            text: `Open this link to choose a new password for your account at ${tenant.name}:\n${address}/set-password?token=${made.token}\n\nThe link works once, until ${made.expiresAt.toUTCString()}. If you did not ask for it, you can ignore this message.\n`,
+          });
       }
       return html(
         reply,

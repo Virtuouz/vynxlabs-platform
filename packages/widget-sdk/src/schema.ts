@@ -49,19 +49,44 @@ const MAX_PATTERN_LENGTH = 200;
 /**
  * Why a pattern is not run, or nothing when it is. A pattern is the tenant's and the string is
  * its frame's, and the page that checks them has one thread, so a pattern that can backtrack
- * without end (`^(a+)+$`) would stop the page for whoever views the widget. A group that is
- * repeated, a back reference, and more than two unbounded repeats are refused; the rest is
- * what a payload needs (`^[a-z]{2,5}-\d+$`).
+ * without end (`^(a+)+$`) would stop the page for whoever views the widget. Refused: a group
+ * that is repeated (`*`, `+`, `{...}`), a group made optional that holds a repeat inside it, a
+ * back reference, look-around, more than two repeats that are unbounded or have a range
+ * (`*`, `+`, `{2,}`, `{0,60}`), and more than four optional atoms (`?`). What is left is what
+ * a payload needs (`^[a-z]{2,5}-\d+$`). A pattern that cannot be shown safe this cheaply is
+ * refused.
  */
 function patternProblem(pattern: string): string | undefined {
   if (pattern.length > MAX_PATTERN_LENGTH) return `is longer than ${MAX_PATTERN_LENGTH} characters`;
   if (/\\(?:[1-9]|k<)/.test(pattern)) return "refers back to a group, which is not run";
-  // What is left once escapes and character classes are out of the way.
-  const bare = pattern.replace(/\\./gsu, "_").replace(/\[(?:[^\]\\]|\\.)*\]/gsu, "_");
-  if (/\)\s*(?:[*+]|\{)/.test(bare)) return "repeats a group, which is not run";
+  // What is left once escapes and character classes are out of the way, and the markers that
+  // open a group without being a repeat (`(?:`, `(?<name>`) are plain parentheses.
+  const bare = pattern
+    .replace(/\\./gsu, "_")
+    .replace(/\[(?:[^\]\\]|\\.)*\]/gsu, "_")
+    .replace(/\(\?(?::|<[A-Za-z_][A-Za-z0-9_]*>)/g, "(");
   if (/\((?:\?<?[=!])/.test(bare)) return "looks ahead or behind, which is not run";
-  const unbounded = bare.match(/[*+]|\{\d+,\}/g)?.length ?? 0;
-  if (unbounded > 2) return "repeats too freely to be run on text from a widget";
+  if (/\)\s*(?:[*+]|\{)/.test(bare)) return "repeats a group, which is not run";
+  // A group made optional is fine on its own; with a repeat inside it, it is not shown safe.
+  const opened: number[] = [];
+  for (const [at, char] of [...bare].entries()) {
+    if (char === "(") opened.push(at);
+    else if (char === ")") {
+      const from = opened.pop();
+      if (
+        from !== undefined &&
+        bare[at + 1] === "?" &&
+        /[*+?]|\{\d+,/.test(bare.slice(from + 1, at))
+      )
+        return "makes a group with a repeat in it optional, which is not run";
+    }
+  }
+  // A lazy mark (`+?`, `{2,3}?`) is not another repeat.
+  const quantifiers = bare.replace(/([*+?}])\?/g, "$1");
+  const ranged = quantifiers.match(/[*+]|\{\d+,\d*\}/g)?.length ?? 0;
+  if (ranged > 2) return "repeats too freely to be run on text from a widget";
+  const optional = quantifiers.match(/\?/g)?.length ?? 0;
+  if (optional > 4) return "has too many optional parts to be run on text from a widget";
   return undefined;
 }
 

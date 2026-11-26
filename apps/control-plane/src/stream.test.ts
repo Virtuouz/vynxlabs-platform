@@ -49,6 +49,7 @@ async function open(client: Client, tenantId = tenant, headers: Record<string, s
   response.on("error", () => {});
   return {
     status: response.statusCode,
+    headers: response.headers,
     events,
     close: () => request.destroy(),
     /** Waits for an event that `match` accepts, or for `ms` to pass. */
@@ -496,6 +497,8 @@ describe("the run event stream", () => {
     expect(streams.map((one) => one.status)).toEqual([200, 200, 200, 200, 200]);
     const sixth = await open(wendy);
     expect(sixth.status).toBe(429);
+    // It says when to try again (C22).
+    expect(Number(sixth.headers["retry-after"])).toBeGreaterThan(0);
     sixth.close();
     for (const one of streams) one.close();
     // Closed streams free their places.

@@ -13,6 +13,7 @@ import {
   cleanEmail,
   createEndUser,
   createPasswordToken,
+  createRequestedResetToken,
   endUnusedTokens,
   endUserIdentity,
   setPasswordWithToken,
@@ -1084,11 +1085,11 @@ export function endUserRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           .executeTakeFirst();
         if (user) {
           const made = await db.transaction().execute(async (trx) => {
-            const token = await createPasswordToken(
-              trx,
-              { id: user.id, tenantId: params.t },
-              "reset",
-            );
+            const token = await createRequestedResetToken(trx, {
+              id: user.id,
+              tenantId: params.t,
+            });
+            if (!token) return undefined;
             await writeAudit(
               trx,
               {
@@ -1107,13 +1108,14 @@ export function endUserRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             return token;
           });
           // Not awaited: how long sending takes must not tell an account from none.
-          void link(
-            tenant,
-            user,
-            "reset",
-            made,
-            place.kind === "domain" ? place.domain.hostname : undefined,
-          );
+          if (made)
+            void link(
+              tenant,
+              user,
+              "reset",
+              made,
+              place.kind === "domain" ? place.domain.hostname : undefined,
+            );
         }
         return { sent: true };
       },

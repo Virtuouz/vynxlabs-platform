@@ -48,6 +48,41 @@ const plain = (value) => {
   }
   return value === undefined ? null : value;
 };
+// A pattern handed to matches() is run by a backtracking engine, which a pattern such as
+// ^(a+)+$ keeps busy for ever. A pattern is refused unless it is shown safe this cheaply: no
+// repeated group, no optional group with a repeat in it, no back reference or look-around, at
+// most two repeats that are unbounded or have a range, and at most four optional atoms.
+const patternProblem = (pattern) => {
+  if (pattern.length > 200) return "is longer than 200 characters";
+  if (/\\\\(?:[1-9]|k<)/.test(pattern)) return "refers back to a group";
+  const bare = pattern
+    .replace(/\\\\./gsu, "_")
+    .replace(/\\[(?:[^\\]\\\\]|\\\\.)*\\]/gsu, "_")
+    .replace(/\\(\\?(?::|<[A-Za-z_][A-Za-z0-9_]*>)/g, "(");
+  if (/\\((?:\\?<?[=!])/.test(bare)) return "looks ahead or behind";
+  if (/\\)\\s*(?:[*+]|\\{)/.test(bare)) return "repeats a group";
+  const opened = [];
+  for (const [at, char] of [...bare].entries()) {
+    if (char === "(") opened.push(at);
+    else if (char === ")") {
+      const from = opened.pop();
+      if (from !== undefined && bare[at + 1] === "?" && /[*+?]|\\{\\d+,/.test(bare.slice(from + 1, at)))
+        return "makes a group with a repeat in it optional";
+    }
+  }
+  const quantifiers = bare.replace(/([*+?}])\\?/g, "$1");
+  if ((quantifiers.match(/[*+]|\\{\\d+,\\d*\\}/g) || []).length > 2) return "repeats too freely";
+  if ((quantifiers.match(/\\?/g) || []).length > 4) return "has too many optional parts";
+  return undefined;
+};
+const NativeRegExp = RegExp;
+class CheckedRegExp extends NativeRegExp {
+  constructor(pattern, flags) {
+    const why = typeof pattern === "string" ? patternProblem(pattern) : undefined;
+    if (why) throw new Error("The pattern " + why + ", so it is not run.");
+    super(pattern, flags);
+  }
+}
 parentPort.on("message", async ({ id, expression, data, parseOnly, names }) => {
   try {
     const both = await ready;
@@ -59,7 +94,17 @@ parentPort.on("message", async ({ id, expression, data, parseOnly, names }) => {
       const checked = program.check();
       if (!checked.valid) throw checked.error;
     }
-    parentPort.postMessage({ id, value: parseOnly ? null : plain(program(data)) });
+    let value = null;
+    if (!parseOnly) {
+      // Only while the expression runs: the library builds patterns of its own when it parses.
+      globalThis.RegExp = CheckedRegExp;
+      try {
+        value = plain(program(data));
+      } finally {
+        globalThis.RegExp = NativeRegExp;
+      }
+    }
+    parentPort.postMessage({ id, value });
   } catch (error) {
     parentPort.postMessage({ id, error: String(error && error.message ? error.message : error) });
   }
@@ -69,7 +114,8 @@ parentPort.on("message", async ({ id, expression, data, parseOnly, names }) => {
 interface Waiting {
   resolve: (value: unknown) => void;
   reject: (error: Error) => void;
-  /** What was asked, to ask a new thread when this one is replaced before it started. */
+  /** Whose it is: the line each tenant waits in. */
+  owner: string;
   message: {
     id: number;
     expression: string;
@@ -79,12 +125,15 @@ interface Waiting {
   };
   /** Set once the thread has started on it. */
   timer?: NodeJS.Timeout | undefined;
-  /** How long it may wait to be started at all: a thread that cannot start is given up on. */
-  patience: NodeJS.Timeout;
+  /** How long the thread may take to start on it at all: a thread that cannot start is given up on. */
+  patience?: NodeJS.Timeout | undefined;
 }
 
-/** How long a thread may take to start, and an expression to wait for its turn. */
+/** How long a thread may take to start on an expression. */
 const PATIENCE_MS = 15_000;
+
+/** How many expressions one owner (a tenant) may have waiting, the one being worked on included. */
+const MAX_WAITING_PER_OWNER = 256;
 
 function explain(message: string): string {
   const first = (message.split("\n")[0] ?? message).trim();
@@ -99,14 +148,22 @@ function explain(message: string): string {
  * Evaluates CEL expressions in a separate thread, with a time limit and a
  * memory cap. An expression that exceeds either is stopped, the thread is
  * replaced, and the caller gets an error. The control plane is never blocked.
+ *
+ * The thread works on one expression at a time, and each owner (a tenant) has a line of its
+ * own, served in turn: one tenant's slow expressions delay another's by at most one time limit
+ * per turn, and never fail them. When the thread is replaced, only the expression that held it
+ * fails; the rest wait for the new one.
  */
 export class Expressions {
   readonly #timeoutMs: number;
   readonly #memoryMb: number;
   readonly #library = import.meta.resolve("@marcbachmann/cel-js");
-  readonly #waiting = new Map<number, Waiting>();
+  /** The owners with something waiting, in the order they are served. */
+  readonly #lines = new Map<string, Waiting[]>();
+  #current: Waiting | undefined;
   #worker: Worker | undefined;
   #next = 0;
+  #unanswered = 0;
   #closed = false;
 
   constructor(limits: ExpressionLimits = {}) {
@@ -129,93 +186,145 @@ export class Expressions {
     worker.on(
       "message",
       (message: { id: number; started?: boolean; value?: unknown; error?: string }) => {
-        const waiting = this.#waiting.get(message.id);
-        if (!waiting) return;
+        const waiting = this.#current;
+        if (!waiting || waiting.message.id !== message.id) return;
+        clearTimeout(waiting.patience);
         if (message.started) {
-          clearTimeout(waiting.patience);
+          this.#unanswered = 0;
           waiting.timer = setTimeout(() => this.#stuck(message.id), this.#timeoutMs);
           return;
         }
-        this.#waiting.delete(message.id);
         clearTimeout(waiting.timer);
-        clearTimeout(waiting.patience);
+        this.#current = undefined;
         if (message.error !== undefined)
           waiting.reject(new ExpressionError(explain(message.error)));
         else waiting.resolve(message.value);
+        this.#serve();
       },
     );
     worker.on("error", (error: Error & { code?: string }) => {
-      // The thread died, almost always from running out of memory. Everything it held fails.
-      if (this.#worker === worker) this.#worker = undefined;
+      // The thread died, almost always from running out of memory. What it held fails.
+      if (this.#worker !== worker) return;
+      this.#worker = undefined;
       const reason =
         error.code === "ERR_WORKER_OUT_OF_MEMORY"
           ? "The expression used too much memory and was stopped."
           : `The expression could not be evaluated: ${error.message}`;
-      this.#failAll(reason);
+      this.#end(reason);
     });
     this.#worker = worker;
     return worker;
   }
 
-  #failAll(reason: string) {
-    for (const waiting of this.#waiting.values()) {
+  /** The expression the thread holds fails; the next in line is given to a new thread. */
+  #end(reason: string) {
+    const waiting = this.#current;
+    this.#current = undefined;
+    if (waiting) {
       clearTimeout(waiting.timer);
       clearTimeout(waiting.patience);
       waiting.reject(new ExpressionError(reason));
     }
-    this.#waiting.clear();
+    this.#serve();
+  }
+
+  /** Fails everything that waits, for a thread that cannot be made to answer or for closing. */
+  #failAll(reason: string) {
+    const all = [this.#current, ...[...this.#lines.values()].flat()];
+    this.#current = undefined;
+    this.#lines.clear();
+    for (const waiting of all) {
+      if (!waiting) continue;
+      clearTimeout(waiting.timer);
+      clearTimeout(waiting.patience);
+      waiting.reject(new ExpressionError(reason));
+    }
+  }
+
+  /** Gives the thread the next owner's expression, when it is free. */
+  #serve() {
+    if (this.#current || this.#closed) return;
+    const first = this.#lines.entries().next().value as [string, Waiting[]] | undefined;
+    if (!first) return;
+    const [owner, line] = first;
+    const waiting = line.shift() as Waiting;
+    // The owner goes to the back of the turns, if it has more waiting.
+    this.#lines.delete(owner);
+    if (line.length > 0) this.#lines.set(owner, line);
+    this.#current = waiting;
+    waiting.patience = setTimeout(() => this.#unresponsive(waiting), PATIENCE_MS);
+    waiting.patience.unref();
+    this.#thread().postMessage(waiting.message);
   }
 
   /**
    * An expression ran past its limit. The thread is busy and cannot be
    * interrupted, so it is replaced: that expression fails, and those that were
-   * only waiting their turn are asked of the new thread.
+   * only waiting their turn are given to the new thread.
    */
   #stuck(id: number) {
-    const waiting = this.#waiting.get(id);
-    if (!waiting) return;
-    this.#waiting.delete(id);
-    clearTimeout(waiting.patience);
-    waiting.reject(
-      new ExpressionError(`The expression took longer than ${this.#timeoutMs} ms and was stopped.`),
-    );
+    if (this.#current?.message.id !== id) return;
     const stuck = this.#worker;
     this.#worker = undefined;
     void stuck?.terminate();
-    for (const other of this.#waiting.values()) this.#thread().postMessage(other.message);
+    this.#end(`The expression took longer than ${this.#timeoutMs} ms and was stopped.`);
   }
 
-  #send(expression: string, data: unknown, parseOnly: boolean, names = false): Promise<unknown> {
+  /** The thread did not start on the expression in all this time: it is replaced. */
+  #unresponsive(waiting: Waiting) {
+    if (this.#current !== waiting) return;
+    const stuck = this.#worker;
+    this.#worker = undefined;
+    void stuck?.terminate();
+    this.#unanswered += 1;
+    const reason = "The expression could not be evaluated: the evaluator did not respond.";
+    // A thread that twice would not start is not going to: nothing more is held for it.
+    if (this.#unanswered >= 2) {
+      this.#unanswered = 0;
+      this.#failAll(reason);
+    } else this.#end(reason);
+  }
+
+  #send(
+    expression: string,
+    data: unknown,
+    parseOnly: boolean,
+    names: boolean,
+    owner: string,
+  ): Promise<unknown> {
     if (this.#closed)
       return Promise.reject(new ExpressionError("The expression evaluator is closed."));
+    const line = this.#lines.get(owner) ?? [];
+    const waiting = line.length + (this.#current?.owner === owner ? 1 : 0);
+    if (waiting >= MAX_WAITING_PER_OWNER) {
+      return Promise.reject(
+        new ExpressionError(
+          "Too many expressions are waiting to be worked out for this tenant. Try again in a moment.",
+        ),
+      );
+    }
     return new Promise((resolve, reject) => {
-      const id = ++this.#next;
-      const message = { id, expression, data, parseOnly, names };
-      const patience = setTimeout(() => {
-        // Not started in all this time: the thread itself is wrong. It is replaced, and
-        // everything it held fails.
-        const stuck = this.#worker;
-        this.#worker = undefined;
-        this.#failAll("The expression could not be evaluated: the evaluator did not respond.");
-        void stuck?.terminate();
-      }, PATIENCE_MS);
-      patience.unref();
-      this.#waiting.set(id, { resolve, reject, message, patience });
-      this.#thread().postMessage(message);
+      const message = { id: ++this.#next, expression, data, parseOnly, names };
+      line.push({ resolve, reject, owner, message });
+      this.#lines.set(owner, line);
+      this.#serve();
     });
   }
 
-  /** The value of an expression over the given data, as plain JSON. */
-  evaluate(expression: string, data: Record<string, unknown>): Promise<unknown> {
-    return this.#send(expression, data, false);
+  /**
+   * The value of an expression over the given data, as plain JSON. `owner` is whose it is (a
+   * tenant's id): each owner's expressions wait in a line of their own.
+   */
+  evaluate(expression: string, data: Record<string, unknown>, owner = ""): Promise<unknown> {
+    return this.#send(expression, data, false, false, owner);
   }
 
   /**
    * Throws an ExpressionError if the expression does not parse. With `names`, also when it
    * reads a name a flow's expression never has, such as `input`.
    */
-  async check(expression: string, names = false): Promise<void> {
-    await this.#send(expression, {}, true, names);
+  async check(expression: string, names = false, owner = ""): Promise<void> {
+    await this.#send(expression, {}, true, names, owner);
   }
 
   async close(): Promise<void> {

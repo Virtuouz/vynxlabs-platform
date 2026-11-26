@@ -90,7 +90,7 @@ export async function storeBundle(
     }),
   ];
   for (const { where, expression } of bundleExpressions(bundle.manifests)) {
-    await kernel.expressions.check(expression, true).catch((error) => {
+    await kernel.expressions.check(expression, true, workspace.tenantId).catch((error) => {
       if (!(error instanceof ExpressionError)) throw error;
       problems.push(`${where} is not a valid expression: ${error.message}`);
     });

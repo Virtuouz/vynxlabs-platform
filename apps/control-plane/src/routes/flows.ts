@@ -366,7 +366,7 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           throw error;
         };
         try {
-          await kernel.expressions.check(query.expression);
+          await kernel.expressions.check(query.expression, false, params.t);
         } catch (error) {
           return { error: said(error), flowRun: null };
         }
@@ -432,7 +432,7 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           const context = await expressionContext(db, run, {}, shield);
           if (readsMasked()) return cannot;
           if (query.items) {
-            const items = await kernel.expressions.evaluate(query.items, context);
+            const items = await kernel.expressions.evaluate(query.items, context, params.t);
             if (!Array.isArray(items) || items.length === 0) {
               return {
                 note: "Its items gave no list to take the first of.",
@@ -442,10 +442,11 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             extra = { item: items[0], index: 0 };
             note = "For the first item.";
           }
-          const value = await kernel.expressions.evaluate(query.expression, {
-            ...context,
-            ...extra,
-          });
+          const value = await kernel.expressions.evaluate(
+            query.expression,
+            { ...context, ...extra },
+            params.t,
+          );
           return { value, ...(note ? { note } : {}), flowRun: shown };
         } catch (error) {
           return { error: said(error), flowRun: shown };

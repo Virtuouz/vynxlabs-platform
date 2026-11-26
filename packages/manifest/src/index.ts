@@ -261,6 +261,7 @@ export {
   setEveryone,
   setPermission,
 } from "./permissions.js";
+export { schemaProblem } from "./pattern-guard.js";
 export { resolveKeyReferences } from "./references.js";
 export {
   type KindDefinition,

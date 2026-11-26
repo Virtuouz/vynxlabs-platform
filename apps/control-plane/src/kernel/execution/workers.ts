@@ -193,6 +193,7 @@ export function noteStarted(
 /** A run ended: what was held for it is free again. A script that ends at once holds nothing back. */
 export function runEnded(runId: string): void {
   for (const held of starting.values()) held.release(runId);
+  slotFreed();
 }
 
 /** A worker was started on this machine by the control plane. */
@@ -216,9 +217,34 @@ const turns = new Map<string, Promise<void>>();
 /** Until when each machine was last found full. */
 const fullUntil = new Map<string, number>();
 
+/**
+ * How long a tenant found to have had its share of a machine is not asked about again, unless a
+ * run ends first. Each of a worker's claims looks once a second, and each look took the machine's
+ * turn and a transaction to be told the same: in the soak of phase 35 twelve tenants' workers
+ * kept a claim that had room waiting about six seconds behind those that had none.
+ */
+const SHARE_FOR_MS = 500;
+/** Until when each tenant was last found to have had its share of each machine. */
+const shareUntil = new Map<string, number>();
+const shareKey = (machine: MachineClaim, tenantId: string) => `${machine.name}\n${tenantId}`;
+
 /** Whether this machine was found full a moment ago, so a claim need not ask the database. */
-export function machineFull(machine: MachineClaim | undefined): boolean {
-  return machine !== undefined && (fullUntil.get(machine.name) ?? 0) > Date.now();
+export function machineFull(machine: MachineClaim | undefined, tenantId?: string): boolean {
+  if (machine === undefined) return false;
+  const now = Date.now();
+  if ((fullUntil.get(machine.name) ?? 0) > now) return true;
+  if (tenantId === undefined) return false;
+  const key = shareKey(machine, tenantId);
+  const until = shareUntil.get(key);
+  if (until === undefined) return false;
+  if (until > now) return true;
+  shareUntil.delete(key);
+  return false;
+}
+
+/** A slot came free somewhere: who had had their share may have room again. */
+export function slotFreed(): void {
+  shareUntil.clear();
 }
 
 /**
@@ -226,17 +252,24 @@ export function machineFull(machine: MachineClaim | undefined): boolean {
  * A machine's claims are decided one at a time under a database lock; waiting for
  * that lock holds a connection, so dozens of workers waiting for it at once would
  * take every connection the control plane has. Waiting here holds none. A claim
- * that finds the machine full says so, and those after it return without asking.
+ * that finds the machine full says so, and those after it return without asking;
+ * one that finds its tenant has had its share says that, and that tenant's claims do.
  */
 export async function onMachine<T>(
   machine: MachineClaim | undefined,
-  claim: (noteFull: () => void) => Promise<T>,
+  claim: (noteFull: () => void, noteShare: () => void) => Promise<T>,
+  tenantId?: string,
 ): Promise<T | undefined> {
   const noteFull = () => {
     if (machine) fullUntil.set(machine.name, Date.now() + FULL_FOR_MS);
   };
-  if (!machine) return claim(noteFull);
-  if (machineFull(machine)) return undefined;
+  const noteShare = () => {
+    if (machine && tenantId) {
+      shareUntil.set(shareKey(machine, tenantId), Date.now() + SHARE_FOR_MS);
+    }
+  };
+  if (!machine) return claim(noteFull, noteShare);
+  if (machineFull(machine, tenantId)) return undefined;
   const previous = turns.get(machine.name) ?? Promise.resolve();
   let release = () => {};
   const mine = new Promise<void>((resolve) => {
@@ -246,8 +279,8 @@ export async function onMachine<T>(
   turns.set(machine.name, tail);
   await previous;
   try {
-    if (machineFull(machine)) return undefined;
-    return await claim(noteFull);
+    if (machineFull(machine, tenantId)) return undefined;
+    return await claim(noteFull, noteShare);
   } finally {
     release();
     if (turns.get(machine.name) === tail) turns.delete(machine.name);

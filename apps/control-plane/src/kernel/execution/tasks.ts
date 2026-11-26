@@ -121,12 +121,16 @@ export async function claimTask(
   if (wanted.length === 0) return undefined;
   if (!machine) return takeTask(kernel.db, scope, workerId, wanted);
   // A worker that shares its machine takes a task only when the machine has room.
-  return onMachine(machine, (noteFull) =>
-    kernel.db.transaction().execute(async (trx) => {
-      const room = await machineHasRoom(trx, machine, scope.tenantId);
-      if (room === "full") noteFull();
-      return room === "room" ? takeTask(trx, scope, workerId, wanted) : undefined;
-    }),
+  return onMachine(
+    machine,
+    (noteFull, noteShare) =>
+      kernel.db.transaction().execute(async (trx) => {
+        const room = await machineHasRoom(trx, machine, scope.tenantId);
+        if (room === "full") noteFull();
+        if (room === "share") noteShare();
+        return room === "room" ? takeTask(trx, scope, workerId, wanted) : undefined;
+      }),
+    scope.tenantId,
   );
 }
 

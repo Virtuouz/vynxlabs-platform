@@ -2,10 +2,12 @@ import { machineName } from "@volvel/worker";
 import { describe, expect, test } from "vitest";
 import {
   machineShortOfMemory,
+  machineFull,
   notePeak,
   noteStarted,
   plannedStartMb,
   noteWorkerStarted,
+  onMachine,
   runEnded,
 } from "./kernel/execution/workers.js";
 
@@ -81,5 +83,31 @@ describe("a machine is handed a script only where one more fits above its memory
     expect(machineShortOfMemory(machine, probe(0), 1)).toBe(false);
     noteStarted(machine, "seen-3", 0, "ws:sleeper");
     expect(machineShortOfMemory(machine, probe(0), 1)).toBe(true);
+  });
+
+  test("a tenant found to have had its share does not take the machine's turn again until a run ends", async () => {
+    const machine = { name: "elsewhere-e", slots: 9 };
+    let asked = 0;
+    const atShare = () =>
+      onMachine(
+        machine,
+        async (_full, noteShare) => {
+          asked += 1;
+          noteShare();
+          return undefined;
+        },
+        "tenant-a",
+      );
+    await atShare();
+    await atShare();
+    await atShare();
+    expect(asked).toBe(1);
+    // Another tenant on the machine is still asked.
+    expect(machineFull(machine, "tenant-b")).toBe(false);
+    expect(await onMachine(machine, async () => "job", "tenant-b")).toBe("job");
+    // A run ended: a slot is free, and the tenant is asked again at once.
+    runEnded("any-run");
+    await atShare();
+    expect(asked).toBe(2);
   });
 });

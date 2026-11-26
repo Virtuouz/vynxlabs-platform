@@ -1150,7 +1150,14 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         },
       },
       async ({ worker, params, body }, reply) => {
-        await completeRun(kernel, worker, params.id, body.attempt, body.output ?? null, body.peakMb);
+        await completeRun(
+          kernel,
+          worker,
+          params.id,
+          body.attempt,
+          body.output ?? null,
+          body.peakMb,
+        );
         await recordLostLogs(params.id, body.attempt, body.logsLost);
         return reply.code(204).send(null);
       },

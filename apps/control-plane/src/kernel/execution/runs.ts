@@ -429,14 +429,26 @@ export async function claimRun(
   // A machine that says what memory it has is handed a script only where one more fits.
   if (machine && machineShortOfMemory(machine)) return null;
   const run =
-    (await onMachine(machine, async (noteFull) => {
-      if (machine && machineShortOfMemory(machine)) return undefined;
-      const claimed = await claimNext(kernel, scope, workerId, abandoned, machine, noteFull);
-      if (machine && claimed) {
-        noteStarted(machine, claimed.run.id, Date.now(), scriptKey(claimed.run));
-      }
-      return claimed;
-    })) ?? null;
+    (await onMachine(
+      machine,
+      async (noteFull, noteShare) => {
+        if (machine && machineShortOfMemory(machine)) return undefined;
+        const claimed = await claimNext(
+          kernel,
+          scope,
+          workerId,
+          abandoned,
+          machine,
+          noteFull,
+          noteShare,
+        );
+        if (machine && claimed) {
+          noteStarted(machine, claimed.run.id, Date.now(), scriptKey(claimed.run));
+        }
+        return claimed;
+      },
+      scope.tenantId,
+    )) ?? null;
   return run;
 }
 
@@ -447,6 +459,7 @@ async function claimNext(
   abandoned: () => boolean,
   machine: MachineClaim | undefined,
   noteFull: () => void,
+  noteShare: () => void = () => {},
 ) {
   let query = kernel.db
     .selectFrom("workspace")
@@ -494,6 +507,7 @@ async function claimNext(
           if (machine) {
             const room = await machineHasRoom(trx, machine, scope.tenantId);
             if (room === "full") noteFull();
+            if (room === "share") noteShare();
             if (room !== "room") return "machine" as const;
           }
 

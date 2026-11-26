@@ -6,7 +6,7 @@ subjects: [backup]
 
 ## Restore an instance
 
-By the end an instance runs from a backup: the same tenants, tables, rows and files, signed in with the same passwords. This procedure was run on a fresh Compose stack for this page.
+By the end an instance runs from a backup: the same tenants, tables, rows and files, signed in with the same passwords. This procedure was run on a fresh Compose stack for this page, and on Fly.io.
 
 ## Before you start
 
@@ -46,6 +46,19 @@ By the end an instance runs from a backup: the same tenants, tables, rows and fi
 5. Start everything: `docker compose -f deploy/compose/compose.yaml up -d --wait`. Migrations run on start: a restore is a database of an earlier level, and it moves forward. The log says "row policies now read the signed claim" with the number of tables it made policies for.
 6. Check. `GET /api/v1/readyz` answers 200. Open **Instance**, then **Health**: the database and the object store answer, and **Master key** lists no value that opened with neither key. Open a tenant that holds a file and read the file: that shows the two backups agree. Add a row to a table: that shows the policies are back.
 :::
+
+## On Fly.io
+
+The same restore, as it was run on Fly in November 2026 with a Fly Postgres app. From a dump to a second instance that answered took about two minutes: 14 seconds to dump a database of 288 MB under load, 35 to restore it, 48 for the new app to start.
+
+:::steps
+1. Dump on the database's machine, where `pg_dump` matches the server: `fly ssh console -a <db app>`, then `pg_dump -Fc --no-owner -h localhost -p 5433 -U postgres -d <database> -f /data/platform.dump` with `PGPASSWORD=$OPERATOR_PASSWORD`. Copy it off with `fly ssh sftp get`. The dump needs room on the volume: a tenth to a fifth of the database's size.
+2. On the target server, make the database (`create database <name> owner <app user>`) and the data role if it is a new server, as in step 3 above. Then `pg_restore --no-owner --role=<app user> -h localhost -p 5433 -U postgres -d <name> /data/platform.dump`.
+3. Create the new app and give it the same `MASTER_KEY` and `AUTH_SECRET`, the bucket's settings, a `DATABASE_URL` that names the restored database and its own `PUBLIC_URL`. `fly secrets import --stage` reads `NAME=value` lines from a file: keep that file readable by you alone and delete it after.
+4. Deploy the same image, or a newer one. Check as in step 6 above.
+:::
+
+A restore started beside the instance it was taken from fires the same schedules and takes the queued runs that were in the dump. Stop one of the two, or start the restore with `MANAGED_WORKERS=false` and its triggers stopped ([Stop triggers and clear a backlog](stop-triggers-and-clear-a-backlog)), unless both are meant to act.
 
 ## The result
 

@@ -33,7 +33,35 @@ Memory is the smaller of what `/proc/meminfo` reports and the container's own li
 
 A standalone worker has no slots, no floor and no memory guard. It runs as many scripts at once as its `--concurrency` says (4 by default).
 
-Plan on 2 GB for a machine that runs the control plane and scripts together. Give the database a dedicated CPU for anything past a trial. On a shared CPU it runs at full speed only until its burst credit is spent, and then every tenant's queries slow down together.
+Plan on 2 GB for a machine that runs the control plane and scripts together, and give both that machine and the database a dedicated CPU for anything past a trial. A shared CPU serves a burst, not a load: it runs at full speed only until its burst credit is spent.
+
+- A database on a shared CPU with 512 MB spends about all of its allowance when idle, and earns almost no burst back. In the load test of November 2026 the console's slowest twentieth of requests took over a second with four people using it.
+- A control plane on two shared CPUs served 160 requests a second on its burst, then 22 to 27.
+
+## How memory is shared between scripts
+
+Slots say how many scripts may run. Memory says whether one more fits:
+
+- Each tenant with work has one managed worker, which holds 65 to 105 MB while it waits. The control plane holds 400 to 800 MB. On 2 GB with twelve tenants at work, 450 to 700 MB is left for scripts.
+- A script is started only where the memory it is planned at fits above the floor. The plan is a quarter over the most that script held in its last four runs, 48 MB at least. A script that has never run is planned at 160 MB.
+- While a script runs, its worker says what it holds. What it holds already shows in the machine's free memory, so only the rest of its plan stays counted.
+- The most each run held is kept with the run, so a restart does not forget it.
+
+A script that takes far more than it ever did before, because of what it was given this time, can still take a machine below its floor. The largest script is then stopped, as above.
+
+## What one machine did
+
+Measured in November 2026 on one dedicated CPU and 2 GB for the control plane and its scripts, and the same for the database, with 24 tenants:
+
+| Load | Result |
+| --- | --- |
+| People using the console | 72 at once, 150 requests a second, before the slowest twentieth took over a second |
+| Reads of tables of 200,000 rows, sorted, filtered and totalled | 24 readers at once, 57 a second. The database's CPU is the limit |
+| Scripts that return at once | About four a second: each run is a new process |
+| A mix of short scripts and ones that sleep or hold 80 MB for five seconds, over twelve tenants | 139 runs a minute, six scripts at once |
+| The console at 50 people and that mix of scripts together | The console kept its speed and the runs waited in the queue: one CPU does not do both |
+
+These are one machine's figures, not a promise. The page of the load test, `docs/phases/phase-35-stress-and-red-team.md` in the repository, has how each was measured.
 
 ## The database's connection budget
 

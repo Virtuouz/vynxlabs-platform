@@ -44,6 +44,8 @@ kill_timeout = 60
 # With MANAGED_WORKERS=process (the default) scripts run on this machine beside the
 # control plane: 1 GB gives three run slots; each 160 MB more gives one more.
 # RUN_SLOTS sets them outright. See /docs/self-host/explanation/running/sizing-and-scaling on an instance.
+# A shared CPU serves a burst and not a load: it is enough to try the instance. For anything
+# past that use `performance-1x` with 2048mb here and for the database.
 [[vm]]
   size = "shared-cpu-1x"
   memory = "1024mb"

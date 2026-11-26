@@ -2,7 +2,7 @@
 
 Fly.io hosts the Vynxlabs-run instances. Nothing in the image is specific to Fly: it reads the same environment variables as every other deployment mode.
 
-The same steps, kept up to date, are in the documentation at `/docs/self-host/how-to/running/install-on-fly` on an instance. This setup has not been run yet. Treat the commands as a starting point and check them against the current Fly documentation.
+The same steps, kept up to date, are in the documentation at `/docs/self-host/how-to/running/install-on-fly` on an instance. The control plane was run this way in November 2026, with `MANAGED_WORKERS=process`, a Fly Postgres app and a Tigris bucket (phase 35). The `workers` group below has not been run.
 
 ## One-time setup
 

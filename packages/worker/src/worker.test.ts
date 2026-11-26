@@ -139,6 +139,8 @@ interface Platform {
   maxLogBody: number;
   /** How many log requests fail before they start to succeed. Infinity: they never do. */
   failLogs: number;
+  /** How many reports of an attempt's end are answered 500 before they are taken. */
+  failReports: number;
   /** Runs whose next heartbeat is told the run was canceled. */
   cancel: Set<string>;
 }
@@ -169,6 +171,7 @@ async function platform(jobs: Asked[], failLogs = 0): Promise<Platform & { runId
     requests: [] as string[],
     bodies: [] as Record<string, unknown>[],
     failLogs,
+    failReports: 0,
     maxLogBody: Number.POSITIVE_INFINITY,
     cancel: new Set<string>(),
     runIds: queue.map((job) => job.runId),
@@ -242,6 +245,11 @@ async function platform(jobs: Asked[], failLogs = 0): Promise<Platform & { runId
     }
     if (path.includes("/secrets/api-key")) return reply(response, 200, { value: "s3cret" });
     if (path.endsWith("/events")) return reply(response, 204);
+    if ((path.endsWith("/complete") || path.endsWith("/fail")) && state.failReports > 0) {
+      // A control plane whose database is away: it answers, and can record nothing.
+      state.failReports -= 1;
+      return reply(response, 500, { detail: "The database cannot be reached." });
+    }
     if (path.endsWith("/complete")) {
       state.ended.push({ runId, kind: "complete", body });
       return reply(response, 204);
@@ -338,6 +346,15 @@ describe("log lines of any size", () => {
     const state = await platform([{ entry: "consoler" }]);
     await work(state, () => state.ended.length === 1);
     expect(state.lines).toEqual(["hello { a: 1 }", "bad"]);
+  });
+
+  it("says a run succeeded again when the control plane could not take it, and never as failed", async () => {
+    const state = await platform([{ entry: "consoler" }]);
+    state.failReports = 2;
+    await work(state, () => state.ended.length === 1);
+    expect(state.ended.map((one) => one.kind)).toEqual(["complete"]);
+    expect(state.requests.filter((one) => one.endsWith("/complete"))).toHaveLength(3);
+    expect(state.requests.some((one) => one.endsWith("/fail"))).toBe(false);
   });
 
   it("refuses an output over its limit before reporting the run done", async () => {

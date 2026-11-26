@@ -35,6 +35,8 @@ export interface WorkerOptions {
   token: string;
   /** How many runs this worker handles at once. Default 4. */
   concurrency?: number;
+  /** How long an attempt's end is said again to a control plane that cannot take it. */
+  reportRetrySeconds?: number;
   /** Stop after this long with nothing to do. Default: never. */
   idleExitSeconds?: number;
   /**
@@ -164,6 +166,8 @@ function defaultRunner(): string {
 
 /** How often a script's memory is looked at. */
 const MEMORY_CHECK_MS = 500;
+/** Long enough for a control plane or its database to restart; a run is waited for no longer. */
+const REPORT_RETRY_SECONDS = 90;
 /** How long a worker waits before claiming again when its machine is short of memory. */
 const LOW_MEMORY_WAIT_MS = 2000;
 
@@ -436,6 +440,32 @@ export class Worker {
     return (text === "" ? undefined : JSON.parse(text)) as T;
   }
 
+  /**
+   * Says how an attempt ended, and says it again while the control plane cannot take it: one
+   * that is restarting, or whose database is, answers 5xx or not at all for some seconds. Said
+   * once, every script that ended in those seconds was failed as not heard from, though its
+   * work was done (phase 35: a database restart of 22 s failed the eight in progress). The
+   * attempt's heartbeat goes on meanwhile. A refusal (4xx) is final at once.
+   */
+  async #report(path: string, body: unknown): Promise<void> {
+    const until = Date.now() + (this.#options.reportRetrySeconds ?? REPORT_RETRY_SECONDS) * 1000;
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        await this.#call("POST", path, body);
+        return;
+      } catch (error) {
+        const status = (error as { status?: number }).status;
+        const passing =
+          error instanceof Busy ||
+          (!(error instanceof CredentialRefused) &&
+            !(error instanceof AttemptOver) &&
+            (status === undefined || status >= 500));
+        if (!passing || Date.now() >= until) throw error;
+        await sleep(Math.min(5000, 500 * 2 ** attempt));
+      }
+    }
+  }
+
   async #claim(): Promise<Claimed | null> {
     const abort = new AbortController();
     this.#claims.add(abort);
@@ -672,7 +702,7 @@ export class Worker {
         );
       }
       const logs = await settle();
-      await this.#call("POST", `${runPath}/complete`, {
+      await this.#report(`${runPath}/complete`, {
         attempt: job.attempt,
         output,
         ...logs,
@@ -687,7 +717,7 @@ export class Worker {
       if (ended || error instanceof AttemptOver) return;
       const failure = error instanceof Error ? error : new Error(String(error));
       failed = failure.message;
-      await this.#call("POST", `${runPath}/fail`, {
+      await this.#report(`${runPath}/fail`, {
         attempt: job.attempt,
         ...peakOf(script),
         ...(error instanceof NoRetry ? { retry: false } : {}),

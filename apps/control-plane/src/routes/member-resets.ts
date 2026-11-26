@@ -65,7 +65,7 @@ export function memberResetRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         const made = await ctx.mutate((trx, audit) =>
           makeMemberResetLink(trx, audit, {
             memberId: params.memberId,
-            byMemberId: ctx.principal.id ?? "",
+            caller: ctx.principal,
             tenantId: params.t,
           }),
         );
@@ -93,7 +93,7 @@ export function memberResetRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         const made = await ctx.mutate((trx, audit) =>
           makeMemberResetLink(trx, audit, {
             memberId: params.memberId,
-            byMemberId: ctx.principal.id ?? "",
+            caller: ctx.principal,
           }),
         );
         return reply.code(201).send(await deliver(made));

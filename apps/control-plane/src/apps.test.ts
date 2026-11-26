@@ -1008,6 +1008,28 @@ describe("end users", () => {
     ).toBe(403);
   });
 
+  test("asking for a reset again does not end the link already sent (C21)", async () => {
+    const base = `/api/v1/tenants/${tenant}`;
+    const ask = () =>
+      browser(t, MAIN).post(`${base}/end-user-auth/password-links`, {
+        email: "ed@customer.example",
+      });
+    const before = mail.length;
+    await ask();
+    await expect.poll(() => mail.length).toBe(before + 1);
+    const first = new URL(/http\S+/.exec(mail.at(-1)?.text ?? "")?.[0] as string);
+    // Someone who only knows the email asks again.
+    await ask();
+    await expect.poll(() => mail.length).toBe(before + 2);
+    const second = new URL(/http\S+/.exec(mail.at(-1)?.text ?? "")?.[0] as string);
+    expect(second.search).not.toBe(first.search);
+    // Both links still open the form: the first was not ended by the second.
+    for (const url of [first, second]) {
+      const page = await browser(t, MAIN).get(`${url.pathname}${url.search}`);
+      expect(page.body).toContain("Choose a new password");
+    }
+  });
+
   test("staff list, rename, disable and delete end users, and make new links", async () => {
     const listed = (await alice.get(`/tenants/${tenant}/end-users?search=EVE`)).body.items;
     expect(listed).toMatchObject([

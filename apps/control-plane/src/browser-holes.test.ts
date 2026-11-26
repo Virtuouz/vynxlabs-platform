@@ -76,10 +76,16 @@ describe("p35 browser: a return address stays on this address", () => {
       "/\u007f/x",
       "evil",
       "",
+      // Dot segments go before the browser looks at the address: these are "//evil.example/x".
+      "/.//evil.example/x",
+      "/a/..//evil.example/x",
+      "/././/evil.example",
+      "/%2e//evil.example",
     ]) {
       expect(ownPath(bad), JSON.stringify(bad)).toBeUndefined();
     }
     expect(ownPath("/t/acme/flows?x=1#y")).toBe("/t/acme/flows?x=1#y");
+    expect(ownPath("/a/./b/../c")).toBe("/a/./b/../c");
   });
 
   test("the staff link of a portal does not send a signed-in member to another site", async () => {

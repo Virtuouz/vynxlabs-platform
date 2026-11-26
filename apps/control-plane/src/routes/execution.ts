@@ -76,6 +76,7 @@ import { eventSchema, publishPlatformEvent } from "../kernel/flows/events.js";
 import { pushRelease } from "../kernel/git.js";
 import { access, findWorkspace, guestLimit, type WorkspaceRef } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
+import { ownPath } from "../kernel/return-path.js";
 import { METRICS, metricHeader } from "../kernel/metric-list.js";
 import { labelText } from "../kernel/metrics.js";
 import { listOf, PageQuery, pageOf } from "../pagination.js";
@@ -3129,6 +3130,9 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       async ({ ctx, params, body }) => {
         const path = wildPath({ "*": body.path });
         const startedBy = ctx.memberId;
+        if (body.returnTo !== undefined && ownPath(body.returnTo) === undefined) {
+          throw badRequest("returnTo must be a path on this address, such as /t/acme/connections.");
+        }
         const begun = await ctx.mutate(async (trx, audit) => {
           const started = await beginAuthorization(
             kernel,
@@ -3172,7 +3176,8 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         if ((await kernel.hosts.place(request)).kind !== "main") throw notFound("The page");
         const query = new URL(request.url, kernel.hosts.mainOrigin).searchParams;
         const back = (returnTo: string | null, said: Record<string, string>) => {
-          const target = new URL(returnTo ?? "/", kernel.hosts.mainOrigin);
+          // Read again, as it was when it was kept: only a path on this address is sent to.
+          const target = new URL(ownPath(returnTo) ?? "/", kernel.hosts.mainOrigin);
           for (const [name, value] of Object.entries(said)) target.searchParams.set(name, value);
           return reply
             .code(302)

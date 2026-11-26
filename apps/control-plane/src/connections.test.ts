@@ -478,6 +478,25 @@ describe("an OAuth connection", () => {
       (await alice.post(`${ws()}/connection-oauth`, { path: "google", returnTo: "//evil.example" }))
         .status,
     ).toBe(400);
+    // A path that a browser reads as another site once its dot segments are resolved is refused too.
+    for (const returnTo of ["/.//evil.example/x", "/a/..//evil.example", "/./\\evil"]) {
+      expect(
+        (await alice.post(`${ws()}/connection-oauth`, { path: "google", returnTo })).status,
+        returnTo,
+      ).toBe(400);
+    }
+    // And one stored before that was refused is not sent on: the callback sends to this site.
+    const kept = await alice.post(`${ws()}/connection-oauth`, { path: "google" });
+    await t.db
+      .updateTable("connection_oauth_state")
+      .set({ return_to: "/.//evil.example/x" })
+      .where("answered_at", "is", null)
+      .execute();
+    const callback = await alice.get(
+      `/oauth/connections/callback?state=${new URL(kept.body.url).searchParams.get("state")}&code=x`,
+    );
+    expect(callback.status).toBe(302);
+    expect(String(callback.headers.location)).toMatch(/^\/(?!\/)/);
     // Still connected: a refusal does not undo what was authorized.
     expect((await listed("google")).oauth.status).toBe("connected");
   });

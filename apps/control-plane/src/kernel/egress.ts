@@ -11,7 +11,7 @@
 import { lookup as dnsLookup } from "node:dns";
 import type { LookupFunction } from "node:net";
 import { BlockList, isIP } from "node:net";
-import { Agent, type RequestInit, type Response, fetch as undiciFetch } from "undici";
+import { Agent, Headers, type RequestInit, type Response, fetch as undiciFetch } from "undici";
 
 /**
  * Why a destination was refused. Its message is for people. It names the host the tenant gave,
@@ -223,7 +223,7 @@ export async function guardedFetch(
     try {
       response = await undiciFetch(url, {
         ...rest,
-        headers,
+        ...(headers ? { headers } : {}),
         method,
         body: body ?? null,
         redirect: follow ? "manual" : (rest.redirect as "manual" | "error"),
@@ -262,7 +262,7 @@ const CREDENTIAL_HEADER =
 
 function withoutCredentials(headers: RequestInit["headers"]): RequestInit["headers"] {
   if (!headers) return headers;
-  const kept = new Headers(headers as HeadersInit);
+  const kept = new Headers(headers);
   for (const name of [...kept.keys()]) if (CREDENTIAL_HEADER.test(name)) kept.delete(name);
   return kept;
 }

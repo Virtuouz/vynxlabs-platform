@@ -66,3 +66,25 @@ Checked in the code, then changed:
 - `nodemailer@7.0.13` (via `apps/control-plane`, `packages/worker`), GHSA-p6gq-j5cr-w38f, message-level `raw` option bypasses file/URL access limits: not reachable, no caller sets `raw` (`kernel/mail.ts`, `packages/worker/src/smtp.ts` pass named fields only).
 - `nodemailer@7.0.13`, GHSA-2x7j-588g-ccc2 and GHSA-v53p-9fqp-m79j, quadratic time in `addressparser`: reachable. A script can pass long address lists to the worker's SMTP connection (`packages/worker/src/smtp.ts`, `to`/`cc`/`bcc`/`replyTo`; it costs that tenant's own worker); the control plane's mail goes to one stored email address.
 - `nodemailer@7.0.13`, GHSA-r7g4-qg5f-qqm2, TLS validation in the OAuth2 token fetch: not reachable, only user and password authentication is configured.
+
+## Round two
+
+### C3 again: a 307 or 308 to another origin sent the body there (reproduced)
+
+**The hole.** On a redirect to another origin `guardedFetch` dropped the credential headers but kept the body for 307 and 308 (and for a 301 or 302 to a method other than POST), so a token request with its `client_secret` in the form was repeated at the other address.
+
+**Proof before.** `egress-redirect.test.ts` "a 307 or 308 to another origin is not followed when it would send a body there": a POST and a PUT with a body were followed and the other server saw them.
+
+**Fix.** `kernel/egress.ts`: a redirect to another origin that would repeat a request with a body is refused with an error that says why; the same request without a body, and a redirect that turns the request into a GET (303, or 301/302 of a POST), go on as before. The older test of header stripping used a POST with a body; it now uses a GET, since it asserted the header rule, not the body's passing. Commit `8ce938a6`.
+
+**Not done: dropping "every header the connection added".** `guardedFetch` gets one list of headers from its caller and cannot tell which the connection added, so the list is still by name (`authorization`, cookies, and any name with key, token, secret or auth). A caller would have to say which headers are credentials; that is a change in every caller, and the names that remain are `x-password`, `x-session`, `signature`, `x-jwt` and the like. Left for the owner.
+
+### C21 again: five pending reset links blocked new requests (reproduced)
+
+**The hole.** With five good links for one person, `createRequestedResetToken` made no new one. Anyone who knew an email could fill the five (5 requests a minute, no sign-in) and leave the person without a new link for up to two hours if they had deleted the mails.
+
+**Proof before.** `end-user-reset-cap.test.ts`: the sixth request got no link.
+
+**Fix.** `kernel/endusers.ts`: past the five, the oldest are replaced by the new one. Commit `3f450084`.
+
+**Left.** The trade the first fix tried to avoid is back in a smaller form: someone who keeps asking can cancel the person's older links by pushing them out (it takes six requests, and the newest link always works). The person is never without one.

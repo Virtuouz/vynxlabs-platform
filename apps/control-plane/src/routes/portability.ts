@@ -33,7 +33,13 @@ const Passphrase = Type.String({ minLength: MIN_PASSPHRASE, maxLength: 500 });
  * needs, an instance writes a few exports at once, a tenant one, and an export whose reader
  * has stopped taking it for `stallMs` is ended and its connection given back.
  */
-export const exportLimits = { atOnce: 3, stallMs: 60_000, retryAfterSeconds: 30 };
+export const exportLimits = {
+  atOnce: 3,
+  stallMs: 60_000,
+  /** One export is ended after this long, however it is read: a reader that takes a chunk now and then keeps no place for ever. */
+  totalMs: 30 * 60_000,
+  retryAfterSeconds: 30,
+};
 const exporting = new Set<string>();
 
 /** Takes a place for one export of this tenant, or says to come back later. */
@@ -66,8 +72,9 @@ function takeExportPlace(tenantId: string): () => void {
 }
 
 /** The archive as a stream that is ended when its reader stops taking it. */
-function readerBoundStream(source: AsyncIterable<Buffer>, release: () => void): Readable {
-  let lastTaken = Date.now();
+export function readerBoundStream(source: AsyncIterable<Buffer>, release: () => void): Readable {
+  const startedAt = Date.now();
+  let lastTaken = startedAt;
   async function* watched() {
     for await (const chunk of source) {
       yield chunk;
@@ -79,9 +86,11 @@ function readerBoundStream(source: AsyncIterable<Buffer>, release: () => void): 
     () => {
       if (stream.readableLength > 0 && Date.now() - lastTaken > exportLimits.stallMs) {
         stream.destroy(new Error("The reader stopped taking the export."));
+      } else if (Date.now() - startedAt > exportLimits.totalMs) {
+        stream.destroy(new Error("The export took longer than it is allowed."));
       }
     },
-    Math.max(50, Math.min(1000, exportLimits.stallMs / 4)),
+    Math.max(50, Math.min(1000, exportLimits.stallMs / 4, exportLimits.totalMs / 4)),
   );
   watch.unref();
   stream.once("close", () => {

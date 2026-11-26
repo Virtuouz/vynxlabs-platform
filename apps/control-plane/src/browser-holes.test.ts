@@ -76,10 +76,16 @@ describe("p35 browser: a return address stays on this address", () => {
       "/\u007f/x",
       "evil",
       "",
+      // Dot segments go before the browser looks at the address: these are "//evil.example/x".
+      "/.//evil.example/x",
+      "/a/..//evil.example/x",
+      "/././/evil.example",
+      "/%2e//evil.example",
     ]) {
       expect(ownPath(bad), JSON.stringify(bad)).toBeUndefined();
     }
     expect(ownPath("/t/acme/flows?x=1#y")).toBe("/t/acme/flows?x=1#y");
+    expect(ownPath("/a/./b/../c")).toBe("/a/./b/../c");
   });
 
   test("the staff link of a portal does not send a signed-in member to another site", async () => {
@@ -115,6 +121,23 @@ describe("p35 browser: a token in a console address is not written down", () => 
       "/portal/acme/forms/:token",
     );
     expect(publicPath({ url: "/portal/acme/forms/contact" })).toBe("/portal/acme/forms/contact");
+  });
+
+  test("a route name written with percent escapes, or with a doubled slash, is masked all the same", () => {
+    for (const url of [
+      `/api/v1/%6Dember-password-links/${TOKEN}`,
+      `/api/v1/%61pproval-links/${TOKEN}`,
+      `/%72eset-password/${TOKEN}`,
+      `/api/v1/%68ooks/${TOKEN}`,
+      `/api/v1/hooks//${TOKEN}`,
+      `/portal/acme/forms/%76xf_${TOKEN}`,
+    ]) {
+      expect(publicPath({ url }), url).not.toContain(TOKEN);
+      expect(publicPath({ url }), url).toMatch(/:token$/);
+    }
+    // A malformed escape does not throw, and the rest is still masked.
+    expect(publicPath({ url: `/api/v1/hooks/${TOKEN}%zz%` })).toBe("/api/v1/hooks/:token");
+    expect(publicPath({ url: "/a%E0%A4%A/b" })).toContain("/b");
   });
 });
 

@@ -128,8 +128,8 @@ const MAX_PENDING_RESETS = 5;
  * A reset link that the person, or anyone who knows their email, asked for. Unlike
  * `createPasswordToken` it does not end the links already sent: those are in the person's
  * mail, and a stranger asking again must not be able to cancel them. Using any one of them
- * ends the rest. At most MAX_PENDING_RESETS are good at once; past that no new one is made
- * (nothing is sent, and the answer to the request is the same).
+ * ends the rest. At most MAX_PENDING_RESETS are good at once; past that the oldest is
+ * replaced by the new one, so a person is never left without a link they asked for.
  */
 export async function createRequestedResetToken(
   trx: Trx,
@@ -151,7 +151,23 @@ export async function createRequestedResetToken(
   const open = await mine()
     .select((eb) => eb.fn.countAll<string>().as("n"))
     .executeTakeFirstOrThrow();
-  if (Number(open.n) >= MAX_PENDING_RESETS) return undefined;
+  if (Number(open.n) >= MAX_PENDING_RESETS) {
+    // Past the most, the oldest is replaced: someone who fills the places must not be able to leave
+    // the person without a new link for hours.
+    const oldest = await mine()
+      .select("id")
+      .orderBy("expires_at", "asc")
+      .limit(Number(open.n) - MAX_PENDING_RESETS + 1)
+      .execute();
+    await trx
+      .deleteFrom("end_user_token")
+      .where(
+        "id",
+        "in",
+        oldest.map((row) => row.id),
+      )
+      .execute();
+  }
   const token = randomBytes(32).toString("base64url");
   const expiresAt = new Date(Date.now() + RESET_HOURS * 3_600_000);
   await trx

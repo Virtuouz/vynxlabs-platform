@@ -312,4 +312,49 @@ describe("who may make a member's password link (phase 35, A3)", () => {
       201,
     );
   });
+  test("a role held only in one workspace does not count as held across the tenant", async () => {
+    const a = await tenantWith("wsscope");
+    const g = await openGrant(a.id);
+    const ws = await t.admin.post(`/tenants/${a.id}/workspaces`, {
+      slug: "w1",
+      name: "W1",
+      type: "dev",
+    });
+    const role = await t.admin.post(`/tenants/${a.id}/roles`, {
+      name: "member_maker",
+      permissions: ["member:write"],
+    });
+    const make = async (name: string) =>
+      (
+        await t.admin.post(`/tenants/${a.id}/members`, {
+          email: `${name}@wsscope.example`,
+          name,
+          password: PASSWORD,
+        })
+      ).body.id as string;
+    const bind = (member: string, roleId: string, workspaceId?: string) =>
+      t.admin.post(`/tenants/${a.id}/bindings`, {
+        principalType: "member",
+        principalId: member,
+        roleId,
+        ...(workspaceId ? { workspaceId } : {}),
+      });
+    const mel = await make("mel");
+    await bind(mel, role.body.id);
+    await bind(mel, roles.tenant_admin as string, ws.body.id);
+    const wanda = await make("wanda");
+    await bind(wanda, roles.workspace_admin as string, ws.body.id);
+    await t.admin.delete(`/tenants/${a.id}/access-grants/${g}`);
+
+    const melIn = await t.signIn("mel@wsscope.example", PASSWORD);
+    const refused = await melIn.post(`/tenants/${a.id}/members/${a.admin}/password-link`, {});
+    expect(refused.status, JSON.stringify(refused.body)).toBe(403);
+
+    // A tenant admin may still make one for a workspace admin.
+    const ok = await a.ann.post(`/tenants/${a.id}/members/${wanda}/password-link`, {});
+    expect(ok.status, JSON.stringify(ok.body)).toBe(201);
+    // A workspace binding of the caller covers the target's permissions in that workspace only.
+    const mel2 = await melIn.post(`/tenants/${a.id}/members/${wanda}/password-link`, {});
+    expect(mel2.status, JSON.stringify(mel2.body)).toBe(201);
+  });
 });

@@ -1,6 +1,6 @@
 import { Ajv2020, type ErrorObject, type ValidateFunction } from "ajv/dist/2020.js";
-import { guardedRegExp } from "./pattern-guard.js";
 import { KIND_PATTERN, Manifest, StoredResource } from "./envelope.js";
+import { countNodes, guardedRegExp, MAX_VALUE_NODES, schemaProblem } from "./pattern-guard.js";
 
 /** A resource kind: its name, the version of its body schema, and that schema. */
 export interface KindDefinition {
@@ -216,12 +216,25 @@ export function validateJson(
   prefix = "",
   own = false,
 ): ManifestIssue[] {
+  if (!own) {
+    const tooBig = schemaProblem(schema);
+    if (tooBig) return [{ path: prefix || "/", message: `the schema is ${tooBig}` }];
+    if (countNodes(value, MAX_VALUE_NODES) > MAX_VALUE_NODES)
+      return [
+        {
+          path: prefix || "/",
+          message: `is too large to be checked against a schema (more than ${MAX_VALUE_NODES} values)`,
+        },
+      ];
+  }
   const validate = compile(schema, own);
   return validate(value) ? [] : toIssues(validate.errors, prefix);
 }
 
 /** Why a value is not a JSON Schema (draft 2020-12), in Ajv's words; nothing when it is one. */
 export function jsonSchemaProblem(schema: unknown): string | undefined {
+  const tooBig = schemaProblem(schema);
+  if (tooBig) return `the schema is ${tooBig}`;
   try {
     new Ajv2020(OPTIONS).compile(schema as object);
     return undefined;

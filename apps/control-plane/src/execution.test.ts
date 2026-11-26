@@ -1384,6 +1384,29 @@ describe("the worker protocol", () => {
     ]);
   });
 
+  test("round two: another credential of the tenant cannot add log lines to a run it was not given", async () => {
+    const holder = protocol(
+      (await alice.post(`/tenants/${tenant}/worker-credentials`, { name: "log-holder" })).body
+        .token,
+    );
+    const other = protocol(
+      (await alice.post(`/tenants/${tenant}/worker-credentials`, { name: "log-other" })).body.token,
+    );
+    const id = await start("flaky", { succeedOn: 1 });
+    expect((await holder.claim()).body.job).toMatchObject({ runId: id, attempt: 1 });
+    const line = { time: new Date().toISOString(), level: "info", message: "from nobody" };
+    expect((await other.post(`/runs/${id}/logs`, { attempt: 1, entries: [line] })).status).toBe(
+      409,
+    );
+    expect(
+      (await holder.post(`/runs/${id}/logs`, { attempt: 1, entries: [{ ...line, message: "ok" }] }))
+        .status,
+    ).toBe(204);
+    await holder.post(`/runs/${id}/complete`, { attempt: 1, output: {} });
+    const logs = (await alice.get(`${ws()}/runs/${id}/logs`)).body.items;
+    expect(logs.map((one: { message: string }) => one.message)).not.toContain("from nobody");
+  });
+
   test("a script labels its run, and the run is found by the label", async () => {
     const ours = protocol(
       (await alice.post(`/tenants/${tenant}/worker-credentials`, { name: "tagger" })).body.token,

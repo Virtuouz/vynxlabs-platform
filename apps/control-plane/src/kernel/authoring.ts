@@ -8,6 +8,7 @@ import {
   entryFor,
   keyOf,
   movedFile,
+  schemaProblem,
   validateJson,
 } from "@volvel/manifest";
 import { CORE_RANGE, SDK_VERSION } from "@volvel/sdk";
@@ -872,6 +873,7 @@ async function describeIn(
 function acceptable(schema: unknown): Record<string, unknown> | undefined {
   if (!schema || typeof schema !== "object" || Array.isArray(schema)) return undefined;
   if (Buffer.byteLength(JSON.stringify(schema)) > MAX_DERIVED_SCHEMA_BYTES) return undefined;
+  if (schemaProblem(schema)) return undefined;
   try {
     // Compiling it is the check: one that is not a JSON Schema throws.
     validateJson(schema, {});

@@ -1,8 +1,8 @@
-import { request, type IncomingMessage } from "node:http";
+import { type IncomingMessage, request } from "node:http";
 import type { AddressInfo } from "node:net";
 import { setTimeout as sleep } from "node:timers/promises";
 import { afterAll, beforeAll, expect, test } from "vitest";
-import { exportLimits } from "./routes/portability.js";
+import { exportLimits, readerBoundStream } from "./routes/portability.js";
 import { type Client, startTestApp, type TestApp } from "./testing.js";
 
 /**
@@ -134,3 +134,27 @@ test("an export read in full still works", async () => {
   });
   expect(done.status).toBe(200);
 });
+
+test("a reader that takes a chunk every so often, never stalling, is still ended after the export's total time", async () => {
+  const before = { ...exportLimits };
+  exportLimits.stallMs = 5000;
+  exportLimits.totalMs = 600;
+  try {
+    async function* chunks() {
+      for (;;) yield Buffer.alloc(64 * 1024);
+    }
+    let released = false;
+    const stream = readerBoundStream(chunks(), () => {
+      released = true;
+    });
+    const ended = new Promise<void>((resolve) => stream.once("close", () => resolve()));
+    stream.on("error", () => undefined);
+    // One chunk every 100 ms: well inside the stall time, for ever.
+    const reader = setInterval(() => stream.read(), 100);
+    await Promise.race([ended, sleep(4000)]);
+    clearInterval(reader);
+    expect(released, "the export kept its place with a reader that never stalled").toBe(true);
+  } finally {
+    Object.assign(exportLimits, before);
+  }
+}, 15_000);

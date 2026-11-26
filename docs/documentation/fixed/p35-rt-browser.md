@@ -24,3 +24,29 @@ Tests: `apps/control-plane/src/browser-holes.test.ts` (A2, C1, B6) and `console-
 
 - **Fix.** The hook in `app.ts` that gives the console's pages `frame-src` now also gives `frame-ancestors 'self'`. It touches only html answers that have no policy of their own, so apps, widget frames, the platform's pages and docs are untouched. The console frames its widgets, docs and apps as children; nothing frames the console from another site. Tenant apps at their own address keep their own policy.
 - **Left.** Not walked in a browser with a real frame; checked from the code (frames in the console: `help.tsx`, `TenantWidgetHost.tsx`) and the header test.
+
+## Round two
+
+### C1 again: `/.//evil.example/x` passed `ownPath`, and the OAuth connection flow did not use it (low to medium)
+
+**The hole.** A browser takes the dot segments out of an address before reading it, so `/.//evil.example/x` is `//evil.example/x`. `ownPath` accepted it, and the OAuth connection flow's `returnTo` did not go through `ownPath` at all: the start route only had a schema pattern, and the callback parsed the stored value with `new URL(returnTo, mainOrigin)` and sent `pathname + search` as `Location`, which was `//evil.example/x?...`. The earlier record's line "read back as pathname and search of a parsed address, so it cannot leave the site" was wrong for this reason.
+
+**Proof before.** `browser-holes.test.ts` (the new bad values) and `connections.test.ts` (start with `/.//evil.example/x` answered 200; a stored one was sent on).
+
+**Fix.** `kernel/return-path.ts` `ownPath` also resolves the value as a browser would (`new URL(raw, "http://own.invalid")`) and refuses it if the origin changed or the path then begins with `//`. `routes/execution.ts`: the start of the OAuth flow refuses a `returnTo` that `ownPath` refuses (400), and the callback reads the stored value through `ownPath` again (an older stored value falls back to `/`). Commit `b41f0cba`.
+
+**Test.** `browser-holes.test.ts` (four dot-segment forms, and `/a/./b/../c` still allowed) and `connections.test.ts` (three starts refused; a stored `/.//evil.example/x` ends at a local path).
+
+**Checked for the same mistake.** The other callers of `ownPath` (`auth.ts`, `apps/front.ts`, `routes/apps.ts`) send the raw string as `Location`, which a browser resolves on the same origin; they now also pass the stricter check.
+
+**Left.** Nothing.
+
+### B6 again: the token mask worked on the raw path (low)
+
+**The hole.** `/api/v1/%6Dember-password-links/<token>` is routed to the real route, but `publicPath` masked the raw text, so the token stayed in the log line, the trace and a problem's `instance`. A doubled slash (`/hooks//<token>`) was also left.
+
+**Proof before.** `browser-holes.test.ts` "a route name written with percent escapes, or with a doubled slash, is masked all the same".
+
+**Fix.** `problem.ts` `publicPath` decodes the plain (ASCII) percent escapes first, then masks, and what is logged is the decoded, masked form. A malformed or multi-byte escape is left as it is, so it cannot throw. The patterns take one or more slashes before the token. Commit `003f58f8`.
+
+**Left.** The path is not otherwise normalised (trailing dots, `;` parameters): the router does not read those as a route either.

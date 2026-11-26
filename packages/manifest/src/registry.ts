@@ -1,6 +1,6 @@
 import { Ajv2020, type ErrorObject, type ValidateFunction } from "ajv/dist/2020.js";
-import { countNodes, guardedRegExp, MAX_VALUE_NODES, schemaProblem } from "./pattern-guard.js";
 import { KIND_PATTERN, Manifest, StoredResource } from "./envelope.js";
+import { countNodes, guardedRegExp, MAX_VALUE_NODES, schemaProblem } from "./pattern-guard.js";
 
 /** A resource kind: its name, the version of its body schema, and that schema. */
 export interface KindDefinition {

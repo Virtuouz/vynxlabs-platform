@@ -1,4 +1,4 @@
-import { request, type IncomingMessage } from "node:http";
+import { type IncomingMessage, request } from "node:http";
 import type { AddressInfo } from "node:net";
 import { setTimeout as sleep } from "node:timers/promises";
 import { afterAll, beforeAll, expect, test } from "vitest";

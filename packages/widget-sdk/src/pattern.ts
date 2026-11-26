@@ -31,13 +31,25 @@ export function patternProblem(pattern: string, maxLength = 200): string | undef
   if (/\((?:\?<?[=!])/.test(bare)) return "looks ahead or behind, which is not run";
   if (/\)\s*(?:[*+]|\{)/.test(bare)) return "repeats a group, which is not run";
   // A group made optional is fine on its own; with a repeat inside it, it is not shown safe.
-  // A group holding a choice (`|`) is counted: each is a fork, and forks multiply.
+  // The ways a text may be divided among the choices (`|`) of the groups, at most: the branches
+  // of a group add up, and what follows each other multiplies. A choice whose branches start alike
+  // (`(a|a)(a|a)...`) is tried every way, so the number is kept small.
   const opened: number[] = [];
-  let forks = 0;
+  const frames: { branch: number; sum: number }[] = [{ branch: 1, sum: 0 }];
   for (const [at, char] of [...bare].entries()) {
-    if (char === "(") opened.push(at);
-    else if (char === ")") {
+    const frame = frames[frames.length - 1] as { branch: number; sum: number };
+    if (char === "|") {
+      frame.sum += frame.branch;
+      frame.branch = 1;
+    } else if (char === "(") {
+      opened.push(at);
+      frames.push({ branch: 1, sum: 0 });
+    } else if (char === ")") {
       const from = opened.pop();
+      if (frames.length > 1) {
+        const done = frames.pop() as { branch: number; sum: number };
+        (frames[frames.length - 1] as { branch: number }).branch *= done.sum + done.branch;
+      }
       if (from === undefined) continue;
       const inside = bare.slice(from + 1, at);
       // An optional group that starts with one plain atom (`(?:\.\d+)?`) is held in place by it;
@@ -45,10 +57,10 @@ export function patternProblem(pattern: string, maxLength = 200): string | undef
       const starts = /^[^|(){}*+?][^*+?{]/.test(inside);
       if (bare[at + 1] === "?" && !starts && /[*+?]|\{\d+,/.test(inside))
         return "makes a group with a repeat in it optional, which is not run";
-      if (inside.includes("|")) forks++;
     }
   }
-  if (forks > 2 || (bare.match(/\|/g)?.length ?? 0) > 6)
+  const outer = frames[0] as { branch: number; sum: number };
+  if (outer.sum + outer.branch > 4096)
     return "has too many choices to be run on text from a caller";
   // A lazy mark (`+?`, `{2,3}?`) is not another repeat.
   const quantifiers = bare.replace(/([*+?}])\?/g, "$1");

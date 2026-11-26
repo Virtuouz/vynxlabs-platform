@@ -52,3 +52,21 @@ The link is still returned when mail is off, as asked.
 **Routes found without an entry** (read in the test): `GET .../resource-files`, `.../drafts`, `.../docs`, `/tenants/:t/search`, `.../queries/visual`, `.../queries/schema`. By the same cause, every route that decides only with `ctx.allowed` / `allowedMany`: those in `routes/` terms, search, permissions, promotion-requests, authoring, dashboards, summary, operations, flows, widget-data, stream, widget-choices, workspaces, execution, docs, data, widgets, queries, interfaces, access-releases, apps, tenants, and `kernel/pages/locate.ts`, `act.ts`, `kernel/flows/approvers.ts`. They are covered now by the shared method; only the six above were measured.
 
 **Left.** Three places call `check()` directly and so still write nothing: `kernel/data/files.ts` `callerOf` (a script acting for a person), `routes/mcp.ts` (a service account's tools, never an operator), and `routes/queries.ts` `standing` (followed by `ctx.allowed` calls that now record). A route that is allowed through a grant and only asks a question for a screen's buttons (`canPromote` and the like) now also writes the entry; that is the stated rule, and noisier for an operator.
+
+## Round two
+
+A reviewer broke the fix for A3 (the member's password link), and the break was real.
+
+### A3 again: the caller's workspace roles counted across the whole tenant (high)
+
+**The hole.** `mayMakeLinkFor` (`kernel/member-reset.ts`) compared two flat lists of permissions from `explainAccess`, which returns tenant, workspace and resource bindings alike. A member with `member:write` at the tenant and an admin binding on one workspace "held" everything the tenant admin holds, and got a link for the tenant admin (201).
+
+**Proof before.** `member-reset.test.ts` "a role held only in one workspace does not count as held across the tenant": the member's request for the tenant admin's link answered 201 with the url.
+
+**Fix.** The comparison is by where a binding applies. What the target holds at the tenant must be held by the caller at the tenant. What the target holds in one workspace may be held at the tenant or in that same workspace. What the target holds on one resource may be held at the tenant, in the resource's workspace, or on that resource.
+
+**Test.** The same test: the reviewer's case is refused (403), a tenant admin still makes a link for a workspace admin, and a member whose workspace binding is `tenant_admin` in that workspace may make one for that workspace's admin (201). Commit `4d4043c8`.
+
+**Checked for the same mistake.** `explainAccess` is read in the console's "who can do what" screens (display only) and here. No other place compares two principals' permissions.
+
+**Left.** Nothing.

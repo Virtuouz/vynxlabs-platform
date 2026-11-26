@@ -37,6 +37,7 @@ function guardedRegExp(pattern: string, flags: string): { test(text: string): bo
   } as { test(text: string): boolean };
 }
 guardedRegExp.code = "guardedRegExp";
+
 export { guardedRegExp };
 
 /** Every unsafe `pattern` in a value (a schema, or a manifest body holding schemas), as "<pointer> <why>". */

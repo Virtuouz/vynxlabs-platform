@@ -246,6 +246,7 @@ export {
   widgetTables,
   workspaceRegistry,
 } from "./page.js";
+export { schemaProblem } from "./pattern-guard.js";
 export {
   APP_FACING_KINDS,
   BUILTIN_ROLE_NAMES,
@@ -261,7 +262,6 @@ export {
   setEveryone,
   setPermission,
 } from "./permissions.js";
-export { schemaProblem } from "./pattern-guard.js";
 export { resolveKeyReferences } from "./references.js";
 export {
   type KindDefinition,

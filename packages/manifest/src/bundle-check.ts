@@ -21,8 +21,8 @@ import {
   widgetTables,
   workspaceRegistry,
 } from "./page.js";
-import { BUILTIN_ROLE_NAMES } from "./permissions.js";
 import { patternProblems, schemaCostProblems } from "./pattern-guard.js";
+import { BUILTIN_ROLE_NAMES } from "./permissions.js";
 import { KindRegistry, validateJson } from "./registry.js";
 import { checkTable, type TableBody } from "./table.js";
 import { checkWidget, type WidgetBody } from "./widget.js";

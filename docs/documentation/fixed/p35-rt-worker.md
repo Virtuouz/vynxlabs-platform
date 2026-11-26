@@ -49,3 +49,33 @@ Five findings of the phase 35 red team, from lanes 07, 08, 10 and 15.
 **Fix.** `routes/portability.ts`: at most 3 exports at once on an instance and 1 per tenant (429 `rate_limited` with `retry-after: 30`), and an export whose reader has taken nothing for 60 s while data waits is destroyed, which runs the export's `finally` and rolls back its snapshot. The limits are in `exportLimits`.
 
 **Left.** The limits are per process (one control plane). No setting for them yet. The test proves the places and the stall end, not the pool count itself.
+
+## Round two
+
+### A6 again: a reader that takes a chunk now and then held its place for ever (unproven in the report; reproduced)
+
+**The hole.** The stall check ended an export only when nothing had been pulled for 60 s while data waited. A reader taking one chunk every 59 s never stalled and kept an export place (three on an instance) for as long as it liked.
+
+**Proof before.** `export-readers.test.ts` "a reader that takes a chunk every so often, never stalling, is still ended after the export's total time": the place was never given back. This is a test of the stream directly (`readerBoundStream`, now exported); a real archive of the test tenant is too small to be held this way.
+
+**Fix.** `routes/portability.ts`: `exportLimits.totalMs` (30 minutes): an export is ended after that long however it is read. Commit `99084d9c`.
+
+**Left.** The 30 minutes is a guess for the largest tenants; a tenant whose export takes longer must be exported another way, and the number belongs in a setting when there is one.
+
+### C6 again: the run's logs route did not check that the credential holds the run (low)
+
+**Proof before.** `execution.test.ts` "another credential of the tenant cannot add log lines to a run it was not given": a second credential's lines were stored (204).
+
+**Fix.** `routes/worker.ts`: `mustHold` after the run is found, as in the other run routes (409). Commit `3120b010`.
+
+**Left.** Nothing. The worker routes that take a run now all call `mustHold`.
+
+### B12 again: the per-machine lists were never pruned (reproduced as growth)
+
+**The hole.** A tenant's own worker may name a machine it makes up in every claim; `starting`, `fullUntil`, `shareUntil` (and the name itself) were kept for each, for the life of the process.
+
+**Proof before.** `machine-memory.test.ts` "a worker that names a new machine in every claim keeps a few names...": 3,000 distinct machine names for one tenant.
+
+**Fix.** `kernel/execution/workers.ts`: a tenant's own worker has at most 32 machine names (the rest are one name, `(others)`, of its own); and when a list passes 256 entries, entries with nothing held (no memory spoken for, not found full, no share to wait out) are dropped. Managed workers are unchanged, and nothing was changed for the control plane's own machine (`MANAGED_WORKER_USER=same`). Commit `5fa4f7fa`.
+
+**Left.** The names a tenant has used are kept (32 per tenant, in a set), so the memory is bounded by tenants times 32, not by claims.

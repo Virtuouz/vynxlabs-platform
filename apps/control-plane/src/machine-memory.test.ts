@@ -1,16 +1,16 @@
 import { machineName } from "@volvel/worker";
 import { describe, expect, test } from "vitest";
 import {
+  machineFull,
   machineOf,
   machineShortOfMemory,
   machineStateSize,
-  machineFull,
   notePeak,
   noteScriptsSeen,
   noteStarted,
-  plannedStartMb,
   noteWorkerStarted,
   onMachine,
+  plannedStartMb,
   runEnded,
 } from "./kernel/execution/workers.js";
 

@@ -1,7 +1,9 @@
 import { machineName } from "@volvel/worker";
 import { describe, expect, test } from "vitest";
 import {
+  machineOf,
   machineShortOfMemory,
+  machineStateSize,
   machineFull,
   notePeak,
   noteScriptsSeen,
@@ -144,5 +146,30 @@ describe("a machine is handed a script only where one more fits above its memory
     noteScriptsSeen("worker-1", [{ runId: "small-1", rssMb: 300 }], 3);
     expect(plannedStartMb("ws:small")).toBe(375);
     runEnded("small-1");
+  });
+});
+
+describe("round two: what is kept for each machine does not grow with the names a tenant's worker makes up", () => {
+  test("a worker that names a new machine in every claim keeps a few names, and what they held is let go", () => {
+    const scope = {
+      credentialId: "c",
+      tenantId: "tenant-made-up-names",
+      workspaceId: null,
+      pool: null,
+      managed: false,
+    } as never;
+    const names = new Set<string>();
+    for (let i = 0; i < 3000; i++) {
+      const machine = machineOf(scope, { name: `made-up-${i}`, slots: 2 });
+      names.add(machine.name);
+      noteStarted(machine, `run-names-${i}`, 0);
+      runEnded(`run-names-${i}`);
+    }
+    // Per tenant, a few distinct names; the rest are one name of the tenant's own.
+    expect(names.size).toBeLessThanOrEqual(40);
+    // Entries with nothing held are not kept.
+    noteStarted({ name: "after-a-minute", slots: 1 }, "run-late", 120_000);
+    runEnded("run-late");
+    expect(machineStateSize()).toBeLessThan(100);
   });
 });

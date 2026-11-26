@@ -85,8 +85,24 @@ export function machineOf(scope: WorkerScope, machine: MachineClaim): MachineCla
 export function machineOf(scope: WorkerScope, machine?: MachineClaim): MachineClaim | undefined;
 export function machineOf(scope: WorkerScope, machine?: MachineClaim): MachineClaim | undefined {
   if (!machine || scope.managed) return machine;
-  return { ...machine, name: `tenant:${scope.tenantId}/${machine.name}` };
+  // A tenant's own worker can name a new machine in every claim. A tenant keeps a few names; the
+  // rest are one more name of its own, so what is kept for machines cannot be grown without end.
+  let names = namesOf.get(scope.tenantId);
+  if (!names) {
+    names = new Set();
+    namesOf.set(scope.tenantId, names);
+  }
+  let name = machine.name;
+  if (!names.has(name)) {
+    if (names.size >= MACHINES_PER_TENANT) name = "(others)";
+    else names.add(name);
+  }
+  return { ...machine, name: `tenant:${scope.tenantId}/${name}` };
 }
+
+/** How many machine names one tenant's own workers may speak of. */
+const MACHINES_PER_TENANT = 32;
+const namesOf = new Map<string, Set<string>>();
 
 /**
  * Refuses a worker credential that does not hold the job. A job is handed to one worker, and
@@ -159,7 +175,24 @@ const SCRIPT_HOLD_MS = 8000;
 const SEEN_HOLD_MS = 25_000;
 const WORKER_HOLD_MS = 10_000;
 
-function startingOn(name: string): Reservations {
+/**
+ * Lets go of what is kept for a machine that holds nothing now: no memory spoken for, not found
+ * full, no share to wait out. Each is made again when it is next needed. Called when the lists
+ * have grown, so the work is paid for by the growth.
+ */
+function pruneMachines(now = Date.now()): void {
+  for (const [name, held] of starting) if (held.mb(now) === 0) starting.delete(name);
+  for (const [name, until] of fullUntil) if (until <= now) fullUntil.delete(name);
+  for (const [key, until] of shareUntil) if (until <= now) shareUntil.delete(key);
+}
+const PRUNE_ABOVE = 256;
+
+/** How many entries are kept for machines (for the tests). */
+export const machineStateSize = (): number =>
+  starting.size + fullUntil.size + shareUntil.size + turns.size;
+
+function startingOn(name: string, now = Date.now()): Reservations {
+  if (starting.size > PRUNE_ABOVE && !starting.has(name)) pruneMachines(now);
   let held = starting.get(name);
   if (!held) {
     held = new Reservations(SCRIPT_HOLD_MS);
@@ -254,7 +287,7 @@ export function noteStarted(
   workerId?: string,
 ): void {
   const mb = plannedStartMb(script);
-  startingOn(machine.name).add(mb, now, runId);
+  startingOn(machine.name, now).add(mb, now, runId);
   if (runId) {
     planned.set(runId, {
       machine: machine.name,
@@ -364,10 +397,14 @@ export async function onMachine<T>(
   tenantId?: string,
 ): Promise<T | undefined> {
   const noteFull = () => {
-    if (machine) fullUntil.set(machine.name, Date.now() + FULL_FOR_MS);
+    if (machine) {
+      if (fullUntil.size > PRUNE_ABOVE) pruneMachines();
+      fullUntil.set(machine.name, Date.now() + FULL_FOR_MS);
+    }
   };
   const noteShare = () => {
     if (machine && tenantId) {
+      if (shareUntil.size > PRUNE_ABOVE) pruneMachines();
       shareUntil.set(shareKey(machine, tenantId), Date.now() + SHARE_FOR_MS);
     }
   };

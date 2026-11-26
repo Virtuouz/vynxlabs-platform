@@ -1,5 +1,6 @@
 import { Client as McpClient } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { newId } from "@volvel/db";
 import { type Bundle, type BundleManifest, bundleDigest } from "@volvel/manifest";
 import { Worker } from "@volvel/worker";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
@@ -317,6 +318,56 @@ describe("an agent's tools", () => {
       "list_approvals",
       "decide_approval",
     ]);
+  });
+
+  test("are worked out in a number of statements that does not grow with the scripts and flows (STR-04)", async () => {
+    let statements = 0;
+    const plugin = {
+      transformQuery(args: { node: unknown }) {
+        statements += 1;
+        return args.node;
+      },
+      transformResult: async (args: { result: unknown }) => args.result,
+    };
+    const plugins = (t.kernel.db.getExecutor() as unknown as { plugins: unknown[] }).plugins;
+    plugins.push(plugin);
+    const listing = async () => {
+      statements = 0;
+      const { tools } = await wide.listTools();
+      return { tools: tools.length, statements };
+    };
+    try {
+      const few = await listing();
+      // Twenty more scripts the account may not start, written as a deploy would leave them: each was asked of separately.
+      const more = Array.from({ length: 20 }, () => newId());
+      await t.db
+        .insertInto("resource")
+        .values(
+          more.map((id, index) => ({
+            id,
+            tenant_id: tenant,
+            workspace_id: workspace,
+            kind: "script",
+            schema_version: 1,
+            key: `extra/s${index}`,
+            path: `extra/s${index}`,
+            ownership: "code",
+            version: 1,
+            body: JSON.stringify({ input: { type: "object" }, output: { type: "object" } }),
+            updated_at: new Date(),
+          })) as never,
+        )
+        .execute();
+      try {
+        const many = await listing();
+        expect(many.tools).toBe(few.tools);
+        expect(many.statements).toBe(few.statements);
+      } finally {
+        await t.db.deleteFrom("resource").where("id", "in", more).execute();
+      }
+    } finally {
+      plugins.splice(plugins.indexOf(plugin), 1);
+    }
   });
 
   test("a script runs on a worker and its output comes back", async () => {

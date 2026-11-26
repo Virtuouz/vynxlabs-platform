@@ -224,13 +224,12 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                 )
                 .groupBy("tenant_id")
                 .execute();
-        const mayRename = new Map<string, boolean>();
-        for (const row of rows.slice(0, args.limit)) {
-          mayRename.set(
-            row.id,
-            await ctx.allowed("tenant:write", { tenantId: row.id, orInstance: true }),
-          );
-        }
+        const shown = rows.slice(0, args.limit);
+        const may = await ctx.allowedMany(
+          "tenant:write",
+          shown.map((row) => ({ tenantId: row.id, orInstance: true })),
+        );
+        const mayRename = new Map(shown.map((row, index) => [row.id, may[index] === true]));
         return toPage(
           rows,
           args,

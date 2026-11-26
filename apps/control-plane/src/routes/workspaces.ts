@@ -235,8 +235,12 @@ export function workspaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         const readable: typeof rows = [];
         // A workspace where the caller holds a grant on a resource is listed for its name alone.
         const inside: typeof rows = [];
-        for (const row of rows) {
-          if (await ctx.allowed("workspace:read", { tenantId: params.t, workspaceId: row.id })) {
+        const mayRead = await ctx.allowedMany(
+          "workspace:read",
+          rows.map((row) => ({ tenantId: params.t, workspaceId: row.id })),
+        );
+        for (const [index, row] of rows.entries()) {
+          if (mayRead[index]) {
             readable.push(row);
           } else if (await boundInside(db, ctx.principal, params.t, row.id)) {
             inside.push(row);

@@ -361,11 +361,13 @@ export const queryRoutes =
         // Only the tables the caller may read are there to be named: a table they may not read is
         // answered as one that does not exist, and the names of the others cannot be probed.
         const known = await workspaceCatalog(kernel, params.t, params.w);
-        for (const [name, table] of known.tables) {
-          if (
-            !(await ctx.allowed("data:read", { ...at, resourceId: table.resourceId ?? undefined }))
-          )
-            known.visual.delete(name);
+        const entries = [...known.tables];
+        const mayRead = await ctx.allowedMany(
+          "data:read",
+          entries.map(([, table]) => ({ ...at, resourceId: table.resourceId ?? undefined })),
+        );
+        for (const [index, [name]] of entries.entries()) {
+          if (!mayRead[index]) known.visual.delete(name);
         }
         const written = writeVisual(visual as VisualQuery, known.visual);
         const scope = await scopeFor(

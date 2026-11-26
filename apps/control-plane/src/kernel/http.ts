@@ -10,7 +10,7 @@ import {
   type Trx,
   writeAudit,
 } from "./audit.js";
-import { boundInside, check, type Target } from "./authorize.js";
+import { boundInside, check, type StandingMemo, type Target } from "./authorize.js";
 import { forbidden, forbiddenBecause, notFound, unauthenticated } from "./errors.js";
 import type { WorkerScope } from "./execution/runs.js";
 import { resolveWorker } from "./execution/workers.js";
@@ -132,11 +132,18 @@ export class RequestContext {
   /** Set when the request named a resource by a path it no longer has. The answer says so. */
   moved: AliasUse | undefined;
   readonly #request: FastifyRequest;
+  /**
+   * What this request has read to decide on a place, kept only by a request that changes
+   * nothing. A summary asked a dozen permissions at one workspace and read the same two
+   * things a dozen times: fifty statements for one screen (STR-04 of phase 35).
+   */
+  readonly #standing: StandingMemo | undefined;
 
   constructor(kernel: Kernel, principal: Principal, request: FastifyRequest) {
     this.kernel = kernel;
     this.principal = principal;
     this.#request = request;
+    this.#standing = request.method === "GET" || request.method === "HEAD" ? new Map() : undefined;
     this.actor = {
       principal,
       ipAddress: request.ip,
@@ -162,7 +169,7 @@ export class RequestContext {
   }
 
   async allowed(permission: string, target: Target): Promise<boolean> {
-    return (await check(this.db, this.principal, permission, target)).allowed;
+    return (await check(this.db, this.principal, permission, target, this.#standing)).allowed;
   }
 
   /**
@@ -170,7 +177,7 @@ export class RequestContext {
    * in the tenant, so tenant IDs cannot be probed, and 403 or 401 otherwise.
    */
   async authorize(permission: string, target: Target): Promise<void> {
-    const decision = await check(this.db, this.principal, permission, target);
+    const decision = await check(this.db, this.principal, permission, target, this.#standing);
     if (!decision.allowed) {
       if (this.principal.type === "anonymous") throw unauthenticated();
       if (!decision.related) throw notFound("The tenant");

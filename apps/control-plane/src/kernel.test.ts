@@ -276,6 +276,42 @@ describe("permissions", () => {
     ).toBe(403);
   });
 
+  test("a request that changes nothing reads a place once, however many permissions it asks", async () => {
+    const member = { type: "member" as const, id: bob.id };
+    const place = { tenantId: acme, workspaceId: dev };
+    // What a summary does: many permissions at one workspace. Counted by the statements the
+    // check sends, which were two for each permission asked.
+    let statements = 0;
+    const counting = t.db.withPlugin({
+      transformQuery(args) {
+        statements += 1;
+        return args.node;
+      },
+      transformResult: async (args) => args.result,
+    });
+    const asked = ["secret:write", "run:read", "script:read", "flow:read", "tenant:write"];
+    const memo = new Map<string, Promise<unknown>>();
+    const withMemo = [];
+    for (const permission of asked) {
+      withMemo.push((await check(counting, member, permission, place, memo)).allowed);
+    }
+    const kept = statements;
+    statements = 0;
+    const without = [];
+    for (const permission of asked) {
+      without.push((await check(counting, member, permission, place)).allowed);
+    }
+    // The same answers, from one reading of the place.
+    expect(withMemo).toEqual(without);
+    expect(kept).toBe(2);
+    expect(statements).toBe(asked.length * 2);
+    // Another place is read for itself.
+    statements = 0;
+    const elsewhere = { tenantId: acme, workspaceId: prod };
+    expect((await check(counting, member, "secret:write", elsewhere, memo)).allowed).toBe(false);
+    expect(statements).toBeGreaterThan(0);
+  });
+
   test("the check itself, scope by scope", async () => {
     const member = { type: "member" as const, id: bob.id };
     const at = (permission: string, target: object) =>

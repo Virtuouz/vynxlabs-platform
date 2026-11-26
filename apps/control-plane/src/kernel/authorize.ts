@@ -113,11 +113,32 @@ export async function boundInside(
  * never reaches inside a tenant. An operator gets in only through an active
  * access grant.
  */
+/**
+ * What one request has already read to decide on a target. Neither read depends on the
+ * permission asked, so a request that asks a dozen permissions at one place reads once.
+ * It lives only as long as a request that changes nothing: a request that changes a binding
+ * must see it changed.
+ */
+export type StandingMemo = Map<string, Promise<unknown>>;
+
+function once<T>(memo: StandingMemo | undefined, key: string, read: () => Promise<T>): Promise<T> {
+  if (!memo) return read();
+  let known = memo.get(key) as Promise<T> | undefined;
+  if (!known) {
+    known = read();
+    memo.set(key, known);
+    // A read that failed is not kept: the next ask reads again.
+    known.catch(() => memo.delete(key));
+  }
+  return known;
+}
+
 export async function check(
   db: Db | Trx,
   principal: Principal,
   permission: string,
   target: Target,
+  memo?: StandingMemo,
 ): Promise<Decision> {
   if (principal.type === "system") return { allowed: true, related: true };
 
@@ -138,18 +159,22 @@ export async function check(
   if (appOnly && !appFacing(permission)) return { allowed: false, related: true };
   // A member suspended in a tenant holds nothing there, by any binding or group, until resumed.
   // An operator's access grant is not membership, and is ended by itself.
+  const place = JSON.stringify([tenantId, workspaceId, resourceId, instanceCounts]);
   let suspended = false;
   if (principal.type === "member" && tenantId !== null) {
-    const membership = await sql<{ suspended: boolean }>`
-      select suspended_at is not null as suspended from tenant_member
-      where tenant_id = ${tenantId} and member_id = ${id}
-    `.execute(db);
+    const membership = await once(memo, `suspended:${tenantId}`, () =>
+      sql<{ suspended: boolean }>`
+        select suspended_at is not null as suspended from tenant_member
+        where tenant_id = ${tenantId} and member_id = ${id}
+      `.execute(db),
+    );
     suspended = membership.rows[0]?.suspended === true;
   }
 
   const principalMatch = matchPrincipal(principal);
 
-  const held = await sql<Held>`
+  const held = await once(memo, `held:${place}`, () =>
+    sql<Held>`
     select r.permissions, b.principal_type, b.scope_type, null::uuid as access_grant_id
     from binding b
     join role r on r.id = b.role_id
@@ -183,7 +208,8 @@ export async function check(
           and ib.principal_id = g.member_id and ir.name = 'operator_admin'
           and im.disabled_at is null
       )
-  `.execute(db);
+  `.execute(db),
+  );
 
   const granting = held.rows.filter(
     (row) =>
@@ -201,12 +227,14 @@ export async function check(
     if (principal.type === "service_account" || principal.type === "end_user") {
       related = true;
     } else if (principal.type === "member") {
-      const membership = await sql`
-        select 1 from tenant_member where tenant_id = ${tenantId} and member_id = ${id}
-        union all
-        select 1 from binding b where b.tenant_id = ${tenantId} and ${principalMatch}
-        limit 1
-      `.execute(db);
+      const membership = await once(memo, `related:${tenantId}`, () =>
+        sql`
+          select 1 from tenant_member where tenant_id = ${tenantId} and member_id = ${id}
+          union all
+          select 1 from binding b where b.tenant_id = ${tenantId} and ${principalMatch}
+          limit 1
+        `.execute(db),
+      );
       related = membership.rows.length > 0;
     }
   }

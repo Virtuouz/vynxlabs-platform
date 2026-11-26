@@ -2,7 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { newId } from "@volvel/db";
 import { endSessions, isOperator } from "./administer.js";
 import type { Audit, Db, Principal, Trx } from "./audit.js";
-import { explainAccess, grants } from "./authorize.js";
+import { type AccessSource, explainAccess, grants } from "./authorize.js";
 import { checkPassword } from "./endusers.js";
 import { badRequest, conflict, forbiddenBecause, HttpError, notFound } from "./errors.js";
 import type { Kernel } from "./kernel.js";
@@ -151,13 +151,31 @@ async function mayMakeLinkFor(
     return;
   }
   if (await holdsGrantOn(trx, caller.id ?? "", [tenantId])) return;
-  const permissionsOf = async (who: Principal) =>
-    (await explainAccess(trx, who, tenantId))
-      .filter((source) => source.counts)
+  // Where a binding applies matters: a role held in one workspace is not held across the
+  // tenant. What the member holds at the tenant must be held at the tenant by the caller, and
+  // what they hold in a workspace may be held at the tenant or in that same workspace.
+  const sourcesOf = async (who: Principal) =>
+    (await explainAccess(trx, who, tenantId)).filter((source) => source.counts);
+  const mine = await sourcesOf(caller);
+  const theirs = await sourcesOf({ type: "member", id: memberId });
+  const workspaceOf = (source: AccessSource) =>
+    source.scope.type === "tenant" ? undefined : source.scope.workspaceId;
+  const heldBy = (target: AccessSource) =>
+    mine
+      .filter(
+        (source) =>
+          source.scope.type === "tenant" ||
+          (target.scope.type !== "tenant" &&
+            source.scope.type === "workspace" &&
+            workspaceOf(source) === workspaceOf(target)) ||
+          (target.scope.type === "resource" &&
+            source.scope.type === "resource" &&
+            source.scope.resourceId === target.scope.resourceId),
+      )
       .flatMap((source) => source.role.permissions);
-  const mine = await permissionsOf(caller);
-  const theirs = await permissionsOf({ type: "member", id: memberId });
-  if (theirs.some((held) => !grants(mine, held))) {
+  if (
+    theirs.some((target) => target.role.permissions.some((held) => !grants(heldBy(target), held)))
+  ) {
     throw forbiddenBecause(
       "That member holds more in this tenant than you do, so only someone who holds as much, or an operator with access to the tenant, can make their password link.",
     );

@@ -39,8 +39,9 @@ const ALLOWED: Record<string, number> = {
   "routes/widgets.ts": 1,
   "routes/worker.ts": 3,
   // A failure alert's connection as declared now; a create refused only where something is at the
-  // path now; a delete of the resource at exactly this path.
-  "routes/workspaces.ts": 4,
+  // path now; a delete of the resource at exactly this path, and the kind of what is at exactly
+  // that path before it is deleted: removing a role or a binding needs that kind's own permission.
+  "routes/workspaces.ts": 5,
 };
 
 const root = fileURLToPath(new URL("../src", import.meta.url));

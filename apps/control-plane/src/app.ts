@@ -431,7 +431,12 @@ export async function buildApp(options: AppOptions) {
         reply.getHeader("content-security-policy") === undefined
       ) {
         const own = new Set(["'self'", kernel.hosts.mainOrigin, kernel.hosts.appsOrigin]);
-        reply.header("content-security-policy", `frame-src ${[...own].join(" ")}`);
+        // The console is not drawn inside another site's page (clickjacking). It is never framed
+        // by anything but itself: the frames it holds are of its widgets, the docs and apps.
+        reply.header(
+          "content-security-policy",
+          `frame-src ${[...own].join(" ")}; frame-ancestors 'self'`,
+        );
       }
       return payload;
     });

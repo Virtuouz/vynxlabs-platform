@@ -130,6 +130,13 @@ if (command.run === "recover-operator") {
   process.exit(0);
 }
 
+// Before the server stops answering: managed workers finish what they run and report it, which
+// they do over HTTP. Stopped after, as they were, every script in progress at a deploy or a
+// restart could not say it had ended, and failed half a minute later as not heard from (STR-08).
+app.addHook("preClose", async () => {
+  await writer.close();
+});
+
 app.addHook("onClose", async () => {
   await writer.close();
   await database.close();

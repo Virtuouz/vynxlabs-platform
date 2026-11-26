@@ -379,8 +379,11 @@ export class WorkerSupervisor {
     });
   }
 
-  /** Asks every managed worker to finish what it is doing and exit. */
-  async stop(graceSeconds = 10, giveUpSeconds = 10): Promise<void> {
+  /**
+   * Asks every managed worker to finish what it is doing and exit. The grace is the worker
+   * host's: a script has thirty seconds to end, and the machine's stop timeout must be longer.
+   */
+  async stop(graceSeconds = 30, giveUpSeconds = 10): Promise<void> {
     this.#stopped = true;
     this.#guard.stop();
     const exits = [...this.#workers.values()].map(

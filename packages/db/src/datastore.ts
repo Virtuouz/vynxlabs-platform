@@ -1,6 +1,7 @@
 import { createHash, createHmac } from "node:crypto";
 import { Kysely, PostgresDialect, sql } from "kysely";
 import pg from "pg";
+import { surviveLostConnections } from "./lost-connection.js";
 import { type PoolStats, statsOf } from "./pool-stats.js";
 import type { PlatformSchema } from "./schema.js";
 
@@ -166,7 +167,7 @@ function pool(connectionString: string, max: number, onError?: (error: Error) =>
   });
   // An idle connection the server closes must not take the control plane down.
   made.on("error", (error) => onError?.(error));
-  return made;
+  return surviveLostConnections(made, onError);
 }
 
 /**

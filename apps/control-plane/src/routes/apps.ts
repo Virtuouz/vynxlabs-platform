@@ -7,6 +7,7 @@ import { newId } from "@volvel/db";
 import { type InterfaceBody, interfaceTables } from "@volvel/manifest";
 import { Type } from "typebox";
 import { appUrl, domainUrl } from "../kernel/apps/address.js";
+import { ownPath } from "../kernel/return-path.js";
 import { MAX_ASSET_BYTES, storeAsset } from "../kernel/apps/assets.js";
 import { challengeProblem, challengeOf as domainChallenge } from "../kernel/apps/challenge.js";
 import { hostnameOf } from "../kernel/apps/hosts.js";
@@ -1214,6 +1215,5 @@ export function appRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
 
 /** A path on this same address, or nothing. Never another site. */
 function safePath(raw: string | undefined): string | undefined {
-  if (!raw?.startsWith("/") || raw.startsWith("//") || /[\\\r\n]/.test(raw)) return undefined;
-  return raw;
+  return ownPath(raw);
 }

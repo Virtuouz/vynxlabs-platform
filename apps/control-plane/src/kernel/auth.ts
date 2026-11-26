@@ -15,6 +15,7 @@ import { ANONYMOUS, type Db, writeAudit } from "./audit.js";
 import { countHit } from "./ratelimit.js";
 import { finish, stateCookie } from "./sso/flow.js";
 import { memberPasswordRefusedBy, nameOwnedBy } from "./sso/people.js";
+import { ownPath } from "./return-path.js";
 import { findRecoveryCode, RECOVERY_HEADER, useRecoveryCode } from "./sso/recovery.js";
 
 /** The header the route sets for the library: the caller's address as the server worked it out. */
@@ -144,9 +145,9 @@ function cookieFrom(header: string | null | undefined, name: string): string | u
 
 /** A place in the console to send someone back to. Only a path at this address is accepted. */
 export function consolePath(raw: string | null | undefined): string {
-  if (!raw?.startsWith("/") || raw.startsWith("//") || /[\\\r\n]/.test(raw)) return "/";
-  if (raw.startsWith("/api/") || raw.length > 2000) return "/";
-  return raw;
+  const path = ownPath(raw);
+  if (path === undefined || path.startsWith("/api/") || path.length > 2000) return "/";
+  return path;
 }
 
 /**

@@ -1,199 +1,182 @@
+import { RE2JS } from "re2js";
+
 /**
- * The one check of a regular expression that comes from a tenant, and is run on text from a
- * caller by a thread other people share. It is used by the widget frame's payload check
- * (`schema.ts`), by the manifest's schema guard (`@volvel/manifest`, `pattern-guard.ts`) and, as
- * source text, by the flow expression worker (`kernel/flows/expressions.ts`). All three call this
- * function, so a change here is a change to all of them.
+ * The one place a regular expression from a tenant is compiled and run. It is used by the
+ * manifest's schema check on the server (`@volvel/manifest`, `pattern-guard.ts`), by the flow
+ * expressions' `matches` (in their worker thread) and by the widget frame's payload check
+ * (`schema.ts`), so all three give the same answer for the same pattern and text.
  *
- * It must stay one self-contained function, with nothing from outside its body: the expression
- * worker is built from `patternProblem.toString()`.
+ * Patterns run on RE2 (here the JavaScript port `re2js`), an engine that never backtracks. The
+ * time it takes is the size of the pattern times the length of the text: a pattern such as
+ * `(a+)+$` cannot hold a thread longer than any other. What it does not have is what needs
+ * backtracking: references back to a group and looking ahead or behind. Those are refused, with
+ * the name of the construct, instead of being run.
  *
- * A pattern is run by a backtracking engine. The ways that engine takes more than a moment are
- * a repeated group (`(a+)+`), a group with a repeat inside it made optional, a back reference,
- * look-around, a chain of optional atoms (`a?a?a?aaa`), a chain of alternations that share a
- * start (`(a|a)(a|a)...`), and repeats that can each take the same text (`a*a*a*b`: every way of
- * dividing the text between them is tried, one more power of its length for each pair). The first
- * four are refused whole (an optional group that starts with one plain atom is let through). For the repeats, the rule is: two repeats that can take the same text,
- * with nothing between them that a text cannot pass (a letter that neither can take), are an
- * "overlapping pair"; at most one such pair is allowed, so the work is at most the square of the
- * length of the text, which the callers keep short (see their `MAX_PATTERN_INPUT`). What is left
- * is what a payload needs: `^[a-z0-9-]+$`, `^[A-Z]{2}\d{6}$`, `^[^@\s]+@[^@\s]+\.[^@\s]+$`.
+ * Where it differs from the engine of a browser (JSON Schema says ECMA-262 with the `u` flag):
+ * - Text is read as code points, as the `u` flag does.
+ * - `\d`, `\w` and `\b` are ASCII only, as in the browser. `\s` is the six characters
+ *   `[\t\n\f\r ]` and no more: a no-break space or U+2028 is not a space here, and `.` takes
+ *   U+2028 and U+2029, which the browser's `.` does not.
+ * - `\p{L}`, `\p{Lu}` and `\p{Greek}` are known; `\p{Script=Greek}` and the other long forms are
+ *   not.
+ * - `\uXXXX` (two in a row that make a surrogate pair are one character) and `\u{X}` are
+ *   accepted and read as the character they name.
+ * - `(?<name>x)` and `(?P<name>x)` are groups with a name; `\k<name>` is a back reference.
+ * - `(?i)` and the other inline flags are accepted, which the browser refuses.
+ * - A repeat count may be at most 1000, and counts that multiply (`(a{100}){100}`) at most 1000
+ *   together.
  */
-export function patternProblem(pattern: string, maxLength = 200): string | undefined {
-  if (pattern.length > maxLength) return `is longer than ${maxLength} characters`;
-  if (/\\(?:[1-9]|k<)/.test(pattern)) return "refers back to a group, which is not run";
-  // What is left once escapes and character classes are out of the way, and the markers that
-  // open a group without being a repeat (`(?:`, `(?<name>`) are plain parentheses.
-  const bare = pattern
-    .replace(/\\./gsu, "_")
-    .replace(/\[(?:[^\]\\]|\\.)*\]/gsu, "_")
-    .replace(/\(\?(?::|<[A-Za-z_][A-Za-z0-9_]*>)/g, "(");
-  if (/\((?:\?<?[=!])/.test(bare)) return "looks ahead or behind, which is not run";
-  if (/\)\s*(?:[*+]|\{)/.test(bare)) return "repeats a group, which is not run";
-  // A group made optional is fine on its own; with a repeat inside it, it is not shown safe.
-  // The ways a text may be divided among the choices (`|`) of the groups, at most: the branches
-  // of a group add up, and what follows each other multiplies. A choice whose branches start alike
-  // (`(a|a)(a|a)...`) is tried every way, so the number is kept small.
-  const opened: number[] = [];
-  const frames: { branch: number; sum: number }[] = [{ branch: 1, sum: 0 }];
-  for (const [at, char] of [...bare].entries()) {
-    const frame = frames[frames.length - 1] as { branch: number; sum: number };
-    if (char === "|") {
-      frame.sum += frame.branch;
-      frame.branch = 1;
-    } else if (char === "(") {
-      opened.push(at);
-      frames.push({ branch: 1, sum: 0 });
-    } else if (char === ")") {
-      const from = opened.pop();
-      if (frames.length > 1) {
-        const done = frames.pop() as { branch: number; sum: number };
-        (frames[frames.length - 1] as { branch: number }).branch *= done.sum + done.branch;
-      }
-      if (from === undefined) continue;
-      const inside = bare.slice(from + 1, at);
-      // An optional group that starts with one plain atom (`(?:\.\d+)?`) is held in place by it;
-      // the repeats in it are counted with the others below.
-      const starts = /^[^|(){}*+?][^*+?{]/.test(inside);
-      if (bare[at + 1] === "?" && !starts && /[*+?]|\{\d+,/.test(inside))
-        return "makes a group with a repeat in it optional, which is not run";
-    }
-  }
-  const outer = frames[0] as { branch: number; sum: number };
-  if (outer.sum + outer.branch > 4096)
-    return "has too many choices to be run on text from a caller";
-  // A lazy mark (`+?`, `{2,3}?`) is not another repeat.
-  const quantifiers = bare.replace(/([*+?}])\?/g, "$1");
-  if ((quantifiers.match(/\?/g)?.length ?? 0) > 4)
-    return "has too many optional parts to be run on text from a caller";
 
-  // The atoms of the pattern, each with how often it may repeat.
-  interface Atom {
-    source: string;
-    min: number;
-    many: boolean;
-    set?: Uint8Array;
-  }
-  const atoms: Atom[] = [];
-  const groups: { from: number; choice: boolean }[] = [];
-  const top = { choice: false };
-  const text = pattern;
-  let at = 0;
-  while (at < text.length) {
-    const char = text[at] as string;
-    let source: string;
+/** The longest pattern, in characters. */
+export const MAX_PATTERN_LENGTH = 10_000;
+
+/** The most steps of work (the pattern's size times the text's length) one test may be given. */
+const MAX_WORK = 2_000_000;
+
+/** The longest text any pattern is run on, in characters. */
+export const MAX_PATTERN_TEXT = 100_000;
+
+/** The largest a pattern may grow to once its repeat counts are written out. */
+const MAX_PROGRAM = 20_000;
+
+/** A pattern, ready to be run. */
+export interface RunnablePattern {
+  /** Whether the pattern matches anywhere in the text, as JSON Schema's `pattern` does. */
+  test(text: string): boolean;
+  /**
+   * The longest text this pattern is run on: 100,000 characters, or fewer when the pattern is
+   * large, so that the work stays under a fixed number of steps.
+   */
+  readonly maxText: number;
+}
+
+/** A pattern's result: ready to run, or the reason it is not run, which reads after "the pattern". */
+export type CompiledPattern = { pattern: RunnablePattern } | { problem: string };
+
+/**
+ * The first construct in a pattern that needs backtracking, named. Classes are skipped, and an
+ * escaped character is not a construct.
+ */
+function backtrackingConstruct(pattern: string): string | undefined {
+  let inClass = false;
+  for (let at = 0; at < pattern.length; at++) {
+    const char = pattern[at];
     if (char === "\\") {
-      const rest = text.slice(at + 1);
-      const long =
-        /^(?:u\{[0-9a-fA-F]+\}|u[0-9a-fA-F]{4}|x[0-9a-fA-F]{2}|[pP]\{[^}]*\}|c[A-Za-z])/.exec(rest);
-      source = `\\${long ? long[0] : rest.slice(0, 1)}`;
-      at += source.length;
-      if (source === "\\b" || source === "\\B") continue;
+      const next = pattern[at + 1] ?? "";
+      if (!inClass && /[1-9]/.test(next))
+        return `a reference back to a group (\\${next}), which patterns do not have`;
+      if (!inClass && next === "k" && pattern[at + 2] === "<")
+        return "a reference back to a named group (\\k<name>), which patterns do not have";
+      at++;
+    } else if (inClass) {
+      if (char === "]") inClass = false;
     } else if (char === "[") {
-      let end = at + 1;
-      if (text[end] === "^") end++;
-      if (text[end] === "]") end++;
-      while (end < text.length && text[end] !== "]") end += text[end] === "\\" ? 2 : 1;
-      source = text.slice(at, end + 1);
-      at = end + 1;
-    } else if (char === "(") {
-      groups.push({ from: atoms.length, choice: false });
-      at += 1;
-      if (text[at] === "?") {
-        const marker = /^\?(?::|<[A-Za-z_][A-Za-z0-9_]*>)/.exec(text.slice(at));
-        at += marker ? marker[0].length : 1;
-      }
-      continue;
-    } else if (char === ")") {
-      // What a group with a choice, or one made optional, holds is not always there: it cannot
-      // be counted on to keep two repeats apart.
-      const group = groups.pop();
-      at += 1;
-      const optional = /^(?:[*?]|\{0)/.test(text.slice(at));
-      if (group && (group.choice || optional))
-        for (const atom of atoms.slice(group.from)) atom.min = 0;
-      continue;
-    } else if (char === "|") {
-      const group = groups[groups.length - 1];
-      if (group) group.choice = true;
-      else top.choice = true;
-      at += 1;
-      continue;
-    } else if (char === "^" || char === "$") {
-      at += 1;
-      continue;
-    } else {
-      source = char;
-      at += 1;
-    }
-    let min = 1;
-    let many = false;
-    const quantifier = /^(?:([*+?])|\{(\d+)(?:(,)(\d*))?\})\??/.exec(text.slice(at));
-    if (quantifier) {
-      at += quantifier[0].length;
-      if (quantifier[1] === "*") [min, many] = [0, true];
-      else if (quantifier[1] === "+") [min, many] = [1, true];
-      else if (quantifier[1] === "?") min = 0;
-      else {
-        min = Number(quantifier[2]);
-        const max =
-          quantifier[3] === undefined
-            ? min
-            : quantifier[4] === ""
-              ? Infinity
-              : Number(quantifier[4]);
-        many = max > 1 && max > min;
-        if (max === 0) min = 0;
-      }
-    }
-    atoms.push({ source, min, many });
-  }
-
-  if (top.choice) for (const atom of atoms) atom.min = 0;
-
-  // For each atom that repeats, the characters it can take, from a spread of probes: every
-  // code up to U+017F, then every 17th one up to U+FFFF, and one beyond.
-  const probes: number[] = [];
-  for (let code = 0; code < 0x180; code++) probes.push(code);
-  for (let code = 0x180; code < 0x10000; code += 17) probes.push(code, code + 1);
-  probes.push(0x1f600);
-  const setOf = (atom: Atom): Uint8Array => {
-    if (atom.set) return atom.set;
-    let test: RegExp | undefined;
-    for (const flags of ["su", "s"]) {
-      try {
-        test = new RegExp(`^(?:${atom.source})$`, flags);
-        break;
-      } catch {
-        // Try the next form.
-      }
-    }
-    atom.set = new Uint8Array(probes.length);
-    for (const [index, code] of probes.entries())
-      atom.set[index] = !test || test.test(String.fromCodePoint(code)) ? 1 : 0;
-    return atom.set;
-  };
-
-  // A pattern that is not anchored at the start is tried from every place in the text: that is a
-  // repeat of its own, in front.
-  if (!pattern.startsWith("^")) atoms.unshift({ source: ".", min: 0, many: true });
-  const repeats = atoms.flatMap((atom, index) => (atom.many ? [index] : []));
-  if (repeats.length > 8) return "repeats too freely to be run on text from a caller";
-  let overlapping = 0;
-  for (const [second, later] of repeats.entries()) {
-    for (const earlier of repeats.slice(0, second)) {
-      // What can sit in both, and in every atom that must be passed between them.
-      const shared = Uint8Array.from(setOf(atoms[later] as Atom));
-      const mix = (atom: Atom) => {
-        const other = setOf(atom);
-        for (let i = 0; i < shared.length; i++)
-          shared[i] = (shared[i] as number) & (other[i] as number);
-      };
-      mix(atoms[earlier] as Atom);
-      for (const between of atoms.slice(earlier + 1, later)) if (between.min > 0) mix(between);
-      if (shared.some(Boolean)) overlapping++;
+      inClass = true;
+      // A `]` straight after `[` or `[^` is a member of the class, not its end.
+      if (pattern[at + 1] === "^") at++;
+      if (pattern[at + 1] === "]") at++;
+    } else if (char === "(" && pattern[at + 1] === "?") {
+      const marker = pattern.slice(at + 2, at + 4);
+      if (marker.startsWith("=") || marker.startsWith("!"))
+        return "looking ahead ((?=...) or (?!...)), which patterns do not have";
+      if (marker === "<=" || marker === "<!")
+        return "looking behind ((?<=...) or (?<!...)), which patterns do not have";
     }
   }
-  if (overlapping > 1) return "repeats too freely to be run on text from a caller";
   return undefined;
+}
+
+/** `\uXXXX` and `\u{X}` are written `\x{X}`, which is how RE2 spells them. */
+function toRe2(pattern: string): string {
+  let out = "";
+  for (let at = 0; at < pattern.length; at++) {
+    const char = pattern[at] as string;
+    if (char !== "\\") {
+      out += char;
+      continue;
+    }
+    const rest = pattern.slice(at + 1);
+    const braced = /^u\{([0-9a-fA-F]+)\}/.exec(rest);
+    const fixed = /^u([0-9a-fA-F]{4})/.exec(rest);
+    if (braced) {
+      out += `\\x{${braced[1]}}`;
+      at += braced[0].length;
+    } else if (fixed) {
+      let code = Number.parseInt(fixed[1] as string, 16);
+      let length = fixed[0].length;
+      // A pair of surrogates written one after the other is one character.
+      const low = /^\\u([dD][c-fC-F][0-9a-fA-F]{2})/.exec(rest.slice(length));
+      if (code >= 0xd800 && code <= 0xdbff && low) {
+        code = 0x10000 + ((code - 0xd800) << 10) + (Number.parseInt(low[1] as string, 16) - 0xdc00);
+        length += low[0].length;
+      }
+      out += `\\x{${code.toString(16)}}`;
+      at += length;
+    } else {
+      out += char + (rest[0] ?? "");
+      at += 1;
+    }
+  }
+  return out;
+}
+
+const held = new Map<string, CompiledPattern>();
+const MAX_HELD = 512;
+
+/**
+ * Compiles a pattern for RE2, or says why it is not run. A pattern is compiled once: the result is
+ * kept, newest last, for the last 512 patterns.
+ */
+export function compilePattern(pattern: string): CompiledPattern {
+  const known = held.get(pattern);
+  if (known) return known;
+  const result = build(pattern);
+  held.set(pattern, result);
+  if (held.size > MAX_HELD) held.delete(held.keys().next().value as string);
+  return result;
+}
+
+function build(pattern: string): CompiledPattern {
+  if (pattern.length > MAX_PATTERN_LENGTH)
+    return { problem: `is longer than ${MAX_PATTERN_LENGTH} characters` };
+  const construct = backtrackingConstruct(pattern);
+  if (construct)
+    return { problem: `uses ${construct}: patterns run on RE2, which cannot go back over text` };
+  let program: RE2JS;
+  try {
+    program = RE2JS.compile(toRe2(pattern));
+  } catch (error) {
+    const why = String((error as Error).message ?? error).replace(/^error parsing regexp: /, "");
+    return { problem: `is not one RE2 can run (${why}): patterns run on RE2` };
+  }
+  const size = program.programSize();
+  if (size > MAX_PROGRAM)
+    return {
+      problem: `is too large to be run (its repeats make ${size} steps of it; the most is ${MAX_PROGRAM})`,
+    };
+  const maxText = Math.min(MAX_PATTERN_TEXT, Math.floor(MAX_WORK / Math.max(size, 1)));
+  return { pattern: { maxText, test: (text) => program.matcher(text).find() } };
+}
+
+/** Why a pattern is not run, or nothing when it is. */
+export function patternProblem(pattern: string): string | undefined {
+  const result = compilePattern(pattern);
+  return "problem" in result ? result.problem : undefined;
+}
+
+/**
+ * Whether a text matches a pattern, or why that is not known: the pattern is not one RE2 runs, or
+ * the text is longer than that pattern is run on.
+ */
+export function matchPattern(
+  pattern: string,
+  text: string,
+): { matches: boolean } | { problem: string } {
+  const result = compilePattern(pattern);
+  if ("problem" in result) return { problem: `The pattern ${result.problem}.` };
+  if (text.length > result.pattern.maxText)
+    return {
+      problem: `The text is longer than ${result.pattern.maxText} characters, the most this pattern is run on.`,
+    };
+  return { matches: result.pattern.test(text) };
 }

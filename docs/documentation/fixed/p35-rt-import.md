@@ -79,3 +79,38 @@ A reviewer found the schema guard of B8 let a cubic pattern through and that two
 **Test.** `schema-safety.test.ts` (three new tests: the costs, upload naming, ordinary and own schemas unaffected).
 
 **Left.** The reviewer's last case (30 `anyOf` branches by 30, over 2,000 items, with every error kept) was not proven and I did not try to prove it; the caps above bound the schema at 5,000 parts and the value at 100,000, not their product. If it is real the next step is to run validation of a tenant's schema in the expression worker's thread with a time limit, as expressions are.
+
+## Round three: patterns run on RE2
+
+The owner's decision (2026-11-26): run tenant patterns on RE2 instead of refusing them by shape. The shape guard refused harmless patterns (`^(ab)+$`) and a pattern it refused in an already-deployed bundle never matched.
+
+The engine. `re2js` 2.10.0, MIT, a JavaScript port of RE2/J with no native part and no dependency of its own. `pnpm view` reports last published 2026-11-10 and 20,433,484 downloads in the week 2026-11-19 to 2026-11-25. It runs in Node, in a worker thread and in a browser bundle. `re2` (node-re2) is native and covers only the server; `re2-wasm` was last published in 2022. Installed with `pnpm add re2js --filter @volvel/widgets`; the server packages reach it through `@volvel/widgets/pattern`.
+
+Size. Built with Vite and minified, `re2js` is 182,812 bytes (49,989 gzipped), and `dist/pattern.js` with it 185,099 (50,858 gzipped). The widget frame's bundle (`@volvel/widgets/frame`) was 7.7 KB before (esbuild) and is 9.9 KB (Vite) with RE2 left out. That is over the 150 KB the brief allows, so **the widget frame keeps the shape guard** and RE2 runs on the server and in the flow expressions' thread. The guard moved to `packages/widget-sdk/src/pattern-shape.ts` (used only by `schema.ts`) with its tests, unchanged, and its limits (200 characters of pattern, 256 of text). The console's bundle grew by one chunk of about 147 KB (`LoadState`, 656,263 to 803,743 bytes) because the console imports `@volvel/manifest`, which is not tree-shaken; nothing in the console calls a pattern.
+
+What changed.
+- `packages/widget-sdk/src/pattern.ts` is now the engine: `compilePattern`, `matchPattern`, `patternProblem`, limits. It names a backreference, `\k<name>`, looking ahead and looking behind itself, and gives RE2's own message for anything else it cannot run. The shape guard is gone from it.
+- Server schemas: Ajv's `code.regExp` is `re2RegExp` (`pattern-guard.ts`) for a tenant's schema; `own = true` keeps the built-in engine. A pattern RE2 does not run stops the compile with a `PatternError`; `validateJson` turns it into an issue, so a deployed bundle fails with the same words as the upload (`patternProblems`, `checkBundleManifests`). Text too long for the pattern fails the check with the limit named.
+- Expressions: the thread no longer holds a copy of the guard as text. It imports `@volvel/widgets/pattern` (the URL goes in `workerData`, as the CEL library's does) and, while an expression runs, `RegExp` is a small class whose `test` calls `matchPattern`. The CEL library hides the reason behind "Invalid regular expression", so the thread sends the reason it kept.
+
+Limits, decided. A pattern is at most 10,000 characters (the brief said 100,000; compiling 100,000 characters took 150 ms on the shared thread). RE2's time is the size of the compiled pattern times the length of the text, not the text alone: `[ab]{1000}` written 50 times took 71 s on 100,000 characters. So the text is at most 100,000 characters, and fewer for a large pattern: 2,000,000 divided by the compiled size (`a{1,1000}` is about 2,000 steps, so 1,000 characters). A compiled size over 20,000 is refused. RE2 itself refuses a repeat count over 1000 and nested counts that multiply past 1000, so `a{1,4000}` from the review is refused at upload with RE2's message, and `a{1,1000}` runs on text up to its limit.
+
+The dialect, each point decided on purpose (also in the comment of `pattern.ts`).
+- `u` flag: text is read as code points (`.` takes one emoji), as the flag does. `\p{L}`, `\p{Lu}` and `\p{Greek}` work; `\p{Script=Greek}` and other long forms are refused.
+- `\d`, `\w`, `\b`: ASCII only, as in the browser. `\s`: only space, tab, line feed, form feed and carriage return; the browser also counts a no-break space and the Unicode spaces. Kept RE2's meaning rather than rewrite the class, so all three server places agree. `.` takes U+2028 and U+2029, which the browser's does not.
+- `\uXXXX`, `\u{X}` and a written pair of surrogates are translated to RE2's `\x{X}`, in and out of a class, since zod and people write them. `\cX` is refused.
+- Named groups: `(?<n>x)` and `(?P<n>x)` work; `\k<n>` is a backreference and is refused.
+- Anchors: `^` and `$` are the start and end of the text (no multiline), as in the browser; `$` does not match before a final newline. `\A` and `\z` are accepted, and so are inline flags such as `(?i)`, which the browser refuses.
+- Possessive quantifiers (`a++`) are refused; lazy ones work.
+
+Tests (all new, none weakened).
+- `packages/widget-sdk/src/pattern.test.ts`: the thirty patterns that froze the engine (`^a*a*a*b`, `(a+)+$`, `(a|aa)+$`, `^(a?){30}a{30}$`, nested and adjacent repeats, ranges) on the worst texts of 100,000 characters, each under 100 ms, and again at each pattern's own longest text; harmless shapes; the refusal messages; the dialect points.
+- `packages/manifest/src/pattern-guard.test.ts`: the same list through `validateJson`; harmless shapes (`^(ab)+$`, email, UUID, zod's ISO date-time); backreference and lookahead refused at upload (`patternProblems`, `jsonSchemaProblem`, `checkBundleManifests` with the pointer) and failing the check in a deployed bundle with the same words; a table of 32 patterns and values where the server's check and the widget frame's give one answer, and the five shapes where the frame refuses and the server runs (`^(ab)+$`, `^(a?){3}b$`, `^([a-z]+-)*[a-z]+$`, `^a*a*a*b`, `^(a|aa)+$`).
+- `apps/control-plane/src/kernel/flows/expressions-patterns.test.ts`: the list through `matches` in the thread, the limit, the harmless shapes, the two refusals.
+- `packages/sdk/src/pattern-examples.test.ts`: every `pattern:` and `.regex(` in `examples/` compiles, and what zod writes for `z.uuid()`, `z.iso.datetime()`, `z.iso.date()` and `z.email()` tells good values from bad.
+
+Existing tests changed because they asserted the old guard: `schema-safety.test.ts` (text over 4096 is refused: now over 100,000; `^(a+)+$` named at upload: now a backreference), `expressions-tenants.test.ts` (the bomb "is refused at once": now it answers `false` at once).
+
+Docs. `develop/reference/scripts/define-script.md` ("Patterns in a schema"), `console/reference/flows/expressions.md` ("Patterns in `matches`"), the `matches` line of `flow-words.ts` (the generated Expressions page), and one sentence in `how-widgets-are-kept-safe.md` saying the page and the server differ.
+
+Left. The widget frame still refuses by shape, so a widget refuses some patterns the server runs (the five above, and any pattern over 200 characters or text over 256). Other tenant-reachable `RegExp` uses were seen and not touched, as outside the three places: `packages/markup/src/validate.ts:259` (a markup prop's `pattern`) and `packages/docs-engine/src/schema.ts:258`; a reviewer should decide whether they take a tenant's text. The `Expressions` constructor's `EXPRESSION_PATTERN_INPUT` export is gone.

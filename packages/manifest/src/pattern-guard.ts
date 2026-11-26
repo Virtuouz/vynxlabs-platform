@@ -1,46 +1,58 @@
-import { patternProblem as widgetPatternProblem } from "@volvel/widgets/pattern";
+import { compilePattern, patternProblem as widgetPatternProblem } from "@volvel/widgets/pattern";
 
 /**
  * A tenant's JSON Schema may carry a `pattern`, and the string it is run on comes from a caller. The
  * control plane has one thread for every tenant, so a pattern that can backtrack without end
- * (`^(a+)+$`) would stop it for all of them. The rules are those of the widget frame's check and
- * of the flow expressions, one function (packages/widget-sdk/src/pattern.ts): a pattern is
- * refused at upload, and at run time it never runs on a long string.
+ * (`^(a+)+$`) would stop it for all of them. Tenant patterns run on RE2, an engine that does not
+ * backtrack (packages/widget-sdk/src/pattern.ts): a pattern it cannot run is refused at upload,
+ * and in a bundle already deployed it fails the check with the same words.
  */
 
 /**
- * The longest string a pattern is run on, and the longest pattern. A pattern the guard accepts takes
- * at most the square of the length of the text, so 1024 keeps the worst case to a few milliseconds
- * (a test runs every accepted pattern of a list of nasty ones against the worst text of this length).
+ * The platform's own schemas use the built-in engine; a tenant's use RE2 (`own` is false). A
+ * pattern RE2 cannot run (a reference back to a group, looking ahead or behind) is refused when
+ * a schema is compiled, with a message that names the construct; the text a pattern is run on is
+ * held to what `compilePattern` allows for that pattern.
  */
-export const MAX_PATTERN_INPUT = 1024;
-const MAX_PATTERN_LENGTH = 1000;
 
-/**
- * Why a pattern is not run, or nothing when it is. The rule is one function shared with the widget
- * frame's check and the flow expressions' (`@volvel/widgets/pattern`): a change to it is a change
- * to all three.
- */
+/** A pattern (or text) that is not run: the message is meant for the author of the schema. */
+export class PatternError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "PatternError";
+  }
+}
+
+/** Why a pattern is not run, or nothing when it is: the one rule of `@volvel/widgets/pattern`. */
 export const patternProblem = (pattern: string): string | undefined =>
-  widgetPatternProblem(pattern, MAX_PATTERN_LENGTH);
+  widgetPatternProblem(pattern);
 
 /**
- * What Ajv's `code.regExp` hook returns: an unsafe pattern, or text that is too long, matches
- * nothing. Ajv keeps one compiled pattern per `toString()`, so that must tell patterns apart.
+ * What Ajv's `code.regExp` hook returns for a tenant's schema: a pattern that RE2 does not run
+ * stops the compile with its reason, and text too long for the pattern stops the check. Ajv keeps one
+ * compiled pattern per `toString()`, so that must tell patterns apart.
  */
-function guardedRegExp(pattern: string, flags: string): { test(text: string): boolean } {
-  const unsafe = patternProblem(pattern) !== undefined;
-  const expression = unsafe ? undefined : new RegExp(pattern, flags);
+function re2RegExp(pattern: string, _flags: string): { test(text: string): boolean } {
+  const result = compilePattern(pattern);
+  if ("problem" in result)
+    throw new PatternError(`the pattern "${pattern.slice(0, 60)}" ${result.problem}`);
+  const { maxText, test } = result.pattern;
   return {
-    test: (text) => text.length <= MAX_PATTERN_INPUT && expression?.test(text) === true,
-    toString: () => `/${pattern}/${flags}${unsafe ? " (not run)" : ""}`,
+    test: (text) => {
+      if (text.length > maxText)
+        throw new PatternError(
+          `a value is longer than ${maxText} characters, the most the pattern "${pattern.slice(0, 60)}" is run on`,
+        );
+      return test(text);
+    },
+    toString: () => `/${pattern}/re2`,
   } as { test(text: string): boolean };
 }
-guardedRegExp.code = "guardedRegExp";
+re2RegExp.code = "re2RegExp";
 
-export { guardedRegExp };
+export { re2RegExp };
 
-/** Every unsafe `pattern` in a value (a schema, or a manifest body holding schemas), as "<pointer> <why>". */
+/** Every `pattern` in a value that RE2 does not run (a schema, or a manifest body holding schemas), as "<pointer> <why>". */
 export function patternProblems(value: unknown, at = ""): string[] {
   if (Array.isArray(value)) return value.flatMap((item, i) => patternProblems(item, `${at}/${i}`));
   if (typeof value !== "object" || value === null) return [];

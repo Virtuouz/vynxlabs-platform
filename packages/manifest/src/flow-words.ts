@@ -288,7 +288,8 @@ export const EXPRESSION_FUNCTIONS: readonly ExpressionFunction[] = [
     name: "matches",
     group: "Text",
     signature: "text.matches(pattern)",
-    description: "True when the text matches the regular expression.",
+    description:
+      "True when the text matches the regular expression. It runs on RE2, which has no back references or look-around.",
     example: "'a1'.matches('[a-z][0-9]')",
     gives: true,
   },

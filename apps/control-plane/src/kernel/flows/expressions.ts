@@ -1,9 +1,5 @@
 import { Worker } from "node:worker_threads";
 import { EXPRESSION_ROOTS } from "@volvel/manifest";
-import { patternProblem } from "@volvel/widgets/pattern";
-
-/** The most characters a pattern in an expression is run on. */
-export const EXPRESSION_PATTERN_INPUT = 1024;
 
 /** An expression that could not be parsed or evaluated. The message is meant for the flow's author. */
 export class ExpressionError extends Error {
@@ -33,7 +29,11 @@ const make = (Environment, unlisted) =>
     limits: { maxAstNodes: 2000, maxDepth: 64, maxListElements: 200, maxMapEntries: 200, maxCallArguments: 16 },
   // A timestamp as text: ISO 8601 in UTC, so string(now).substring(0, 10) is today's date.
   }).registerFunction("string(google.protobuf.Timestamp): string", (time) => time.toISOString());
-const ready = import(workerData.library).then(({ Environment }) => {
+// matches() is run by RE2, the engine of @volvel/widgets/pattern, which the schema checks use too.
+// It is a module the thread imports, not text built into it.
+let matchPattern;
+const ready = Promise.all([import(workerData.library), import(workerData.pattern)]).then(([{ Environment }, patterns]) => {
+  matchPattern = patterns.matchPattern;
   const environment = make(Environment, true);
   // For a check of the names: only what a flow's expressions may read is known.
   const strict = make(Environment, false);
@@ -52,32 +52,29 @@ const plain = (value) => {
   }
   return value === undefined ? null : value;
 };
-// A pattern handed to matches() is run by a backtracking engine, which a pattern such as
-// ^(a+)+$ keeps busy for ever. A pattern is refused unless it is shown safe: this is the one rule
-// the widget frame's check and the schema guard use too (@volvel/widgets/pattern), built into the
-// thread as text. A change to that function is a change to all three.
-const patternProblem = ${patternProblem.toString()};
-// What a pattern is run on is held to this many characters: the work is at most the square of it.
-const MAX_TEXT = ${EXPRESSION_PATTERN_INPUT};
+// A pattern handed to matches() is run by RE2, which cannot backtrack: the time is the size of the
+// pattern times the length of the text. The library asks for a RegExp and calls test(), so while an
+// expression runs, RegExp is a class that does that with RE2. The library hides the reason a
+// pattern is not run behind its own message, so the reason is kept here and sent in its place.
+let problem;
 const NativeRegExp = RegExp;
-class CheckedRegExp extends NativeRegExp {
-  constructor(pattern, flags) {
-    const why = typeof pattern === "string" ? patternProblem(pattern, 200) : undefined;
-    if (why) throw new Error("The pattern " + why + ", so it is not run.");
-    super(pattern, flags);
+class Re2RegExp {
+  constructor(pattern) {
+    this.pattern = String(pattern);
   }
   test(text) {
-    if (String(text).length > MAX_TEXT) throw new Error("The text is longer than " + MAX_TEXT + " characters, the most a pattern is run on.");
-    return super.test(text);
-  }
-  exec(text) {
-    if (String(text).length > MAX_TEXT) throw new Error("The text is longer than " + MAX_TEXT + " characters, the most a pattern is run on.");
-    return super.exec(text);
+    const result = matchPattern(this.pattern, String(text));
+    if ("problem" in result) {
+      problem = result.problem;
+      throw new Error(result.problem);
+    }
+    return result.matches;
   }
 }
 parentPort.on("message", async ({ id, expression, data, parseOnly, names }) => {
   try {
     const both = await ready;
+    problem = undefined;
     const environment = parseOnly && names ? both.strict : both.environment;
     // The clock starts now: not while the thread was starting, nor while this waited its turn.
     parentPort.postMessage({ id, started: true });
@@ -89,7 +86,7 @@ parentPort.on("message", async ({ id, expression, data, parseOnly, names }) => {
     let value = null;
     if (!parseOnly) {
       // Only while the expression runs: the library builds patterns of its own when it parses.
-      globalThis.RegExp = CheckedRegExp;
+      globalThis.RegExp = Re2RegExp;
       try {
         value = plain(program(data));
       } finally {
@@ -98,7 +95,7 @@ parentPort.on("message", async ({ id, expression, data, parseOnly, names }) => {
     }
     parentPort.postMessage({ id, value });
   } catch (error) {
-    parentPort.postMessage({ id, error: String(error && error.message ? error.message : error) });
+    parentPort.postMessage({ id, error: problem ?? String(error && error.message ? error.message : error) });
   }
 });
 `;
@@ -150,6 +147,7 @@ export class Expressions {
   readonly #timeoutMs: number;
   readonly #memoryMb: number;
   readonly #library = import.meta.resolve("@marcbachmann/cel-js");
+  readonly #patterns = import.meta.resolve("@volvel/widgets/pattern");
   /** The owners with something waiting, in the order they are served. */
   readonly #lines = new Map<string, Waiting[]>();
   #current: Waiting | undefined;
@@ -167,7 +165,7 @@ export class Expressions {
     if (this.#worker) return this.#worker;
     const worker = new Worker(THREAD, {
       eval: true,
-      workerData: { library: this.#library, roots: EXPRESSION_ROOTS },
+      workerData: { library: this.#library, pattern: this.#patterns, roots: EXPRESSION_ROOTS },
       resourceLimits: {
         maxOldGenerationSizeMb: this.#memoryMb,
         maxYoungGenerationSizeMb: 16,

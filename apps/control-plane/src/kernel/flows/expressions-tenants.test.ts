@@ -1,6 +1,6 @@
 // One tenant's slow expression must not fail another tenant's (RT-12-1).
 import { afterAll, describe, expect, test } from "vitest";
-import { ExpressionError, Expressions } from "./expressions.js";
+import { Expressions } from "./expressions.js";
 
 const expressions = new Expressions({ timeoutMs: 100 });
 afterAll(() => expressions.close());
@@ -46,11 +46,9 @@ describe("one tenant's slow expressions and another tenant's", () => {
     expect(many.some((one) => "value" in one)).toBe(true);
   });
 
-  test("a pattern that backtracks without end is refused at once, not run", async () => {
+  test("a pattern that backtracks without end on another engine is answered at once, on RE2", async () => {
     const started = Date.now();
-    const error = await expressions.evaluate(BOMB, {}, "d").catch((one: Error) => one);
-    expect(error).toBeInstanceOf(ExpressionError);
-    expect((error as Error).message).toMatch(/regular expression/);
+    expect(await expressions.evaluate(BOMB, {}, "d")).toBe(false);
     expect(Date.now() - started).toBeLessThan(90);
   });
 

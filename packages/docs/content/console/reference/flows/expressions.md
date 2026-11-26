@@ -23,6 +23,10 @@ An expression that fails does not quote a secret the run was given. A start's in
 
 An expression field is plain text with no autocomplete. After you stop typing for 400 ms, a "Gives …" line shows what it would give, cut at 160 characters, worked out against the last test or else the flow's newest run. Values the run was given in secret are masked as on the run page. With no run it says "Run a test to see its value."
 
+## Patterns in `matches`
+
+`text.matches(pattern)` runs the pattern on RE2, an engine that never backtracks, so the time grows with the length of the text and never faster, whatever the pattern. A reference back to a group (`\1`) and looking ahead or behind (`(?=...)`, `(?<=...)`) are not available: the expression fails and says which. A text of over 100,000 characters is not run, and a large pattern is run on fewer.
+
 ## Traps
 
 - A number from a step or a request is a decimal. `trigger.n + 1` fails; write `trigger.n + 1.0`. `trigger.n % 2.0` fails; use `int(trigger.n) % 2`. Joining text and a number needs `string()`. Comparing with a whole number works. `7 / 2` is 3.

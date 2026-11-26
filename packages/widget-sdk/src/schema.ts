@@ -8,7 +8,7 @@
  * know (`$ref`, `not`, `if`) fails the value: a schema it cannot read admits nothing.
  */
 
-import { patternProblem as sharedPatternProblem } from "./pattern.js";
+import { patternProblem as sharedPatternProblem } from "./pattern-shape.js";
 
 type Schema = Readonly<Record<string, unknown>>;
 

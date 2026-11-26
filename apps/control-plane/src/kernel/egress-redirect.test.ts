@@ -47,17 +47,31 @@ describe("credentials on a redirect", () => {
 
   test("a redirect to another origin does not carry the credentials, and keeps the rest", async () => {
     configureEgress({ networks: ["127.0.0.0/8"], hosts: [] });
-    await guardedFetch(`http://127.0.0.1:${firstPort}/start`, {
-      method: "POST",
-      headers,
-      body: "x",
-    });
+    await guardedFetch(`http://127.0.0.1:${firstPort}/start`, { headers });
     const got = seen["/elsewhere"];
     expect(got?.authorization).toBeUndefined();
     expect(got?.cookie).toBeUndefined();
     expect(got?.["x-api-key"]).toBeUndefined();
     expect(got?.["x-custom-token"]).toBeUndefined();
     expect(got?.accept).toBe("text/plain");
+  });
+
+  test("a 307 or 308 to another origin is not followed when it would send a body there", async () => {
+    configureEgress({ networks: ["127.0.0.0/8"], hosts: [] });
+    for (const [method, body] of [
+      ["POST", "client_secret=s"],
+      ["PUT", "x"],
+    ] as const) {
+      delete seen["/elsewhere"];
+      await expect(
+        guardedFetch(`http://127.0.0.1:${firstPort}/start`, { method, headers, body }),
+      ).rejects.toThrow(/body/);
+      expect(seen["/elsewhere"], `${method} body reached the other origin`).toBeUndefined();
+    }
+    // Without a body there is nothing to leak, and it goes on.
+    delete seen["/elsewhere"];
+    await guardedFetch(`http://127.0.0.1:${firstPort}/start`, { method: "POST", headers });
+    expect(seen["/elsewhere"]).toBeDefined();
   });
 
   test("a redirect inside the same origin keeps them", async () => {

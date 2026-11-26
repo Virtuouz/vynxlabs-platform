@@ -243,18 +243,30 @@ export async function guardedFetch(
     await response.body?.cancel();
     const next = new URL(location, url);
     // As browsers and `fetch` do: what proves who is asking stays with the origin it was meant for.
-    if (next.origin !== url.origin) headers = withoutCredentials(headers);
-    url = next;
     // As browsers do: after a 303, or a 301 or 302 to a POST, the next request is a GET.
-    if (
+    const asGet =
       response.status === 303 ||
-      ((response.status === 301 || response.status === 302) && method === "POST")
-    ) {
+      ((response.status === 301 || response.status === 302) && method === "POST");
+    if (next.origin !== url.origin) {
+      // Any other redirect asks for the same request again, body included. Sending what the
+      // caller meant for one address (a token request with its client secret) to another is
+      // not done.
+      if (!asGet && body != null && !bodyless(method)) {
+        throw new Error(
+          `${input} redirected to another address, and the request has a body that is not sent there.`,
+        );
+      }
+      headers = withoutCredentials(headers);
+    }
+    url = next;
+    if (asGet) {
       method = "GET";
       body = undefined;
     }
   }
 }
+
+const bodyless = (method: string) => ["GET", "HEAD"].includes(method.toUpperCase());
 
 /** Headers that carry a credential: the standard ones, and any named like a key, token or secret. */
 const CREDENTIAL_HEADER =

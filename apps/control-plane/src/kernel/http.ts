@@ -10,7 +10,14 @@ import {
   type Trx,
   writeAudit,
 } from "./audit.js";
-import { boundInside, check, checkMany, type StandingMemo, type Target } from "./authorize.js";
+import {
+  boundInside,
+  check,
+  checkMany,
+  type Decision,
+  type StandingMemo,
+  type Target,
+} from "./authorize.js";
 import { forbidden, forbiddenBecause, notFound, unauthenticated } from "./errors.js";
 import type { WorkerScope } from "./execution/runs.js";
 import { resolveWorker } from "./execution/workers.js";
@@ -138,6 +145,8 @@ export class RequestContext {
    * things a dozen times: fifty statements for one screen (STR-04 of phase 35).
    */
   readonly #standing: StandingMemo | undefined;
+  /** The grants and tenants this request has already written an `operator.access` entry for. */
+  readonly #noted = new Set<string>();
 
   constructor(kernel: Kernel, principal: Principal, request: FastifyRequest) {
     this.kernel = kernel;
@@ -169,7 +178,9 @@ export class RequestContext {
   }
 
   async allowed(permission: string, target: Target): Promise<boolean> {
-    return (await check(this.db, this.principal, permission, target, this.#standing)).allowed;
+    const decision = await check(this.db, this.principal, permission, target, this.#standing);
+    await this.#noteOperatorAccess(decision, permission, target);
+    return decision.allowed;
   }
 
   /**
@@ -178,6 +189,9 @@ export class RequestContext {
    */
   async allowedMany(permission: string, targets: readonly Target[]): Promise<boolean[]> {
     const decisions = await checkMany(this.db, this.principal, permission, targets);
+    for (const [index, decision] of decisions.entries()) {
+      await this.#noteOperatorAccess(decision, permission, targets[index] as Target);
+    }
     return decisions.map((one) => one.allowed);
   }
 
@@ -192,18 +206,29 @@ export class RequestContext {
       if (!decision.related) throw notFound("The tenant");
       throw forbidden(permission);
     }
-    if (decision.accessGrantId && this.actor.accessGrantId !== decision.accessGrantId) {
-      this.actor.accessGrantId = decision.accessGrantId;
-      // Everything an operator does inside a tenant is recorded, reads included.
-      await writeAudit(this.db, this.actor, {
-        action: "operator.access",
-        targetType: "request",
-        targetId: `${this.#request.method} ${this.#request.routeOptions.url}`,
-        tenantId: target.tenantId ?? null,
-        workspaceId: target.workspaceId ?? null,
-        details: { permission },
-      });
-    }
+    await this.#noteOperatorAccess(decision, permission, target);
+  }
+
+  /**
+   * Everything an operator does inside a tenant is recorded, reads included: once for each
+   * tenant a request reaches, whichever of `authorize`, `allowed` or `allowedMany` let them in
+   * (a list that decides row by row writes one entry, not one for each row).
+   */
+  async #noteOperatorAccess(decision: Decision, permission: string, target: Target) {
+    if (!decision.allowed || !decision.accessGrantId) return;
+    const tenantId = target.tenantId ?? null;
+    const key = `${decision.accessGrantId}:${tenantId}`;
+    if (this.#noted.has(key)) return;
+    this.#noted.add(key);
+    this.actor.accessGrantId = decision.accessGrantId;
+    await writeAudit(this.db, this.actor, {
+      action: "operator.access",
+      targetType: "request",
+      targetId: `${this.#request.method} ${this.#request.routeOptions.url}`,
+      tenantId,
+      workspaceId: target.workspaceId ?? null,
+      details: { permission },
+    });
   }
 
   /**

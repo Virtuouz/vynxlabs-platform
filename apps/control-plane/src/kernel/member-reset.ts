@@ -1,9 +1,10 @@
 import { createHash, randomBytes } from "node:crypto";
 import { newId } from "@volvel/db";
-import { endSessions } from "./administer.js";
-import type { Audit, Db, Trx } from "./audit.js";
+import { endSessions, isOperator } from "./administer.js";
+import type { Audit, Db, Principal, Trx } from "./audit.js";
+import { explainAccess, grants } from "./authorize.js";
 import { checkPassword } from "./endusers.js";
-import { badRequest, conflict, HttpError, notFound } from "./errors.js";
+import { badRequest, conflict, forbiddenBecause, HttpError, notFound } from "./errors.js";
 import type { Kernel } from "./kernel.js";
 import { memberPasswordRefusedBy } from "./sso/people.js";
 
@@ -30,7 +31,7 @@ const gone = () =>
 export async function makeMemberResetLink(
   trx: Trx,
   audit: Audit,
-  input: { memberId: string; byMemberId: string; tenantId?: string },
+  input: { memberId: string; caller: Principal; tenantId?: string },
 ): Promise<{
   member: { id: string; email: string; name: string };
   token: string;
@@ -52,7 +53,7 @@ export async function makeMemberResetLink(
       .executeTakeFirst();
     if (!inTenant) throw notFound("The member");
   }
-  if (member.id === input.byMemberId) {
+  if (member.id === input.caller.id) {
     throw badRequest("Change your own password on your Account screen.");
   }
   if (member.disabled_at) throw badRequest("This account is disabled. Enable it first.");
@@ -76,6 +77,14 @@ export async function makeMemberResetLink(
       );
     }
   }
+  const tenants = (
+    await trx
+      .selectFrom("tenant_member")
+      .select("tenant_id")
+      .where("member_id", "=", member.id)
+      .execute()
+  ).map((row) => row.tenant_id);
+  await mayMakeLinkFor(trx, input.caller, member.id, tenants, input.tenantId);
   const refusedBy = await memberPasswordRefusedBy(trx, member.email);
   if (refusedBy) {
     throw conflict(
@@ -93,15 +102,66 @@ export async function makeMemberResetLink(
     .insertInto("member_password_token")
     .values({ id: newId(), member_id: member.id, token_hash: hash(token), expires_at: expiresAt })
     .execute();
-  // Who made it, and for whom. Never the token.
-  await audit({
-    action: "member.password_link_created",
-    targetType: "member",
-    targetId: member.id,
-    ...(input.tenantId !== undefined ? { tenantId: input.tenantId } : {}),
-    details: { email: member.email },
-  });
+  // Who made it (the entry names the caller), and for whom. Never the token. Each tenant the
+  // member belongs to has the entry in its own log: the link is a way into all of them.
+  for (const tenantId of tenants.length > 0 ? tenants : [undefined]) {
+    await audit({
+      action: "member.password_link_created",
+      targetType: "member",
+      targetId: member.id,
+      ...(tenantId !== undefined ? { tenantId } : {}),
+      details: { email: member.email },
+    });
+  }
   return { member, token, expiresAt };
+}
+
+/** Whether this operator holds an open access grant on each of these tenants. */
+async function holdsGrantOn(trx: Trx, operatorId: string, tenants: readonly string[]) {
+  if (tenants.length === 0 || !operatorId || !(await isOperator(trx, operatorId))) return false;
+  const open = await trx
+    .selectFrom("access_grant")
+    .select("tenant_id")
+    .where("member_id", "=", operatorId)
+    .where("tenant_id", "in", [...tenants])
+    .where("revoked_at", "is", null)
+    .where("expires_at", ">", new Date())
+    .execute();
+  return new Set(open.map((row) => row.tenant_id)).size === tenants.length;
+}
+
+/**
+ * A link is a way to sign in as the member, so it follows the rules for reaching their data.
+ * An operator needs an open access grant on every tenant the member belongs to, as for any
+ * other read or change there. In a tenant, whoever makes it must hold at least what the member
+ * holds there (an operator under a grant is the exception, as the grant is its own rule), so
+ * that a person who may manage members cannot take over the tenant's admin.
+ */
+async function mayMakeLinkFor(
+  trx: Trx,
+  caller: Principal,
+  memberId: string,
+  tenants: readonly string[],
+  tenantId: string | undefined,
+) {
+  if (tenantId === undefined) {
+    if (tenants.length > 0 && !(await holdsGrantOn(trx, caller.id ?? "", tenants))) {
+      throw notFound("The member");
+    }
+    return;
+  }
+  if (await holdsGrantOn(trx, caller.id ?? "", [tenantId])) return;
+  const permissionsOf = async (who: Principal) =>
+    (await explainAccess(trx, who, tenantId))
+      .filter((source) => source.counts)
+      .flatMap((source) => source.role.permissions);
+  const mine = await permissionsOf(caller);
+  const theirs = await permissionsOf({ type: "member", id: memberId });
+  if (theirs.some((held) => !grants(mine, held))) {
+    throw forbiddenBecause(
+      "That member holds more in this tenant than you do, so only someone who holds as much, or an operator with access to the tenant, can make their password link.",
+    );
+  }
 }
 
 /** Whose a link is, while it is still good. For showing the page. */

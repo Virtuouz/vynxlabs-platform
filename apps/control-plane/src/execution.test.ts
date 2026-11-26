@@ -1667,6 +1667,45 @@ describe("managed workers", () => {
     expect(await hasOutsideCodeWriters(t.kernel, tenant)).toBe(true);
   });
 
+  test("anyone who can upload, deploy or promote code counts as writing it, not only code:write (A4)", async () => {
+    const { hasOutsideCodeWriters } = await import("./kernel/execution/isolation.js");
+    const one = async (slug: string, held: string | string[]) => {
+      const id = (await t.admin.post("/tenants", { slug, name: slug })).body.id;
+      const grant = await t.admin.post(`/tenants/${id}/access-grants`, {
+        reason: "Setup",
+        roleId: roles.tenant_admin,
+      });
+      const role =
+        typeof held === "string"
+          ? held
+          : (await t.admin.post(`/tenants/${id}/roles`, { name: "ships", permissions: held })).body
+              .id;
+      const made = await t.admin.post(`/tenants/${id}/members`, {
+        email: `ship@${slug}.example`,
+        name: "Ship",
+        password: "a-good-long-password",
+      });
+      await t.admin.post(`/tenants/${id}/bindings`, {
+        principalType: "member",
+        principalId: made.body.id,
+        roleId: role,
+      });
+      await t.admin.delete(`/tenants/${id}/access-grants/${grant.body.id}`);
+      return id as string;
+    };
+    expect(
+      await hasOutsideCodeWriters(t.kernel, await one("shipper", roles.deployer as string)),
+    ).toBe(true);
+    for (const permission of ["bundle:write", "deployment:write", "promotion:write"]) {
+      const slug = `ships-${permission.split(":")[0]}`;
+      expect(await hasOutsideCodeWriters(t.kernel, await one(slug, [permission]))).toBe(true);
+    }
+    // A role that can only read still counts for nothing.
+    expect(await hasOutsideCodeWriters(t.kernel, await one("looker", roles.viewer as string))).toBe(
+      false,
+    );
+  });
+
   test("beside the control plane, a tenant whose code is written outside the operator gets no worker", async () => {
     const { WorkerSupervisor } = await import("./kernel/execution/supervisor.js");
     const { workerUserMode } = await import("./kernel/execution/isolation.js");

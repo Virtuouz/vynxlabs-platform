@@ -36,5 +36,6 @@
   },
   "dependencies": {
     "re2js": "^2.10.0"
-  }
+  },
+  "sideEffects": false
 }

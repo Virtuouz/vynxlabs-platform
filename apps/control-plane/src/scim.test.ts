@@ -707,6 +707,9 @@ describe("a tenant's members, pushed as Entra pushes them", () => {
     const back = await push(staff, "POST", "/Users", entraUser("bob@acme.example", "third-id"));
     expect(back.status, JSON.stringify(back.body)).toBe(201);
     scimId = back.body.id;
+    // Tying an account again ends the keys it had; a new one is made.
+    expect(await reaches()).toBe(401);
+    bobKey = await keyFor(bob);
     expect(await reaches()).toBe(200);
     expect((await alice.get(provisioning(staff))).body).toMatchObject({
       users: { pushed: 1, active: 1 },

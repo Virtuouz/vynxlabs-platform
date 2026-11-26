@@ -3,6 +3,7 @@ import type { Audit, Trx } from "../audit.js";
 import { workspaceSchema } from "../data/apply.js";
 import { conflict, HttpError } from "../errors.js";
 import type { Kernel } from "../kernel.js";
+import { stripIfNoMembership } from "../sign-ins.js";
 import { deleteOwned, storedKeys } from "./tables.js";
 
 /** Work still going on. Deleting underneath it would leave a worker holding a run that no longer exists. */
@@ -169,8 +170,18 @@ export async function deleteTenant(
     .set({ linked_workspace_id: null, active_bundle_id: null })
     .where("tenant_id", "=", tenantId)
     .execute();
+  const people = (
+    await trx
+      .selectFrom("tenant_member")
+      .select("member_id")
+      .where("tenant_id", "=", tenantId)
+      .execute()
+  ).map((row) => row.member_id);
   const counts = await deleteOwned(trx, { tenantId });
   await trx.deleteFrom("tenant").where("id", "=", tenantId).execute();
+  // A member who belonged to nothing else keeps nothing that can sign in. The tenant has no log
+  // of its own any more, so the entries are the instance's.
+  for (const memberId of people) await stripIfNoMembership(trx, audit, memberId);
   // Recorded for the instance: the tenant has no log of its own any more.
   await audit({
     action: "tenant.deleted",

@@ -11,6 +11,7 @@ import { access, reachedFromInside } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
 import { createMember } from "../kernel/members.js";
 import { effectivePolicy } from "../kernel/retention.js";
+import { stripIfNoMembership } from "../kernel/sign-ins.js";
 import { accessResource, freeKey, releaseOne } from "../kernel/tenant/releases.js";
 import {
   afterName,
@@ -883,6 +884,8 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               tenantId: params.t,
               details: { bindingsRemoved: bindings.length },
             });
+            // Nothing that signed in as the account stays for the next tenant that adds it.
+            await stripIfNoMembership(trx, audit, params.memberId, [params.t]);
           }),
         );
         return reply.code(204).send(null);

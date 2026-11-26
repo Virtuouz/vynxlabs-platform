@@ -546,6 +546,10 @@ describe("a tenant's members signing in over OIDC", () => {
     // The cookie that tied the sign-in to this browser is gone.
     expect([...chrome.jar.keys()].filter((name) => name.startsWith("vx_sso_"))).toEqual([]);
 
+    // The first tie ended the sessions the account had: the person signs in again.
+    expect((await alice.get("/me")).status).toBe(401);
+    alice = await t.signIn("alice@acme.example", PASSWORD);
+
     const links = (await alice.get(`${providers()}/${provider}/links`)).body.items;
     expect(links).toMatchObject([
       { subject: "u-alice", email: "alice@acme.example", principalType: "member" },
@@ -978,6 +982,9 @@ describe("the instance's own provider", () => {
     );
     await chrome.get(local(answered.location as string));
     expect(await chrome.member()).toBe(ADMIN.email);
+    // The operator's first tie ended the sessions they had: they sign in again.
+    expect((await t.admin.get("/me")).status).toBe(401);
+    t.admin = await t.signIn(ADMIN.email, ADMIN.password);
 
     // The break-glass account: the operator's password still works with the provider required.
     expect((await browser().post("/api/v1/auth/sign-in/email", ADMIN)).status).toBe(200);
@@ -1612,6 +1619,8 @@ describe("a tenant's members signing in over SAML", () => {
 
 describe("a tenant with providers, exported and imported", () => {
   test("its providers arrive paused and its domains unproved, until someone confirms them", async () => {
+    // Earlier tests tied alice to a provider again after her link was removed: that ended her sessions.
+    alice = await t.signIn("alice@acme.example", PASSWORD);
     const passphrase = "a long passphrase for the export";
     const exported = await alice.post(`/tenants/${tenant}/exports`, { passphrase });
     expect(exported.status).toBe(200);

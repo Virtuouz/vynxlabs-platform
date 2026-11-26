@@ -758,8 +758,16 @@ describe("deleting a tenant", () => {
       );
     expect(schema.rows).toEqual([]);
     await expect(t.kernel.storage.get(key)).rejects.toThrow();
-    // Gina's account belongs to the instance. She can still sign in, and sees no tenant.
-    expect((await gina.get("/me")).body.tenants).toEqual([]);
+    // Gina's account belongs to the instance and stays, but it was her last tenant: her session
+    // and her password went with it, and the next tenant to add her starts from a link.
+    expect((await gina.get("/me")).status).toBe(401);
+    expect(
+      await t.db
+        .selectFrom("member")
+        .select("id")
+        .where("email", "=", "gina@globex.example")
+        .executeTakeFirst(),
+    ).toBeDefined();
     const record = (await t.admin.get("/audit?action=tenant.deleted")).body.items[0];
     expect(record.details).toMatchObject({ slug: "globex", workspaces: 1, tables: 1, files: 1 });
     // The tenant is gone from its table, and its entry still says what it was called.

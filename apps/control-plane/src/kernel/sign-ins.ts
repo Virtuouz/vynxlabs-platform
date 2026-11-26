@@ -1,0 +1,133 @@
+import { endSessions } from "./administer.js";
+import type { Audit, Trx } from "./audit.js";
+import { holdsInstanceAccess, memberPasswordRefusedBy } from "./sso/people.js";
+
+/** Why an account's earlier sign-ins were ended. Written in the entry. */
+export type SignInsEnded =
+  | "password_reset"
+  | "operator_recovered"
+  | "single_sign_on_tie"
+  | "last_membership_removed";
+
+/**
+ * Ends what could sign in as an account before now: every session (the console's and the apps'),
+ * the API keys that act as the person (a key of a service account belongs to its tenant, not to
+ * a person, and is left alone), and their recovery codes. With `password`, the password too.
+ * The product has no passkeys or other second factors.
+ *
+ * It is for the moments when someone who proved they own the account, or an operator, chooses
+ * how it is entered from now on: whatever was made under the old way of entering it must not
+ * carry over. An entry in the log of each tenant the account belongs to says what was ended.
+ */
+export async function endEarlierSignIns(
+  trx: Trx,
+  audit: Audit,
+  memberId: string,
+  why: SignInsEnded,
+  options: {
+    password?: boolean;
+    /** Tenants to write the entry in besides those the account belongs to (it was just removed from one). */
+    alsoTenants?: readonly string[];
+  } = {},
+): Promise<{ apiKeys: number; recoveryCodes: number }> {
+  await endSessions(trx, memberId, { console: true });
+  const keys = await trx
+    .updateTable("api_key")
+    .set({ revoked_at: new Date() })
+    .where("owner_type", "=", "member")
+    .where("owner_id", "=", memberId)
+    .where("revoked_at", "is", null)
+    .returning("id")
+    .execute();
+  const codes = await trx
+    .deleteFrom("member_recovery_code")
+    .where("member_id", "=", memberId)
+    .returning("id")
+    .execute();
+  if (options.password) {
+    await trx
+      .deleteFrom("member_account" as never)
+      .where("member_id" as never, "=", memberId as never)
+      .where("provider_id" as never, "=", "credential" as never)
+      .execute();
+  }
+  const tenants = new Set([
+    ...(
+      await trx
+        .selectFrom("tenant_member")
+        .select("tenant_id")
+        .where("member_id", "=", memberId)
+        .execute()
+    ).map((row) => row.tenant_id),
+    ...(options.alsoTenants ?? []),
+  ]);
+  const details = {
+    reason: why,
+    apiKeysEnded: keys.length,
+    recoveryCodesEnded: codes.length,
+    ...(options.password ? { passwordEnded: true } : {}),
+  };
+  for (const tenantId of tenants.size > 0 ? tenants : [undefined]) {
+    await audit({
+      action: "member.sign_ins_ended",
+      targetType: "member",
+      targetId: memberId,
+      ...(tenantId !== undefined ? { tenantId } : {}),
+      details,
+    });
+  }
+  return { apiKeys: keys.length, recoveryCodes: codes.length };
+}
+
+/**
+ * An account that belongs to no tenant any more, and holds nothing at the instance, keeps
+ * nothing that can sign in: the next tenant to add that email starts from an account that
+ * nobody can enter until its owner sets a password through a link. The account itself is
+ * kept, as it is everywhere else (no route deletes one, and a directory only turns it off).
+ */
+export async function stripIfNoMembership(
+  trx: Trx,
+  audit: Audit,
+  memberId: string,
+  removedFrom: readonly string[] = [],
+): Promise<boolean> {
+  const left = await trx
+    .selectFrom("tenant_member")
+    .select("tenant_id")
+    .where("member_id", "=", memberId)
+    .executeTakeFirst();
+  if (left || (await holdsInstanceAccess(trx, memberId))) return false;
+  await endEarlierSignIns(trx, audit, memberId, "last_membership_removed", {
+    password: true,
+    alsoTenants: removedFrom,
+  });
+  return true;
+}
+
+/**
+ * Called when an account has just been tied to a single sign-on identity. The first tie of an
+ * account ends what could sign in as it before (sessions, personal keys, recovery codes): whoever
+ * made the account, with a password of their own, must not keep a way in once the person's own
+ * provider has vouched for them. Where a provider that is required covers the person's email, the
+ * password goes too (an operator keeps theirs, as everywhere); where it is not required, the
+ * password stays beside single sign-on.
+ */
+export async function endSignInsOnFirstTie(
+  trx: Trx,
+  audit: Audit,
+  memberId: string,
+  email: string,
+): Promise<boolean> {
+  const links = await trx
+    .selectFrom("identity_link")
+    .select("id")
+    .where("principal_type", "=", "member")
+    .where("principal_id", "=", memberId)
+    .execute();
+  if (links.length !== 1) return false;
+  const required = await memberPasswordRefusedBy(trx, email);
+  await endEarlierSignIns(trx, audit, memberId, "single_sign_on_tie", {
+    password: required !== undefined,
+  });
+  return true;
+}

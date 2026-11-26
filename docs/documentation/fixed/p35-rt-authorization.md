@@ -123,3 +123,54 @@ The owner decided two rules. Both are built, each with tests that failed first (
 3. **The repository deploy of the Fernhill example** carries roles and bindings, so Devi (deployer) cannot make the first deploy. `examples/fernhill/setup/setup.mjs` now has Maya (tenant admin) make it, and the README says so; Devi's step 9 (a change to a script) leaves access as it is and still works. The seed was not run here (it needs a running instance); the control-plane tests that deploy bundles were.
 4. A binding to one resource in a deploy is held at the workspace, the wider place: someone who holds a role only on that resource cannot deploy it.
 5. The browser suite was not run, as the brief says. A spec in which a deployer ships roles or bindings needs the same change as Fernhill.
+
+## Round three: planted accounts
+
+An account (`member`) is one for each email on the whole instance. A tenant admin who adds a member may set the account's password, so an admin of tenant A could make an account for someone else's email, sign in as it, make an API key and recovery codes, remove it from A, and wait. When tenant B (or the operator) later added that email, the old key, codes and password acted there. A reset by link ended the console session but not the key or the codes, and a recovery code with the password got round an enforced single sign-on. The owner decided three changes.
+
+### 1. A reset and the first single sign-on tie end what could sign in before
+
+**Proof before.** `planted-accounts.test.ts`: after a reset by link the planted key still answered 200 (wanted 401); after an operator recovery the operator's old key still answered 200; after the first tie to a provider the session, key and codes were all still there; a person changing their own password left their other sessions alive.
+
+**How keys are modelled.** `api_key.owner_type` is `member` or `service_account`. A member's key acts as the account itself, in every tenant it belongs to. A service account belongs to one tenant (`service_account.tenant_id`) and its keys are the tenant's, not a person's. Only the first kind is ended; service accounts' keys are left alone. The product has no passkeys or other second factors (the authentication library runs with only email and password; recovery codes are the one extra way in), so there was nothing else to end.
+
+**Fix.** One function, `kernel/sign-ins.ts` `endEarlierSignIns`: ends every session (console and apps, and open streams, through `endSessions`), revokes the account's personal keys, deletes its recovery codes, optionally deletes the password, and writes `member.sign_ins_ended` in the log of each tenant the account belongs to (reason, how many keys and codes). Used by:
+- the member reset by link (`setMemberPasswordWithToken`), reason `password_reset`;
+- the operator's recovery command (`recoverOperator`), reason `operator_recovered`;
+- the first tie of an existing account to a single sign-on identity, by a person's sign-in (`resolvePerson`) or by a directory push (`scim.ts` `tie`), through `endSignInsOnFirstTie`, reason `single_sign_on_tie`. "First" is when the account has no other identity link. The password is deleted too where a required provider covers the account's email (`memberPasswordRefusedBy`; an operator keeps theirs, as everywhere); where the provider is not required the password stays beside single sign-on.
+- the library's own reset (`/request-password-reset`, `/reset-password`) is not offered (no mail sender is given to it, so it refuses); a test says so. Nothing was needed there.
+- an account changing its own password while signed in (`/change-password`, `kernel/auth.ts`): the current session stays and every other one ends, the console's and the apps'. Keys and recovery codes stay, since the person is signed in and can list and revoke them. I think this is right: ending the keys would break their scripts for a change they chose to make. If the owner wants codes ended there too, it is one call to `endEarlierSignIns`.
+
+**Tests.** `planted-accounts.test.ts`, the first two describes. Existing tests that relied on a session or key surviving a first tie were changed to sign in again or make a new key (`sso.test.ts` three places, `scim.test.ts` one); they asserted the old behaviour, not a requirement.
+
+**To look at twice.** An operator's own first tie to the instance's provider ends their sessions, including the one doing the setup. A person tied by a push from a directory loses their sessions and keys at the moment of the push, not at their next sign-in.
+
+### 2. An account that loses its last membership keeps nothing that can sign in
+
+**Proof before.** The planted account, removed from A, still signed in, kept its key and codes, and acted in B as soon as B added the email.
+
+**Fix.** `kernel/sign-ins.ts` `stripIfNoMembership`: when an account belongs to no tenant and holds nothing at the instance (any instance binding, which is wider than "operator" and so never strips an account that runs or is meant to run the instance), it ends sessions, personal keys and recovery codes and deletes the password, and writes the entry. The account row is kept: no route deletes an account anywhere in the product (a directory only turns it off, and tenant deletion keeps accounts), so deleting would have been new. The next tenant to add the email starts from an account nobody can sign in to until its owner chooses a password by a link (`makeMemberResetLink` already inserts the password row when there is none).
+
+**Covered.** The members route (`DELETE /tenants/:t/members/:id`, entry in the tenant it left) and tenant deletion (`deleteTenant`, for each member of the tenant; the tenant has no log any more, so the entries are the instance's).
+
+**Not applicable, read in the code.** SCIM: a directory's removal only suspends the person in the tenant and ties off the link (`deleteScimUser`); it never deletes `tenant_member`, so no membership ends there. An import never removes memberships: it makes a new tenant and matches or makes accounts. A suspended member still belongs to the tenant and is not stripped.
+
+**Tests.** `planted-accounts.test.ts`, third describe (route, one who belongs elsewhere and an operator keep theirs, tenant deletion). Existing tests changed because they asserted the old state: `kernel.test.ts` (a removed member can still sign in, then is added back: now they choose a password by a link), `environments.test.ts` (a deleted tenant's member could still sign in), `portability.test.ts` (a tenant deleted and imported back found the account with its password).
+
+### 3. The stricter link rule only where the link is handed back
+
+**Confirmed from the code.** `routes/member-resets.ts` `deliver` returned `url: null` only when the mail was sent. With mail set up but the send failing (`Mailer.send` returns false), the link came back in the answer. That is fixed first: with mail set up, a failed send now answers 503 `unavailable` and the link is in no answer. The link is made but unseen and runs out in two hours.
+
+**Fix.** `makeMemberResetLink` takes `returnsLink` (the routes pass `!kernel.mail.configured`). `mayMakeLinkFor` runs the "holds what the member holds" comparison only when the link is handed back. With mail set up `member:write` is enough in a tenant. Unchanged in both cases: the tenant-only rule (a member of two tenants, or of the instance, is for an operator), an operator's need for an open access grant on every tenant of the member, and the audit entry in each tenant.
+
+**Tests.** `planted-accounts.test.ts`, the fourth describe: no mail, a member manager is refused (403) for a tenant admin; mail on, the same caller gets 201 with no link in the answer and the mail goes to the member; mail on but failing, 503 and no link.
+
+### The reviewer's proofs, as tests
+
+`planted-accounts.test.ts`, last describe. With the planter removed from A (so its last membership is gone): B adds the email, and the planted session, key, password, and password plus recovery code all fail in B; B's admin makes the link and the owner's own password works, the old key still does not. The same account made an operator by the instance holds nothing from before (401 on session and key, password refused).
+
+### What still works
+
+The chain is closed where the planter's account ends up with no membership. It is **not** closed where the planter keeps the account as a member of A (never removes it) and B adds the same email: the planter's password, session and key then act in B as before (tested by hand: session 200, key 200 in B; B's admin cannot make a link because the account belongs to two tenants, 409, so B cannot clear it, only an operator with a grant on both). Closing that means stopping a tenant admin from choosing a password for an email that no one else has proved, which is the first question in the reviewer's report (the create-member password) and is for the owner. The same holds for P2 when the squatter stays in A and the operator binds the account `operator_admin`: nothing ends until a reset by link. Also not covered: a tenant import creates accounts with the password hash from the archive.
+
+No migration was needed (next free number is still 0104). One audit action was added, `member.sign_ins_ended` (`packages/manifest/src/audit.ts`).

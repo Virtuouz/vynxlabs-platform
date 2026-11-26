@@ -1475,7 +1475,32 @@ describe("back again", () => {
       .set({ email: "carol@acme.example" })
       .where("id", "=", carolId)
       .execute();
+    // The tenant's deletion here left Alice's account without a password, as it left her last
+    // tenant: she chooses one by a link, as for any account a tenant adds again.
+    const returned = imported.body.tenant.id as string;
+    const owner = await a.db
+      .selectFrom("role")
+      .select("id")
+      .where("name", "=", "tenant_admin")
+      .where("builtin", "=", true)
+      .executeTakeFirstOrThrow();
+    await a.admin.post(`/tenants/${returned}/access-grants`, {
+      reason: "Alice's password",
+      roleId: owner.id,
+    });
+    const aliceId = (
+      await a.db
+        .selectFrom("member")
+        .select("id")
+        .where("email", "=", "alice@acme.example")
+        .executeTakeFirstOrThrow()
+    ).id;
+    const link = await a.admin.post(`/members/${aliceId}/password-link`, {});
+    expect(link.status, JSON.stringify(link.body)).toBe(201);
+    const token = decodeURIComponent(String(link.body.url).split("/").pop() as string);
+    await a.anonymous.post(`/member-password-links/${token}`, { password: PASSWORD });
     const back = await a.signIn("alice@acme.example", PASSWORD);
+    alice = back;
     expect(
       (await back.get(`${ws(main)}/rows/orders?sort=number`)).body.items.map((row: Any) => [
         row.number,

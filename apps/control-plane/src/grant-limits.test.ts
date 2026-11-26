@@ -182,20 +182,27 @@ describe("nobody gives a binding to a role they do not hold", () => {
 });
 
 describe("what the built-in admins give every day", () => {
-  test("a workspace admin gives viewer, developer and deployer in its workspace, and not in another", async () => {
+  test("a workspace admin gives viewer and deployer in its workspace, and not developer, nor anything in another", async () => {
     const wendy = await person("wendy", [
       { roleId: roles.workspace_admin as string, workspace: true },
     ]);
-    for (const name of ["viewer", "developer", "deployer"] as const) {
-      const someone = await person(`w-${name}`, []);
-      const given = await wendy.client.post(`/tenants/${tenant}/bindings`, {
+    const give = async (name: string, to: string) =>
+      wendy.client.post(`/tenants/${tenant}/bindings`, {
         principalType: "member",
-        principalId: someone.id,
+        principalId: to,
         roleId: roles[name] as string,
         workspaceId: dev,
       });
+    for (const name of ["viewer", "deployer"]) {
+      const someone = await person(`w-${name}`, []);
+      const given = await give(name, someone.id);
       expect(given.status, `${name}: ${JSON.stringify(given.body)}`).toBe(201);
     }
+    // Writing code is given by its own name, and a workspace admin does not hold it.
+    const coder = await person("w-developer", []);
+    const refused = await give("developer", coder.id);
+    expect(refused.status).toBe(403);
+    expect(refused.body.detail).toContain("code:write");
     const across = await wendy.client.post(`/tenants/${tenant}/bindings`, {
       principalType: "member",
       principalId: wendy.id,

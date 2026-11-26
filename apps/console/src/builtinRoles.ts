@@ -48,6 +48,7 @@ export const BUILTIN_ROLES: Record<string, string[]> = {
   tenant_admin: ["*:*", "sql:read"],
   viewer: ["*:read"],
   workspace_admin: [
+    "*:read",
     "app:*",
     "approval:*",
     "audit:read",

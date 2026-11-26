@@ -9,7 +9,7 @@ import {
 } from "@volvel/worker";
 import type { FastifyRequest } from "fastify";
 import type { Db, Trx } from "../audit.js";
-import { badRequest, unauthenticated } from "../errors.js";
+import { badRequest, conflict, unauthenticated } from "../errors.js";
 import type { Kernel } from "../kernel.js";
 import { hashApiKey } from "../principal.js";
 import type { WorkerScope } from "./runs.js";
@@ -86,6 +86,24 @@ export function machineOf(scope: WorkerScope, machine?: MachineClaim): MachineCl
 export function machineOf(scope: WorkerScope, machine?: MachineClaim): MachineClaim | undefined {
   if (!machine || scope.managed) return machine;
   return { ...machine, name: `tenant:${scope.tenantId}/${machine.name}` };
+}
+
+/**
+ * Refuses a worker credential that does not hold the job. A job is handed to one worker, and
+ * only the credential that worker called with may report on it: another credential of the
+ * same tenant cannot finish, fail or read what it was not given. A job whose worker is no
+ * longer known is left to whoever the tenant check lets through.
+ */
+export async function mustHold(db: Db | Trx, scope: WorkerScope, workerId: string | null) {
+  if (!workerId) return;
+  const holder = await db
+    .selectFrom("worker")
+    .select("credential_id")
+    .where("id", "=", workerId)
+    .executeTakeFirst();
+  if (holder && holder.credential_id !== scope.credentialId) {
+    throw conflict("This job was given to another worker. Its result is not recorded.");
+  }
 }
 
 /** Records that a worker is alive. */

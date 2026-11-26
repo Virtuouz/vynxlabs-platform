@@ -10,7 +10,7 @@ import type { Db, Trx } from "../audit.js";
 import { conflict, notFound } from "../errors.js";
 import type { Kernel } from "../kernel.js";
 import type { WorkerScope } from "./runs.js";
-import { type MachineClaim, machineHasRoom, onMachine } from "./workers.js";
+import { type MachineClaim, machineHasRoom, mustHold, onMachine } from "./workers.js";
 
 export const TASK_KINDS = ["describe", "deliver", "test-connection"] as const;
 export type TaskKind = (typeof TASK_KINDS)[number];
@@ -171,6 +171,7 @@ export async function heldTask(db: Db | Trx, scope: WorkerScope, id: string): Pr
   if (task.status !== "running") {
     throw conflict("This task is no longer in progress. Its result is not recorded.");
   }
+  await mustHold(db, scope, task.worker_id);
   return task;
 }
 

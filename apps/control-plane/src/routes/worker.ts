@@ -53,7 +53,7 @@ import {
   MAX_RESULT_BYTES,
 } from "../kernel/execution/tasks.js";
 import { kickStarted } from "../kernel/execution/triggers.js";
-import { machineOf, noteScriptsSeen, seeWorker } from "../kernel/execution/workers.js";
+import { machineOf, mustHold, noteScriptsSeen, seeWorker } from "../kernel/execution/workers.js";
 import { publishEvent } from "../kernel/flows/events.js";
 import { access } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
@@ -580,6 +580,7 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         if (run.status !== "running" || run.attempt !== body.attempt || !run.queue_job_id) {
           return { cancelled: true };
         }
+        await mustHold(db, worker, run.worker_id);
         const alive = await kernel.queue.heartbeat(
           queueName(run.workspace_id, run.pool),
           run.queue_job_id,

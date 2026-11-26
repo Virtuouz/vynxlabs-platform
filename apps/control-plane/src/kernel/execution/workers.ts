@@ -113,8 +113,12 @@ export interface MachineClaim {
 /** What was started on each machine a moment ago, script or worker, whose memory does not show yet. */
 const starting = new Map<string, Reservations>();
 const OWN_MACHINE = machineName();
-/** A script is counted until it ends, or for this long: by then what it holds can be seen. */
-const SCRIPT_HOLD_MS = 8000;
+/**
+ * A script is counted until it ends, or for this long: by then what it holds can be seen in the
+ * machine's free memory, and counting it longer counts it twice. At eight seconds, four scripts
+ * ran on a machine with 700 MB free.
+ */
+const SCRIPT_HOLD_MS = 3000;
 const WORKER_HOLD_MS = 10_000;
 
 function startingOn(name: string): Reservations {

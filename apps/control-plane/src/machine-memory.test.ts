@@ -42,7 +42,7 @@ describe("a machine is handed a script only where one more fits above its memory
     noteStarted(machine, "run-4", 2);
     expect(machineShortOfMemory(machine, probe(0), 3)).toBe(true);
     // By then their memory shows, and the reading is believed again.
-    expect(machineShortOfMemory(machine, probe(0), 8003)).toBe(false);
+    expect(machineShortOfMemory(machine, probe(0), 3003)).toBe(false);
   });
 
   test("a worker just started counts against the scripts handed to its machine", () => {

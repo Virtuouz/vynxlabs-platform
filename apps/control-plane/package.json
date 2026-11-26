@@ -30,7 +30,7 @@
     "cron-parser": "^5.10.4",
     "fastify": "^5.12.8",
     "isomorphic-git": "^1.44.13",
-    "nodemailer": "^7",
+    "nodemailer": "^10.6.1",
     "openid-client": "^6",
     "pgsql-parser": "18.3.5",
     "selfsigned": "^5.5.0",
@@ -44,7 +44,6 @@
     }
   },
   "devDependencies": {
-    "@types/nodemailer": "^8.0.2",
     "@types/xml-encryption": "^1.2.4",
     "xml-crypto": "^6.4.0",
     "xml-encryption": "^3.1.0"

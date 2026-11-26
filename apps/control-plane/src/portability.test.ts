@@ -9,7 +9,7 @@ import { type Bundle, type BundleManifest, bundleDigest } from "@volvel/manifest
 import { Worker } from "@volvel/worker";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { workspaceSchema } from "./kernel/data/apply.js";
-import type { ExportManifest } from "./kernel/tenancy/export.js";
+import { type ExportManifest, manifestText } from "./kernel/tenancy/export.js";
 import { removeExpiredImports, STAGE_DIR } from "./kernel/tenancy/staging.js";
 import { OWNED_TABLES } from "./kernel/tenancy/tables.js";
 import { TAR_END, tarEntry, tarIndex, tarRead } from "./kernel/tenancy/tar.js";
@@ -393,12 +393,13 @@ afterAll(async () => {
 
 /**
  * The archive as someone who knows the passphrase could rewrite it: any file changed, added or
- * dropped, the list of contents made to match, and written in format 1 so that nothing signs it.
- * The checks that hold a file to its own tenant must hold for such a file too.
+ * dropped, the list of contents made to match and signed again with the key the passphrase opens.
+ * The checks that hold a file to its own tenant must hold for such a file too. `unsigned` is what
+ * someone WITHOUT the passphrase can do: say format 1 and drop the signature.
  */
 async function altered(
   change: (files: Map<string, Buffer>, manifest: ExportManifest) => void,
-  options: { keepSignature?: boolean } = {},
+  options: { keepSignature?: boolean; unsigned?: boolean } = {},
 ): Promise<Buffer> {
   const path = join(dir, `a-${Math.random()}.tar`);
   await writeFile(path, archive);
@@ -411,7 +412,7 @@ async function altered(
       (await tarRead(file, index.at(-1) as never)).toString("utf8"),
     ) as ExportManifest;
     change(files, changed);
-    if (!options.keepSignature) {
+    if (options.unsigned) {
       changed.formatVersion = 1;
       delete changed.authentication;
     }
@@ -420,6 +421,14 @@ async function altered(
       bytes: content.length,
       sha256: createHash("sha256").update(content).digest("hex"),
     }));
+    if (!options.keepSignature && !options.unsigned) {
+      const key = JSON.parse((files.get("key.json") as Buffer).toString("utf8"));
+      const wrapped = b.kernel.vault.importTenantKey(changed.tenant.id, key, PASSPHRASE);
+      changed.authentication = {
+        alg: "hmac-sha256",
+        mac: b.kernel.vault.manifestMac(changed.tenant.id, wrapped, manifestText(changed)),
+      };
+    }
     return Buffer.concat([
       ...[...files].flatMap(([entryPath, content]) => tarEntry(entryPath, content)),
       ...tarEntry("manifest.json", Buffer.from(JSON.stringify(changed))),
@@ -652,6 +661,136 @@ describe("an export that should not be imported", () => {
   });
 });
 
+describe("p35 an archive that is not what its maker says it is", () => {
+  const mallory = "0199d0aa-0000-7000-8000-0000000000aa";
+  const archiveFiles = new Map<string, Buffer>();
+  beforeAll(async () => {
+    await altered((files) => {
+      for (const [path, content] of files) archiveFiles.set(path, content);
+    });
+  });
+  const tenantNotOnB = async () =>
+    expect(await b.db.selectFrom("tenant").select("id").where("id", "=", tenant).execute()).toEqual(
+      [],
+    );
+  const nobodyOnB = async () =>
+    expect(
+      await b.db
+        .selectFrom("member")
+        .select("id")
+        .where("email", "=", "mallory@evil.example")
+        .execute(),
+    ).toEqual([]);
+
+  test("an export edited down to format 1, with a new admin in it, is refused (B10)", async () => {
+    const bytes = await altered(
+      (files) => {
+        const members = lines(files.get("members.0001.jsonl"));
+        members.push({
+          id: mallory,
+          name: "Mallory",
+          email: "mallory@evil.example",
+          email_verified: true,
+          image: null,
+          created_at: new Date().toISOString(),
+          password_hash: "x",
+        });
+        files.set("members.0001.jsonl", jsonl(members));
+        const tm = lines(files.get("platform/tenant_member.0001.jsonl"));
+        tm.push({ ...tm[0], member_id: mallory });
+        files.set("platform/tenant_member.0001.jsonl", jsonl(tm));
+      },
+      { unsigned: true },
+    );
+    const result = await importInto(operatorB, bytes);
+    expect(result.status, JSON.stringify(result.body)).toBe(400);
+    expect(result.body.detail).toMatch(/format 1/);
+    await nobodyOnB();
+  });
+
+  test("a link may not name an account the export does not list (B11)", async () => {
+    const provider = "0199d0aa-0000-7000-8000-0000000000c1";
+    // An account on this instance that the archive's own members do not match.
+    const listed = new Set(lines(archiveFiles.get("members.0001.jsonl")).map((one) => one.email));
+    const someoneElse = (await b.db.selectFrom("member").select(["id", "email"]).execute()).find(
+      (one) => !listed.has(one.email),
+    );
+    expect(someoneElse).toBeDefined();
+    const bytes = await altered((files, changed) => {
+      const now = new Date().toISOString();
+      files.set(
+        "platform/identity_provider.0001.jsonl",
+        jsonl([
+          {
+            id: provider,
+            tenant_id: tenant,
+            audience: "members",
+            protocol: "oidc",
+            name: "Evil",
+            config: {},
+            enabled: false,
+            enforce: false,
+            provision: false,
+            paused: true,
+            scim: {},
+            created_at: now,
+            updated_at: now,
+          },
+        ]),
+      );
+      files.set(
+        "platform/identity_link.0001.jsonl",
+        jsonl([
+          {
+            id: "0199d0aa-0000-7000-8000-0000000000c2",
+            provider_id: provider,
+            tenant_id: tenant,
+            subject: "attacker-subject",
+            principal_type: "member",
+            principal_id: someoneElse?.id,
+            email: someoneElse?.email,
+            created_at: now,
+            last_signed_in_at: null,
+          },
+        ]),
+      );
+      changed.counts.identity_provider = 1;
+      changed.counts.identity_link = 1;
+    });
+    const result = await importInto(operatorB, bytes);
+    expect(result.status, JSON.stringify(result.body)).toBe(400);
+    expect(result.body.detail).toMatch(
+      /identity_link holds a link to someone the export does not list/,
+    );
+    await tenantNotOnB();
+  });
+
+  test("a row may not name another tenant's object, though the archive carries its bytes (C19)", async () => {
+    const victim = "0199d0aa-0000-7000-8000-0000000000bb";
+    const bytes = Buffer.from("public file");
+    const sha = createHash("sha256").update(bytes).digest("hex");
+    const result = await importInto(
+      operatorB,
+      await altered((files, changed) => {
+        const assets = lines(files.get("platform/bundle_asset.0001.jsonl"));
+        assets.push({
+          tenant_id: tenant,
+          sha256: sha,
+          size_bytes: bytes.length,
+          storage_key: `assets/${victim}/${sha}`,
+          created_at: "2020-01-01T00:00:00Z",
+        });
+        files.set("platform/bundle_asset.0001.jsonl", jsonl(assets));
+        files.set(`objects/assets/${victim}/${sha}`, bytes);
+        changed.counts.bundle_asset = assets.length;
+      }),
+    );
+    expect(result.status, JSON.stringify(result.body)).toBe(400);
+    expect(result.body.detail).toMatch(/a stored file that is not this tenant's own/);
+    await tenantNotOnB();
+  });
+});
+
 describe("an export that someone changed, who knows its passphrase", () => {
   const refusedWith = async (bytes: Buffer, detail: RegExp, query = "") => {
     const refused = await importInto(operatorB, bytes, query);
@@ -846,11 +985,15 @@ describe("an export that someone changed, who knows its passphrase", () => {
       problem: null,
     });
     expect(await check(await altered(() => {}))).toMatchObject({
-      formatVersion: 1,
-      authenticated: false,
+      formatVersion: 2,
+      authenticated: true,
       passphraseOk: true,
       problem: null,
     });
+    // p35: a file that says it is format 1 has no signature to check and is not read at all.
+    expect((await check(await altered(() => {}, { unsigned: true }))).problem).toMatch(
+      /This export is in format 1\. This instance reads formats 2\./,
+    );
     const changed = await check(
       await altered(
         (_files, one) => {
@@ -1398,7 +1541,7 @@ describe("members' passwords in an export (GOV-09)", () => {
     await a.db.deleteFrom("tenant_member").where("tenant_id", "=", side).execute();
   });
 
-  test("an export in format 1, with its hashes as plain fields, is still imported", async () => {
+  test("an export in format 1, with its hashes as plain fields, is no longer read (p35)", async () => {
     const files = await readArchive(archive);
     const hashes = new Map(
       (
@@ -1435,8 +1578,8 @@ describe("members' passwords in an export (GOV-09)", () => {
         "application/x-tar",
         { "x-export-passphrase": PASSPHRASE },
       );
-      expect(imported.status, JSON.stringify(imported.body)).toBe(201);
-      expect((await c.signIn("carol@acme.example", PASSWORD)).get).toBeDefined();
+      expect(imported.status, JSON.stringify(imported.body)).toBe(400);
+      expect(imported.body.detail).toMatch(/This export is in format 1/);
     } finally {
       await c.stop();
     }

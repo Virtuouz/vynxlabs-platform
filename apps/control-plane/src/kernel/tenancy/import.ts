@@ -162,11 +162,10 @@ function checkLayout(manifest: ExportManifest, paths: string[]) {
 
 /**
  * Format 2 signs the list of contents under the tenant's key, which only the passphrase
- * opens. Returns true when the signature is right, false for a format that has none, and
+ * opens. Returns true when the signature is right, and
  * refuses a signature that is wrong or missing.
  */
 function authenticate(kernel: Kernel, manifest: ExportManifest, wrappedKey: Buffer): boolean {
-  if (manifest.formatVersion < 2) return false;
   const given = manifest.authentication;
   if (
     given?.alg !== "hmac-sha256" ||
@@ -258,7 +257,7 @@ export async function inspectImport(
     }
     const { manifest } = checked;
     let passphraseOk: boolean | null = null;
-    let authenticated: boolean | null = manifest.formatVersion < 2 ? false : null;
+    let authenticated: boolean | null = null;
     let problem: string | null = null;
     if (options.passphrase) {
       const entry = checked.byPath.get("key.json");
@@ -446,6 +445,7 @@ export async function importTenant(
       "scim_group",
       "member_dashboard",
       "data_table",
+      "end_user",
     ]);
     // Tables with no tenant of their own are held to a parent that was loaded before them.
     const PARENTS: Record<string, [column: string, parent: string]> = {
@@ -463,6 +463,20 @@ export async function importTenant(
     `.execute(kernel.db);
     const hasColumn = (table: string, column: string) =>
       owning.rows.some((one) => one.table === table && one.column === column);
+    /**
+     * Whether an object key is under this tenant's own folders: the places the platform keeps a
+     * tenant's files, bundles, app files and branding, and the folder of a run or flow run of this
+     * export. Another tenant's key, though the archive carries bytes for it, is not taken.
+     */
+    const ownKey = (key: string) => {
+      const [folder, owner] = key.split("/");
+      if (folder === "runs" || folder === "flow-runs") {
+        return seenIds("run").has(String(owner)) || seenIds("flow_run").has(String(owner));
+      }
+      return (
+        ["bundles", "files", "assets", "branding"].includes(String(folder)) && owner === tenantId
+      );
+    };
     /** The object keys the loaded rows name. Only these may be in the archive. */
     const named = new Set<string>();
     const validate = (table: string, row: Record<string, unknown>) => {
@@ -496,10 +510,19 @@ export async function importTenant(
         ids.add(row.id);
         seen.set(table, ids);
       }
+      // A link ties a provider's subject to an account. It may name only someone this import
+      // creates, or the account an exported member is matched to under the rules above.
+      if (table === "identity_link") {
+        const person = String(row.principal_id);
+        const listed =
+          row.principal_type === "member" ? memberIds.has(person) : seenIds("end_user").has(person);
+        if (!listed) throw wrong("a link to someone the export does not list");
+      }
       for (const column of OWNED_TABLES.find((entry) => entry.table === table)?.stored ?? []) {
         const key = row[column];
         if (key == null) continue;
         if (typeof key !== "string" || unsafeKey(key)) throw wrong("a stored file with a bad name");
+        if (!ownKey(key)) throw wrong("a stored file that is not this tenant's own");
         named.add(key);
       }
     };

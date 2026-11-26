@@ -464,15 +464,20 @@ describe("the published schema of a file", () => {
   test("accepts what the reader accepts, and names a key it does not know", () => {
     const variable = schema("variable");
     expect(
-      validateJson(variable, {
-        key: "limits/size",
-        path: "lending/limits/size",
-        title: "Batch size",
-        schemaVersion: 1,
-        body: { default: "5" },
-      }),
+      validateJson(
+        variable,
+        {
+          key: "limits/size",
+          path: "lending/limits/size",
+          title: "Batch size",
+          schemaVersion: 1,
+          body: { default: "5" },
+        },
+        "",
+        true,
+      ),
     ).toEqual([]);
-    expect(validateJson(variable, { schemaVersion: 1, body: {}, owner: "me" })).toEqual([
+    expect(validateJson(variable, { schemaVersion: 1, body: {}, owner: "me" }, "", true)).toEqual([
       expect.objectContaining({ message: expect.stringContaining("owner") }),
     ]);
     // A script's code is in the file beside it, so its file says neither entry nor source.

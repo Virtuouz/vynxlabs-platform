@@ -1,27 +1,28 @@
+import { patternProblem as widgetPatternProblem } from "@volvel/widgets/pattern";
+
 /**
  * A tenant's JSON Schema may carry a `pattern`, and the string it is run on comes from a caller. The
  * control plane has one thread for every tenant, so a pattern that can backtrack without end
- * (`^(a+)+$`) would stop it for all of them. The rules are those of the widget frame's check
- * (packages/widget-sdk/src/schema.ts `patternProblem`; that package runs in a browser and cannot be
- * imported here): a pattern is refused at upload, and at run time it never runs on a long string.
+ * (`^(a+)+$`) would stop it for all of them. The rules are those of the widget frame's check and
+ * of the flow expressions, one function (packages/widget-sdk/src/pattern.ts): a pattern is
+ * refused at upload, and at run time it never runs on a long string.
  */
 
-/** The longest string a pattern is run on, and the longest pattern. */
-export const MAX_PATTERN_INPUT = 4096;
+/**
+ * The longest string a pattern is run on, and the longest pattern. A pattern the guard accepts takes
+ * at most the square of the length of the text, so 1024 keeps the worst case to a few milliseconds
+ * (a test runs every accepted pattern of a list of nasty ones against the worst text of this length).
+ */
+export const MAX_PATTERN_INPUT = 1024;
 const MAX_PATTERN_LENGTH = 1000;
 
-/** Why a pattern is not run, or nothing when it is. */
-export function patternProblem(pattern: string): string | undefined {
-  if (pattern.length > MAX_PATTERN_LENGTH) return `is longer than ${MAX_PATTERN_LENGTH} characters`;
-  if (/\\(?:[1-9]|k<)/.test(pattern)) return "refers back to a group, which is not run";
-  // What is left once escapes and character classes are out of the way.
-  const bare = pattern.replace(/\\./gsu, "_").replace(/\[(?:[^\]\\]|\\.)*\]/gsu, "_");
-  if (/\)\s*(?:[*+]|\{)/.test(bare)) return "repeats a group, which is not run";
-  if (/\((?:\?<?[=!])/.test(bare)) return "looks ahead or behind, which is not run";
-  const unbounded = bare.match(/[*+]|\{\d+,\}/g)?.length ?? 0;
-  if (unbounded > 3) return "repeats too freely to be run on text from a caller";
-  return undefined;
-}
+/**
+ * Why a pattern is not run, or nothing when it is. The rule is one function shared with the widget
+ * frame's check and the flow expressions' (`@volvel/widgets/pattern`): a change to it is a change
+ * to all three.
+ */
+export const patternProblem = (pattern: string): string | undefined =>
+  widgetPatternProblem(pattern, MAX_PATTERN_LENGTH);
 
 /**
  * What Ajv's `code.regExp` hook returns: an unsafe pattern, or text that is too long, matches

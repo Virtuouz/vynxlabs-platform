@@ -1,5 +1,9 @@
 import { Worker } from "node:worker_threads";
 import { EXPRESSION_ROOTS } from "@volvel/manifest";
+import { patternProblem } from "@volvel/widgets/pattern";
+
+/** The most characters a pattern in an expression is run on. */
+export const EXPRESSION_PATTERN_INPUT = 1024;
 
 /** An expression that could not be parsed or evaluated. The message is meant for the flow's author. */
 export class ExpressionError extends Error {
@@ -49,38 +53,26 @@ const plain = (value) => {
   return value === undefined ? null : value;
 };
 // A pattern handed to matches() is run by a backtracking engine, which a pattern such as
-// ^(a+)+$ keeps busy for ever. A pattern is refused unless it is shown safe this cheaply: no
-// repeated group, no optional group with a repeat in it, no back reference or look-around, at
-// most two repeats that are unbounded or have a range, and at most four optional atoms.
-const patternProblem = (pattern) => {
-  if (pattern.length > 200) return "is longer than 200 characters";
-  if (/\\\\(?:[1-9]|k<)/.test(pattern)) return "refers back to a group";
-  const bare = pattern
-    .replace(/\\\\./gsu, "_")
-    .replace(/\\[(?:[^\\]\\\\]|\\\\.)*\\]/gsu, "_")
-    .replace(/\\(\\?(?::|<[A-Za-z_][A-Za-z0-9_]*>)/g, "(");
-  if (/\\((?:\\?<?[=!])/.test(bare)) return "looks ahead or behind";
-  if (/\\)\\s*(?:[*+]|\\{)/.test(bare)) return "repeats a group";
-  const opened = [];
-  for (const [at, char] of [...bare].entries()) {
-    if (char === "(") opened.push(at);
-    else if (char === ")") {
-      const from = opened.pop();
-      if (from !== undefined && bare[at + 1] === "?" && /[*+?]|\\{\\d+,/.test(bare.slice(from + 1, at)))
-        return "makes a group with a repeat in it optional";
-    }
-  }
-  const quantifiers = bare.replace(/([*+?}])\\?/g, "$1");
-  if ((quantifiers.match(/[*+]|\\{\\d+,\\d*\\}/g) || []).length > 2) return "repeats too freely";
-  if ((quantifiers.match(/\\?/g) || []).length > 4) return "has too many optional parts";
-  return undefined;
-};
+// ^(a+)+$ keeps busy for ever. A pattern is refused unless it is shown safe: this is the one rule
+// the widget frame's check and the schema guard use too (@volvel/widgets/pattern), built into the
+// thread as text. A change to that function is a change to all three.
+const patternProblem = ${patternProblem.toString()};
+// What a pattern is run on is held to this many characters: the work is at most the square of it.
+const MAX_TEXT = ${EXPRESSION_PATTERN_INPUT};
 const NativeRegExp = RegExp;
 class CheckedRegExp extends NativeRegExp {
   constructor(pattern, flags) {
-    const why = typeof pattern === "string" ? patternProblem(pattern) : undefined;
+    const why = typeof pattern === "string" ? patternProblem(pattern, 200) : undefined;
     if (why) throw new Error("The pattern " + why + ", so it is not run.");
     super(pattern, flags);
+  }
+  test(text) {
+    if (String(text).length > MAX_TEXT) throw new Error("The text is longer than " + MAX_TEXT + " characters, the most a pattern is run on.");
+    return super.test(text);
+  }
+  exec(text) {
+    if (String(text).length > MAX_TEXT) throw new Error("The text is longer than " + MAX_TEXT + " characters, the most a pattern is run on.");
+    return super.exec(text);
   }
 }
 parentPort.on("message", async ({ id, expression, data, parseOnly, names }) => {

@@ -181,6 +181,46 @@ describe("nobody gives a binding to a role they do not hold", () => {
   });
 });
 
+describe("what the built-in admins give every day", () => {
+  test("a workspace admin gives viewer, developer and deployer in its workspace, and not in another", async () => {
+    const wendy = await person("wendy", [
+      { roleId: roles.workspace_admin as string, workspace: true },
+    ]);
+    for (const name of ["viewer", "developer", "deployer"] as const) {
+      const someone = await person(`w-${name}`, []);
+      const given = await wendy.client.post(`/tenants/${tenant}/bindings`, {
+        principalType: "member",
+        principalId: someone.id,
+        roleId: roles[name] as string,
+        workspaceId: dev,
+      });
+      expect(given.status, `${name}: ${JSON.stringify(given.body)}`).toBe(201);
+    }
+    const across = await wendy.client.post(`/tenants/${tenant}/bindings`, {
+      principalType: "member",
+      principalId: wendy.id,
+      roleId: roles.viewer,
+    });
+    expect(across.status).toBe(403);
+  });
+
+  test("a permission only its own name gives is given by someone who holds everything, and by nobody else", async () => {
+    const production = await alice.post(`/tenants/${tenant}/roles`, {
+      name: "production_keeper",
+      permissions: ["workspace_production:write"],
+    });
+    expect(production.status, JSON.stringify(production.body)).toBe(201);
+    const wide = await role("nearly_all", ["role:*", "binding:*", "workspace:*"]);
+    const nils = await person("nils", [{ roleId: wide }]);
+    const refused = await nils.client.post(`/tenants/${tenant}/roles`, {
+      name: "production_taker",
+      permissions: ["workspace_production:write"],
+    });
+    expect(refused.status).toBe(403);
+    expect(refused.body.detail).toContain("workspace_production:write");
+  });
+});
+
 describe("nobody writes a role that holds what they do not", () => {
   test("someone who holds only role:write cannot make a role of *:*, or widen one", async () => {
     const writer = await role("writer", ["role:write", "role:read"]);

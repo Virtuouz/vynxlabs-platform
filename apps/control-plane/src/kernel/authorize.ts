@@ -1,5 +1,5 @@
 import { sql } from "@volvel/db";
-import { APP_FACING_KINDS, grants } from "@volvel/manifest";
+import { APP_FACING_KINDS, grants, isExplicitKind } from "@volvel/manifest";
 import type { Db, Principal, Trx } from "./audit.js";
 import { forbiddenBecause } from "./errors.js";
 
@@ -612,7 +612,12 @@ export async function holdingsIn(db: Db | Trx, principal: Principal, tenantId: s
         .filter((source) => reaches(source, target))
         .flatMap((source) => source.role.permissions);
       // Someone signed in to apps only holds only what apps use, whatever they are bound to.
-      return wanted.find((one) => (appOnly && !appFacing(one)) || !grants(held, one));
+      // A permission that only its own name gives (production workspaces, SQL) is one nobody
+      // holds by holding everything. Someone has to be able to give it all the same, and that is
+      // whoever holds everything there: they could write the role that names it.
+      const mayGive = (one: string) =>
+        grants(held, one) || (isExplicitKind(one.split(":")[0] ?? "") && held.includes("*:*"));
+      return wanted.find((one) => (appOnly && !appFacing(one)) || !mayGive(one));
     },
   };
 }

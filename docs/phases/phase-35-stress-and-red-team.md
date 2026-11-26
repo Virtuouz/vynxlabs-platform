@@ -1,6 +1,6 @@
 # Phase 35: an instance is loaded until it bends, broken on purpose, and attacked
 
-Status: in progress, on branch `phase-35-stress-and-red-team`, off `phase-34-yaml-first-and-widgets`.
+Status: built; the owner's decisions on what the red team left are open. On on branch `phase-35-stress-and-red-team`, off `phase-34-yaml-first-and-widgets`.
 Last updated: 2026-11-26
 
 The owner asked, on 2026-11-25, for proof that phases 25 to 34 did not cost performance or the
@@ -126,4 +126,32 @@ Fifteen reviewers each took one part of the product (the front door, sign-in, si
 
 ## Findings
 
-What the phase as a whole found.
+**Did phases 25 to 34 cost performance or the ability to recover?** The read paths did not: every figure phase 11 has is met or bettered on a dedicated CPU, and the new surfaces (widgets, dashboards, app pages, docs, search, MCP) hold 91 requests a second. Three things had got worse or had never been true, and were found only by breaking the instance:
+
+- The control plane exited when its database restarted (STR-09), and every deploy failed the scripts in progress (STR-08). Neither is in phase 11, which never killed a machine.
+- Cancelling a backlog stopped every run on the instance (STR-06).
+- The memory arithmetic of phase 11 plans nothing for the workers themselves. With 24 tenants it stopped scripts for memory at rest (STR-02), and the first mending of that starved them (STR-07, STR-12).
+
+**What the hardware is.** A shared CPU serves a burst and not a load, for the database and for the app (STR-01, STR-03). On one dedicated CPU the app is the limit for console traffic and for short scripts, since each run is a new process, and the database for reads of large tables. Console traffic and scripts together want more than one CPU: the console keeps its speed and the runs wait.
+
+**Not fixed, and why.**
+
+- A script in progress when the database stops taking writes for more than about thirty seconds is failed (STR-11): its result has nowhere to be kept.
+- A write that meets Postgres at the instant it restarts is answered 500, not 503. Seen twice, one request each time.
+- A script never run is planned at 160 MB, and one that takes four times what it took before is planned by its past (STR-12).
+- Scripts in progress when a machine is killed outright are failed, not run again, unless they declare retries. That is the design.
+- `query-result-size.test.ts` failed twice in a full run of the suite and passes alone: its measure of memory is disturbed by the other tests. It is to be made steadier.
+- The owner's test instance has the health check on `/readyz` and no `kill_timeout` (STR-08, STR-13).
+
+**What could not be seen while watching**, for the monitoring work set aside:
+
+- Why a script is not starting. Slots, a tenant's share, the memory floor and what is counted against it all end in the same silence; only `runs_queued` and `runs_running` are there. A count of claims refused, by reason, and the memory spoken for on each machine, would have found STR-07 in a minute and not an evening.
+- What each script takes. `run.peak_memory_mb` is now kept and is shown nowhere.
+- A deploy or a restart, and what it cost: runs failed as not heard from are counted with every other failure.
+- The control plane's own memory and its event loop's delay. Both were read over `fly ssh`.
+- Time waiting for a database connection, by route. `volvel_db_pool{state="waiting"}` says that requests wait and not which.
+- `/readyz` is one answer for two things. A monitor needs "serving" and "whole" apart, as STR-13 shows.
+- Per tenant: nothing. Every figure here is the instance's.
+
+**The suites.** `pnpm test`: 5,460 tests, all passing but the one above. `pnpm e2e`: see the last line of this section once the final run is in.
+

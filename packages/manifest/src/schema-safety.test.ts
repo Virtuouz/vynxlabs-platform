@@ -10,17 +10,18 @@ describe("p35 a tenant's JSON Schema is checked without harm to the other tenant
     expect(performance.now() - started).toBeLessThan(200);
   });
 
-  test("a string too long for any pattern is not run through one", () => {
+  test("a string too long for the most a pattern is run on is not run through one", () => {
     const schema = { type: "string", pattern: "^[a-z]+$" };
     expect(validateJson(schema, "a".repeat(100))).toEqual([]);
-    expect(validateJson(schema, "a".repeat(100_000)).length).toBeGreaterThan(0);
+    expect(validateJson(schema, "a".repeat(100_000))).toEqual([]);
+    expect(validateJson(schema, "a".repeat(100_001)).length).toBeGreaterThan(0);
   });
 
-  test("an unsafe pattern is named at upload, a plain one is not", () => {
-    expect(patternProblems({ input: { properties: { a: { pattern: "^(a+)+$" } } } })).toHaveLength(
+  test("a pattern RE2 does not run is named at upload, a plain one is not", () => {
+    expect(patternProblems({ input: { properties: { a: { pattern: "^(a)\\1$" } } } })).toHaveLength(
       1,
     );
-    expect(patternProblems({ patternProperties: { "^(x*)*$": {} } })).toHaveLength(1);
+    expect(patternProblems({ patternProperties: { "^(?=x)": {} } })).toHaveLength(1);
     expect(
       patternProblems({
         properties: { a: { pattern: "^[a-z]{2,5}-\\d+$" }, pattern: { type: "string" } },

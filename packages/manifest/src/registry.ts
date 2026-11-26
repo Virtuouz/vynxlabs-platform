@@ -1,6 +1,12 @@
 import { Ajv2020, type ErrorObject, type ValidateFunction } from "ajv/dist/2020.js";
 import { KIND_PATTERN, Manifest, StoredResource } from "./envelope.js";
-import { countNodes, guardedRegExp, MAX_VALUE_NODES, schemaProblem } from "./pattern-guard.js";
+import {
+  countNodes,
+  MAX_VALUE_NODES,
+  PatternError,
+  re2RegExp,
+  schemaProblem,
+} from "./pattern-guard.js";
 
 /** A resource kind: its name, the version of its body schema, and that schema. */
 export interface KindDefinition {
@@ -170,13 +176,13 @@ export class KindRegistry {
 }
 
 // `verbose` keeps each error's schema, so a format's pattern can be described in words.
-// The platform's own schemas (its kinds) hold patterns the guard would refuse, and are not a tenant's.
+// The platform's own schemas (its kinds) keep the built-in engine; a tenant's run on RE2.
 const OWN_OPTIONS = { allErrors: true, strict: false, verbose: true } as const;
 const OPTIONS = {
   allErrors: true,
   strict: false,
   verbose: true,
-  code: { regExp: guardedRegExp },
+  code: { regExp: re2RegExp },
 } as const;
 
 /**
@@ -207,8 +213,8 @@ function compile(schema: object, own: boolean): ValidateFunction {
 
 /**
  * Checks a value against any JSON Schema. Returns the problems, or an empty list. The schema is
- * taken to be a tenant's: a pattern that could run for ever never runs. `own` is for the platform's
- * own schemas only.
+ * taken to be a tenant's: its patterns run on RE2, and one RE2 cannot run fails the check with the
+ * reason. `own` is for the platform's own schemas only.
  */
 export function validateJson(
   schema: object,
@@ -227,8 +233,14 @@ export function validateJson(
         },
       ];
   }
-  const validate = compile(schema, own);
-  return validate(value) ? [] : toIssues(validate.errors, prefix);
+  try {
+    const validate = compile(schema, own);
+    return validate(value) ? [] : toIssues(validate.errors, prefix);
+  } catch (error) {
+    // A pattern RE2 does not run, or a value too long for one: said in words, not run.
+    if (error instanceof PatternError) return [{ path: prefix || "/", message: error.message }];
+    throw error;
+  }
 }
 
 /** Why a value is not a JSON Schema (draft 2020-12), in Ajv's words; nothing when it is one. */

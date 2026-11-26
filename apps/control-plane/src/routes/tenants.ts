@@ -4,7 +4,9 @@ import { ACCESS_DESCRIPTION_MAX } from "@volvel/manifest";
 import { Type } from "typebox";
 import { MIN_PASSWORD_LENGTH, RETENTION_BOUNDS } from "../config.js";
 import { endSessions, isOperator, keepingAnAdmin } from "../kernel/administer.js";
+import { SYSTEM } from "../kernel/audit.js";
 import { badRequest, conflict, forbiddenBecause, notFound } from "../kernel/errors.js";
+import { requireToHandOver } from "../kernel/grant-limits.js";
 import { access, reachedFromInside } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
 import { createMember } from "../kernel/members.js";
@@ -338,7 +340,7 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               .where("name", "=", "tenant_admin")
               .where("builtin", "=", true)
               .executeTakeFirstOrThrow();
-            await insertBinding(trx, audit, row.id, {
+            await insertBinding(trx, audit, row.id, SYSTEM, {
               principalType: "member",
               principalId: creator,
               roleId: admin.id,
@@ -757,7 +759,7 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             details: { email },
           });
           for (const binding of body.bindings ?? []) {
-            await insertBinding(trx, audit, params.t, {
+            await insertBinding(trx, audit, params.t, ctx.principal, {
               principalType: "member",
               principalId: found.id,
               roleId: binding.roleId,
@@ -1179,6 +1181,8 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             .where("member_id", "=", params.memberId)
             .executeTakeFirst();
           if (!member) throw notFound("The member");
+          // Whoever joins holds what the group is given: that is a grant, held to the same rule.
+          await requireToHandOver(trx, ctx.principal, params.t, "group", params.g);
           await trx
             .insertInto("group_member")
             .values({ group_id: params.g, member_id: params.memberId })
@@ -1449,6 +1453,8 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             .where("tenant_id", "=", params.t)
             .executeTakeFirst();
           if (!account) throw notFound("The service account");
+          // A key acts as the account, so it hands over what the account is given.
+          await requireToHandOver(trx, ctx.principal, params.t, "service_account", params.id);
           const key = await insertApiKey(
             trx,
             { type: "service_account", id: params.id },

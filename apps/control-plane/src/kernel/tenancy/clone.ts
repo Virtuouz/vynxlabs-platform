@@ -11,6 +11,7 @@ import {
 } from "../execution/bindings.js";
 import { deployBundle, order } from "../execution/deploy.js";
 import { adoptBundle } from "../execution/promote.js";
+import { isAccessKind, requireToChangeAccessByDeploy } from "../grant-limits.js";
 import type { WorkspaceRef } from "../http.js";
 import type { Kernel } from "../kernel.js";
 import { putResource } from "../resources.js";
@@ -358,6 +359,25 @@ async function copyWorkspace(
       .where("ownership", "=", "ui")
       .execute()
   ).sort((a, b) => order(a.kind) - order(b.kind));
+  // The copy has the roles and bindings the console made, so it changes who holds what in a
+  // new workspace: whoever clones needs what making them needs, as a deploy of them would.
+  await requireToChangeAccessByDeploy(
+    trx,
+    actor.principal,
+    target,
+    made.flatMap((resource) =>
+      isAccessKind(resource.kind)
+        ? [
+            {
+              kind: resource.kind,
+              path: resource.path,
+              body: resource.body,
+              change: "added" as const,
+            },
+          ]
+        : [],
+    ),
+  );
   for (const resource of made) {
     await putResource(kernel, trx, audit, target, {
       path: resource.path,

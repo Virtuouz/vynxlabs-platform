@@ -1,3 +1,4 @@
+import { isAccessKind, requireToGiveByResources } from "../grant-limits.js";
 import type { RequestContext } from "../http.js";
 import type { Kernel } from "../kernel.js";
 
@@ -115,6 +116,23 @@ export async function requireStanding(
     workspace,
     changes.map((change) => change.kind),
   );
+  // And a role or a binding gives only what the writer holds: nobody writes themselves access.
+  const access = changes.filter((change) => !change.deleted && isAccessKind(change.kind));
+  if (access.length > 0) {
+    await requireToGiveByResources(
+      kernel.db,
+      ctx.principal,
+      workspace,
+      await Promise.all(
+        access.map(async (change) => ({
+          kind: change.kind as "role" | "binding",
+          path: change.path,
+          body: change.body,
+          before: await keptAt(kernel, workspace.id, change.path, true),
+        })),
+      ),
+    );
+  }
   let sources: Set<string> | undefined;
   let sql = false;
   let source = false;

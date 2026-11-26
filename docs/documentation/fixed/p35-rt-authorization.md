@@ -70,3 +70,56 @@ A reviewer broke the fix for A3 (the member's password link), and the break was 
 **Checked for the same mistake.** `explainAccess` is read in the console's "who can do what" screens (display only) and here. No other place compares two principals' permissions.
 
 **Left.** Nothing.
+
+## Round three: what may be granted
+
+The owner decided two rules. Both are built, each with tests that failed first (`apps/control-plane/src/grant-limits.test.ts`, 16 tests; with the fix out, 11 of the first 13 failed with the hole open, and the access-change, promotion and clone tests failed with the deploy and release checks taken out).
+
+### Rule 1: nobody grants what they do not hold
+
+**The hole.** `POST /tenants/:t/bindings` checked `binding:write` and that the role may be used at the scope; the roles routes took any list of permissions. A custom role of `binding:write` alone could bind its holder to `tenant_admin`; a role of `role:write` alone could write a role of `*:*`.
+
+**The rule.** A binding may give only a role whose every permission the caller holds at that scope (the tenant, the workspace or the resource, or wider). A role may be written, or changed, only to hold what the caller holds there: a change is held to what it adds, so taking a permission away asks no more than before. An operator acting under an access grant holds what the grant's role holds. A wildcard counts as what it covers (`grants`): `binding:*` covers `binding:write`, and `binding:write` does not cover `binding:*`.
+
+**The one comparison.** `holdingsIn` in `kernel/authorize.ts` reads what a principal holds with `explainAccess` and `reaches` (the rows `check()` reads, so an operator's grant counts and a suspended member holds nothing) and answers, for a list of permissions at a place, which is the first not held, using `grants`. `requireToGive` and `refusedToGive` throw the 403, which names that permission. `kernel/grant-limits.ts` holds the other ways it is asked: of what a group or service account is given (`requireToHandOver`), of a role by id (`requireToGiveRole`), and of roles and bindings written as workspace resources (`requireToGiveByResources`). `mayMakeLinkFor` in `kernel/member-reset.ts` was read and not edited: it compares two people, not a caller with a list, so it keeps its own comparison.
+
+**Every door found, and what each does now.**
+
+| Door | Now |
+| --- | --- |
+| `POST /tenants/:t/bindings` for a person, or at one resource | `insertBinding` asks `requireToGive` for the role at that scope |
+| the same, for a group or a service account (an access change) | `releaseAccess` asks (below) |
+| `POST /tenants/:t/members` with `bindings` | `insertBinding`, as the caller |
+| tenant creation, the operator's first administrator | `insertBinding` as the system: nothing is held yet; unchanged |
+| roles routes (`POST`, `PATCH`, `DELETE`), which are access changes | `releaseAccess`: a role put is held to what it adds; delete asks no more |
+| access changes from a repository (`/access/releases`, `/access/plan`, rollback) | `releaseAccess` asks of the asker, before the change waits or applies |
+| the decision on a waiting access change | `decideRelease` asks of the one who approves, for what it gives |
+| a group's sign-in values (group PATCH, repository) | held to what the group is given; only values added are asked |
+| `PUT /groups/:g/members/:id` | `requireToHandOver`: the caller holds what the group is given, at each place. Decided from the code: a group is bound to roles, so joining it is the same grant |
+| `PUT /end-user-groups/:g/members/:id` | the same |
+| `POST /service-accounts/:id/api-keys` | the same: a key acts as the account |
+| a member's own key (`POST /api-keys`) | unchanged: it acts as themselves |
+| identity provider default role (create, change) | `requireToGiveRole`, after `binding:write` |
+| identity provider group mapping (`PUT .../group-maps`) | `requireToHandOver` for each group mapped, after `binding:write` if any holds a role |
+| resource `PUT`, draft save, restore and draft deploy of kinds `role` and `binding` | `requireStanding` now also asks `requireToGiveByResources` with the body, after the `role:write` and `binding:write` it already asked |
+| SCIM | no door: a directory pushes people and groups; it cannot set a role |
+| MCP tools | no door: the tools are the workspace's own scripts and flows; none gives access |
+| operator access grants | no door for a tenant member: opening one needs `access_grant:write` on the instance |
+| `POST /bindings` for the operator role | operators only; unchanged |
+| tenant import | operator only; left as asked |
+
+### Rule 2: a deploy that changes who holds what needs the permission to say so
+
+**The hole.** A deploy (`deployment:write`, the built-in `deployer` role) may carry `role` and `binding` resources, and a reviewer proved that a deployer so gave itself `*:*` in its workspace (chain 3 of the review). A repository deploy was said to be code review's to gate (decision D25); nothing gated it.
+
+**The rule.** A deploy whose result differs from what the workspace has in any `role` or `binding` resource (added, changed or removed) needs `role:write` or `binding:write` there, and is held to rule 1 for what it adds or changes. A deploy that leaves them as they are needs only what it needed.
+
+**The fix.** One check in `deployBundle` (`kernel/execution/deploy.ts`), after the bundle is matched to what is deployed: `requireToChangeAccessByDeploy` (`kernel/grant-limits.ts`). Every way a bundle becomes the deployed one goes through `deployBundle`, so each is covered: a deployment, a promotion (the decision on a promotion request, and a direct promotion, compare with the target workspace), a rollback (a deploy of an earlier bundle), a deploy of drafts, a pull (the puller's standing), and a clone. A clone also copies the roles and bindings the console made in the source, outside any bundle, and is checked for those too (`kernel/tenancy/clone.ts`). The previews run the same code and show the refusal. A git-synced folder does not deploy by itself: a pull is made by a person and deploys with their standing. Tenant import is operator only and is left. The refusal is 403 and says which resource (kind and path) and which permission.
+
+**Questions for the owner** (not decided here).
+
+1. **An administrator cannot give a permission that is given only by its own name.** `tenant_admin` holds `*:*` and `sql:read`, and `*:*` does not give an explicit permission (`grants`). So nobody can now write `workspace_production:*` into a role, or bind a role that has it, through the API: nobody holds it. The existing test "deleting a production workspace" did exactly that as a tenant administrator. I kept the rule as stated and changed that test to write the two roles and their bindings straight into the tables, with a comment. The choice is the owner's: let a holder of `*:*` give explicit permissions too, give `tenant_admin` the explicit permissions by a migration (the next free number is 0104), or leave it.
+2. **`workspace_admin` can no longer give `viewer`, `developer` or `deployer`**: it lacks `*:read`, and for the others `bundle:*` or `secret:write`. It still gives itself, `agent_runner`, `portal_user`, `portal_reader`, `doc_writer` and `app_maintainer`. A workspace administrator who gave someone `viewer` can no longer. `tenant_admin` loses nothing (it holds all of them). `developer`, `deployer` and `viewer` do nothing here that they did. Giving `workspace_admin` `*:read` is a migration and a decision.
+3. **The repository deploy of the Fernhill example** carries roles and bindings, so Devi (deployer) cannot make the first deploy. `examples/fernhill/setup/setup.mjs` now has Maya (tenant admin) make it, and the README says so; Devi's step 9 (a change to a script) leaves access as it is and still works. The seed was not run here (it needs a running instance); the control-plane tests that deploy bundles were.
+4. A binding to one resource in a deploy is held at the workspace, the wider place: someone who holds a role only on that resource cannot deploy it.
+5. The browser suite was not run, as the brief says. A spec in which a deployer ships roles or bindings needs the same change as Fernhill.

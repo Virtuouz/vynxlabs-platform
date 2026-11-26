@@ -3,7 +3,9 @@ import { newId, sql, type TenantResource } from "@volvel/db";
 import { checkTenantResources, tenantName, tenantOrder } from "@volvel/manifest";
 import { keepingAnAdmin } from "../administer.js";
 import type { Audit, Db, Principal, Trx } from "../audit.js";
+import { grants, holdingsIn, refusedToGive } from "../authorize.js";
 import { badRequest, conflict, forbiddenBecause, HttpError, notFound } from "../errors.js";
+import { requireToHandOver } from "../grant-limits.js";
 
 /**
  * A tenant's access, released: its groups, service accounts, roles and what
@@ -316,6 +318,95 @@ async function usesOf(trx: Trx, type: PrincipalKind, id: string): Promise<string
     .where("binding.principal_id", "=", id)
     .execute();
   return rows.map((row) => `the binding ${row.path} in ${row.slug}`);
+}
+
+/**
+ * Nobody gives what they do not hold, for an access change: whoever asks for it, and whoever
+ * approves it, must hold what it gives. A role written holds only what they hold (a change to
+ * a role is held to what it adds); a binding gives only a role whose every permission they
+ * hold at the place it is given; and a group's sign-in values, which put people in it, add
+ * only to a group that is given what they hold. What an access change takes away asks no more
+ * than it did. Throws 403 naming the first permission they lack.
+ */
+async function refuseWhatCannotBeGiven(
+  trx: Trx,
+  tenantId: string,
+  by: Principal,
+  steps: readonly Step[],
+  current: readonly TenantResource[],
+): Promise<void> {
+  if (by.type === "system") return;
+  const holds = await holdingsIn(trx, by, tenantId);
+  const puts = steps.flatMap((step) => (step.op === "put" ? [step.resource] : []));
+  const before = (kind: string, key: string) =>
+    current.find((one) => one.kind === kind && one.key === key);
+  const permissionsOf = (resource: TenantResource | undefined) =>
+    ((resource?.body as { permissions?: string[] } | undefined)?.permissions ?? []) as string[];
+
+  for (const resource of puts.filter((one) => one.kind === "tenant_role")) {
+    const had = permissionsOf(before(resource.kind, resource.key));
+    const added = permissionsOf(resource).filter((one) => !grants(had, one));
+    const lacking = holds.lacking(added);
+    if (lacking !== undefined) throw refusedToGive(lacking);
+  }
+
+  for (const resource of puts.filter((one) => one.kind === "tenant_binding")) {
+    const body = resource.body as { role: string; workspace?: string };
+    // The role as it will be once this change is made, else as it is.
+    const written = puts.find((one) => one.kind === "tenant_role" && one.key === body.role);
+    const permissions = written
+      ? permissionsOf(written)
+      : ((
+          await trx
+            .selectFrom("role")
+            .select("permissions")
+            .where("name", "=", body.role)
+            .where("workspace_id", "is", null)
+            .where((eb) => eb.or([eb("tenant_id", "=", tenantId), eb("tenant_id", "is", null)]))
+            .orderBy("tenant_id", sql`desc nulls last`)
+            .executeTakeFirst()
+        )?.permissions ?? []);
+    const workspaceId = body.workspace
+      ? (
+          await trx
+            .selectFrom("workspace")
+            .select("id")
+            .where("tenant_id", "=", tenantId)
+            .where("slug", "=", body.workspace)
+            .executeTakeFirst()
+        )?.id
+      : undefined;
+    const lacking = holds.lacking(permissions, { workspaceId });
+    if (lacking !== undefined) throw refusedToGive(lacking, { workspaceId });
+  }
+
+  for (const resource of puts.filter(
+    (one) => one.kind === "group" || one.kind === "end_user_group",
+  )) {
+    const values = (resource.body as { membership?: { sso?: { values?: string[] } } }).membership
+      ?.sso?.values;
+    const had = (
+      before(resource.kind, resource.key)?.body as
+        | { membership?: { sso?: { values?: string[] } } }
+        | undefined
+    )?.membership?.sso?.values;
+    if (!(values ?? []).some((one) => !(had ?? []).includes(one))) continue;
+    const group = await trx
+      .selectFrom(TABLE[resource.kind as "group" | "end_user_group"])
+      .select("id")
+      .where("tenant_id", "=", tenantId)
+      .where("key", "=", resource.key)
+      .executeTakeFirst();
+    if (group) {
+      await requireToHandOver(
+        trx,
+        by,
+        tenantId,
+        resource.kind as "group" | "end_user_group",
+        group.id,
+      );
+    }
+  }
 }
 
 async function applyStep(
@@ -811,6 +902,8 @@ export async function releaseAccess(
       summary: { created: 0, updated: 0, deleted: 0, unchanged, changes: [], warnings: [] },
     };
   }
+  // Asked for now, so that nobody can leave a change waiting that they could not make.
+  await refuseWhatCannotBeGiven(trx, tenantId, principal, steps, current);
   if (request.scope === "full") {
     const unsaid = steps
       .filter((step): step is Extract<Step, { op: "delete" }> => step.op === "delete")
@@ -1159,6 +1252,8 @@ export async function decideRelease(
       "The tenant's access changed after this access change was asked for, so it is no longer the change that was shown. Withdraw it and ask again.",
     );
   }
+  // Approving gives what the change gives: the one who approves must hold it, as the one who asked did.
+  await refuseWhatCannotBeGiven(trx, tenantId, principal, steps, current);
   const summary: AccessSummary = {
     created: 0,
     updated: 0,

@@ -3,8 +3,8 @@ import { newId, type PrincipalType as PrincipalKind } from "@volvel/db";
 import { ACCESS_DESCRIPTION_MAX } from "@volvel/manifest";
 import { Type } from "typebox";
 import { keepingAnAdmin } from "../kernel/administer.js";
-import type { Audit, Db, Trx } from "../kernel/audit.js";
-import { holdsAppFacing, PERMISSION_PATTERN } from "../kernel/authorize.js";
+import type { Audit, Db, Principal, Trx } from "../kernel/audit.js";
+import { holdsAppFacing, PERMISSION_PATTERN, requireToGive } from "../kernel/authorize.js";
 import { principalLabel } from "../kernel/binding-labels.js";
 import { badRequest, conflict, notFound } from "../kernel/errors.js";
 import { access } from "../kernel/http.js";
@@ -511,7 +511,7 @@ export function permissionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             : reply.code(202).send(waiting(made.released));
         }
         const id = await ctx.mutate((trx, audit) =>
-          insertBinding(trx, audit, tenantId, { ...body, workspaceId, resourceId }),
+          insertBinding(trx, audit, tenantId, ctx.principal, { ...body, workspaceId, resourceId }),
         );
         return reply.code(201).send({ id });
       },
@@ -1073,6 +1073,8 @@ export async function insertBinding(
   trx: Trx,
   audit: Audit,
   tenantId: string,
+  /** Who gives it: nobody gives a role that holds what they do not. */
+  by: Principal,
   body: {
     principalType: PrincipalKind;
     principalId?: string | undefined;
@@ -1095,6 +1097,7 @@ export async function insertBinding(
     (role.workspace_id === null || role.workspace_id === workspaceId);
   if (!role || !usable) throw badRequest("That role cannot be bound at this scope.");
   refuseNothingForApps(body.principalType, role);
+  await requireToGive(trx, by, tenantId, role.permissions, { workspaceId, resourceId });
 
   if (workspaceId) {
     const workspace = await trx

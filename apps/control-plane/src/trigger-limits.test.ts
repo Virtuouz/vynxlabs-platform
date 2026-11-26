@@ -1,6 +1,7 @@
 import { sql } from "@volvel/db";
 import { type Bundle, type BundleManifest, bundleDigest } from "@volvel/manifest";
 import { afterAll, beforeAll, expect, test } from "vitest";
+import { cancelRun, queueName } from "./kernel/execution/runs.js";
 import { fireDueSchedules } from "./kernel/execution/triggers.js";
 import { startTestApp, type TestApp } from "./testing.js";
 
@@ -242,3 +243,46 @@ test("a schedule whose bundle cannot be read does not stop the others from firin
   expect(await flowRuns(fine, "skips")).toBeGreaterThan(0);
   expect(await flowRuns(broken, "skips")).toBe(0);
 });
+
+test("a cancel and a claim of the same run both finish: neither waits for the other for ever", async () => {
+  // STR-06 of phase 35. The claim takes the run's job, then the run. The cancel took the run,
+  // then asked for the job on another connection: each waited for the other, Postgres saw no
+  // deadlock, and no run on the instance was claimed again until someone looked.
+  const ws = await workspace("race");
+  const workspaceId = ws.split("/").at(-1) as string;
+  const started = await t.admin.post(`${ws}/runs`, { script: "work", input: {} });
+  expect(started.status).toBe(201);
+  const runId = started.body.id as string;
+
+  let claimHasJob = () => {};
+  const jobTaken = new Promise<void>((resolve) => {
+    claimHasJob = resolve;
+  });
+  let letClaimGoOn = () => {};
+  const goOn = new Promise<void>((resolve) => {
+    letClaimGoOn = resolve;
+  });
+  // A claim, as `claimNext` makes it: the job, a pause, then the run.
+  const claim = t.kernel.db.transaction().execute(async (trx) => {
+    const job = await t.kernel.queue.claim<{ runId: string }>(queueName(workspaceId, null), trx);
+    expect(job?.data.runId).toBe(runId);
+    claimHasJob();
+    await goOn;
+    await trx.selectFrom("run").select("id").where("id", "=", runId).forUpdate().execute();
+    await trx.updateTable("run").set({ status: "running" }).where("id", "=", runId).execute();
+  });
+  await jobTaken;
+  const cancel = t.kernel.db
+    .transaction()
+    .execute((trx) => cancelRun(t.kernel, trx, workspaceId, runId));
+  // Long enough for the cancel to have taken whatever it takes first.
+  await new Promise((resolve) => setTimeout(resolve, 500));
+  letClaimGoOn();
+  const finished = await Promise.race([
+    Promise.all([claim, cancel]).then(() => "both" as const),
+    new Promise<"stuck">((resolve) => setTimeout(() => resolve("stuck"), 10_000)),
+  ]);
+  expect(finished).toBe("both");
+  const run = await t.admin.get(`${ws}/runs/${runId}`);
+  expect(run.body.status).toBe("cancelled");
+}, 30_000);

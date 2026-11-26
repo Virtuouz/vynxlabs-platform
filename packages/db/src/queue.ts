@@ -196,8 +196,13 @@ export class JobQueue {
     return (await this.#boss.fail(queue, id, error)).affected > 0;
   }
 
-  async cancel(queue: string, id: string): Promise<boolean> {
-    return (await this.#boss.cancel(queue, id)).affected > 0;
+  /**
+   * With `trx`, the job is cancelled in that transaction, and waits there for whoever holds
+   * it: on a connection of its own, a cancel that waited for a claim that waited for the
+   * cancel's own transaction was a deadlock Postgres could not see.
+   */
+  async cancel(queue: string, id: string, trx?: AnyTransaction): Promise<boolean> {
+    return (await this.#boss.cancel(queue, id, within(trx))).affected > 0;
   }
 
   async state(queue: string, id: string): Promise<JobState | null> {

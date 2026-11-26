@@ -471,6 +471,9 @@ async function claimNext(
       const outcome = await kernel.db
         .transaction()
         .execute(async (trx) => {
+          // A claim holds its machine's turn while it waits. Whatever it waits for, it does
+          // not wait for long: one that could not get a lock is asked again by its worker.
+          await sql`set local lock_timeout = '15s'`.execute(trx);
           await sql`select pg_advisory_xact_lock(hashtextextended(${workspace.id}, 0))`.execute(
             trx,
           );
@@ -533,6 +536,11 @@ async function claimNext(
         })
         .catch((error) => {
           if (error instanceof ClaimAbandoned) return "abandoned" as const;
+          // lock_not_available: nothing is handed out this time.
+          if ((error as { code?: string }).code === "55P03") {
+            kernel.log.warn({ workspaceId: workspace.id }, "a claim gave up waiting for a lock");
+            return "empty" as const;
+          }
           throw error;
         });
       if (outcome === "abandoned") return null;
@@ -761,6 +769,23 @@ export function alreadyEnded(what: "run" | "flow run", status: string): string {
 
 /** Stops a run that is waiting or in progress. A running script hears on its next heartbeat. */
 export async function cancelRun(kernel: Kernel, trx: Trx, workspaceId: string, runId: string) {
+  // The job first, then the run: the order a claim takes them in. A cancel that held the run
+  // and then asked for the job, on a connection of the queue's own, waited for a claim that
+  // held the job and waited for the run. Postgres saw no deadlock, the claim kept its
+  // machine's turn, and no run on the instance was claimed again (STR-06 of phase 35).
+  const seen = await trx
+    .selectFrom("run")
+    .select(["status", "pool", "queue_job_id"])
+    .where("id", "=", runId)
+    .where("workspace_id", "=", workspaceId)
+    .executeTakeFirst();
+  if (!seen) throw notFound("The run");
+  if (seen.status !== "queued" && seen.status !== "running") {
+    throw conflict(alreadyEnded("run", seen.status));
+  }
+  if (seen.queue_job_id) {
+    await kernel.queue.cancel(queueName(workspaceId, seen.pool), seen.queue_job_id, trx);
+  }
   const run = await trx
     .selectFrom("run")
     .selectAll()
@@ -772,8 +797,9 @@ export async function cancelRun(kernel: Kernel, trx: Trx, workspaceId: string, r
   if (run.status !== "queued" && run.status !== "running") {
     throw conflict(alreadyEnded("run", run.status));
   }
-  if (run.queue_job_id) {
-    await kernel.queue.cancel(queueName(workspaceId, run.pool), run.queue_job_id);
+  // A job the run took on between the two reads. Rare, and still in this transaction.
+  if (run.queue_job_id && run.queue_job_id !== seen.queue_job_id) {
+    await kernel.queue.cancel(queueName(workspaceId, run.pool), run.queue_job_id, trx);
   }
   const cancelled = await trx
     .updateTable("run")

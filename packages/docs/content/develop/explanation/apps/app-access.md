@@ -26,6 +26,12 @@ An app that is open to someone and reads a table they have no binding at opens, 
 
 The session is a cookie named for the tenant, `vx_app_` and the tenant's ID, set for the address the app is served at, `HttpOnly`, `SameSite=Lax`, and `Secure` over HTTPS. A console session is 7 days; that is a different cookie. A request that changes something and comes from another origin is refused with 403 `cross_site`.
 
+### An end user's email address is not proved by signing up
+
+Where the tenant lets people create their own account, they can sign up with any email address, and they are signed in at once. The instance does not ask them to prove the address, whether or not it sends mail. An app, a script or a flow sees that address as `email` on the person, and it is only what they typed. A rule that shows a person the rows that carry their email address shows those rows to whoever signed up with it.
+
+So do not key an app's access on an end user's email address when people sign themselves up. Rows named by the person's ID, by a group or by an attribute you set are not affected. Make the end users yourself instead: invite them from the console ([Invite end users](../../../administer/how-to/access/invite-end-users)), where the account has no password until its link is opened, or have them sign in through an identity provider, which refuses an email it says is not verified. An instance that sends mail also lets the owner of an address take back an account made with it, by asking for a new password. See [Set up the instance's mail](../../../self-host/how-to/running/set-up-mail).
+
 `signOut()` ends the app session. At the instance's own address, a member still has the console session, so they stay signed in as staff.
 
 ## Roles and bindings

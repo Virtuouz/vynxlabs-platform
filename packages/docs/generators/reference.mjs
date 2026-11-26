@@ -22,6 +22,15 @@ import { cell, fieldsOf, fieldTable, page, tablesOf } from "./schema.mjs";
 const sentence = (text) => (/[.!?]$/.test(text) ? text : `${text}.`);
 const titled = (kind) => kind.replace(/_/g, " ").replace(/^./, (letter) => letter.toUpperCase());
 
+/**
+ * Permissions that allow more than their name says. The sentence is added to the permission's row.
+ * The same warning is in SECURITY.md.
+ */
+const MORE_THAN_THE_NAME = {
+  "sso:write":
+    "Amounts to tenant admin: give it only to people who could be tenant admins. See [Single sign-on permissions](sso/permissions).",
+};
+
 function permissions() {
   const groups = [...new Set(PERMISSION_KINDS.map((entry) => entry.group))];
   const body = [
@@ -37,6 +46,7 @@ function permissions() {
           const notes = [
             entry.appFacing ? "An end user can hold it." : "",
             entry.explicit ? "Given only by its own name: `*` does not include it." : "",
+            MORE_THAN_THE_NAME[`${entry.kind}:${verb}`] ?? "",
           ]
             .filter(Boolean)
             .join(" ");

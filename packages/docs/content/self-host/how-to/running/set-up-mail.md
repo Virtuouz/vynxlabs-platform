@@ -11,7 +11,8 @@ By the end the instance sends the mail it owns: end users' invitations and passw
 ## Before you start
 
 - An SMTP server the control plane can reach, and an address mail is sent from.
-- Mail is optional. Without it the instance sends nothing: whoever makes an invitation is shown the link to pass on, and "Forgot your password" tells people to ask.
+- Mail is recommended for an instance people use, and not required. Without it the instance sends nothing: whoever makes an invitation is shown the link to pass on, and "Forgot your password" tells people to ask.
+- Mail does not make an end user's email address a proved one. Read [What mail does and does not prove](#what-mail-does-and-does-not-prove) before you build rules on an email address.
 
 ## Set it up
 
@@ -41,6 +42,19 @@ A link:
 A forwarded link can be used once by whoever holds it, and decides as the approver it was sent to. The decision is recorded as that member's, with `via: "email"` in the audit log.
 
 A tenant sends mail from its flows through its own `smtp` connection, made by a worker. The instance's `SMTP_URL` is not used for that, and the mail server must be reachable from where workers run.
+
+## What mail does and does not prove
+
+When a tenant lets people create their own account, anyone can sign up with any email address, and is signed in at once. The instance does not ask them to prove the address, with mail or without it.
+
+What mail changes:
+
+- An invitation made in the console is emailed. The account has no password until its link is opened, so whoever opens it is someone who can read that mailbox. Without mail, the person who made the invitation passes the link on.
+- "Forgot your password" sends a reset link to the address. The owner of an address can use it to take back an account someone else made with it: using the link sets a new password and signs out every session of the account. Without mail, the page tells people to ask.
+
+What it does not change: an account made by signing up is not marked as checked, and an app sees the address as the person gave it, in lower case.
+
+Without mail, an app that shows a person the rows that carry their email address shows them to whoever signed up with it. Whether or not you set up mail, do not key an app's rules, or a script's or a flow's decisions, on an end user's email address when people sign themselves up. Make the end users yourself instead, by inviting them from the console (see [Invite end users](../../../administer/how-to/access/invite-end-users)), or have them sign in through an identity provider of end users, which refuses an email its provider says is not verified. Rules that name a person by their ID, a group or an attribute you set are not affected.
 
 ## Try mail without a server
 

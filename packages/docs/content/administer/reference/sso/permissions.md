@@ -19,6 +19,15 @@ Each permission is written `kind:verb`. The full list, for every kind, is in the
 
 Retention and the switch for workers the instance starts use `tenant:read` and `tenant:write`. Retention also accepts an operator's binding at the instance.
 
+## `sso:write` is as much as tenant admin
+
+Give `sso:write` only to people who could be tenant admins. A person who holds it can:
+
+- point a provider at an identity provider of their own, and sign in as any member whose email is in a domain the provider has proved. Changing the provider's issuer ends the links that tied people to the old one, and leaves the proved domains as they were. A member who holds access at the instance is refused. Everyone else in that domain is reachable, in every tenant they belong to;
+- make a token for provisioning (SCIM) and, with it, add members in those domains, and put people in groups. A person put in a group that a group mapping already points at gets what that group holds, an admin role included.
+
+Saving a new group mapping, or a default role, needs `group:write` and `binding:write` besides: that is not what makes the permission large. The existing mappings are.
+
 ## At the instance
 
 The instance's screens use `instance:read` and `instance:write`. The instance's audit log needs `audit:read` at the instance. The instance's provider and the console branding need `instance:write` to change.

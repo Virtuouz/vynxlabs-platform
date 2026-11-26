@@ -122,7 +122,8 @@ export const queryRoutes =
             "allowed: no other statement, no table of the database's own, and only the " +
             "functions that work on the values they are given. Each table read needs " +
             "`data:read`, and its row policy applies to the caller. Parameters are `$1`, `$2` " +
-            "and so on. The run is recorded in the audit log, with its text and not its result.",
+            "and so on. A result is cut short at 5 MB, saying so with `truncated`; one row over 5 MB " +
+            "answers 422. The run is recorded in the audit log, with its text and not its result.",
           tags: ["data"],
           params: WorkspaceParams,
           body: Type.Object({

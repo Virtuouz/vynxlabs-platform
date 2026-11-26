@@ -14,6 +14,7 @@ import {
   type MachineClaim,
   machineHasRoom,
   machineShortOfMemory,
+  mustHold,
   notePeak,
   noteStarted,
   peakKnown,
@@ -458,6 +459,8 @@ export interface WorkerScope {
   workspaceId: string | null;
   /** The pool this worker serves. Null for the default pool. */
   pool: string | null;
+  /** Whether the control plane or a worker host started this worker and named its machine. */
+  managed?: boolean;
 }
 
 class ClaimAbandoned extends Error {}
@@ -641,6 +644,7 @@ export async function activeRun(db: Db | Trx, scope: WorkerScope, runId: string,
   if (run.status !== "running" || run.attempt !== attempt) {
     throw conflict("This attempt is no longer in progress. Its result is not recorded.");
   }
+  await mustHold(db, scope, run.worker_id);
   return run;
 }
 
@@ -652,8 +656,8 @@ export async function completeRun(
   output: unknown,
   peakMb?: number,
 ) {
-  runEnded(runId);
   const run = await activeRun(kernel.db, scope, runId, attempt);
+  runEnded(runId);
   await keepPeak(kernel, run, peakMb);
   const taken = await kernel.queue.complete(
     queueName(run.workspace_id, run.pool),
@@ -793,8 +797,8 @@ export async function failRun(
   retry = true,
   peakMb?: number,
 ) {
-  runEnded(runId);
   const run = await activeRun(kernel.db, scope, runId, attempt);
+  runEnded(runId);
   await keepPeak(kernel, run, peakMb);
   // What the script was given never reaches the record, the alerts or the handler: an error
   // that quotes a URL with its key, or a header, is stored without it.

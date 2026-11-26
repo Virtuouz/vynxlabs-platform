@@ -53,7 +53,7 @@ import {
   MAX_RESULT_BYTES,
 } from "../kernel/execution/tasks.js";
 import { kickStarted } from "../kernel/execution/triggers.js";
-import { noteScriptsSeen, seeWorker } from "../kernel/execution/workers.js";
+import { machineOf, mustHold, noteScriptsSeen, seeWorker } from "../kernel/execution/workers.js";
 import { publishEvent } from "../kernel/flows/events.js";
 import { access } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
@@ -331,8 +331,9 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         },
       },
       async ({ worker, body, raw }) => {
-        await seeWorker(kernel, worker, body.workerId, body.version, body.machine);
-        noteScriptsSeen(body.workerId, body.machine?.scripts);
+        const machine = machineOf(worker, body.machine);
+        await seeWorker(kernel, worker, body.workerId, body.version, machine);
+        noteScriptsSeen(body.workerId, machine?.scripts);
         const deadline = Date.now() + (body.waitSeconds ?? 20) * 1000;
         // A worker that hung up must not be handed a job.
         const gone = () => raw.socket.destroyed;
@@ -343,7 +344,7 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           if (gone()) return { job: null };
           // A task first: each is short, and someone is often waiting on it.
           const task = body.kinds
-            ? await claimTask(kernel, worker, body.workerId, body.kinds, body.machine)
+            ? await claimTask(kernel, worker, body.workerId, body.kinds, machine)
             : undefined;
           if (task) {
             return {
@@ -359,7 +360,7 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             };
           }
           const claimed = takesRuns
-            ? await claimRun(kernel, worker, body.workerId, gone, body.machine)
+            ? await claimRun(kernel, worker, body.workerId, gone, machine)
             : undefined;
           if (claimed) {
             const { run } = claimed;
@@ -579,6 +580,7 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         if (run.status !== "running" || run.attempt !== body.attempt || !run.queue_job_id) {
           return { cancelled: true };
         }
+        await mustHold(db, worker, run.worker_id);
         const alive = await kernel.queue.heartbeat(
           queueName(run.workspace_id, run.pool),
           run.queue_job_id,

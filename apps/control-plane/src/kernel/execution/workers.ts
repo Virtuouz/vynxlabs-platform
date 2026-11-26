@@ -9,7 +9,7 @@ import {
 } from "@volvel/worker";
 import type { FastifyRequest } from "fastify";
 import type { Db, Trx } from "../audit.js";
-import { badRequest, unauthenticated } from "../errors.js";
+import { badRequest, conflict, unauthenticated } from "../errors.js";
 import type { Kernel } from "../kernel.js";
 import { hashApiKey } from "../principal.js";
 import type { WorkerScope } from "./runs.js";
@@ -56,7 +56,7 @@ export async function resolveWorker(kernel: Kernel, request: FastifyRequest): Pr
   }
   const credential = await kernel.db
     .selectFrom("worker_credential")
-    .select(["id", "tenant_id", "workspace_id", "pool", "revoked_at", "expires_at"])
+    .select(["id", "tenant_id", "workspace_id", "pool", "managed", "revoked_at", "expires_at"])
     .where("token_hash", "=", hashApiKey(token))
     .executeTakeFirst();
   if (
@@ -71,7 +71,39 @@ export async function resolveWorker(kernel: Kernel, request: FastifyRequest): Pr
     tenantId: credential.tenant_id,
     workspaceId: credential.workspace_id,
     pool: credential.pool,
+    managed: credential.managed,
   };
+}
+
+/**
+ * The machine a worker names, as the control plane keeps it. A worker that was started by the
+ * control plane or a worker host was told its machine's name and is believed. Any other
+ * worker's word is kept apart under its tenant, so that it can only ever speak of machines
+ * of its own tenant: it cannot fill, mark full or reserve the memory of one that is shared.
+ */
+export function machineOf(scope: WorkerScope, machine: MachineClaim): MachineClaim;
+export function machineOf(scope: WorkerScope, machine?: MachineClaim): MachineClaim | undefined;
+export function machineOf(scope: WorkerScope, machine?: MachineClaim): MachineClaim | undefined {
+  if (!machine || scope.managed) return machine;
+  return { ...machine, name: `tenant:${scope.tenantId}/${machine.name}` };
+}
+
+/**
+ * Refuses a worker credential that does not hold the job. A job is handed to one worker, and
+ * only the credential that worker called with may report on it: another credential of the
+ * same tenant cannot finish, fail or read what it was not given. A job whose worker is no
+ * longer known is left to whoever the tenant check lets through.
+ */
+export async function mustHold(db: Db | Trx, scope: WorkerScope, workerId: string | null) {
+  if (!workerId) return;
+  const holder = await db
+    .selectFrom("worker")
+    .select("credential_id")
+    .where("id", "=", workerId)
+    .executeTakeFirst();
+  if (holder && holder.credential_id !== scope.credentialId) {
+    throw conflict("This job was given to another worker. Its result is not recorded.");
+  }
 }
 
 /** Records that a worker is alive. */

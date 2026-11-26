@@ -27,6 +27,70 @@ const STAGE_HOURS = 1;
 
 const Passphrase = Type.String({ minLength: MIN_PASSPHRASE, maxLength: 500 });
 
+/**
+ * An export reads from a snapshot and keeps a database connection for as long as its reader
+ * takes to read the download. So that slow readers cannot take the connections the platform
+ * needs, an instance writes a few exports at once, a tenant one, and an export whose reader
+ * has stopped taking it for `stallMs` is ended and its connection given back.
+ */
+export const exportLimits = { atOnce: 3, stallMs: 60_000, retryAfterSeconds: 30 };
+const exporting = new Set<string>();
+
+/** Takes a place for one export of this tenant, or says to come back later. */
+function takeExportPlace(tenantId: string): () => void {
+  if (exporting.has(tenantId)) {
+    throw new HttpError(
+      429,
+      "rate_limited",
+      "This tenant is already being exported. Wait for that export to end, then try again.",
+      undefined,
+      { "retry-after": String(exportLimits.retryAfterSeconds) },
+    );
+  }
+  if (exporting.size >= exportLimits.atOnce) {
+    throw new HttpError(
+      429,
+      "rate_limited",
+      "This instance is writing as many exports as it allows at once. Try again in a moment.",
+      undefined,
+      { "retry-after": String(exportLimits.retryAfterSeconds) },
+    );
+  }
+  exporting.add(tenantId);
+  let given = false;
+  return () => {
+    if (given) return;
+    given = true;
+    exporting.delete(tenantId);
+  };
+}
+
+/** The archive as a stream that is ended when its reader stops taking it. */
+function readerBoundStream(source: AsyncIterable<Buffer>, release: () => void): Readable {
+  let lastTaken = Date.now();
+  async function* watched() {
+    for await (const chunk of source) {
+      yield chunk;
+      lastTaken = Date.now();
+    }
+  }
+  const stream = Readable.from(watched());
+  const watch = setInterval(
+    () => {
+      if (stream.readableLength > 0 && Date.now() - lastTaken > exportLimits.stallMs) {
+        stream.destroy(new Error("The reader stopped taking the export."));
+      }
+    },
+    Math.max(50, Math.min(1000, exportLimits.stallMs / 4)),
+  );
+  watch.unref();
+  stream.once("close", () => {
+    clearInterval(watch);
+    release();
+  });
+  return stream;
+}
+
 /** Taking a tenant out of an instance, and bringing one in. */
 export function portabilityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
   return async (app) => {
@@ -64,22 +128,31 @@ export function portabilityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           .executeTakeFirst();
         if (!tenant) throw notFound("The tenant");
         const history = body.history ?? false;
-        await ctx.mutate((_trx, audit) =>
-          audit({
-            action: "tenant.exported",
-            targetType: "tenant",
-            targetId: params.t,
-            tenantId: params.t,
-            details: { history },
-          }),
-        );
-        const stamp = new Date().toISOString().slice(0, 19).replaceAll(":", "");
-        return reply
-          .header("content-type", "application/x-tar")
-          .header("content-disposition", `attachment; filename="${tenant.slug}-${stamp}.tar"`)
-          .send(
-            Readable.from(exportTenant(kernel, params.t, { passphrase: body.passphrase, history })),
+        const release = takeExportPlace(params.t);
+        try {
+          await ctx.mutate((_trx, audit) =>
+            audit({
+              action: "tenant.exported",
+              targetType: "tenant",
+              targetId: params.t,
+              tenantId: params.t,
+              details: { history },
+            }),
           );
+          const stamp = new Date().toISOString().slice(0, 19).replaceAll(":", "");
+          return reply
+            .header("content-type", "application/x-tar")
+            .header("content-disposition", `attachment; filename="${tenant.slug}-${stamp}.tar"`)
+            .send(
+              readerBoundStream(
+                exportTenant(kernel, params.t, { passphrase: body.passphrase, history }),
+                release,
+              ),
+            );
+        } catch (error) {
+          release();
+          throw error;
+        }
       },
     );
 

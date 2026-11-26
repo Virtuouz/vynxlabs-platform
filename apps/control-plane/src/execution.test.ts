@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { createServer, type IncomingMessage } from "node:http";
 import type { AddressInfo } from "node:net";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -172,6 +173,11 @@ async function deploy(content: Bundle, base = ws(), as = alice) {
 }
 
 /** Speaks the worker protocol directly, as a worker in another language would. */
+function workerOf(token: string) {
+  const tail = createHash("sha1").update(token).digest("hex").slice(0, 12);
+  return `018f0000-0000-7000-8000-${tail}`;
+}
+
 function protocol(token: string) {
   const call = async (method: "GET" | "POST", path: string, body?: object) => {
     const response = await t.app.inject({
@@ -183,7 +189,8 @@ function protocol(token: string) {
     return { status: response.statusCode, body: response.body ? response.json() : null };
   };
   return {
-    claim: (workerId = "018f0000-0000-7000-8000-000000000001", kinds?: string[]) =>
+    // A credential's worker is its own: two credentials never share a worker's id.
+    claim: (workerId = workerOf(token), kinds?: string[]) =>
       call("POST", "/claim", { workerId, waitSeconds: 0, ...(kinds ? { kinds } : {}) }),
     get: (path: string) => call("GET", path),
     post: (path: string, body: object) => call("POST", path, body),

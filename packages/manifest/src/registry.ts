@@ -1,4 +1,5 @@
 import { Ajv2020, type ErrorObject, type ValidateFunction } from "ajv/dist/2020.js";
+import { guardedRegExp } from "./pattern-guard.js";
 import { KIND_PATTERN, Manifest, StoredResource } from "./envelope.js";
 
 /** A resource kind: its name, the version of its body schema, and that schema. */
@@ -169,23 +170,60 @@ export class KindRegistry {
 }
 
 // `verbose` keeps each error's schema, so a format's pattern can be described in words.
-const schemaValidator = new Ajv2020({ allErrors: true, strict: false, verbose: true });
-const compiled = new WeakMap<object, ValidateFunction>();
+// The platform's own schemas (its kinds) hold patterns the guard would refuse, and are not a tenant's.
+const OWN_OPTIONS = { allErrors: true, strict: false, verbose: true } as const;
+const OPTIONS = {
+  allErrors: true,
+  strict: false,
+  verbose: true,
+  code: { regExp: guardedRegExp },
+} as const;
 
-/** Checks a value against any JSON Schema. Returns the problems, or an empty list. */
-export function validateJson(schema: object, value: unknown, prefix = ""): ManifestIssue[] {
-  let validate = compiled.get(schema);
-  if (!validate) {
-    validate = schemaValidator.compile(schema);
-    compiled.set(schema, validate);
+/**
+ * Each schema is compiled by an Ajv of its own, so no schema can see another's `$id` (two tenants
+ * naming theirs alike must not collide) and nothing is kept in a shared registry. The compiled
+ * validators are held in a bounded list, newest last, keyed by the schema's text, so a schema read
+ * again from the database at every run start is compiled once and the list does not grow with runs.
+ */
+const MAX_COMPILED = 256;
+const compiled = new Map<string, ValidateFunction>();
+
+/** How many schemas are held compiled (for the tests). */
+export const compiledSchemaCount = (): number => compiled.size;
+
+function compile(schema: object, own: boolean): ValidateFunction {
+  const key = (own ? "own:" : "") + JSON.stringify(schema);
+  const held = compiled.get(key);
+  if (held) {
+    compiled.delete(key);
+    compiled.set(key, held);
+    return held;
   }
+  const validate = new Ajv2020(own ? OWN_OPTIONS : OPTIONS).compile(schema);
+  compiled.set(key, validate);
+  if (compiled.size > MAX_COMPILED) compiled.delete(compiled.keys().next().value as string);
+  return validate;
+}
+
+/**
+ * Checks a value against any JSON Schema. Returns the problems, or an empty list. The schema is
+ * taken to be a tenant's: a pattern that could run for ever never runs. `own` is for the platform's
+ * own schemas only.
+ */
+export function validateJson(
+  schema: object,
+  value: unknown,
+  prefix = "",
+  own = false,
+): ManifestIssue[] {
+  const validate = compile(schema, own);
   return validate(value) ? [] : toIssues(validate.errors, prefix);
 }
 
 /** Why a value is not a JSON Schema (draft 2020-12), in Ajv's words; nothing when it is one. */
 export function jsonSchemaProblem(schema: unknown): string | undefined {
   try {
-    schemaValidator.compile(schema as object);
+    new Ajv2020(OPTIONS).compile(schema as object);
     return undefined;
   } catch (error) {
     return (error as Error).message.replace(/^schema is invalid: /, "");

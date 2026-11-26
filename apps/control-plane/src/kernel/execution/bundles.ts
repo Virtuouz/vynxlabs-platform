@@ -63,7 +63,7 @@ export async function storeBundle(
   /** `compose` and `preview` are bundles the control plane made itself. */
   origin: "upload" | "compose" | "preview" = "upload",
 ) {
-  const issues = validateJson(Bundle, input, "/body");
+  const issues = validateJson(Bundle, input, "/body", true);
   if (issues.length > 0) throw badRequest("That is not a bundle.", issues);
   const bundle = input as Bundle;
   if (bundleDigest(bundle) !== bundle.digest) {

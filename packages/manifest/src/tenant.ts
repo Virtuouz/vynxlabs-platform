@@ -208,7 +208,7 @@ export function checkTenantResources(
       );
     }
     seen.add(`${resource.kind} ${resource.key}`);
-    for (const issue of validateJson(definition.body, resource.body, "/body")) {
+    for (const issue of validateJson(definition.body, resource.body, "/body", true)) {
       problems.push(
         `${name} (${tenantFileName(definition, resource.key)}): ${issue.path} ${issue.message}`,
       );

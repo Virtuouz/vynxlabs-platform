@@ -1,6 +1,6 @@
 # Phase 35: an instance is loaded until it bends, broken on purpose, and attacked
 
-Status: built; the owner's decisions on what the red team left are open. On on branch `phase-35-stress-and-red-team`, off `phase-34-yaml-first-and-widgets`.
+Status: built; the owner's decisions on what the red team left are open. On branch `phase-35-stress-and-red-team`, off `phase-34-yaml-first-and-widgets`.
 Last updated: 2026-11-26
 
 The owner asked, on 2026-11-25, for proof that phases 25 to 34 did not cost performance or the

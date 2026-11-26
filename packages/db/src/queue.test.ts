@@ -182,6 +182,44 @@ describe("job queue", () => {
   }, 60_000);
 });
 
+describe("a queue that could not be written to for a while", () => {
+  test("a job silent all that time is still its worker's once the silence is forgiven, and lost when it is not", async () => {
+    // A database of its own: the queue above supervises every job in the one it is in.
+    const own = await createTestDatabase();
+    const quick = new Database({
+      connectionString: own.connectionString,
+      queue: { superviseIntervalSeconds: 1, heartbeatSeconds: 10 },
+    });
+    await quick.migrate();
+    await quick.queue.start();
+    try {
+      for (const forgiven of [true, false]) {
+        const name = queue();
+        const id = await quick.queue.enqueue(name, {}, { retryLimit: 1, timeoutSeconds: 600 });
+        await quick.queue.claim(name);
+        // Supervision stops, as when the database takes no writes, for longer than a heartbeat.
+        await quick.queue.stop();
+        await sleep(12_000);
+        // What a request still does while it is stopped goes on working.
+        expect(await quick.queue.state(name, id)).toBe("active");
+        if (forgiven) {
+          await quick.queue.forgiveSilence();
+          // A worker's heartbeat, and a new job, are taken while supervision is still stopped.
+          expect(await quick.queue.heartbeat(name, id)).toBe(true);
+          await quick.queue.enqueue(queue(), {}, { retryLimit: 0, timeoutSeconds: 60 });
+        }
+        await quick.queue.start();
+        await sleep(2500);
+        expect(await quick.queue.state(name, id)).toBe(forgiven ? "active" : "retry");
+        expect(await quick.queue.heartbeat(name, id)).toBe(forgiven);
+      }
+    } finally {
+      await quick.close();
+      await own.drop();
+    }
+  }, 60_000);
+});
+
 describe("job queue inside a transaction", () => {
   test("a job queued in a transaction that rolls back never existed", async () => {
     const q = queue();

@@ -2,6 +2,7 @@ import type { Database } from "@volvel/db";
 import type { Config } from "./config.js";
 import { bootstrapAdmin } from "./kernel/bootstrap.js";
 import { startBackground } from "./kernel/execution/background.js";
+import { forgiveSilentRuns } from "./kernel/execution/runs.js";
 import { WorkerSupervisor } from "./kernel/execution/supervisor.js";
 import type { Kernel } from "./kernel/kernel.js";
 import { rekeyIfRotating } from "./kernel/rekey.js";
@@ -40,6 +41,9 @@ export function createWriter(options: {
   async function start(opts: { atBoot?: boolean } = {}) {
     // Already on: a second loop would double every tick and could start more workers than the cap.
     if (writing || background) return;
+    // Nothing could be written until now, a worker's heartbeat no more than anything else:
+    // what is in progress is given its time again before anything is taken back for silence.
+    await forgiveSilentRuns(kernel);
     await database.queue.start();
     // At boot these ran already, before the sign-in for row requests was set up.
     if (!opts.atBoot) {
@@ -76,6 +80,14 @@ export function createWriter(options: {
     await ended?.stop();
   }
 
+  /** Writes stopped: the queue is not supervised until they return, so that it takes nothing back meanwhile. */
+  async function pause() {
+    await stop();
+    await database.queue.stop().catch((error) => {
+      log.warn({ err: error }, "the queue's supervision could not be stopped");
+    });
+  }
+
   return {
     start,
     stop,
@@ -98,7 +110,7 @@ export function createWriter(options: {
                 "the database takes no writes: its disk may be full. Background work stops; " +
                   "reads go on, and changes are answered 503 until writes come back",
               );
-              await stop();
+              await pause();
             }
           })
           .catch((error) =>

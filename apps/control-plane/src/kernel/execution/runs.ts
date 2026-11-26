@@ -858,6 +858,22 @@ export async function reapDeadRuns(kernel: Kernel): Promise<number> {
 }
 
 /**
+ * Counts every run in progress as heard from now. Called before the queue is supervised again
+ * after a time in which nothing could be written, a database that took no writes or was away:
+ * the workers' heartbeats were refused all that time. Without it, the scripts in progress when
+ * a disk filled were failed as not heard from eight seconds after it was freed, each with its
+ * worker waiting to say it had ended (phase 35).
+ */
+export async function forgiveSilentRuns(kernel: Kernel): Promise<void> {
+  await kernel.queue.forgiveSilence();
+  await kernel.db
+    .updateTable("run")
+    .set({ last_heartbeat_at: new Date() })
+    .where("status", "=", "running")
+    .execute();
+}
+
+/**
  * Puts back in line the runs whose worker went silent. The queue takes such a
  * job back by itself. This brings the run record in step, so the run shows as
  * waiting and a worker is started for it. Returns how many it put back.

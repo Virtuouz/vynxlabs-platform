@@ -74,6 +74,7 @@ const GROUP_TIERS = Object.fromEntries(
 export class JobQueue {
   readonly #boss: PgBoss;
   readonly #known = new Set<string>();
+  readonly #pool: pg.Pool;
   /** A worker silent for this long loses its job. */
   readonly heartbeatSeconds: number;
   #started = false;
@@ -83,6 +84,7 @@ export class JobQueue {
    * queue's own, not the one transactions are taken from: see `Database`.
    */
   constructor(pool: pg.Pool, tuning: QueueTuning = {}, onError: (error: Error) => void = () => {}) {
+    this.#pool = pool;
     this.heartbeatSeconds = tuning.heartbeatSeconds ?? HEARTBEAT_SECONDS;
     const supervise = tuning.superviseIntervalSeconds ?? DEFAULT_SUPERVISE_SECONDS;
     this.#boss = new PgBoss({
@@ -173,6 +175,25 @@ export class JobQueue {
       attempt: job.retryCount + 1,
       timeoutSeconds: job.expireInSeconds,
     };
+  }
+
+  /**
+   * Counts every job in progress as heard from now. Called when the queue could not be written
+   * to for a while, a database that took no writes or was away, before supervision starts
+   * again: a worker's heartbeats were refused all that time, and without this its job was taken
+   * back the moment writes returned, though the worker had never stopped (phase 35).
+   */
+  async forgiveSilence(): Promise<void> {
+    try {
+      await this.#pool.query(
+        "update pgboss.job set heartbeat_on = pgboss.job_now() where state = 'active' and heartbeat_on is not null",
+      );
+    } catch (error) {
+      // Before the queue's first start it has no tables, and nothing to forgive.
+      const code = (error as { code?: string }).code;
+      if (code === "42P01" || code === "3F000" || code === "42883") return;
+      throw error;
+    }
   }
 
   /** Says the worker is still alive. Returns false when the job is no longer its to run. */

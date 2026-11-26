@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createWriter } from "./writer.js";
 
 vi.mock("./kernel/bootstrap.js", () => ({ bootstrapAdmin: async () => {} }));
+vi.mock("./kernel/execution/runs.js", () => ({ forgiveSilentRuns: async () => {} }));
 vi.mock("./kernel/rekey.js", () => ({ rekeyIfRotating: async () => {} }));
 vi.mock("./kernel/tenancy/clone.js", () => ({ failInterruptedClones: async () => {} }));
 
@@ -11,7 +12,10 @@ function setup(readOnly: () => boolean, queueMs = 0) {
   const log = { warn: vi.fn(), error: vi.fn() };
   const writer = createWriter({
     database: {
-      queue: { start: () => new Promise<void>((resolve) => setTimeout(resolve, queueMs)) },
+      queue: {
+        start: () => new Promise<void>((resolve) => setTimeout(resolve, queueMs)),
+        stop: async () => {},
+      },
       readOnly: async () => readOnly(),
     } as never,
     kernel: { log } as never,

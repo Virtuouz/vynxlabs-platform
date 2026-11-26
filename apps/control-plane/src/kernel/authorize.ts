@@ -1,6 +1,7 @@
 import { sql } from "@volvel/db";
 import { APP_FACING_KINDS, grants } from "@volvel/manifest";
 import type { Db, Principal, Trx } from "./audit.js";
+import { forbiddenBecause } from "./errors.js";
 
 export { grants, PERMISSION_PATTERN } from "@volvel/manifest";
 
@@ -574,3 +575,62 @@ export function reaches(source: AccessSource, target: Target): boolean {
   if (source.scope.type === "workspace") return source.scope.workspaceId === target.workspaceId;
   return source.scope.resourceId === target.resourceId;
 }
+
+/** Where inside a tenant something is given: the tenant when neither is set, else a workspace or one resource of it. */
+export interface Place {
+  workspaceId?: string | null | undefined;
+  resourceId?: string | null | undefined;
+}
+
+/**
+ * What a principal holds in a tenant, to answer, for a list of permissions at a place, which is
+ * the first they do not hold. It is the one comparison behind "nobody gives what they do not
+ * hold": a binding, a role, a group's members, a service account's key and a deploy that
+ * changes who holds what are all held to it. What is held at a place is what the principal's
+ * bindings and an operator's open access grant give there, at the tenant, the workspace or the
+ * resource, the way `explainAccess` and `check()` read them. A wildcard counts as what it
+ * covers and nothing more (`grants`): `*:*` does not give a permission that is only given by
+ * its own name, and `binding:write` does not give `binding:*`. The system holds everything.
+ * Reads once, then answers as often as asked.
+ */
+export async function holdingsIn(db: Db | Trx, principal: Principal, tenantId: string) {
+  if (principal.type === "system") {
+    return {
+      lacking: (_wanted: readonly string[], _place?: Place): string | undefined => undefined,
+    };
+  }
+  const appOnly = principal.type === "end_user" || principal.appTenantId !== undefined;
+  const sources = (await explainAccess(db, principal, tenantId)).filter((source) => source.counts);
+  return {
+    lacking(wanted: readonly string[], place: Place = {}): string | undefined {
+      const target: Target = {
+        tenantId,
+        workspaceId: place.workspaceId ?? undefined,
+        resourceId: place.resourceId ?? undefined,
+      };
+      const held = sources
+        .filter((source) => reaches(source, target))
+        .flatMap((source) => source.role.permissions);
+      // Someone signed in to apps only holds only what apps use, whatever they are bound to.
+      return wanted.find((one) => (appOnly && !appFacing(one)) || !grants(held, one));
+    },
+  };
+}
+
+/** Throws 403 naming the first of `wanted` that `principal` does not hold at `place`. */
+export async function requireToGive(
+  db: Db | Trx,
+  principal: Principal,
+  tenantId: string,
+  wanted: readonly string[],
+  place: Place = {},
+): Promise<void> {
+  const lacking = (await holdingsIn(db, principal, tenantId)).lacking(wanted, place);
+  if (lacking !== undefined) throw refusedToGive(lacking, place);
+}
+
+/** The refusal for giving what one does not hold. */
+export const refusedToGive = (permission: string, place: Place = {}) =>
+  forbiddenBecause(
+    `You do not hold ${permission} ${place.resourceId ? "on that resource" : place.workspaceId ? "in that workspace" : "in this tenant"}, so you cannot give it. A role, and a binding to one, gives only what the person who makes it holds.`,
+  );

@@ -1,5 +1,5 @@
 import { setTimeout as sleep } from "node:timers/promises";
-import { sql } from "@volvel/db";
+import { newId, sql } from "@volvel/db";
 import { createTestDatabase } from "@volvel/db/testing";
 import { type Bundle, type BundleManifest, bundleDigest } from "@volvel/manifest";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
@@ -1328,32 +1328,38 @@ describe("deleting a production workspace", () => {
     // Nor an operator, who has no standing in a tenant that has not let them in.
     expect((await t.admin.delete(address)).status).toBe(404);
     // A role cannot be given it by a wildcard on its kind either.
-    const wide = await alice.post(`/tenants/${tenant}/roles`, {
-      name: "wide",
-      permissions: ["workspace_production:*", "workspace:*"],
-    });
-    expect(wide.status, JSON.stringify(wide.body)).toBe(201);
+    // The roles are written straight into the table: a tenant administrator holds no permission
+    // that is given only by its own name, so cannot write one into a role by the API since the
+    // rule that nobody gives what they do not hold (phase 35, round three; open question).
+    const roleWith = async (name: string, permissions: string[]) => {
+      const id = newId();
+      await t.db
+        .insertInto("role")
+        .values({ id, tenant_id: tenant, workspace_id: null, name, description: "", permissions })
+        .execute();
+      return { body: { id } };
+    };
+    const bindTo = (memberId: string, roleId: string, workspaceId: string | null) =>
+      t.db
+        .insertInto("binding")
+        .values({
+          id: newId(),
+          scope_type: workspaceId ? "workspace" : "tenant",
+          tenant_id: tenant,
+          workspace_id: workspaceId,
+          principal_type: "member",
+          principal_id: memberId,
+          role_id: roleId,
+        })
+        .execute();
+    const wide = await roleWith("wide", ["workspace_production:*", "workspace:*"]);
     const me = (await alice.get("/me")).body.principal.id as string;
-    await alice.post(`/tenants/${tenant}/bindings`, {
-      principalType: "member",
-      principalId: me,
-      roleId: wide.body.id,
-    });
+    await bindTo(me, wide.body.id, null);
     expect((await alice.delete(address)).status).toBe(403);
 
     // By name, it is given, and the giving is in the audit log.
-    const named = await alice.post(`/tenants/${tenant}/roles`, {
-      name: "production_remover",
-      permissions: ["workspace_production:write"],
-    });
-    expect(named.status, JSON.stringify(named.body)).toBe(201);
-    const bound = await alice.post(`/tenants/${tenant}/bindings`, {
-      workspaceId: gone,
-      principalType: "member",
-      principalId: me,
-      roleId: named.body.id,
-    });
-    expect(bound.status, JSON.stringify(bound.body)).toBe(201);
+    const named = await roleWith("production_remover", ["workspace_production:write"]);
+    await bindTo(me, named.body.id, gone);
     // Given at that workspace, it reaches no other production workspace.
     expect((await alice.delete(`${ws(shop)}?confirm=shop`)).status).toBe(403);
     // The slug is still asked for.

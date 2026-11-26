@@ -16,6 +16,7 @@ import { recordWidgetQueries } from "../dashboard-queries.js";
 import { loadCatalog, reconcileReferences, workspaceSchema } from "../data/apply.js";
 import { describeChanges } from "../data/plan.js";
 import { HttpError, notFound } from "../errors.js";
+import { isAccessKind, requireToChangeAccessByDeploy } from "../grant-limits.js";
 import type { WorkspaceRef } from "../http.js";
 import type { Kernel } from "../kernel.js";
 import { renamePathState, swapPath } from "../rename.js";
@@ -391,6 +392,29 @@ export async function deployBundle(
     // Bindings and triggers before the roles and scripts they refer to.
     .sort((a, b) => order(b.kind) - order(a.kind));
   const leaving = new Set(removed.map((row) => row.id));
+  // A deploy that changes who holds what needs the permission to say so, whoever deploys and
+  // however the bundle came to be the one deployed: an upload, a promotion, a rollback, a pull.
+  await requireToChangeAccessByDeploy(trx, principal, workspace, [
+    ...content.manifests.flatMap((manifest) => {
+      if (!isAccessKind(manifest.kind)) return [];
+      const row = matched.get(manifest);
+      if (row && same(row.body, manifest.body)) return [];
+      return [
+        {
+          kind: manifest.kind,
+          path: manifest.path,
+          body: manifest.body,
+          change: row ? ("changed" as const) : ("added" as const),
+          ...(row ? { before: row.body } : {}),
+        },
+      ];
+    }),
+    ...removed.flatMap((row) =>
+      isAccessKind(row.kind)
+        ? [{ kind: row.kind, path: row.path, change: "removed" as const, before: row.body }]
+        : [],
+    ),
+  ]);
   // What the console did since the repository last had it is not overwritten by surprise.
   const overridden: ConsoleChange[] = [];
   if (options.repository && (await hasBasis(trx, workspace.id))) {

@@ -1,11 +1,12 @@
 import { createHash, randomBytes } from "node:crypto";
 import { newId } from "@volvel/db";
-import { endSessions, isOperator } from "./administer.js";
+import { isOperator } from "./administer.js";
 import type { Audit, Db, Principal, Trx } from "./audit.js";
 import { type AccessSource, explainAccess, grants } from "./authorize.js";
 import { checkPassword } from "./endusers.js";
 import { badRequest, conflict, forbiddenBecause, HttpError, notFound } from "./errors.js";
 import type { Kernel } from "./kernel.js";
+import { endEarlierSignIns } from "./sign-ins.js";
 import { memberPasswordRefusedBy } from "./sso/people.js";
 
 /** How long a member's reset link works. The same as an end user's. */
@@ -31,7 +32,18 @@ const gone = () =>
 export async function makeMemberResetLink(
   trx: Trx,
   audit: Audit,
-  input: { memberId: string; caller: Principal; tenantId?: string },
+  input: {
+    memberId: string;
+    caller: Principal;
+    tenantId?: string;
+    /**
+     * Whether the link is handed back to the caller (no mail is set up). Where it is sent to the
+     * member's own address and not returned, the caller cannot use it, so a tenant's `member:write`
+     * is enough; where it comes back, the caller could sign in with it and must hold what the
+     * member holds.
+     */
+    returnsLink?: boolean;
+  },
 ): Promise<{
   member: { id: string; email: string; name: string };
   token: string;
@@ -84,7 +96,14 @@ export async function makeMemberResetLink(
       .where("member_id", "=", member.id)
       .execute()
   ).map((row) => row.tenant_id);
-  await mayMakeLinkFor(trx, input.caller, member.id, tenants, input.tenantId);
+  await mayMakeLinkFor(
+    trx,
+    input.caller,
+    member.id,
+    tenants,
+    input.tenantId,
+    input.returnsLink ?? true,
+  );
   const refusedBy = await memberPasswordRefusedBy(trx, member.email);
   if (refusedBy) {
     throw conflict(
@@ -135,7 +154,9 @@ async function holdsGrantOn(trx: Trx, operatorId: string, tenants: readonly stri
  * An operator needs an open access grant on every tenant the member belongs to, as for any
  * other read or change there. In a tenant, whoever makes it must hold at least what the member
  * holds there (an operator under a grant is the exception, as the grant is its own rule), so
- * that a person who may manage members cannot take over the tenant's admin.
+ * that a person who may manage members cannot take over the tenant's admin. That last rule is
+ * for a link that is handed back (`returnsLink`): a link mailed to the member's own address is
+ * not seen by the caller, so `member:write` is enough.
  */
 async function mayMakeLinkFor(
   trx: Trx,
@@ -143,6 +164,7 @@ async function mayMakeLinkFor(
   memberId: string,
   tenants: readonly string[],
   tenantId: string | undefined,
+  returnsLink: boolean,
 ) {
   if (tenantId === undefined) {
     if (tenants.length > 0 && !(await holdsGrantOn(trx, caller.id ?? "", tenants))) {
@@ -151,6 +173,7 @@ async function mayMakeLinkFor(
     return;
   }
   if (await holdsGrantOn(trx, caller.id ?? "", [tenantId])) return;
+  if (!returnsLink) return;
   // Where a binding applies matters: a role held in one workspace is not held across the
   // tenant. What the member holds at the tenant must be held at the tenant by the caller, and
   // what they hold in a workspace may be held at the tenant or in that same workspace.
@@ -198,8 +221,9 @@ export async function readMemberResetToken(db: Db | Trx, token: string) {
 }
 
 /**
- * Sets the password from a link, once. Every sign-in the member had ends, the console's and the
- * apps': a reset is what is done when someone else may know the old password.
+ * Sets the password from a link, once. Every sign-in the member had ends: the console's and the
+ * apps' sessions, their personal API keys and their recovery codes. A reset is what is done when
+ * someone else may know the old password, and what they made with it must not outlive it.
  */
 export async function setMemberPasswordWithToken(
   kernel: Kernel,
@@ -260,6 +284,6 @@ export async function setMemberPasswordWithToken(
     .where("member_id", "=", member.id)
     .where("used_at", "is", null)
     .execute();
-  await endSessions(trx, member.id, { console: true });
+  await endEarlierSignIns(trx, audit, member.id, "password_reset");
   await audit({ action: "member.password_reset", targetType: "member", targetId: member.id });
 }

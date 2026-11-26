@@ -1161,12 +1161,21 @@ describe("members", () => {
   test("removing a member from a tenant removes their access", async () => {
     expect((await bob.client.get(`/tenants/${acme}/workspaces/${dev}`)).status).toBe(200);
     expect((await alice.client.delete(`/tenants/${acme}/members/${bob.id}`)).status).toBe(204);
-    expect((await bob.client.get(`/tenants/${acme}/workspaces/${dev}`)).status).toBe(404);
-    expect((await bob.client.get("/tenants")).body.items).toEqual([]);
-    // Adding an existing member back needs only the email.
+    // His last membership is gone, so nothing that signed in as him is left: not his session, and
+    // not his password. The account stays.
+    expect((await bob.client.get(`/tenants/${acme}/workspaces/${dev}`)).status).toBe(401);
+    await expect(t.signIn("bob@acme.example", PASSWORD)).rejects.toThrow(/Sign-in failed/);
+    // Adding an existing member back needs only the email. They choose a password by a link.
     expect(
       (await alice.client.post(`/tenants/${acme}/members`, { email: "bob@acme.example" })).status,
     ).toBe(201);
+    const link = await alice.client.post(`/tenants/${acme}/members/${bob.id}/password-link`, {});
+    expect(link.status, JSON.stringify(link.body)).toBe(201);
+    const token = decodeURIComponent(String(link.body.url).split("/").pop() as string);
+    expect(
+      (await t.anonymous.post(`/member-password-links/${token}`, { password: PASSWORD })).status,
+    ).toBe(204);
+    bob = { id: bob.id, client: await t.signIn("bob@acme.example", PASSWORD) };
     expect(
       (await alice.client.post(`/tenants/${acme}/members`, { email: "new@acme.example" })).status,
     ).toBe(400);

@@ -144,6 +144,7 @@ export const AUDIT_ACTIONS = [
   "member.recovery_codes_made",
   "member.renamed",
   "member.sign_in_refused",
+  "member.sign_ins_ended",
   "member.signed_in",
   "member.signed_out",
   "operator.access",

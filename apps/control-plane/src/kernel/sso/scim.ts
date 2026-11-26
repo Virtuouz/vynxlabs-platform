@@ -8,6 +8,7 @@ import { HttpError } from "../errors.js";
 import type { Kernel } from "../kernel.js";
 import { setMemberDisabled } from "../members.js";
 import { hashApiKey } from "../principal.js";
+import { endSignInsOnFirstTie } from "../sign-ins.js";
 import { giveRole, holdsInstanceAccess, syncGroups } from "./people.js";
 import { domainOfEmail, findProvider, type Provider, provedDomains } from "./providers.js";
 
@@ -606,6 +607,9 @@ async function tie(
         last_signed_in_at: null,
       })
       .execute();
+    if (person.principal_type === "member") {
+      await endSignInsOnFirstTie(trx, audit, person.principal_id, person.email);
+    }
   }
   await audit({
     action: "identity_link.created",

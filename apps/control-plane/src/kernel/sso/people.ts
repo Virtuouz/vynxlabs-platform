@@ -6,6 +6,7 @@ import { createEndUser } from "../endusers.js";
 import { HttpError } from "../errors.js";
 import type { Kernel } from "../kernel.js";
 import { INSTANCE_ONLY_ROLE } from "../kinds.js";
+import { endSignInsOnFirstTie } from "../sign-ins.js";
 import { domainOfEmail, type Provider, provedDomains } from "./providers.js";
 
 /** What a provider said about the person who signed in, after its answer was checked. */
@@ -198,6 +199,11 @@ export async function resolvePerson(
       tenantId: tenantId,
       details: { identityProvider: provider.name, email, created },
     });
+    // An account that was there before now has the provider vouching for its owner: what signed
+    // in as it until now (a password someone else chose, keys, codes) does not carry over.
+    if (principalType === "member" && !created) {
+      await endSignInsOnFirstTie(trx, audit, principalId, email);
+    }
   } else {
     await trx
       .updateTable("identity_link")

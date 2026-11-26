@@ -11,11 +11,12 @@ import { setSessionCookie } from "better-auth/cookies";
 import { openAPI } from "better-auth/plugins/open-api";
 import type { FastifyBaseLogger } from "fastify";
 import { CONSOLE_SESSION_DAYS, type Config, MIN_PASSWORD_LENGTH } from "../config.js";
+import { endSessions } from "./administer.js";
 import { ANONYMOUS, type Db, writeAudit } from "./audit.js";
 import { countHit } from "./ratelimit.js";
+import { ownPath } from "./return-path.js";
 import { finish, stateCookie } from "./sso/flow.js";
 import { memberPasswordRefusedBy, nameOwnedBy } from "./sso/people.js";
-import { ownPath } from "./return-path.js";
 import { findRecoveryCode, RECOVERY_HEADER, useRecoveryCode } from "./sso/recovery.js";
 
 /** The header the route sets for the library: the caller's address as the server worked it out. */
@@ -226,6 +227,22 @@ export function createAuth(
     hooks: {
       // A person ending their other sessions is on the record, as ending one is.
       after: createAuthMiddleware(async (ctx) => {
+        if (ctx.path === "/change-password" && !(ctx.context.returned instanceof Error)) {
+          // The person is signed in and may know who else is: this session stays, and so do
+          // their keys and codes, which they can see and end. Every other session ends, the
+          // console's and the apps'.
+          const kept = ctx.context.newSession ?? (await getSessionFromCtx(ctx));
+          if (!kept) return;
+          await db.transaction().execute(async (trx) => {
+            await trx
+              .deleteFrom("member_session")
+              .where("member_id", "=", kept.user.id)
+              .where("id", "!=", kept.session.id)
+              .execute();
+            await endSessions(trx, kept.user.id, { console: false });
+          });
+          return;
+        }
         if (ctx.path !== "/revoke-other-sessions") return;
         const session = await getSessionFromCtx(ctx);
         if (!session) return;

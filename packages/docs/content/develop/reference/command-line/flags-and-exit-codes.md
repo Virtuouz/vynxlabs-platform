@@ -31,8 +31,8 @@ The list of every command is [The volvel command](../cli), drawn from the same s
 | `tenant approve`, `decline`, `withdraw <number>` | `--tenant`, `--comment <text>`. |
 | `tenant rollback <number>` | `--tenant`, `--yes`. |
 | `tenant approval [on\|off]` | `--tenant`. |
-| `tenant export` | `--tenant`, `--out <file>`, `--history`. |
-| `tenant import <file>` | `--slug`, `--location`. |
+| `tenant export` | `--tenant` (or the slug as the first argument), `--out <file>`, `--history`. |
+| `tenant import <file>` | `--slug`, `--location`, `--yes`. |
 | `instance triggers [pause\|resume]` | `--reason <text>` with `pause`. |
 
 `--profile <name>` goes with any command, before or after it: see [Sign in to more than one instance](../../how-to/cli/sign-in-with-profiles). `--json` is described in [JSON output](json-output).

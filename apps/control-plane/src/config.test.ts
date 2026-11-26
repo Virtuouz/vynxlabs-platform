@@ -82,6 +82,10 @@ describe("configuration", () => {
         sqlStatementTimeoutMs: 15_000,
         triggersPaused: false,
         scheduleBacklogLimit: 200,
+        exportsAtOnce: 3,
+        exportsPerTenant: 1,
+        exportStallSeconds: 60,
+        exportMaxMinutes: 30,
       },
     });
   });
@@ -94,6 +98,27 @@ describe("configuration", () => {
     expect(() => loadConfig({ ...valid, RUN_SLOTS: "0" })).toThrow(/RUN_SLOTS/);
     expect(() => loadConfig({ ...valid, MANAGED_WORKERS_MAX: "lots" })).toThrow(
       /MANAGED_WORKERS_MAX/,
+    );
+  });
+
+  test("how many tenant exports are written at once, and for how long, are settings with bounds", () => {
+    expect(
+      loadConfig({
+        ...valid,
+        EXPORTS_AT_ONCE: "6",
+        EXPORTS_PER_TENANT: "2",
+        EXPORT_STALL_SECONDS: "300",
+        EXPORT_MAX_MINUTES: "0",
+      }).limits,
+    ).toMatchObject({
+      exportsAtOnce: 6,
+      exportsPerTenant: 2,
+      exportStallSeconds: 300,
+      exportMaxMinutes: 0,
+    });
+    expect(() => loadConfig({ ...valid, EXPORTS_AT_ONCE: "0" })).toThrow(/EXPORTS_AT_ONCE/);
+    expect(() => loadConfig({ ...valid, EXPORT_MAX_MINUTES: "soon" })).toThrow(
+      /EXPORT_MAX_MINUTES/,
     );
   });
 

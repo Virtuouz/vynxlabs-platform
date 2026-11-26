@@ -40,7 +40,7 @@ By the end you have the three things a restore needs: a copy of Postgres, a copy
 5. Try a restore on another machine. A backup is a backup once a restore from it has worked: [Restore an instance](restore-an-instance).
 :::
 
-A tenant can also be backed up by itself, as an export, from its own **Export** page or with `volvel tenant export`. The file holds everything the tenant has, with its secrets encrypted under a passphrase. Treat it like a database backup.
+A tenant can also be backed up by itself, as an export, from its own **Export** page or with `volvel tenant export`. The file holds everything the tenant has, with its secrets encrypted under a passphrase. Treat it like a database backup. To move a whole instance, restore a database backup instead of exporting tenant by tenant. For a large tenant, see [Move a tenant](../instance/moving-a-tenant).
 
 ## The result
 

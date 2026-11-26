@@ -804,22 +804,24 @@ export async function importTenant(
           throw refuse(`The export is refused: a row names the object ${key}, which is not in it.`);
         }
       }
-      const fresh: [string, Buffer][] = [];
+      // One object at a time is in memory: first every object is checked against what is stored
+      // here, then the new ones are read again and written. Nothing is written until all agree.
+      const fresh: TarIndexEntry[] = [];
       for (const entry of incoming) {
         const key = entry.path.slice("objects/".length);
-        const content = await tarRead(file, entry);
         const stored = await kernel.storage.get(key).catch(() => null);
-        if (stored === null) fresh.push([key, content]);
-        else if (!stored.equals(content)) {
+        if (stored === null) fresh.push(entry);
+        else if (!stored.equals(await tarRead(file, entry))) {
           throw refuse(
             `The export is refused: the object ${key} is already stored here with other content.`,
           );
         }
       }
       const objects = incoming.length;
-      for (const [key, content] of fresh) {
+      for (const entry of fresh) {
+        const key = entry.path.slice("objects/".length);
         written.push(key);
-        await kernel.storage.put(key, content, "application/octet-stream");
+        await kernel.storage.put(key, await tarRead(file, entry), "application/octet-stream");
       }
 
       // Count what arrived, and hold it against what the export says it holds.

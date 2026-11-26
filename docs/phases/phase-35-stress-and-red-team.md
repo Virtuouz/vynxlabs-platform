@@ -120,9 +120,22 @@ Fifteen reviewers each took one part of the product (the front door, sign-in, si
 
 **What held**, under both passes: no read or write across tenants was found in the authorization core, the data plane and its row policies, the worker protocol, the handling of SAML and OIDC, the read-only SQL guard, the outbound request guard or the cryptography. The two changes this phase made to the check (STR-04, STR-05) were reviewed by two reviewers and held.
 
-**The second pass** broke five of the first fixes and they were fixed again (the "Round two" section of each record). It also joined findings into chains; those rest on decisions that are the owner's, and are with the owner.
+**The second pass** broke five of the first fixes and they were fixed again (the "Round two" section of each record). It also joined findings into chains that rested on decisions that were the owner's.
 
-**Dependencies.** `pnpm audit --prod` on 2026-11-26: 26 advisories, four of them high, all in `nodemailer` 7.0.13; none critical. Nothing was upgraded in this phase. CI has no audit step.
+**The owner's decisions, 2026-11-26**, on what the second pass left, and what was built for each (the "Round three" sections of the records):
+
+| Decided | Built |
+|---|---|
+| A password reset and a first single sign-on tie end what could sign in before; an account with no membership keeps nothing that can sign in | `kernel/sign-ins.ts`. Sessions, a person's own API keys and recovery codes are ended, and the password where it applies. Replayed on the instance after the fix: the earlier password, session and key all answered 401 |
+| The stricter rule for a member's password link only where the link comes back to the caller | With mail, `member:write` is enough again. A send that failed had still returned the link: it is now 503 |
+| Nobody gives what they do not hold | One comparison (`requireToGive`, `kernel/authorize.ts`) at every door by which a role or a binding comes to be. The built-in workspace admin gained `*:read` (migration 0104) so that it can give viewer and deployer; it does not hold `code:write`, so the developer role is given by a tenant admin. A permission only its own name gives is given by whoever holds everything there |
+| A deploy that changes who holds what needs the permission to | A deploy, promotion, rollback or clone that adds, changes or removes a `role` or `binding` resource needs `role:write` or `binding:write`. Fernhill's first deploy is now the practice manager's, not the deployer's |
+| Patterns run on RE2 | `re2js` 2.10.0, for schemas and for expressions on the server. A pattern is at most 10,000 characters and its text at most 100,000, less for a large pattern; backreferences and lookaround are refused, with words that say so. The widget frame keeps the check by shape: the engine is 183 KB against a frame of 10 |
+| Large tenants | The four limits on exports are settings (`EXPORTS_AT_ONCE`, `EXPORTS_PER_TENANT`, `EXPORT_STALL_SECONDS`, `EXPORT_MAX_MINUTES`). The command line is the recommended way and is not a way round them: it reads as fast as the server writes, so it is never the slow reader. The defaults suit about 15 GB of archive, by one measured rate; nothing over 20 MB has been run |
+| Documented, not changed | What `sso:write` amounts to, what is and is not proved of an app's end users, and what apps that share an address share: each is in `SECURITY.md` and the pages it names |
+| Format 1 archives stay refused | Nothing to build |
+
+**Dependencies.** `nodemailer` went from 7.0.13 to 10.6.1, which cleared four high advisories; `pnpm audit --prod` now reports six, all low, in `dompurify` and `katex`. A workflow fails a pull request on a high or critical advisory and runs weekly.
 
 ## Findings
 
@@ -140,8 +153,7 @@ Fifteen reviewers each took one part of the product (the front door, sign-in, si
 - A write that meets Postgres at the instant it restarts is answered 500, not 503. Seen twice, one request each time.
 - A script never run is planned at 160 MB, and one that takes four times what it took before is planned by its past (STR-12).
 - Scripts in progress when a machine is killed outright are failed, not run again, unless they declare retries. That is the design.
-- `query-result-size.test.ts` failed twice in a full run of the suite and passes alone: its measure of memory is disturbed by the other tests. It is to be made steadier.
-- The owner's test instance has the health check on `/readyz` and no `kill_timeout` (STR-08, STR-13).
+- `query-result-size.test.ts` and `export-readers.test.ts` fail in some full runs of the suite and pass alone: the first measures memory, which the other tests disturb, and the second's limits are held once for the process. Both are to be made steadier.
 
 **What could not be seen while watching**, for the monitoring work set aside:
 

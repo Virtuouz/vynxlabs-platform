@@ -10,7 +10,7 @@ import {
   type Trx,
   writeAudit,
 } from "./audit.js";
-import { boundInside, check, type StandingMemo, type Target } from "./authorize.js";
+import { boundInside, check, checkMany, type StandingMemo, type Target } from "./authorize.js";
 import { forbidden, forbiddenBecause, notFound, unauthenticated } from "./errors.js";
 import type { WorkerScope } from "./execution/runs.js";
 import { resolveWorker } from "./execution/workers.js";
@@ -170,6 +170,15 @@ export class RequestContext {
 
   async allowed(permission: string, target: Target): Promise<boolean> {
     return (await check(this.db, this.principal, permission, target, this.#standing)).allowed;
+  }
+
+  /**
+   * `allowed` for many places, one permission, in a bounded number of statements: for a list
+   * that says per row what the caller may do. The answers are `allowed`'s, place by place.
+   */
+  async allowedMany(permission: string, targets: readonly Target[]): Promise<boolean[]> {
+    const decisions = await checkMany(this.db, this.principal, permission, targets);
+    return decisions.map((one) => one.allowed);
   }
 
   /**

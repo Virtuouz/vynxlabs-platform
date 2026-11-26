@@ -138,8 +138,14 @@ export function termRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         .select("slug")
         .where("id", "=", workspace.tenantId)
         .executeTakeFirstOrThrow();
-      for (const { app, id, set } of apps) {
-        if (!writer && !(await ctx.allowed("app:read", { ...at, resourceId: id }))) continue;
+      const mayApp = writer
+        ? []
+        : await ctx.allowedMany(
+            "app:read",
+            apps.map(({ id }) => ({ ...at, resourceId: id })),
+          );
+      for (const [index, { app, set }] of apps.entries()) {
+        if (!writer && !mayApp[index]) continue;
         const base = appUrl(kernel, {
           tenantSlug: tenant.slug,
           workspaceSlug: workspace.slug,

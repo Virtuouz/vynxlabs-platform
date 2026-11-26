@@ -29,9 +29,14 @@ kill_timeout = 60
   auto_start_machines = true
   min_machines_running = 1
 
+  # Liveness, not readiness. This check decides whether Fly sends the machine traffic, and with one
+  # machine a failing check is the whole instance unreachable. `/api/v1/readyz` answers 503 when
+  # the object store cannot be reached, while the console, the API and scripts still work: with
+  # the check on it, a store that was away took everything else away as well (phase 35). Watch
+  # `/api/v1/readyz` from a monitor of your own instead.
   [[http_service.checks]]
     method = "GET"
-    path = "/api/v1/readyz"
+    path = "/api/v1/healthz"
     interval = "15s"
     timeout = "5s"
     grace_period = "30s"

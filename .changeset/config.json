@@ -1,0 +1,27 @@
+{
+  "$schema": "../node_modules/@changesets/config/schema.json",
+  "baseBranch": "main",
+  "access": "public",
+  "fixed": [
+    [
+      "@volvel/app",
+      "@volvel/cli",
+      "@volvel/docs",
+      "@volvel/docs-engine",
+      "@volvel/docs-site",
+      "@volvel/markup",
+      "@volvel/sdk",
+      "@volvel/ui",
+      "@volvel/widget-frame",
+      "@volvel/widgets"
+    ]
+  ],
+  "privatePackages": {
+    "version": false,
+    "tag": false
+  },
+  "updateInternalDependencies": "patch",
+  "changelog": false,
+  "commit": false,
+  "format": false
+}

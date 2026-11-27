@@ -1,8 +1,7 @@
 name: Pull request title
 
-# The title becomes the squashed commit on main, and release-please reads it to
-# choose the next version and write the changelog. `feat:` is a minor version,
-# `fix:` a patch, and `!` (`feat(sdk)!: …`) marks a breaking change.
+# The title becomes the squashed commit on main, so main's history reads one way.
+# The version and the release notes come from changesets, not from titles.
 
 on:
   pull_request_target:

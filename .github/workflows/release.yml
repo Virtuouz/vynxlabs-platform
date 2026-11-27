@@ -91,6 +91,8 @@ jobs:
     name: Build, rehearse, publish
     needs: screenshots
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # the GitHub release of a tag
     services:
       # The API's page of reference is written by the app itself, which needs a database.
       postgres:
@@ -187,6 +189,18 @@ jobs:
           tags: |
             volvel/volvel:${{ steps.version.outputs.version }}
             volvel/volvel:${{ steps.version.outputs.tag }}
+
+      # The words the changesets gave this version (CHANGELOG.md), then every pull request it
+      # holds, grouped by label as .github/release.yml says.
+      - name: Write the GitHub release
+        if: vars.RELEASE_ENABLED == 'true' && github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          node scripts/version-packages.mjs notes "${VERSION}" > "${RUNNER_TEMP}/notes.md"
+          gh release create "${GITHUB_REF_NAME}" --verify-tag --title "Volvel ${VERSION}" \
+            --notes-file "${RUNNER_TEMP}/notes.md" --generate-notes
 
       # The website is another repository. It is told when there is a version to build
       # its documentation from, once it exists to be told: set DOCS_SITE_REPOSITORY to it. The

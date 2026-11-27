@@ -5,7 +5,8 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md) and [docs/master-spec.md](docs/master-sp
 ## Where the work is
 
 - The work is in GitHub issues and milestones on `volveldev/volvel`, not in files. Start from the issue: `gh issue view <n>`, and its milestone's tracking issue for the context around it.
-- Branch per issue or milestone. A pull request says `Closes #<n>`, and its title is a conventional commit (`feat(console): …`, `fix(worker): …`, `!` for a breaking change): it becomes the squashed commit and the changelog line.
+- Branch per issue or milestone. A pull request says `Closes #<n>`, and its title is a conventional commit (`feat(console): …`, `fix(worker): …`, `!` for a breaking change): it becomes the squashed commit.
+- A change a person would notice adds a changeset (`pnpm changeset`, or a file in `.changeset/`): the bump, and what to tell people, written as the CHANGELOG is, under `### For operators` or `### For tenant developers`. These words are the release notes, so they are written for the reader, not as a commit message. See `.changeset/README.md`.
 - What a walk or a build found goes in the pull request's description, or a comment on the issue. Not in a file in `docs/`.
 - A decision later work must follow is a new record in `docs/adr/`.
 - The history of phases 0–35, the polish audit and the UI/UX audits are in the private repository `volveldev/volvel-internal`. Read it from `../volvel-internal` when it is cloned beside this one and a task needs the history.

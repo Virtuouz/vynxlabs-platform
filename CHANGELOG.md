@@ -1,6 +1,6 @@
 # Changelog
 
-From 0.6.0 on, each version's entry is written by release-please from the titles of the pull requests it holds. The entries before it were written by hand and are below them.
+From 0.6.0 on, each version's entry is gathered from the changesets of the pull requests it holds (see `.changeset/README.md`). The entries before it are below them.
 
 Versions before 1.0 may change the API, the manifest format and the worker protocol. Each entry says what an operator and a tenant developer need to do.
 

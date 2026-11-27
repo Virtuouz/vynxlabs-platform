@@ -10,7 +10,8 @@ Outside contributions are not accepted yet. A contributor agreement must be in p
 - **Milestones** group the issues of one body of work, such as a release or one of the steps in [docs/before-publicizing.md](docs/before-publicizing.md). The [project board](https://github.com/orgs/volveldev/projects) shows what is next and what is in progress.
 - **Labels** say the type (`type: bug`, `type: feature`, `type: docs`, `type: chore`, `type: security`), the area (`area: console`, `area: worker`, …), the priority (`priority: p0` to `p2`) and the state (`status: needs-triage`, `status: blocked`).
 - **A pull request** closes its issue (`Closes #123`) and is squash-merged. Its title is a [conventional commit](https://www.conventionalcommits.org): `feat(console): …`, `fix(worker): …`, `docs: …`, with `!` for a breaking change. CI checks the title.
-- **Releases** are made by release-please from those titles: it keeps a release pull request open with the next version and its changelog, and merging it tags the release. Before 1.0, `feat` and a breaking change raise the minor version and `fix` the patch.
+- **A change a person would notice adds a changeset** (`pnpm changeset`): how big it is, and what to tell people about it, in the words of the changelog. Tests, CI and refactors need none. See [.changeset/README.md](.changeset/README.md).
+- **Releases** gather the changesets. A "chore: release" pull request stays open with the next version and its `CHANGELOG.md` section, and merging it tags `vX.Y.Z`, which publishes the release. The GitHub release shows the changesets' words first, then every merged pull request grouped by its `type:` label. Before 1.0, `minor` is something new or anything that breaks what worked, and `patch` a fix.
 - **Design** stays in the repository: the [spec](docs/master-spec.md), the [contracts](docs/contracts), and a new [architecture decision record](docs/adr) for a decision that later work must follow.
 
 ## Before you push

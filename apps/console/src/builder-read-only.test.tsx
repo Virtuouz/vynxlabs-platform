@@ -78,7 +78,7 @@ test("a viewer reads the published page, with no way to change, add, preview or 
   expect(line.textContent).toContain("Read only");
   expect(line.textContent).toContain("resource:write or interface:write");
   expect(screen.queryByRole("button", { name: "Rename the app" })).toBeNull();
-  expect(screen.queryByRole("button", { name: "Add to page" })).toBeNull();
+  expect(screen.queryByRole("button", { name: /^Add to page/ })).toBeNull();
   expect(screen.queryByRole("button", { name: "Publish" })).toBeNull();
   expect(screen.queryByRole("button", { name: /Preview/ })).toBeNull();
   expect(screen.queryByRole("button", { name: "Add a page" })).toBeNull();
@@ -96,7 +96,7 @@ test("someone who may edit sees the builder as it was", async () => {
   summary = { mayAuthor: true, authorBlockedBy: null };
   await open();
   expect(document.querySelector("[data-read-only]")).toBeNull();
-  expect(screen.getByRole("button", { name: "Add to page" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: /^Add to page/ })).toBeTruthy();
 });
 
 test("the line says production when it is production, and what is needed when it is a permission", () => {
@@ -110,7 +110,7 @@ test("an app the repository manages is read only until it is taken over, and say
   await open();
   expect(screen.getByText(/defined in code, in the tenant's repository/)).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Rename the app" })).toBeNull();
-  expect(screen.queryByRole("button", { name: "Add to page" })).toBeNull();
+  expect(screen.queryByRole("button", { name: /^Add to page/ })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Take over" }));
   await waitFor(() => expect(screen.getByRole("button", { name: "Rename the app" })).toBeTruthy());
   expect(screen.getByText(/takes it back/)).toBeTruthy();

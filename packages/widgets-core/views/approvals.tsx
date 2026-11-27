@@ -504,6 +504,9 @@ function Row({
 }) {
   const meta = metaOf(item, now);
   const lead = item.fields.slice(0, 2).map((field) => valueWords(field.name, field.value));
+  const badge = settled ? "Decided" : meta.overdue ? "Overdue" : undefined;
+  // A row that opens is named by everything it shows, in order (WCAG 2.5.3).
+  const name = [item.title, lead.join(" · "), meta.text, badge].filter(Boolean).join(", ");
   return (
     <li
       data-leaving={leaving ? "" : undefined}
@@ -519,7 +522,7 @@ function Row({
             ? {
                 role: "button",
                 tabIndex: leaving ? undefined : 0,
-                "aria-label": `${item.title}, ${meta.text}`,
+                "aria-label": name,
                 onClick: onOpen,
                 onFocus,
                 onKeyDown: (event: KeyboardEvent<HTMLElement>) => {
@@ -542,16 +545,16 @@ function Row({
           }`}
         >
           <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-            <strong className="block truncate font-medium">{item.title}</strong>
+            <strong className="block truncate font-medium">{item.title}</strong>{" "}
             {lead.length > 0 ? (
               <span className="truncate text-body-sm text-ink-muted">{lead.join(" · ")}</span>
-            ) : null}
+            ) : null}{" "}
             <span
               className={`truncate text-meta ${meta.overdue ? "text-danger" : "text-ink-muted"}`}
             >
               {meta.text}
             </span>
-          </span>
+          </span>{" "}
           {settled ? (
             <DotBadge tone="neutral">Decided</DotBadge>
           ) : meta.overdue ? (

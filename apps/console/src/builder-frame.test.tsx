@@ -288,7 +288,7 @@ test("dragging a row's handle in the outline puts it where it is let go, and the
 
 test("the A key opens Add to page when focus is not in a field, and not in one", async () => {
   await open();
-  const add = screen.getAllByRole("button", { name: "Add to page" })[0] as HTMLElement;
+  const add = screen.getAllByRole("button", { name: /^Add to page/ })[0] as HTMLElement;
   expect(add.getAttribute("aria-keyshortcuts")).toBe("A");
   expect(add.textContent).toContain("A");
   fireEvent.click(screen.getByRole("button", { name: "Rename the app" }));

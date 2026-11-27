@@ -205,7 +205,7 @@ test("a container has no Move to: it goes only on the page", async () => {
 test("Add to page adds into the chosen Section, and says so", async () => {
   await open();
   choose("Orders");
-  fireEvent.click(screen.getByRole("button", { name: "Add to page" }));
+  fireEvent.click(screen.getByRole("button", { name: /^Add to page/ }));
   const dialog = await screen.findByRole("dialog", { name: "Add to page" });
   expect(within(dialog).getByText("Orders", { selector: "strong" })).toBeTruthy();
   fireEvent.click(within(dialog).getByRole("button", { name: /^Text/ }));
@@ -222,7 +222,7 @@ test("Add to page adds into the chosen Section, and says so", async () => {
 
   // With a loose widget chosen, it goes at the end of the page, as before.
   choose("Loose note");
-  fireEvent.click(screen.getByRole("button", { name: "Add to page" }));
+  fireEvent.click(screen.getByRole("button", { name: /^Add to page/ }));
   const again = await screen.findByRole("dialog", { name: "Add to page" });
   expect(within(again).queryByText(/Adds to/)).toBeNull();
 });
@@ -230,7 +230,7 @@ test("Add to page adds into the chosen Section, and says so", async () => {
 test("Add to page into Tabs goes to its first tab, from a child too", async () => {
   await open();
   choose("Status notes");
-  fireEvent.click(screen.getByRole("button", { name: "Add to page" }));
+  fireEvent.click(screen.getByRole("button", { name: /^Add to page/ }));
   const dialog = await screen.findByRole("dialog", { name: "Add to page" });
   expect(within(dialog).getByText("Views › By status", { selector: "strong" })).toBeTruthy();
   fireEvent.click(within(dialog).getByRole("button", { name: /^Text/ }));

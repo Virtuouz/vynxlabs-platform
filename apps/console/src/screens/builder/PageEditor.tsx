@@ -626,7 +626,7 @@ export function PageEditor({
             <Button
               variant="quiet"
               disabled={full}
-              aria-label="Add to page"
+              // Named by what it shows, the key included (WCAG 2.5.3): "Add to page A".
               aria-keyshortcuts="A"
               tooltip={full ? `A page holds at most ${MAX_PAGE_WIDGETS} widgets.` : undefined}
               className="w-full shrink-0 justify-center border border-action bg-action-soft"

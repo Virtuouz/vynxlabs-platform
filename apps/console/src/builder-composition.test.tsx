@@ -250,7 +250,7 @@ const saved = async (check: (body: InterfaceBody) => boolean) => {
 };
 const money0 = () => stored.pages[0]?.widgets ?? [];
 const suggestions = async () => {
-  fireEvent.click(screen.getAllByRole("button", { name: "Add to page" })[0] as HTMLElement);
+  fireEvent.click(screen.getAllByRole("button", { name: /^Add to page/ })[0] as HTMLElement);
   const dialog = within(await screen.findByRole("dialog", { name: "Add to page" }));
   return {
     dialog,
@@ -701,7 +701,7 @@ test("an empty page offers the table starters, on the canvas and in Add to page,
   ).toBe(true);
   fireEvent.click(dialog.getByRole("button", { name: "Cancel" }));
   // And in Add to page, among the suggestions.
-  fireEvent.click(screen.getAllByRole("button", { name: "Add to page" })[0] as HTMLElement);
+  fireEvent.click(screen.getAllByRole("button", { name: /^Add to page/ })[0] as HTMLElement);
   const adding = within(await screen.findByRole("dialog", { name: "Add to page" }));
   const offered = within(await adding.findByRole("region", { name: /Suggested for/ }));
   expect(offered.getByText("An Invoice record page")).toBeTruthy();

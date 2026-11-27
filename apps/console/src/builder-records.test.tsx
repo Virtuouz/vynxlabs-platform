@@ -376,7 +376,7 @@ test("a table that does nothing on a click can be made to open an Invoice detail
 
 test("Add a form writes the form, the modal it opens in and the button that opens it", async () => {
   await open();
-  fireEvent.click(screen.getAllByRole("button", { name: "Add to page" })[0] as HTMLElement);
+  fireEvent.click(screen.getAllByRole("button", { name: /^Add to page/ })[0] as HTMLElement);
   fireEvent.click(
     await within(await screen.findByRole("dialog", { name: "Add to page" })).findByRole("button", {
       name: /Form/,
@@ -431,7 +431,7 @@ test("Add to page suggests what follows from the table the page shows, each corr
   delete stored.pages[0]?.widgets[0]?.config;
   await open();
   const suggestions = async () => {
-    fireEvent.click(screen.getAllByRole("button", { name: "Add to page" })[0] as HTMLElement);
+    fireEvent.click(screen.getAllByRole("button", { name: /^Add to page/ })[0] as HTMLElement);
     const dialog = within(await screen.findByRole("dialog", { name: "Add to page" }));
     return within(await dialog.findByRole("region", { name: "Suggested for Invoices" }));
   };
@@ -533,7 +533,7 @@ test("the row click editor writes each choice, and Opens as changes the detail's
 
 test("Add a form draws the form live from the checked fields, and makes the same body", async () => {
   await open();
-  fireEvent.click(screen.getAllByRole("button", { name: "Add to page" })[0] as HTMLElement);
+  fireEvent.click(screen.getAllByRole("button", { name: /^Add to page/ })[0] as HTMLElement);
   fireEvent.click(
     await within(await screen.findByRole("dialog", { name: "Add to page" })).findByRole("button", {
       name: /^Form/,

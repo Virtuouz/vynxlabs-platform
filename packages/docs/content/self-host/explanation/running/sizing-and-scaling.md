@@ -61,7 +61,7 @@ Measured in November 2026 on one dedicated CPU and 2 GB for the control plane an
 | A mix of short scripts and ones that sleep or hold 80 MB for five seconds, over twelve tenants | 139 runs a minute, six scripts at once |
 | The console at 50 people and that mix of scripts together | The console kept its speed and the runs waited in the queue: one CPU does not do both |
 
-These are one machine's figures, not a promise. The page of the load test, `docs/phases/phase-35-stress-and-red-team.md` in the repository, has how each was measured.
+These are one machine's figures, not a promise. The fixtures that put on the load are `examples/stress` in the repository, so the test can be run again.
 
 ## The database's connection budget
 

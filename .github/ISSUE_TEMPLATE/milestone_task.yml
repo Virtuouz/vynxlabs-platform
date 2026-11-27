@@ -1,0 +1,43 @@
+name: Milestone task (maintainers)
+description: A piece of planned work in a milestone, with its acceptance criteria and polish gate.
+labels: ["status: needs-triage"]
+body:
+  - type: textarea
+    id: why
+    attributes:
+      label: What it is for
+      description: What a person can do when it is done, and where the ask came from.
+    validations:
+      required: true
+  - type: textarea
+    id: criteria
+    attributes:
+      label: Acceptance criteria
+      description: |
+        One line per thing a person does, as a journey, naming the screen it happens on
+        ("a folder is made, renamed, moved and deleted without opening a page", not "folders are supported").
+        Add a line for each POLISH rule (docs/engineering/polish-prevention-rules.md) it touches.
+      value: |
+        - [ ] 
+    validations:
+      required: true
+  - type: textarea
+    id: decisions
+    attributes:
+      label: Owner decisions
+      description: Asked before building. Anything trimmed later is asked again (POLISH-015).
+  - type: checkboxes
+    id: gate
+    attributes:
+      label: Polish gate (anything a person sees)
+      description: |
+        See docs/engineering/milestone-polish-quality-gate.md. Answer each in the PR, with a file:line,
+        a screenshot or "not applicable because …".
+      options:
+        - label: "Rules: the POLISH rules touched are in the acceptance criteria"
+        - label: "Siblings: screens doing the same job listed; the fix is in the shared piece"
+        - label: "Lifecycle: create, open, edit, rename, move, duplicate, remove, undo, clear, bulk accounted for"
+        - label: "States: loading, empty, filtered-empty, stale, failed, forbidden, waiting, live"
+        - label: "Walk: throwaway Fernhill instance at 1440, 768 and 390 px, light and dark, keyboard, reload"
+        - label: "Guards: typecheck, touched unit tests; new sections measured in e2e/polish-setup.ts"
+        - label: "Left out: anything trimmed was asked about"

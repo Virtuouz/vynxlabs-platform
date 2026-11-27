@@ -1,0 +1,19 @@
+# How GitHub groups the merged pull requests of a release, under the notes the changesets wrote.
+# A pull request goes in the first category whose label it has.
+changelog:
+  exclude:
+    labels:
+      - "skip-changelog"
+      - "dependencies"
+      - "type: chore"
+  categories:
+    - title: Security
+      labels: ["type: security"]
+    - title: Features
+      labels: ["type: feature"]
+    - title: Fixes
+      labels: ["type: bug"]
+    - title: Documentation
+      labels: ["type: docs"]
+    - title: Other changes
+      labels: ["*"]

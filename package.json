@@ -28,11 +28,14 @@
     "docs:export": "tsc -b && pnpm --filter @volvel/docs build && node packages/docs/export.mjs",
     "docs:generate": "tsc -b && node packages/docs/generate.mjs",
     "release:check": "pnpm build && node scripts/release-check.mjs",
+    "changeset": "changeset",
+    "release:version": "node scripts/version-packages.mjs",
     "docs:screenshots": "SCREENSHOTS=1 node e2e/run.mjs screenshots"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.10.2",
     "@biomejs/biome": "^2.6.7",
+    "@changesets/cli": "^3.1.0",
     "@playwright/test": "^1.65.0",
     "@types/node": "^24.0.0",
     "typescript": "^7.0.2",

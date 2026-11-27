@@ -35,7 +35,9 @@ test("a page with no fact-check record is refused, and a tutorial or how-to also
   const written = ["a/index", "a/how-to/x", "a/ref/y"];
   const out = recordProblems({ written, types, has: has(), unchecked: [] });
   expect(out).toHaveLength(2);
-  expect(out[0]).toContain("factcheck/a/how-to/x.md and no docs/documentation/runs/a/how-to/x.md");
+  expect(out[0]).toContain(
+    "factcheck/a/how-to/x.md and no packages/docs/records/runs/a/how-to/x.md",
+  );
   expect(out[1]).toContain("factcheck/a/ref/y.md");
   expect(out[1]).not.toContain("runs/");
   expect(

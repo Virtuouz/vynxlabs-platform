@@ -2,7 +2,17 @@
 
 Read [docs/master-spec.md](docs/master-spec.md) first. Every change must be consistent with it. If a change needs to contradict the spec, raise it with the owner and change the spec first.
 
-Outside contributions are not accepted yet. A contributor agreement must be in place first.
+Outside contributions are not accepted yet. A contributor agreement must be in place first. Bug reports and feature requests are welcome in [Issues](https://github.com/volveldev/volvel/issues/new/choose), and questions in [Discussions](https://github.com/volveldev/volvel/discussions). Everyone taking part follows the [code of conduct](CODE_OF_CONDUCT.md).
+
+## How work is tracked
+
+- **Issues** hold the work: one per bug, feature or task, with its acceptance criteria. Planned work uses the *Milestone task* form.
+- **Milestones** group the issues of one body of work, such as a release or one of the steps in [docs/before-publicizing.md](docs/before-publicizing.md). The [project board](https://github.com/orgs/volveldev/projects) shows what is next and what is in progress.
+- **Labels** say the type (`type: bug`, `type: feature`, `type: docs`, `type: chore`, `type: security`), the area (`area: console`, `area: worker`, …), the priority (`priority: p0` to `p2`) and the state (`status: needs-triage`, `status: blocked`).
+- **A pull request** closes its issue (`Closes #123`) and is squash-merged. Its title is a [conventional commit](https://www.conventionalcommits.org): `feat(console): …`, `fix(worker): …`, `docs: …`, with `!` for a breaking change. CI checks the title.
+- **A change a person would notice adds a changeset** (`pnpm changeset`): how big it is, and what to tell people about it, in the words of the changelog. Tests, CI and refactors need none. See [.changeset/README.md](.changeset/README.md).
+- **Releases** gather the changesets. A "chore: release" pull request stays open with the next version and its `CHANGELOG.md` section, and merging it tags `vX.Y.Z`, which publishes the release. The GitHub release shows the changesets' words first, then every merged pull request grouped by its `type:` label. Before 1.0, `minor` is something new or anything that breaks what worked, and `patch` a fix.
+- **Design** stays in the repository: the [spec](docs/master-spec.md), the [contracts](docs/contracts), and a new [architecture decision record](docs/adr) for a decision that later work must follow.
 
 ## Before you push
 
@@ -39,7 +49,18 @@ Adding a license to the allowlist is a decision for the owner.
 
 ## API
 
-Every route follows the conventions in [docs/phases/phase-0-foundations.md](docs/phases/phase-0-foundations.md): the `/api/v1` prefix, a TypeBox schema for the request and every response, problem-details errors and cursor pagination. A route without a response schema fails the tests. There are no private routes.
+Every route follows these conventions. A route without a response schema fails the tests.
+
+- **Prefix and version.** All routes live under `/api/v1`. A breaking change means a new prefix.
+- **Description.** OpenAPI 3.1 at `/api/v1/openapi.json`, generated from the routes' TypeBox schemas, one for the request and one for every response.
+- **No private routes.** The console and apps use this API and nothing else.
+- **Bodies.** JSON, with camelCase field names.
+- **Identifiers.** UUIDv7 strings.
+- **Timestamps.** ISO 8601 in UTC, for example `2026-11-11T17:05:00.000Z`.
+- **Errors.** RFC 9457 problem details with content type `application/problem+json`. Fields: `type`, `title`, `status`, `detail`, `instance`, plus `code` (a stable machine-readable string) and `requestId`. Validation errors add an `errors` array of `{path, message}`.
+- **Lists.** Cursor pagination. Request: `limit` (default 50, maximum 200) and `cursor`. Response: `{"items": [...], "nextCursor": "..." | null}`. Cursors are opaque.
+- **Request IDs.** Every response carries `x-request-id`. An incoming value is kept if it is well formed.
+- **Logs.** One structured JSON line per request, with the request ID.
 
 ## Access and audit
 
@@ -99,12 +120,11 @@ The control plane knows nothing about TypeScript. It depends on the manifest for
 - The console calls only the public API.
 - An app calls only the public API too, through `@volvel/app`. If an app needs something the API lacks, the API grows.
 
-## Phases
+## The polish gate
 
-- Work is planned and recorded as phases in `docs/phases/`, one document and one `phase-N-*` branch each. A new phase document starts from [docs/phases/TEMPLATE.md](docs/phases/TEMPLATE.md).
-- A milestone that changes anything a person sees is not marked **Built** until its **Polish gate** section is answered. That section holds the seven steps of [the gate](docs/polish/milestone-polish-quality-gate.md), checked against [the rules POLISH-001 to 015](docs/polish/polish-prevention-rules.md), and includes a browser walk on a throwaway instance seeded with `examples/fernhill`.
+- A change to anything a person sees is not done until the **Polish gate** of its pull request is answered: the seven steps of [the gate](docs/engineering/milestone-polish-quality-gate.md), checked against [the rules POLISH-001 to 015](docs/engineering/polish-prevention-rules.md), with a browser walk on a throwaway instance seeded with `examples/fernhill`.
 - A fix goes in the shared piece, not only where the symptom was seen, and lists the other places that use it (POLISH-013).
-- `apps/console/src/enforce.test.ts` fails on a navigation section that `e2e/polish-setup.ts` neither measures nor lists in `NOT_MEASURED`. More guards from the gate come with the fixes that make them pass (phase 22).
+- `apps/console/src/enforce.test.ts` fails on a navigation section that `e2e/polish-setup.ts` neither measures nor lists in `NOT_MEASURED`. More guards from the gate come with the fixes that make them pass.
 
 ## Apps, end users and addresses
 

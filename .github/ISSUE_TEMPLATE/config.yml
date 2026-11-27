@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Ask a question
+    url: https://github.com/volveldev/volvel/discussions
+    about: How do I…, is this expected, which approach is right. Issues are for bugs and feature requests.
+  - name: Report a vulnerability
+    url: https://github.com/volveldev/volvel/security/advisories/new
+    about: Privately, never in a public issue. Answered within 3 working days.

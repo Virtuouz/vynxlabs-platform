@@ -204,7 +204,7 @@ for (const path of ratchet.words ?? []) {
   }
 }
 // A fact-check record for every page, and a run log for a tutorial or how-to.
-const RECORDS = join(REPO, "docs/documentation");
+const RECORDS = join(REPO, "packages/docs/records");
 problems.push(
   ...recordProblems({
     written,

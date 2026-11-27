@@ -6,8 +6,8 @@ import { expectNoAxeViolations } from "./visual.ts";
 /**
  * Phase 27, walked in a browser on the Fernhill example (`examples/fernhill/setup/setup.mjs`),
  * in its sandbox workspace and under names of its own. Each test is one journey of the exit
- * criterion in docs/phases/phase-27-composition.md, titled with the POLISH rule
- * (docs/polish/polish-prevention-rules.md) it checks: Money's search bar, Visits' section and
+ * criterion in phase-27-composition.md in volvel-internal, titled with the POLISH rule
+ * (docs/engineering/polish-prevention-rules.md) it checks: Money's search bar, Visits' section and
  * tabs, Stock's search, folding section and action group, the invoice sheet's action group, the
  * builder (drag and keyboard moves into a Section and a tab, the nesting outline, duplicate and
  * remove with undo, suggestions, grouping buttons, "+ Page" from a table), and a dashboard.

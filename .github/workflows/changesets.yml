@@ -1,0 +1,72 @@
+name: Release PR
+
+# Two jobs in one, on every push to main.
+#
+# While changesets are waiting in .changeset/, it keeps a "chore: release" pull request open that
+# turns them into the next version: a section of CHANGELOG.md in the words the changesets give,
+# and that version on every package (scripts/version-packages.mjs).
+#
+# When that pull request is merged, the version on main is new, and this tags it `vX.Y.Z`. The
+# tag runs release.yml, which publishes it and writes the GitHub release.
+#
+# A pull request opened, or a tag pushed, with the workflow's own token starts no other workflow,
+# so both use RELEASE_PLEASE_TOKEN: a fine-grained token with contents and pull requests write on
+# this repository.
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: release-pr
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  release-pr:
+    name: Release pull request and tag
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: What there is to do
+        id: mode
+        uses: changesets/action/select-mode@v2.1.2
+
+      - name: Open or update the release pull request
+        if: steps.mode.outputs.mode == 'version'
+        uses: changesets/action/version@v2.1.2
+        with:
+          github-token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+          script: node scripts/version-packages.mjs
+          pr-title: "chore: release"
+          commit-message: "chore: release"
+
+      - name: Tag the version a merged release pull request made
+        if: steps.mode.outputs.mode != 'version'
+        run: |
+          read_version() { node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.parse(s).version))'; }
+          now=$(read_version < packages/sdk/package.json)
+          before=$(git show HEAD^:packages/sdk/package.json | read_version)
+          if [ "$now" = "$before" ]; then
+            echo "The version is still $now: nothing to tag."
+            exit 0
+          fi
+          if git ls-remote --exit-code --tags origin "refs/tags/v$now" > /dev/null; then
+            echo "v$now is tagged already."
+            exit 0
+          fi
+          git tag "v$now"
+          git push origin "v$now"
+          echo "Tagged v$now. release.yml publishes it."

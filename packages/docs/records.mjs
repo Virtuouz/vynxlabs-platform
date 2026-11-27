@@ -8,15 +8,15 @@ export function recordProblems({ written, types, has, unchecked }) {
   for (const path of [...written].sort()) {
     if (path === "index" || path.endsWith("/index")) continue;
     const need = [];
-    if (!has(`factcheck/${path}.md`)) need.push(`docs/documentation/factcheck/${path}.md`);
+    if (!has(`factcheck/${path}.md`)) need.push(`packages/docs/records/factcheck/${path}.md`);
     if ((types[path] === "tutorial" || types[path] === "how-to") && !has(`runs/${path}.md`)) {
-      need.push(`docs/documentation/runs/${path}.md`);
+      need.push(`packages/docs/records/runs/${path}.md`);
     }
     if (need.length === 0) continue;
     missing.add(path);
     if (!unchecked.includes(path)) {
       problems.push(
-        `${path}.md  has no ${need.join(" and no ")}. A page is not finished without them (see docs/documentation/style-guide.md, "How a page is made").`,
+        `${path}.md  has no ${need.join(" and no ")}. A page is not finished without them (see packages/docs/records/style-guide.md, "How a page is made").`,
       );
     }
   }

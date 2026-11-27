@@ -81,7 +81,7 @@ describe("p35 round three: patterns run on RE2", () => {
         const started = performance.now();
         compiled.pattern.test(text);
         expect(performance.now() - started, `${pattern} on ${text.slice(0, 6)}...`).toBeLessThan(
-          100,
+          SOON_MS,
         );
       }
     }

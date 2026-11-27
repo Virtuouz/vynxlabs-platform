@@ -155,7 +155,8 @@ describe("the worker host", () => {
       maxWorkers: 3,
     });
     const running = host.run();
-    for (let i = 0; i < 100 && started.length < 3; i++) await sleep(50);
+    // A directory's mode is read after its worker starts, so wait for both.
+    for (let i = 0; i < 100 && (started.length < 3 || modes.length < 3); i++) await sleep(50);
     expect(started.map((one) => one.uid)).toEqual([20000, 20001, 20002]);
     expect(started.map((one) => one.gid)).toEqual([30000, 30001, 30002]);
     expect(new Set(started.map((one) => one.home)).size).toBe(3);

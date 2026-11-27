@@ -320,7 +320,7 @@ Postgres is the only platform database, custom tables live in one schema per wor
 - Apps reach data through the public API, which applies permissions and row policies.
 - Row policies are enforced for every caller, including scripts acting on behalf of an end user.
 - Who is asking is told to the database as a claim the control plane signs. A row policy checks the signature with a key the connection that reads rows cannot reach, so nothing run on that connection can claim to be someone else.
-- A workspace's tables can be asked a question in SQL, and only asked: one SELECT, read by Postgres's own parser and written again from what was read, over the workspace's tables by their paths, calling only functions on a list the platform keeps. Each table named needs the permission to read its rows, and each table's row policy applies to whoever asks. It has a permission of its own, which is explicit. A query kept by name is a resource, and is run by whoever may read its tables. The row API takes no SQL. [Decision 0003](evolution/decisions/0003-read-only-sql.md) records the design.
+- A workspace's tables can be asked a question in SQL, and only asked: one SELECT, read by Postgres's own parser and written again from what was read, over the workspace's tables by their paths, calling only functions on a list the platform keeps. Each table named needs the permission to read its rows, and each table's row policy applies to whoever asks. It has a permission of its own, which is explicit. A query kept by name is a resource, and is run by whoever may read its tables. The row API takes no SQL. [Decision 0003](adr/0003-read-only-sql.md) records the design.
 - A column may hold one of a list of values, or several. The database holds it to them. A value that leaves the list is retired like a column: kept on the rows that hold it and offered no more.
 - A reference says what happens when the row it points to is deleted, and a table says which column stands for a row where another table points to it.
 
@@ -506,7 +506,7 @@ Apps built in the console and dashboards are one system: pages of widgets on a t
 - **Actions run on the server**: a button or a widget's event runs steps read from the deployed page (change this record, start a flow, open a page), each checked against the person's permissions.
 - **The boundary is part of the design.** No expressions, variables, custom CSS, arbitrary scripts, absolute positioning or breakpoints. Hiding a widget is never security: what a person may read and do is decided by row policies and permissions.
 
-The design is [S9](evolution/specs/S9-pages-and-widgets.md), with decisions [0004](evolution/decisions/0004-page-actions-run-on-the-server.md), [0005](evolution/decisions/0005-the-widget-contract.md) and [0006](evolution/decisions/0006-one-page-model.md).
+The design is [S9](specs/S9-pages-and-widgets.md), with decisions [0004](adr/0004-page-actions-run-on-the-server.md), [0005](adr/0005-the-widget-contract.md) and [0006](adr/0006-one-page-model.md).
 
 ### Dashboards
 
@@ -777,7 +777,7 @@ Nothing below is in scope for the early phases, but no design may block the defe
 ### Deferred
 
 - Visual editing of flows. Resources of every kind have been made in the console since phase 7, as drafts that a deploy makes live.
-- Widgets written by a tenant's developers and run in a sandbox. The contract allows them; packaging and the sandbox are designed in [decision 0005](evolution/decisions/0005-the-widget-contract.md) and not built.
+- Widgets written by a tenant's developers and run in a sandbox. The contract allows them; packaging and the sandbox are designed in [decision 0005](adr/0005-the-widget-contract.md) and not built.
 - A core automation node pack.
 - Additional authoring languages.
 - Sandboxing for code from authors the operator does not trust.

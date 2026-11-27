@@ -6,8 +6,8 @@ import { type Browser, expect, type Page, test } from "./test.ts";
 /**
  * Phase 23, walked in a browser on the Fernhill example (`examples/fernhill/setup/setup.mjs`),
  * in its sandbox workspace and under table and resource names of its own. It walks the phase's
- * exit criterion (docs/phases/phase-23-owner-decisions.md), each test titled with the POLISH
- * rule (docs/polish/polish-prevention-rules.md) it checks:
+ * exit criterion (phase-23-owner-decisions.md in volvel-internal), each test titled with the POLISH
+ * rule (docs/engineering/polish-prevention-rules.md) it checks:
  *
  * - M1 (004, 005): a table's rows scroll in one place at 1440, 768 and 390 px;
  * - M2 (001): a reference is chosen by typing, past the first 200;

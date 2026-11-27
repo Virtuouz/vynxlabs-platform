@@ -5,10 +5,10 @@ import { type Browser, expect, type Page, test } from "./test.ts";
 /**
  * Phase 24, walked in a browser on the Fernhill example (`examples/fernhill/setup/setup.mjs`),
  * in its sandbox workspace and under names of its own. Each test is titled with the item of
- * docs/phases/phase-24-follow-through.md it checks.
+ * phase-24-follow-through.md in volvel-internal it checks.
  *
- * It walks the phase's exit criterion (docs/phases/phase-24-follow-through.md), each test titled
- * with the POLISH rule (docs/polish/polish-prevention-rules.md) it checks:
+ * It walks the phase's exit criterion (phase-24-follow-through.md in volvel-internal), each test titled
+ * with the POLISH rule (docs/engineering/polish-prevention-rules.md) it checks:
  *
  * - M1 (003, 010): a query used by a console dashboard is renamed, the dialog lists the dashboard,
  *   it is drafted with the new path, and runs once deployed; a widget whose path was not updated

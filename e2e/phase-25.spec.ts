@@ -6,8 +6,8 @@ import { type Browser, expect, type Page, test } from "./test.ts";
 /**
  * Phase 25, walked in a browser on the Fernhill example (`examples/fernhill/setup/setup.mjs`),
  * in its sandbox workspace and under names of its own. Each test is one item of the exit
- * criterion in docs/phases/phase-25-one-widget-system.md, titled with the POLISH rule
- * (docs/polish/polish-prevention-rules.md) it checks.
+ * criterion in phase-25-one-widget-system.md in volvel-internal, titled with the POLISH rule
+ * (docs/engineering/polish-prevention-rules.md) it checks.
  *
  * The walk copies Clinic performance's Money page into an interface of its own
  * (`screens/p25-<stamp>`), so nothing it moves is anyone else's.

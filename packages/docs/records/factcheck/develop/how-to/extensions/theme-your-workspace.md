@@ -1,6 +1,6 @@
 # Fact-check record: develop/how-to/extensions/theme-your-workspace
 
-Lines are current at commit `5ebf1c80` (branch phase-31-write-the-docs), 2026-11-23. Paths are under `apps/console/src` unless they start with `apps/control-plane` or `packages`. `Au` = `screens/Authoring.tsx`, `CS` = `screens/CodeSettings.tsx`. Written by the writer; "Checked by" is for the second agent. Run log: `docs/documentation/runs/develop/how-to/extensions/theme-your-workspace.md`.
+Lines are current at commit `5ebf1c80` (branch phase-31-write-the-docs), 2026-11-23. Paths are under `apps/console/src` unless they start with `apps/control-plane` or `packages`. `Au` = `screens/Authoring.tsx`, `CS` = `screens/CodeSettings.tsx`. Written by the writer; "Checked by" is for the second agent. Run log: `packages/docs/records/runs/develop/how-to/extensions/theme-your-workspace.md`.
 
 | Claim | Source (file:line) | Checked by | Result |
 | --- | --- | --- | --- |

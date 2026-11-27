@@ -1,6 +1,6 @@
 # S1: Process per attempt, hard timeouts, worker isolation
 
-Roadmap: [P0-1](../07-roadmap.md#p0-1-hard-timeouts-and-worker-isolation-s1). Priority P0. Complexity M.
+Roadmap item (the 2026 roadmap, in volvel-internal): P0-1. Priority P0. Complexity M.
 
 ## Problem (verified)
 

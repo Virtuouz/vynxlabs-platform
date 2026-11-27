@@ -206,14 +206,14 @@ Rules:
 ## 6. What not to describe
 
 - **Internals** a reader cannot act on: table names, queue mechanics, class names, the file a function is in. The exception is when a reader would be surprised or hurt without it (for example "file-owned resources are read-only in the console").
-- **Anything unreleased or not built.** `docs/documentation/inventory/tutorials-and-style.md` section 5 lists what is not shipped: developer-written widgets, MFA, languages other than TypeScript, hosted Volvel, npm and Docker publication (the first publish date is not set), CSV import, and others. Do not write that it exists or "will". Where a reader would expect it, say in one sentence that it is not there.
+- **Anything unreleased or not built.** The inventory in volvel-internal (`docs/documentation/inventory/tutorials-and-style.md` section 5) lists what is not shipped: developer-written widgets, MFA, languages other than TypeScript, hosted Volvel, npm and Docker publication (the first publish date is not set), CSV import, and others. Do not write that it exists or "will". Where a reader would expect it, say in one sentence that it is not there.
 - **Anything the code does not do.** If you cannot find the line that does it, you do not write it. Do not describe from the master spec, from an old phase document, from `docs/evolution/` (before phase 9), or from memory. Use the code, the generated reference and `CHANGELOG.md`.
 - **Our promises** such as uptime, performance or support commitments.
-- **A fix for a bug.** If the product does the wrong thing, report it in `docs/documentation/findings`; do not document around it.
+- **A fix for a bug.** If the product does the wrong thing, open an issue (`type: bug`, `area: docs` if it is only the pages); do not document around it.
 
 ### The fact-check record
 
-Every page has a record, at `docs/documentation/factcheck/<collection>/<page>.md` (the page's path under the collection, with `.md`). It is a table, one row per claim a reader could act on:
+Every page has a record, at `packages/docs/records/factcheck/<collection>/<page>.md` (the page's path under the collection, with `.md`). It is a table, one row per claim a reader could act on:
 
 | Claim | Source (file:line) | Checked by | Result |
 | --- | --- | --- | --- |
@@ -225,7 +225,7 @@ A claim is a label, a limit, a default, a permission, a state, a command or flag
 
 1. **The writer** reads the code and the screen, then writes the page from this guide and the type's template. The writer fills the first column and the source of the record.
 2. **A second agent**, who did not write the page, checks every label, limit, permission and command against the code, and the page against this guide. The second agent writes "checked by" and the result in the record, and gives each claim that does not hold back to the writer. A page does not pass with an open claim.
-3. **Tutorials and how-tos are executed**: every step run, in order, on a throwaway instance seeded by `examples/fernhill/setup/setup.mjs` (never the owner's own or the live test instance), at the width a person would use, by the person the page says is signed in. A run log goes to `docs/documentation/runs/<page>.md`: the instance and commit, the steps as followed, what was seen at each, and what the page got wrong. The page is corrected to what happened and run again until a run has no change. A run that could not be done is said there, and the page is not presented as finished.
+3. **Tutorials and how-tos are executed**: every step run, in order, on a throwaway instance seeded by `examples/fernhill/setup/setup.mjs` (never the owner's own or the live test instance), at the width a person would use, by the person the page says is signed in. A run log goes to `packages/docs/records/runs/<page>.md`: the instance and commit, the steps as followed, what was seen at each, and what the page got wrong. The page is corrected to what happened and run again until a run has no change. A run that could not be done is said there, and the page is not presented as finished.
 4. **Reference screen pages** are walked in a browser: every control and state is on the page, and no page has a control the screen lacks.
 5. **Then the check:** `pnpm docs:check` and the docs build. A new warning is not added to `lint-allow.json`; it is fixed. The page is listed in its folder's `pages:`.
 6. The commit message says which pages and starts with the phase and milestone.

@@ -6,10 +6,10 @@ import { expectNoAxeViolations } from "./visual.ts";
 /**
  * Phase 28, walked in a browser on the Fernhill example (`examples/fernhill/setup/setup.mjs`),
  * in its sandbox workspace and under names of its own: the builder as boards 1 to 19 draw it
- * (docs/phases/phase-28-phone-publish-and-the-boards.md), the phone layout, the publish check,
+ * (phase-28-phone-publish-and-the-boards.md in volvel-internal), the phone layout, the publish check,
  * View as, who can run and who can see, draft history, and the acceptance walk-throughs. Each
  * test is one journey through the real UI, titled with the POLISH rule
- * (docs/polish/polish-prevention-rules.md) it checks. What a journey changed is read back from
+ * (docs/engineering/polish-prevention-rules.md) it checks. What a journey changed is read back from
  * the draft through the API, and is looked for on the canvas and again after a reload.
  *
  * The walk makes interfaces of its own (`screens/p28<area>-<stamp>`, each with an app of its own,

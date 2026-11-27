@@ -12,8 +12,15 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "../../..");
 const OLD = ["vy", "nx"].join("");
 const COMPANY = `V${OLD.slice(1)}labs`;
 
-/** What was written before the name, and is a record. */
-const RECORD = ["docs/phases/", "docs/evolution/", "docs/uiux/", "CHANGELOG.md"];
+/** What was written before the name, and is a record. Decisions and their specs are never rewritten. */
+const RECORD = [
+  "docs/adr/",
+  "docs/specs/",
+  "docs/phases/",
+  "docs/evolution/",
+  "docs/uiux/",
+  "CHANGELOG.md",
+];
 
 /** Where the company is meant, and so named. */
 const NAMES_THE_COMPANY = new Set([

@@ -1,11 +1,13 @@
 # Before Volvel is made public
 
-Written: 2026-11-26, after [phase 35](phases/phase-35-stress-and-red-team.md).
+Written: 2026-11-26, after phase 35 (its record is in the private repository `volveldev/volvel-internal`, as are the other documents named below).
 
 This lists what stands between the product as it is and telling people to choose it. It holds
 blockers only: things that would stop a developer, an administrator, a leader or an agency from
 choosing the software, or that would embarrass a claim made in public. Smaller faults are in the
 phase documents.
+
+Each blocker is tracked as an issue, and each step of the suggested order at the end as a milestone: see the [Before publicizing](https://github.com/volveldev/volvel/issues?q=label%3A%22priority%3A+p0%22) issues. This page is the reasoning. What is done and what is next is on the issues, not here.
 
 Each item says how it is known. "Measured" and "proved" mean phase 35 ran it. "Read" means it was
 found by reading the repository and not run. "Not assessed" means nobody has looked.

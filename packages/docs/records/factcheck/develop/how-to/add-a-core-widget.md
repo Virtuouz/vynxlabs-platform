@@ -1,6 +1,6 @@
 # Fact-check record: develop/how-to/add-a-core-widget
 
-Lines are current at commit `5ebf1c80` (branch phase-31-write-the-docs), 2026-11-23. Paths are under `apps/console/src` unless they start with `apps/control-plane` or `packages`. `Au` = `screens/Authoring.tsx`, `CS` = `screens/CodeSettings.tsx`. Written by the writer; "Checked by" is for the second agent. `W` = `packages/widget-sdk/src/index.ts`, `Core` = `packages/widgets-core/src/index.ts`. Run log: `docs/documentation/runs/develop/how-to/add-a-core-widget.md`.
+Lines are current at commit `5ebf1c80` (branch phase-31-write-the-docs), 2026-11-23. Paths are under `apps/console/src` unless they start with `apps/control-plane` or `packages`. `Au` = `screens/Authoring.tsx`, `CS` = `screens/CodeSettings.tsx`. Written by the writer; "Checked by" is for the second agent. `W` = `packages/widget-sdk/src/index.ts`, `Core` = `packages/widgets-core/src/index.ts`. Run log: `packages/docs/records/runs/develop/how-to/add-a-core-widget.md`.
 
 | Claim | Source (file:line) | Checked by | Result |
 | --- | --- | --- | --- |

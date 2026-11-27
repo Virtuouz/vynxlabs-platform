@@ -1,6 +1,6 @@
 # Fact-check record: console/reference/screens/data/tables
 
-Code as of commit `be324f78` (branch `phase-31-write-the-docs`), 2026-11-23. Written by the page's writer; walked in a browser on the throwaway instance (`docs/documentation/runs/console/reference/screens/data/tables.md`). "Checked by" ends with the second agent, who read each claim against the code (Checked by: second agent, 2026-11-23). Line numbers point at the block that holds the claim and were found by searching the file, not by reading each line again: the second agent confirms them. `Data` = `apps/console/src/screens/Data.tsx`, `Cols` = `apps/console/src/screens/ColumnControls.tsx`, `Rules` = `apps/console/src/screens/RowRules.tsx`, `GF` = `apps/console/src/screens/gridFilter.ts`.
+Code as of commit `be324f78` (branch `phase-31-write-the-docs`), 2026-11-23. Written by the page's writer; walked in a browser on the throwaway instance (`packages/docs/records/runs/console/reference/screens/data/tables.md`). "Checked by" ends with the second agent, who read each claim against the code (Checked by: second agent, 2026-11-23). Line numbers point at the block that holds the claim and were found by searching the file, not by reading each line again: the second agent confirms them. `Data` = `apps/console/src/screens/Data.tsx`, `Cols` = `apps/console/src/screens/ColumnControls.tsx`, `Rules` = `apps/console/src/screens/RowRules.tsx`, `GF` = `apps/console/src/screens/gridFilter.ts`.
 
 | Claim | Source (file:line) | Checked by | Result |
 | --- | --- | --- | --- |

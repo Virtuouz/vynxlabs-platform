@@ -1,6 +1,6 @@
 # Fact-check record: start/tutorials/your-first-table
 
-Code as of commit `be324f78` (branch `phase-31-write-the-docs`), 2026-11-23. Written by the page's writer; every row was also executed on the throwaway instance (see `docs/documentation/runs/start/tutorials/your-first-table.md`). "Checked by" is left for the second agent.
+Code as of commit `be324f78` (branch `phase-31-write-the-docs`), 2026-11-23. Written by the page's writer; every row was also executed on the throwaway instance (see `packages/docs/records/runs/start/tutorials/your-first-table.md`). "Checked by" is left for the second agent.
 
 | Claim | Source (file:line) | Checked by | Result |
 | --- | --- | --- | --- |

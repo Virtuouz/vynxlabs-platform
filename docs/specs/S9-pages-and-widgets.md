@@ -1,6 +1,6 @@
 # S9: Pages and widgets
 
-The design for apps built in the console and for dashboards, as one system. Owner's direction 2026-11-21: the drawings and notes in `temp/` (six boards on Fernhill's Clinic performance, and a research note), and the owner's decisions recorded in [phase 25](../../phases/phase-25-one-widget-system.md). Decisions: [0004](../decisions/0004-page-actions-run-on-the-server.md), [0005](../decisions/0005-the-widget-contract.md), [0006](../decisions/0006-one-page-model.md).
+The design for apps built in the console and for dashboards, as one system. Owner's direction 2026-11-21: the drawings and notes in `temp/` (six boards on Fernhill's Clinic performance, and a research note), and the owner's decisions recorded in phase 25. Decisions: [0004](../adr/0004-page-actions-run-on-the-server.md), [0005](../adr/0005-the-widget-contract.md), [0006](../adr/0006-one-page-model.md).
 
 ## Problem (observed)
 

@@ -1,6 +1,6 @@
 # Fact-check record: console/explanation/how-tables-work
 
-Code as of commit `be324f78` (branch `phase-31-write-the-docs`), 2026-11-23. Written by the page's writer. Items marked "run" were also done on the throwaway instance (`docs/documentation/runs/start/tutorials/your-first-table.md`, section "Extra probes"). "Checked by" is left for the second agent.
+Code as of commit `be324f78` (branch `phase-31-write-the-docs`), 2026-11-23. Written by the page's writer. Items marked "run" were also done on the throwaway instance (`packages/docs/records/runs/start/tutorials/your-first-table.md`, section "Extra probes"). "Checked by" is left for the second agent.
 
 | Claim | Source (file:line) | Checked by | Result |
 | --- | --- | --- | --- |

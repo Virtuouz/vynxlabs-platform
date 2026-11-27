@@ -5,7 +5,7 @@ import { type Browser, expect, type Page, type Request, test } from "./test.ts";
 /**
  * The exit criterion of phase 22, walked in a browser on the Fernhill example
  * (`examples/fernhill/setup/setup.mjs`), each step named for the POLISH rule it checks
- * (docs/polish):
+ * (docs/engineering):
  *
  * - the text sent is the text typed, whether by ⌘S pressed at once or by an autosave that a
  *   keystroke overtook (POLISH-012);

@@ -39,7 +39,7 @@ test("any CSS color is read, and one with some transparency is laid over its gro
   expect(parseColor("not a color")).toBeUndefined();
 });
 
-// The pairs in docs/uiux/07-design-system-specification.md §7.4.
+// The text and surface pairs the design system holds to WCAG AA contrast.
 const TEXT = ["ink", "ink-muted", "ink-subtle"];
 describe.each([
   ["light", ["canvas", "surface", "sunken", "structure", "selected"], ["attention", "success"]],

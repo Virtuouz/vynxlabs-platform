@@ -1,6 +1,6 @@
 # S8: Command palette with entities and actions
 
-Roadmap: [P1-10](../07-roadmap.md#p1-10-command-palette-with-entities-and-actions-s8). Priority P1. Complexity M.
+Roadmap item (the 2026 roadmap, in volvel-internal): P1-10. Priority P1. Complexity M.
 
 ## Problem (observed)
 

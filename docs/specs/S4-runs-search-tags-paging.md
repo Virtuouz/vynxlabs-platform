@@ -1,6 +1,6 @@
 # S4: Runs search, tags and paging
 
-Roadmap: [P1-3](../07-roadmap.md#p1-3-runs-search-tags-and-paging-s4). Priority P1. Complexity M.
+Roadmap item (the 2026 roadmap, in volvel-internal): P1-3. Priority P1. Complexity M.
 
 ## Problem (verified)
 

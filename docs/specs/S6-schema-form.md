@@ -1,6 +1,6 @@
 # S6: SchemaForm everywhere, and schemas from zod in console code
 
-Roadmap: [P1-5](../07-roadmap.md#p1-5-schemaform-everywhere-derive-console-schemas-from-zod-s6). Priority P1. Complexity M.
+Roadmap item (the 2026 roadmap, in volvel-internal): P1-5. Priority P1. Complexity M.
 
 ## Problem (verified and observed)
 

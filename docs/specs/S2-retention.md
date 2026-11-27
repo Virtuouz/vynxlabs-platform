@@ -1,6 +1,6 @@
 # S2: Retention and pruning
 
-Roadmap: [P0-2](../07-roadmap.md#p0-2-retention-and-pruning-s2). Priority P0. Complexity M–L.
+Roadmap item (the 2026 roadmap, in volvel-internal): P0-2. Priority P0. Complexity M–L.
 
 ## Problem (verified)
 

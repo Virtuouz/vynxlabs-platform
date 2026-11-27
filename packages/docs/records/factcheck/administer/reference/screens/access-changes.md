@@ -11,5 +11,5 @@ Checked by: second agent, 2026-11-23.
 | approval_needs_two, own_release, release_stale, service account cannot decide | `apps/control-plane/src/routes/access-releases.ts:186-198; apps/control-plane/src/kernel/tenant/releases.ts:1100-1160` | writer, 2026-11-23; second agent, 2026-11-23 | holds as read |
 | Decline comment 1000 | `apps/control-plane/src/routes/access-releases.ts:412` | writer, 2026-11-23; second agent, 2026-11-23 | holds as read |
 | Withdraw by asker needs no permission | `apps/control-plane/src/routes/access-releases.ts:420-437` | writer, 2026-11-23; second agent, 2026-11-23 | holds as read |
-| Run: approve, decline (Superseded), withdraw, own_release | `docs/documentation/runs/administer/reference/screens/access-changes.md` | writer, 2026-11-23; second agent, 2026-11-23 | holds as read |
+| Run: approve, decline (Superseded), withdraw, own_release | `packages/docs/records/runs/administer/reference/screens/access-changes.md` | writer, 2026-11-23; second agent, 2026-11-23 | holds as read |
 | Ask/Stop asking, Withdraw, Go back dialogs, waiting row texts | `apps/console/src/screens/AccessReleases.tsx` | second agent, 2026-11-23 | holds; run in the browser |

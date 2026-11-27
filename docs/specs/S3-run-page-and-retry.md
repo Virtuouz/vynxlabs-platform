@@ -1,6 +1,6 @@
 # S3: Full run page, re-run with edit, retry from failed step
 
-Roadmap: [P1-1](../07-roadmap.md#p1-1-full-page-run-view-s3) and [P1-2](../07-roadmap.md#p1-2-re-run-with-edited-input-retry-flow-from-failed-step-s3). Priority P1. Complexity M + M.
+Roadmap item (the 2026 roadmap, in volvel-internal): P1-1 and P1-2. Priority P1. Complexity M + M.
 
 ## Problem (verified and observed)
 

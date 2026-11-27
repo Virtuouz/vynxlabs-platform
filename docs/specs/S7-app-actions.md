@@ -1,6 +1,6 @@
 # S7: Actions in the App Builder
 
-Roadmap: [P1-7](../07-roadmap.md#p1-7-app-builder-action-widget-s7). Priority P1. Complexity M.
+Roadmap item (the 2026 roadmap, in volvel-internal): P1-7. Priority P1. Complexity M.
 
 ## Problem (observed)
 

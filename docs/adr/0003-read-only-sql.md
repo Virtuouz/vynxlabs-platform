@@ -1,6 +1,6 @@
 # Decision 0003: read-only SQL over a workspace's tables
 
-Status: **accepted as proposed** 2026-11-18. The owner asked for phase 18 to be built through M9 without stopping here, so the open decisions at the end were taken as recommended, and each is the owner's to change. Built as M7 to M9 of [phase 18](../../phases/phase-18-data-insight.md), which records where this text and the code disagree.
+Status: **accepted as proposed** 2026-11-18. The owner asked for phase 18 to be built through M9 without stopping here, so the open decisions at the end were taken as recommended, and each is the owner's to change. Built as M7 to M9 of phase 18, which records where this text and the code disagree.
 Date: 2026-11-18.
 Prompted by: the owner's notes after phase 17. Dashboards read one table at a time, nothing can join two, and an analyst has no way to ask a question the row API was not built for.
 

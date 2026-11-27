@@ -12,7 +12,7 @@ The newest two minor versions get fixes for security problems: the newest minor 
 
 ## Two rules
 
-Decision 0001 (`docs/evolution/decisions/0001-execution-boundary.md`) sets where a tenant's code runs and what the control plane reaches on a tenant's behalf.
+Decision 0001 ([`docs/adr/0001-execution-boundary.md`](docs/adr/0001-execution-boundary.md)) sets where a tenant's code runs and what the control plane reaches on a tenant's behalf.
 
 1. **The control plane never runs a tenant's code.** It does not import a bundle, evaluate a tenant's expression with access to anything but the data it is given, or load a tenant's connector. Work that needs a tenant's code, such as reading the schema a script declares, is a task that one of the tenant's workers does, in a process of its own.
 2. **The control plane reaches a destination a tenant chose only through a named list, behind an egress guard.** The list: an identity provider's metadata and endpoints, a Git remote, a data source, the token address of an OAuth connection, and the check of a registered hostname. The guard refuses loopback, private, link-local (cloud metadata included), shared and reserved addresses, checked on the address actually connected to and on every redirect. `EGRESS_ALLOW` lets an operator allow an internal network or host. Anything else a tenant's systems are asked, such as posting a failure alert through a connection or trying a connection, is a task for a worker.

@@ -1,6 +1,6 @@
 # S5: Run event stream
 
-Roadmap: [P1-4](../07-roadmap.md#p1-4-run-event-stream-s5). Priority P1. Complexity M.
+Roadmap item (the 2026 roadmap, in volvel-internal): P1-4. Priority P1. Complexity M.
 
 ## Problem (verified)
 

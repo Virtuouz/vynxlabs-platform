@@ -1,6 +1,6 @@
 # Decision 0002: resource identity, two-way authoring, and access as resources
 
-Status: **accepted** 2026-11-17, with the owner's answers at the end. Being built as [phase 17](../../phases/phase-17-resource-identity.md), which records where this text and the code disagree and the narrower readings taken.
+Status: **accepted** 2026-11-17, with the owner's answers at the end. Built in phase 17, whose record (in volvel-internal) holds where this text and the code disagree and the narrower readings taken.
 Date: 2026-11-17.
 Prompted by: the developer-ergonomics test that built `examples/higher-ed-devices` on the test instance, and the owner's review of what renaming costs.
 

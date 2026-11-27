@@ -5,7 +5,7 @@ import { type Browser, expect, type Page, test } from "./test.ts";
 /**
  * Phase 26, walked in a browser on the Fernhill example (`examples/fernhill/setup/setup.mjs`),
  * in its sandbox workspace and under names of its own. Each test is one journey of the exit
- * criterion in docs/phases/phase-26-records-and-actions.md: a row opens a record in a side sheet,
+ * criterion in phase-26-records-and-actions.md in volvel-internal: a row opens a record in a side sheet,
  * "Mark paid" and "Edit" and "New invoice" change the table and say so, a person who may only
  * read presses the button because the button is the grant, and a widget is shown only to who it
  * is for.

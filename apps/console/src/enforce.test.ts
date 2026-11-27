@@ -432,9 +432,9 @@ test("a table that is read has its tools, and a dialog that holds one is big eno
 
 /**
  * Every section in the navigation is measured by `e2e/polish-setup.ts` (shared by the `polish-*.spec.ts` files), or that module
- * lists it in `NOT_MEASURED` (the polish gate, step 6, `docs/polish`). A section
+ * lists it in `NOT_MEASURED` (the polish gate, step 6, `docs/engineering`). A section
  * added to `nav.ts` without either fails here, so its layout is not left unseen by
- * default, as the data screens were (A2-31).
+ * default, as the data screens once were.
  */
 test("every section in the navigation is measured for polish, or says it is not", async () => {
   const { INSTANCE_SECTIONS, TENANT_SECTIONS, WORKSPACE_SECTIONS } = await import("./nav.ts");

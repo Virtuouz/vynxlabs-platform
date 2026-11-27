@@ -16,6 +16,6 @@ Checked by: second agent, 2026-11-23.
 | Last-admin refusal text | `apps/control-plane/src/kernel/administer.ts:57-69` | writer, 2026-11-23; second agent, 2026-11-23 | holds as read |
 | View access: sources, 'not while suspended', Find or check a permission, Allowed/Denied texts | `apps/console/src/screens/Access.tsx:60-321` | writer, 2026-11-23; second agent, 2026-11-23 | holds as read |
 | View access needs binding:read or self | `apps/control-plane/src/routes/access.ts:99-103` | writer, 2026-11-23; second agent, 2026-11-23 | holds as read |
-| Run on instance 2026-11-23: members list, inspector buttons, reset link emailed, approval and direct bindings | `docs/documentation/runs/administer/reference/screens/members.md` | writer, 2026-11-23; second agent, 2026-11-23 | holds as read |
+| Run on instance 2026-11-23: members list, inspector buttons, reset link emailed, approval and direct bindings | `packages/docs/records/runs/administer/reference/screens/members.md` | writer, 2026-11-23; second agent, 2026-11-23 | holds as read |
 | Denied texts of View access | `apps/console/src/screens/Access.tsx:205-225` | second agent, 2026-11-23 | corrected: second sentences added; confirmed on screen |
 | Add member dialog, Remove title, reset link dialogs, suspend dialogs | `Members.tsx`, `MemberResetLink.tsx` | second agent, 2026-11-23 | holds; driven in the browser, 390 px and dark walked |

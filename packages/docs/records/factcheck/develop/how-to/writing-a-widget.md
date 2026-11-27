@@ -1,6 +1,6 @@
 # Fact-check record: develop/how-to/writing-a-widget
 
-Lines are current at commit `aabf96af` (branch p34-b6) plus the docs of this lane, 2026-11-24. Written by the writer (B6); "Checked by" is for the second agent. Lane b4r reviews the frame host and the widget route at the same time: re-check the rows marked (b4r) after it merges. Run log: `docs/documentation/runs/develop/how-to/writing-a-widget.md`.
+Lines are current at commit `aabf96af` (branch p34-b6) plus the docs of this lane, 2026-11-24. Written by the writer (B6); "Checked by" is for the second agent. Lane b4r reviews the frame host and the widget route at the same time: re-check the rows marked (b4r) after it merges. Run log: `packages/docs/records/runs/develop/how-to/writing-a-widget.md`.
 
 | Claim | Source (file:line) | Checked by | Result |
 | --- | --- | --- | --- |

@@ -19,7 +19,7 @@ Code as of branch `phase-31-write-the-docs`, 2026-11-23. Written by the page's w
 | Minimap hidden under 640 px (max-sm) and while testing | FlowEditor.tsx:1882-1883 | second agent, 2026-11-23 | checked: labels matched against the console source |
 | To fix lists problems of the build's graph check; one fault at a time | FlowEditor.tsx:514 (manifestProblems), 2548-2575 | second agent, 2026-11-23 | checked: labels matched against the console source |
 | 200 steps, 1000 edges | schemas/kinds/flow.v1.schema.json:20,833 | second agent, 2026-11-23 | checked: labels matched against the console source |
-| Run: a test was driven in the browser; panel showed Build with all drafts, As JSON, Run again, Open the run, the steps with times, Last test, Test from set | docs/documentation/runs/console/how-to/flows/test-a-flow.md | second agent, 2026-11-23 | checked: labels matched against the console source |
+| Run: a test was driven in the browser; panel showed Build with all drafts, As JSON, Run again, Open the run, the steps with times, Last test, Test from set | packages/docs/records/runs/console/how-to/flows/test-a-flow.md | second agent, 2026-11-23 | checked: labels matched against the console source |
 
 ## Second check, 2026-11-23
 

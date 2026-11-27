@@ -240,6 +240,12 @@ export function createAuth(
               .where("id", "!=", kept.session.id)
               .execute();
             await endSessions(trx, kept.user.id, { console: false });
+            // The owner chose this password: nobody else set it.
+            await trx
+              .updateTable("member")
+              .set({ password_set_by_type: null, password_set_by_id: null })
+              .where("id", "=", kept.user.id)
+              .execute();
           });
           return;
         }

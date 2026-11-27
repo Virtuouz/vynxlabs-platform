@@ -103,5 +103,6 @@
   "0102_widget_version.sql": "3c96e11d247a809c9fef0b141de90cff91e367b4f372291f6dd071dfe6d6d75a",
   "0103_run_peak_memory.sql": "ecf694f86fe79d1bb8ea967cd0289c8d99bb40efcf8a730dbe192b522248d1f4",
   "0104_workspace_admin_holds_what_it_gives.sql": "86dd55ff864942f73609d76690e2ec61dfc4cd1a83510160d68ba70e93e44af8",
-  "0105_member_proved.sql": "6ffeefc0897ef0da0bb0f3ffd10482d9419d3d5d7c6e00efcc4ed2ddd2ae22ca"
+  "0105_member_proved.sql": "6ffeefc0897ef0da0bb0f3ffd10482d9419d3d5d7c6e00efcc4ed2ddd2ae22ca",
+  "0106_member_password_set_by.sql": "715f52707c482d3d40dbe8208c3cf5515610b8d1fffab656cc4d77bce0882360"
 }

@@ -921,3 +921,291 @@ const pushed = (provider: Awaited<ReturnType<typeof providerWithDomain>>, email:
         { userName: email, email },
       ),
     );
+
+describe("the one who set an account's password may add it elsewhere (round five)", () => {
+  const setBy = async (memberId: string) =>
+    t.db
+      .selectFrom("member")
+      .select(["password_set_by_type", "password_set_by_id"])
+      .where("id", "=", memberId)
+      .executeTakeFirstOrThrow();
+  const nobody = { password_set_by_type: null, password_set_by_id: null };
+
+  /** A tenant the operator holds an open grant on, with no members of its own yet. */
+  async function openTenant(slug: string) {
+    const id = (await t.admin.post("/tenants", { slug, name: slug })).body.id as string;
+    const grant = await t.admin.post(`/tenants/${id}/access-grants`, {
+      reason: "Setup",
+      roleId: roles.tenant_admin,
+    });
+    return { id, endGrant: () => t.admin.delete(`/tenants/${id}/access-grants/${grant.body.id}`) };
+  }
+
+  /** Makes `memberId` an admin of a new tenant, as the operator would. */
+  async function adminOfNew(slug: string, memberId: string, email: string) {
+    const tenant = await openTenant(slug);
+    await t.admin.post(`/tenants/${tenant.id}/members`, { email });
+    await t.admin.post(`/tenants/${tenant.id}/bindings`, {
+      principalType: "member",
+      principalId: memberId,
+      roleId: roles.tenant_admin,
+    });
+    await tenant.endGrant();
+    return tenant;
+  }
+
+  test("the same operator, under a grant on each tenant, adds the account they made to several tenants and keeps everything", async () => {
+    const A = await openTenant("fiveopa");
+    const B = await openTenant("fiveopb");
+    const C = await openTenant("fiveopc");
+    const email = "devi@fiveop.example";
+    const made = await t.admin.post(`/tenants/${A.id}/members`, {
+      email,
+      name: "Devi",
+      password: PASSWORD,
+    });
+    expect(made.status).toBe(201);
+    const deviId = made.body.id as string;
+    expect(await setBy(deviId)).toMatchObject({ password_set_by_type: "member" });
+    await t.admin.post(`/tenants/${A.id}/bindings`, {
+      principalType: "member",
+      principalId: deviId,
+      roleId: roles.tenant_admin,
+    });
+    const devi = await t.signIn(email, PASSWORD);
+    const held = await personWithKeyAndCodes(devi);
+    const codes = await recoveryCodesLeft(deviId);
+    for (const tenant of [B, C]) {
+      const added = await t.admin.post(`/tenants/${tenant.id}/members`, {
+        email,
+        name: "Devi",
+        password: PASSWORD,
+      });
+      expect(added.status, JSON.stringify(added.body)).toBe(201);
+      expect(added.body.id).toBe(deviId);
+      await t.admin.post(`/tenants/${tenant.id}/bindings`, {
+        principalType: "member",
+        principalId: deviId,
+        roleId: roles.tenant_admin,
+      });
+    }
+    for (const tenant of [A, B, C]) await tenant.endGrant();
+    expect(await signInStatus(email, PASSWORD)).toBe(200);
+    expect((await devi.get("/me")).status).toBe(200);
+    expect((await held.key.get("/me")).status).toBe(200);
+    expect(await recoveryCodesLeft(deviId)).toBe(codes);
+    expect((await entries("member.sign_ins_ended", deviId)).length).toBe(0);
+    for (const tenant of [A, B, C]) {
+      expect((await devi.get(`/tenants/${tenant.id}/members`)).status).toBe(200);
+    }
+    // Still not proved: the owner has not shown the account is theirs.
+    expect(await provedAt(deviId)).toBeNull();
+
+    // A different admin adding it starts it again, whoever set it first.
+    const D = await tenantWith("fiveopd", ["dora"]);
+    const added = await (D.clients.dora as Client).post(`/tenants/${D.id}/members`, { email });
+    expect(added.status).toBe(201);
+    expect(await signInStatus(email, PASSWORD)).not.toBe(200);
+    expect((await devi.get("/me")).status).toBe(401);
+    expect((await held.key.get("/me")).status).toBe(401);
+    expect(await recoveryCodesLeft(deviId)).toBe(0);
+    expect(await setBy(deviId)).toEqual(nobody);
+  });
+
+  test("the maker, an admin of A only, cannot use it to reach B: B's own admin adds the account and it starts again", async () => {
+    const A = await tenantWith("fivemka", ["ann"]);
+    const B = await tenantWith("fivemkb", ["bob"]);
+    const carolId = await planted(A.clients.ann as Client, A.id, "carol@fivemk.example");
+    const carol = await t.signIn("carol@fivemk.example", PLANTED);
+    const refused = await (A.clients.ann as Client).post(`/tenants/${B.id}/members`, {
+      email: "carol@fivemk.example",
+    });
+    expect([403, 404]).toContain(refused.status);
+    const added = await (B.clients.bob as Client).post(`/tenants/${B.id}/members`, {
+      email: "carol@fivemk.example",
+    });
+    expect(added.status).toBe(201);
+    expect((await carol.get("/me")).status).toBe(401);
+    expect(await signInStatus("carol@fivemk.example", PLANTED)).not.toBe(200);
+    expect(await provedAt(carolId)).toBeNull();
+  });
+
+  test("a maker who is also an admin of B adds the account there and keeps it: they held that already", async () => {
+    const A = await tenantWith("fiveboa", ["ann"]);
+    const ann = A.clients.ann as Client;
+    const B = await adminOfNew("fiveboab", A.members.ann as string, "ann@fiveboa.example");
+    const carolId = await planted(ann, A.id, "carol@fivebo.example");
+    const carol = await t.signIn("carol@fivebo.example", PLANTED);
+    const added = await ann.post(`/tenants/${B.id}/members`, { email: "carol@fivebo.example" });
+    expect(added.status, JSON.stringify(added.body)).toBe(201);
+    expect((await carol.get("/me")).status).toBe(200);
+    expect(await signInStatus("carol@fivebo.example", PLANTED)).toBe(200);
+    expect(await provedAt(carolId)).toBeNull();
+  });
+
+  test("after the owner sets their own password through a mailed link the record is cleared and the account is proved", async () => {
+    const A = await tenantWith("fiveclr", ["ann"]);
+    const ann = A.clients.ann as Client;
+    const carolId = await planted(ann, A.id, "carol@fiveclr.example");
+    expect((await setBy(carolId)).password_set_by_id).toBe(A.members.ann);
+    await ownerProves(ann, A.id, carolId, OWN);
+    expect(await setBy(carolId)).toEqual(nobody);
+    expect(await provedAt(carolId)).not.toBeNull();
+  });
+
+  test("the owner changing their password while signed in clears the record, so the maker adding it starts it again", async () => {
+    const A = await tenantWith("fivechg", ["ann"]);
+    const ann = A.clients.ann as Client;
+    const carolId = await planted(ann, A.id, "carol@fivechg.example");
+    const carol = await t.signIn("carol@fivechg.example", PLANTED);
+    const changed = await carol.post("/auth/change-password", {
+      currentPassword: PLANTED,
+      newPassword: OWN,
+    });
+    expect(changed.status, JSON.stringify(changed.body)).toBe(200);
+    expect(await setBy(carolId)).toEqual(nobody);
+    const B = await adminOfNew("fivechgb", A.members.ann as string, "ann@fivechg.example");
+    await ann.post(`/tenants/${B.id}/members`, { email: "carol@fivechg.example" });
+    expect(await signInStatus("carol@fivechg.example", OWN)).not.toBe(200);
+  });
+
+  test("two admins who each set the password: only the last one counts", async () => {
+    const A = await tenantWith("fivetwo", ["ann", "amy"]);
+    const ann = A.clients.ann as Client;
+    const amy = A.clients.amy as Client;
+    const carolId = await planted(ann, A.id, "carol@fivetwo.example");
+    // Amy, with no mail, is handed a link and uses it: the password is now hers.
+    mailOff();
+    const link = await amy.post(`/tenants/${A.id}/members/${carolId}/password-link`, {});
+    expect(link.status, JSON.stringify(link.body)).toBe(201);
+    const set = await t.anonymous.post(`/member-password-links/${tokenOf(link.body.url)}`, {
+      password: "amys-password-chosen-7",
+    });
+    expect(set.status).toBe(204);
+    expect(await setBy(carolId)).toMatchObject({
+      password_set_by_type: "member",
+      password_set_by_id: A.members.amy,
+    });
+    // Ann set the first password, but not this one: adding it to a tenant of hers starts it again.
+    const B = await adminOfNew("fivetwob", A.members.ann as string, "ann@fivetwo.example");
+    const carol = await t.signIn("carol@fivetwo.example", "amys-password-chosen-7");
+    const byAnn = await ann.post(`/tenants/${B.id}/members`, { email: "carol@fivetwo.example" });
+    expect(byAnn.status, JSON.stringify(byAnn.body)).toBe(201);
+    expect((await carol.get("/me")).status).toBe(401);
+    expect(await signInStatus("carol@fivetwo.example", "amys-password-chosen-7")).not.toBe(200);
+  });
+
+  test("the operator who set the password and later binds the account at the instance keeps it, as for an account with no place", async () => {
+    const A = await openTenant("fiveopi");
+    const made = await t.admin.post(`/tenants/${A.id}/members`, {
+      email: "ops@fiveopi.example",
+      name: "Ops",
+      password: PASSWORD,
+    });
+    await A.endGrant();
+    const opsId = made.body.id as string;
+    const ops = await t.signIn("ops@fiveopi.example", PASSWORD);
+    const bound = await t.admin.post("/bindings", {
+      memberId: opsId,
+      roleId: roles.operator_admin,
+    });
+    expect(bound.status).toBe(201);
+    expect(await signInStatus("ops@fiveopi.example", PASSWORD)).toBe(200);
+    expect((await ops.get("/members")).status).toBe(200);
+  });
+
+  test("an account whose setter was never recorded (older accounts) starts again as before", async () => {
+    const A = await tenantWith("fiveold", ["ann"]);
+    const ann = A.clients.ann as Client;
+    const carolId = await planted(ann, A.id, "carol@fiveold.example");
+    await t.db
+      .updateTable("member")
+      .set({ password_set_by_type: null, password_set_by_id: null })
+      .where("id", "=", carolId)
+      .execute();
+    const carol = await t.signIn("carol@fiveold.example", PLANTED);
+    const B = await adminOfNew("fiveoldb", A.members.ann as string, "ann@fiveold.example");
+    await ann.post(`/tenants/${B.id}/members`, { email: "carol@fiveold.example" });
+    expect((await carol.get("/me")).status).toBe(401);
+  });
+
+  test("a setter who is later turned off names nobody who can act: a different admin still starts it again", async () => {
+    const A = await tenantWith("fivegone", ["ann"]);
+    const carolId = await planted(A.clients.ann as Client, A.id, "carol@fivegone.example");
+    const carol = await t.signIn("carol@fivegone.example", PLANTED);
+    const off = await t.admin.patch(`/members/${A.members.ann}`, { disabled: true });
+    expect(off.status, JSON.stringify(off.body)).toBe(200);
+    const B = await tenantWith("fivegoneb", ["bob"]);
+    await (B.clients.bob as Client).post(`/tenants/${B.id}/members`, {
+      email: "carol@fivegone.example",
+    });
+    expect((await carol.get("/me")).status).toBe(401);
+    expect(await provedAt(carolId)).toBeNull();
+  });
+
+  test("a service account that made the account is the setter only for itself, and only inside its own tenant", async () => {
+    const A = await tenantWith("fivesvc", ["ann"]);
+    const B = await tenantWith("fivesvcb", ["bob"]);
+    const ann = A.clients.ann as Client;
+    const account = await ann.post(`/tenants/${A.id}/service-accounts`, { name: "Robot" });
+    await ann.post(`/tenants/${A.id}/bindings`, {
+      principalType: "service_account",
+      principalId: account.body.id,
+      roleId: roles.tenant_admin,
+    });
+    const key = await ann.post(`/tenants/${A.id}/service-accounts/${account.body.id}/api-keys`, {
+      name: "robot",
+    });
+    const robot = t.withKey(key.body.token);
+    const made = await robot.post(`/tenants/${A.id}/members`, {
+      email: "carol@fivesvc.example",
+      name: "Carol",
+      password: PLANTED,
+    });
+    expect(made.status, JSON.stringify(made.body)).toBe(201);
+    expect(await setBy(made.body.id)).toEqual({
+      password_set_by_type: "service_account",
+      password_set_by_id: account.body.id,
+    });
+    const carol = await t.signIn("carol@fivesvc.example", PLANTED);
+    // The robot cannot reach B at all.
+    const refused = await robot.post(`/tenants/${B.id}/members`, {
+      email: "carol@fivesvc.example",
+    });
+    expect([401, 403, 404]).toContain(refused.status);
+    expect((await carol.get("/me")).status).toBe(200);
+    // Ann, a person acting for the robot's tenant, is a different principal: B's admin starts it.
+    await (B.clients.bob as Client).post(`/tenants/${B.id}/members`, {
+      email: "carol@fivesvc.example",
+    });
+    expect((await carol.get("/me")).status).toBe(401);
+  });
+
+  test("the example's seed for several copies: the same operator adds the same people to each, and they sign in in each", async () => {
+    const people = ["devi.shah@fernhill.example", "tom.okafor@fernhill.example"];
+    const copies = [] as { id: string }[];
+    for (const slug of ["fhcopya", "fhcopyb", "fhcopyc"]) {
+      const copy = await openTenant(slug);
+      for (const email of people) {
+        const added = await t.admin.post(`/tenants/${copy.id}/members`, {
+          email,
+          name: email.split("@")[0],
+          password: PASSWORD,
+        });
+        expect(added.status, JSON.stringify(added.body)).toBe(201);
+        await t.admin.post(`/tenants/${copy.id}/bindings`, {
+          principalType: "member",
+          principalId: added.body.id,
+          roleId: roles.tenant_admin,
+        });
+      }
+      await copy.endGrant();
+      copies.push(copy);
+    }
+    for (const email of people) expect(await signInStatus(email, PASSWORD)).toBe(200);
+    const devi = await t.signIn(people[0] as string, PASSWORD);
+    for (const copy of copies) {
+      expect((await devi.get(`/tenants/${copy.id}/members`)).status).toBe(200);
+    }
+  });
+});

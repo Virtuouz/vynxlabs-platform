@@ -743,11 +743,17 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             if (body.name === undefined || body.password === undefined) {
               throw badRequest("No member has that email. Send name and password to create one.");
             }
-            found = await createMember(kernel, trx, audit, {
-              email,
-              name: body.name,
-              password: body.password,
-            });
+            found = await createMember(
+              kernel,
+              trx,
+              audit,
+              {
+                email,
+                name: body.name,
+                password: body.password,
+              },
+              ctx.principal,
+            );
           }
           // An account that was already here is read before it gains this place: where nobody has
           // proved it, what could sign in as it ends. One made by this very request is not.
@@ -763,7 +769,7 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             tenantId: params.t,
             details: { email },
           });
-          if (existing) await startOverIfUnproved(trx, audit, found.id, hadAPlace);
+          if (existing) await startOverIfUnproved(trx, audit, found.id, hadAPlace, ctx.principal);
           for (const binding of body.bindings ?? []) {
             await insertBinding(trx, audit, params.t, ctx.principal, {
               principalType: "member",

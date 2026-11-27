@@ -60,6 +60,13 @@ export interface MemberTable {
    * password. A tenant that adds such an account ends what could sign in as it before.
    */
   proved_at: ColumnType<Date | null, Date | null | undefined, Date | null>;
+  /**
+   * Who typed the current password for someone else (or was handed back the link that set it):
+   * the kind of principal and its id. Null when the owner chose it, or nobody knows. The same
+   * principal adding the account to another place does not start it again.
+   */
+  password_set_by_type: ColumnType<string | null, string | null | undefined, string | null>;
+  password_set_by_id: ColumnType<string | null, string | null | undefined, string | null>;
   created_at: Timestamp;
   updated_at: Timestamp;
 }
@@ -1010,6 +1017,9 @@ export interface MemberPasswordTokenTable {
   used_at: Date | null;
   /** The link went to the account's own address and was not handed to whoever asked for it. */
   mailed: Generated<boolean>;
+  /** Who made the link; it matters only for a link that was handed back. */
+  made_by_type: string | null;
+  made_by_id: string | null;
   created_at: Generated<Date>;
 }
 

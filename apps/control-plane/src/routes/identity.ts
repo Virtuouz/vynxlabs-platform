@@ -1143,7 +1143,9 @@ export function identityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         },
       },
       async ({ ctx, body }, reply) => {
-        const member = await ctx.mutate((trx, audit) => createMember(kernel, trx, audit, body));
+        const member = await ctx.mutate((trx, audit) =>
+          createMember(kernel, trx, audit, body, ctx.principal),
+        );
         return reply.code(201).send(toMember(member));
       },
     );
@@ -1245,7 +1247,7 @@ export function identityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             details: { scope: "instance", memberId: body.memberId, role: role.name },
           });
           // Access at the instance is a new place: an account nobody has proved starts again.
-          await startOverIfUnproved(trx, audit, body.memberId, hadAPlace);
+          await startOverIfUnproved(trx, audit, body.memberId, hadAPlace, ctx.principal);
         });
         return reply.code(201).send({ id });
       },

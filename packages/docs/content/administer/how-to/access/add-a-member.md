@@ -37,7 +37,13 @@ An initial password you typed is known to you. To have the person choose theirs:
 3. Where the instance sends mail, the link is emailed to them and you are not shown it. Where it does not, the dialog **Password reset link** shows the link once: copy it and pass it on.
 :::
 
-The link works once and runs out after 2 hours. Opening it ends the member's other sign-ins. A tenant admin can make the link only for a member who belongs to this tenant and no other, and who holds no role at the instance. For anyone else an operator makes it.
+The link works once and runs out after 2 hours. Opening it ends the member's other sign-ins. A tenant admin can make the link for a member who belongs to this tenant and no other, and who holds no role at the instance. For an account that belongs to several tenants, an admin of any of them can make it only where it is emailed and nobody has yet proved the account is theirs; for anyone else an operator makes it.
+
+### When the person's account was made by another tenant
+
+An account is one for each email on the whole instance, so adding someone who already has an account adds that account. If another tenant's admin made it with a password they typed, and its owner never set their own through a mailed link or signed in through single sign-on, nobody has shown the account is theirs. Adding it to your tenant ends everything that could sign in as it until now: sessions, personal API keys, recovery codes and the password. The person then chooses a password with a reset link, which is emailed to them where the instance sends mail and which you can make for them from either tenant.
+
+A person who has set their own password through a link, or signed in through single sign-on, keeps their sessions, keys, recovery codes and password when your tenant adds them. A password you type for a new account is never taken as proof, so give the person a reset link and let them choose their own.
 
 ### If it does not work
 

@@ -10,6 +10,7 @@ import { badRequest, conflict, HttpError } from "../errors.js";
 import type { Kernel } from "../kernel.js";
 import { INSTANCE_ONLY_ROLE } from "../kinds.js";
 import { EXPORT_FORMAT, EXPORT_FORMATS_READ, type ExportManifest, manifestText } from "./export.js";
+import { holdsAnyPlace, startOverIfUnproved } from "../sign-ins.js";
 import { removeStored } from "./remove.js";
 import { OWNED_TABLES } from "./tables.js";
 import { type TarIndexEntry, tarIndex, tarRead } from "./tar.js";
@@ -647,6 +648,13 @@ export async function importTenant(
 
       let created = 0;
       let withPassword = 0;
+      // Whether each account that was already here had a place before this tenant gave it one.
+      const hadAPlace = new Map<string, boolean>();
+      for (const member of members) {
+        if (!known.has(member.id)) continue;
+        const accountId = renamed.get(member.id) ?? member.id;
+        hadAPlace.set(accountId, await holdsAnyPlace(trx, accountId));
+      }
       for (const member of members) {
         if (known.has(member.id)) continue;
         await trx
@@ -746,6 +754,18 @@ export async function importTenant(
         limit 1
       `.execute(trx);
       if (stray.rows[0]) throw refuse(`The export is refused: ${stray.rows[0].what}.`);
+      // An account already here that the archive puts in this tenant gains a place. If nobody has
+      // proved it, what could sign in as it ends, as when any tenant's admin adds it; one its owner
+      // proved is left as it is. The import never marks an account proved.
+      for (const [accountId, had] of hadAPlace) {
+        const joined = await trx
+          .selectFrom("tenant_member")
+          .select("member_id")
+          .where("tenant_id", "=", tenantId)
+          .where("member_id", "=", accountId)
+          .executeTakeFirst();
+        if (joined) await startOverIfUnproved(trx, audit, accountId, had);
+      }
       for (const link of links) {
         if (link.active !== null && !seenIds("bundle").has(link.active)) {
           throw refuse("The export is refused: a workspace names a bundle that is not in it.");

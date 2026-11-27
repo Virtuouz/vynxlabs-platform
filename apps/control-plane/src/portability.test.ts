@@ -382,6 +382,13 @@ beforeAll(async () => {
     })
   ).body.id;
   await operatorB.delete(`/tenants/${elsewhere.body.id}/access-grants/${grantB.body.id}`);
+  // Bob's own account: he proved it is his (a mailed link), so an import that puts him in another
+  // tenant leaves it as it is. An account nobody proved would start again (planted-accounts.test.ts).
+  await b.db
+    .updateTable("member")
+    .set({ proved_at: new Date() })
+    .where("id", "=", bobOnB)
+    .execute();
 }, 120_000);
 
 afterAll(async () => {
@@ -1695,6 +1702,12 @@ describe("p35 round four: an import brings no passwords unless the operator says
       })
     ).body.id as string;
     await app.admin.delete(`/tenants/${there.body.id}/access-grants/${grant.body.id}`);
+    // Bob's own account: his owner proved it (a mailed link), so an import leaves it as it is.
+    await app.db
+      .updateTable("member")
+      .set({ proved_at: new Date() })
+      .where("id", "=", bobId)
+      .execute();
     await app.db
       .insertInto("member_recovery_code")
       .values({ id: newId(), member_id: bobId, code_hash: "bobs-code-hash" })

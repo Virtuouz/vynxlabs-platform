@@ -11,6 +11,8 @@ updates:
     groups:
       minor-and-patch:
         update-types: [minor, patch]
+        # Below 1.0 a minor version may break, and this one parses SAML: it comes on its own.
+        exclude-patterns: ["@xmldom/xmldom"]
     # Node's types follow the Node that runs: they move with .nvmrc, never ahead of it.
     ignore:
       - dependency-name: "@types/node"

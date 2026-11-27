@@ -132,6 +132,8 @@ export async function makeMemberResetLink(
       expires_at: expiresAt,
       // A link that is not handed back goes to the account's own address and nowhere else.
       mailed: !(input.returnsLink ?? true),
+      made_by_type: input.caller.id ? input.caller.type : null,
+      made_by_id: input.caller.id,
     })
     .execute();
   // Who made it (the entry names the caller), and for whom. Never the token. Each tenant the
@@ -251,7 +253,7 @@ export async function setMemberPasswordWithToken(
     .where("token_hash", "=", hash(input.token))
     .where("used_at", "is", null)
     .where("expires_at", ">", new Date())
-    .returning(["member_id", "mailed"])
+    .returning(["member_id", "mailed", "made_by_type", "made_by_id"])
     .executeTakeFirst();
   if (!taken) throw gone();
   const member = await trx
@@ -301,5 +303,16 @@ export async function setMemberPasswordWithToken(
   // A link that went only to the account's own address shows its owner chose this password. One
   // that was handed to whoever asked for it shows nothing about who is using it.
   if (taken.mailed) await markProved(trx, member.id);
+  // Who now knows the password: nobody but the owner if it was mailed to them; the one who was
+  // handed the link otherwise. Only the last one counts.
+  await trx
+    .updateTable("member")
+    .set(
+      taken.mailed || !taken.made_by_id
+        ? { password_set_by_type: null, password_set_by_id: null }
+        : { password_set_by_type: taken.made_by_type, password_set_by_id: taken.made_by_id },
+    )
+    .where("id", "=", member.id)
+    .execute();
   await audit({ action: "member.password_reset", targetType: "member", targetId: member.id });
 }

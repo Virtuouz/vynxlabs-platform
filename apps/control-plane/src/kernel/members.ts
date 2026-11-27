@@ -5,7 +5,7 @@ import {
   keepingAnOperator,
   tenantAdmins,
 } from "./administer.js";
-import type { Audit, Trx } from "./audit.js";
+import type { Audit, Principal, Trx } from "./audit.js";
 import { conflict, notFound } from "./errors.js";
 import type { Kernel } from "./kernel.js";
 
@@ -15,8 +15,22 @@ export interface NewMember {
   password: string;
 }
 
+/** The columns that record who typed a password for someone else; null where nobody did. */
+export function passwordSetBy(who: Principal | undefined) {
+  return who?.id
+    ? { password_set_by_type: who.type, password_set_by_id: who.id }
+    : { password_set_by_type: null, password_set_by_id: null };
+}
+
 /** Creates a member identity with a password. The email must be unused. */
-export async function createMember(kernel: Kernel, trx: Trx, audit: Audit, input: NewMember) {
+export async function createMember(
+  kernel: Kernel,
+  trx: Trx,
+  audit: Audit,
+  input: NewMember,
+  /** Who typed the password, when it is not the person it is for. */
+  typedBy?: Principal,
+) {
   const email = input.email.trim().toLowerCase();
   const taken = await trx
     .selectFrom("member")
@@ -30,7 +44,15 @@ export async function createMember(kernel: Kernel, trx: Trx, audit: Audit, input
   const passwordHash = await (await kernel.auth.$context).password.hash(input.password);
   await trx
     .insertInto("member")
-    .values({ id, email, name: input.name, email_verified: true, created_at: now, updated_at: now })
+    .values({
+      id,
+      email,
+      name: input.name,
+      email_verified: true,
+      created_at: now,
+      updated_at: now,
+      ...passwordSetBy(typedBy),
+    })
     .execute();
   // The authentication library keeps the password hash in its account table.
   await trx

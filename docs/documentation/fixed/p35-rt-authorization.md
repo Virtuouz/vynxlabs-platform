@@ -239,3 +239,32 @@ No step of the chain works in any variant I could build:
 - A person who knows the password an admin typed for them and is then added to a second tenant is signed out and must use a link once. That is the rule as given.
 
 **To look at twice.** The exception for a password alone on an account with no place (above). The `endEarlierSignIns` call in the import runs inside the import's transaction, after the rows are loaded.
+
+## Round five: the one who set a password may add its account elsewhere
+
+**The problem.** Round four ended the password, sessions, keys and recovery codes of an unproved account whenever it gained a place. The browser suite then could not seed the example for several Fernhill copies: the operator makes each person with a typed password in the first copy and adds the same addresses to each later copy, and every add ended the password the operator had just typed (`Signing in as devi.shah@fernhill.example: 401`). The rule protects a tenant from someone else who knows the password; when the one adding is the one who set it, nobody new is exposed.
+
+**The record.** Migration 0106: `member.password_set_by_type` and `member.password_set_by_id` (the last principal who typed the current password for someone else, or was handed back the link that set it), and `member_password_token.made_by_type` and `made_by_id` (who made a link, used only when it was handed back). No foreign key: a setter who goes away names nobody who can act. Existing accounts are null, so the round-four rule applies to them as before.
+- Set: `createMember` (a tenant route and `POST /members` pass the caller; `bootstrapAdmin` passes nobody); a link that was handed back and used (the one who made it).
+- Cleared: a mailed link used; the owner's change of password while signed in (auth hook); any time the password is ended (`endEarlierSignIns` with the password). Only the last setter counts.
+- Not recorded (null, so the rule applies): tenant import with `keepSignIns`, SCIM pushes, a recovered operator (proved anyway).
+
+**The rule.** `startOverIfUnproved` takes the acting principal. It does nothing when type and id match the recorded setter. Callers that pass it: `POST /tenants/:t/members` and `POST /bindings`. Not passed (so no exemption): SCIM, single sign-on joins, tenant import (a directory, a sign-in and an archive are not the person who typed the password). A proved account is unchanged, as is a different admin or operator, and an account with no recorded setter.
+
+**A request that carries a password for an account that already exists** (the seed's case): the members route ignores the password for an existing account, as before (`found` is used, `createMember` is not called). So the record is not changed by it and the old password stays; the seed works because the old password is the same one.
+
+**Abuse cases**, each tested in `planted-accounts.test.ts` (describe "round five"):
+- The maker, an admin of A only, cannot add the account to B: B's own admin does, who is not the setter, and it starts again. The maker's own post to B is refused.
+- A maker who is also an admin of B keeps everything and gains nothing they did not hold.
+- The operator who set the password and then binds the account at the instance keeps it. This agrees with round four's rule for an account with no place, and adds no new reach: an operator can already make an operator and bind it. (Where the account has other places, the exemption now applies too, and the operator was the one who set the password.) What an operator-made account keeps after the grant ends is the property round four already had for one tenant: the operator's password for what they gave it; this adds only the tenants the operator was each given a grant on to add it.
+- A service account that made the account is recorded as the setter; it acts only in its own tenant (a tenant-bound principal), so it cannot add the account anywhere else. A member's API key acts as that member and so is the same principal as them.
+- A setter later suspended or removed: the record names nobody who can act; a different admin still starts it again.
+- Two admins: only the last setter counts (a link handed back and used by the second replaces the record; the first, adding it later, starts it again).
+- The owner's mailed link or own password change clears the record; the account is then proved or, for a change while signed in, an add by the maker starts it again.
+- A link handed back: its maker is the setter even if they pass it to someone else; they chose who sees it.
+
+**Proof before.** With the exemption off, seven of the new tests fail (`expected 401 to be 200`: the second tenant's add ended the password), among them the three-tenant operator test and the seed-for-copies test.
+
+**The seed.** `examples/fernhill/setup/setup.mjs` is unchanged. A test performs its sequence for three copies (grant, add the same addresses with the same password, bind, end the grant) and signs in as one of them in each.
+
+**Left.** Accounts that existed before (null) still start again when they gain a place. If the owner wants a setter backfilled it cannot be known from the data.

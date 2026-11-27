@@ -53,7 +53,7 @@ Suspending ends the member's console and app sessions in this tenant, their open
 | **Role**, **Where they work** | A role to give with the membership, in the same change. **Role** starts at **No access yet**. **Where they work** appears once a role is chosen: **The whole tenant** or one workspace. Roles that belong to a workspace are not offered. |
 | **Add another role**, **Remove** | Up to 20 role and place pairs. **Add another role** appears once the last pair has a role. |
 
-When it works, the notice says "<email> is a member, with <roles>." or "<email> is a member. They hold no role yet." The roles are given with `binding:write` at each place you chose. For an email with no account, **Name** and **Initial password** are needed: without them the answer is "No member has that email. Send name and password to create one."
+When it works, the notice says "<email> is a member, with <roles>." or "<email> is a member. They hold no role yet." The roles are given with `binding:write` at each place you chose. For an email with no account, **Name** and **Initial password** are needed: without them the answer is "No member has that email. Send name and password to create one." An account nobody has proved, added from another tenant, starts again (its sessions, keys, recovery codes and password end), unless the one adding it is the person who typed its password: they may add it to other tenants without it starting again.
 
 Volvel sends no invitation email for a new member. Tell the person their email and the initial password yourself, or add them with an initial password and then [make a reset link](#password-reset-links) so they choose their own.
 

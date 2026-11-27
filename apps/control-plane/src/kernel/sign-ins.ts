@@ -1,5 +1,5 @@
 import { endSessions } from "./administer.js";
-import type { Audit, Trx } from "./audit.js";
+import type { Audit, Principal, Trx } from "./audit.js";
 import { holdsInstanceAccess, memberPasswordRefusedBy } from "./sso/people.js";
 
 /** Why an account's earlier sign-ins were ended. Written in the entry. */
@@ -50,6 +50,12 @@ export async function endEarlierSignIns(
       .deleteFrom("member_account" as never)
       .where("member_id" as never, "=", memberId as never)
       .where("provider_id" as never, "=", "credential" as never)
+      .execute();
+    // That password is gone, and so is the record of who chose it.
+    await trx
+      .updateTable("member")
+      .set({ password_set_by_type: null, password_set_by_id: null })
+      .where("id", "=", memberId)
       .execute();
   }
   const tenants = new Set([
@@ -196,20 +202,31 @@ async function holdsAWayInBesidesAPassword(trx: Trx, memberId: string): Promise<
  * not count), all of that ends (password included), an entry says so in each tenant it belongs to,
  * and it stays not proved until its owner sets a password through a link mailed to them.
  *
- * Returns whether anything was ended.
+ * Where the account's password was chosen by the very principal adding it (`actor`; see
+ * `member.password_set_by_*`), nothing is ended. Returns whether anything was ended.
  */
 export async function startOverIfUnproved(
   trx: Trx,
   audit: Audit,
   memberId: string,
   hadAPlace: boolean,
+  actor?: Principal,
 ): Promise<boolean> {
   const member = await trx
     .selectFrom("member")
-    .select("proved_at")
+    .select(["proved_at", "password_set_by_type", "password_set_by_id"])
     .where("id", "=", memberId)
     .executeTakeFirst();
   if (!member || member.proved_at) return false;
+  // The one who chose the password this account has now adding it to one more place exposes it to
+  // nobody new: they could already sign in as it. Anyone else adding it starts it again.
+  if (
+    actor?.id &&
+    member.password_set_by_id === actor.id &&
+    member.password_set_by_type === actor.type
+  ) {
+    return false;
+  }
   if (!hadAPlace && !(await holdsAWayInBesidesAPassword(trx, memberId))) return false;
   await endEarlierSignIns(trx, audit, memberId, "gained_a_place", { password: true });
   return true;

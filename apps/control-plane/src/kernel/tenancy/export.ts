@@ -10,10 +10,12 @@ import { TAR_END, tarEntry } from "./tar.js";
 export const EXPORT_FORMAT = "volvel-tenant-export";
 /**
  * Format 2 authenticates the list of contents under the passphrase-wrapped key, and seals each
- * member's password hash. Format 1 did neither, and is still read.
+ * member's password hash. Format 1 did neither, and is no longer read: a file that says it is
+ * format 1 would otherwise be taken without a signature, and whoever holds a signed export on its
+ * way could make it say so.
  */
 export const EXPORT_FORMAT_VERSION = 2;
-export const EXPORT_FORMATS_READ = [1, 2];
+export const EXPORT_FORMATS_READ = [2];
 const API_KEYS = "API keys: create new ones on the instance the tenant moves to.";
 const WORKERS =
   "Worker credentials: create new ones and restart the tenant's own workers with them.";

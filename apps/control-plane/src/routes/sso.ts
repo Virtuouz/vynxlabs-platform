@@ -11,6 +11,7 @@ import { ANONYMOUS } from "../kernel/audit.js";
 import { consolePath } from "../kernel/auth.js";
 import { CredentialSet, credentialSetters } from "../kernel/credentials.js";
 import { badRequest, notFound } from "../kernel/errors.js";
+import { requireToGiveRole, requireToHandOver } from "../kernel/grant-limits.js";
 import { access } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
 import { answer, begin, refused, STATE_COOKIE_SECONDS } from "../kernel/sso/flow.js";
@@ -287,6 +288,7 @@ export function ssoRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           // to bind it, as `POST /bindings` asks.
           if (body.defaultRoleId && tenantId !== null) {
             await ctx.authorize("binding:write", { tenantId });
+            await requireToGiveRole(db, ctx.principal, tenantId, body.defaultRoleId);
           }
           const created = await ctx.mutate(async (trx, audit) => {
             const made = await createProvider(
@@ -345,6 +347,7 @@ export function ssoRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             current.tenantId !== null
           ) {
             await ctx.authorize("binding:write", { tenantId: current.tenantId });
+            await requireToGiveRole(db, ctx.principal, current.tenantId, body.defaultRoleId);
           }
           const updated = await ctx.mutate(async (trx, audit) => {
             const saved = await updateProvider(kernel, trx, audit, current, body, ctx.principal);
@@ -763,6 +766,16 @@ export function ssoRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               .where("principal_id", "in", wanted)
               .executeTakeFirst();
             if (holds) await ctx.authorize("binding:write", { tenantId });
+            // The people it puts there hold what the groups are given: nobody maps in more than they hold.
+            for (const groupId of wanted) {
+              await requireToHandOver(
+                db,
+                ctx.principal,
+                tenantId,
+                forMembers ? "group" : "end_user_group",
+                groupId,
+              );
+            }
           }
           await ctx.mutate(async (trx, audit) => {
             const known =

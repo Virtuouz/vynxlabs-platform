@@ -276,6 +276,42 @@ describe("permissions", () => {
     ).toBe(403);
   });
 
+  test("a request that changes nothing reads a place once, however many permissions it asks", async () => {
+    const member = { type: "member" as const, id: bob.id };
+    const place = { tenantId: acme, workspaceId: dev };
+    // What a summary does: many permissions at one workspace. Counted by the statements the
+    // check sends, which were two for each permission asked.
+    let statements = 0;
+    const counting = t.db.withPlugin({
+      transformQuery(args) {
+        statements += 1;
+        return args.node;
+      },
+      transformResult: async (args) => args.result,
+    });
+    const asked = ["secret:write", "run:read", "script:read", "flow:read", "tenant:write"];
+    const memo = new Map<string, Promise<unknown>>();
+    const withMemo = [];
+    for (const permission of asked) {
+      withMemo.push((await check(counting, member, permission, place, memo)).allowed);
+    }
+    const kept = statements;
+    statements = 0;
+    const without = [];
+    for (const permission of asked) {
+      without.push((await check(counting, member, permission, place)).allowed);
+    }
+    // The same answers, from one reading of the place.
+    expect(withMemo).toEqual(without);
+    expect(kept).toBe(2);
+    expect(statements).toBe(asked.length * 2);
+    // Another place is read for itself.
+    statements = 0;
+    const elsewhere = { tenantId: acme, workspaceId: prod };
+    expect((await check(counting, member, "secret:write", elsewhere, memo)).allowed).toBe(false);
+    expect(statements).toBeGreaterThan(0);
+  });
+
   test("the check itself, scope by scope", async () => {
     const member = { type: "member" as const, id: bob.id };
     const at = (permission: string, target: object) =>
@@ -1125,12 +1161,21 @@ describe("members", () => {
   test("removing a member from a tenant removes their access", async () => {
     expect((await bob.client.get(`/tenants/${acme}/workspaces/${dev}`)).status).toBe(200);
     expect((await alice.client.delete(`/tenants/${acme}/members/${bob.id}`)).status).toBe(204);
-    expect((await bob.client.get(`/tenants/${acme}/workspaces/${dev}`)).status).toBe(404);
-    expect((await bob.client.get("/tenants")).body.items).toEqual([]);
-    // Adding an existing member back needs only the email.
+    // His last membership is gone, so nothing that signed in as him is left: not his session, and
+    // not his password. The account stays.
+    expect((await bob.client.get(`/tenants/${acme}/workspaces/${dev}`)).status).toBe(401);
+    await expect(t.signIn("bob@acme.example", PASSWORD)).rejects.toThrow(/Sign-in failed/);
+    // Adding an existing member back needs only the email. They choose a password by a link.
     expect(
       (await alice.client.post(`/tenants/${acme}/members`, { email: "bob@acme.example" })).status,
     ).toBe(201);
+    const link = await alice.client.post(`/tenants/${acme}/members/${bob.id}/password-link`, {});
+    expect(link.status, JSON.stringify(link.body)).toBe(201);
+    const token = decodeURIComponent(String(link.body.url).split("/").pop() as string);
+    expect(
+      (await t.anonymous.post(`/member-password-links/${token}`, { password: PASSWORD })).status,
+    ).toBe(204);
+    bob = { id: bob.id, client: await t.signIn("bob@acme.example", PASSWORD) };
     expect(
       (await alice.client.post(`/tenants/${acme}/members`, { email: "new@acme.example" })).status,
     ).toBe(400);

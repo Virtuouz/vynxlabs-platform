@@ -139,6 +139,8 @@ interface Platform {
   maxLogBody: number;
   /** How many log requests fail before they start to succeed. Infinity: they never do. */
   failLogs: number;
+  /** How many reports of an attempt's end are answered 500 before they are taken. */
+  failReports: number;
   /** Runs whose next heartbeat is told the run was canceled. */
   cancel: Set<string>;
 }
@@ -169,6 +171,7 @@ async function platform(jobs: Asked[], failLogs = 0): Promise<Platform & { runId
     requests: [] as string[],
     bodies: [] as Record<string, unknown>[],
     failLogs,
+    failReports: 0,
     maxLogBody: Number.POSITIVE_INFINITY,
     cancel: new Set<string>(),
     runIds: queue.map((job) => job.runId),
@@ -242,6 +245,11 @@ async function platform(jobs: Asked[], failLogs = 0): Promise<Platform & { runId
     }
     if (path.includes("/secrets/api-key")) return reply(response, 200, { value: "s3cret" });
     if (path.endsWith("/events")) return reply(response, 204);
+    if ((path.endsWith("/complete") || path.endsWith("/fail")) && state.failReports > 0) {
+      // A control plane whose database is away: it answers, and can record nothing.
+      state.failReports -= 1;
+      return reply(response, 500, { detail: "The database cannot be reached." });
+    }
     if (path.endsWith("/complete")) {
       state.ended.push({ runId, kind: "complete", body });
       return reply(response, 204);
@@ -339,6 +347,25 @@ describe("log lines of any size", () => {
     await work(state, () => state.ended.length === 1);
     expect(state.lines).toEqual(["hello { a: 1 }", "bad"]);
   });
+
+  it("says a run succeeded again when the control plane could not take it, and never as failed", async () => {
+    const state = await platform([{ entry: "consoler" }]);
+    state.failReports = 2;
+    await work(state, () => state.ended.length === 1);
+    expect(state.ended.map((one) => one.kind)).toEqual(["complete"]);
+    expect(state.requests.filter((one) => one.endsWith("/complete"))).toHaveLength(3);
+    expect(state.requests.some((one) => one.endsWith("/fail"))).toBe(false);
+  });
+
+  it.runIf(process.platform === "linux")(
+    "says what a script held, even one that ends at once",
+    async () => {
+      const state = await platform([{ entry: "consoler" }]);
+      await work(state, () => state.ended.length === 1);
+      // Looked at when it said it was done: a script over in a tenth of a second is still seen.
+      expect(state.ended[0]?.body.peakMb).toBeGreaterThan(10);
+    },
+  );
 
   it("refuses an output over its limit before reporting the run done", async () => {
     const state = await platform([{ entry: "bulky" }]);
@@ -550,6 +577,41 @@ describe("a machine shared with other workers", () => {
     expect(state.ended[0]).toMatchObject({ kind: "complete" });
     // Each claim names the machine and its slots, so the control plane can hold all its workers to them.
     const claim = state.bodies[state.requests.indexOf("POST /claim")];
-    expect(claim?.machine).toEqual({ name: "m1", slots: 4 });
+    // It also says what memory it saw, so a burst of claims is not all granted on one reading.
+    expect(claim?.machine).toEqual({ name: "m1", slots: 4, availableMb: 1000, floorMb: 200 });
   });
+
+  it("leaves when the machine stays short of memory and it holds no run, if it is one that exits when idle", async () => {
+    const state = await platform([]);
+    const worker = new Worker({
+      url: state.url,
+      token: "token",
+      concurrency: 1,
+      claimWaitSeconds: 1,
+      idleExitSeconds: 600,
+      lowMemoryLeaveSeconds: 1,
+      machine: { name: "m1", slots: 4, floorMb: 200 },
+      probe: machine({ mb: 100 }),
+    });
+    // Its memory is part of what is short: it gives it back, long before it would count as idle.
+    expect(await worker.run()).toBe("idle");
+    expect(state.requests.filter((request) => request === "POST /claim")).toEqual([]);
+  }, 15_000);
+
+  it("stays through a shortage when it never exits by itself: nobody would start it again", async () => {
+    const state = await platform([]);
+    const worker = new Worker({
+      url: state.url,
+      token: "token",
+      concurrency: 1,
+      claimWaitSeconds: 1,
+      lowMemoryLeaveSeconds: 1,
+      machine: { name: "m1", slots: 4, floorMb: 200 },
+      probe: machine({ mb: 100 }),
+    });
+    const running = worker.run();
+    await pause(3500);
+    worker.stop();
+    expect(await running).toBe("stopped");
+  }, 15_000);
 });

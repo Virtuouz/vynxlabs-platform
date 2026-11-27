@@ -200,15 +200,28 @@ export async function runQuery(kernel: Kernel, request: QueryRequest): Promise<Q
         // Each row comes back as JSON text written by Postgres, which keeps the columns in order
         // (and those of one name), and says a number as a number and a date as text. The text is
         // read here, not by the driver, which would make an object of it and reorder its keys.
-        // One row more than is wanted is read, to know whether there were more.
-        const fetched = await trx.executeQuery<{ r: string }>(
+        // One row more than is wanted is read, to know whether there were more. The database adds
+        // up the rows' sizes as it goes and sends nothing of a row once what came before it has
+        // reached the most a result may weigh (QUERY_BYTES), so the control plane never holds
+        // more than that of one result.
+        const fetched = await trx.executeQuery<{ r: string | null; over: boolean }>(
           CompiledQuery.raw(
-            `select row_to_json(vx_q)::text as r from (${checked.sql}) as vx_q offset ${Math.max(Math.trunc(request.offset ?? 0), 0)} limit ${limit + 1}`,
+            `select case when vx_c <= ${QUERY_BYTES} then vx_t end as r, vx_c > ${QUERY_BYTES} as over from (select vx_t, vx_n, sum(octet_length(vx_t)) over (order by vx_n rows between unbounded preceding and current row) as vx_c from (select row_to_json(vx_q)::text as vx_t, row_number() over () as vx_n from (${checked.sql}) as vx_q offset ${Math.max(Math.trunc(request.offset ?? 0), 0)} limit ${limit + 1}) as vx_a) as vx_b order by vx_n`,
             given,
           ),
         );
-        const rows = fetched.rows.map((row) => readColumns(row.r));
-        if (rows.length > 0) return { rows, names: undefined };
+        if (fetched.rows[0]?.over) {
+          throw new HttpError(
+            422,
+            "validation_failed",
+            `A single row of this result is over ${QUERY_BYTES / 1024 / 1024} MB, which is too large to return. Select fewer or shorter columns, or cut long values with left() or substr().`,
+          );
+        }
+        const cut = fetched.rows.some((row) => row.over);
+        const rows = fetched.rows
+          .filter((row) => !row.over)
+          .map((row) => readColumns(row.r as string));
+        if (rows.length > 0) return { rows, names: undefined, cut };
         // With no rows there is still a result with columns: one row of nothing says which.
         const shape = await trx.executeQuery<{ r: string }>(
           CompiledQuery.raw(
@@ -218,6 +231,7 @@ export async function runQuery(kernel: Kernel, request: QueryRequest): Promise<Q
         );
         return {
           rows,
+          cut,
           names: shape.rows[0] ? readColumns(shape.rows[0].r).map(([name]) => name) : [],
         };
       },
@@ -230,7 +244,7 @@ export async function runQuery(kernel: Kernel, request: QueryRequest): Promise<Q
   const names = kept[0] ? kept[0].map(([name]) => name) : (found.names ?? []);
   const rows: unknown[][] = [];
   let weight = 0;
-  let truncatedBySize = false;
+  let truncatedBySize = found.cut;
   for (const row of kept) {
     const values = row.map(([, value]) => plain(value));
     weight += JSON.stringify(values).length;

@@ -54,6 +54,19 @@ export interface MemberTable {
     "hand" | "provider" | null | undefined,
     "hand" | "provider" | null
   >;
+  /**
+   * When the account's owner showed it is theirs (a link mailed to its address, single sign-on from
+   * a proved domain, or the first operator). Null: not proved, and an admin may have typed the
+   * password. A tenant that adds such an account ends what could sign in as it before.
+   */
+  proved_at: ColumnType<Date | null, Date | null | undefined, Date | null>;
+  /**
+   * Who typed the current password for someone else (or was handed back the link that set it):
+   * the kind of principal and its id. Null when the owner chose it, or nobody knows. The same
+   * principal adding the account to another place does not start it again.
+   */
+  password_set_by_type: ColumnType<string | null, string | null | undefined, string | null>;
+  password_set_by_id: ColumnType<string | null, string | null | undefined, string | null>;
   created_at: Timestamp;
   updated_at: Timestamp;
 }
@@ -650,6 +663,8 @@ export interface RunTable {
   started_at: Date | null;
   finished_at: Date | null;
   last_heartbeat_at: Date | null;
+  /** The most its script's process was seen to hold, in MB. Null when it was never looked at. */
+  peak_memory_mb: Generated<number | null>;
   tags: Generated<string[]>;
   /** The first line of the error, kept by the database. */
   error_summary: Generated<string | null>;
@@ -1000,6 +1015,11 @@ export interface MemberPasswordTokenTable {
   token_hash: string;
   expires_at: Timestamp;
   used_at: Date | null;
+  /** The link went to the account's own address and was not handed to whoever asked for it. */
+  mailed: Generated<boolean>;
+  /** Who made the link; it matters only for a link that was handed back. */
+  made_by_type: string | null;
+  made_by_id: string | null;
   created_at: Generated<Date>;
 }
 

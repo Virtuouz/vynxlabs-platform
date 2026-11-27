@@ -41,7 +41,11 @@ const CODES: Record<number, ErrorCode> = {
 };
 
 /** Addresses whose last part is a credential: whoever has it may act. */
-const SECRET_PATHS = /\/(hooks|member-password-links|approval-links)\/[^/?]+/g;
+const SECRET_PATHS =
+  /\/(hooks|member-password-links|approval-links|approve|reset-password)\/+[^/?]+/g;
+
+/** A form's address ends in its token (`vxf_...`), at the portal of any tenant. */
+const SECRET_FORM_PATHS = /\/forms\/+vxf_[^/?]+/g;
 
 /**
  * A request's path as it may be said back or written down. Some addresses hold a secret
@@ -49,7 +53,13 @@ const SECRET_PATHS = /\/(hooks|member-password-links|approval-links)\/[^/?]+/g;
  * may carry it.
  */
 export function publicPath(request: { url: string }): string {
-  return (request.url.split("?")[0] as string).replace(SECRET_PATHS, "/$1/:token");
+  // The router reads "/%6Dember-password-links/<token>" as the route it names, so the path is
+  // masked as the router reads it. Only plain characters are decoded (a malformed escape or a
+  // multi-byte one is left as it is), which cannot throw; and what is logged is the decoded form.
+  const decoded = (request.url.split("?")[0] as string).replace(/%([0-7][0-9a-fA-F])/g, (_, hex) =>
+    String.fromCharCode(Number.parseInt(hex, 16)),
+  );
+  return decoded.replace(SECRET_PATHS, "/$1/:token").replace(SECRET_FORM_PATHS, "/forms/:token");
 }
 
 export function sendProblem(
@@ -107,6 +117,8 @@ export function errorHandler(
 ) {
   // A destination a tenant gave that the egress guard refused: the tenant's to change.
   if (error instanceof EgressRefused) {
+    // The address a name resolved to is for the log, not for the tenant.
+    request.log.info({ host: error.host, address: error.address }, "egress refused");
     return sendProblem(request, reply, 400, { code: "egress_refused", detail: error.message });
   }
   // The database too busy to hand out a connection, or taking no writes: said as such,

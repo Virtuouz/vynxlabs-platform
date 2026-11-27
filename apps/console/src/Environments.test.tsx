@@ -565,3 +565,122 @@ test("WLK-17f: a file with no signature is a note, not a failure, and its long l
   expect(line?.getAttribute("data-check")).toBe("note");
   expect(line?.querySelector("span")?.className).toContain("break-words");
 });
+
+/** Stages an archive that creates `accounts` accounts, checks it, and imports it with the box as `tick` says. */
+async function importWith(
+  accounts: number | undefined,
+  tick: boolean,
+  members: { created: number; linked: number; withPassword: number; withoutPassword: number },
+) {
+  routes["GET /api/v1/instance/database-locations/names"] = () => [200, { items: [] }];
+  const one = (more: Partial<typeof inspection> = {}) =>
+    staged({
+      passphraseOk: true,
+      slugTaken: false,
+      ...(accounts === undefined ? {} : { accountsToCreate: accounts }),
+      ...more,
+    } as Partial<typeof inspection>);
+  routes["POST /api/v1/instance/tenant-imports/staged"] = () => [201, one()];
+  routes["GET /api/v1/instance/tenant-imports/staged/s1"] = () => [200, one()];
+  routes["POST /api/v1/instance/tenant-imports/staged/s1/import"] = () => [
+    201,
+    {
+      tenant: { id: "t9", slug: "acme", name: "Acme Corp", dataLocation: null },
+      counts: {},
+      members,
+      objects: 0,
+      cancelled: { runs: 0, flowRuns: 0 },
+      pausedWorkspaces: 0,
+      notCarried: [],
+    },
+  ];
+  show(<TenantImport />);
+  const file = new File(["tar bytes"], "acme.tar", { type: "application/x-tar" });
+  fireEvent.change(screen.getByLabelText("Export file"), { target: { files: [file] } });
+  fireEvent.submit(screen.getByLabelText("Export file").closest("form") as HTMLFormElement);
+  await screen.findByText("Acme Corp");
+  fireEvent.input(screen.getByLabelText("Its passphrase"), { target: { value: "the passphrase" } });
+  fireEvent.click(screen.getByRole("button", { name: "Check again" }));
+  await screen.findByText("The passphrase opens it");
+  const box = screen.getByRole("checkbox", {
+    name: "Bring the members' passwords in with the file",
+  }) as HTMLInputElement;
+  const before = { checked: box.checked, disabled: box.disabled };
+  const reason = (document.body.textContent ?? "").includes(
+    "The file creates no accounts here, so there are no passwords to bring in.",
+  );
+  if (tick) fireEvent.click(box);
+  await waitFor(() =>
+    expect(
+      (screen.getByRole("button", { name: "Import tenant" }) as HTMLButtonElement).disabled,
+    ).toBe(false),
+  );
+  fireEvent.submit(screen.getByLabelText("Its passphrase").closest("form") as HTMLFormElement);
+  await screen.findByText(/was imported/);
+  return { before, box, reason, url: sent("POST")[1]?.url ?? "" };
+}
+
+test("the members' passwords stay out by default: the box is off and the request does not ask for them", async () => {
+  const { before, box, url } = await importWith(3, false, {
+    created: 3,
+    linked: 0,
+    withPassword: 0,
+    withoutPassword: 3,
+  });
+  expect(before).toEqual({ checked: false, disabled: false });
+  expect(url).toBe("/api/v1/instance/tenant-imports/staged/s1/import");
+  expect(document.body.textContent).toContain("The members created have no password yet:");
+  const link = screen.getByRole("link", { name: "Members" });
+  expect(link.getAttribute("href")).toBe("/t/t9/members");
+  expect(box).toBeTruthy();
+});
+
+test("ticking the box sends keepSignIns=true, and the notice says they sign in with the passwords they had", async () => {
+  const { before, url } = await importWith(3, true, {
+    created: 3,
+    linked: 0,
+    withPassword: 3,
+    withoutPassword: 0,
+  });
+  expect(before).toEqual({ checked: false, disabled: false });
+  expect(url).toBe("/api/v1/instance/tenant-imports/staged/s1/import?keepSignIns=true");
+  expect(document.body.textContent).toContain(
+    "The members created can sign in with the passwords they had.",
+  );
+  expect(document.body.textContent).not.toContain("no password yet");
+});
+
+test("the box names the accounts to create, one in the singular, and who it is for", async () => {
+  routes["POST /api/v1/instance/tenant-imports/staged"] = () => [
+    201,
+    staged({ accountsToCreate: 1 } as never),
+  ];
+  show(<TenantImport />);
+  const file = new File(["tar bytes"], "acme.tar", { type: "application/x-tar" });
+  fireEvent.change(screen.getByLabelText("Export file"), { target: { files: [file] } });
+  fireEvent.submit(screen.getByLabelText("Export file").closest("form") as HTMLFormElement);
+  await screen.findByText("Acme Corp");
+  expect(document.body.textContent).toContain("The import will create 1 account.");
+  expect(document.body.textContent).toContain("never for a file someone else made");
+});
+
+test("some members with a password and some without are told apart after the import", async () => {
+  await importWith(3, true, { created: 3, linked: 0, withPassword: 2, withoutPassword: 1 });
+  expect(document.body.textContent).toContain(
+    "2 of the 3 members created can sign in with the passwords they had. The other 1 has no password yet:",
+  );
+});
+
+test("a file that creates no accounts has a box that is off and cannot be ticked, with the reason, and says nothing of passwords after", async () => {
+  const { before, reason, url } = await importWith(0, true, {
+    created: 0,
+    linked: 2,
+    withPassword: 0,
+    withoutPassword: 0,
+  });
+  expect(before).toEqual({ checked: false, disabled: true });
+  expect(reason).toBe(true);
+  expect(url).toBe("/api/v1/instance/tenant-imports/staged/s1/import");
+  expect(document.body.textContent).not.toContain("password yet");
+  expect(document.body.textContent).not.toContain("passwords they had");
+});

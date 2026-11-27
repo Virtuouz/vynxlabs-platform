@@ -2,6 +2,7 @@ import { Kysely, PostgresDialect, sql } from "kysely";
 import pg from "pg";
 import { type DataStore, openDataStore } from "./datastore.js";
 import { type Listener, type ListenOptions, listen } from "./listener.js";
+import { surviveLostConnections } from "./lost-connection.js";
 import { type MigrationResult, runMigrations } from "./migrate.js";
 import { type PoolStats, statsOf } from "./pool-stats.js";
 import { JobQueue, type QueueTuning } from "./queue.js";
@@ -56,6 +57,7 @@ export class Database {
       connectionTimeoutMillis: CONNECTION_WAIT_MS,
     });
     this.#pool.on("error", (error) => options.onConnectionError?.(error));
+    surviveLostConnections(this.#pool, options.onConnectionError);
     // The queue's own statements get connections of their own. Much of the platform
     // calls the queue from inside a transaction, which already holds a connection
     // from the pool above. If the queue then waited on that same pool, enough such
@@ -69,6 +71,7 @@ export class Database {
       application_name: "volvel-queue",
     });
     this.#queuePool.on("error", (error) => options.onConnectionError?.(error));
+    surviveLostConnections(this.#queuePool, options.onConnectionError);
     this.#kysely = new Kysely<PlatformSchema>({
       dialect: new PostgresDialect({ pool: this.#pool }),
     });

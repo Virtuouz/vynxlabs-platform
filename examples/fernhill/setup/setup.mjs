@@ -328,11 +328,14 @@ for (const ws of [prod, dev]) {
   await admin.put(`${W}/secrets/PAYFERN_SIGNING_SECRET`, { value: PAYFERN_SECRET });
 }
 
-// ----- The code, as Devi ships it -----
+// ----- The code, as the practice ships it -----
 
-step("Devi deploys the repository to the sandbox, and Maya promotes it to Clinics");
+// The repository carries roles and bindings, and a deploy that changes who holds what needs the
+// permission to say so: Maya, the practice owner, makes the first one. Devi, who may only
+// deploy, ships code after it, as long as it leaves access as it is (the README's step 9).
+step("Maya deploys the repository to the sandbox and promotes it to Clinics");
 const devi = await session("devi.shah@fernhill.example", PASSWORD);
-const deviKey = await devi.post("/api-keys", { name: "Devi's laptop" });
+await devi.post("/api-keys", { name: "Devi's laptop" });
 const maya = await session("maya.brooks@fernhill.example", PASSWORD);
 const mayaKey = await maya.post("/api-keys", { name: "Maya's CLI" });
 const cli = (args, token) =>
@@ -343,7 +346,7 @@ const cli = (args, token) =>
     stdio: ["ignore", "pipe", "pipe"],
   });
 console.log(
-  cli(["deploy", "--tenant", SLUG, "--workspace", "sandbox"], deviKey.token)
+  cli(["deploy", "--tenant", SLUG, "--workspace", "sandbox"], mayaKey.token)
     .trim()
     .split("\n")
     .slice(-3)

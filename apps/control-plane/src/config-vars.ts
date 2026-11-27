@@ -216,6 +216,29 @@ export const CONFIG_VARS = {
     description:
       "Queued runs in a workspace past which its schedules pass over their times. 0 is no limit.",
   },
+  EXPORTS_AT_ONCE: {
+    group: "Limits",
+    default: "3",
+    description:
+      "Tenant exports the instance writes at once. Each holds a database connection until it ends. The next is answered 429 with `Retry-After: 30`.",
+  },
+  EXPORTS_PER_TENANT: {
+    group: "Limits",
+    default: "1",
+    description: "Exports of one tenant written at once.",
+  },
+  EXPORT_STALL_SECONDS: {
+    group: "Limits",
+    default: "60",
+    description:
+      "Seconds an export's reader may take nothing before the export is ended and its connection given back.",
+  },
+  EXPORT_MAX_MINUTES: {
+    group: "Limits",
+    default: "30",
+    description:
+      "Minutes one export may take, however it is read, before it is ended. 0 is no limit.",
+  },
   TRIGGERS_PAUSED: {
     group: "Limits",
     default: "false",

@@ -10,7 +10,7 @@ import type { Db, Trx } from "../audit.js";
 import { conflict, notFound } from "../errors.js";
 import type { Kernel } from "../kernel.js";
 import type { WorkerScope } from "./runs.js";
-import { type MachineClaim, machineHasRoom, onMachine } from "./workers.js";
+import { type MachineClaim, machineHasRoom, mustHold, onMachine } from "./workers.js";
 
 export const TASK_KINDS = ["describe", "deliver", "test-connection"] as const;
 export type TaskKind = (typeof TASK_KINDS)[number];
@@ -121,12 +121,16 @@ export async function claimTask(
   if (wanted.length === 0) return undefined;
   if (!machine) return takeTask(kernel.db, scope, workerId, wanted);
   // A worker that shares its machine takes a task only when the machine has room.
-  return onMachine(machine, (noteFull) =>
-    kernel.db.transaction().execute(async (trx) => {
-      const room = await machineHasRoom(trx, machine, scope.tenantId);
-      if (room === "full") noteFull();
-      return room === "room" ? takeTask(trx, scope, workerId, wanted) : undefined;
-    }),
+  return onMachine(
+    machine,
+    (noteFull, noteShare) =>
+      kernel.db.transaction().execute(async (trx) => {
+        const room = await machineHasRoom(trx, machine, scope.tenantId);
+        if (room === "full") noteFull();
+        if (room === "share") noteShare();
+        return room === "room" ? takeTask(trx, scope, workerId, wanted) : undefined;
+      }),
+    scope.tenantId,
   );
 }
 
@@ -167,6 +171,7 @@ export async function heldTask(db: Db | Trx, scope: WorkerScope, id: string): Pr
   if (task.status !== "running") {
     throw conflict("This task is no longer in progress. Its result is not recorded.");
   }
+  await mustHold(db, scope, task.worker_id);
   return task;
 }
 

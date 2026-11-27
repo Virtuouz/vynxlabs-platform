@@ -116,3 +116,25 @@ describe.each(["higher-ed-devices", "fernhill"])("the %s example", (name) => {
     ).toEqual([]);
   }, 120_000);
 });
+
+test("stress builds: the table, the flow, two schedules, a webhook and the scripts", async () => {
+  const built = await buildRepository({ directory: example("stress") });
+  expect(built.bundle.manifests.map((one) => `${one.kind} ${one.path}`).sort()).toEqual([
+    "dashboard load/overview",
+    "flow load/fan-out",
+    "schedule load/fan-out-every-minute",
+    "schedule load/sleep-every-minute",
+    "script load/burn-cpu",
+    "script load/fill-table",
+    "script load/hold-memory",
+    "script load/item",
+    "script load/items",
+    "script load/quick",
+    "script load/sleep",
+    "table load/records",
+    "trigger load/quick-hook",
+  ]);
+  // A foreach runs at most 1,000 items, so the flow's schedule must not ask for more.
+  const fanOut = built.bundle.manifests.find((one) => one.path === "load/fan-out-every-minute");
+  expect((fanOut?.body.input as { count?: number } | undefined)?.count).toBeLessThanOrEqual(1000);
+}, 120_000);

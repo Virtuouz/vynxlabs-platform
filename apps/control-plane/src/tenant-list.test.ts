@@ -26,6 +26,8 @@ test("a member suspended in a tenant does not see it in the tenant list", async 
     });
     expect(made.status, JSON.stringify(made.body)).toBe(201);
     sam = made.body.id ?? sam;
+    // Sam's owner has proved the account (a mailed link), so a second tenant adding it ends nothing.
+    await t.db.updateTable("member").set({ proved_at: new Date() }).where("id", "=", sam).execute();
   }
   const client = await t.signIn("sam@list.example", password);
   const slugs = async () =>

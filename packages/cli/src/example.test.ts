@@ -569,7 +569,7 @@ describe("working locally", () => {
       secret,
     );
     expect(exported.err).toBe("");
-    expect(exported.out).toMatch(/Exported acme to .*acme\.tar \(\d+\.\d MB\)\./);
+    expect(exported.out).toMatch(/Exported acme to .*acme\.tar \(\d+\.\d MB, \d+\.\d MB\/s\)\./);
     expect(exported.out).toContain("It includes run, flow and event history.");
     const bytes = await readFile(file);
     // A tar archive that ends with its list of contents.

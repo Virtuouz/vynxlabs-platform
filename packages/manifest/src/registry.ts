@@ -1,5 +1,12 @@
 import { Ajv2020, type ErrorObject, type ValidateFunction } from "ajv/dist/2020.js";
 import { KIND_PATTERN, Manifest, StoredResource } from "./envelope.js";
+import {
+  countNodes,
+  MAX_VALUE_NODES,
+  PatternError,
+  re2RegExp,
+  schemaProblem,
+} from "./pattern-guard.js";
 
 /** A resource kind: its name, the version of its body schema, and that schema. */
 export interface KindDefinition {
@@ -169,23 +176,79 @@ export class KindRegistry {
 }
 
 // `verbose` keeps each error's schema, so a format's pattern can be described in words.
-const schemaValidator = new Ajv2020({ allErrors: true, strict: false, verbose: true });
-const compiled = new WeakMap<object, ValidateFunction>();
+// The platform's own schemas (its kinds) keep the built-in engine; a tenant's run on RE2.
+const OWN_OPTIONS = { allErrors: true, strict: false, verbose: true } as const;
+const OPTIONS = {
+  allErrors: true,
+  strict: false,
+  verbose: true,
+  code: { regExp: re2RegExp },
+} as const;
 
-/** Checks a value against any JSON Schema. Returns the problems, or an empty list. */
-export function validateJson(schema: object, value: unknown, prefix = ""): ManifestIssue[] {
-  let validate = compiled.get(schema);
-  if (!validate) {
-    validate = schemaValidator.compile(schema);
-    compiled.set(schema, validate);
+/**
+ * Each schema is compiled by an Ajv of its own, so no schema can see another's `$id` (two tenants
+ * naming theirs alike must not collide) and nothing is kept in a shared registry. The compiled
+ * validators are held in a bounded list, newest last, keyed by the schema's text, so a schema read
+ * again from the database at every run start is compiled once and the list does not grow with runs.
+ */
+const MAX_COMPILED = 256;
+const compiled = new Map<string, ValidateFunction>();
+
+/** How many schemas are held compiled (for the tests). */
+export const compiledSchemaCount = (): number => compiled.size;
+
+function compile(schema: object, own: boolean): ValidateFunction {
+  const key = (own ? "own:" : "") + JSON.stringify(schema);
+  const held = compiled.get(key);
+  if (held) {
+    compiled.delete(key);
+    compiled.set(key, held);
+    return held;
   }
-  return validate(value) ? [] : toIssues(validate.errors, prefix);
+  const validate = new Ajv2020(own ? OWN_OPTIONS : OPTIONS).compile(schema);
+  compiled.set(key, validate);
+  if (compiled.size > MAX_COMPILED) compiled.delete(compiled.keys().next().value as string);
+  return validate;
+}
+
+/**
+ * Checks a value against any JSON Schema. Returns the problems, or an empty list. The schema is
+ * taken to be a tenant's: its patterns run on RE2, and one RE2 cannot run fails the check with the
+ * reason. `own` is for the platform's own schemas only.
+ */
+export function validateJson(
+  schema: object,
+  value: unknown,
+  prefix = "",
+  own = false,
+): ManifestIssue[] {
+  if (!own) {
+    const tooBig = schemaProblem(schema);
+    if (tooBig) return [{ path: prefix || "/", message: `the schema is ${tooBig}` }];
+    if (countNodes(value, MAX_VALUE_NODES) > MAX_VALUE_NODES)
+      return [
+        {
+          path: prefix || "/",
+          message: `is too large to be checked against a schema (more than ${MAX_VALUE_NODES} values)`,
+        },
+      ];
+  }
+  try {
+    const validate = compile(schema, own);
+    return validate(value) ? [] : toIssues(validate.errors, prefix);
+  } catch (error) {
+    // A pattern RE2 does not run, or a value too long for one: said in words, not run.
+    if (error instanceof PatternError) return [{ path: prefix || "/", message: error.message }];
+    throw error;
+  }
 }
 
 /** Why a value is not a JSON Schema (draft 2020-12), in Ajv's words; nothing when it is one. */
 export function jsonSchemaProblem(schema: unknown): string | undefined {
+  const tooBig = schemaProblem(schema);
+  if (tooBig) return `the schema is ${tooBig}`;
   try {
-    schemaValidator.compile(schema as object);
+    new Ajv2020(OPTIONS).compile(schema as object);
     return undefined;
   } catch (error) {
     return (error as Error).message.replace(/^schema is invalid: /, "");

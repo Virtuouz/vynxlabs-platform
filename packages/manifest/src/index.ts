@@ -246,6 +246,7 @@ export {
   widgetTables,
   workspaceRegistry,
 } from "./page.js";
+export { schemaProblem } from "./pattern-guard.js";
 export {
   APP_FACING_KINDS,
   BUILTIN_ROLE_NAMES,

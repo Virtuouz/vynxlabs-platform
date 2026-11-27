@@ -53,7 +53,7 @@ import {
   MAX_RESULT_BYTES,
 } from "../kernel/execution/tasks.js";
 import { kickStarted } from "../kernel/execution/triggers.js";
-import { seeWorker } from "../kernel/execution/workers.js";
+import { machineOf, mustHold, noteScriptsSeen, seeWorker } from "../kernel/execution/workers.js";
 import { publishEvent } from "../kernel/flows/events.js";
 import { access } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
@@ -144,6 +144,14 @@ function cappedFields(fields: unknown): unknown {
 const DEFAULT_MEMORY_MB = 512;
 /** Log lines the worker held but could not deliver. The run says how many. */
 const LogsLost = Type.Optional(Type.Integer({ minimum: 0 }));
+const PeakMb = Type.Optional(
+  Type.Integer({
+    minimum: 0,
+    maximum: 1_000_000,
+    description:
+      "The most memory the script's process was seen to hold, in MB. The next start of the same script is planned at about this much. Absent from an older worker, or where the script ended before it was looked at.",
+  }),
+);
 
 /**
  * The worker protocol: the second language-neutral contract. A worker in any
@@ -279,6 +287,36 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                 {
                   name: Type.String({ minLength: 1, maxLength: 120 }),
                   slots: Type.Integer({ minimum: 1, maximum: 1000 }),
+                  availableMb: Type.Optional(
+                    Type.Number({
+                      minimum: 0,
+                      description: "Free memory on the machine as the worker read it, in MB.",
+                    }),
+                  ),
+                  scripts: Type.Optional(
+                    Type.Array(
+                      Type.Object({
+                        runId: Id,
+                        rssMb: Type.Number({ minimum: 0, maximum: 1_000_000 }),
+                      }),
+                      {
+                        maxItems: 64,
+                        description:
+                          "What each script this worker is running holds now, in MB. Only what a " +
+                          "script has yet to take of what it was planned at stays counted against " +
+                          "the machine. A worker that says nothing has each script counted in " +
+                          "full for eight seconds.",
+                      },
+                    ),
+                  ),
+                  floorMb: Type.Optional(
+                    Type.Number({
+                      minimum: 0,
+                      description:
+                        "Free memory below which the machine takes no more scripts. With " +
+                        "`availableMb`, a script is handed out only where one more fits above it.",
+                    }),
+                  ),
                 },
                 {
                   description:
@@ -293,7 +331,9 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         },
       },
       async ({ worker, body, raw }) => {
-        await seeWorker(kernel, worker, body.workerId, body.version, body.machine);
+        const machine = machineOf(worker, body.machine);
+        await seeWorker(kernel, worker, body.workerId, body.version, machine);
+        noteScriptsSeen(body.workerId, machine?.scripts);
         const deadline = Date.now() + (body.waitSeconds ?? 20) * 1000;
         // A worker that hung up must not be handed a job.
         const gone = () => raw.socket.destroyed;
@@ -304,7 +344,7 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           if (gone()) return { job: null };
           // A task first: each is short, and someone is often waiting on it.
           const task = body.kinds
-            ? await claimTask(kernel, worker, body.workerId, body.kinds, body.machine)
+            ? await claimTask(kernel, worker, body.workerId, body.kinds, machine)
             : undefined;
           if (task) {
             return {
@@ -320,7 +360,7 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             };
           }
           const claimed = takesRuns
-            ? await claimRun(kernel, worker, body.workerId, gone, body.machine)
+            ? await claimRun(kernel, worker, body.workerId, gone, machine)
             : undefined;
           if (claimed) {
             const { run } = claimed;
@@ -509,12 +549,26 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             "When `cancelled` is true, stop the script: the run is no longer this worker's.",
           tags: ["worker protocol"],
           params: RunParams,
-          body: Type.Object({ attempt: Attempt, workerId: Type.Optional(Id) }),
+          body: Type.Object({
+            attempt: Attempt,
+            workerId: Type.Optional(Id),
+            rssMb: Type.Optional(
+              Type.Number({
+                minimum: 0,
+                maximum: 1_000_000,
+                description:
+                  "What the script's process holds now, in MB. Needs `workerId`. See `machine.scripts` of a claim.",
+              }),
+            ),
+          }),
           response: { 200: Type.Object({ cancelled: Type.Boolean() }) },
         },
       },
       async ({ worker, params, body }) => {
         if (body.workerId) await seeWorker(kernel, worker, body.workerId);
+        if (body.workerId && body.rssMb !== undefined) {
+          noteScriptsSeen(body.workerId, [{ runId: params.id, rssMb: body.rssMb }]);
+        }
         let query = db
           .selectFrom("run")
           .selectAll()
@@ -526,6 +580,7 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         if (run.status !== "running" || run.attempt !== body.attempt || !run.queue_job_id) {
           return { cancelled: true };
         }
+        await mustHold(db, worker, run.worker_id);
         const alive = await kernel.queue.heartbeat(
           queueName(run.workspace_id, run.pool),
           run.queue_job_id,
@@ -580,6 +635,8 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         if (worker.workspaceId) query = query.where("workspace_id", "=", worker.workspaceId);
         const run = await query.executeTakeFirst();
         if (!run) throw notFound("The run");
+        // Only the worker the run was given to may add to its log.
+        await mustHold(db, worker, run.worker_id);
         if (body.entries.length > 0) {
           // A line is stored masked: the values the run was given, and secret-named fields.
           const known = await servedValues(kernel, db, run);
@@ -1122,12 +1179,20 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             attempt: Attempt,
             output: Type.Optional(Type.Unknown()),
             logsLost: LogsLost,
+            peakMb: PeakMb,
           }),
           response: { 204: NoContent },
         },
       },
       async ({ worker, params, body }, reply) => {
-        await completeRun(kernel, worker, params.id, body.attempt, body.output ?? null);
+        await completeRun(
+          kernel,
+          worker,
+          params.id,
+          body.attempt,
+          body.output ?? null,
+          body.peakMb,
+        );
         await recordLostLogs(params.id, body.attempt, body.logsLost);
         return reply.code(204).send(null);
       },
@@ -1155,6 +1220,7 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               }),
             ),
             logsLost: LogsLost,
+            peakMb: PeakMb,
           }),
           response: { 200: Type.Object({ final: Type.Boolean() }) },
         },
@@ -1170,6 +1236,7 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             ...(body.error.stack ? { stack: body.error.stack } : {}),
           },
           body.retry !== false,
+          body.peakMb,
         );
         await recordLostLogs(params.id, body.attempt, body.logsLost);
         return result;

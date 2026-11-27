@@ -49,7 +49,7 @@ VOLVEL_URL=http://localhost:8080 node setup/setup.mjs          # --reset to star
 1. The operator creates the tenant and opens access to set it up.
 2. Four members and sixty locums (`locum.01` to `locum.60`, no role, so the members list has a second page), "Practice managers" and "Billing" groups (Billing: Rowan Ellis and Devi Shah; with the practice managers they may mark an invoice paid), two workspaces (`clinics` in production, `sandbox` in dev), end-user groups and front-desk accounts.
 3. Connects TextLine and VetSupply in both workspaces and stores PayFern's signing secret.
-4. Devi deploys the repository with the CLI, and Maya promotes it.
+4. Maya deploys the repository with the CLI (it carries roles and bindings, and a deploy that changes who holds what needs a role that may), and promotes it.
 5. Seeds six weeks of history in Clinics: about 2,900 visits and 2,100 invoices. The sandbox gets a smaller group (six clients a clinic) over eight weeks, so the builder's charts have a few weeks of lines and bars to draw.
 6. Plays out a morning:
    - a stock check starts reorders, four of which wait for a manager
@@ -104,7 +104,7 @@ The agent is offered exactly the scripts and the flow it is bound to (`platform/
 6. **Pet portal as George.** Book a visit for his dog from the free times (Hilltop is closed on Saturdays), and see his unpaid invoices in dollars.
 7. **Clinic performance**, through "Staff sign-in" on the portal as Maya. Try the bars: Search invoices, Clinic, Issued and Status on Money; the tabs on Visits; the folded orders and the Reorder and Count stock buttons on Stock; and Mark paid, Edit and Void on an invoice.
 8. **The public form** at the portal's registration address (Operate → Triggers) lands in the front desk's Callbacks.
-9. **Ship a change as Devi.** Change the reminder text in `src/scripts.ts` and deploy it to the sandbox:
+9. **Ship a change as Devi.** Change the reminder text in `src/scripts.ts` and deploy it to the sandbox. Devi may deploy but not change roles or bindings, so this works because the change leaves them as they are:
 
    ```sh
    VOLVEL_URL=… VOLVEL_TOKEN=<Devi's key> node ../../packages/cli/dist/bin.js deploy --tenant fernhill --workspace sandbox

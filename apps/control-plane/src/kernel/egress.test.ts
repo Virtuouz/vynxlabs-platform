@@ -96,10 +96,17 @@ describe("guarded requests", () => {
   test("a request to an internal address is refused, by address or by name, before it is sent", async () => {
     await expect(guardedFetch(`http://127.0.0.1:${port}/ok`)).rejects.toThrow(EgressRefused);
     await expect(guardedFetch(`http://localhost:${port}/ok`)).rejects.toThrow(
-      /localhost is at .*a private or internal address/,
+      /localhost resolves to a private or internal address/,
     );
     await expect(checkHost("169.254.169.254")).rejects.toThrow(EgressRefused);
     await expect(checkHost("localhost")).rejects.toThrow(EgressRefused);
+  });
+
+  test("a refused name does not say which address it resolved to", async () => {
+    const error = await checkHost("localhost").catch((one) => one);
+    expect(error).toBeInstanceOf(EgressRefused);
+    expect(error.message).not.toMatch(/127\.0\.0\.1|::1/);
+    expect(error.address).toMatch(/127\.0\.0\.1|::1/);
   });
 
   test("allowed, it goes through; a redirect to an internal address is still refused", async () => {

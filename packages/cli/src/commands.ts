@@ -184,13 +184,13 @@ export const COMMANDS = [
     "tenant",
     "Move a tenant",
     "tenant export --tenant <slug> --out <file> [--history]",
-    "Write everything the tenant has to one file. The file's passphrase is read from VOLVEL_EXPORT_PASSPHRASE.",
+    "Write everything the tenant has to one file, as it arrives, so a tenant of any size needs only the disk for the file. The file's passphrase is read from VOLVEL_EXPORT_PASSPHRASE. Shows progress on a terminal. An instance that is writing as many exports as it allows is waited for, up to 10 tries, by the time it says. An export the instance ended is said so, with the setting that ended it, and its partial file is removed: nothing is resumed.",
   ),
   entry(
     "tenant",
     "Move a tenant",
-    "tenant import <file> [--slug <slug>] [--location <name>]",
-    "Bring an exported tenant into this instance. Operators only.",
+    "tenant import <file> [--slug <slug>] [--location <name>] [--keep-sign-ins] [--yes]",
+    "Bring an exported tenant into this instance. Operators only. The file is sent from disk as a stream, and the instance checks it from end to end and says what it holds. Then it asks before importing; --yes answers for you, and is needed where there is no terminal to ask at. The passphrase is read from VOLVEL_EXPORT_PASSPHRASE. The accounts the import creates have no password unless you give --keep-sign-ins, which keeps the passwords the export holds: use it only for your own tenant moved between your own instances, because whoever made the export knows them. Accounts that already exist here are never changed.",
   ),
 
   entry(

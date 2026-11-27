@@ -163,7 +163,14 @@ describe("a link that resets a member's password (D4)", () => {
     const shared = await a.ann.post(`/tenants/${a.id}/members/${a.person}/password-link`, {});
     expect(shared.status, JSON.stringify(shared.body)).toBe(409);
     expect(shared.body.detail).toMatch(/operator/i);
-    // An operator may.
+    // An operator may, with an open access grant on each tenant the member belongs to (A3).
+    expect((await t.admin.post(`/members/${a.person}/password-link`, {})).status).toBe(404);
+    for (const tenant of [a.id, b.id]) {
+      await t.admin.post(`/tenants/${tenant}/access-grants`, {
+        reason: "Ticket",
+        roleId: roles.tenant_admin,
+      });
+    }
     const op = await t.admin.post(`/members/${a.person}/password-link`, {});
     expect(op.status, JSON.stringify(op.body)).toBe(201);
     // An operator's own password is not reset by a tenant's admin.
@@ -224,5 +231,130 @@ describe("a link that resets a member's password (D4)", () => {
     expect((await (await t.signIn("pat@imported.example", NEW_PASSWORD)).get("/me")).status).toBe(
       200,
     );
+  });
+});
+
+describe("who may make a member's password link (phase 35, A3)", () => {
+  const openGrant = async (tenant: string) =>
+    (
+      await t.admin.post(`/tenants/${tenant}/access-grants`, {
+        reason: "Ticket",
+        roleId: roles.tenant_admin,
+      })
+    ).body.id as string;
+
+  test("an operator with no open access grant is refused for a member of a tenant, and no link is made", async () => {
+    const a = await tenantWith("nogrant");
+    const refused = await t.admin.post(`/members/${a.admin}/password-link`, {});
+    expect(refused.status).toBe(404);
+    expect(refused.body.url).toBeUndefined();
+    const tokens = await t.db
+      .selectFrom("member_password_token")
+      .select("id")
+      .where("member_id", "=", a.admin)
+      .execute();
+    expect(tokens).toHaveLength(0);
+  });
+
+  test("under a grant the operator may, and the entry is in the tenant's log with who made it", async () => {
+    const a = await tenantWith("withgrant");
+    await openGrant(a.id);
+    const made = await t.admin.post(`/members/${a.admin}/password-link`, {});
+    expect(made.status, JSON.stringify(made.body)).toBe(201);
+    const log = await a.ann.get(`/tenants/${a.id}/audit?action=member.password_link_created`);
+    expect(log.body.items).toHaveLength(1);
+    expect(log.body.items[0].actorId).toBeTruthy();
+    expect(log.body.items[0].targetId).toBe(a.admin);
+  });
+
+  test("a member of two tenants is logged in each, and the operator needs a grant in each", async () => {
+    const a = await tenantWith("twoa");
+    const b = await tenantWith("twob");
+    await t.db
+      .insertInto("tenant_member")
+      .values({ tenant_id: b.id, member_id: a.person } as Any)
+      .execute();
+    await openGrant(a.id);
+    expect((await t.admin.post(`/members/${a.person}/password-link`, {})).status).toBe(404);
+    await openGrant(b.id);
+    expect((await t.admin.post(`/members/${a.person}/password-link`, {})).status).toBe(201);
+    for (const tenant of [a, b]) {
+      const entries = (await audits("member.password_link_created")).filter(
+        (one) => one.tenant_id === tenant.id && one.target_id === a.person,
+      );
+      expect(entries).toHaveLength(1);
+      expect(entries[0]?.actor_id).toBeTruthy();
+    }
+  });
+
+  test("a member with member:write cannot make a link for a tenant admin, but can for a plain member", async () => {
+    const a = await tenantWith("morethan");
+    const g = await openGrant(a.id);
+    const role = await t.admin.post(`/tenants/${a.id}/roles`, {
+      name: "member_maker",
+      permissions: ["member:write", "*:read"],
+    });
+    const made = await t.admin.post(`/tenants/${a.id}/members`, {
+      email: "mel@morethan.example",
+      name: "Mel",
+      password: PASSWORD,
+    });
+    await t.admin.post(`/tenants/${a.id}/bindings`, {
+      principalType: "member",
+      principalId: made.body.id,
+      roleId: role.body.id,
+    });
+    await t.admin.delete(`/tenants/${a.id}/access-grants/${g}`);
+    const mel = await t.signIn("mel@morethan.example", PASSWORD);
+    const refused = await mel.post(`/tenants/${a.id}/members/${a.admin}/password-link`, {});
+    expect(refused.status, JSON.stringify(refused.body)).toBe(403);
+    expect((await mel.post(`/tenants/${a.id}/members/${a.person}/password-link`, {})).status).toBe(
+      201,
+    );
+  });
+  test("a role held only in one workspace does not count as held across the tenant", async () => {
+    const a = await tenantWith("wsscope");
+    const g = await openGrant(a.id);
+    const ws = await t.admin.post(`/tenants/${a.id}/workspaces`, {
+      slug: "w1",
+      name: "W1",
+      type: "dev",
+    });
+    const role = await t.admin.post(`/tenants/${a.id}/roles`, {
+      name: "member_maker",
+      permissions: ["member:write"],
+    });
+    const make = async (name: string) =>
+      (
+        await t.admin.post(`/tenants/${a.id}/members`, {
+          email: `${name}@wsscope.example`,
+          name,
+          password: PASSWORD,
+        })
+      ).body.id as string;
+    const bind = (member: string, roleId: string, workspaceId?: string) =>
+      t.admin.post(`/tenants/${a.id}/bindings`, {
+        principalType: "member",
+        principalId: member,
+        roleId,
+        ...(workspaceId ? { workspaceId } : {}),
+      });
+    const mel = await make("mel");
+    await bind(mel, role.body.id);
+    await bind(mel, roles.tenant_admin as string, ws.body.id);
+    const wanda = await make("wanda");
+    await bind(wanda, roles.workspace_admin as string, ws.body.id);
+    await t.admin.delete(`/tenants/${a.id}/access-grants/${g}`);
+
+    const melIn = await t.signIn("mel@wsscope.example", PASSWORD);
+    const refused = await melIn.post(`/tenants/${a.id}/members/${a.admin}/password-link`, {});
+    expect(refused.status, JSON.stringify(refused.body)).toBe(403);
+
+    // A tenant admin may still make one for a workspace admin.
+    const ok = await a.ann.post(`/tenants/${a.id}/members/${wanda}/password-link`, {});
+    expect(ok.status, JSON.stringify(ok.body)).toBe(201);
+    // A workspace binding of the caller covers the target's permissions in that workspace only.
+    const mel2 = await melIn.post(`/tenants/${a.id}/members/${wanda}/password-link`, {});
+    expect(mel2.status, JSON.stringify(mel2.body)).toBe(201);
   });
 });

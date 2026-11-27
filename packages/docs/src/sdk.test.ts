@@ -69,13 +69,16 @@ test("every export of @volvel/sdk, @volvel/widgets and @volvel/widget-frame says
     "@volvel/widgets/action",
     "@volvel/widgets/frame",
     "@volvel/widgets/page",
+    "@volvel/widgets/pattern",
     "@volvel/widget-frame",
     "@volvel/widget-frame/react",
   ]);
   const gaps: string[] = [];
   for (const entry of entries) {
     const { names } = exportsOfEntry(entry);
-    expect(names.size, entry.specifier).toBeGreaterThan(entry.specifier.endsWith("/react") ? 0 : 5);
+    expect(names.size, entry.specifier).toBeGreaterThan(
+      /\/(react|pattern)$/.test(entry.specifier) ? 0 : 5,
+    );
     for (const one of names.values()) {
       if (one.kind === "unknown") gaps.push(`${entry.specifier}: ${one.name} could not be read`);
       else if (one.kind !== "reexport" && one.doc.text === "") {

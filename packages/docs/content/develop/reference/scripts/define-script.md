@@ -71,6 +71,10 @@ The `key` of `concurrency` is checked against the input type, so a field that is
 - **What it declares.** A script that asks `ctx` for a connection, secret, variable, table, source or event it did not declare is refused. A deploy to production, and a promotion, refuse a script whose declared connections, secrets, variables without a default, or sources are not set up in the workspace; a deploy to a dev workspace warns. Connection groups need nothing set up.
 - **A failure handler.** `onFailure.notify` must name an HTTP connection.
 
+## Patterns in a schema
+
+A `pattern` in an input or output schema (and in a connector's or a flow's) runs on RE2, an engine that never backtracks: the time grows with the length of the value and never faster, whatever the pattern. A reference back to a group (`\1`) and looking ahead or behind (`(?=...)`, `(?<=...)`) are not available; a bundle that uses one is refused at upload, and says which. Digits and word characters are ASCII only, `\s` is the space, tab and line breaks, and a value of over 100,000 characters is not run through a pattern.
+
 ## At least once
 
 A run is delivered at least once, even with `retries.limit` of 0. A retry runs the whole function again, and a worker lost mid-run counts as an attempt. Write `run` so that doing it twice is safe: pass `ctx.run.idempotencyKey`, which stays the same across attempts of one run, to the systems you call.

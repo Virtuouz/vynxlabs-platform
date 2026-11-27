@@ -2,7 +2,7 @@
 
 Fly.io hosts the Vynxlabs-run instances. Nothing in the image is specific to Fly: it reads the same environment variables as every other deployment mode.
 
-The same steps, kept up to date, are in the documentation at `/docs/self-host/how-to/running/install-on-fly` on an instance. This setup has not been run yet. Treat the commands as a starting point and check them against the current Fly documentation.
+The same steps, kept up to date, are in the documentation at `/docs/self-host/how-to/running/install-on-fly` on an instance. The control plane was run this way in November 2026, with `MANAGED_WORKERS=process`, a Fly Postgres app and a Tigris bucket (phase 35). The `workers` group below has not been run.
 
 ## One-time setup
 
@@ -61,7 +61,7 @@ Size the `workers` machines for the scripts they will run. The worker host runs 
 
 `APPS_URL` gives apps written as code an address of their own: `fly certs add apps.<your domain>`. Without it they are not served.
 
-Migrations run when the new machine starts, before it accepts traffic. The health check holds traffic until `/api/v1/readyz` returns 200.
+Migrations run when the new machine starts, before it listens. The health check holds traffic until `/api/v1/healthz` returns 200, which it does once the machine listens. The check is on liveness and not on `/api/v1/readyz`: readiness answers 503 while the object store cannot be reached, and with one machine a failing check makes the whole instance unreachable, though the console, the API and scripts still work. Watch `/api/v1/readyz` from your own monitor.
 
 Fly does not restart a machine whose health check fails: the check only decides where traffic goes. The instance protects its machine instead:
 - Scripts are held to the machine's run slots (`RUN_SLOTS`).

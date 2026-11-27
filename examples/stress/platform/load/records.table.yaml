@@ -1,0 +1,42 @@
+# The table load/fill-table writes. It has no indexes of its own: the product makes the ones
+# it makes (the id and the system columns), and a sort or a filter on any other column works
+# the whole table. That is what the stress test reads against.
+schemaVersion: 1
+body:
+  description: Rows to sort, filter and count, written by load/fill-table.
+  columns:
+    seq:
+      type: integer
+      required: true
+      description: The row's place in the fill, from 0. Where a fill resumes.
+    title:
+      type: text
+      required: true
+      description: A few words, mostly different from row to row.
+    notes:
+      type: text
+      description: A longer text, 40 to 200 characters.
+    category:
+      type: enum
+      required: true
+      values: [alpha, bravo, charlie, delta, echo, foxtrot, golf, hotel]
+    region:
+      type: text
+      required: true
+      description: One of forty names, so a filter keeps about one row in forty.
+    amount:
+      type: number
+      required: true
+      description: 0 to 10,000 with cents.
+    quantity:
+      type: integer
+      required: true
+    active:
+      type: boolean
+      required: true
+    created_on:
+      type: date
+      required: true
+      description: Spread over three years.
+    due_at:
+      type: timestamp

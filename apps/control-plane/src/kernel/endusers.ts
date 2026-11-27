@@ -121,6 +121,69 @@ export async function createPasswordToken(
   return { token, expiresAt };
 }
 
+/** How many reset links may be good at once for one person who asks for them themselves. */
+const MAX_PENDING_RESETS = 5;
+
+/**
+ * A reset link that the person, or anyone who knows their email, asked for. Unlike
+ * `createPasswordToken` it does not end the links already sent: those are in the person's
+ * mail, and a stranger asking again must not be able to cancel them. Using any one of them
+ * ends the rest. At most MAX_PENDING_RESETS are good at once; past that the oldest is
+ * replaced by the new one, so a person is never left without a link they asked for.
+ */
+export async function createRequestedResetToken(
+  trx: Trx,
+  user: { id: string; tenantId: string },
+): Promise<{ token: string; expiresAt: Date } | undefined> {
+  const mine = () =>
+    trx
+      .selectFrom("end_user_token")
+      .where("end_user_id", "=", user.id)
+      .where("purpose", "=", "reset")
+      .where("used_at", "is", null);
+  await trx
+    .deleteFrom("end_user_token")
+    .where("end_user_id", "=", user.id)
+    .where("purpose", "=", "reset")
+    .where("used_at", "is", null)
+    .where("expires_at", "<=", new Date())
+    .execute();
+  const open = await mine()
+    .select((eb) => eb.fn.countAll<string>().as("n"))
+    .executeTakeFirstOrThrow();
+  if (Number(open.n) >= MAX_PENDING_RESETS) {
+    // Past the most, the oldest is replaced: someone who fills the places must not be able to leave
+    // the person without a new link for hours.
+    const oldest = await mine()
+      .select("id")
+      .orderBy("expires_at", "asc")
+      .limit(Number(open.n) - MAX_PENDING_RESETS + 1)
+      .execute();
+    await trx
+      .deleteFrom("end_user_token")
+      .where(
+        "id",
+        "in",
+        oldest.map((row) => row.id),
+      )
+      .execute();
+  }
+  const token = randomBytes(32).toString("base64url");
+  const expiresAt = new Date(Date.now() + RESET_HOURS * 3_600_000);
+  await trx
+    .insertInto("end_user_token")
+    .values({
+      id: newId(),
+      tenant_id: user.tenantId,
+      end_user_id: user.id,
+      purpose: "reset",
+      token_hash: hash(token),
+      expires_at: expiresAt,
+    })
+    .execute();
+  return { token, expiresAt };
+}
+
 /** Who a link token is for, while it is still good. For showing the form. */
 export async function readPasswordToken(db: Db | Trx, tenantId: string, token: string) {
   return db

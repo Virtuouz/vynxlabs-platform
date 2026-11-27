@@ -6,7 +6,8 @@ import { setPriority, tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
-import { type Bundle, type BundleManifest, bundleDigest } from "@volvel/manifest";
+import type { Bundle, BundleManifest } from "@volvel/manifest";
+import { bundleDigest } from "@volvel/manifest/digest";
 import {
   allowedCall,
   type Bound,
@@ -34,8 +35,17 @@ export interface WorkerOptions {
   token: string;
   /** How many runs this worker handles at once. Default 4. */
   concurrency?: number;
+  /** How long an attempt's end is said again to a control plane that cannot take it. */
+  reportRetrySeconds?: number;
   /** Stop after this long with nothing to do. Default: never. */
   idleExitSeconds?: number;
+  /**
+   * A worker that exits when idle also exits after this long below the machine's memory floor
+   * with nothing in progress: its own memory is part of what is short, and whoever started it
+   * starts another when there is room. Default: 8 to 16 seconds, differing by worker so that
+   * the workers of a machine do not all leave together.
+   */
+  lowMemoryLeaveSeconds?: number;
   /**
    * A file touched each time the control plane answers a request for work, whether or not
    * there was any: what a health check reads. Default: `volvel-worker-alive` in the
@@ -156,6 +166,12 @@ function defaultRunner(): string {
 
 /** How often a script's memory is looked at. */
 const MEMORY_CHECK_MS = 500;
+/** When a script's memory is first looked at. */
+const FIRST_LOOK_MS = 150;
+/** When a run's first heartbeat is sent, with what its script holds by then. */
+const FIRST_BEAT_MS = 1500;
+/** Long enough for a control plane or its database to restart; a run is waited for no longer. */
+const REPORT_RETRY_SECONDS = 90;
 /** How long a worker waits before claiming again when its machine is short of memory. */
 const LOW_MEMORY_WAIT_MS = 2000;
 
@@ -187,6 +203,12 @@ interface ScriptProcess {
   kill(): void;
   /** Why it ended, once it has. */
   ended(code: number | null, signal: NodeJS.Signals | null): Error;
+  /** The most the process was seen to hold, in MB, if it was seen at all. */
+  peakMb(): number | undefined;
+  /** What it held when last looked at, in MB. */
+  heldMb(): number | undefined;
+  /** Looks now at what it holds: called when it says it is done, which is when it holds most. */
+  look(): void;
   dispose(): void;
 }
 
@@ -215,16 +237,23 @@ function startScript(runner: string, memoryMb: number, probe: MachineProbe): Scr
   // The heap limit covers only what JavaScript holds. Buffers, and what native code holds,
   // are counted here instead, from what the process holds in all.
   const limitMb = memoryMb + NODE_OVERHEAD_MB;
-  const watching =
-    child.pid !== undefined && probe.rssMb(child.pid) !== undefined
-      ? setInterval(() => {
-          const held = child.pid === undefined ? undefined : probe.rssMb(child.pid);
-          if (held !== undefined && held > limitMb && killed === undefined) {
-            killed = "memory";
-            child.kill("SIGKILL");
-          }
-        }, MEMORY_CHECK_MS)
-      : undefined;
+  let peak: number | undefined;
+  let last: number | undefined;
+  const look = () => {
+    const held = child.pid === undefined ? undefined : probe.rssMb(child.pid);
+    if (held === undefined) return;
+    last = held;
+    if (held > (peak ?? 0)) peak = held;
+    if (held > limitMb && killed === undefined) {
+      killed = "memory";
+      child.kill("SIGKILL");
+    }
+  };
+  const watched = child.pid !== undefined && probe.rssMb(child.pid) !== undefined;
+  const watching = watched ? setInterval(look, MEMORY_CHECK_MS) : undefined;
+  // Once early as well: most scripts end before the first regular look, and one never looked
+  // at stays planned at the flat figure for ever.
+  const firstLook = watched ? setTimeout(look, FIRST_LOOK_MS) : undefined;
   return {
     child,
     kill() {
@@ -234,10 +263,26 @@ function startScript(runner: string, memoryMb: number, probe: MachineProbe): Scr
     ended(code, signal) {
       return processEnded(code, signal, stderr, memoryMb, killed);
     },
+    peakMb() {
+      return peak === undefined ? undefined : Math.ceil(peak);
+    },
+    heldMb() {
+      return last;
+    },
+    look() {
+      if (watched && child.exitCode === null && child.signalCode === null) look();
+    },
     dispose() {
       clearInterval(watching);
+      clearTimeout(firstLook);
     },
   };
+}
+
+/** What a script's process held at most, as the control plane is told it: it plans the next start by it. */
+function peakOf(script: ScriptProcess | undefined): { peakMb?: number } {
+  const peakMb = script?.peakMb();
+  return peakMb === undefined ? {} : { peakMb };
 }
 
 /** Ends a script's process with its attempt: now, or when the grace already given runs out. */
@@ -273,7 +318,12 @@ export class Worker {
   #stopping = false;
   #inFlight = 0;
   #lastWork = Date.now();
+  /** Since when the machine has been below its memory floor, as this worker saw it. */
+  #shortSince: number | undefined;
+  readonly #leaveAfterMs: number;
   #claims = new Set<AbortController>();
+  /** The scripts in progress, by run, so the control plane can be told what each holds. */
+  #scripts = new Map<string, ScriptProcess>();
 
   constructor(options: WorkerOptions) {
     this.#options = options;
@@ -282,6 +332,10 @@ export class Worker {
     this.#cacheDir = options.cacheDir ?? join(tmpdir(), `volvel-worker-${this.id}`);
     this.#runner = options.runner ?? defaultRunner();
     this.#probe = options.probe ?? procProbe;
+    this.#leaveAfterMs =
+      options.lowMemoryLeaveSeconds !== undefined
+        ? options.lowMemoryLeaveSeconds * 1000
+        : 8000 + Math.random() * 8000;
   }
 
   /** Whether the machine has too little memory left to start another script. */
@@ -299,11 +353,23 @@ export class Worker {
     const slots = Array.from({ length: this.#options.concurrency ?? 4 }, async () => {
       while (!this.#stopping) {
         if (this.#shortOfMemory()) {
-          // Not idle: the work is there, the memory is not. Wait for it.
-          this.#lastWork = Date.now();
+          this.#shortSince ??= Date.now();
+          // A worker holding nothing is itself part of what is short. While it stayed, a
+          // machine full of idle workers never got its memory back, and every script that
+          // started was the one stopped for it.
+          if (this.#leavesWhenShort()) {
+            reason = "idle";
+            this.#stopping = true;
+            this.#log(
+              "info",
+              "Leaving: the machine is short of memory and this worker holds no run.",
+            );
+            break;
+          }
           await sleep(LOW_MEMORY_WAIT_MS);
           continue;
         }
+        this.#shortSince = undefined;
         try {
           const job = await this.#claim();
           if (job) {
@@ -346,6 +412,32 @@ export class Worker {
     for (const claim of this.#claims) claim.abort();
   }
 
+  /** What the control plane is told with a claim, so it hands out a script only where one fits. */
+  #memoryNow(): {
+    availableMb?: number;
+    floorMb?: number;
+    scripts?: { runId: string; rssMb: number }[];
+  } {
+    const floorMb = this.#options.machine?.floorMb;
+    const availableMb = this.#probe.memory()?.availableMb;
+    if (!floorMb || availableMb === undefined) return {};
+    const scripts = [...this.#scripts].flatMap(([runId, script]) => {
+      const rssMb = script.heldMb();
+      return rssMb === undefined ? [] : [{ runId, rssMb: Math.round(rssMb) }];
+    });
+    return {
+      availableMb: Math.round(availableMb),
+      floorMb,
+      ...(scripts.length ? { scripts } : {}),
+    };
+  }
+
+  /** Whether to give the machine this worker's memory back: only a worker that would exit when idle does. */
+  #leavesWhenShort(): boolean {
+    if (this.#options.idleExitSeconds === undefined || this.#inFlight > 0) return false;
+    return this.#shortSince !== undefined && Date.now() - this.#shortSince > this.#leaveAfterMs;
+  }
+
   #idle(): boolean {
     const limit = this.#options.idleExitSeconds;
     return (
@@ -382,6 +474,32 @@ export class Worker {
     return (text === "" ? undefined : JSON.parse(text)) as T;
   }
 
+  /**
+   * Says how an attempt ended, and says it again while the control plane cannot take it: one
+   * that is restarting, or whose database is, answers 5xx or not at all for some seconds. Said
+   * once, every script that ended in those seconds was failed as not heard from, though its
+   * work was done (phase 35: a database restart of 22 s failed the eight in progress). The
+   * attempt's heartbeat goes on meanwhile. A refusal (4xx) is final at once.
+   */
+  async #report(path: string, body: unknown): Promise<void> {
+    const until = Date.now() + (this.#options.reportRetrySeconds ?? REPORT_RETRY_SECONDS) * 1000;
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        await this.#call("POST", path, body);
+        return;
+      } catch (error) {
+        const status = (error as { status?: number }).status;
+        const passing =
+          error instanceof Busy ||
+          (!(error instanceof CredentialRefused) &&
+            !(error instanceof AttemptOver) &&
+            (status === undefined || status >= 500));
+        if (!passing || Date.now() >= until) throw error;
+        await sleep(Math.min(5000, 500 * 2 ** attempt));
+      }
+    }
+  }
+
   async #claim(): Promise<Claimed | null> {
     const abort = new AbortController();
     this.#claims.add(abort);
@@ -399,6 +517,7 @@ export class Worker {
                 machine: {
                   name: this.#options.machine.name,
                   slots: this.#options.machine.slots,
+                  ...this.#memoryNow(),
                 },
               }
             : {}),
@@ -532,12 +651,16 @@ export class Worker {
       return lost > 0 ? { logsLost: lost } : {};
     };
 
-    const heartbeat = setInterval(async () => {
+    const beat = async () => {
       await flush();
       try {
+        // What the script holds goes with it: the control plane counts against the machine only
+        // what a script has yet to take of what it was planned at.
+        const rssMb = this.#scripts.get(job.runId)?.heldMb();
         const reply = await this.#call<{ cancelled: boolean }>("POST", `${runPath}/heartbeat`, {
           attempt: job.attempt,
           workerId: this.id,
+          ...(rssMb === undefined ? {} : { rssMb: Math.round(rssMb) }),
         });
         if (reply.cancelled) {
           ended = new AttemptOver();
@@ -546,7 +669,10 @@ export class Worker {
       } catch {
         // A missed heartbeat is not fatal. The next one may get through.
       }
-    }, Math.max(1, job.heartbeatSeconds) * 1000);
+    };
+    const heartbeat = setInterval(beat, Math.max(1, job.heartbeatSeconds) * 1000);
+    // Once early, for a script still running then: its memory is known within two seconds, not ten.
+    const firstBeat = setTimeout(beat, FIRST_BEAT_MS);
     const timeout = setTimeout(
       () =>
         abort.abort(
@@ -563,9 +689,11 @@ export class Worker {
       script = startScript(this.#runner, memoryMb, this.#probe);
       const { child: started } = script;
       const watched = script;
+      this.#scripts.set(job.runId, script);
 
       const outcome = new Promise<unknown>((resolve, reject) => {
         started.on("message", (message: FromRunner) => {
+          if (message.t !== "log") watched.look();
           if (message.t === "log") {
             pending.push(capped(message.entry));
             bound();
@@ -617,7 +745,12 @@ export class Worker {
         );
       }
       const logs = await settle();
-      await this.#call("POST", `${runPath}/complete`, { attempt: job.attempt, output, ...logs });
+      await this.#report(`${runPath}/complete`, {
+        attempt: job.attempt,
+        output,
+        ...logs,
+        ...peakOf(script),
+      });
     } catch (error) {
       const logs = await settle();
       if (error instanceof CredentialRefused || ended instanceof CredentialRefused) {
@@ -627,8 +760,9 @@ export class Worker {
       if (ended || error instanceof AttemptOver) return;
       const failure = error instanceof Error ? error : new Error(String(error));
       failed = failure.message;
-      await this.#call("POST", `${runPath}/fail`, {
+      await this.#report(`${runPath}/fail`, {
         attempt: job.attempt,
+        ...peakOf(script),
         ...(error instanceof NoRetry ? { retry: false } : {}),
         ...logs,
         error: {
@@ -645,7 +779,9 @@ export class Worker {
         }
       });
     } finally {
+      this.#scripts.delete(job.runId);
       clearInterval(heartbeat);
+      clearTimeout(firstBeat);
       clearTimeout(timeout);
       // Whatever the script left running ends with its attempt. An aborted one had its
       // grace to stop by itself; any other is ended now.

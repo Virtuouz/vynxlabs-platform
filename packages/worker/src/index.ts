@@ -7,9 +7,13 @@ export {
   type MachineProbe,
   type MachineShare,
   MemoryGuard,
+  machineName,
   machineShare,
+  PLANNED_START_MB,
+  PLANNED_WORKER_MB,
   parseMachine,
   procProbe,
+  Reservations,
 } from "./machine.js";
 export { readOtlpHeaders } from "./otlp-headers.js";
 export { telemetryFromEnv } from "./trace.js";

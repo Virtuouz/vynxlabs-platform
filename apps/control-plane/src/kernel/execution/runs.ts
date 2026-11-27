@@ -10,7 +10,18 @@ import { traceFor, traceRun } from "../trace.js";
 import { bundleManifest, payloadSchemas } from "./bundles.js";
 import { redactError, summarize } from "./redact.js";
 import { servedValues } from "./served.js";
-import { type MachineClaim, machineHasRoom, onMachine } from "./workers.js";
+import {
+  type MachineClaim,
+  machineHasRoom,
+  machineShortOfMemory,
+  mustHold,
+  notePeak,
+  noteStarted,
+  onMachine,
+  peakKnown,
+  recallPeaks,
+  runEnded,
+} from "./workers.js";
 
 /** Input and output above this size go to file storage, and the run keeps a reference. */
 export const INLINE_PAYLOAD_BYTES = 256 * 1024;
@@ -18,6 +29,60 @@ export const INLINE_PAYLOAD_BYTES = 256 * 1024;
 /** Each workspace has a queue for the default pool, and one more for each named pool its scripts ask for. */
 export const queueName = (workspaceId: string, pool?: string | null) =>
   `ws_${workspaceId.replaceAll("-", "")}${pool ? `_p_${pool.replaceAll("-", "_")}` : ""}`;
+
+/** What a script's memory is remembered under: the script of one workspace. */
+const scriptKey = (run: { workspace_id: string; script_path: string }) =>
+  `${run.workspace_id}:${run.script_path}`;
+
+/** How many of a workspace's latest runs are looked through for what a script held before. */
+const PEAK_LOOKBACK_RUNS = 500;
+
+/**
+ * What a script held in its last runs, read once for each script after a start: what was known
+ * of it is in this process's memory, and a restart forgets that.
+ */
+async function rememberPeaks(kernel: Kernel, run: { workspace_id: string; script_path: string }) {
+  const key = scriptKey(run);
+  if (peakKnown(key)) return;
+  try {
+    const rows = await kernel.db
+      .selectFrom(
+        kernel.db
+          .selectFrom("run")
+          .select(["id", "script_path", "peak_memory_mb"])
+          .where("workspace_id", "=", run.workspace_id)
+          .orderBy("id", "desc")
+          .limit(PEAK_LOOKBACK_RUNS)
+          .as("recent"),
+      )
+      .select("peak_memory_mb")
+      .where("script_path", "=", run.script_path)
+      .where("peak_memory_mb", "is not", null)
+      .orderBy("id", "desc")
+      .limit(4)
+      .execute();
+    recallPeaks(key, rows.map((row) => row.peak_memory_mb as number).reverse());
+  } catch (error) {
+    // Not worth a claim: the script is planned at the flat figure, as one never seen is.
+    kernel.log.warn({ err: error }, "what a script held before could not be read");
+  }
+}
+
+/** Keeps what a run's script held at most, for this process and for the next. */
+async function keepPeak(
+  kernel: Kernel,
+  run: { id: string; workspace_id: string; script_path: string },
+  peakMb: number | undefined,
+) {
+  if (peakMb === undefined || !Number.isFinite(peakMb) || peakMb <= 0) return;
+  notePeak(scriptKey(run), peakMb);
+  await kernel.db
+    .updateTable("run")
+    .set({ peak_memory_mb: Math.min(Math.ceil(peakMb), 1_000_000) })
+    .where("id", "=", run.id)
+    .execute()
+    .catch((error) => kernel.log.warn({ err: error }, "what a script held could not be kept"));
+}
 
 export interface ScriptBody {
   entry: string;
@@ -394,6 +459,8 @@ export interface WorkerScope {
   workspaceId: string | null;
   /** The pool this worker serves. Null for the default pool. */
   pool: string | null;
+  /** Whether the control plane or a worker host started this worker and named its machine. */
+  managed?: boolean;
 }
 
 class ClaimAbandoned extends Error {}
@@ -414,11 +481,31 @@ export async function claimRun(
   /** The machine the worker shares with others, whose slots it must keep within. */
   machine?: MachineClaim,
 ) {
-  return (
-    (await onMachine(machine, (noteFull) =>
-      claimNext(kernel, scope, workerId, abandoned, machine, noteFull),
-    )) ?? null
-  );
+  // A machine that says what memory it has is handed a script only where one more fits.
+  if (machine && machineShortOfMemory(machine)) return null;
+  const run =
+    (await onMachine(
+      machine,
+      async (noteFull, noteShare) => {
+        if (machine && machineShortOfMemory(machine)) return undefined;
+        const claimed = await claimNext(
+          kernel,
+          scope,
+          workerId,
+          abandoned,
+          machine,
+          noteFull,
+          noteShare,
+        );
+        if (machine && claimed) {
+          await rememberPeaks(kernel, claimed.run);
+          noteStarted(machine, claimed.run.id, Date.now(), scriptKey(claimed.run), workerId);
+        }
+        return claimed;
+      },
+      scope.tenantId,
+    )) ?? null;
+  return run;
 }
 
 async function claimNext(
@@ -428,6 +515,7 @@ async function claimNext(
   abandoned: () => boolean,
   machine: MachineClaim | undefined,
   noteFull: () => void,
+  noteShare: () => void = () => {},
 ) {
   let query = kernel.db
     .selectFrom("workspace")
@@ -459,6 +547,9 @@ async function claimNext(
       const outcome = await kernel.db
         .transaction()
         .execute(async (trx) => {
+          // A claim holds its machine's turn while it waits. Whatever it waits for, it does
+          // not wait for long: one that could not get a lock is asked again by its worker.
+          await sql`set local lock_timeout = '15s'`.execute(trx);
           await sql`select pg_advisory_xact_lock(hashtextextended(${workspace.id}, 0))`.execute(
             trx,
           );
@@ -472,6 +563,7 @@ async function claimNext(
           if (machine) {
             const room = await machineHasRoom(trx, machine, scope.tenantId);
             if (room === "full") noteFull();
+            if (room === "share") noteShare();
             if (room !== "room") return "machine" as const;
           }
 
@@ -521,6 +613,11 @@ async function claimNext(
         })
         .catch((error) => {
           if (error instanceof ClaimAbandoned) return "abandoned" as const;
+          // lock_not_available: nothing is handed out this time.
+          if ((error as { code?: string }).code === "55P03") {
+            kernel.log.warn({ workspaceId: workspace.id }, "a claim gave up waiting for a lock");
+            return "empty" as const;
+          }
           throw error;
         });
       if (outcome === "abandoned") return null;
@@ -547,6 +644,7 @@ export async function activeRun(db: Db | Trx, scope: WorkerScope, runId: string,
   if (run.status !== "running" || run.attempt !== attempt) {
     throw conflict("This attempt is no longer in progress. Its result is not recorded.");
   }
+  await mustHold(db, scope, run.worker_id);
   return run;
 }
 
@@ -556,8 +654,11 @@ export async function completeRun(
   runId: string,
   attempt: number,
   output: unknown,
+  peakMb?: number,
 ) {
   const run = await activeRun(kernel.db, scope, runId, attempt);
+  runEnded(runId);
+  await keepPeak(kernel, run, peakMb);
   const taken = await kernel.queue.complete(
     queueName(run.workspace_id, run.pool),
     run.queue_job_id as string,
@@ -694,8 +795,11 @@ export async function failRun(
   reported: RunFailure,
   /** False when another attempt would repeat work that was done: the run ends here. */
   retry = true,
+  peakMb?: number,
 ) {
   const run = await activeRun(kernel.db, scope, runId, attempt);
+  runEnded(runId);
+  await keepPeak(kernel, run, peakMb);
   // What the script was given never reaches the record, the alerts or the handler: an error
   // that quotes a URL with its key, or a header, is stored without it.
   const error = redactError(reported, await servedValues(kernel, kernel.db, run));
@@ -747,6 +851,23 @@ export function alreadyEnded(what: "run" | "flow run", status: string): string {
 
 /** Stops a run that is waiting or in progress. A running script hears on its next heartbeat. */
 export async function cancelRun(kernel: Kernel, trx: Trx, workspaceId: string, runId: string) {
+  // The job first, then the run: the order a claim takes them in. A cancel that held the run
+  // and then asked for the job, on a connection of the queue's own, waited for a claim that
+  // held the job and waited for the run. Postgres saw no deadlock, the claim kept its
+  // machine's turn, and no run on the instance was claimed again (STR-06 of phase 35).
+  const seen = await trx
+    .selectFrom("run")
+    .select(["status", "pool", "queue_job_id"])
+    .where("id", "=", runId)
+    .where("workspace_id", "=", workspaceId)
+    .executeTakeFirst();
+  if (!seen) throw notFound("The run");
+  if (seen.status !== "queued" && seen.status !== "running") {
+    throw conflict(alreadyEnded("run", seen.status));
+  }
+  if (seen.queue_job_id) {
+    await kernel.queue.cancel(queueName(workspaceId, seen.pool), seen.queue_job_id, trx);
+  }
   const run = await trx
     .selectFrom("run")
     .selectAll()
@@ -758,8 +879,9 @@ export async function cancelRun(kernel: Kernel, trx: Trx, workspaceId: string, r
   if (run.status !== "queued" && run.status !== "running") {
     throw conflict(alreadyEnded("run", run.status));
   }
-  if (run.queue_job_id) {
-    await kernel.queue.cancel(queueName(workspaceId, run.pool), run.queue_job_id);
+  // A job the run took on between the two reads. Rare, and still in this transaction.
+  if (run.queue_job_id && run.queue_job_id !== seen.queue_job_id) {
+    await kernel.queue.cancel(queueName(workspaceId, run.pool), run.queue_job_id, trx);
   }
   const cancelled = await trx
     .updateTable("run")
@@ -790,6 +912,22 @@ export async function reapDeadRuns(kernel: Kernel): Promise<number> {
     closed += 1;
   }
   return closed;
+}
+
+/**
+ * Counts every run in progress as heard from now. Called before the queue is supervised again
+ * after a time in which nothing could be written, a database that took no writes or was away:
+ * the workers' heartbeats were refused all that time. Without it, the scripts in progress when
+ * a disk filled were failed as not heard from eight seconds after it was freed, each with its
+ * worker waiting to say it had ended (phase 35).
+ */
+export async function forgiveSilentRuns(kernel: Kernel): Promise<void> {
+  await kernel.queue.forgiveSilence();
+  await kernel.db
+    .updateTable("run")
+    .set({ last_heartbeat_at: new Date() })
+    .where("status", "=", "running")
+    .execute();
 }
 
 /**

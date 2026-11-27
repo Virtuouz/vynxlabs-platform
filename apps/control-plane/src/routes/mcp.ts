@@ -6,7 +6,7 @@ import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprot
 import { sql } from "@volvel/db";
 import { derivedToolName, type FlowBody } from "@volvel/manifest";
 import { Type } from "typebox";
-import { boundInside, check } from "../kernel/authorize.js";
+import { boundInside, check, checkMany } from "../kernel/authorize.js";
 import { forbidden, HttpError, notFound } from "../kernel/errors.js";
 import { payloadSchemas } from "../kernel/execution/bundles.js";
 import { type Known, redact, redactText } from "../kernel/execution/redact.js";
@@ -181,7 +181,10 @@ const FLOW_ANSWER_SCHEMA: Record<string, unknown> = {
 };
 
 /** What working out the tools needs of a caller: who they are, and what they may do. */
-type Caller = Pick<RequestContext, "principal" | "allowed" | "authorize" | "mutate">;
+type Caller = Pick<
+  RequestContext,
+  "principal" | "allowed" | "allowedMany" | "authorize" | "mutate"
+>;
 
 async function toolsFor(kernel: Kernel, ctx: Caller, workspace: WorkspaceRef): Promise<Tool[]> {
   const { db } = kernel;
@@ -275,11 +278,25 @@ async function toolsFor(kernel: Kernel, ctx: Caller, workspace: WorkspaceRef): P
 
   /** The tool each resource got, to give it again under the names it had before a rename. */
   const named = new Map<string, { prefix: string; name: string }>();
+  // Who may start each, asked once for all the scripts and once for all the flows: a list of
+  // tools is not a statement or two for each of them.
+  const mayStart = new Map<string, boolean>();
+  for (const [kind, permission] of [
+    ["script", "run:write"],
+    ["flow", "flow_run:write"],
+  ] as const) {
+    const these = resources.filter((one) => one.kind === kind);
+    const answers = await ctx.allowedMany(
+      permission,
+      these.map((one) => ({ ...target, resourceId: one.id })),
+    );
+    for (const [index, one] of these.entries()) mayStart.set(one.id, answers[index] === true);
+  }
   for (const resource of resources) {
     if (tools.length >= MAX_TOOLS) break;
     const scope = { ...target, resourceId: resource.id };
     if (resource.kind === "script") {
-      if (!(await ctx.allowed("run:write", scope))) continue;
+      if (mayStart.get(resource.id) !== true) continue;
       const body = resource.body as { description?: string; input?: unknown; output?: unknown };
       const declared = objectSchema(body.input);
       const keyName = keyArgument(declared);
@@ -339,7 +356,7 @@ async function toolsFor(kernel: Kernel, ctx: Caller, workspace: WorkspaceRef): P
       const manual = Object.values(body.nodes ?? {}).some(
         (node) => node.type === "trigger" && node.trigger.type === "manual",
       );
-      if (!manual || !(await ctx.allowed("flow_run:write", scope))) continue;
+      if (!manual || mayStart.get(resource.id) !== true) continue;
       // The manual trigger may declare what it takes. The first one is the one started.
       const first = Object.values(body.nodes ?? {}).find(
         (node) => node.type === "trigger" && node.trigger.type === "manual",
@@ -664,6 +681,8 @@ export function mcpRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         };
         const allowed = async (permission: string, target: Parameters<typeof check>[3]) =>
           (await check(kernel.db, principal, permission, target)).allowed;
+        const allowedMany = async (permission: string, targets: Parameters<typeof checkMany>[3]) =>
+          (await checkMany(kernel.db, principal, permission, targets)).map((one) => one.allowed);
         const never = async (): Promise<never> => {
           throw new Error("A tool is not run from its listing.");
         };
@@ -674,7 +693,7 @@ export function mcpRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         const tools = reachable
           ? await toolsFor(
               kernel,
-              { principal, allowed, authorize: never, mutate: never },
+              { principal, allowed, allowedMany, authorize: never, mutate: never },
               workspace,
             )
           : [];
@@ -752,6 +771,8 @@ export function mcpRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         const caller: Caller = {
           principal,
           allowed,
+          allowedMany: async (permission, targets) =>
+            (await checkMany(kernel.db, principal, permission, targets)).map((one) => one.allowed),
           authorize: async (permission, target) => {
             if (!(await allowed(permission, target))) throw forbidden(permission);
           },

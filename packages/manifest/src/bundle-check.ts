@@ -21,6 +21,7 @@ import {
   widgetTables,
   workspaceRegistry,
 } from "./page.js";
+import { patternProblems, schemaCostProblems } from "./pattern-guard.js";
 import { BUILTIN_ROLE_NAMES } from "./permissions.js";
 import { KindRegistry, validateJson } from "./registry.js";
 import { checkTable, type TableBody } from "./table.js";
@@ -392,6 +393,16 @@ export function checkBundleManifests(
         problems.push(
           `${manifest.path} (connection_group): /body/connector is oauth2, which a group cannot use yet. Declare a connection for each account.`,
         );
+      }
+    }
+    // A pattern that can backtrack without end would hold the control plane's one thread when a
+    // caller's input is checked against it. Script, connector and flow bodies hold such schemas.
+    if (manifest.kind === "script" || manifest.kind === "connector" || manifest.kind === "flow") {
+      for (const problem of [
+        ...patternProblems(manifest.body, "/body"),
+        ...schemaCostProblems(manifest.body, "/body"),
+      ]) {
+        problems.push(`${manifest.path} (${manifest.kind}): ${problem}`);
       }
     }
     if (manifest.kind === "connector") {

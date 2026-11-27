@@ -27,10 +27,107 @@ const STAGE_HOURS = 1;
 
 const Passphrase = Type.String({ minLength: MIN_PASSPHRASE, maxLength: 500 });
 
+/**
+ * An export reads from a snapshot and keeps a database connection for as long as its reader
+ * takes to read the download. So that slow readers cannot take the connections the platform
+ * needs, an instance writes a few exports at once, a tenant one, and an export whose reader
+ * has stopped taking it for `stallMs` is ended and its connection given back.
+ *
+ * These are the one place the numbers are held. The instance's settings (EXPORTS_AT_ONCE,
+ * EXPORTS_PER_TENANT, EXPORT_STALL_SECONDS, EXPORT_MAX_MINUTES) are copied here when the routes
+ * are made; these are the defaults until then.
+ */
+export const exportLimits = {
+  atOnce: 3,
+  perTenant: 1,
+  stallMs: 60_000,
+  /**
+   * One export is ended after this long, however it is read: a reader that takes a chunk now and
+   * then keeps no place for ever. 0 is no limit.
+   */
+  totalMs: 30 * 60_000,
+  retryAfterSeconds: 30,
+};
+/** How many exports of each tenant are being written. */
+const exporting = new Map<string, number>();
+const exportsRunning = () => [...exporting.values()].reduce((a, b) => a + b, 0);
+
+/** Takes a place for one export of this tenant, or says to come back later. */
+function takeExportPlace(tenantId: string): () => void {
+  if ((exporting.get(tenantId) ?? 0) >= exportLimits.perTenant) {
+    throw new HttpError(
+      429,
+      "rate_limited",
+      "This tenant is already being exported. Wait for that export to end, then try again.",
+      undefined,
+      { "retry-after": String(exportLimits.retryAfterSeconds) },
+    );
+  }
+  if (exportsRunning() >= exportLimits.atOnce) {
+    throw new HttpError(
+      429,
+      "rate_limited",
+      "This instance is writing as many exports as it allows at once. Try again in a moment.",
+      undefined,
+      { "retry-after": String(exportLimits.retryAfterSeconds) },
+    );
+  }
+  exporting.set(tenantId, (exporting.get(tenantId) ?? 0) + 1);
+  let given = false;
+  return () => {
+    if (given) return;
+    given = true;
+    const left = (exporting.get(tenantId) ?? 1) - 1;
+    if (left > 0) exporting.set(tenantId, left);
+    else exporting.delete(tenantId);
+  };
+}
+
+/** The archive as a stream that is ended when its reader stops taking it. */
+export function readerBoundStream(source: AsyncIterable<Buffer>, release: () => void): Readable {
+  const startedAt = Date.now();
+  let lastTaken = startedAt;
+  async function* watched() {
+    for await (const chunk of source) {
+      yield chunk;
+      lastTaken = Date.now();
+    }
+  }
+  const stream = Readable.from(watched());
+  const watch = setInterval(
+    () => {
+      if (stream.readableLength > 0 && Date.now() - lastTaken > exportLimits.stallMs) {
+        stream.destroy(new Error("The reader stopped taking the export."));
+      } else if (exportLimits.totalMs > 0 && Date.now() - startedAt > exportLimits.totalMs) {
+        stream.destroy(new Error("The export took longer than it is allowed."));
+      }
+    },
+    Math.max(
+      50,
+      Math.min(
+        1000,
+        exportLimits.stallMs / 4,
+        exportLimits.totalMs > 0 ? exportLimits.totalMs / 4 : 1000,
+      ),
+    ),
+  );
+  watch.unref();
+  stream.once("close", () => {
+    clearInterval(watch);
+    release();
+  });
+  return stream;
+}
+
 /** Taking a tenant out of an instance, and bringing one in. */
 export function portabilityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
   return async (app) => {
     const { db } = kernel;
+    const settings = kernel.config.limits;
+    exportLimits.atOnce = settings.exportsAtOnce;
+    exportLimits.perTenant = settings.exportsPerTenant;
+    exportLimits.stallMs = settings.exportStallSeconds * 1000;
+    exportLimits.totalMs = settings.exportMaxMinutes * 60_000;
 
     app.post(
       "/tenants/:t/exports",
@@ -64,22 +161,38 @@ export function portabilityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           .executeTakeFirst();
         if (!tenant) throw notFound("The tenant");
         const history = body.history ?? false;
-        await ctx.mutate((_trx, audit) =>
-          audit({
-            action: "tenant.exported",
-            targetType: "tenant",
-            targetId: params.t,
-            tenantId: params.t,
-            details: { history },
-          }),
-        );
-        const stamp = new Date().toISOString().slice(0, 19).replaceAll(":", "");
-        return reply
-          .header("content-type", "application/x-tar")
-          .header("content-disposition", `attachment; filename="${tenant.slug}-${stamp}.tar"`)
-          .send(
-            Readable.from(exportTenant(kernel, params.t, { passphrase: body.passphrase, history })),
+        const release = takeExportPlace(params.t);
+        try {
+          await ctx.mutate((_trx, audit) =>
+            audit({
+              action: "tenant.exported",
+              targetType: "tenant",
+              targetId: params.t,
+              tenantId: params.t,
+              details: { history },
+            }),
           );
+          const stamp = new Date().toISOString().slice(0, 19).replaceAll(":", "");
+          return (
+            reply
+              .header("content-type", "application/x-tar")
+              // So that a command line that is cut off can say which limit it was.
+              .header(
+                "x-export-limits",
+                `max-minutes=${Math.round(exportLimits.totalMs / 60_000)}; stall-seconds=${Math.round(exportLimits.stallMs / 1000)}`,
+              )
+              .header("content-disposition", `attachment; filename="${tenant.slug}-${stamp}.tar"`)
+              .send(
+                readerBoundStream(
+                  exportTenant(kernel, params.t, { passphrase: body.passphrase, history }),
+                  release,
+                ),
+              )
+          );
+        } catch (error) {
+          release();
+          throw error;
+        }
       },
     );
 
@@ -122,6 +235,12 @@ export function portabilityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         workspaces: Type.Array(Type.Object({ name: Type.String(), type: Type.String() })),
         rows: Type.Integer(),
         members: Type.Integer(),
+        accountsToCreate: Type.Optional(
+          Type.Integer({
+            description:
+              "How many accounts the import would create here: members who match no account by id or email. They get no password unless the import is asked to keep sign-ins.",
+          }),
+        ),
         pendingRuns: Type.Integer(),
         notCarried: Type.Array(Type.String()),
         passphraseOk: Type.Union([Type.Boolean(), Type.Null()]),
@@ -249,6 +368,12 @@ export function portabilityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           querystring: Type.Object({
             slug: Type.Optional(Slug),
             dataLocation: Type.Optional(Type.String()),
+            keepSignIns: Type.Optional(
+              Type.Boolean({
+                description:
+                  "Keep the password of each account the import creates. Off by default: whoever made the export knows every password in it, so the accounts made from it have none, and each person sets one through a member password link. Turn it on to move your own tenant between your own instances. An account that already exists here is never changed, either way.",
+              }),
+            ),
           }),
           headers: Type.Object({ "x-export-passphrase": Type.String({ minLength: 1 }) }),
           response: { 201: Type.Object({}, { additionalProperties: true }) },
@@ -261,6 +386,7 @@ export function portabilityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           passphrase: headers["x-export-passphrase"],
           slug: query.slug,
           dataLocation: query.dataLocation,
+          keepSignIns: query.keepSignIns,
         });
         await db.deleteFrom("import_staging").where("id", "=", row.id).execute();
         await rm(stagedPath(row.id), { force: true });
@@ -386,7 +512,8 @@ export function portabilityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               "`x-export-passphrase` header. The whole file is checked against its own list of " +
               "contents before anything is written, and the tenant arrives entirely or not at " +
               "all. IDs are kept. Members are matched by email: someone who already has an " +
-              "account here keeps it, with their own password. Every workspace arrives with " +
+              "account here keeps it, as it is, and nothing of the export's is applied to it. An " +
+              "account the import creates has no password unless `keepSignIns` is true. Every workspace arrives with " +
               "its triggers paused. The export must come from an instance at the same " +
               "database level as this one.",
             tags: ["portability"],
@@ -397,6 +524,12 @@ export function portabilityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                 Type.String({
                   description:
                     "A registered dedicated database for the tenant's custom tables. Without it they go in Volvel's own database.",
+                }),
+              ),
+              keepSignIns: Type.Optional(
+                Type.Boolean({
+                  description:
+                    "Keep the password of each account the import creates. Off by default: whoever made the export knows every password in it, so the accounts made from it have none, and each person sets one through a member password link. Turn it on to move your own tenant between your own instances. An account that already exists here is never changed, either way.",
                 }),
               ),
             }),
@@ -410,7 +543,12 @@ export function portabilityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                   dataLocation: NullableString,
                 }),
                 counts: Type.Record(Type.String(), Type.Integer()),
-                members: Type.Object({ created: Type.Integer(), linked: Type.Integer() }),
+                members: Type.Object({
+                  created: Type.Integer(),
+                  linked: Type.Integer(),
+                  withPassword: Type.Integer(),
+                  withoutPassword: Type.Integer(),
+                }),
                 objects: Type.Integer(),
                 cancelled: Type.Object({ runs: Type.Integer(), flowRuns: Type.Integer() }),
                 pausedWorkspaces: Type.Integer(),
@@ -447,6 +585,7 @@ export function portabilityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               passphrase: headers["x-export-passphrase"],
               slug: query.slug,
               dataLocation: query.dataLocation,
+              keepSignIns: query.keepSignIns,
             });
             return reply.code(201).send(report);
           } finally {

@@ -4,11 +4,14 @@ import { ACCESS_DESCRIPTION_MAX } from "@volvel/manifest";
 import { Type } from "typebox";
 import { MIN_PASSWORD_LENGTH, RETENTION_BOUNDS } from "../config.js";
 import { endSessions, isOperator, keepingAnAdmin } from "../kernel/administer.js";
+import { SYSTEM } from "../kernel/audit.js";
 import { badRequest, conflict, forbiddenBecause, notFound } from "../kernel/errors.js";
+import { requireToHandOver } from "../kernel/grant-limits.js";
 import { access, reachedFromInside } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
 import { createMember } from "../kernel/members.js";
 import { effectivePolicy } from "../kernel/retention.js";
+import { holdsAnyPlace, startOverIfUnproved, stripIfNoMembership } from "../kernel/sign-ins.js";
 import { accessResource, freeKey, releaseOne } from "../kernel/tenant/releases.js";
 import {
   afterName,
@@ -224,13 +227,12 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                 )
                 .groupBy("tenant_id")
                 .execute();
-        const mayRename = new Map<string, boolean>();
-        for (const row of rows.slice(0, args.limit)) {
-          mayRename.set(
-            row.id,
-            await ctx.allowed("tenant:write", { tenantId: row.id, orInstance: true }),
-          );
-        }
+        const shown = rows.slice(0, args.limit);
+        const may = await ctx.allowedMany(
+          "tenant:write",
+          shown.map((row) => ({ tenantId: row.id, orInstance: true })),
+        );
+        const mayRename = new Map(shown.map((row, index) => [row.id, may[index] === true]));
         return toPage(
           rows,
           args,
@@ -339,7 +341,7 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               .where("name", "=", "tenant_admin")
               .where("builtin", "=", true)
               .executeTakeFirstOrThrow();
-            await insertBinding(trx, audit, row.id, {
+            await insertBinding(trx, audit, row.id, SYSTEM, {
               principalType: "member",
               principalId: creator,
               roleId: admin.id,
@@ -736,16 +738,26 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             .select(["id", "name", "email", "created_at"])
             .where("email", "=", email)
             .executeTakeFirst();
+          const existing = found !== undefined;
           if (!found) {
             if (body.name === undefined || body.password === undefined) {
               throw badRequest("No member has that email. Send name and password to create one.");
             }
-            found = await createMember(kernel, trx, audit, {
-              email,
-              name: body.name,
-              password: body.password,
-            });
+            found = await createMember(
+              kernel,
+              trx,
+              audit,
+              {
+                email,
+                name: body.name,
+                password: body.password,
+              },
+              ctx.principal,
+            );
           }
+          // An account that was already here is read before it gains this place: where nobody has
+          // proved it, what could sign in as it ends. One made by this very request is not.
+          const hadAPlace = existing ? await holdsAnyPlace(trx, found.id) : false;
           await trx
             .insertInto("tenant_member")
             .values({ tenant_id: params.t, member_id: found.id })
@@ -757,8 +769,9 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             tenantId: params.t,
             details: { email },
           });
+          if (existing) await startOverIfUnproved(trx, audit, found.id, hadAPlace, ctx.principal);
           for (const binding of body.bindings ?? []) {
-            await insertBinding(trx, audit, params.t, {
+            await insertBinding(trx, audit, params.t, ctx.principal, {
               principalType: "member",
               principalId: found.id,
               roleId: binding.roleId,
@@ -882,6 +895,8 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               tenantId: params.t,
               details: { bindingsRemoved: bindings.length },
             });
+            // Nothing that signed in as the account stays for the next tenant that adds it.
+            await stripIfNoMembership(trx, audit, params.memberId, [params.t]);
           }),
         );
         return reply.code(204).send(null);
@@ -1180,6 +1195,8 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             .where("member_id", "=", params.memberId)
             .executeTakeFirst();
           if (!member) throw notFound("The member");
+          // Whoever joins holds what the group is given: that is a grant, held to the same rule.
+          await requireToHandOver(trx, ctx.principal, params.t, "group", params.g);
           await trx
             .insertInto("group_member")
             .values({ group_id: params.g, member_id: params.memberId })
@@ -1450,6 +1467,8 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             .where("tenant_id", "=", params.t)
             .executeTakeFirst();
           if (!account) throw notFound("The service account");
+          // A key acts as the account, so it hands over what the account is given.
+          await requireToHandOver(trx, ctx.principal, params.t, "service_account", params.id);
           const key = await insertApiKey(
             trx,
             { type: "service_account", id: params.id },

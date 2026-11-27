@@ -13,6 +13,7 @@ import {
   cleanEmail,
   createEndUser,
   createPasswordToken,
+  createRequestedResetToken,
   endUnusedTokens,
   endUserIdentity,
   setPasswordWithToken,
@@ -26,6 +27,7 @@ import {
   notFound,
   unauthenticated,
 } from "../kernel/errors.js";
+import { requireToHandOver } from "../kernel/grant-limits.js";
 import { access, guestLimit } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
 import { requireEndUserPasswordAllowed } from "../kernel/sso/people.js";
@@ -856,6 +858,8 @@ export function endUserRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             .where("tenant_id", "=", params.t)
             .executeTakeFirst();
           if (!user) throw notFound("The end user");
+          // Whoever joins holds what the group is given: held to the same rule as giving it.
+          await requireToHandOver(trx, ctx.principal, params.t, "end_user_group", group.id);
           await trx
             .insertInto("end_user_group_member")
             .values({ group_id: group.id, end_user_id: user.id })
@@ -1084,11 +1088,11 @@ export function endUserRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           .executeTakeFirst();
         if (user) {
           const made = await db.transaction().execute(async (trx) => {
-            const token = await createPasswordToken(
-              trx,
-              { id: user.id, tenantId: params.t },
-              "reset",
-            );
+            const token = await createRequestedResetToken(trx, {
+              id: user.id,
+              tenantId: params.t,
+            });
+            if (!token) return undefined;
             await writeAudit(
               trx,
               {
@@ -1107,13 +1111,14 @@ export function endUserRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             return token;
           });
           // Not awaited: how long sending takes must not tell an account from none.
-          void link(
-            tenant,
-            user,
-            "reset",
-            made,
-            place.kind === "domain" ? place.domain.hostname : undefined,
-          );
+          if (made)
+            void link(
+              tenant,
+              user,
+              "reset",
+              made,
+              place.kind === "domain" ? place.domain.hostname : undefined,
+            );
         }
         return { sent: true };
       },

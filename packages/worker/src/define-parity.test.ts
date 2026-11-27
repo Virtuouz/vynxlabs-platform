@@ -262,7 +262,8 @@ describe("each define* makes what its kind's schema accepts", () => {
         const manifest = definition.toManifest("example");
         const schema = kinds.find((one) => one.schemaVersion === manifest.schemaVersion);
         expect(schema, `${kind} version ${manifest.schemaVersion}`).toBeDefined();
-        expect(validateJson(schema?.body ?? {}, manifest.body)).toEqual([]);
+        // The schemas of the platform's own kinds: their patterns are not a tenant's.
+        expect(validateJson(schema?.body ?? {}, manifest.body, "", true)).toEqual([]);
       }
     });
   }

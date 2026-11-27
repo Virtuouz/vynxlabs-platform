@@ -8,6 +8,8 @@
  * know (`$ref`, `not`, `if`) fails the value: a schema it cannot read admits nothing.
  */
 
+import { patternProblem as sharedPatternProblem } from "./pattern-shape.js";
+
 type Schema = Readonly<Record<string, unknown>>;
 
 const KNOWN = new Set([
@@ -47,23 +49,10 @@ const MAX_PATTERN_INPUT = 256;
 const MAX_PATTERN_LENGTH = 200;
 
 /**
- * Why a pattern is not run, or nothing when it is. A pattern is the tenant's and the string is
- * its frame's, and the page that checks them has one thread, so a pattern that can backtrack
- * without end (`^(a+)+$`) would stop the page for whoever views the widget. A group that is
- * repeated, a back reference, and more than two unbounded repeats are refused; the rest is
- * what a payload needs (`^[a-z]{2,5}-\d+$`).
+ * Why a pattern is not run, or nothing when it is: the one rule in `pattern.ts`, which the manifest's
+ * schema guard and the flow expressions use too. A change there is a change to all three.
  */
-function patternProblem(pattern: string): string | undefined {
-  if (pattern.length > MAX_PATTERN_LENGTH) return `is longer than ${MAX_PATTERN_LENGTH} characters`;
-  if (/\\(?:[1-9]|k<)/.test(pattern)) return "refers back to a group, which is not run";
-  // What is left once escapes and character classes are out of the way.
-  const bare = pattern.replace(/\\./gsu, "_").replace(/\[(?:[^\]\\]|\\.)*\]/gsu, "_");
-  if (/\)\s*(?:[*+]|\{)/.test(bare)) return "repeats a group, which is not run";
-  if (/\((?:\?<?[=!])/.test(bare)) return "looks ahead or behind, which is not run";
-  const unbounded = bare.match(/[*+]|\{\d+,\}/g)?.length ?? 0;
-  if (unbounded > 2) return "repeats too freely to be run on text from a widget";
-  return undefined;
-}
+const patternProblem = (pattern: string) => sharedPatternProblem(pattern, MAX_PATTERN_LENGTH);
 
 const isObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);

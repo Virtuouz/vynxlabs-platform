@@ -1,0 +1,13 @@
+{
+  "name": "@volvel/example-stress",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Fixtures for stress-testing an instance: slow, memory-hungry and CPU-bound scripts, a 200,000-row table, a per-minute flow over 1,000 items, schedules and a webhook, with a setup script that makes N tenants and writes what a load generator needs.",
+  "scripts": {
+    "setup": "node setup/setup.mjs"
+  },
+  "dependencies": {
+    "@volvel/sdk": "workspace:*"
+  }
+}

@@ -13,6 +13,9 @@ import type { Kernel } from "../kernel.js";
  */
 export type WorkerUserMode = "host" | "isolated" | "shared" | "unable" | "off";
 
+/** The permissions by which code can reach a workspace: found from the routes that take it in. */
+const CODE_PERMISSIONS = ["code:write", "bundle:write", "deployment:write", "promotion:write"];
+
 let mode: WorkerUserMode = "off";
 
 export function workerUserMode(): WorkerUserMode {
@@ -26,7 +29,11 @@ export function setWorkerUserMode(next: WorkerUserMode) {
 /**
  * Whether anyone outside the operator may write the tenant's code: a service
  * account, or a member, or a member of a group, who holds no instance-wide role.
- * Any binding in the tenant whose role grants `code:write`, wildcards included, counts.
+ * Any binding in the tenant whose role grants a permission by which code reaches a workspace
+ * counts, wildcards included: `code:write` (written in the console, or pulled from the
+ * repository), `bundle:write` (a bundle uploaded), `deployment:write` (a bundle deployed or
+ * rolled back) and `promotion:write` (a promotion decided). The built-in deployer role holds the
+ * last three and not the first.
  */
 export async function hasOutsideCodeWriters(kernel: Kernel, tenantId: string): Promise<boolean> {
   const { db } = kernel;
@@ -36,7 +43,9 @@ export async function hasOutsideCodeWriters(kernel: Kernel, tenantId: string): P
     .select(["b.principal_type", "b.principal_id", "r.permissions"])
     .where("b.tenant_id", "=", tenantId)
     .execute();
-  const writers = bindings.filter((binding) => grants(binding.permissions, "code:write"));
+  const writers = bindings.filter((binding) =>
+    CODE_PERMISSIONS.some((permission) => grants(binding.permissions, permission)),
+  );
   if (writers.length === 0) return false;
 
   const members = new Set<string>();

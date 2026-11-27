@@ -1,3 +1,4 @@
+import { isAccessKind, requireToGiveByResources } from "../grant-limits.js";
 import type { RequestContext } from "../http.js";
 import type { Kernel } from "../kernel.js";
 
@@ -9,6 +10,8 @@ import type { Kernel } from "../kernel.js";
  * - SQL typed into a dashboard widget, or a query whose SQL changed: `sql:read`.
  * - A table of a bound data source on a page: `data_source:read` (decision D24). A reader of the
  *   page needs only `data:read`.
+ * - A role or a binding: what making one by its own route needs (`role:write`, `binding:write`),
+ *   so a resource is no way round it to give oneself access (phase 35, B4).
  */
 
 export interface PageChange {
@@ -80,6 +83,25 @@ async function keptAt(
   return deployed?.body;
 }
 
+/**
+ * Writing, or removing, a resource of a kind that gives access takes what its own route takes.
+ * A role is the tenant's to write; a binding is held at the workspace it is in.
+ */
+export async function requireAccessKindStanding(
+  ctx: RequestContext,
+  workspace: { id: string; tenantId: string },
+  kinds: Iterable<string | undefined>,
+): Promise<void> {
+  const wanted = new Set(kinds);
+  if (wanted.has("role")) await ctx.authorize("role:write", { tenantId: workspace.tenantId });
+  if (wanted.has("binding")) {
+    await ctx.authorize("binding:write", {
+      tenantId: workspace.tenantId,
+      workspaceId: workspace.id,
+    });
+  }
+}
+
 /** Throws 403 naming the permission the caller lacks. */
 export async function requireStanding(
   kernel: Kernel,
@@ -89,6 +111,28 @@ export async function requireStanding(
   options: { deploying?: boolean } = {},
 ): Promise<void> {
   const at = { tenantId: workspace.tenantId, workspaceId: workspace.id };
+  await requireAccessKindStanding(
+    ctx,
+    workspace,
+    changes.map((change) => change.kind),
+  );
+  // And a role or a binding gives only what the writer holds: nobody writes themselves access.
+  const access = changes.filter((change) => !change.deleted && isAccessKind(change.kind));
+  if (access.length > 0) {
+    await requireToGiveByResources(
+      kernel.db,
+      ctx.principal,
+      workspace,
+      await Promise.all(
+        access.map(async (change) => ({
+          kind: change.kind as "role" | "binding",
+          path: change.path,
+          body: change.body,
+          before: await keptAt(kernel, workspace.id, change.path, true),
+        })),
+      ),
+    );
+  }
   let sources: Set<string> | undefined;
   let sql = false;
   let source = false;

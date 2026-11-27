@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { createServer, type IncomingMessage } from "node:http";
 import type { AddressInfo } from "node:net";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -172,6 +173,11 @@ async function deploy(content: Bundle, base = ws(), as = alice) {
 }
 
 /** Speaks the worker protocol directly, as a worker in another language would. */
+function workerOf(token: string) {
+  const tail = createHash("sha1").update(token).digest("hex").slice(0, 12);
+  return `018f0000-0000-7000-8000-${tail}`;
+}
+
 function protocol(token: string) {
   const call = async (method: "GET" | "POST", path: string, body?: object) => {
     const response = await t.app.inject({
@@ -183,7 +189,8 @@ function protocol(token: string) {
     return { status: response.statusCode, body: response.body ? response.json() : null };
   };
   return {
-    claim: (workerId = "018f0000-0000-7000-8000-000000000001", kinds?: string[]) =>
+    // A credential's worker is its own: two credentials never share a worker's id.
+    claim: (workerId = workerOf(token), kinds?: string[]) =>
       call("POST", "/claim", { workerId, waitSeconds: 0, ...(kinds ? { kinds } : {}) }),
     get: (path: string) => call("GET", path),
     post: (path: string, body: object) => call("POST", path, body),
@@ -1377,6 +1384,29 @@ describe("the worker protocol", () => {
     ]);
   });
 
+  test("round two: another credential of the tenant cannot add log lines to a run it was not given", async () => {
+    const holder = protocol(
+      (await alice.post(`/tenants/${tenant}/worker-credentials`, { name: "log-holder" })).body
+        .token,
+    );
+    const other = protocol(
+      (await alice.post(`/tenants/${tenant}/worker-credentials`, { name: "log-other" })).body.token,
+    );
+    const id = await start("flaky", { succeedOn: 1 });
+    expect((await holder.claim()).body.job).toMatchObject({ runId: id, attempt: 1 });
+    const line = { time: new Date().toISOString(), level: "info", message: "from nobody" };
+    expect((await other.post(`/runs/${id}/logs`, { attempt: 1, entries: [line] })).status).toBe(
+      409,
+    );
+    expect(
+      (await holder.post(`/runs/${id}/logs`, { attempt: 1, entries: [{ ...line, message: "ok" }] }))
+        .status,
+    ).toBe(204);
+    await holder.post(`/runs/${id}/complete`, { attempt: 1, output: {} });
+    const logs = (await alice.get(`${ws()}/runs/${id}/logs`)).body.items;
+    expect(logs.map((one: { message: string }) => one.message)).not.toContain("from nobody");
+  });
+
   test("a script labels its run, and the run is found by the label", async () => {
     const ours = protocol(
       (await alice.post(`/tenants/${tenant}/worker-credentials`, { name: "tagger" })).body.token,
@@ -1665,6 +1695,45 @@ describe("managed workers", () => {
     expect(await hasOutsideCodeWriters(t.kernel, lone)).toBe(false);
     // Alice is a tenant admin and no operator, and Bob a developer.
     expect(await hasOutsideCodeWriters(t.kernel, tenant)).toBe(true);
+  });
+
+  test("anyone who can upload, deploy or promote code counts as writing it, not only code:write (A4)", async () => {
+    const { hasOutsideCodeWriters } = await import("./kernel/execution/isolation.js");
+    const one = async (slug: string, held: string | string[]) => {
+      const id = (await t.admin.post("/tenants", { slug, name: slug })).body.id;
+      const grant = await t.admin.post(`/tenants/${id}/access-grants`, {
+        reason: "Setup",
+        roleId: roles.tenant_admin,
+      });
+      const role =
+        typeof held === "string"
+          ? held
+          : (await t.admin.post(`/tenants/${id}/roles`, { name: "ships", permissions: held })).body
+              .id;
+      const made = await t.admin.post(`/tenants/${id}/members`, {
+        email: `ship@${slug}.example`,
+        name: "Ship",
+        password: "a-good-long-password",
+      });
+      await t.admin.post(`/tenants/${id}/bindings`, {
+        principalType: "member",
+        principalId: made.body.id,
+        roleId: role,
+      });
+      await t.admin.delete(`/tenants/${id}/access-grants/${grant.body.id}`);
+      return id as string;
+    };
+    expect(
+      await hasOutsideCodeWriters(t.kernel, await one("shipper", roles.deployer as string)),
+    ).toBe(true);
+    for (const permission of ["bundle:write", "deployment:write", "promotion:write"]) {
+      const slug = `ships-${permission.split(":")[0]}`;
+      expect(await hasOutsideCodeWriters(t.kernel, await one(slug, [permission]))).toBe(true);
+    }
+    // A role that can only read still counts for nothing.
+    expect(await hasOutsideCodeWriters(t.kernel, await one("looker", roles.viewer as string))).toBe(
+      false,
+    );
   });
 
   test("beside the control plane, a tenant whose code is written outside the operator gets no worker", async () => {

@@ -42,6 +42,10 @@ export async function eventSchema(
 
 export async function publishEvent(kernel: Kernel, trx: Trx, asked: PublishEvent) {
   let event = asked;
+  // Events under platform/ are the platform's own: no script or caller outside may forge one.
+  if (event.name.startsWith(PLATFORM_EVENT_PREFIX) && event.source.type !== "platform") {
+    throw badRequest(`Events under ${PLATFORM_EVENT_PREFIX} are published by Volvel itself.`);
+  }
   const depth = event.depth ?? 0;
   if (!event.name.startsWith(PLATFORM_EVENT_PREFIX)) {
     // An event that was renamed is still published by the name it had: by a run pinned to
@@ -117,9 +121,11 @@ export async function publishEvent(kernel: Kernel, trx: Trx, asked: PublishEvent
   for (const subscriber of subscribers) {
     if (subscriber.filter) {
       try {
-        const wanted = await kernel.expressions.evaluate(subscriber.filter, {
-          event: { name: event.name, payload: event.payload },
-        });
+        const wanted = await kernel.expressions.evaluate(
+          subscriber.filter,
+          { event: { name: event.name, payload: event.payload } },
+          event.tenantId,
+        );
         if (wanted !== true) continue;
       } catch (error) {
         if (!(error instanceof ExpressionError)) throw error;

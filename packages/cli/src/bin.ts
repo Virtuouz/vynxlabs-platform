@@ -17,4 +17,10 @@ process.exitCode = await run(process.argv.slice(2), {
   err: (line) => console.error(line),
   env: process.env,
   ...(confirm ? { confirm } : {}),
+  // A line that is drawn again as a transfer goes on, on a terminal only.
+  ...(process.stderr.isTTY
+    ? {
+        progress: (line: string) => process.stderr.write(`\r\x1b[K${line}`),
+      }
+    : {}),
 });

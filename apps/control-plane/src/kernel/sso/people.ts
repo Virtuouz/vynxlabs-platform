@@ -6,6 +6,12 @@ import { createEndUser } from "../endusers.js";
 import { HttpError } from "../errors.js";
 import type { Kernel } from "../kernel.js";
 import { INSTANCE_ONLY_ROLE } from "../kinds.js";
+import {
+  endSignInsOnFirstTie,
+  holdsAnyPlace,
+  markProved,
+  startOverIfUnproved,
+} from "../sign-ins.js";
 import { domainOfEmail, type Provider, provedDomains } from "./providers.js";
 
 /** What a provider said about the person who signed in, after its answer was checked. */
@@ -69,7 +75,7 @@ export async function resolvePerson(
   const principalType = provider.audience === "members" ? "member" : "end_user";
   const link = await trx
     .selectFrom("identity_link")
-    .select(["id", "principal_id"])
+    .select(["id", "principal_id", "email"])
     .where("provider_id", "=", provider.id)
     .where("subject", "=", asserted.subject)
     .executeTakeFirst();
@@ -198,6 +204,11 @@ export async function resolvePerson(
       tenantId: tenantId,
       details: { identityProvider: provider.name, email, created },
     });
+    // An account that was there before now has the provider vouching for its owner: what signed
+    // in as it until now (a password someone else chose, keys, codes) does not carry over.
+    if (principalType === "member" && !created) {
+      await endSignInsOnFirstTie(trx, audit, principalId, email);
+    }
   } else {
     await trx
       .updateTable("identity_link")
@@ -217,6 +228,12 @@ export async function resolvePerson(
       throw new SsoRefusal("disabled", "This account has been turned off.");
     }
     await refuseInstanceMember(trx, provider, principalId, email ?? asserted.subject);
+    // The person signed in through a provider that has proved their email's domain: the account
+    // is theirs. Before the tenant is joined, so that joining ends nothing of theirs.
+    const address = email ?? link?.email ?? undefined;
+    if (address && (await provedDomains(trx, provider.id)).has(domainOfEmail(address) ?? "")) {
+      await markProved(trx, principalId);
+    }
     if (tenantId !== null) await ensureTenantMember(trx, audit, provider, tenantId, principalId);
   } else {
     const user = await trx
@@ -352,6 +369,7 @@ async function ensureTenantMember(
       "The member exists but does not belong to this tenant, and the provider does not add people on first sign-in.",
     );
   }
+  const hadAPlace = await holdsAnyPlace(trx, memberId);
   await trx
     .insertInto("tenant_member")
     .values({ tenant_id: tenantId, member_id: memberId })
@@ -363,6 +381,7 @@ async function ensureTenantMember(
     tenantId,
     details: { identityProvider: provider.name },
   });
+  await startOverIfUnproved(trx, audit, memberId, hadAPlace);
   await giveRole(trx, audit, provider, tenantId, memberId);
 }
 

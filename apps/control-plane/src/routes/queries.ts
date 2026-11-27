@@ -122,7 +122,8 @@ export const queryRoutes =
             "allowed: no other statement, no table of the database's own, and only the " +
             "functions that work on the values they are given. Each table read needs " +
             "`data:read`, and its row policy applies to the caller. Parameters are `$1`, `$2` " +
-            "and so on. The run is recorded in the audit log, with its text and not its result.",
+            "and so on. A result is cut short at 5 MB, saying so with `truncated`; one row over 5 MB " +
+            "answers 422. The run is recorded in the audit log, with its text and not its result.",
           tags: ["data"],
           params: WorkspaceParams,
           body: Type.Object({
@@ -361,11 +362,13 @@ export const queryRoutes =
         // Only the tables the caller may read are there to be named: a table they may not read is
         // answered as one that does not exist, and the names of the others cannot be probed.
         const known = await workspaceCatalog(kernel, params.t, params.w);
-        for (const [name, table] of known.tables) {
-          if (
-            !(await ctx.allowed("data:read", { ...at, resourceId: table.resourceId ?? undefined }))
-          )
-            known.visual.delete(name);
+        const entries = [...known.tables];
+        const mayRead = await ctx.allowedMany(
+          "data:read",
+          entries.map(([, table]) => ({ ...at, resourceId: table.resourceId ?? undefined })),
+        );
+        for (const [index, [name]] of entries.entries()) {
+          if (!mayRead[index]) known.visual.delete(name);
         }
         const written = writeVisual(visual as VisualQuery, known.visual);
         const scope = await scopeFor(

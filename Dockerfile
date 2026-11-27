@@ -41,6 +41,9 @@ FROM node:24-slim
 # the control plane's environment nor signal it. Switching users needs CAP_SETUID and
 # CAP_SETGID. Only node-cp, the copy of node the control plane runs on, holds them: a
 # worker and its scripts run on plain node and hold none, so they cannot switch back.
+# node-cp may be run by root and by the control plane's own group alone, and its owner and mode
+# are set before its capabilities, which a change of owner would remove. While anyone could run
+# it, a script had only to start it by its path to become any user it liked, root among them.
 # Without those capabilities in the container, node-cp cannot start at all, and
 # volvel-start runs the control plane on plain node instead: it then refuses managed
 # workers to tenants whose code is written outside the operator. See /docs/self-host/explanation/running/managed-workers-and-isolation on an instance.
@@ -50,6 +53,8 @@ FROM node:24-slim
 RUN apt-get update \
   && apt-get install -y --no-install-recommends libcap2-bin iptables \
   && cp /usr/local/bin/node /usr/local/bin/node-cp \
+  && chown root:node /usr/local/bin/node-cp \
+  && chmod 0750 /usr/local/bin/node-cp \
   && setcap cap_setuid,cap_setgid+ep /usr/local/bin/node-cp \
   && apt-get purge -y libcap2-bin \
   && apt-get autoremove -y \

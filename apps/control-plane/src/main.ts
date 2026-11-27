@@ -142,13 +142,22 @@ for (const signal of ["SIGTERM", "SIGINT"] as const) {
     if (stopping) return;
     stopping = true;
     app.log.info({ signal }, "shutting down");
-    app.close().then(
-      () => process.exit(0),
-      (error) => {
-        app.log.error({ err: error }, "shutdown failed");
-        process.exit(1);
-      },
-    );
+    // First, while the server still answers: managed workers finish what they run and report
+    // it, which they do over HTTP. Once `close` is called every request is answered 503, and a
+    // script in progress at a deploy or a restart could not say it had ended: it failed half a
+    // minute later as not heard from (STR-08).
+    const drained = writer.close().catch((error) => {
+      app.log.error({ err: error }, "managed workers could not be stopped");
+    });
+    void drained
+      .then(() => app.close())
+      .then(
+        () => process.exit(0),
+        (error) => {
+          app.log.error({ err: error }, "shutdown failed");
+          process.exit(1);
+        },
+      );
   });
 }
 

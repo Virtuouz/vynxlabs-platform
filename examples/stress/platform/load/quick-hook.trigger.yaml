@@ -1,0 +1,7 @@
+# A webhook that starts load/quick, for the throughput of the part that takes in requests.
+# Its address is read from the workspace's triggers, which the setup script does.
+schemaVersion: 1
+body:
+  type: webhook
+  description: Starts load/quick with the request's body.
+  script: load/quick

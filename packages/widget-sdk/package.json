@@ -20,6 +20,10 @@
     "./page": {
       "types": "./dist/page.d.ts",
       "default": "./dist/page.js"
+    },
+    "./pattern": {
+      "types": "./dist/pattern.d.ts",
+      "default": "./dist/pattern.js"
     }
   },
   "files": [
@@ -29,5 +33,9 @@
   ],
   "publishConfig": {
     "access": "public"
-  }
+  },
+  "dependencies": {
+    "re2js": "^2.10.0"
+  },
+  "sideEffects": false
 }

@@ -2,6 +2,7 @@ import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import { Type } from "typebox";
 import { MIN_PASSWORD_LENGTH } from "../config.js";
 import { ANONYMOUS, writeAudit } from "../kernel/audit.js";
+import { HttpError } from "../kernel/errors.js";
 import { access } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
 import {
@@ -39,6 +40,15 @@ export function memberResetRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           subject: "Choose a new password",
           text: `Open this link to choose a new password for your account:\n${url}\n\nThe link works once, until ${made.expiresAt.toUTCString()}. If you did not expect it, you can ignore this message.\n`,
         }));
+      // Where mail is set up the caller was held only to `member:write`, because the link is not
+      // handed back. So it is not handed back when the mail could not be sent either.
+      if (kernel.mail.configured && !emailed) {
+        throw new HttpError(
+          503,
+          "unavailable",
+          "The email with the link could not be sent. Try again in a moment.",
+        );
+      }
       return { url: emailed ? null : url, expiresAt: made.expiresAt.toISOString(), emailed };
     }
 
@@ -65,8 +75,9 @@ export function memberResetRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         const made = await ctx.mutate((trx, audit) =>
           makeMemberResetLink(trx, audit, {
             memberId: params.memberId,
-            byMemberId: ctx.principal.id ?? "",
+            caller: ctx.principal,
             tenantId: params.t,
+            returnsLink: !kernel.mail.configured,
           }),
         );
         return reply.code(201).send(await deliver(made));
@@ -93,7 +104,8 @@ export function memberResetRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         const made = await ctx.mutate((trx, audit) =>
           makeMemberResetLink(trx, audit, {
             memberId: params.memberId,
-            byMemberId: ctx.principal.id ?? "",
+            caller: ctx.principal,
+            returnsLink: !kernel.mail.configured,
           }),
         );
         return reply.code(201).send(await deliver(made));

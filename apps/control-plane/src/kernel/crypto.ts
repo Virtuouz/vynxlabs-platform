@@ -51,6 +51,29 @@ export interface PassphraseWrappedKey {
 
 const SCRYPT = { n: 2 ** 15, r: 8, p: 1 };
 
+/**
+ * The cost is written in the archive, which may be someone else's, and scrypt holds the thread for
+ * as long as it runs. Only what an export writes (`SCRYPT`) and a small multiple of it are taken.
+ */
+export function scryptCostAllowed(cost: { n: unknown; r: unknown; p: unknown }): boolean {
+  const { n, r, p } = cost;
+  return (
+    typeof n === "number" &&
+    typeof r === "number" &&
+    typeof p === "number" &&
+    Number.isInteger(n) &&
+    Number.isInteger(r) &&
+    Number.isInteger(p) &&
+    n >= SCRYPT.n &&
+    n <= SCRYPT.n * 2 &&
+    (n & (n - 1)) === 0 &&
+    r >= 1 &&
+    r <= SCRYPT.r &&
+    p >= 1 &&
+    p <= 2
+  );
+}
+
 function fromPassphrase(
   passphrase: string,
   salt: Buffer,
@@ -165,6 +188,9 @@ export class Vault {
   importTenantKey(tenantId: string, exported: PassphraseWrappedKey, passphrase: string): Buffer {
     if (exported.kdf !== "scrypt" || exported.cipher !== "aes-256-gcm") {
       throw new Error("Unrecognized key wrapping.");
+    }
+    if (!scryptCostAllowed(exported)) {
+      throw new Error("The export's key is wrapped with a cost this platform does not accept.");
     }
     const key = open(
       fromPassphrase(passphrase, Buffer.from(exported.salt, "base64"), exported),

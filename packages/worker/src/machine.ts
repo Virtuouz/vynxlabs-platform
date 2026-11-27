@@ -133,6 +133,49 @@ const RESERVED_MB = 512;
 /** What one run is planned at when slots are worked out from memory. Most use far less. */
 const PLANNED_RUN_MB = 160;
 
+/**
+ * What one more worker is planned at before it runs anything: a worker measured about 105 MB at
+ * rest until it loaded less, and about 65 MB since. A worker is started only where this much stays
+ * above the memory floor, so that starting it is not what takes the machine below.
+ */
+export const PLANNED_WORKER_MB = 96;
+
+/**
+ * What a script just started is planned at until it ends or its memory can be seen. Most take
+ * far less, and one that ends at once gives this back at once.
+ */
+export const PLANNED_START_MB = 160;
+
+/**
+ * Memory spoken for by what was started a moment ago and has not taken it yet. Free memory is
+ * read from the machine, and a process that has just started still looks like free memory: a
+ * dozen workers started in one pass each saw the same room and together left none (STR-02).
+ */
+export class Reservations {
+  readonly #holdMs: number;
+  #held: { until: number; mb: number; key: string | undefined }[] = [];
+
+  constructor(holdMs: number) {
+    this.#holdMs = holdMs;
+  }
+
+  /** Speaks for `mb`, for this long or until `key` is released, whichever is first. */
+  add(mb: number, now = Date.now(), key?: string, holdMs = this.#holdMs): void {
+    this.#held.push({ until: now + holdMs, mb, key });
+  }
+
+  /** What `key` stood for has ended, or its memory can be seen now. */
+  release(key: string): void {
+    this.#held = this.#held.filter((one) => one.key !== key);
+  }
+
+  /** What is still spoken for. */
+  mb(now = Date.now()): number {
+    this.#held = this.#held.filter((one) => one.until > now);
+    return this.#held.reduce((sum, one) => sum + one.mb, 0);
+  }
+}
+
 /** Runs one machine takes at once when nobody says: what its memory can hold. */
 export function defaultSlots(totalMb: number | undefined): number {
   if (totalMb === undefined) return 8;

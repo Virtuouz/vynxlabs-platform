@@ -8,8 +8,8 @@ subjects: [install]
 
 By the end the control plane runs on Fly.io. Fly is an example, not a supported topology: Compose is the supported one. The files are `deploy/fly/fly.toml` and `deploy/fly/README.md`.
 
-:::alert[Not run]{type=warning}
-The Fly setup has never been run. Treat the commands as a starting point and check them against the current Fly documentation. The `workers` group has not run, and whether Fly runs it as root, which it must be, is not proved.
+:::alert[What was run]{type=info}
+The control plane was run on Fly in November 2026 with `MANAGED_WORKERS=process`, a Fly Postgres app and a Tigris bucket, loaded and broken on purpose for a day. The `workers` group of step 4 has not been run, and whether Fly runs it as root, which it must be, is not proved.
 :::
 
 ## Before you start
@@ -57,12 +57,22 @@ The Fly setup has never been run. Treat the commands as a starting point and che
 
 - `HOST = "::"`, because `<app>.internal` is an IPv6 address and the control plane would otherwise listen on IPv4 only.
 - The service names the `app` group (`processes = ["app"]`), so the `workers` group has none.
-- `kill_timeout = 60`: give the `workers` machines the same. The health check is `/api/v1/readyz`; Fly does not restart a machine whose check fails, it decides where traffic goes. Migrations run when the new machine starts, before it accepts traffic.
+- `kill_timeout = 60`: give the `workers` machines the same. Without it Fly gives a stopping machine five seconds, and every deploy fails the scripts in progress. With it, a deploy lets them finish for thirty seconds.
+- The health check is `/api/v1/healthz`. Fly does not restart a machine whose check fails, it decides where traffic goes, and with one machine a failing check is the whole instance unreachable. `/api/v1/readyz` answers 503 while the object store cannot be reached, though the console, the API and scripts still work, so it is not the check: watch it from a monitor of your own. Migrations run when the new machine starts, before it listens.
 - `swap_size_mb = 512`, and a machine of `shared-cpu-1x` with 1024 MB, which gives three run slots in `process` mode. Size the `workers` machines for the scripts they will run.
 - The worker host runs as root, to start each worker as a user of its own. If its log says "not running as root" or "a worker could not be started", no worker will start.
 - `APPS_URL` gives apps written as code an address of their own: `fly certs add apps.<your domain>`.
 
-A `shared-cpu-1x` Postgres has burst credit for a while, then a fraction of a core, and every tenant's queries slow down together. Give it a `performance` CPU, or use Fly Managed Postgres, for anything past a trial.
+A shared CPU has burst credit for a while, then a fraction of a core. On `shared-cpu-1x` a Postgres spends its allowance when idle and every tenant's queries slow down together; on `shared-cpu-2x` the control plane served 160 requests a second on its burst and 22 to 27 after. Give both a `performance` CPU for anything past a trial: `performance-1x` with 2 GB each is what the figures in [Sizing and scaling](../../explanation/running/sizing-and-scaling) were measured on.
+
+## What an outage looked like
+
+Each was done on purpose, under load:
+
+- **The app's machine killed.** Fly started it again: answering after 22 seconds, scripts running after 53. The queue was whole. Scripts in progress failed as not heard from, and one with no retries is not run again.
+- **The database's machine killed.** The control plane stayed up, answered 503 for about five seconds, and went on. No script failed.
+- **The database's disk full.** Fly's Postgres turns the database read-only. Reads and the console went on, changes were answered 503 `read_only`, and writes came back 11 to 17 seconds after the disk was freed, with no restart. See [Run on a read-only database](run-on-a-read-only-database).
+- **The bucket unreachable.** `/api/v1/readyz` said so within three seconds. Everything that needs no file went on.
 
 ## If it does not work
 

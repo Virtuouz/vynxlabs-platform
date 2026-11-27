@@ -1,12 +1,12 @@
 import { randomBytes } from "node:crypto";
 import { newId } from "@volvel/db";
 import type { FastifyBaseLogger } from "fastify";
-import { endSessions } from "./administer.js";
 import { mutate, SYSTEM } from "./audit.js";
 import { badRequest } from "./errors.js";
 import type { Kernel } from "./kernel.js";
 import { INSTANCE_ONLY_ROLE } from "./kinds.js";
 import { createMember } from "./members.js";
+import { endEarlierSignIns, markProved } from "./sign-ins.js";
 
 /**
  * Creates the first operator admin from configuration, once, when the
@@ -28,6 +28,8 @@ export async function bootstrapAdmin(kernel: Kernel, log: FastifyBaseLogger): Pr
       name: "Operator admin",
       password: admin.password,
     });
+    // The first operator is set by whoever runs the instance: that is proof enough.
+    await markProved(trx, member.id);
     const role = await trx
       .selectFrom("role")
       .select("id")
@@ -84,7 +86,7 @@ export async function recoverOperator(kernel: Kernel, rawEmail: string) {
       .executeTakeFirstOrThrow();
     await trx
       .updateTable("member")
-      .set({ disabled_at: null, disabled_by: null })
+      .set({ disabled_at: null, disabled_by: null, proved_at: new Date() })
       .where("id", "=", member.id)
       .execute();
     const bound = await trx
@@ -131,7 +133,7 @@ export async function recoverOperator(kernel: Kernel, rawEmail: string) {
         } as never)
         .execute();
     }
-    await endSessions(trx, member.id);
+    await endEarlierSignIns(trx, audit, member.id, "operator_recovered");
     await audit({
       action: "operator.recovered",
       targetType: "member",

@@ -261,7 +261,7 @@ export function sourceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       },
       async ({ ctx, params, body }, reply) => {
         const path = wildPath(params);
-        checkSourceConfig(validateJson(sourceConfigSchema, body.config, "/body/config"));
+        checkSourceConfig(validateJson(sourceConfigSchema, body.config, "/body/config", true));
         const config = body.config as unknown as SourceConfig;
         const bindingId = await ctx.mutate(async (trx, audit) => {
           const { created, credentialDropped } = await bindSource(

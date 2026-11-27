@@ -5,9 +5,12 @@ import { COLUMN_TYPES } from "@volvel/manifest";
 import { type Actor, mutate, type Trx } from "../audit.js";
 import type { PassphraseWrappedKey } from "../crypto.js";
 import { restoreRules, restoreStructure, workspaceSchema } from "../data/apply.js";
+import { cleanEmail } from "../endusers.js";
 import { badRequest, conflict, HttpError } from "../errors.js";
 import type { Kernel } from "../kernel.js";
 import { INSTANCE_ONLY_ROLE } from "../kinds.js";
+import { passwordSetBy } from "../members.js";
+import { holdsAnyPlace, startOverIfUnproved } from "../sign-ins.js";
 import { EXPORT_FORMAT, EXPORT_FORMATS_READ, type ExportManifest, manifestText } from "./export.js";
 import { removeStored } from "./remove.js";
 import { OWNED_TABLES } from "./tables.js";
@@ -19,13 +22,26 @@ export interface ImportOptions {
   slug?: string | undefined;
   /** The dedicated database for its custom tables. Default: the platform database. */
   dataLocation?: string | undefined;
+  /**
+   * Keep the password of each account the import creates. Off by default: whoever made the
+   * archive would know every password in it, so an account made from one has none, and its owner
+   * sets one through a link. On, for an operator moving their own tenant between their own
+   * instances. An account that is already here is never given anything from the archive.
+   */
+  keepSignIns?: boolean | undefined;
 }
 
 export interface ImportReport {
   tenant: { id: string; slug: string; name: string; dataLocation: string | null };
   /** Rows loaded per table, as counted afterwards. Equal to the export's own counts, or the import fails. */
   counts: Record<string, number>;
-  members: { created: number; linked: number };
+  members: {
+    created: number;
+    linked: number;
+    /** Of the accounts created, how many came with the password the archive held. */
+    withPassword: number;
+    withoutPassword: number;
+  };
   objects: number;
   /** Runs and flow runs that were unfinished in the export, recorded here as canceled. */
   cancelled: { runs: number; flowRuns: number };
@@ -48,6 +64,39 @@ interface ExportedMember {
   password_hash?: string | null;
   /** Format 2: the hash sealed under the tenant's key, or null when it was left out. */
   password_sealed?: string | null;
+}
+
+/**
+ * The members of an archive, read from its files. An address is held to the rule every other
+ * route applies (one @, no white space, at most 254 characters) and is lower-cased the same way,
+ * so that matching it to an account here is exact. A row that fails refuses the archive, and
+ * says which row.
+ */
+async function readMembers(checked: Checked): Promise<ExportedMember[]> {
+  const members: ExportedMember[] = [];
+  for (const entry of parts(checked, "members")) {
+    for (const line of (await tarRead(checked.file, entry)).toString("utf8").split("\n")) {
+      if (!line) continue;
+      const member = JSON.parse(line) as ExportedMember;
+      const row = members.length + 1;
+      let email: string | null = null;
+      if (typeof member.email === "string" && member.email.trim().length <= 254) {
+        try {
+          email = cleanEmail(member.email);
+        } catch {
+          email = null;
+        }
+      }
+      if (email === null) {
+        throw refuse(
+          `The export is refused: member ${row} (in ${entry.path}) has an address that is not an email address.`,
+        );
+      }
+      member.email = email;
+      members.push(member);
+    }
+  }
+  return members;
 }
 
 /** An archive on disk that has been checked from end to end. */
@@ -162,11 +211,10 @@ function checkLayout(manifest: ExportManifest, paths: string[]) {
 
 /**
  * Format 2 signs the list of contents under the tenant's key, which only the passphrase
- * opens. Returns true when the signature is right, false for a format that has none, and
+ * opens. Returns true when the signature is right, and
  * refuses a signature that is wrong or missing.
  */
 function authenticate(kernel: Kernel, manifest: ExportManifest, wrappedKey: Buffer): boolean {
-  if (manifest.formatVersion < 2) return false;
   const given = manifest.authentication;
   if (
     given?.alg !== "hmac-sha256" ||
@@ -204,6 +252,11 @@ export interface ImportInspection {
   workspaces: { name: string; type: string }[];
   rows: number;
   members: number;
+  /**
+   * How many accounts the import would create: the members who match no account here by id or
+   * email. They get no password unless the import is asked to keep sign-ins.
+   */
+  accountsToCreate: number;
   pendingRuns: number;
   notCarried: string[];
   /** Null when no passphrase was given to try. */
@@ -218,6 +271,27 @@ export interface ImportInspection {
   tenantPresent: boolean;
   slugTaken: boolean;
 }
+
+/** The accounts on this instance that an archive's members match, by id or by email. */
+const accountsHere = (kernel: Kernel, members: ExportedMember[]) =>
+  kernel.db
+    .selectFrom("member")
+    .select(["id", "email"])
+    .where((eb) =>
+      eb.or([
+        eb(
+          "id",
+          "in",
+          members.map((member) => member.id),
+        ),
+        eb(
+          "email",
+          "in",
+          members.map((member) => member.email),
+        ),
+      ]),
+    )
+    .execute();
 
 /**
  * What an export holds and whether it can come in here, read without writing
@@ -240,6 +314,7 @@ export async function inspectImport(
     workspaces: [],
     rows: 0,
     members: 0,
+    accountsToCreate: 0,
     pendingRuns: 0,
     notCarried: [],
     passphraseOk: null,
@@ -257,8 +332,19 @@ export async function inspectImport(
       return { ...empty, problem: (error as Error).message };
     }
     const { manifest } = checked;
+    let accountsToCreate = 0;
+    try {
+      const members = await readMembers(checked);
+      const here = members.length === 0 ? [] : await accountsHere(kernel, members);
+      accountsToCreate = members.filter(
+        (member) =>
+          !here.some((candidate) => candidate.id === member.id || candidate.email === member.email),
+      ).length;
+    } catch (error) {
+      return { ...empty, problem: (error as Error).message };
+    }
     let passphraseOk: boolean | null = null;
-    let authenticated: boolean | null = manifest.formatVersion < 2 ? false : null;
+    let authenticated: boolean | null = null;
     let problem: string | null = null;
     if (options.passphrase) {
       const entry = checked.byPath.get("key.json");
@@ -300,6 +386,7 @@ export async function inspectImport(
       workspaces: manifest.workspaces.map((one) => ({ name: one.name, type: one.type })),
       rows: Object.values(manifest.counts).reduce((sum, n) => sum + n, 0),
       members: manifest.counts.member ?? 0,
+      accountsToCreate,
       pendingRuns: manifest.pendingRuns,
       notCarried: manifest.notCarried,
       passphraseOk,
@@ -380,33 +467,8 @@ export async function importTenant(
     // Members are matched by ID first, then by email. Someone already here keeps their account
     // and password, and everything in the export that names them is rewritten to name the
     // account here.
-    const members: ExportedMember[] = [];
-    for (const entry of parts(checked, "members")) {
-      for (const line of (await tarRead(file, entry)).toString("utf8").split("\n")) {
-        if (line) members.push(JSON.parse(line));
-      }
-    }
-    const here =
-      members.length === 0
-        ? []
-        : await kernel.db
-            .selectFrom("member")
-            .select(["id", "email"])
-            .where((eb) =>
-              eb.or([
-                eb(
-                  "id",
-                  "in",
-                  members.map((member) => member.id),
-                ),
-                eb(
-                  "email",
-                  "in",
-                  members.map((member) => member.email),
-                ),
-              ]),
-            )
-            .execute();
+    const members = await readMembers(checked);
+    const here = members.length === 0 ? [] : await accountsHere(kernel, members);
     const renamed = new Map<string, string>();
     const known = new Set<string>();
     for (const member of members) {
@@ -446,6 +508,7 @@ export async function importTenant(
       "scim_group",
       "member_dashboard",
       "data_table",
+      "end_user",
     ]);
     // Tables with no tenant of their own are held to a parent that was loaded before them.
     const PARENTS: Record<string, [column: string, parent: string]> = {
@@ -463,6 +526,20 @@ export async function importTenant(
     `.execute(kernel.db);
     const hasColumn = (table: string, column: string) =>
       owning.rows.some((one) => one.table === table && one.column === column);
+    /**
+     * Whether an object key is under this tenant's own folders: the places the platform keeps a
+     * tenant's files, bundles, app files and branding, and the folder of a run or flow run of this
+     * export. Another tenant's key, though the archive carries bytes for it, is not taken.
+     */
+    const ownKey = (key: string) => {
+      const [folder, owner] = key.split("/");
+      if (folder === "runs" || folder === "flow-runs") {
+        return seenIds("run").has(String(owner)) || seenIds("flow_run").has(String(owner));
+      }
+      return (
+        ["bundles", "files", "assets", "branding"].includes(String(folder)) && owner === tenantId
+      );
+    };
     /** The object keys the loaded rows name. Only these may be in the archive. */
     const named = new Set<string>();
     const validate = (table: string, row: Record<string, unknown>) => {
@@ -496,10 +573,19 @@ export async function importTenant(
         ids.add(row.id);
         seen.set(table, ids);
       }
+      // A link ties a provider's subject to an account. It may name only someone this import
+      // creates, or the account an exported member is matched to under the rules above.
+      if (table === "identity_link") {
+        const person = String(row.principal_id);
+        const listed =
+          row.principal_type === "member" ? memberIds.has(person) : seenIds("end_user").has(person);
+        if (!listed) throw wrong("a link to someone the export does not list");
+      }
       for (const column of OWNED_TABLES.find((entry) => entry.table === table)?.stored ?? []) {
         const key = row[column];
         if (key == null) continue;
         if (typeof key !== "string" || unsafeKey(key)) throw wrong("a stored file with a bad name");
+        if (!ownKey(key)) throw wrong("a stored file that is not this tenant's own");
         named.add(key);
       }
     };
@@ -562,6 +648,14 @@ export async function importTenant(
         .execute();
 
       let created = 0;
+      let withPassword = 0;
+      // Whether each account that was already here had a place before this tenant gave it one.
+      const hadAPlace = new Map<string, boolean>();
+      for (const member of members) {
+        if (!known.has(member.id)) continue;
+        const accountId = renamed.get(member.id) ?? member.id;
+        hadAPlace.set(accountId, await holdsAnyPlace(trx, accountId));
+      }
       for (const member of members) {
         if (known.has(member.id)) continue;
         await trx
@@ -576,20 +670,32 @@ export async function importTenant(
             updated_at: new Date(),
           })
           .execute();
-        const hash =
-          member.password_hash ??
-          (member.password_sealed
-            ? kernel.vault.decrypt(
-                kernel.vault.unwrapTenantKey(tenantId, wrappedKey),
-                { tenantId, workspaceId: "members", name: member.id },
-                Buffer.from(member.password_sealed, "base64"),
-              )
-            : null);
+        // An archive's maker knows every password in it. An account made from one has none
+        // unless the operator, who may be the maker, asks to keep them.
+        const hash = !options.keepSignIns
+          ? null
+          : (member.password_hash ??
+            (member.password_sealed
+              ? kernel.vault.decrypt(
+                  kernel.vault.unwrapTenantKey(tenantId, wrappedKey),
+                  { tenantId, workspaceId: "members", name: member.id },
+                  Buffer.from(member.password_sealed, "base64"),
+                )
+              : null));
         if (hash) {
+          withPassword += 1;
           await sql`
             insert into member_account (id, member_id, account_id, provider_id, password)
             values (gen_random_uuid(), ${member.id}, ${member.id}, 'credential', ${hash})
           `.execute(trx);
+          // Whoever imports with the passwords is taken to have set them: it is their own
+          // tenant they move, and they may put its people in their other tenants without each
+          // account starting again. Anyone else who adds one of them starts it again.
+          await trx
+            .updateTable("member")
+            .set(passwordSetBy(actor.principal))
+            .where("id", "=", member.id)
+            .execute();
         }
         created += 1;
       }
@@ -657,6 +763,18 @@ export async function importTenant(
         limit 1
       `.execute(trx);
       if (stray.rows[0]) throw refuse(`The export is refused: ${stray.rows[0].what}.`);
+      // An account already here that the archive puts in this tenant gains a place. If nobody has
+      // proved it, what could sign in as it ends, as when any tenant's admin adds it; one its owner
+      // proved is left as it is. The import never marks an account proved.
+      for (const [accountId, had] of hadAPlace) {
+        const joined = await trx
+          .selectFrom("tenant_member")
+          .select("member_id")
+          .where("tenant_id", "=", tenantId)
+          .where("member_id", "=", accountId)
+          .executeTakeFirst();
+        if (joined) await startOverIfUnproved(trx, audit, accountId, had);
+      }
       for (const link of links) {
         if (link.active !== null && !seenIds("bundle").has(link.active)) {
           throw refuse("The export is refused: a workspace names a bundle that is not in it.");
@@ -781,22 +899,24 @@ export async function importTenant(
           throw refuse(`The export is refused: a row names the object ${key}, which is not in it.`);
         }
       }
-      const fresh: [string, Buffer][] = [];
+      // One object at a time is in memory: first every object is checked against what is stored
+      // here, then the new ones are read again and written. Nothing is written until all agree.
+      const fresh: TarIndexEntry[] = [];
       for (const entry of incoming) {
         const key = entry.path.slice("objects/".length);
-        const content = await tarRead(file, entry);
         const stored = await kernel.storage.get(key).catch(() => null);
-        if (stored === null) fresh.push([key, content]);
-        else if (!stored.equals(content)) {
+        if (stored === null) fresh.push(entry);
+        else if (!stored.equals(await tarRead(file, entry))) {
           throw refuse(
             `The export is refused: the object ${key} is already stored here with other content.`,
           );
         }
       }
       const objects = incoming.length;
-      for (const [key, content] of fresh) {
+      for (const entry of fresh) {
+        const key = entry.path.slice("objects/".length);
         written.push(key);
-        await kernel.storage.put(key, content, "application/octet-stream");
+        await kernel.storage.put(key, await tarRead(file, entry), "application/octet-stream");
       }
 
       // Count what arrived, and hold it against what the export says it holds.
@@ -879,7 +999,12 @@ export async function importTenant(
       const result: ImportReport = {
         tenant: { id: tenantId, slug, name: manifest.tenant.name, dataLocation: location },
         counts,
-        members: { created, linked: members.length - created },
+        members: {
+          created,
+          linked: members.length - created,
+          withPassword,
+          withoutPassword: created - withPassword,
+        },
         objects,
         cancelled: {
           runs: Number(runs.numAffectedRows ?? 0n),
@@ -900,6 +1025,7 @@ export async function importTenant(
           fromCoreVersion: manifest.coreVersion,
           history: manifest.history,
           members: result.members,
+          keepSignIns: options.keepSignIns === true,
           objects,
           rows: Object.values(counts).reduce((sum, n) => sum + n, 0),
         },

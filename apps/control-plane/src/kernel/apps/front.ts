@@ -34,7 +34,7 @@ import { workingDocs } from "../docs/working.js";
 import {
   checkEndUserPassword,
   createEndUser,
-  createPasswordToken,
+  createRequestedResetToken,
   endUserIdentity,
   readPasswordToken,
   setPasswordWithToken,
@@ -46,6 +46,7 @@ import { findForm, submitForm } from "../execution/triggers.js";
 import type { Kernel } from "../kernel.js";
 import { resolvePrincipal } from "../principal.js";
 import { pathNow } from "../resolve.js";
+import { ownPath } from "../return-path.js";
 import { answer, begin, finish, stateCookie } from "../sso/flow.js";
 import { endUserPasswordRefusedBy, SsoRefusal } from "../sso/people.js";
 import {
@@ -130,8 +131,8 @@ async function readForm(
 
 /** A place to send someone back to. Only a path on this same address is accepted. */
 function safeReturn(raw: string | undefined | null): string | undefined {
-  if (!raw?.startsWith("/") || raw.startsWith("//") || /[\\\r\n]/.test(raw)) return undefined;
-  return raw.length <= 2000 ? raw : undefined;
+  const path = ownPath(raw);
+  return path !== undefined && path.length <= 2000 ? path : undefined;
 }
 
 function decodeSegments(path: string): string[] | null {
@@ -474,11 +475,11 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
         .executeTakeFirst();
       if (user) {
         const made = await db.transaction().execute(async (trx) => {
-          const token = await createPasswordToken(
-            trx,
-            { id: user.id, tenantId: tenant.id },
-            "reset",
-          );
+          const token = await createRequestedResetToken(trx, {
+            id: user.id,
+            tenantId: tenant.id,
+          });
+          if (!token) return undefined;
           await writeAudit(trx, actorOf(request, ANONYMOUS), {
             action: "end_user.reset_requested",
             targetType: "end_user",
@@ -493,11 +494,12 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
           place.kind === "domain" ? place.domain.hostname : undefined,
         );
         // Not awaited: how long sending takes must not tell an account from none.
-        void kernel.mail.send({
-          to: user.email,
-          subject: `Reset your password at ${tenant.name}`,
-          text: `Open this link to choose a new password for your account at ${tenant.name}:\n${address}/set-password?token=${made.token}\n\nThe link works once, until ${made.expiresAt.toUTCString()}. If you did not ask for it, you can ignore this message.\n`,
-        });
+        if (made)
+          void kernel.mail.send({
+            to: user.email,
+            subject: `Reset your password at ${tenant.name}`,
+            text: `Open this link to choose a new password for your account at ${tenant.name}:\n${address}/set-password?token=${made.token}\n\nThe link works once, until ${made.expiresAt.toUTCString()}. If you did not ask for it, you can ignore this message.\n`,
+          });
       }
       return html(
         reply,
@@ -1035,8 +1037,15 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
     if (isPage) asset = files.get(entry);
     if (!asset) return missing();
 
+    // A docs app's files are the tenant's own. Where they are served at the console's address,
+    // the page's origin would be the console's, with the session of whoever opens it, so they are
+    // given none (as a widget's frame is): a script in them runs as no one in particular.
+    const tenantFilesAtConsole = documents && place.kind === "main";
     reply
-      .header("content-security-policy", APP_POLICY)
+      .header(
+        "content-security-policy",
+        tenantFilesAtConsole ? `${APP_POLICY}; sandbox` : APP_POLICY,
+      )
       .header("x-content-type-options", "nosniff")
       .header("referrer-policy", "same-origin");
     const content =

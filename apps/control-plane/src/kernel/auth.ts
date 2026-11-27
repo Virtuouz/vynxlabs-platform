@@ -11,8 +11,10 @@ import { setSessionCookie } from "better-auth/cookies";
 import { openAPI } from "better-auth/plugins/open-api";
 import type { FastifyBaseLogger } from "fastify";
 import { CONSOLE_SESSION_DAYS, type Config, MIN_PASSWORD_LENGTH } from "../config.js";
+import { endSessions } from "./administer.js";
 import { ANONYMOUS, type Db, writeAudit } from "./audit.js";
 import { countHit } from "./ratelimit.js";
+import { ownPath } from "./return-path.js";
 import { finish, stateCookie } from "./sso/flow.js";
 import { memberPasswordRefusedBy, nameOwnedBy } from "./sso/people.js";
 import { findRecoveryCode, RECOVERY_HEADER, useRecoveryCode } from "./sso/recovery.js";
@@ -144,9 +146,9 @@ function cookieFrom(header: string | null | undefined, name: string): string | u
 
 /** A place in the console to send someone back to. Only a path at this address is accepted. */
 export function consolePath(raw: string | null | undefined): string {
-  if (!raw?.startsWith("/") || raw.startsWith("//") || /[\\\r\n]/.test(raw)) return "/";
-  if (raw.startsWith("/api/") || raw.length > 2000) return "/";
-  return raw;
+  const path = ownPath(raw);
+  if (path === undefined || path.startsWith("/api/") || path.length > 2000) return "/";
+  return path;
 }
 
 /**
@@ -225,6 +227,28 @@ export function createAuth(
     hooks: {
       // A person ending their other sessions is on the record, as ending one is.
       after: createAuthMiddleware(async (ctx) => {
+        if (ctx.path === "/change-password" && !(ctx.context.returned instanceof Error)) {
+          // The person is signed in and may know who else is: this session stays, and so do
+          // their keys and codes, which they can see and end. Every other session ends, the
+          // console's and the apps'.
+          const kept = ctx.context.newSession ?? (await getSessionFromCtx(ctx));
+          if (!kept) return;
+          await db.transaction().execute(async (trx) => {
+            await trx
+              .deleteFrom("member_session")
+              .where("member_id", "=", kept.user.id)
+              .where("id", "!=", kept.session.id)
+              .execute();
+            await endSessions(trx, kept.user.id, { console: false });
+            // The owner chose this password: nobody else set it.
+            await trx
+              .updateTable("member")
+              .set({ password_set_by_type: null, password_set_by_id: null })
+              .where("id", "=", kept.user.id)
+              .execute();
+          });
+          return;
+        }
         if (ctx.path !== "/revoke-other-sessions") return;
         const session = await getSessionFromCtx(ctx);
         if (!session) return;

@@ -761,7 +761,7 @@ class Advance {
   ): Promise<unknown> {
     const context = await this.#context(extra);
     try {
-      return await this.#kernel.expressions.evaluate(expression, context);
+      return await this.#kernel.expressions.evaluate(expression, context, this.#flowRun.tenant_id);
     } catch (error) {
       if (error instanceof ExpressionError) {
         const large = error.message.startsWith("No such key") ? tooLargeIn(context) : [];

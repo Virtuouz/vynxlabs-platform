@@ -63,7 +63,7 @@ export async function storeBundle(
   /** `compose` and `preview` are bundles the control plane made itself. */
   origin: "upload" | "compose" | "preview" = "upload",
 ) {
-  const issues = validateJson(Bundle, input, "/body");
+  const issues = validateJson(Bundle, input, "/body", true);
   if (issues.length > 0) throw badRequest("That is not a bundle.", issues);
   const bundle = input as Bundle;
   if (bundleDigest(bundle) !== bundle.digest) {
@@ -90,7 +90,7 @@ export async function storeBundle(
     }),
   ];
   for (const { where, expression } of bundleExpressions(bundle.manifests)) {
-    await kernel.expressions.check(expression, true).catch((error) => {
+    await kernel.expressions.check(expression, true, workspace.tenantId).catch((error) => {
       if (!(error instanceof ExpressionError)) throw error;
       problems.push(`${where} is not a valid expression: ${error.message}`);
     });

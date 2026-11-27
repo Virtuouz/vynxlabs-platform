@@ -12,7 +12,9 @@ import {
   type MachineShare,
   MemoryGuard,
   machineShare,
+  PLANNED_WORKER_MB,
   procProbe,
+  Reservations,
 } from "./machine.js";
 import type { WorkerLog } from "./worker.js";
 
@@ -116,9 +118,16 @@ export class WorkerHost {
     this.#guard = new MemoryGuard({ probe: this.#probe, log: this.#log });
   }
 
-  #shortOfMemory(): boolean {
+  /** Workers started a moment ago, whose memory does not show yet. */
+  readonly #starting = new Reservations(10_000);
+
+  /** Whether one more worker would take the machine below its floor. */
+  #noRoomForAWorker(): boolean {
     const memory = this.#probe.memory();
-    return memory !== undefined && memory.availableMb < this.machine.floorMb;
+    return (
+      memory !== undefined &&
+      memory.availableMb - this.#starting.mb() < this.machine.floorMb + PLANNED_WORKER_MB
+    );
   }
 
   /** Leases in progress, by lease. */
@@ -151,7 +160,7 @@ export class WorkerHost {
     this.#guard.start();
     let routeOffSaid = false;
     while (!this.#stopping) {
-      if (this.#workers.size >= max || this.#shortOfMemory()) {
+      if (this.#workers.size >= max || this.#noRoomForAWorker()) {
         await sleep(1000);
         continue;
       }
@@ -342,6 +351,7 @@ export class WorkerHost {
     // Handed over once, on a pipe, and kept out of the worker's environment and command line.
     child.stdin?.end(`${lease.token}\n`);
     this.#workers.set(lease.id, child);
+    this.#starting.add(PLANNED_WORKER_MB);
     this.#log("info", "started a worker", { tenantId: lease.tenantId, pid: child.pid });
     for (const stream of [child.stdout, child.stderr]) {
       if (!stream) continue;

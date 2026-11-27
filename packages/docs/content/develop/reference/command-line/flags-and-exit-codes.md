@@ -31,8 +31,8 @@ The list of every command is [The volvel command](../cli), drawn from the same s
 | `tenant approve`, `decline`, `withdraw <number>` | `--tenant`, `--comment <text>`. |
 | `tenant rollback <number>` | `--tenant`, `--yes`. |
 | `tenant approval [on\|off]` | `--tenant`. |
-| `tenant export` | `--tenant`, `--out <file>`, `--history`. |
-| `tenant import <file>` | `--slug`, `--location`. |
+| `tenant export` | `--tenant` (or the slug as the first argument), `--out <file>`, `--history`. |
+| `tenant import <file>` | `--slug`, `--location`, `--keep-sign-ins`, `--yes`. |
 | `instance triggers [pause\|resume]` | `--reason <text>` with `pause`. |
 
 `--profile <name>` goes with any command, before or after it: see [Sign in to more than one instance](../../how-to/cli/sign-in-with-profiles). `--json` is described in [JSON output](json-output).
@@ -41,6 +41,7 @@ Notes on single flags:
 
 - `--allow-delete <path>` names a resource a deploy or promotion may delete. On `tenant release` it names `<kind>/<key>`.
 - `--port` and `--older-than` take whole numbers. Anything else is refused: `--port is a whole number from 1 to 65535, not "abc".`
+- `--keep-sign-ins` on `tenant import` keeps the password each account the import creates had in the export. Without it those accounts have no password, because whoever made the export knows every password in it, and each person sets one through a link. Use it for your own tenant, moved between your own instances. An account that already exists on the instance is never changed.
 - `--message` needs some words. An empty one is refused: `--message needs some words.`
 - `--input` is read as JSON, or as the contents of a file when it starts with `@`. A file that is not there is `There is no file at <path>.` Text that is not JSON is `--input must be JSON, or @ and a file of JSON, for example --input '{"customer":"ada"}'`.
 

@@ -1,6 +1,6 @@
 import type { Connector, MailMessage, SmtpClient, SmtpConfig } from "@volvel/sdk";
 import { smtpConfigSchema } from "@volvel/sdk";
-import { createTransport } from "nodemailer";
+import type { createTransport, Transporter } from "nodemailer";
 
 /**
  * The built-in connector for a mail server. It is part of the worker, which
@@ -12,13 +12,20 @@ export const smtpConnector: Connector<SmtpConfig, SmtpClient> = {
   name: "smtp",
   configSchema: smtpConfigSchema,
   create(config, credential, signal) {
-    const transport = transportFor(config, credential);
-    signal.addEventListener("abort", () => transport.close(), { once: true });
-    return client(config, transport);
+    // The mail library is loaded when a script first sends: every script's process builds its
+    // connectors, and loading it for each cost about 29 MB a script that sent nothing.
+    let transport: Promise<Transporter> | undefined;
+    signal.addEventListener("abort", () => void transport?.then((made) => made.close()), {
+      once: true,
+    });
+    return client(config, () => {
+      transport ??= transportFor(config, credential);
+      return transport;
+    });
   },
   /** Connects, says hello, and signs in, if the connection signs in. Sends nothing. */
   async test(config, credential, signal) {
-    const transport = transportFor(config, credential);
+    const transport = await transportFor(config, credential);
     signal.addEventListener("abort", () => transport.close(), { once: true });
     try {
       await transport.verify();
@@ -29,9 +36,12 @@ export const smtpConnector: Connector<SmtpConfig, SmtpClient> = {
   },
 };
 
-function transportFor(config: SmtpConfig, credential: string | undefined) {
+async function transportFor(config: SmtpConfig, credential: string | undefined) {
   const security = config.security ?? "starttls";
-  return createTransport({
+  const { createTransport: create } = (await import("nodemailer")) as {
+    createTransport: typeof createTransport;
+  };
+  return create({
     host: config.host,
     port: config.port ?? 587,
     secure: security === "tls",
@@ -45,13 +55,13 @@ function transportFor(config: SmtpConfig, credential: string | undefined) {
   });
 }
 
-function client(config: SmtpConfig, transport: ReturnType<typeof createTransport>): SmtpClient {
+function client(config: SmtpConfig, transport: () => Promise<Transporter>): SmtpClient {
   return {
     async send(message: MailMessage) {
       if (message.text === undefined && message.html === undefined) {
         throw new Error("A message needs text or html.");
       }
-      const sent = await transport.sendMail({
+      const sent = await (await transport()).sendMail({
         from: config.from,
         to: message.to,
         cc: message.cc,

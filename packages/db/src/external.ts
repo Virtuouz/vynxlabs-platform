@@ -1,6 +1,7 @@
 import { type LookupFunction, Socket } from "node:net";
 import { Kysely, PostgresDialect } from "kysely";
 import pg from "pg";
+import { surviveLostConnections } from "./lost-connection.js";
 
 export interface ExternalPostgres {
   host: string;
@@ -56,5 +57,7 @@ export function openExternalPostgres(config: ExternalPostgres): Kysely<any> {
   });
   // An idle connection the source closes must not take the control plane down.
   pool.on("error", () => {});
+  // Nor one it closes in the middle of a query: the source is a server of the tenant's choosing.
+  surviveLostConnections(pool);
   return new Kysely({ dialect: new PostgresDialect({ pool }) });
 }

@@ -19,6 +19,7 @@ import { badRequest, conflict, forbidden, HttpError, notFound } from "../kernel/
 import { loadBundle } from "../kernel/execution/bundles.js";
 import { access, type WorkspaceRef } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
+import { ownPath } from "../kernel/return-path.js";
 import { listOf } from "../pagination.js";
 import {
   Id,
@@ -1214,6 +1215,5 @@ export function appRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
 
 /** A path on this same address, or nothing. Never another site. */
 function safePath(raw: string | undefined): string | undefined {
-  if (!raw?.startsWith("/") || raw.startsWith("//") || /[\\\r\n]/.test(raw)) return undefined;
-  return raw;
+  return ownPath(raw);
 }

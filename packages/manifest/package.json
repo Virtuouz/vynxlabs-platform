@@ -8,6 +8,10 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
+    "./digest": {
+      "types": "./dist/digest.d.ts",
+      "default": "./dist/digest.js"
+    },
     "./action": {
       "types": "./dist/action.d.ts",
       "default": "./dist/action.js"
@@ -27,5 +31,6 @@
     "ajv": "^8.20.0",
     "typebox": "^1.4.6",
     "yaml": "^2.9.1"
-  }
+  },
+  "sideEffects": false
 }

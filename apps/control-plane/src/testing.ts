@@ -60,6 +60,10 @@ export function testConfig(overrides: Partial<Config> = {}): Config {
       sqlStatementTimeoutMs: 15_000,
       triggersPaused: false,
       scheduleBacklogLimit: 200,
+      exportsAtOnce: 3,
+      exportsPerTenant: 1,
+      exportStallSeconds: 60,
+      exportMaxMinutes: 30,
     },
     ...overrides,
   };

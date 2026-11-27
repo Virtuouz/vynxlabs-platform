@@ -11,15 +11,19 @@
 import { lookup as dnsLookup } from "node:dns";
 import type { LookupFunction } from "node:net";
 import { BlockList, isIP } from "node:net";
-import { Agent, type RequestInit, type Response, fetch as undiciFetch } from "undici";
+import { Agent, Headers, type RequestInit, type Response, fetch as undiciFetch } from "undici";
 
-/** Why a destination was refused. Its message is for people, and names the address. */
+/**
+ * Why a destination was refused. Its message is for people. It names the host the tenant gave,
+ * and never the address a name resolved to: that would let a tenant map the instance's network
+ * by trying names. The address is kept in `address`, for the server's log.
+ */
 export class EgressRefused extends Error {
   readonly host: string;
   readonly address: string;
   constructor(host: string, address: string) {
     super(
-      `${host} is ${address === host ? "" : `at ${address}, `}a private or internal address, ` +
+      `${host} ${address === host ? "is" : "resolves to"} a private or internal address, ` +
         "which the instance does not reach for a tenant. An operator can allow it with EGRESS_ALLOW.",
     );
     this.name = "EgressRefused";
@@ -209,6 +213,7 @@ export async function guardedFetch(
   let url = new URL(input);
   let method = rest.method ?? "GET";
   let body = rest.body;
+  let headers = rest.headers;
   for (let hop = 0; ; hop += 1) {
     if (url.protocol !== "https:" && url.protocol !== "http:") {
       throw new Error(`Only http and https addresses can be reached, not ${url.protocol}`);
@@ -218,6 +223,7 @@ export async function guardedFetch(
     try {
       response = await undiciFetch(url, {
         ...rest,
+        ...(headers ? { headers } : {}),
         method,
         body: body ?? null,
         redirect: follow ? "manual" : (rest.redirect as "manual" | "error"),
@@ -235,16 +241,42 @@ export async function guardedFetch(
     if (hop >= MAX_REDIRECTS)
       throw new Error(`More than ${MAX_REDIRECTS} redirects from ${input}.`);
     await response.body?.cancel();
-    url = new URL(location, url);
+    const next = new URL(location, url);
+    // As browsers and `fetch` do: what proves who is asking stays with the origin it was meant for.
     // As browsers do: after a 303, or a 301 or 302 to a POST, the next request is a GET.
-    if (
+    const asGet =
       response.status === 303 ||
-      ((response.status === 301 || response.status === 302) && method === "POST")
-    ) {
+      ((response.status === 301 || response.status === 302) && method === "POST");
+    if (next.origin !== url.origin) {
+      // Any other redirect asks for the same request again, body included. Sending what the
+      // caller meant for one address (a token request with its client secret) to another is
+      // not done.
+      if (!asGet && body != null && !bodyless(method)) {
+        throw new Error(
+          `${input} redirected to another address, and the request has a body that is not sent there.`,
+        );
+      }
+      headers = withoutCredentials(headers);
+    }
+    url = next;
+    if (asGet) {
       method = "GET";
       body = undefined;
     }
   }
+}
+
+const bodyless = (method: string) => ["GET", "HEAD"].includes(method.toUpperCase());
+
+/** Headers that carry a credential: the standard ones, and any named like a key, token or secret. */
+const CREDENTIAL_HEADER =
+  /^(authorization|proxy-authorization|cookie|cookie2)$|key|token|secret|auth/i;
+
+function withoutCredentials(headers: RequestInit["headers"]): RequestInit["headers"] {
+  if (!headers) return headers;
+  const kept = new Headers(headers);
+  for (const name of [...kept.keys()]) if (CREDENTIAL_HEADER.test(name)) kept.delete(name);
+  return kept;
 }
 
 /** Redirects a guarded request follows before it gives up. */

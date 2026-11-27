@@ -1092,7 +1092,7 @@ function PasswordsAfterImport({
   const people = (n: number) => (n === 1 ? "member" : "members");
   const link = (
     <>
-      each needs a link made from{" "}
+      {without === 1 ? "they need" : "each needs"} a link made from{" "}
       <Link to={`/t/${tenantId}/members`} className={TEXT_LINK}>
         Members
       </Link>

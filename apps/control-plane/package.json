@@ -25,7 +25,7 @@
     "@volvel/sdk": "workspace:^",
     "@volvel/widgets": "workspace:*",
     "@volvel/worker": "workspace:*",
-    "@xmldom/xmldom": "^0.9.12",
+    "@xmldom/xmldom": "^0.8.15",
     "better-auth": "^1.7.28",
     "cron-parser": "^5.10.6",
     "fastify": "^5.12.8",

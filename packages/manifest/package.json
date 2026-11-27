@@ -29,7 +29,7 @@
     "@volvel/widgets-core": "workspace:*",
     "@volvel/widgets-labs": "workspace:*",
     "ajv": "^8.20.0",
-    "typebox": "^1.4.6",
+    "typebox": "^1.4.7",
     "yaml": "^2.9.1"
   },
   "sideEffects": false

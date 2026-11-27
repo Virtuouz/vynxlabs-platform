@@ -35,9 +35,9 @@ For a large file, or a script, the same import is one command on the instance it
 
 An import brings no passwords. The accounts it creates have no password, so nobody can sign in to them until each person chooses one. The reason is that whoever made the export held every password in it: if the import kept them, that person could sign in as any member the import created, now or later. An account that already exists on the instance is not changed at all: it keeps its own password, keys and codes.
 
-Each person gets a link and chooses a password with it: see [All members](../../reference/console/members), **Make a password reset link**. The console's import screen has no option for this and never keeps passwords.
+Each person gets a link and chooses a password with it: see [All members](../../reference/console/members), **Make a password reset link**. The console's import screen keeps none either, unless you tick its box for it.
 
-If you are moving your own tenant between your own instances, you made the file and you hold it, so nobody else knows the passwords. Then keep them: add `--keep-sign-ins` to the command, `volvel tenant import SLUG.tar --keep-sign-ins`, or send `keepSignIns=true` to the import route. Before it asks, the command says how many accounts it will create and whether they will have a password. The instance's log records which you chose and how many accounts were made with and without a password.
+If you are moving your own tenant between your own instances, you made the file and you hold it, so nobody else knows the passwords. Then keep them: tick **Bring the members' passwords in with the file** on the console's import screen, add `--keep-sign-ins` to the command, `volvel tenant import SLUG.tar --keep-sign-ins`, or send `keepSignIns=true` to the import route. Before it asks, the command says how many accounts it will create and whether they will have a password. The instance's log records which you chose and how many accounts were made with and without a password.
 
 ## A large tenant
 

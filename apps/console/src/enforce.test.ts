@@ -778,7 +778,9 @@ test("the top bar's items do not wrap at a larger type scale", () => {
   const shell = readFileSync(join(here, "Shell.tsx"), "utf8");
   const cluster = shell.match(/<div className="([^"]*)">\s*\{tenantId \? <OperatorMark \/>/);
   expect(cluster?.[1]).toContain("whitespace-nowrap");
-  const search = shell.match(/aria-label="Search or jump to"\s*className="([^"]*)"/);
+  const search = shell.match(
+    /aria-label=\{`Search or jump to… [^`]*`\}\s*aria-keyshortcuts=\{[^}]*\}\s*className="([^"]*)"/,
+  );
   expect(search?.[1]).toContain("whitespace-nowrap");
   expect(search?.[1]).toMatch(/md:w-\[calc\(14rem\*var\(--vx-type-scale,1\)\)\]/);
   expect(search?.[1]).not.toMatch(/md:w-56/);

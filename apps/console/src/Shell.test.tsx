@@ -148,11 +148,11 @@ test("in a workspace the rail shows its areas, a flow run counts as a run, and t
   // The workspace's name is the whole of the button that changes which one: no small target.
   const crumbs = screen.getByRole("navigation", { name: "Where you are" });
   expect(within(crumbs).queryByRole("link", { name: "Sandbox" })).toBeNull();
-  expect(within(crumbs).getByRole("button", { name: "Switch workspace" }).textContent).toContain(
+  expect(within(crumbs).getByRole("button", { name: /switch workspace$/ }).textContent).toContain(
     "Sandbox",
   );
   expect(within(crumbs).getByRole("link", { name: "Acme" }).getAttribute("href")).toBe("/t/t1");
-  expect(screen.getByRole("button", { name: "Switch workspace" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: /switch workspace$/ })).toBeTruthy();
   expect(await screen.findByText(/promotes to/)).toBeTruthy();
   // The release path: what is drafted, what runs here and what runs where it promotes.
   expect(await within(sections).findByText("v14")).toBeTruthy();
@@ -335,7 +335,7 @@ test("the search box names the shortcut for this computer, not a Mac's (SHL-04)"
         <p>Screen</p>
       </Shell>,
     );
-    return screen.getByRole("button", { name: "Search or jump to" }).textContent;
+    return screen.getByRole("button", { name: /^Search or jump to/ }).textContent;
   };
   vi.stubGlobal("navigator", { platform: "Linux x86_64", userAgent: "Linux" });
   expect(search()).toContain("Ctrl+K");

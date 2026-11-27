@@ -50,7 +50,7 @@ export default [
   }),
   instance("import-check", "/instance/import", heading("Import a tenant"), {
     setup: "instance-import",
-    viewport: { width: 1440, height: 1450 },
+    viewport: { width: 1440, height: 1800 },
     mask: [...MOMENTS, "text=/kept until/"],
     steps: [
       { click: { role: "button", name: "Open" } },

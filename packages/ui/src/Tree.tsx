@@ -370,9 +370,11 @@ export function Tree({
                   id={part("name")}
                   className={`flex min-w-0 items-center gap-1.5 ${chosen ? "font-medium" : ""}`}
                 >
+                  {/* A space before each part that follows is heard; the layout ignores it. */}
                   <span className="truncate">{node.label}</span>
-                  {node.badge}
+                  {node.badge !== undefined ? <> {node.badge}</> : null}
                 </span>
+                {node.detail !== undefined ? " " : null}
                 {node.detail !== undefined ? (
                   <span
                     id={part("detail")}
@@ -387,6 +389,7 @@ export function Tree({
               <span className="shrink-0 text-meta text-action">Move into</span>
             ) : node.trailing !== undefined ? (
               <span id={part("trailing")} className="contents">
+                {" "}
                 {node.trailing}
               </span>
             ) : null}

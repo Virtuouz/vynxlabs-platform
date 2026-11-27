@@ -38,7 +38,7 @@ The panel shows the tenant's name (or the file's name when it cannot be read), t
 | **From version** | The version of the instance that wrote it. |
 | **Workspaces** | Each name and its type, or "None". |
 | **Rows** | The number of rows in the file. |
-| **Members** | How many members. The instance also works out how many accounts the import would create; the command line says so before it asks. |
+| **Members** | How many members. The box under the form says how many accounts the import would create. |
 | **Run history** | "Included" or "Left out of the export". |
 | **Unfinished runs** | Shown when there are some: "N, recorded as canceled". |
 
@@ -65,6 +65,7 @@ Then the form:
 | **Its passphrase** | Required. The passphrase the export was made with. |
 | **Slug on this instance** | Optional. "Leave empty to keep the slug it had." Same rules as when creating a tenant. |
 | **Where its custom tables go** | "The instance's own database", or a registered [database location](databases). |
+| **Bring the members' passwords in with the file** | A box, off by default. Ticked, the accounts the import creates keep the password they had in the file. Use it for your own tenant, moved between your own instances, and not for a file someone else made, because whoever made it knows those passwords. Beside it the screen says how many accounts the import will create; when the file creates none, the box is off, cannot be ticked, and says why. It is off again after a reload. |
 
 The check runs again by itself 600 ms after the slug or the passphrase stops changing. **Check again** runs it now.
 
@@ -76,7 +77,7 @@ The check runs again by itself 600 ms after the slug or the passphrase stops cha
 
 ### Step 3, the result
 
-A notice reads "NAME was imported: N rows and N stored objects. Members created: N. Members linked to accounts already here: N." Under it:
+A notice reads "NAME was imported: N rows and N stored objects. Members created: N. Members linked to accounts already here: N." When the import created members, a second notice says what became of their passwords: that they have no password yet and each needs a link made from **Members**, or that they sign in with the passwords they had. Under them:
 
 - Where the custom tables are: "the database location "NAME"" or "the instance's own database".
 - "The workspace arrived with its triggers paused. Resume it when the instance it came from has stopped." or "All N workspaces arrived with their triggers paused. Resume each one when the instance it came from has stopped." or, when the tenant had none, "The tenant had no workspaces, so there are no triggers to resume."
@@ -87,7 +88,7 @@ The buttons are **Open the tenant** and **Import another**.
 
 ### What arrives
 
-The tenant keeps its IDs. Every workspace arrives with its triggers paused, git sync paused, identity providers paused and domains unproved, so that two instances never both act. Unfinished runs are recorded as canceled. Members are matched by ID, then by email. A member who already has an account here keeps that account and its password, and everything in the file that names them is rewritten to name it. Another member is created, with no password: the import never applies anything of the file's to an account that is already here, and by default it gives a new one no password, because whoever made the file knows every password in it. Each person sets one with a link: see [All members](members). To keep the passwords the file holds (they are carried sealed under the passphrase, only for members who belong to no other tenant and hold no instance role), use the command line with `--keep-sign-ins` or the route with `keepSignIns=true`, for your own tenant moved between your own instances. This screen has no such choice. Every address in the file is held to the same check as any other member's, and a file with a bad one is refused at the check, naming the row. A file that names one account by ID and another by email is refused.
+The tenant keeps its IDs. Every workspace arrives with its triggers paused, git sync paused, identity providers paused and domains unproved, so that two instances never both act. Unfinished runs are recorded as canceled. Members are matched by ID, then by email. A member who already has an account here keeps that account and its password, and everything in the file that names them is rewritten to name it. Another member is created, with no password: the import never applies anything of the file's to an account that is already here, and by default it gives a new one no password, because whoever made the file knows every password in it. Each person sets one with a link: see [All members](members). To keep the passwords the file holds (they are carried sealed under the passphrase, only for members who belong to no other tenant and hold no instance role), tick **Bring the members' passwords in with the file** on the Check step, or use the command line with `--keep-sign-ins`, or the route with `keepSignIns=true`: for your own tenant moved between your own instances only. Every address in the file is held to the same check as any other member's, and a file with a bad one is refused at the check, naming the row. A file that names one account by ID and another by email is refused.
 
 The import is all or nothing. It writes `tenant.imported` to the tenant's own log, and `tenant_import.staged` and `tenant_import.discarded` to the [instance audit log](audit-log).
 

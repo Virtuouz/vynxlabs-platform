@@ -1,5 +1,6 @@
 import {
   Button,
+  CheckboxField,
   ComboboxField,
   Notice,
   NumberField,
@@ -27,7 +28,7 @@ import { SaveBar } from "../kit/SaveBar.tsx";
 import { Code, lookUp, Mono, StatePill, Tag } from "../kit/status.tsx";
 import { Time } from "../kit/Time.tsx";
 import { CreateDialog, Page, RemoveButton, when } from "../ListScreen.tsx";
-import { Link, navigate } from "../router.tsx";
+import { Link, navigate, TEXT_LINK } from "../router.tsx";
 import { GiveAccess } from "./GiveAccess.tsx";
 
 export interface WorkspaceSummary {
@@ -1070,11 +1071,54 @@ export function DatabaseLocations() {
 interface ImportReport {
   tenant: { id: string; slug: string; name: string; dataLocation: string | null };
   counts: Record<string, number>;
-  members: { created: number; linked: number };
+  members: { created: number; linked: number; withPassword?: number; withoutPassword?: number };
   objects: number;
   cancelled: { runs: number; flowRuns: number };
   pausedWorkspaces: number;
   notCarried: string[];
+}
+
+/** What became of the passwords of the members an import created, in words a person can act on. */
+function PasswordsAfterImport({
+  tenantId,
+  members,
+}: {
+  tenantId: string;
+  members: ImportReport["members"];
+}) {
+  const created = members.created;
+  const kept = members.withPassword ?? 0;
+  const without = created - kept;
+  const people = (n: number) => (n === 1 ? "member" : "members");
+  const link = (
+    <>
+      each needs a link made from{" "}
+      <Link to={`/t/${tenantId}/members`} className={TEXT_LINK}>
+        Members
+      </Link>
+    </>
+  );
+  if (without === 0) {
+    return (
+      <>
+        The {people(created)} created can sign in with the {kept === 1 ? "password" : "passwords"}{" "}
+        they had.
+      </>
+    );
+  }
+  if (kept === 0) {
+    return (
+      <>
+        The {people(created)} created {created === 1 ? "has" : "have"} no password yet: {link}.
+      </>
+    );
+  }
+  return (
+    <>
+      {kept} of the {created} members created can sign in with the passwords they had. The other{" "}
+      {without} {without === 1 ? "has" : "have"} no password yet: {link}.
+    </>
+  );
 }
 
 interface Inspection {
@@ -1095,6 +1139,8 @@ interface Inspection {
   authenticated?: boolean | null;
   tenantPresent: boolean;
   slugTaken: boolean;
+  /** How many accounts the import would create here. Older instances do not say. */
+  accountsToCreate?: number;
 }
 interface Staged {
   id: string;
@@ -1219,6 +1265,8 @@ export function TenantImport() {
   const [passphrase, setPassphrase] = useState("");
   const [slug, setSlug] = useState("");
   const [location, setLocation] = useState("");
+  /** Off whenever a file is staged again, including after a reload: it is a choice made for one import. */
+  const [keepSignIns, setKeepSignIns] = useState(false);
   const [working, setWorking] = useState(false);
   const [problem, setProblem] = useState<string>();
   const [staged, setStaged] = useState<Staged>();
@@ -1255,6 +1303,7 @@ export function TenantImport() {
     return text ? `?${text}` : "";
   };
   const inspection = staged?.inspection;
+  const accounts = inspection?.accountsToCreate ?? 0;
   const ready =
     inspection !== undefined &&
     !inspection.problem &&
@@ -1286,6 +1335,7 @@ export function TenantImport() {
   const startOver = () => {
     setSlug("");
     setLocation("");
+    setKeepSignIns(false);
     setPassphrase("");
     setCheckedWith(undefined);
   };
@@ -1311,6 +1361,11 @@ export function TenantImport() {
             {count(report.objects)} stored objects. Members created: {report.members.created}.
             Members linked to accounts already here: {report.members.linked}.
           </Notice>
+          {report.members.created > 0 ? (
+            <Notice tone="attention">
+              <PasswordsAfterImport tenantId={report.tenant.id} members={report.members} />
+            </Notice>
+          ) : null}
           <ul className="m-0 flex list-disc flex-col gap-1 pl-5">
             <li>
               Its custom tables are in{" "}
@@ -1460,7 +1515,7 @@ export function TenantImport() {
               void run(async () => {
                 const body = await withPassphrase<ImportReport>(
                   "POST",
-                  `/instance/tenant-imports/staged/${staged.id}/import${query({ slug, dataLocation: location })}`,
+                  `/instance/tenant-imports/staged/${staged.id}/import${query({ slug, dataLocation: location, keepSignIns: accounts > 0 && keepSignIns ? "true" : "" })}`,
                   passphrase,
                 );
                 setReport(body);
@@ -1499,6 +1554,18 @@ export function TenantImport() {
                   label: item.name,
                 })),
               ]}
+            />
+            <CheckboxField
+              label="Bring the members' passwords in with the file"
+              name="keep-sign-ins"
+              checked={accounts > 0 && keepSignIns}
+              disabled={accounts === 0}
+              onChange={setKeepSignIns}
+              hint={
+                accounts === 0
+                  ? "The file creates no accounts here, so there are no passwords to bring in."
+                  : `The import will create ${accounts} ${accounts === 1 ? "account" : "accounts"}. Without this they have no password, and each person sets one with a link from Members. Tick it only for your own tenant, moved between your own instances, never for a file someone else made: whoever made it knows those passwords.`
+              }
             />
             {problem ? <Notice tone="danger">{problem}</Notice> : null}
             <div className="flex flex-wrap gap-2">

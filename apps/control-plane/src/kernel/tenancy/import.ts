@@ -9,8 +9,9 @@ import { cleanEmail } from "../endusers.js";
 import { badRequest, conflict, HttpError } from "../errors.js";
 import type { Kernel } from "../kernel.js";
 import { INSTANCE_ONLY_ROLE } from "../kinds.js";
-import { EXPORT_FORMAT, EXPORT_FORMATS_READ, type ExportManifest, manifestText } from "./export.js";
+import { passwordSetBy } from "../members.js";
 import { holdsAnyPlace, startOverIfUnproved } from "../sign-ins.js";
+import { EXPORT_FORMAT, EXPORT_FORMATS_READ, type ExportManifest, manifestText } from "./export.js";
 import { removeStored } from "./remove.js";
 import { OWNED_TABLES } from "./tables.js";
 import { type TarIndexEntry, tarIndex, tarRead } from "./tar.js";
@@ -687,6 +688,14 @@ export async function importTenant(
             insert into member_account (id, member_id, account_id, provider_id, password)
             values (gen_random_uuid(), ${member.id}, ${member.id}, 'credential', ${hash})
           `.execute(trx);
+          // Whoever imports with the passwords is taken to have set them: it is their own
+          // tenant they move, and they may put its people in their other tenants without each
+          // account starting again. Anyone else who adds one of them starts it again.
+          await trx
+            .updateTable("member")
+            .set(passwordSetBy(actor.principal))
+            .where("id", "=", member.id)
+            .execute();
         }
         created += 1;
       }

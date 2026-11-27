@@ -1863,6 +1863,44 @@ describe("p35 round four: an import brings no passwords unless the operator says
       keepSignIns: true,
       members: { created: 2, linked: 1, withPassword: 2, withoutPassword: 0 },
     });
+    // Whoever imported with the passwords is the one who set them, so they may put these people
+    // in their other tenants without each account starting again. Bob's, already here, says nothing.
+    const operator = await keeping.db
+      .selectFrom("member")
+      .select("id")
+      .where("email", "=", "admin@example.com")
+      .executeTakeFirst();
+    const set = await keeping.db
+      .selectFrom("member")
+      .select(["email", "password_set_by_type", "password_set_by_id"])
+      .where("email", "in", ["alice@acme.example", "carol@acme.example", "bob@acme.example"])
+      .orderBy("email")
+      .execute();
+    const setters = Object.fromEntries(set.map((row) => [row.email, row.password_set_by_id]));
+    expect(setters["alice@acme.example"]).toBeTruthy();
+    expect(setters["carol@acme.example"]).toBe(setters["alice@acme.example"]);
+    if (operator) expect(setters["alice@acme.example"]).toBe(operator.id);
+    expect(set.find((row) => row.email === "alice@acme.example")?.password_set_by_type).toBe(
+      "member",
+    );
+    // And so the same operator adds one of them to another tenant, and their password still works.
+    const other = await keeping.admin.post("/tenants", { slug: "kept-two", name: "Kept two" });
+    const role = await keeping.db
+      .selectFrom("role")
+      .select("id")
+      .where("builtin", "=", true)
+      .where("name", "=", "tenant_admin")
+      .executeTakeFirstOrThrow();
+    await keeping.admin.post(`/tenants/${other.body.id}/access-grants`, {
+      reason: "the same operator's other tenant",
+      roleId: role.id,
+    });
+    const added = await keeping.admin.post(`/tenants/${other.body.id}/members`, {
+      email: "alice@acme.example",
+      name: "Alice",
+    });
+    expect(added.status, JSON.stringify(added.body)).toBe(201);
+    await keeping.signIn("alice@acme.example", PASSWORD);
   });
 });
 

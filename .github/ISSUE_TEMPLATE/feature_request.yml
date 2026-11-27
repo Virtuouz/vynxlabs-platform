@@ -1,0 +1,38 @@
+name: Feature request
+description: Something Volvel should let you do that it does not.
+labels: ["type: feature", "status: needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe the problem before the solution. An open-ended idea or a question fits better in
+        [Discussions](../../discussions).
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What you are trying to do, and what stops you today.
+    validations:
+      required: true
+  - type: dropdown
+    id: who
+    attributes:
+      label: Who it is for
+      multiple: true
+      options:
+        - A tenant developer (repository, CLI, SDK, API)
+        - Someone who uses the console
+        - An end user of an app
+        - A tenant's administrator
+        - Someone who runs an instance
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you would like
+      description: How it could work. Mention another product if it does this well.
+  - type: textarea
+    id: workaround
+    attributes:
+      label: What you do now instead

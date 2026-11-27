@@ -1,0 +1,64 @@
+name: Bug report
+description: Something in Volvel does not work as the documentation says.
+labels: ["type: bug", "status: needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. Questions belong in [Discussions](../../discussions), and a suspected
+        vulnerability belongs in a [private report](../../security/advisories/new), never here.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: The image tag the instance runs (`volvel/volvel:<version>`) or the commit it was built from, and the CLI's if it is involved (`volvel --version`).
+      placeholder: "0.6.0, CLI 0.6.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: deployment
+    attributes:
+      label: How the instance runs
+      options:
+        - Docker Compose
+        - Fly.io
+        - Another container host
+        - Built from source
+        - Not about an instance (CLI or SDK only)
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: The smallest set of steps. A tenant repository or a definition that shows it helps most.
+      placeholder: |
+        1. Deploy …
+        2. Open …
+        3. …
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened instead
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or the error shown
+      description: Take out secrets, tokens and personal data first.
+      render: text
+  - type: input
+    id: browser
+    attributes:
+      label: Browser and screen width
+      description: Only if it is about the console or an app.
+      placeholder: "Firefox 140, 390 px"

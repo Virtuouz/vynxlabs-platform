@@ -32,7 +32,7 @@ import {
   useCommandKey,
 } from "./kit/CommandPalette.tsx";
 import { ErrorBoundary } from "./kit/ErrorBoundary.tsx";
-import { formatCombo, openShortcuts, useShortcut } from "./kit/keys.ts";
+import { formatCombo, isMac, openShortcuts, useShortcut } from "./kit/keys.ts";
 import { LiveIndicator } from "./kit/LiveIndicator.tsx";
 import { useWide, WIDE } from "./kit/layout.tsx";
 import { Junction, Wire } from "./kit/motifs.tsx";
@@ -1303,7 +1303,10 @@ export function Shell({
             <button
               type="button"
               onClick={openPalette}
-              aria-label="Search or jump to"
+              // The name holds the shortcut the button shows at desktop widths, so what is heard
+              // includes what is seen (WCAG 2.5.3). On a phone only the icon shows.
+              aria-label={`Search or jump to… ${formatCombo("Mod+K")}`}
+              aria-keyshortcuts={isMac() ? "Meta+K" : "Control+K"}
               className="flex h-8 items-center gap-2 rounded-control text-meta whitespace-nowrap text-ink-subtle hover:text-ink md:h-7 md:w-[calc(14rem*var(--vx-type-scale,1))] md:min-w-0 md:shrink md:border md:border-line md:bg-structure md:pr-1.5 md:pl-3"
             >
               <Search aria-hidden="true" size={16} className="mx-1.5 md:mx-0" />

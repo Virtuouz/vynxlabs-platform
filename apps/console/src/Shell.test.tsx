@@ -335,7 +335,7 @@ test("the search box names the shortcut for this computer, not a Mac's (SHL-04)"
         <p>Screen</p>
       </Shell>,
     );
-    return screen.getByRole("button", { name: "Search or jump to" }).textContent;
+    return screen.getByRole("button", { name: /^Search or jump to/ }).textContent;
   };
   vi.stubGlobal("navigator", { platform: "Linux x86_64", userAgent: "Linux" });
   expect(search()).toContain("Ctrl+K");

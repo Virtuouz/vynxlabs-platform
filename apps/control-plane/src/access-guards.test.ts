@@ -640,7 +640,15 @@ describe("the instance keeps an operator who can sign in (ACC-09, INS-04, GOV-04
       o.admin.delete(`/bindings/${x.binding}`),
       x.client.delete(`/bindings/${first.id}`),
     ]);
-    expect([a.status, b.status].sort()).toEqual([204, 409]);
+    // One removal goes through. The other is refused: as the last operator (409) when x was still
+    // an operator when it asked, or as no operator at all (403) when the first removal came first.
+    const statuses = [a.status, b.status].sort();
+    expect([
+      [204, 403],
+      [204, 409],
+    ]).toContainEqual(statuses);
+    const left = ((await o.admin.get("/bindings")).body.items as Any[]).map((one) => one.id);
+    expect([x.binding, first.id].filter((id) => left.includes(id))).toHaveLength(1);
     // Which of the two went first is chance. When it was x, the first operator is no operator now,
     // and the next test makes its operators as them: x, who stays, makes them one again.
     if (b.status === 204) {

@@ -52,6 +52,8 @@ describe("an address that someone outside the operator chose, on its way to the 
       slowest = Math.max(slowest, took);
     }
     console.log(`400000 characters, to Mailer.send -> ${times.join("; ")}`);
-    expect(slowest).toBeLessThan(1);
+    // Read in time that grows with the square of the length, these take minutes. Read in a line,
+    // they take well under a second here and a little over one on a slow CI runner (1.3 s).
+    expect(slowest).toBeLessThan(5);
   }, 120_000);
 });

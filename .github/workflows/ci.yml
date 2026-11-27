@@ -33,11 +33,11 @@ jobs:
     env:
       TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -57,7 +57,7 @@ jobs:
     name: Image and single-host stack
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Configure the stack
         run: |
           {
@@ -108,12 +108,12 @@ jobs:
     # build is paid for once rather than three times.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Build the image
         run: docker build -t volvel/volvel:e2e .
       - name: Save it
         run: docker save volvel/volvel:e2e | gzip -1 > volvel-e2e.tar.gz
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: volvel-e2e-image
           path: volvel-e2e.tar.gz
@@ -130,9 +130,9 @@ jobs:
         # Three groups cut by how long their tests take (e2e/playwright.config.ts).
         group: [a, b, c]
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -147,7 +147,7 @@ jobs:
             sleep 2
           done
           exit 1
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: volvel-e2e-image
       - name: Load the image
@@ -212,7 +212,7 @@ jobs:
           docker logs platform
           docker compose -f deploy/compose/compose.dev.yaml logs keycloak | tail -50
           cat /tmp/stand-ins.log || true
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: failure()
         with:
           name: browser-test-results-${{ matrix.group }}

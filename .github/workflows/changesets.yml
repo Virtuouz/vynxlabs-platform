@@ -2,7 +2,7 @@ name: Release PR
 
 # Two jobs in one, on every push to main.
 #
-# While changesets are waiting in .changeset/, it keeps a "chore: release" pull request open that
+# While changesets are waiting in .changeset/, it keeps a "chore: release X.Y.Z" pull request open that
 # turns them into the next version: a section of CHANGELOG.md in the words the changesets give,
 # and that version on every package (scripts/version-packages.mjs).
 #
@@ -44,14 +44,34 @@ jobs:
         id: mode
         uses: changesets/action/select-mode@v2.1.2
 
+      # Not changesets/action/version: it reads a CHANGELOG.md in every package that moved, and
+      # Volvel keeps one, at the root. The pull request says what the release will say.
       - name: Open or update the release pull request
         if: steps.mode.outputs.mode == 'version'
-        uses: changesets/action/version@v2.1.2
-        with:
-          github-token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
-          script: node scripts/version-packages.mjs
-          pr-title: "chore: release"
-          commit-message: "chore: release"
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B changeset-release/main
+          node scripts/version-packages.mjs
+          version=$(node -p "require('./packages/sdk/package.json').version")
+          git add -A
+          git commit -q -m "chore: release ${version}"
+          git push --force origin changeset-release/main
+          {
+            echo "Merging this releases Volvel ${version}: it tags \`v${version}\`, and the tag publishes it."
+            echo "The notes below are what the release will say. To change them, change the changesets on main."
+            echo
+            node scripts/version-packages.mjs notes "${version}"
+          } > "${RUNNER_TEMP}/body.md"
+          number=$(gh pr list --head changeset-release/main --state open --json number --jq '.[0].number // empty')
+          if [ -n "${number}" ]; then
+            gh pr edit "${number}" --title "chore: release ${version}" --body-file "${RUNNER_TEMP}/body.md"
+          else
+            gh pr create --base main --head changeset-release/main \
+              --title "chore: release ${version}" --body-file "${RUNNER_TEMP}/body.md"
+          fi
 
       - name: Tag the version a merged release pull request made
         if: steps.mode.outputs.mode != 'version'

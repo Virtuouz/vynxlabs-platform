@@ -1,6 +1,12 @@
 import { afterAll, describe, expect, test } from "vitest";
 import { Expressions } from "./expressions.js";
 
+/**
+ * What "at once" is held to. A pattern that backtracks takes seconds to years on these texts, so
+ * a second tells the two apart on the slowest runner; a tenth of one did not (107 ms in CI).
+ */
+const SOON_MS = 1000;
+
 const expressions = new Expressions({ timeoutMs: 5000 });
 afterAll(() => expressions.close());
 
@@ -53,7 +59,7 @@ const matches = (pattern: string, text: string) =>
   );
 
 describe("p35 round three: flow expressions run patterns on RE2", () => {
-  test("every pattern that froze a backtracking engine finishes in under 100 ms on text of 100,000 characters", async () => {
+  test("every pattern that froze a backtracking engine finishes at once on text of 100,000 characters", async () => {
     // Warm up the thread, so only the pattern is timed.
     await matches("^a$", "a");
     for (const pattern of NASTY) {
@@ -61,7 +67,7 @@ describe("p35 round three: flow expressions run patterns on RE2", () => {
         const started = performance.now();
         const outcome = await matches(pattern, text);
         const took = performance.now() - started;
-        expect(took, `${pattern} on ${text.slice(0, 6)}... (${outcome})`).toBeLessThan(100);
+        expect(took, `${pattern} on ${text.slice(0, 6)}... (${outcome})`).toBeLessThan(SOON_MS);
         // Only a large pattern is held to a shorter text, and says so.
         if (outcome !== "ran") expect(outcome).toMatch(/longer than \d+ characters/);
       }

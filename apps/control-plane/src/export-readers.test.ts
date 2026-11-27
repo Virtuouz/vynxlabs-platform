@@ -1,6 +1,8 @@
+import { randomBytes } from "node:crypto";
 import { type IncomingMessage, request } from "node:http";
 import type { AddressInfo } from "node:net";
 import { setTimeout as sleep } from "node:timers/promises";
+import { newId } from "@volvel/db";
 import { afterAll, beforeAll, expect, test } from "vitest";
 import { exportLimits, readerBoundStream } from "./routes/portability.js";
 import { type Client, startTestApp, type TestApp } from "./testing.js";
@@ -38,6 +40,28 @@ async function tenantWithAdmin(slug: string) {
     roleId: roles.tenant_admin,
   });
   await t.admin.delete(`/tenants/${tenant}/access-grants/${grant.body.id}`);
+  // An export that fits in the connection's own buffers is written to the end whether or not
+  // anyone reads it, and gives its place back: on some machines these tenants' did, and the test
+  // passed or failed by the size of a buffer. Each tenant now carries more than any buffer holds.
+  await t.db
+    .insertInto("audit_entry")
+    .values({
+      id: newId(),
+      tenant_id: tenant,
+      workspace_id: null,
+      actor_type: "system",
+      actor_id: null,
+      api_key_id: null,
+      access_grant_id: null,
+      action: "test.filler",
+      target_type: "tenant",
+      target_id: tenant,
+      details: JSON.stringify({ filler: randomBytes(12 * 1024 * 1024).toString("hex") }),
+      ip_address: null,
+      user_agent: null,
+      request_id: null,
+    })
+    .execute();
   const client = await t.signIn(`admin@${slug}.example`, PASSWORD);
   people.push({ tenant, client });
   return { tenant, client };

@@ -4,6 +4,12 @@ import { checkBundleManifests } from "./bundle-check.js";
 import { patternProblem, patternProblems } from "./pattern-guard.js";
 import { jsonSchemaProblem, validateJson } from "./registry.js";
 
+/**
+ * What "at once" is held to. A pattern that backtracks takes seconds to years on these texts, so
+ * a second tells the two apart on the slowest runner; a tenth of one did not (107 ms in CI).
+ */
+const SOON_MS = 1000;
+
 // Patterns that froze a backtracking engine: nested and adjacent repeats, forks that share a
 // start, chains of optional atoms, ranges. Tenant schemas run patterns on RE2 (packages/widget-sdk/
 // src/pattern.ts), in time that grows with the text only. The same list is in
@@ -57,14 +63,14 @@ const UUID =
   "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$";
 
 describe("p35 round three: a tenant's schema patterns run on RE2", () => {
-  test("every pattern that froze a backtracking engine finishes in under 100 ms on text of 100,000 characters", () => {
+  test("every pattern that froze a backtracking engine finishes at once on text of 100,000 characters", () => {
     for (const pattern of NASTY) {
       expect(patternProblem(pattern), pattern).toBeUndefined();
       for (const text of texts(100_000)) {
         const started = performance.now();
         validateJson({ type: "string", pattern }, text);
         const took = performance.now() - started;
-        expect(took, `${pattern} on ${text.slice(0, 6)}...`).toBeLessThan(100);
+        expect(took, `${pattern} on ${text.slice(0, 6)}...`).toBeLessThan(SOON_MS);
       }
     }
   }, 120_000);
@@ -77,7 +83,7 @@ describe("p35 round three: a tenant's schema patterns run on RE2", () => {
     const started = performance.now();
     expect(validateJson(schema, { name: `${"a".repeat(26)}!` })).not.toEqual([]);
     expect(validateJson(schema, { name: "aaaa" })).toEqual([]);
-    expect(performance.now() - started).toBeLessThan(100);
+    expect(performance.now() - started).toBeLessThan(SOON_MS);
   });
 
   test("patterns a guard by shape refused, and patterns for ordinary fields, run", () => {

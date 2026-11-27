@@ -53,7 +53,9 @@ describe("the size of a query result", () => {
   test("rows past the byte cap are cut in the database, not after the control plane holds them", async () => {
     const before = process.memoryUsage().rss;
     const answer = await run(
-      "select repeat('x', 2000000) as a from generate_series(1, 1000)",
+      // 400 MB if it were all sent: enough to show the cut, and made by a small runner well
+      // inside the statement's time. A thousand such rows took one past it.
+      "select repeat('x', 2000000) as a from generate_series(1, 200)",
       10000,
     );
     const grew = process.memoryUsage().rss - before;

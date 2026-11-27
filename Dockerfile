@@ -1,5 +1,5 @@
 # One image for every deployment mode. Differences between modes are configuration.
-FROM node:24-slim AS build
+FROM node:26-slim AS build
 WORKDIR /repo
 RUN corepack enable
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json .pnpmfile.cjs ./
@@ -36,7 +36,7 @@ RUN pnpm build
 # It includes the worker, which the control plane starts for tenants that have work.
 RUN pnpm --filter @volvel/control-plane deploy --prod /out
 
-FROM node:24-slim
+FROM node:26-slim
 # Managed workers run as vxrun, a user of their own, so a tenant's script can neither read
 # the control plane's environment nor signal it. Switching users needs CAP_SETUID and
 # CAP_SETGID. Only node-cp, the copy of node the control plane runs on, holds them: a

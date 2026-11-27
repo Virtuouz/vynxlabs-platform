@@ -1,0 +1,48 @@
+name: Pull request title
+
+# The title becomes the squashed commit on main, and release-please reads it to
+# choose the next version and write the changelog. `feat:` is a minor version,
+# `fix:` a patch, and `!` (`feat(sdk)!: …`) marks a breaking change.
+
+on:
+  pull_request_target:
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  pull-requests: read
+
+jobs:
+  title:
+    name: Conventional title
+    runs-on: ubuntu-latest
+    steps:
+      - uses: amannn/action-semantic-pull-request@v5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          types: |
+            feat
+            fix
+            perf
+            docs
+            refactor
+            test
+            ci
+            build
+            chore
+            revert
+          scopes: |
+            control-plane
+            worker
+            console
+            apps
+            sdk
+            cli
+            db
+            docs
+            deploy
+            deps
+            release
+          requireScope: false
+          subjectPattern: ^[^A-Z].+$
+          subjectPatternError: 'Start the subject with a lowercase letter, such as "fix(console): keep the filter after a reload".'

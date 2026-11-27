@@ -11,7 +11,7 @@ The **Import a tenant** screen brings a tenant that was exported from another in
 
 An export is made by the tenant's own admin, from the tenant's [Export](../../../administer/reference/screens/export) screen or with `volvel tenant export`. See [Move a tenant](../../how-to/instance/moving-a-tenant) for the whole journey.
 
-::screenshot{name=self-host/instance-import-check alt="The Check step of Import a tenant: the tenant's name, the export's date and version, workspaces, rows and members, the Can it come in list with each line passing, the Not carried list, then the passphrase, the slug, where its custom tables go and the choice of the members' passwords, above the buttons Check again, Import tenant and Throw it away."}
+::screenshot{name=self-host/instance-import-check alt="The Check step of Import a tenant: what the file holds, the Can it come in list with each line passing, the Not carried list, then the passphrase, the slug, where its custom tables go and the choice of the members' passwords, above the three buttons."}
 
 The title is **Import a tenant**. The description reads "Brings a tenant exported from another instance into this one, whole or not at all. Upload the file first: it is checked from end to end and kept for an hour, and nothing is written until you import it." A stepper shows **Upload** ("The export file"), **Check** ("What it holds") and **Import** ("As a new tenant").
 

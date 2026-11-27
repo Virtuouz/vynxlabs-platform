@@ -25,7 +25,6 @@ import { APP_POLICY, keyOf, readFormAnswer, WIDGET_POLICY } from "@volvel/manife
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { MIN_PASSWORD_LENGTH } from "../../config.js";
 import { ANONYMOUS, type Db, type Principal, writeAudit } from "../audit.js";
-import { ownPath } from "../return-path.js";
 import { check } from "../authorize.js";
 import { describeTable, insertRows, withData } from "../data/rows.js";
 import { describer } from "../docs/describe.js";
@@ -47,6 +46,7 @@ import { findForm, submitForm } from "../execution/triggers.js";
 import type { Kernel } from "../kernel.js";
 import { resolvePrincipal } from "../principal.js";
 import { pathNow } from "../resolve.js";
+import { ownPath } from "../return-path.js";
 import { answer, begin, finish, stateCookie } from "../sso/flow.js";
 import { endUserPasswordRefusedBy, SsoRefusal } from "../sso/people.js";
 import {

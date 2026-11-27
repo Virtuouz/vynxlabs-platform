@@ -20,8 +20,8 @@ import { inputOf } from "./input.js";
 import { init, runLocally } from "./local.js";
 import { pull, pulledFile, readPulled } from "./pull.js";
 import { SCHEMA_FOLDER, writeEditorSchemas } from "./schemas.js";
-import { writeEnvTypes } from "./types.js";
 import { tenantExport, tenantImport } from "./tenant-move.js";
+import { writeEnvTypes } from "./types.js";
 import { widgetCommand } from "./widget.js";
 
 export { CliError };

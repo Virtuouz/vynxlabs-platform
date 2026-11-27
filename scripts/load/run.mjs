@@ -72,7 +72,8 @@ export function summarizeStage({ users, seconds, results, extra = {} }) {
   let refused = 0;
   let retryAfterMissing = 0;
   for (const r of results) {
-    const route = (routes[r.route] ??= { ms: [], statuses: {} });
+    routes[r.route] ??= { ms: [], statuses: {} };
+    const route = routes[r.route];
     route.ms.push(r.ms);
     route.statuses[r.status] = (route.statuses[r.status] ?? 0) + 1;
     if (r.synthetic) continue;

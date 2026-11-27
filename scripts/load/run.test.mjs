@@ -1,11 +1,11 @@
-import { mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, expect, test } from "vitest";
-import baseline from "./scenarios/baseline.mjs";
 import { render } from "./report.mjs";
 import { decideKnee, execute, labelRoute, parseArgs, percentile } from "./run.mjs";
+import baseline from "./scenarios/baseline.mjs";
 
 let server;
 let url;

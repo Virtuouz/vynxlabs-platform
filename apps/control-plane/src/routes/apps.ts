@@ -7,7 +7,6 @@ import { newId } from "@volvel/db";
 import { type InterfaceBody, interfaceTables } from "@volvel/manifest";
 import { Type } from "typebox";
 import { appUrl, domainUrl } from "../kernel/apps/address.js";
-import { ownPath } from "../kernel/return-path.js";
 import { MAX_ASSET_BYTES, storeAsset } from "../kernel/apps/assets.js";
 import { challengeProblem, challengeOf as domainChallenge } from "../kernel/apps/challenge.js";
 import { hostnameOf } from "../kernel/apps/hosts.js";
@@ -20,6 +19,7 @@ import { badRequest, conflict, forbidden, HttpError, notFound } from "../kernel/
 import { loadBundle } from "../kernel/execution/bundles.js";
 import { access, type WorkspaceRef } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
+import { ownPath } from "../kernel/return-path.js";
 import { listOf } from "../pagination.js";
 import {
   Id,

@@ -17,9 +17,9 @@ import {
   mustHold,
   notePeak,
   noteStarted,
+  onMachine,
   peakKnown,
   recallPeaks,
-  onMachine,
   runEnded,
 } from "./workers.js";
 

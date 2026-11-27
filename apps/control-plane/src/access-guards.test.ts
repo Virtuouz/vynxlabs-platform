@@ -647,7 +647,9 @@ describe("the instance keeps an operator who can sign in (ACC-09, INS-04, GOV-04
       [204, 403],
       [204, 409],
     ]).toContainEqual(statuses);
-    const left = ((await o.admin.get("/bindings")).body.items as Any[]).map((one) => one.id);
+    // Asked of whichever of the two is still an operator.
+    const stayed = b.status === 204 ? x.client : o.admin;
+    const left = ((await stayed.get("/bindings")).body.items as Any[]).map((one) => one.id);
     expect([x.binding, first.id].filter((id) => left.includes(id))).toHaveLength(1);
     // Which of the two went first is chance. When it was x, the first operator is no operator now,
     // and the next test makes its operators as them: x, who stays, makes them one again.

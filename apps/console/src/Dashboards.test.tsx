@@ -190,11 +190,11 @@ test("its maker adds a widget from Add to page, changes it in its settings, remo
   show(<DashboardView root={root} link="/t/t1/workspaces/w1" id="d1" />);
   await screen.findByLabelText("Held", { selector: "section" });
   // Looking, there is nothing to change with.
-  expect(screen.queryByRole("button", { name: "Add to page" })).toBeNull();
+  expect(screen.queryByRole("button", { name: /^Add to page/ })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Edit" }));
 
   // What can be added is what the registry offers a dashboard, by what it is for.
-  fireEvent.click(screen.getAllByRole("button", { name: "Add to page" })[0] as HTMLElement);
+  fireEvent.click(screen.getAllByRole("button", { name: /^Add to page/ })[0] as HTMLElement);
   const dialog = within(await screen.findByRole("dialog", { name: "Add to page" }));
   expect(dialog.getByText("Work with records")).toBeTruthy();
   expect(dialog.getByText("A trend or a comparison")).toBeTruthy();
@@ -329,7 +329,7 @@ test("a dashboard someone else shared, or the workspace keeps, is looked at and 
   const { unmount } = show(<DashboardView root={root} link="/t/t1/workspaces/w1" id="d1" />);
   await screen.findByText(/Alice's, shared with you\. You see the rows you may read/);
   await screen.findByLabelText("Held", { selector: "section" });
-  for (const name of ["Edit", "Share", "Add to page", "More"]) {
+  for (const name of ["Edit", "Share", /^Add to page/, "More"]) {
     expect(screen.queryByRole("button", { name })).toBeNull();
   }
   unmount();
@@ -432,7 +432,7 @@ test("F1 on a dashboard that is looked at opens the dashboards' help, and the ed
   viewing.unmount();
   history.replaceState(null, "", "/?edit=1");
   show(<DashboardView root={root} link="/t/t1/workspaces/w1" id="d1" />);
-  await screen.findByRole("button", { name: "Add to page" });
+  await screen.findByRole("button", { name: /^Add to page/ });
   expect(getHelpTopic()).toBe("data-dashboards-editor");
 });
 
@@ -513,7 +513,7 @@ test("QSD-MP2: a dashboard the workspace keeps is changed as a draft, on the rev
   await screen.findByText(/Kept by the workspace, at boards\/lending/);
   fireEvent.click(screen.getByRole("button", { name: "Edit" }));
   fireEvent.click(
-    (await screen.findAllByRole("button", { name: "Add to page" }))[0] as HTMLElement,
+    (await screen.findAllByRole("button", { name: /^Add to page/ }))[0] as HTMLElement,
   );
   const dialog = within(await screen.findByRole("dialog", { name: "Add to page" }));
   fireEvent.click(dialog.getByRole("button", { name: /Chart/ }));
@@ -686,7 +686,7 @@ test("a dashboard the workspace keeps, saved over by someone else, offers to cop
   await screen.findByText(/Kept by the workspace, at boards\/lending/);
   fireEvent.click(screen.getByRole("button", { name: "Edit" }));
   fireEvent.click(
-    (await screen.findAllByRole("button", { name: "Add to page" }))[0] as HTMLElement,
+    (await screen.findAllByRole("button", { name: /^Add to page/ }))[0] as HTMLElement,
   );
   const dialog = within(await screen.findByRole("dialog", { name: "Add to page" }));
   fireEvent.click(dialog.getByRole("button", { name: /Chart/ }));

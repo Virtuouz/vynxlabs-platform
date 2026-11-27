@@ -209,7 +209,8 @@ export function ViewAsMenu({
       label={
         <>
           <Eye aria-hidden="true" size={14} className="text-ink-muted" />
-          <span className="text-ink-muted max-xl:sr-only">View as</span>
+          {/* The space is what is heard between the two: without it the name reads "View asMe". */}
+          <span className="text-ink-muted max-xl:sr-only">View as</span>{" "}
           <span className="font-medium">{viewAsWords(value)}</span>
           <ChevronDown aria-hidden="true" size={14} className="text-ink-muted" />
         </>

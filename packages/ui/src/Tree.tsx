@@ -4,6 +4,7 @@ import {
   type KeyboardEvent,
   type ReactNode,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -81,6 +82,7 @@ export function Tree({
   /** F2 on a row. */
   onRename?: (id: string) => void;
 }) {
+  const base = useId();
   // The row being dragged, and where it would go if it were let go now.
   const [dragged, setDragged] = useState<string>();
   const [over, setOver] = useState<{ id: string; position: DropPosition }>();
@@ -200,18 +202,31 @@ export function Tree({
 
   return (
     <div ref={list} role="tree" aria-label={label} className="flex flex-col">
-      {rows.map((row) => {
+      {rows.map((row, index) => {
         const { node, level } = row;
         const branch = node.children !== undefined;
         const open = branch && !closed.has(node.id);
         const chosen = node.id === selected;
         const grabbable = onMove !== undefined && (canDrag ? canDrag(node.id) : true);
         const here = over?.id === node.id ? over.position : undefined;
+        // A row is named by everything it shows, the badge, the detail and what trails included,
+        // so that what is heard holds what is seen (WCAG 2.5.3). Its buttons have names of their own.
+        const part = (name: string) => `${base}-${index}-${name}`;
+        const named =
+          node.editing !== undefined
+            ? { "aria-label": node.label }
+            : {
+                "aria-labelledby": [
+                  part("name"),
+                  ...(node.detail !== undefined ? [part("detail")] : []),
+                  ...(node.trailing !== undefined && here !== "inside" ? [part("trailing")] : []),
+                ].join(" "),
+              };
         return (
           <div
             key={node.id}
             role="treeitem"
-            aria-label={node.label}
+            {...named}
             data-tree-id={node.id}
             aria-level={level}
             aria-selected={chosen}
@@ -352,13 +367,19 @@ export function Tree({
             ) : (
               <span className="flex min-w-0 flex-1 flex-col">
                 <span
+                  id={part("name")}
                   className={`flex min-w-0 items-center gap-1.5 ${chosen ? "font-medium" : ""}`}
                 >
+                  {/* A space before each part that follows is heard; the layout ignores it. */}
                   <span className="truncate">{node.label}</span>
-                  {node.badge}
+                  {node.badge !== undefined ? <> {node.badge}</> : null}
                 </span>
+                {node.detail !== undefined ? " " : null}
                 {node.detail !== undefined ? (
-                  <span className="truncate font-mono text-code-sm text-ink-subtle">
+                  <span
+                    id={part("detail")}
+                    className="truncate font-mono text-code-sm text-ink-subtle"
+                  >
                     {node.detail}
                   </span>
                 ) : null}
@@ -366,9 +387,12 @@ export function Tree({
             )}
             {here === "inside" ? (
               <span className="shrink-0 text-meta text-action">Move into</span>
-            ) : (
-              node.trailing
-            )}
+            ) : node.trailing !== undefined ? (
+              <span id={part("trailing")} className="contents">
+                {" "}
+                {node.trailing}
+              </span>
+            ) : null}
             {node.actions !== undefined && node.editing === undefined ? (
               <span
                 data-tree-action

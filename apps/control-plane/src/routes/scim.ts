@@ -1042,10 +1042,15 @@ async function recordScimRefusal(
     reason: string;
   },
 ) {
+  // The moment is taken when the refusal is made, not when the row is written: it is kept after
+  // the answer is sent, so two refusals in a row could otherwise be written, and listed, swapped.
+  const id = newId();
+  const occurredAt = new Date();
   await kernel.db
     .insertInto("scim_refusal")
     .values({
-      id: newId(),
+      id,
+      occurred_at: occurredAt,
       provider_id: refusal.providerId,
       tenant_id: refusal.tenantId,
       method: refusal.method,

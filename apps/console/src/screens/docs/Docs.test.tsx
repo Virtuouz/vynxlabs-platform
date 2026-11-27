@@ -236,7 +236,11 @@ describe("the pages of a workspace", () => {
 
 describe("the Documentation screen", () => {
   const tree = () => screen.findByRole("tree", { name: "Pages" });
-  const row = async (name: string) => within(await tree()).getByRole("treeitem", { name });
+  // A row is named by what it shows: its title first, then its file's name and its state.
+  const row = async (name: string) =>
+    within(await tree()).getByRole("treeitem", {
+      name: new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(\\s|$)`),
+    });
   const dataTransfer = () => ({ setData: () => {}, effectAllowed: "", dropEffect: "" });
 
   test("shows the first page, drawn, with the tree of pages beside it", async () => {

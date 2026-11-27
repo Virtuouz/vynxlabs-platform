@@ -262,7 +262,7 @@ test("widgets are added and removed, and what is wrong is said before anything c
 
   const addChart = async () => {
     // A person's click puts focus on the button: the dialog gives it back to that button when it closes.
-    const opener = screen.getAllByRole("button", { name: "Add to page" })[0] as HTMLElement;
+    const opener = screen.getAllByRole("button", { name: /^Add to page/ })[0] as HTMLElement;
     opener.focus();
     fireEvent.click(opener);
     const dialog = within(await screen.findByRole("dialog", { name: "Add to page" }));

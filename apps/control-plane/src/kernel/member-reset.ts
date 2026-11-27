@@ -6,7 +6,7 @@ import { type AccessSource, explainAccess, grants } from "./authorize.js";
 import { checkPassword } from "./endusers.js";
 import { badRequest, conflict, forbiddenBecause, HttpError, notFound } from "./errors.js";
 import type { Kernel } from "./kernel.js";
-import { endEarlierSignIns } from "./sign-ins.js";
+import { endEarlierSignIns, markProved } from "./sign-ins.js";
 import { memberPasswordRefusedBy } from "./sso/people.js";
 
 /** How long a member's reset link works. The same as an end user's. */
@@ -51,7 +51,7 @@ export async function makeMemberResetLink(
 }> {
   const member = await trx
     .selectFrom("member")
-    .select(["id", "email", "name", "disabled_at"])
+    .select(["id", "email", "name", "disabled_at", "proved_at"])
     .where("id", "=", input.memberId)
     .forUpdate()
     .executeTakeFirst();
@@ -83,7 +83,13 @@ export async function makeMemberResetLink(
       .where("principal_type", "=", "member")
       .where("principal_id", "=", member.id)
       .executeTakeFirst();
-    if (elsewhere || atInstance) {
+    // An account of several tenants has no one tenant's admin to answer for it, so only an
+    // operator makes its link. Except where nobody has proved the account and the link goes to its
+    // own address: then the admin of any tenant it belongs to must be able to give the real owner
+    // a way in, or the account would stay with whoever made it. The account of an operator, and a
+    // link handed back to the caller, stay with operators.
+    const unprovedAndMailed = !member.proved_at && !atInstance && !(input.returnsLink ?? true);
+    if ((elsewhere || atInstance) && !unprovedAndMailed) {
       throw conflict(
         `${member.email} also belongs to another tenant or runs the instance, so only an operator can make a password link for them.`,
       );
@@ -119,7 +125,14 @@ export async function makeMemberResetLink(
   const expiresAt = new Date(Date.now() + MEMBER_RESET_HOURS * 3_600_000);
   await trx
     .insertInto("member_password_token")
-    .values({ id: newId(), member_id: member.id, token_hash: hash(token), expires_at: expiresAt })
+    .values({
+      id: newId(),
+      member_id: member.id,
+      token_hash: hash(token),
+      expires_at: expiresAt,
+      // A link that is not handed back goes to the account's own address and nowhere else.
+      mailed: !(input.returnsLink ?? true),
+    })
     .execute();
   // Who made it (the entry names the caller), and for whom. Never the token. Each tenant the
   // member belongs to has the entry in its own log: the link is a way into all of them.
@@ -238,7 +251,7 @@ export async function setMemberPasswordWithToken(
     .where("token_hash", "=", hash(input.token))
     .where("used_at", "is", null)
     .where("expires_at", ">", new Date())
-    .returning("member_id")
+    .returning(["member_id", "mailed"])
     .executeTakeFirst();
   if (!taken) throw gone();
   const member = await trx
@@ -285,5 +298,8 @@ export async function setMemberPasswordWithToken(
     .where("used_at", "is", null)
     .execute();
   await endEarlierSignIns(trx, audit, member.id, "password_reset");
+  // A link that went only to the account's own address shows its owner chose this password. One
+  // that was handed to whoever asked for it shows nothing about who is using it.
+  if (taken.mailed) await markProved(trx, member.id);
   await audit({ action: "member.password_reset", targetType: "member", targetId: member.id });
 }

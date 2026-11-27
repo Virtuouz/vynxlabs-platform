@@ -174,3 +174,68 @@ An account (`member`) is one for each email on the whole instance. A tenant admi
 The chain is closed where the planter's account ends up with no membership. It is **not** closed where the planter keeps the account as a member of A (never removes it) and B adds the same email: the planter's password, session and key then act in B as before (tested by hand: session 200, key 200 in B; B's admin cannot make a link because the account belongs to two tenants, 409, so B cannot clear it, only an operator with a grant on both). Closing that means stopping a tenant admin from choosing a password for an email that no one else has proved, which is the first question in the reviewer's report (the create-member password) and is for the owner. The same holds for P2 when the squatter stays in A and the operator binds the account `operator_admin`: nothing ends until a reset by link. Also not covered: a tenant import creates accounts with the password hash from the archive.
 
 No migration was needed (next free number is still 0104). One audit action was added, `member.sign_ins_ended` (`packages/manifest/src/audit.ts`).
+
+## Round four: an account nobody has proved starts again when it gains a place
+
+**The hole** (the one left open at the end of round three). An admin of tenant A makes an account for someone else's address with a password of their own and keeps it in A. Tenant B later adds the address, or the operator binds it at the instance. The admin of A signs in with the password they chose and acts in B with what B gave. B's admin could not clear it: a link for an account of two tenants was refused.
+
+**The owner's rule.** A person's own recovery codes, keys and password are never taken from them just because another tenant adds them. So the rule applies only to an account its owner has never proved.
+
+**Proof before.** `planted-accounts.test.ts`, describe "an account nobody has proved starts again when it gains a place (round four)": with the maker keeping the account in A and B adding it, the maker's session, key, password and recovery code all still answered in A and B (200, wanted 401); the same when the operator bound the account at the instance; the same when a directory (SCIM) added it; and B's admin got 409 for a password link. Five of the new tests failed before the change.
+
+### 1. How "proved" is recorded
+
+`member.proved_at` (migration 0105, with a comment saying what it means; null is "nobody has proved it"). Set by `markProved` in `kernel/sign-ins.ts`, only:
+- when a member's password is set through a link that was **mailed** to the account's address (`member_password_token.mailed`, set when the link is made without being handed back; `setMemberPasswordWithToken` reads it);
+- when the person signs in through single sign-on and the email's domain is one the provider has proved (`resolvePerson`, before the tenant is joined, so that joining ends nothing of theirs);
+- for the first operator (`bootstrapAdmin`) and for an operator recovered on the machine (`recoverOperator`): whoever runs the command holds the instance;
+- in the migration, for accounts that already belong to two or more tenants, hold access at the instance, or are tied to a single sign-on identity. Nothing is ended by the migration; every other existing account stays not proved and is ended only if it later gains a place.
+
+Never set by an admin typing a password, by a tenant import (with or without `keepSignIns`), by a push from a directory (a push is not the person signing in), or by a link that came back to the caller.
+
+**The link that came back to the caller.** Where no mail is set up the link is in the answer, so whoever asked for it can use it. I read that as proving nothing about the owner, as the safe reading says. A link sent by mail goes to the address and the caller never sees it, so it does. Where mail is set up but the send fails, the route answers 503 and the link is seen by nobody (round three), so no unmailed link exists there.
+
+### 2. The doors, and what each does
+
+The rule is `startOverIfUnproved` (`kernel/sign-ins.ts`), called after the place is added with "had a place" read before. If the account is proved: nothing. If not, and it already had a place elsewhere (a tenant or the instance) or holds a session, personal key or recovery code: `endEarlierSignIns` with the password (reason `gained_a_place`), an entry `member.sign_ins_ended` in each tenant it belongs to, and it stays not proved.
+
+| Door | Now |
+|---|---|
+| `POST /tenants/:t/members` for an account already here | the rule. An account made by that same request is not touched |
+| the same route for the same tenant again, or a role / suspend change in the tenant | no new place: nothing ends (the second add is refused as before) |
+| SCIM push of an existing account (`createScimUser`) | the rule. A push that creates the account has nothing to end |
+| a single sign-on sign-in that adds the person to a tenant (`ensureTenantMember`) | the sign-in proves the account first (the domain is proved), so nothing ends; where the provider's domain is not the person's, the rule runs |
+| tenant import, accounts matched to ones already here (`kernel/tenancy/import.ts`) | the rule, after the archive's rows are loaded. Accounts the import creates have no password, or the archive's with `keepSignIns`, and are not proved |
+| `POST /bindings` (instance access) | the rule |
+| `bootstrapAdmin`, `recoverOperator` | the account is proved |
+| tenant creation (the caller becomes its first member) | not a door: the person acts for themselves |
+| a repository or release changing access | not a door: bindings name groups and service accounts, never a person, and a person must already belong to the tenant |
+| a group's members, a role given in a tenant | not a door: the person must already belong to the tenant |
+
+The one place I did not follow the sentence "has anything that can sign in" to the letter: a **password alone**, on an account with **no place anywhere**, does not count. That is what an operator leaves when they make an account at the instance (`POST /members`) and then bind it as an operator; ending the password they just typed would break making an operator, which the console offers. A tenant's admin cannot make such an account (a tenant route gives it a place, and losing the last place deletes the password in round three), so the maker of a planted account is never in that state. Any session, key or code on it, or any other place, does count.
+
+### 3. The second tenant's admin is not stuck
+
+`makeMemberResetLink`: the refusal for an account of more than one tenant is kept for proved accounts, for an account that holds access at the instance, and for a link that would be handed back to the caller. For an account nobody has proved, where the link is mailed (not returned), an admin of either tenant may make it, with the existing rules unchanged (`member:write`; an operator needs a grant on each tenant of the account). Where the link would be handed back the account of several tenants is still for an operator, since the caller could sign in with it in tenants they do not run.
+
+### 4. Imports
+
+Said in tests only (`an account an import creates is not proved...`): the imported account has `proved_at` null, with and without `keepSignIns`. `import.ts` was changed only to apply the rule at the door above (the accounts it attaches).
+
+### 5. Tests
+
+`planted-accounts.test.ts`: the remaining chain (maker keeps the account; B adds; nothing of the maker's acts in A or B; B's admin makes a mailed link; the owner signs in and is proved); the maker making a link for it while mail is off and using it does not prove it, and B's add then ends the maker's password; the operator-binding variant; a proved person added to a second tenant keeps session, password, API key and recovery codes; a proved account added by SCIM and by import is untouched, and an unproved one added by SCIM or import starts again; an unproved account changed within its own tenant is untouched; the migration's update leaves multi-tenant accounts and operators proved and a single-tenant account not.
+
+Existing tests that encoded the old state, changed by marking the account's owner as having proved it (`proved_at` set in the test's set-up, with a comment): `planted-accounts.test.ts` (three, an account of two tenants and an operator added to a tenant), `portability.test.ts` (Bob, the person who already has an account on the instance an archive is imported into).
+
+### What is left, said plainly
+
+No step of the chain works in any variant I could build:
+- **The maker proves the account themselves with no mail**: the link comes back to them, so it proves nothing; they set a password, and B's add (or the operator's binding) still ends it (tested).
+- **With mail on**: the link goes to the real owner's address, which the maker does not hold. The maker cannot change the account's address: no route or setting changes a member's email (the library's change-email is off; a SCIM push never changes a member's email; the members route only suspends). Mail is not readable through the product. An admin of A who also controls the mailbox of the address is the owner for this purpose.
+- **A tenant admin whose own directory is tied to the address** (single sign-on from a proved domain): that is the owner by the rule, as in round three.
+- **An account that is proved stays reachable by whoever also holds its address or its provider**: that is the meaning of proof, and a provider's domain is already a stated non-goal in `SECURITY.md`.
+- **Accounts that existed before and were never proved** (one tenant, a password typed by an admin, never replaced) are not marked by the migration: the migration cannot tell a person who chose their own password from one who did not. They lose their sign-ins only when they next gain a place. If the owner wants those marked, it is a decision.
+- A person who knows the password an admin typed for them and is then added to a second tenant is signed out and must use a link once. That is the rule as given.
+
+**To look at twice.** The exception for a password alone on an account with no place (above). The `endEarlierSignIns` call in the import runs inside the import's transaction, after the rows are loaded.

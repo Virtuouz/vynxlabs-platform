@@ -8,7 +8,7 @@ import { HttpError } from "../errors.js";
 import type { Kernel } from "../kernel.js";
 import { setMemberDisabled } from "../members.js";
 import { hashApiKey } from "../principal.js";
-import { endSignInsOnFirstTie } from "../sign-ins.js";
+import { endSignInsOnFirstTie, holdsAnyPlace, startOverIfUnproved } from "../sign-ins.js";
 import { giveRole, holdsInstanceAccess, syncGroups } from "./people.js";
 import { domainOfEmail, findProvider, type Provider, provedDomains } from "./providers.js";
 
@@ -731,6 +731,7 @@ export async function createScimUser(
         .where("member_id", "=", principalId)
         .executeTakeFirst();
       if (!belongs) {
+        const hadAPlace = existing ? await holdsAnyPlace(trx, principalId) : false;
         await trx
           .insertInto("tenant_member")
           .values({ tenant_id: provider.tenantId, member_id: principalId })
@@ -741,6 +742,7 @@ export async function createScimUser(
           targetId: principalId,
           tenantId: provider.tenantId,
         });
+        if (existing) await startOverIfUnproved(trx, audit, principalId, hadAPlace);
         await giveRole(trx, audit, provider, provider.tenantId, principalId);
       }
     }

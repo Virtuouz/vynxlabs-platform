@@ -14,6 +14,7 @@ import { INSTANCE_ONLY_ROLE } from "../kernel/kinds.js";
 import { createMember, setMemberDisabled } from "../kernel/members.js";
 import { generateApiKey } from "../kernel/principal.js";
 import { effectivePolicy } from "../kernel/retention.js";
+import { holdsAnyPlace, startOverIfUnproved } from "../kernel/sign-ins.js";
 import { nameOwnedBy } from "../kernel/sso/people.js";
 import { makeRecoveryCodes, ownsATenant } from "../kernel/sso/recovery.js";
 import { likeTerm, listOf, PageQuery, pageOf, SearchPageQuery } from "../pagination.js";
@@ -1222,6 +1223,7 @@ export function identityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           if (member.disabled_at) {
             throw badRequest("That account is disabled. Enable it before making it an operator.");
           }
+          const hadAPlace = await holdsAnyPlace(trx, body.memberId);
           await trx
             .insertInto("binding")
             .values({
@@ -1242,6 +1244,8 @@ export function identityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             targetId: id,
             details: { scope: "instance", memberId: body.memberId, role: role.name },
           });
+          // Access at the instance is a new place: an account nobody has proved starts again.
+          await startOverIfUnproved(trx, audit, body.memberId, hadAPlace);
         });
         return reply.code(201).send({ id });
       },

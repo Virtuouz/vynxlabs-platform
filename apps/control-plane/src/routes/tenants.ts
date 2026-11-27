@@ -11,7 +11,7 @@ import { access, reachedFromInside } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
 import { createMember } from "../kernel/members.js";
 import { effectivePolicy } from "../kernel/retention.js";
-import { stripIfNoMembership } from "../kernel/sign-ins.js";
+import { holdsAnyPlace, startOverIfUnproved, stripIfNoMembership } from "../kernel/sign-ins.js";
 import { accessResource, freeKey, releaseOne } from "../kernel/tenant/releases.js";
 import {
   afterName,
@@ -738,6 +738,7 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             .select(["id", "name", "email", "created_at"])
             .where("email", "=", email)
             .executeTakeFirst();
+          const existing = found !== undefined;
           if (!found) {
             if (body.name === undefined || body.password === undefined) {
               throw badRequest("No member has that email. Send name and password to create one.");
@@ -748,6 +749,9 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               password: body.password,
             });
           }
+          // An account that was already here is read before it gains this place: where nobody has
+          // proved it, what could sign in as it ends. One made by this very request is not.
+          const hadAPlace = existing ? await holdsAnyPlace(trx, found.id) : false;
           await trx
             .insertInto("tenant_member")
             .values({ tenant_id: params.t, member_id: found.id })
@@ -759,6 +763,7 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             tenantId: params.t,
             details: { email },
           });
+          if (existing) await startOverIfUnproved(trx, audit, found.id, hadAPlace);
           for (const binding of body.bindings ?? []) {
             await insertBinding(trx, audit, params.t, ctx.principal, {
               principalType: "member",

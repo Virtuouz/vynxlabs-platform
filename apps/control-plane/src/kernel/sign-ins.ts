@@ -7,7 +7,8 @@ export type SignInsEnded =
   | "password_reset"
   | "operator_recovered"
   | "single_sign_on_tie"
-  | "last_membership_removed";
+  | "last_membership_removed"
+  | "gained_a_place";
 
 /**
  * Ends what could sign in as an account before now: every session (the console's and the apps'),
@@ -129,5 +130,87 @@ export async function endSignInsOnFirstTie(
   await endEarlierSignIns(trx, audit, memberId, "single_sign_on_tie", {
     password: required !== undefined,
   });
+  return true;
+}
+
+/**
+ * Records that the person the account is for has shown it is theirs (`member.proved_at`): they
+ * set the password through a link mailed to its address, signed in through single sign-on from
+ * a domain that was proved, or it is the instance's first operator. Never set because an admin
+ * typed a password, and never by an archive. It is only ever set once; later calls change nothing.
+ */
+export async function markProved(trx: Trx, memberId: string): Promise<void> {
+  await trx
+    .updateTable("member")
+    .set({ proved_at: new Date() })
+    .where("id", "=", memberId)
+    .where("proved_at", "is", null)
+    .execute();
+}
+
+/** Whether the account has a place anywhere: it belongs to a tenant, or holds access at the instance. */
+export async function holdsAnyPlace(trx: Trx, memberId: string): Promise<boolean> {
+  const tenant = await trx
+    .selectFrom("tenant_member")
+    .select("tenant_id")
+    .where("member_id", "=", memberId)
+    .executeTakeFirst();
+  return tenant !== undefined || (await holdsInstanceAccess(trx, memberId));
+}
+
+/**
+ * Whether the account holds a way in besides its password: a session, a personal key or a
+ * recovery code. A password alone, on an account that has no place anywhere, is what an operator
+ * leaves when they make an account for someone at the instance (a tenant's admin cannot make one
+ * without giving it a place, and losing the last place deletes the password). That is the
+ * operator's own act and is not ended by giving the account its first place.
+ */
+async function holdsAWayInBesidesAPassword(trx: Trx, memberId: string): Promise<boolean> {
+  const session = await trx
+    .selectFrom("member_session")
+    .select("member_id")
+    .where("member_id", "=", memberId)
+    .executeTakeFirst();
+  const key = await trx
+    .selectFrom("api_key")
+    .select("id")
+    .where("owner_type", "=", "member")
+    .where("owner_id", "=", memberId)
+    .where("revoked_at", "is", null)
+    .executeTakeFirst();
+  const code = await trx
+    .selectFrom("member_recovery_code")
+    .select("id")
+    .where("member_id", "=", memberId)
+    .executeTakeFirst();
+  return session !== undefined || key !== undefined || code !== undefined;
+}
+
+/**
+ * The rule for an account that gains a place it did not have (someone adds it to a tenant, or it
+ * is given access at the instance). Call it after the place is added, with `hadAPlace` read
+ * before. An account whose owner has proved it (`member.proved_at`) is left exactly as it is: its
+ * owner's password, keys and codes are theirs. An account nobody has proved may have a password
+ * that whoever made it chose, so where it already had a place elsewhere, or holds a way in besides
+ * its password (a password alone, on an account with no place, is an operator's own doing and does
+ * not count), all of that ends (password included), an entry says so in each tenant it belongs to,
+ * and it stays not proved until its owner sets a password through a link mailed to them.
+ *
+ * Returns whether anything was ended.
+ */
+export async function startOverIfUnproved(
+  trx: Trx,
+  audit: Audit,
+  memberId: string,
+  hadAPlace: boolean,
+): Promise<boolean> {
+  const member = await trx
+    .selectFrom("member")
+    .select("proved_at")
+    .where("id", "=", memberId)
+    .executeTakeFirst();
+  if (!member || member.proved_at) return false;
+  if (!hadAPlace && !(await holdsAWayInBesidesAPassword(trx, memberId))) return false;
+  await endEarlierSignIns(trx, audit, memberId, "gained_a_place", { password: true });
   return true;
 }

@@ -54,6 +54,12 @@ export interface MemberTable {
     "hand" | "provider" | null | undefined,
     "hand" | "provider" | null
   >;
+  /**
+   * When the account's owner showed it is theirs (a link mailed to its address, single sign-on from
+   * a proved domain, or the first operator). Null: not proved, and an admin may have typed the
+   * password. A tenant that adds such an account ends what could sign in as it before.
+   */
+  proved_at: ColumnType<Date | null, Date | null | undefined, Date | null>;
   created_at: Timestamp;
   updated_at: Timestamp;
 }
@@ -1002,6 +1008,8 @@ export interface MemberPasswordTokenTable {
   token_hash: string;
   expires_at: Timestamp;
   used_at: Date | null;
+  /** The link went to the account's own address and was not handed to whoever asked for it. */
+  mailed: Generated<boolean>;
   created_at: Generated<Date>;
 }
 

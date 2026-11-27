@@ -15,8 +15,9 @@ const COMPANY = `V${OLD.slice(1)}labs`;
 /** What was written before the name, and is a record. Decisions and their specs are never rewritten. */
 const RECORD = ["docs/adr/", "docs/specs/", "CHANGELOG.md"];
 
-/** Where the company is meant, and so named. */
+/** Where the company is meant, and so named: by its name, or by its mail domain. */
 const NAMES_THE_COMPANY = new Set([
+  "CODE_OF_CONDUCT.md",
   "docs/master-spec.md",
   "docs/self-hosting.md",
   "deploy/fly/README.md",
@@ -36,7 +37,9 @@ test("nothing is named for the company where the product is meant", () => {
     }
     if (!text.toLowerCase().includes(OLD)) continue;
     text.split("\n").forEach((line, index) => {
-      const rest = NAMES_THE_COMPANY.has(file) ? line.replaceAll(COMPANY, "") : line;
+      const rest = NAMES_THE_COMPANY.has(file)
+        ? line.replaceAll(COMPANY, "").replaceAll(`@${COMPANY.toLowerCase()}.com`, "")
+        : line;
       if (rest.toLowerCase().includes(OLD)) found.push(`${file}:${index + 1}`);
     });
   }

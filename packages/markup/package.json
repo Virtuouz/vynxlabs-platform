@@ -28,7 +28,7 @@
     "access": "public"
   },
   "dependencies": {
-    "markdown-it": "^14.3.3",
+    "markdown-it": "^15.0.3",
     "prismjs": "1.30.0"
   },
   "peerDependencies": {

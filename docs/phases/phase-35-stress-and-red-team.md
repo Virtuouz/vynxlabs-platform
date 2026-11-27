@@ -155,6 +155,12 @@ Fifteen reviewers each took one part of the product (the front door, sign-in, si
 - Scripts in progress when a machine is killed outright are failed, not run again, unless they declare retries. That is the design.
 - `query-result-size.test.ts` and `export-readers.test.ts` fail in some full runs of the suite and pass alone: the first measures memory, which the other tests disturb, and the second's limits are held once for the process. Both are to be made steadier.
 
+**Set aside for later, by the owner's decision of 2026-11-26.**
+
+- The Apps screen on a phone draws its description paragraph in some runs and not in others, which moves everything below it by about 100 px (`e2e/redesign.spec.ts:170`, picture `light-phone-apps`; the words are set at `apps/console/src/screens/Apps.tsx:551`). It failed in every full run of the browser suite and passed whenever its file ran alone, so it depends on what ran before it. The nine tests after it in that file do not run when it fails.
+- `e2e/phase-28.spec.ts:2170` (POLISH-008, dragging in the phone preview) waited twenty seconds for a layout value that stayed undefined in four full runs of five, and passed alone each time.
+- Apps written as code share one address. The owner's answers for closing it: every such app's pages are served sandboxed; what an app kept in the browser (`localStorage`) is dropped, not replaced; an app's script and style files are fetched by a name made from their content, without a sign-in; a staff member acts in an app with their own roles and only what apps use; an app that has a hostname of its own is no longer served at the shared address; the console's address stays the default. It is a phase of its own.
+
 **What could not be seen while watching**, for the monitoring work set aside:
 
 - Why a script is not starting. Slots, a tenant's share, the memory floor and what is counted against it all end in the same silence; only `runs_queued` and `runs_running` are there. A count of claims refused, by reason, and the memory spoken for on each machine, would have found STR-07 in a minute and not an evening.

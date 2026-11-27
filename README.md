@@ -1,6 +1,13 @@
 # Volvel
 
-Volvel is one self-hostable foundation for custom internal apps, business flows and system integrations. The design is in [docs/master-spec.md](docs/master-spec.md). Work is delivered in phases, each with a design doc under [docs/phases](docs/phases).
+[![CI](https://github.com/volveldev/volvel/actions/workflows/ci.yml/badge.svg)](https://github.com/volveldev/volvel/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![npm](https://img.shields.io/npm/v/@volvel/cli?label=%40volvel%2Fcli)](https://www.npmjs.com/package/@volvel/cli)
+[![Docker](https://img.shields.io/docker/v/volvel/volvel?label=volvel%2Fvolvel&sort=semver)](https://hub.docker.com/r/volvel/volvel)
+
+Volvel is one self-hostable foundation for custom internal apps, business flows and system integrations. The design is in [docs/master-spec.md](docs/master-spec.md), and the decisions that shaped it are in [docs/adr](docs/adr).
+
+**Status: pre-release.** What is being worked on, and in what order, is on the [roadmap](https://github.com/orgs/volveldev/projects) and the [milestones](https://github.com/volveldev/volvel/milestones). Questions go to [Discussions](https://github.com/volveldev/volvel/discussions); bugs and feature requests to [Issues](https://github.com/volveldev/volvel/issues/new/choose).
 
 A developer defines scripts, flows, tables, data sources and apps in a tenant's repository and deploys them. An app is served by the instance to the tenant's staff, to its own pool of end users, or to anyone, as its bindings say, with the tenant's branding. Changes move from a dev workspace to production as the same bundle, a tenant's data can live in a database of its own, and a whole tenant can be exported from one instance and imported into another.
 
@@ -132,7 +139,9 @@ For Fly.io, see [deploy/fly](deploy/fly/README.md).
 | `packages/sdk` | What a tenant repository imports to define scripts and other resources |
 | `packages/worker` | The worker that runs a tenant's scripts |
 | `examples/acme` | A sample tenant repository |
-| `docs/contracts` | The worker protocol and the tenant export format |
+| `docs/contracts` | The worker protocol, the bundle and the tenant export format |
+| `docs/adr` | Architecture decision records |
+| `docs/engineering` | The rules a change to the interface is held to |
 | `packages/docs` | The documentation: five collections of pages, served at `/docs` |
 | `packages/db` | Database access, migrations, tenant routing |
 | `packages/manifest` | The resource envelope, kind registry and validation |

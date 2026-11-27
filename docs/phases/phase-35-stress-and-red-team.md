@@ -153,7 +153,6 @@ Fifteen reviewers each took one part of the product (the front door, sign-in, si
 - A write that meets Postgres at the instant it restarts is answered 500, not 503. Seen twice, one request each time.
 - A script never run is planned at 160 MB, and one that takes four times what it took before is planned by its past (STR-12).
 - Scripts in progress when a machine is killed outright are failed, not run again, unless they declare retries. That is the design.
-- `query-result-size.test.ts` and `export-readers.test.ts` fail in some full runs of the suite and pass alone: the first measures memory, which the other tests disturb, and the second's limits are held once for the process. Both are to be made steadier.
 
 **Set aside for later, by the owner's decision of 2026-11-26.**
 
@@ -170,6 +169,8 @@ Fifteen reviewers each took one part of the product (the front door, sign-in, si
 - Time waiting for a database connection, by route. `volvel_db_pool{state="waiting"}` says that requests wait and not which.
 - `/readyz` is one answer for two things. A monitor needs "serving" and "whole" apart, as STR-13 shows.
 - Per tenant: nothing. Every figure here is the instance's.
+
+**Tests that went by the speed of the machine.** Four of this phase's own tests failed on the first run of CI that reached them and were mended: two held a pattern to a tenth of a second where a second tells a backtracking engine from one that is not; one built 2 GB in the database, which a small runner did not do inside the statement's time; one exported tenants small enough to be written to the end unread, so that whether a place was held went by the size of a buffer. The last two had also failed in some full runs here.
 
 **The suites.** `pnpm test`: 5,460 tests, all passing but the one above. `pnpm e2e`, run in full twice, before and after the second round of fixes: 260 and 271 passed; three failed each time and passed when their files were run again, so none failed twice. Two are timing on a phone layout (`phase-27.spec.ts:478`, `phase-28.spec.ts:2170`, the second in both runs). The third is `redesign.spec.ts:170`: the Apps screen on a phone sometimes draws its description paragraph and sometimes not, which moves everything below it by about 100 px against the reviewed picture. None touches what this phase changed; the third is a real fault of that screen, found here and not mended. A third full run, after the owner's decisions were built: 274 passed, and that same Apps screen was the one failure; it passed alone. The nine tests after it in its file did not run in the full pass. A last full run, with accounts that start again and imports that bring no passwords: 274 passed; the same Apps screen and `phase-28.spec.ts:2170` failed and passed alone, as before. The run before it had failed for a reason of this phase's own: the copies of Fernhill add the same people to several tenants with a typed password, and each add ended it; whoever set an account's password may now add it elsewhere.
 

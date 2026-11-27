@@ -26,6 +26,7 @@ let exportAnswers: ((res: ServerResponse) => void)[];
 let uploaded: Buffer | undefined;
 let calls: string[];
 let inspection: Record<string, unknown>;
+let importQuery: string | undefined;
 
 const good = {
   problem: null,
@@ -37,6 +38,7 @@ const good = {
   workspaces: [{ name: "main", type: "production" }],
   rows: 1234,
   members: 3,
+  accountsToCreate: 2,
   pendingRuns: 0,
   notCarried: [],
   passphraseOk: true,
@@ -86,11 +88,12 @@ beforeAll(async () => {
       return res.end();
     }
     if (path === "POST /api/v1/instance/tenant-imports/staged/s1/import") {
+      importQuery = req.url?.split("?")[1];
       return json(res, 201, {
         tenant: { slug: "big", dataLocation: null },
         counts: { a: 1234 },
         objects: 2,
-        members: { created: 3, linked: 0 },
+        members: { created: 3, linked: 0, withPassword: 0, withoutPassword: 3 },
         pausedWorkspaces: 1,
         cancelled: { runs: 0, flowRuns: 0 },
         notCarried: [],
@@ -105,6 +108,7 @@ afterAll(() => new Promise<void>((done) => server.close(() => done())));
 beforeEach(() => {
   exportAnswers = [];
   uploaded = undefined;
+  importQuery = undefined;
   calls = [];
   inspection = good;
 });
@@ -252,6 +256,23 @@ describe("tenant import", () => {
     expect(calls).toContain("POST /api/v1/instance/tenant-imports/staged/s1/import");
     expect(lines.length).toBeGreaterThan(0);
     expect(done.out + done.err).not.toContain(SECRET.VOLVEL_EXPORT_PASSPHRASE);
+  });
+
+  test("says before asking that the accounts it creates have no password, and keeps none by default (p35)", async () => {
+    const done = await cli(["tenant", "import", file(), "--yes"]);
+    expect(done.out).toContain("2 accounts will be created here");
+    expect(done.out).toContain("no password");
+    expect(done.out).toContain("--keep-sign-ins");
+    expect(new URLSearchParams(importQuery).has("keepSignIns")).toBe(false);
+    expect(done.out).toContain("3 of the accounts created have no password");
+  });
+
+  test("--keep-sign-ins reaches the import, and the inspection says the passwords come with it (p35)", async () => {
+    const done = await cli(["tenant", "import", file(), "--yes", "--keep-sign-ins"]);
+    expect(new URLSearchParams(importQuery).get("keepSignIns")).toBe("true");
+    expect(done.out).toContain(
+      "2 accounts will be created here with the password the export holds",
+    );
   });
 
   test("with nobody to ask and no --yes, imports nothing and throws the upload away", async () => {

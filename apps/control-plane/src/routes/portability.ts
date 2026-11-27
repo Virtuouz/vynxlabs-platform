@@ -235,6 +235,12 @@ export function portabilityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         workspaces: Type.Array(Type.Object({ name: Type.String(), type: Type.String() })),
         rows: Type.Integer(),
         members: Type.Integer(),
+        accountsToCreate: Type.Optional(
+          Type.Integer({
+            description:
+              "How many accounts the import would create here: members who match no account by id or email. They get no password unless the import is asked to keep sign-ins.",
+          }),
+        ),
         pendingRuns: Type.Integer(),
         notCarried: Type.Array(Type.String()),
         passphraseOk: Type.Union([Type.Boolean(), Type.Null()]),
@@ -362,6 +368,12 @@ export function portabilityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           querystring: Type.Object({
             slug: Type.Optional(Slug),
             dataLocation: Type.Optional(Type.String()),
+            keepSignIns: Type.Optional(
+              Type.Boolean({
+                description:
+                  "Keep the password of each account the import creates. Off by default: whoever made the export knows every password in it, so the accounts made from it have none, and each person sets one through a member password link. Turn it on to move your own tenant between your own instances. An account that already exists here is never changed, either way.",
+              }),
+            ),
           }),
           headers: Type.Object({ "x-export-passphrase": Type.String({ minLength: 1 }) }),
           response: { 201: Type.Object({}, { additionalProperties: true }) },
@@ -374,6 +386,7 @@ export function portabilityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           passphrase: headers["x-export-passphrase"],
           slug: query.slug,
           dataLocation: query.dataLocation,
+          keepSignIns: query.keepSignIns,
         });
         await db.deleteFrom("import_staging").where("id", "=", row.id).execute();
         await rm(stagedPath(row.id), { force: true });
@@ -499,7 +512,8 @@ export function portabilityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               "`x-export-passphrase` header. The whole file is checked against its own list of " +
               "contents before anything is written, and the tenant arrives entirely or not at " +
               "all. IDs are kept. Members are matched by email: someone who already has an " +
-              "account here keeps it, with their own password. Every workspace arrives with " +
+              "account here keeps it, as it is, and nothing of the export's is applied to it. An " +
+              "account the import creates has no password unless `keepSignIns` is true. Every workspace arrives with " +
               "its triggers paused. The export must come from an instance at the same " +
               "database level as this one.",
             tags: ["portability"],
@@ -510,6 +524,12 @@ export function portabilityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                 Type.String({
                   description:
                     "A registered dedicated database for the tenant's custom tables. Without it they go in Volvel's own database.",
+                }),
+              ),
+              keepSignIns: Type.Optional(
+                Type.Boolean({
+                  description:
+                    "Keep the password of each account the import creates. Off by default: whoever made the export knows every password in it, so the accounts made from it have none, and each person sets one through a member password link. Turn it on to move your own tenant between your own instances. An account that already exists here is never changed, either way.",
                 }),
               ),
             }),
@@ -523,7 +543,12 @@ export function portabilityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                   dataLocation: NullableString,
                 }),
                 counts: Type.Record(Type.String(), Type.Integer()),
-                members: Type.Object({ created: Type.Integer(), linked: Type.Integer() }),
+                members: Type.Object({
+                  created: Type.Integer(),
+                  linked: Type.Integer(),
+                  withPassword: Type.Integer(),
+                  withoutPassword: Type.Integer(),
+                }),
                 objects: Type.Integer(),
                 cancelled: Type.Object({ runs: Type.Integer(), flowRuns: Type.Integer() }),
                 pausedWorkspaces: Type.Integer(),
@@ -560,6 +585,7 @@ export function portabilityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               passphrase: headers["x-export-passphrase"],
               slug: query.slug,
               dataLocation: query.dataLocation,
+              keepSignIns: query.keepSignIns,
             });
             return reply.code(201).send(report);
           } finally {

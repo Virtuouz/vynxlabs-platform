@@ -38,7 +38,7 @@ The panel shows the tenant's name (or the file's name when it cannot be read), t
 | **From version** | The version of the instance that wrote it. |
 | **Workspaces** | Each name and its type, or "None". |
 | **Rows** | The number of rows in the file. |
-| **Members** | How many members. |
+| **Members** | How many members. The instance also works out how many accounts the import would create; the command line says so before it asks. |
 | **Run history** | "Included" or "Left out of the export". |
 | **Unfinished runs** | Shown when there are some: "N, recorded as canceled". |
 
@@ -87,7 +87,7 @@ The buttons are **Open the tenant** and **Import another**.
 
 ### What arrives
 
-The tenant keeps its IDs. Every workspace arrives with its triggers paused, git sync paused, identity providers paused and domains unproved, so that two instances never both act. Unfinished runs are recorded as canceled. Members are matched by ID, then by email. A member who already has an account here keeps that account and its password, and everything in the file that names them is rewritten to name it. Another member is created. In a format 2 export their password is carried sealed under the passphrase, and only for members who belong to no other tenant and hold no instance role. A member created without a password needs one set: see [All members](members). A file that names one account by ID and another by email is refused.
+The tenant keeps its IDs. Every workspace arrives with its triggers paused, git sync paused, identity providers paused and domains unproved, so that two instances never both act. Unfinished runs are recorded as canceled. Members are matched by ID, then by email. A member who already has an account here keeps that account and its password, and everything in the file that names them is rewritten to name it. Another member is created, with no password: the import never applies anything of the file's to an account that is already here, and by default it gives a new one no password, because whoever made the file knows every password in it. Each person sets one with a link: see [All members](members). To keep the passwords the file holds (they are carried sealed under the passphrase, only for members who belong to no other tenant and hold no instance role), use the command line with `--keep-sign-ins` or the route with `keepSignIns=true`, for your own tenant moved between your own instances. This screen has no such choice. Every address in the file is held to the same check as any other member's, and a file with a bad one is refused at the check, naming the row. A file that names one account by ID and another by email is refused.
 
 The import is all or nothing. It writes `tenant.imported` to the tenant's own log, and `tenant_import.staged` and `tenant_import.discarded` to the [instance audit log](audit-log).
 
@@ -111,7 +111,7 @@ A staged file is kept for 1 hour from the upload. A replica that did not receive
 
 The screen is not grayed for a person without it: the server refuses with a 403 and the reason.
 
-From a terminal: `volvel tenant import <file> [--slug <slug>] [--location <name>]` with an operator's API key, and the passphrase in `VOLVEL_EXPORT_PASSPHRASE`. It checks and imports in one step and does not stage the file.
+From a terminal: `volvel tenant import <file> [--slug <slug>] [--location <name>]` with an operator's API key, and the passphrase in `VOLVEL_EXPORT_PASSPHRASE`. It sends the file, says how many accounts it will create and that they will have no password, asks, and imports. Add `--keep-sign-ins` to keep the passwords the file holds.
 
 ## Related
 

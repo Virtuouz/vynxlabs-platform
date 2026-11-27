@@ -31,6 +31,14 @@ You take a tenant out of one place and bring it in at another: to a different in
 
 For a large file, or a script, the same import is one command on the instance it goes to: `volvel tenant import SLUG.tar --slug NEW --location NAME`, with an operator's API key and `VOLVEL_EXPORT_PASSPHRASE` set. It sends the file, says what it holds, asks, and imports. Add `--yes` where nobody can be asked.
 
+## Passwords do not come with the file
+
+An import brings no passwords. The accounts it creates have no password, so nobody can sign in to them until each person chooses one. The reason is that whoever made the export held every password in it: if the import kept them, that person could sign in as any member the import created, now or later. An account that already exists on the instance is not changed at all: it keeps its own password, keys and codes.
+
+Each person gets a link and chooses a password with it: see [All members](../../reference/console/members), **Make a password reset link**. The console's import screen has no option for this and never keeps passwords.
+
+If you are moving your own tenant between your own instances, you made the file and you hold it, so nobody else knows the passwords. Then keep them: add `--keep-sign-ins` to the command, `volvel tenant import SLUG.tar --keep-sign-ins`, or send `keepSignIns=true` to the import route. Before it asks, the command says how many accounts it will create and whether they will have a password. The instance's log records which you chose and how many accounts were made with and without a password.
+
 ## A large tenant
 
 Use the command line for a large tenant. It does the same as the console, through the same routes, and differs in three ways:
@@ -76,7 +84,7 @@ One measurement: an archive of 20 MB was written in 2.1 to 2.6 seconds with one 
 
 ## What to do after
 
-- Sign in as one of the tenant's members. Their passwords came with the file, except for a member who also belongs to another tenant or holds an instance role: that account is the whole instance's. One who already had an account on this instance keeps it and its password. A member created without a password needs one: see [All members](../../reference/console/members), **Make a password reset link**.
+- Give each member a way in. The accounts the import created have no password unless you used `--keep-sign-ins`: make each person a link, see [All members](../../reference/console/members), **Make a password reset link**. A member who already had an account on this instance keeps it and its password, whichever way you imported.
 - Make new API keys and worker credentials. They are never in an export.
 - Point whatever calls the tenant's webhooks at the new address. The part after the host is unchanged.
 - Hostnames, identity providers and domains need to be set up again. Single sign-on providers and git sync arrive paused, domains unproved.

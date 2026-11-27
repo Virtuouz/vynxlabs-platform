@@ -189,8 +189,8 @@ export const COMMANDS = [
   entry(
     "tenant",
     "Move a tenant",
-    "tenant import <file> [--slug <slug>] [--location <name>] [--yes]",
-    "Bring an exported tenant into this instance. Operators only. The file is sent from disk as a stream, and the instance checks it from end to end and says what it holds. Then it asks before importing; --yes answers for you, and is needed where there is no terminal to ask at. The passphrase is read from VOLVEL_EXPORT_PASSPHRASE.",
+    "tenant import <file> [--slug <slug>] [--location <name>] [--keep-sign-ins] [--yes]",
+    "Bring an exported tenant into this instance. Operators only. The file is sent from disk as a stream, and the instance checks it from end to end and says what it holds. Then it asks before importing; --yes answers for you, and is needed where there is no terminal to ask at. The passphrase is read from VOLVEL_EXPORT_PASSPHRASE. The accounts the import creates have no password unless you give --keep-sign-ins, which keeps the passwords the export holds: use it only for your own tenant moved between your own instances, because whoever made the export knows them. Accounts that already exist here are never changed.",
   ),
 
   entry(

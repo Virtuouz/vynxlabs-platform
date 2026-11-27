@@ -234,6 +234,8 @@ interface Inspection {
   workspaces: { name: string; type: string }[];
   rows: number;
   members: number;
+  /** How many accounts the import would create here. Absent from an older instance. */
+  accountsToCreate?: number;
   pendingRuns: number;
   notCarried: string[];
   passphraseOk: boolean | null;
@@ -275,6 +277,7 @@ export async function tenantImport(
       slug: { type: "string" as const },
       location: { type: "string" as const },
       yes: { type: "boolean" as const },
+      "keep-sign-ins": { type: "boolean" as const },
     },
   });
   const [path] = positionals;
@@ -350,6 +353,15 @@ export async function tenantImport(
     io.out(`${seen.pendingRuns} runs were unfinished in it and will be recorded as canceled.`);
   }
   io.out(`It comes in as "${values.slug ?? seen.tenant?.slug}".`);
+  const accounts = seen.accountsToCreate ?? 0;
+  if (accounts > 0) {
+    const many = `${accounts} ${accounts === 1 ? "account" : "accounts"}`;
+    io.out(
+      values["keep-sign-ins"]
+        ? `${many} will be created here with the password the export holds. Use this only for your own tenant, moved between your own instances: whoever made the export knows those passwords.`
+        : `${many} will be created here. ${accounts === 1 ? "It has" : "They have"} no password: each person sets one with a member password link. To keep the passwords the export holds, for your own tenant moved between your own instances, run it again with --keep-sign-ins.`,
+    );
+  }
 
   if (!values.yes) {
     if (!io.confirm) {
@@ -368,6 +380,7 @@ export async function tenantImport(
   const query = new URLSearchParams();
   if (values.slug) query.set("slug", values.slug);
   if (values.location) query.set("dataLocation", values.location);
+  if (values["keep-sign-ins"]) query.set("keepSignIns", "true");
   io.out(
     "Importing. This can take a long time for a large tenant; the instance answers when it is done.",
   );
@@ -387,7 +400,7 @@ export async function tenantImport(
     tenant: { slug: string; dataLocation: string | null };
     counts: Record<string, number>;
     objects: number;
-    members: { created: number; linked: number };
+    members: { created: number; linked: number; withPassword?: number; withoutPassword?: number };
     pausedWorkspaces: number;
     cancelled: { runs: number; flowRuns: number };
     notCarried: string[];
@@ -397,6 +410,11 @@ export async function tenantImport(
     `Imported ${report.tenant.slug}: ${rows} rows, ${report.objects} stored objects, ` +
       `${report.members.created} members created and ${report.members.linked} linked to accounts already here.`,
   );
+  if (report.members.withoutPassword) {
+    io.out(
+      `${report.members.withoutPassword} of the accounts created have no password. Make each person a member password link (on the Members screen, or by the API) so that they can set one.`,
+    );
+  }
   io.out(
     report.tenant.dataLocation
       ? `Its custom tables are in the database location "${report.tenant.dataLocation}".`

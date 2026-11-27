@@ -1627,7 +1627,7 @@ describe("a tenant with providers, exported and imported", () => {
     const b = await startTestApp();
     try {
       const imported = await b.admin.upload(
-        "/instance/tenant-imports",
+        "/instance/tenant-imports?keepSignIns=true",
         exported.bytes,
         "application/x-tar",
         {

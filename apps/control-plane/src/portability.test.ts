@@ -3,7 +3,7 @@ import { mkdtemp, open, readdir, rm, stat, utimes, writeFile } from "node:fs/pro
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
-import { type Kysely, type PlatformSchema, sql } from "@volvel/db";
+import { type Kysely, newId, type PlatformSchema, sql } from "@volvel/db";
 import { createTestDatabase, type TestDatabase } from "@volvel/db/testing";
 import { type Bundle, type BundleManifest, bundleDigest } from "@volvel/manifest";
 import { Worker } from "@volvel/worker";
@@ -789,6 +789,63 @@ describe("p35 an archive that is not what its maker says it is", () => {
     expect(result.body.detail).toMatch(/a stored file that is not this tenant's own/);
     await tenantNotOnB();
   });
+
+  test("the inspection says how many accounts the import would create (round four)", async () => {
+    // Bob is already here, so of the three members two would be made.
+    const staged = await operatorB.upload(
+      "/instance/tenant-imports/staged",
+      archive,
+      "application/x-tar",
+      { "x-export-passphrase": PASSPHRASE },
+    );
+    expect(staged.status, JSON.stringify(staged.body)).toBe(201);
+    expect(staged.body.inspection).toMatchObject({ members: 3, accountsToCreate: 2 });
+    await operatorB.delete(`/instance/tenant-imports/staged/${staged.body.id}`);
+  });
+
+  test("an address in the archive that is not an address refuses it at inspection, naming the row (round four)", async () => {
+    for (const email of [
+      "not an address",
+      "two@@signs.example",
+      "a b@x.example",
+      `${"x".repeat(250)}@x.example`,
+    ]) {
+      const bytes = await altered((files) => {
+        const members = lines(files.get("members.0001.jsonl"));
+        members[1].email = email;
+        files.set("members.0001.jsonl", jsonl(members));
+      });
+      const staged = await operatorB.upload(
+        "/instance/tenant-imports/staged",
+        bytes,
+        "application/x-tar",
+        { "x-export-passphrase": PASSPHRASE },
+      );
+      expect(staged.status, JSON.stringify(staged.body)).toBe(201);
+      expect(staged.body.inspection.problem, email).toMatch(/member 2 .*not an email address/);
+      await operatorB.delete(`/instance/tenant-imports/staged/${staged.body.id}`);
+      const direct = await importInto(operatorB, bytes);
+      expect(direct.status, email).toBe(400);
+      expect(direct.body.detail, email).toMatch(/member 2 .*not an email address/);
+    }
+    await tenantNotOnB();
+  });
+
+  test("an address with capitals and spaces round it is read the way every other route reads it (round four)", async () => {
+    const bytes = await altered((files) => {
+      const members = lines(files.get("members.0001.jsonl"));
+      members[0].email = ` ${String(members[0].email).toUpperCase()} `;
+      files.set("members.0001.jsonl", jsonl(members));
+    });
+    const staged = await operatorB.upload(
+      "/instance/tenant-imports/staged",
+      bytes,
+      "application/x-tar",
+      { "x-export-passphrase": PASSPHRASE },
+    );
+    expect(staged.body.inspection.problem).toBeNull();
+    await operatorB.delete(`/instance/tenant-imports/staged/${staged.body.id}`);
+  });
 });
 
 describe("an export that someone changed, who knows its passphrase", () => {
@@ -1074,7 +1131,7 @@ describe("the exit criterion: a tenant moves to a dedicated instance with nothin
   let dataB: Kysely<PlatformSchema>;
 
   test("the import brings in everything the export lists", async () => {
-    const imported = await importInto(operatorB, archive, "?dataLocation=acme-db");
+    const imported = await importInto(operatorB, archive, "?dataLocation=acme-db&keepSignIns=true");
     expect(imported.status, JSON.stringify(imported.body)).toBe(201);
     report = imported.body;
     expect(report.tenant).toEqual({
@@ -1085,7 +1142,7 @@ describe("the exit criterion: a tenant moves to a dedicated instance with nothin
     });
     expect(report.counts).toEqual(manifest.counts);
     // Alice and Carol are new here. Bob already had an account, which he keeps.
-    expect(report.members).toEqual({ created: 2, linked: 1 });
+    expect(report.members).toEqual({ created: 2, linked: 1, withPassword: 2, withoutPassword: 0 });
     expect(report.pausedWorkspaces).toBe(2);
     expect(report.cancelled.runs).toBe(2);
     dataA = (await a.kernel.data.forTenant(tenant)).owner;
@@ -1608,6 +1665,191 @@ describe("members' passwords in an export (GOV-09)", () => {
     } finally {
       await c.stop();
     }
+  });
+});
+
+describe("p35 round four: an import brings no passwords unless the operator says so", () => {
+  // The archive's maker knows every password in it. Two fresh instances: one imports with the
+  // default, one with the option. Bob is already on both, with a password, a key and a code.
+  let plain: TestApp;
+  let keeping: TestApp;
+  const bobsPassword = "bobs-own-password-here";
+  const bobRow = (app: TestApp) =>
+    app.db
+      .selectFrom("member")
+      .select("id")
+      .where("email", "=", "bob@acme.example")
+      .executeTakeFirstOrThrow();
+  const makeBob = async (app: TestApp) => {
+    const roles = await rolesOf(app);
+    const there = await app.admin.post("/tenants", { slug: "elsewhere", name: "Elsewhere" });
+    const grant = await app.admin.post(`/tenants/${there.body.id}/access-grants`, {
+      reason: "Setup",
+      roleId: roles.tenant_admin,
+    });
+    const bobId = (
+      await app.admin.post(`/tenants/${there.body.id}/members`, {
+        email: "bob@acme.example",
+        name: "Bob",
+        password: bobsPassword,
+      })
+    ).body.id as string;
+    await app.admin.delete(`/tenants/${there.body.id}/access-grants/${grant.body.id}`);
+    await app.db
+      .insertInto("member_recovery_code")
+      .values({ id: newId(), member_id: bobId, code_hash: "bobs-code-hash" })
+      .execute();
+    await app.db
+      .insertInto("api_key")
+      .values({
+        id: newId(),
+        owner_type: "member",
+        owner_id: bobId,
+        name: "bob's key",
+        prefix: "vx_bob",
+        token_hash: "bobs-key-hash",
+      })
+      .execute();
+  };
+  const bobsThings = async (app: TestApp) => {
+    const id = (await bobRow(app)).id;
+    return {
+      accounts: (
+        await sql<{ id: string; password: string | null; provider_id: string }>`
+          select id, password, provider_id from member_account where member_id = ${id}`.execute(
+          app.db,
+        )
+      ).rows,
+      codes: await app.db
+        .selectFrom("member_recovery_code")
+        .select(["id", "code_hash"])
+        .where("member_id", "=", id)
+        .execute(),
+      keys: await app.db
+        .selectFrom("api_key")
+        .select(["id", "token_hash"])
+        .where("owner_id", "=", id)
+        .execute(),
+    };
+  };
+  const accountsOf = async (app: TestApp, email: string) =>
+    (
+      await sql<{ id: string; password: string | null }>`
+        select m.id, a.password from member m
+        left join member_account a on a.member_id = m.id
+        where m.email = ${email}`.execute(app.db)
+    ).rows;
+  const arrival = (app: TestApp) =>
+    app.db
+      .selectFrom("audit_entry")
+      .select("details")
+      .where("action", "=", "tenant.imported")
+      .where("tenant_id", "=", tenant)
+      .executeTakeFirstOrThrow();
+  let bobBefore: Awaited<ReturnType<typeof bobsThings>>;
+  let bobBeforeKeeping: Awaited<ReturnType<typeof bobsThings>>;
+
+  beforeAll(async () => {
+    [plain, keeping] = await Promise.all([startTestApp(), startTestApp()]);
+    await makeBob(plain);
+    await makeBob(keeping);
+    bobBefore = await bobsThings(plain);
+    bobBeforeKeeping = await bobsThings(keeping);
+    expect(bobBefore.accounts).toHaveLength(1);
+    expect(bobBefore.codes).toHaveLength(1);
+    expect(bobBefore.keys).toHaveLength(1);
+  }, 120_000);
+  afterAll(async () => {
+    await plain.stop();
+    await keeping.stop();
+  });
+
+  test("by default the accounts it creates have no password, and a member password link gives one", async () => {
+    const imported = await importInto(plain.admin, archive);
+    expect(imported.status, JSON.stringify(imported.body)).toBe(201);
+    expect(imported.body.members).toEqual({
+      created: 2,
+      linked: 1,
+      withPassword: 0,
+      withoutPassword: 2,
+    });
+    for (const email of ["alice@acme.example", "carol@acme.example"]) {
+      const rows = await accountsOf(plain, email);
+      expect(rows.length, email).toBe(1);
+      expect(rows[0]?.password ?? null, email).toBeNull();
+      await expect(plain.signIn(email, PASSWORD)).rejects.toThrow();
+    }
+    // No other way in came with them: no session, no key, no code.
+    const created = (await accountsOf(plain, "alice@acme.example"))[0]?.id as string;
+    expect(
+      await plain.db
+        .selectFrom("member_session")
+        .select("member_id")
+        .where("member_id", "=", created)
+        .execute(),
+    ).toEqual([]);
+    expect(
+      await plain.db
+        .selectFrom("member_recovery_code")
+        .select("member_id")
+        .where("member_id", "=", created)
+        .execute(),
+    ).toEqual([]);
+    expect(
+      await plain.db.selectFrom("api_key").select("id").where("owner_id", "=", created).execute(),
+    ).toEqual([]);
+
+    // An operator makes the link, as for anyone, and the person chooses a password with it.
+    const roles = await rolesOf(plain);
+    await plain.admin.post(`/tenants/${tenant}/access-grants`, {
+      reason: "A link for Alice",
+      roleId: roles.tenant_admin,
+    });
+    const link = await plain.admin.post(`/members/${created}/password-link`, {});
+    expect(link.status, JSON.stringify(link.body)).toBe(201);
+    const token = decodeURIComponent(String(link.body.url).split("/").pop() as string);
+    const chosen = await plain.anonymous.post(`/member-password-links/${token}`, {
+      password: "alices-new-password",
+    });
+    expect(chosen.status, JSON.stringify(chosen.body)).toBeLessThan(300);
+    const alice = await plain.signIn("alice@acme.example", "alices-new-password");
+    expect((await alice.get("/me")).body.tenants).toEqual([
+      { id: tenant, slug: "acme", name: "Acme Corp" },
+    ]);
+    await expect(plain.signIn("alice@acme.example", PASSWORD)).rejects.toThrow();
+  });
+
+  test("an account that is already here is not changed by the archive, by default", async () => {
+    expect(await bobsThings(plain)).toEqual(bobBefore);
+    await plain.signIn("bob@acme.example", bobsPassword);
+    await expect(plain.signIn("bob@acme.example", PASSWORD)).rejects.toThrow();
+  });
+
+  test("the audit entry says the choice and how many accounts had a password", async () => {
+    expect((await arrival(plain)).details).toMatchObject({
+      keepSignIns: false,
+      members: { created: 2, linked: 1, withPassword: 0, withoutPassword: 2 },
+    });
+  });
+
+  test("with keepSignIns the new accounts keep the password they had, and an account already here is still not changed", async () => {
+    const imported = await importInto(keeping.admin, archive, "?keepSignIns=true");
+    expect(imported.status, JSON.stringify(imported.body)).toBe(201);
+    expect(imported.body.members).toEqual({
+      created: 2,
+      linked: 1,
+      withPassword: 2,
+      withoutPassword: 0,
+    });
+    await keeping.signIn("alice@acme.example", PASSWORD);
+    await keeping.signIn("carol@acme.example", PASSWORD);
+    expect(await bobsThings(keeping)).toEqual(bobBeforeKeeping);
+    await keeping.signIn("bob@acme.example", bobsPassword);
+    await expect(keeping.signIn("bob@acme.example", PASSWORD)).rejects.toThrow();
+    expect((await arrival(keeping)).details).toMatchObject({
+      keepSignIns: true,
+      members: { created: 2, linked: 1, withPassword: 2, withoutPassword: 0 },
+    });
   });
 });
 

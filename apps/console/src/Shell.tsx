@@ -1143,8 +1143,9 @@ export function Shell({
                     <Wire width={6} />
                   </span>
                   {/* The whole name is the way to another workspace: nobody has to aim for the arrows. */}
+                  {/* What is heard starts with what is seen (WCAG 2.5.3): the name, then what it does. */}
                   <Menu
-                    ariaLabel="Switch workspace"
+                    ariaLabel={`${workspace?.name ?? "Workspace"}, switch workspace`}
                     triggerClassName="flex max-w-[12rem] shrink-0 items-center gap-1 rounded-control border border-line py-[3px] pr-1.5 pl-2 font-medium text-ink hover:bg-surface"
                     label={
                       <>
@@ -1200,7 +1201,7 @@ export function Shell({
               ) : tenantId ? (
                 <>
                   <Menu
-                    ariaLabel="Switch tenant"
+                    ariaLabel={`${tenant?.name ?? "Tenant"}, switch tenant`}
                     triggerClassName="flex min-w-0 items-center gap-1.5 text-ink-muted hover:text-ink"
                     label={
                       <>

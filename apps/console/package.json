@@ -24,7 +24,7 @@
     "@volvel/widgets": "workspace:*",
     "@volvel/widgets-core": "workspace:*",
     "@volvel/widgets-labs": "workspace:*",
-    "@xyflow/react": "^12.12.1",
+    "@xyflow/react": "^13.0.3",
     "lucide-react": "^1.79.0",
     "mermaid": "12.3.0",
     "monaco-editor": "^0.58.0",

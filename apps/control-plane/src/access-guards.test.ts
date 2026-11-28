@@ -470,8 +470,12 @@ describe("disabling an account at the instance says which tenants it leaves with
     });
     try {
       await t.admin.patch(`/members/${a.members.rex}`, { disabled: true });
-      await vi.waitFor(() => expect(closed.sort()).toEqual(["rex elsewhere", "rex here"]));
-      expect(heard.map((one) => JSON.parse(one).p)).toEqual([`member:${a.members.rex}`]);
+      // Each hub and this listener hear the notification on a connection of their own, in no
+      // set order: what this one heard is waited for too, not read once the hubs have closed.
+      await vi.waitFor(() => {
+        expect([...closed].sort()).toEqual(["rex elsewhere", "rex here"]);
+        expect(heard.map((one) => JSON.parse(one).p)).toEqual([`member:${a.members.rex}`]);
+      });
     } finally {
       await listener.close();
       await elsewhere.close();

@@ -1,6 +1,6 @@
 {
   "name": "@volvel/docs-site",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "type": "module",
   "description": "A docs site's pages, drawn: the stylesheet, the script, the icons and the page functions that turn a set of documentation into HTML that works with scripts off.",
   "license": "Apache-2.0",

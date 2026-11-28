@@ -33,3 +33,4 @@ After each phase, the owner used to find a round of corrections within hours: st
 
 - `temp/` holds the owner's design files and is not in git. Never run a formatter with `--write` over the repository root.
 - After each issue: a typecheck, the unit tests of what it touched, and its browser walk. The full `pnpm test` and `pnpm e2e` run once, at the end of a milestone, before it is called done (the e2e takes about ten minutes). After that run, rerun only the specs that failed.
+- A pull request's CI is the fast lane (CONTRIBUTING, "How CI runs"): it runs the unit tests a change reaches and no browser tests unless `e2e/` changed. Label a pull request `full-ci` when its reach is wider than its imports show, and say in the pull request which lane it ran. Watch `main`'s runs after a merge: an issue titled "main is failing" is fixed before new work.

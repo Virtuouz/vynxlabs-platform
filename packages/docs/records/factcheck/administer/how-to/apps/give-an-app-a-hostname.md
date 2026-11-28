@@ -22,3 +22,11 @@ Lines are current at commit `14f7d5b9` (branch phase-31-write-the-docs). Paths a
 ## Second check, 2026-11-23 (Checked by: second agent, 2026-11-23)
 
 - The page is a pointer; its result sentence (**On**, **Verified**, hostname listed under **Address** in Apps) read against `Apps.tsx` (only enabled hostnames are listed, `Apps.tsx:586-634`). The steps belong to the sso page's check. Not run: real DNS.
+
+## Decision 0008 (apps isolation), 2026-11-28
+
+The page was changed for decision 0008 (`docs/adr/0008-apps-written-as-code-are-sandboxed.md`). Lines are those of the working tree of branch `feat/apps-isolation`, before its commit. Read in code, not run.
+
+| Claim | Source (file:line) | Checked by | Result |
+| --- | --- | --- | --- |
+| An app with an enabled and proved hostname is redirected (308) from the shared address, keeping path and query. | `kernel/apps/front.ts:960-990` | writer, read in code, not run, 2026-11-28 | holds |

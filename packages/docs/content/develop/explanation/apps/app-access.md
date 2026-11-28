@@ -4,7 +4,7 @@ description: "What decides who may open an app and what it may do for them: sess
 subjects: [apps, access]
 ---
 
-An app is code that runs in someone's browser and calls the instance as that person. Nothing in the app decides what the person may do: the instance does, on every call, from who they are and the bindings they hold. This page says how.
+An app is code that runs in someone's browser and calls the instance as that person. An app written as code runs in a sandbox: its page has no origin of its own, and it calls with a short-lived token. Nothing in the app decides what the person may do: the instance does, on every call, from who they are and the bindings they hold. This page says how.
 
 ## The idea
 
@@ -20,11 +20,15 @@ An app that is open to someone and reads a table they have no binding at opens, 
 
 | Who | How they are known |
 | --- | --- |
-| A member of the tenant | At the instance's own address, by their console session. At an address of the app's own, they are carried over with a hand-off: a code, good for one use and 60 seconds, bound to the address, and made only from a member's own sign-in (an API key is refused). The session it starts lasts 12 hours. |
+| A member of the tenant | At the instance's own address, by their console session, which gives the page a token for apps. At an address of the app's own, they are carried over with a hand-off: a code, good for one use and 60 seconds, bound to the address, and made only from a member's own sign-in (an API key is refused). The session it starts lasts 12 hours. |
 | An end user | By signing in at the tenant's sign-in page. Their session lasts 30 days. |
 | Anyone | Not signed in: `anonymous`. They are known only by the bindings made to `anonymous`. |
 
-The session is a cookie named for the tenant, `vx_app_` and the tenant's ID, set for the address the app is served at, `HttpOnly`, `SameSite=Lax`, and `Secure` over HTTPS. A console session is 7 days; that is a different cookie. A request that changes something and comes from another origin is refused with 403 `cross_site`.
+The session is a cookie named for the tenant, `vx_app_` and the tenant's ID, set for the address the app is served at, `HttpOnly`, `SameSite=Lax`, and `Secure` over HTTPS. A console session is 7 days; that is a different cookie. A request that changes something with a cookie and comes from another origin is refused with 403 `cross_site`.
+
+### What a code app's page holds
+
+The browser opens a page of an app written as code in a sandbox, so the page never holds a cookie. The instance reads the cookie when it serves the page, and puts an **app token** (`vxa_…`) in the page. The token names the tenant, the address, the sign-in it stands on and the person. It lasts 10 minutes, and `@volvel/app` renews it before it ends. Every call the client makes carries it as `Authorization: Bearer`. It is worth nothing once the sign-in it stands on ends or the person is disabled. A member's token is always limited to what apps use, also at the console's address (see below). A page that is not signed in has no token, and is known as `anonymous`.
 
 ### An end user's email address is not proved by signing up
 
@@ -32,7 +36,7 @@ Where the tenant lets people create their own account, they can sign up with any
 
 So do not key an app's access on an end user's email address when people sign themselves up. Rows named by the person's ID, by a group or by an attribute you set are not affected. Make the end users yourself instead: invite them from the console ([Invite end users](../../../administer/how-to/access/invite-end-users)), where the account has no password until its link is opened, or have them sign in through an identity provider, which refuses an email it says is not verified. An instance that sends mail also lets the owner of an address take back an account made with it, by asking for a new password. See [Set up the instance's mail](../../../self-host/how-to/running/set-up-mail).
 
-`signOut()` ends the app session. At the instance's own address, a member still has the console session, so they stay signed in as staff.
+`signOut()` ends the sign-in the page's token stands on. At the instance's own address, a member still has the console session, so they stay signed in as staff.
 
 ## Roles and bindings
 
@@ -51,7 +55,7 @@ A person who started a run may read it, with no binding at the run.
 
 ## The app-only ceiling
 
-A person who comes to an app, an end user or a member carried to the app's own address, holds only the kinds of permission an app needs: `script`, `run`, `flow_run`, `table`, `data`, `data_all`, `file`, `app` and `theme`. Whatever role they are bound to, a permission outside those kinds is not theirs while they are at an app. A binding made too wide cannot hand an end user the tenant's settings or secrets. A binding to `anonymous` gives nothing outside those kinds either, and an operator's access grant does not count at an app's address.
+A person who comes to an app, an end user or a member, also at the console's address, holds only the kinds of permission an app needs: `script`, `run`, `flow_run`, `table`, `data`, `data_all`, `file`, `app` and `theme`. Whatever role they are bound to, a permission outside those kinds is not theirs while they are at an app. A binding made too wide cannot hand an end user the tenant's settings or secrets. A binding to `anonymous` gives nothing outside those kinds either, and an operator's access grant does not count at an app's address.
 
 ## Row rules
 
@@ -77,12 +81,14 @@ See [What an app may load](../../reference/apps/content-policy) for how they are
 
 ## What this does not do
 
-- It does not isolate two tenants' code served at one address for apps. Their code shares an origin. Give each tenant a hostname of its own with [Domains](../../../administer/how-to/apps/give-an-app-a-hostname).
-- A widget's approval cannot be decided where a code app runs. The widget links to the console, and the instance answers 403 `decide_in_console` for a decision made at an app.
+- It does not let a code app keep anything in the browser. There is no `localStorage`, `sessionStorage` or cookie.
+- It does not let a code app sign a person in by calling the API: a sandboxed page cannot set a cookie. Sign-in is on the tenant's sign-in pages, which `signInUrl()` and `staffSignInUrl()` give.
+- It does not let a code app decide an approval. The Approvals widget of an app made in the App Builder can be decided in the app, at every address, by a person who may decide it.
 - A binding at the workspace to members does not show in the **Open to** column of the Apps screen.
 
 ## How it fits
 
 - [Share an app](../../../console/how-to/apps/share-an-app) makes these bindings from the console.
 - [Write an app as code](../../how-to/apps/write-an-app) makes them from the repository.
+- [The app client](../../reference/apps/app-client) sends the token.
 - [The Apps screen](../../../console/reference/screens/build/published-apps) shows who an app is open to.

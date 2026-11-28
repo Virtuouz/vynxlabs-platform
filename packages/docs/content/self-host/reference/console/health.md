@@ -65,7 +65,7 @@ The section is **This replica's settings**, under "What the process that answere
 | **Triggers** | "Paused by TRIGGERS_PAUSED where the instance runs", or "Not paused by the environment". This is the environment only: a pause made on [Triggers](triggers) is not shown here. |
 | **Kept: runs**, **Kept: events**, **Kept: refusals**, **Kept: audit log** | The instance's default retention, in days. A tenant may set its own. |
 | **Address** | The public URL. |
-| **Apps** | "At their own address, URL", "At the console's address, by the operator's choice", or "Not served yet: set APPS_URL". |
+| **Apps** | "At the console's address, each app sandboxed" or "At their own address, URL". |
 | **Mail** | "Not set up: nobody is mailed", "Written to files, for development", or "Sent from ADDRESS". |
 | **Reachable networks** | "Only public addresses", or the networks and hosts allowed besides. |
 | **Proxies trusted** | "None", "N in front", or the list of addresses. |

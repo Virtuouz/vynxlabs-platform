@@ -150,13 +150,7 @@ export const CONFIG_VARS = {
   APPS_URL: {
     group: "Apps",
     description:
-      "A second address for apps written as code, such as `https://apps.example.com`. Without it they are not served, unless `APPS_ON_CONSOLE_ADDRESS` says so.",
-  },
-  APPS_ON_CONSOLE_ADDRESS: {
-    group: "Apps",
-    default: "false",
-    description:
-      "`true` serves apps written as code at the console's own address. Only where everyone who writes an app is trusted with the console.",
+      "A second address for apps written as code, such as `https://apps.example.com`. Without it they are served at the console's address. Either way each app's pages are sandboxed: they hold no cookie and reach no other page.",
   },
 
   MANAGED_WORKERS: {

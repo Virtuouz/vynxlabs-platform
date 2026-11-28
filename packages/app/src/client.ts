@@ -21,6 +21,18 @@ export interface AppContext {
   portal: string;
   /** Who the page was served to. */
   principal: Principal;
+  /**
+   * Set on a page of an app written as code, which is served sandboxed: it has no cookie, and
+   * calls the API with this token, which the helpers here send and renew. Null when no one is
+   * signed in. Absent on an app made in the console, which calls the API with its cookie.
+   */
+  token?: AppToken | null;
+}
+
+/** What a sandboxed page calls the API with. It lasts minutes and is renewed by `call`. */
+export interface AppToken {
+  token: string;
+  expiresAt: string;
 }
 
 export interface Principal {
@@ -83,19 +95,63 @@ export function setAppContext(context: AppContext | undefined): void {
   cached = context;
 }
 
+/** A token is renewed when less than this is left of it. */
+const RENEW_BEFORE_MS = 4 * 60_000;
+let renewing: Promise<AppToken | null> | undefined;
+
+async function renew(held: AppToken): Promise<AppToken | null> {
+  const context = appContext();
+  const response = await fetch(`${context.api}/app-token`, {
+    credentials: "omit",
+    headers: { authorization: `Bearer ${held.token}` },
+  });
+  if (!response.ok) return null;
+  const fresh = (await response.json()) as AppToken;
+  context.token = fresh;
+  return fresh;
+}
+
+/**
+ * The Authorization header a page of an app written as code sends, renewing its token when it is
+ * about to end. `force` renews it now, after the API refused it. Null when there is none to send.
+ */
+export async function appAuthorization(force = false): Promise<string | null> {
+  const held = appContext().token;
+  if (!held) return null;
+  if (force || Date.parse(held.expiresAt) - Date.now() < RENEW_BEFORE_MS) {
+    renewing ??= renew(held).finally(() => {
+      renewing = undefined;
+    });
+    const fresh = await renewing;
+    return fresh ? `Bearer ${fresh.token}` : null;
+  }
+  return `Bearer ${held.token}`;
+}
+
+/** Whether the page is sandboxed and acts with a token: an app written as code. */
+export const sandboxed = () => appContext().token !== undefined;
+
 /** How often a request is tried again when the platform is busy, and the longest wait between. */
 const BUSY_RETRIES = 2;
 const BUSY_WAIT_LIMIT_MS = 5000;
 
 async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const send = () =>
-    fetch(`${appContext().api}${path}`, {
+  const send = async (force = false) => {
+    const authorization = await appAuthorization(force);
+    return fetch(`${appContext().api}${path}`, {
       method,
-      credentials: "same-origin",
-      headers: body === undefined ? {} : { "content-type": "application/json" },
+      // A sandboxed page has no cookie of its own to send; one made by the console's page is never its.
+      credentials: sandboxed() ? "omit" : "same-origin",
+      headers: {
+        ...(body === undefined ? {} : { "content-type": "application/json" }),
+        ...(authorization ? { authorization } : {}),
+      },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
+  };
   let response = await send();
+  // A token that ended while the page slept is renewed once, if the sign-in it stands on lasts.
+  if (response.status === 401 && appContext().token) response = await send(true);
   // Busy: nothing was done, and the platform says when to try again.
   for (let attempt = 0; attempt < BUSY_RETRIES; attempt += 1) {
     const after = response.headers.get("retry-after");
@@ -555,6 +611,9 @@ export function staffSignInUrl(returnTo: string = here()): string {
 /** Ends the person's sign-in to this tenant's apps. A member's console session is left alone. */
 export async function signOut(): Promise<void> {
   await api.post(`/tenants/${appContext().tenant.id}/end-user-auth/sign-out`);
+  // The sign-in the token stood on has ended; a sandboxed page now calls as no one.
+  const context = appContext();
+  if (context.token) context.token = null;
 }
 
 /**

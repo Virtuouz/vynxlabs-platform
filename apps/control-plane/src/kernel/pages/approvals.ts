@@ -1,6 +1,5 @@
 import { sql } from "@volvel/db";
 import type { PageWidget } from "@volvel/manifest";
-import { DEFAULT_PRODUCT_NAME } from "../../routes/branding.js";
 import type { Db, Principal } from "../audit.js";
 import { check } from "../authorize.js";
 import { badRequest, conflict, forbiddenBecause, HttpError, notFound } from "../errors.js";
@@ -160,6 +159,9 @@ export async function approvalStanding(
   at: { tenantId: string; workspaceId: string },
 ): Promise<{ memberId: string; read: boolean; write: boolean } | undefined> {
   if (principal.type !== "member" || !principal.id) return undefined;
+  // A page of an app written as code acts with its app token, and only with what apps use:
+  // never with the member's own standing, which is what this would give it (decision 0008).
+  if (principal.appToken) return undefined;
   const memberId = principal.id;
   const row = await db
     .selectFrom("tenant_member")
@@ -292,8 +294,6 @@ export async function readApprovals(
     at: { tenantId: string; workspaceId: string };
     widget: PageWidget;
     draft: boolean;
-    /** The request arrived at an address where decisions are not taken (`Hosts.runsCodeApps`). */
-    elsewhere?: boolean;
   },
 ): Promise<ApprovalsWire> {
   const { db } = kernel;
@@ -381,25 +381,9 @@ export async function readApprovals(
   );
   return {
     shape: "approvals",
-    ...(request.elsewhere ? { decideIn: await consoleOf(kernel, at) } : {}),
     waiting,
     decided,
     more,
-  };
-}
-
-/** The console's page of this workspace's approvals, and what the instance calls itself. */
-async function consoleOf(
-  kernel: Kernel,
-  at: { tenantId: string; workspaceId: string },
-): Promise<{ console: string; name: string }> {
-  const branding = await kernel.db
-    .selectFrom("instance_branding")
-    .select("product_name")
-    .executeTakeFirst();
-  return {
-    console: `${kernel.hosts.mainOrigin}/t/${at.tenantId}/workspaces/${at.workspaceId}/approvals`,
-    name: branding?.product_name || DEFAULT_PRODUCT_NAME,
   };
 }
 
@@ -469,8 +453,6 @@ export function agoWords(then: Date | null, now = new Date()): string {
 }
 
 export interface DecideRequest extends PageRequest {
-  /** The request arrived at an address where decisions are not taken (`Hosts.runsCodeApps`). */
-  elsewhere?: boolean;
   widget: string;
   /** The step, as the widget's data named it. */
   id: string;
@@ -522,16 +504,9 @@ export async function decideFromPage(
     throw notFound("The widget");
   }
 
-  // An app written as code runs its own script here, with the member's sign-in: it could press
-  // the button for them. Nothing in the request can tell that apart (decision 0007, rule 8).
-  if (request.elsewhere) {
-    const where = await consoleOf(kernel, at);
-    throw new HttpError(
-      403,
-      "decide_in_console",
-      `Decide this in ${where.name}, not in an app: open it at ${where.console}.`,
-    );
-  }
+  // An app written as code is sandboxed and acts with an app token, which never has the
+  // member's own standing (`approvalStanding`): it cannot press the button for them, at any
+  // address (decision 0008, which replaces rule 8 of decision 0007).
 
   const wanted = splitItemId(request.id);
   if (!wanted) throw notFound("The approval");

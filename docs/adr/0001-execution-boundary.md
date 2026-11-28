@@ -202,7 +202,7 @@ Then milestone 6 as planned (SchemaForm, triggers, app actions), with S6's deriv
 | The rules | Both adopted as stated |
 | Data sources | Stay on the control plane for now, behind the egress guard, as a named exception. Serving them through the tenant's worker is a later item |
 | Managed workers' network | Option 2: a worker host container beside the control plane, on a network of its own. Option 3 is the fallback where no worker host is deployed: in-process managed workers only for tenants whose code only the operator writes. Option 1 is added in the worker host image as defense in depth where its runtime allows |
-| Apps' address | A separate app address is the default. Code apps are served on the console's address only when the operator says so explicitly |
+| Apps' address | A separate app address is the default. Code apps are served on the console's address only when the operator says so explicitly. **Superseded by decision 0008** (0.7.0): code apps are sandboxed and act with a token, and the console's address is the default |
 
 ## Amendment: OAuth connection token endpoints (2026-11-15)
 

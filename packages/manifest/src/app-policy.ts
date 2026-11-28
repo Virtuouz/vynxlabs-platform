@@ -26,6 +26,31 @@ export function appPolicy(
 export const APP_POLICY = appPolicy();
 
 /**
+ * What a page of an app written as code may do besides (decision 0008): it is sandboxed, with
+ * no origin of its own. It reads no other page at its address, the browser sends it no cookie,
+ * and it keeps nothing in the browser's storage; it calls the API with its app token. It may
+ * run scripts, send forms, open other windows as ordinary pages, download, and ask with
+ * `confirm()`.
+ */
+export const CODE_APP_SANDBOX =
+  "sandbox allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-downloads allow-modals";
+
+/** The policy of a page of an app written as code, deployed or in development. */
+export function codeAppPolicy(development?: Parameters<typeof appPolicy>[0]): string {
+  return `${appPolicy(development)}; ${CODE_APP_SANDBOX}`;
+}
+
+export const CODE_APP_POLICY = codeAppPolicy();
+
+/**
+ * Said on each file of an app written as code, which is served without a sign-in by a name made
+ * from the app's files. A page's script loads it; opened by itself it is a page with no origin
+ * and no network, so a picture or a page among the files can do nothing where it is served.
+ */
+export const CODE_APP_FILE_POLICY =
+  "default-src 'none'; style-src 'unsafe-inline'; img-src data:; sandbox";
+
+/**
  * What the frame of a developer's widget may load and do (decision 0005): its own script and
  * inline styles, images it is given, and nothing else. No `connect-src`, so `default-src 'none'`
  * leaves it no network: it cannot fetch, open a socket or send a beacon. `sandbox

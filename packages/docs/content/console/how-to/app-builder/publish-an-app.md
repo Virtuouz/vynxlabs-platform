@@ -45,7 +45,6 @@ By the end the people an app is shared with will see your draft: you will have t
 | What saving or deploying refused, in the page's words | The control plane's own check, such as an action with no steps, or another resource this deploy carries. | Yes |
 | "X on Y shows nothing yet" | A List with nothing placed, a Pivot with no grid, or a Record detail with no record. | No |
 | "Approvals lists X, which asks for no approval" | A flow it lists has no approval step. | No |
-| "Approvals are decided in the console, not in this app" | Apps are served at an address of their own, so the app shows the requests and sends people to the console to decide them. | No |
 | "Phone layout hides N widgets" | See [Set the phone and tablet layout](set-the-phone-layout). | No |
 | "X has Help topic Y, and no document has that topic" | The page's Help button would show nothing. | No |
 | "N groups named in the rules no longer exist" | An action that names only such groups can be run by nobody. | No |

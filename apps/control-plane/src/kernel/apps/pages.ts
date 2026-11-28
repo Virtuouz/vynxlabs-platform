@@ -377,9 +377,16 @@ export function iconLinks(iconsHref: string | undefined): string {
  */
 export function injectContext(
   html: string,
-  context: { base: string; themeHref: string; iconsHref?: string | undefined; data: unknown },
+  context: {
+    base: string;
+    themeHref: string;
+    iconsHref?: string | undefined;
+    data: unknown;
+    /** A script of the platform's own, run before the app's: it reads the context. */
+    script?: string | undefined;
+  },
 ): string {
-  const head = `<base href="${escapeHtml(context.base)}"><script type="application/json" id="vx-context">${jsonForHtml(context.data)}</script>`;
+  const head = `<base href="${escapeHtml(context.base)}"><script type="application/json" id="vx-context">${jsonForHtml(context.data)}</script>${context.script ? `<script src="${escapeHtml(context.script)}"></script>` : ""}`;
   // An app that names an icon of its own keeps it: the tenant's is for one that names none.
   const icons = /<link[^>]+rel=["']?(?:shortcut )?icon/i.test(html)
     ? ""

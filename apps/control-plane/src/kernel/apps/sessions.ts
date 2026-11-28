@@ -76,19 +76,26 @@ export async function startAppSession(
   return id;
 }
 
-/** Ends the sign-in the request came with, if any, and clears the cookie. */
+/**
+ * Ends the sign-in the request came with, if any, and clears the cookie. A sandboxed page of an
+ * app written as code has no cookie to send: its app token names the sign-in it stands on, and
+ * that is ended instead. The cookie that is left then stands for nothing.
+ */
 export async function endAppSession(
   db: Db | Trx,
   request: FastifyRequest,
   reply: FastifyReply,
   tenantId: string,
+  principal?: Principal,
 ): Promise<{ type: string; id: string } | null> {
   const token = readCookie(request, appCookieName(tenantId));
   reply.header("set-cookie", cookie(request, tenantId, "", 0));
-  if (!token) return null;
+  const byToken = principal?.appToken === true ? principal.appSessionId : undefined;
+  if (!token && !byToken) return null;
   const ended = await db
     .deleteFrom("app_session")
-    .where("token_hash", "=", hash(token))
+    .$if(token !== undefined, (query) => query.where("token_hash", "=", hash(token as string)))
+    .$if(token === undefined, (query) => query.where("id", "=", byToken as string))
     .where("tenant_id", "=", tenantId)
     .returning(["principal_type", "principal_id"])
     .executeTakeFirst();
@@ -115,7 +122,16 @@ export async function appPrincipal(
     .executeTakeFirst();
   if (!session || session.expires_at <= new Date()) return null;
   if (session.host !== request.host.toLowerCase()) return null;
+  const principal = await principalOfAppSession(kernel, session, tenantId);
+  return principal && { ...principal, viaCookie: true };
+}
 
+/** Who an app sign-in stands for, while they are still there and not disabled. */
+export async function principalOfAppSession(
+  kernel: Kernel,
+  session: { id: string; principal_type: string; principal_id: string },
+  tenantId: string,
+): Promise<Principal | null> {
   if (session.principal_type === "end_user") {
     const user = await kernel.db
       .selectFrom("end_user")
@@ -131,7 +147,6 @@ export async function appPrincipal(
       name: user.name,
       email: user.email,
       appSessionId: session.id,
-      viaCookie: true,
     };
   }
   const member = await kernel.db
@@ -146,7 +161,6 @@ export async function appPrincipal(
     ...who,
     appTenantId: tenantId,
     appSessionId: session.id,
-    viaCookie: true,
   };
 }
 

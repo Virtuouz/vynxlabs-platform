@@ -19,7 +19,7 @@ const settings: ReplicaSettings = {
   retention: { runsDays: 30, eventsDays: 30, refusalsDays: 14, auditDays: 365 },
   mail: { from: "volvel@example.test" },
   publicUrl: "https://volvel.example.test",
-  appsAddress: "none",
+  appsAddress: "console",
   appsUrl: null,
   egressAllow: { networks: ["10.0.0.0/8"], hosts: [] },
   trustedProxies: 1,

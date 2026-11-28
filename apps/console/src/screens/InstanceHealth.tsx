@@ -43,7 +43,7 @@ export interface ReplicaSettings {
   retention: { runsDays: number; eventsDays: number; refusalsDays: number; auditDays: number };
   mail: { from: string } | { capturedToFiles: true } | null;
   publicUrl: string;
-  appsAddress: "separate" | "console" | "none";
+  appsAddress: "separate" | "console";
   appsUrl: string | null;
   egressAllow: { networks: string[]; hosts: string[] };
   trustedProxies: number | string[];
@@ -309,9 +309,7 @@ function Replica() {
                 value:
                   s.appsAddress === "separate"
                     ? `At their own address, ${s.appsUrl ?? ""}`
-                    : s.appsAddress === "console"
-                      ? "At the console's address, by the operator's choice"
-                      : "Not served yet: set APPS_URL",
+                    : "At the console's address, each app sandboxed",
               },
               {
                 label: "Mail",

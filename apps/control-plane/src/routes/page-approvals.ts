@@ -65,7 +65,6 @@ export function pageApprovalRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         return decideFromPage(kernel, ctx as RequestContext, params, {
           of: "interface",
           ...body,
-          elsewhere: kernel.hosts.runsCodeApps(await kernel.hosts.place(request)),
         });
       },
     );

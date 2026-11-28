@@ -41,7 +41,7 @@ const inGroup = (file: string) =>
  *   beside any other.
  */
 const ALONE = ["exit-criterion", "redesign", "favicon", "polish-behaviour"];
-const FERNHILL = /^(phase-2[2-8].*|approvals-mine|screenshots)$/;
+const FERNHILL = /^(phase-2[2-8].*|approvals-mine|apps-isolation|screenshots)$/;
 /** Both ask a workspace for its one `docs-feedback` table, so the second waits for the first. */
 const DOCS_FEEDBACK = ["phase-23", "phase-24"];
 const files = readdirSync(here)

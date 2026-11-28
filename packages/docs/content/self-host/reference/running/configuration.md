@@ -21,7 +21,7 @@ The Settings reference has a section for each group.
 | Files | The object store's address, bucket, keys, region and path style. |
 | Secrets | `MASTER_KEY_SECONDARY` and `METRICS_TOKEN`. |
 | First start | `BOOTSTRAP_ADMIN_EMAIL` and `BOOTSTRAP_ADMIN_PASSWORD`, set together; the password is at least 12 characters. |
-| Apps | `APPS_URL` (a different host from `PUBLIC_URL`) and `APPS_ON_CONSOLE_ADDRESS`. |
+| Apps | `APPS_URL`, optional (a different host from `PUBLIC_URL`). |
 | Workers | `MANAGED_WORKERS`, `WORKER_HOST_TOKEN`, `MANAGED_WORKER_USER`, `MANAGED_WORKER_UID`, `MANAGED_WORKER_GID`, `MANAGED_WORKER_USERS`, `MANAGED_WORKERS_MAX`, `RUN_SLOTS`, `RUN_MEMORY_FLOOR_MB`. |
 | Limits | `SCHEDULE_BACKLOG_LIMIT` (200), `TRIGGERS_PAUSED`, and the limits on tenant exports: `EXPORTS_AT_ONCE` (3), `EXPORTS_PER_TENANT` (1), `EXPORT_STALL_SECONDS` (60) and `EXPORT_MAX_MINUTES` (30; 0 is no limit). See [Move a tenant](../../how-to/instance/moving-a-tenant). |
 | Mail | `SMTP_URL` and `MAIL_FROM` together, and `MAIL_CAPTURE_DIR`. |

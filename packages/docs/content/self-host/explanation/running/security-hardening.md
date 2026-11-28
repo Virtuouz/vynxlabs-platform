@@ -21,7 +21,8 @@ Two rules hold the design:
 | A tenant from the operator | An operator has no access inside a tenant by default. Access is a time-limited grant with a reason, which the tenant's admins can see and end. Everything done under it is audited. |
 | Secrets at rest | Each tenant has its own key, wrapped by the master key. See [the master key](keys-and-secrets). |
 | A person's rows from another person | Postgres row-level security on every custom table. Row requests sign in as a role that owns nothing. |
-| The console from a tenant's app | A member's console session counts only at the instance's own address. Apps written as code are served only at `APPS_URL`. |
+| The console from a tenant's app | A member's console session counts only at the instance's own address. Every page of an app written as code is served sandboxed, so it has no origin and is sent no cookie. Even at the console's address it acts with a token that reaches only what apps use. |
+| One tenant's app written as code from another tenant's | Each page is sandboxed, with no origin, no cookie and no storage. It cannot read another page, and it acts with a ten-minute token for one tenant. The API answers it without credentials, and ignores a cookie it sends. |
 | What happened | One write path records an audit entry in the same transaction as the change. Entries cannot be changed or deleted one by one. |
 | A worker's credential from a script | The script's process is never given it. |
 
@@ -32,8 +33,7 @@ Two rules hold the design:
 - **A worker host without `NET_ADMIN`.** Block link-local addresses at the machine.
 - **An operator with access to the database, the master key or the host.** Such a person can read everything. Use a dedicated instance where that matters.
 - **A lost master key.** Nothing encrypted can be recovered without it.
-- **Apps on the console's address**, if you set `APPS_ON_CONSOLE_ADDRESS=true`. An app then runs as whoever opens it.
-- **One tenant's app written as code, from another tenant's.** Every app written as code is served at one address, `APPS_URL` or the console's own, which a browser treats as one site. A page of tenant A's app can read and change what tenant B's app shows, as any visitor who is signed in to B's apps in that browser. This was run in a browser, for both addresses. On an instance whose tenants do not trust each other, give the right to deploy an app written as code (`deployment:write`) only to people you trust, until apps have addresses of their own. A hostname a tenant registers for an app is an origin of its own, and keeps the sign-in used there from other tenants' pages. It does not take the app off the shared address, where anyone who signs in is exposed again.
+- **What an app's files hold.** An app's scripts, styles, fonts and pictures are served without a sign-in, at an address made from their content. Anyone who knows it can fetch it. An app's files must hold no secret: they are sent to every visitor in any case.
 - **A flood from many addresses.** Limits are per address and are counted in Postgres across every replica. The address is the one your proxy saw: set `TRUSTED_PROXIES` to match your proxies. Put a proxy with limits of its own in front of a public app.
 - **A column, from someone who may read the row.** Row rules decide which rows, not which columns.
 
@@ -42,7 +42,7 @@ Two rules hold the design:
 - A TLS-terminating proxy is in front. The control plane speaks plain HTTP and listens on `127.0.0.1:8080` in the Compose file. See [Put a proxy in front](../../how-to/running/put-a-proxy-in-front).
 - `TRUSTED_PROXIES` matches the proxies in front (`0` when none), and the proxy overwrites `X-Forwarded-For`, `X-Forwarded-Host` and `X-Forwarded-Proto`.
 - `PUBLIC_URL` is the address people type. Cookies are marked Secure by its scheme.
-- `APPS_URL` is a different host from `PUBLIC_URL`, if tenants write apps as code. It keeps the console's sign-in from an app, and does not keep one tenant's app from another's: see above.
+- `APPS_URL`, if you set it, is a different host from `PUBLIC_URL`. It is not needed to keep tenants' apps apart: every page of an app written as code is sandboxed.
 - `BOOTSTRAP_ADMIN_EMAIL` and `BOOTSTRAP_ADMIN_PASSWORD` are removed after the first start.
 - `MASTER_KEY` is kept in a second place, and every key is kept as long as the backups it sealed.
 - Backups run, and a restore has been tried. See [Restore an instance](../../how-to/running/restore-an-instance).

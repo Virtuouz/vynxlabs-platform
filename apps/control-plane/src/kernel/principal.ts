@@ -4,6 +4,7 @@ import { fromNodeHeaders } from "better-auth/node";
 import type { FastifyRequest } from "fastify";
 import type { Place } from "./apps/hosts.js";
 import { appPrincipal } from "./apps/sessions.js";
+import { APP_TOKEN_PREFIX, fromAppToken } from "./apps/tokens.js";
 import { ANONYMOUS, type Principal } from "./audit.js";
 import { HttpError, unauthenticated } from "./errors.js";
 import type { Kernel } from "./kernel.js";
@@ -94,7 +95,7 @@ function refuseCrossSite(kernel: Kernel, request: FastifyRequest, place: Place):
 }
 
 /**
- * Works out who is calling: an API key, a member's session, a sign-in to a
+ * Works out who is calling: an API key, an app's token, a member's session, a sign-in to a
  * tenant's apps, or nobody.
  *
  * A member's session counts only at the instance's own address. At an app's
@@ -109,12 +110,18 @@ export async function resolvePrincipal(
   const authorization = request.headers.authorization;
   if (authorization) {
     const [scheme, token] = authorization.split(" ");
+    if (scheme?.toLowerCase() === "bearer" && token?.startsWith(APP_TOKEN_PREFIX)) {
+      return fromAppToken(kernel, request, token);
+    }
     if (scheme?.toLowerCase() !== "bearer" || !token?.startsWith(API_KEY_PREFIX)) {
       throw unauthenticated("The Authorization header must be: Bearer <api key>.");
     }
     return fromApiKey(kernel, token);
   }
   if (!request.headers.cookie) return ANONYMOUS;
+  // A page with no origin of its own, such as an app written as code, which is served
+  // sandboxed. Its browser sends it no cookie; one that arrives anyway is not its to use.
+  if (request.headers.origin === "null") return ANONYMOUS;
   const place = await kernel.hosts.place(request);
   if (place.kind === "main") {
     const session = await kernel.auth.api.getSession({
@@ -139,6 +146,7 @@ export async function resolvePrincipal(
         name: session.user.name,
         email: session.user.email,
         viaCookie: true,
+        memberSessionId: session.session.id,
       };
     }
   }

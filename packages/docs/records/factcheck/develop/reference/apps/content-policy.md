@@ -21,3 +21,13 @@ Lines are current at commit `14f7d5b9` (branch phase-31-write-the-docs). Paths a
 - Fallback rule (HTML accepted, or no dot): `front.ts:1012-1020`.
 - Rate limits: `front.ts:179-181`, `kernel/http.ts:86-91`; the 429 answer read in code, not run.
 - `<base>`, `vx-context`, icons, theme stylesheet: `pages.ts:366-380`; read in code.
+
+## Decision 0008 (apps isolation), 2026-11-28
+
+The page was changed for decision 0008 (`docs/adr/0008-apps-written-as-code-are-sandboxed.md`). Lines are those of the working tree of branch `feat/apps-isolation`, before its commit. Read in code, not run.
+
+| Claim | Source (file:line) | Checked by | Result |
+| --- | --- | --- | --- |
+| The `sandbox` directive on every code app page, without `allow-same-origin`. | `packages/manifest/src/app-policy.ts` (`CODE_APP_SANDBOX`, `codeAppPolicy`); `kernel/apps/front.ts:1109` | writer, read in code, not run, 2026-11-28 | holds |
+| App files at `/_apps/<tenant>/<workspace>/<hash>/<file>`, public and immutable; the ordinary path redirects (302). | `kernel/apps/front.ts:128,1011-1015,1569-1625,1779-1785` | writer, read in code, not run, 2026-11-28 | holds |
+| `vx-context` carries `token` for a code app. | `kernel/apps/front.ts:1160` | writer, read in code, not run, 2026-11-28 | holds |

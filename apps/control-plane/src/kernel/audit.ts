@@ -20,6 +20,10 @@ export interface Principal {
   appSessionId?: string;
   /** Whether the caller was recognized by a cookie, which a browser sends by itself. */
   viaCookie?: boolean;
+  /** A member's session at the console's address, when the caller came with one. */
+  memberSessionId?: string;
+  /** Whether the caller is a page of an app written as code, acting with its app token. */
+  appToken?: boolean;
   apiKeyId?: string;
   name?: string;
   email?: string;

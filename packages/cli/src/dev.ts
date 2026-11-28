@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { resolve } from "node:path";
-import { appPolicy } from "@volvel/manifest";
+import { codeAppPolicy } from "@volvel/manifest";
 import { loadVite, viteSettings } from "./apps.js";
 import { appSources } from "./build.js";
 import { siteApps, startSiteServer } from "./dev-site.js";
@@ -133,12 +133,16 @@ export async function startDevServer(options: DevOptions) {
     // who signs in comes back here and not to the instance.
     portal: `/portal/${options.tenant.slug}`,
     principal: { id: null, ...options.principal },
+    // Sandboxed as when deployed (decision 0008): the page sends no cookie. This server adds the
+    // developer's key to what it sends on to the instance, so the page needs no token of its own.
+    token: null,
   };
   const theme = `/api/v1/tenants/${options.tenant.id}/workspaces/${options.workspace.id}/theme.css`;
   // The development server's own inline scripts carry a nonce made for this run, and its
   // reload socket is the one thing besides the page's own origin that may be connected to.
   const nonce = randomBytes(16).toString("base64");
-  const policy = options.strict === false ? undefined : appPolicy({ nonce, connect: DEV_SOCKETS });
+  const policy =
+    options.strict === false ? undefined : codeAppPolicy({ nonce, connect: DEV_SOCKETS });
   const own = new Map<string, string>();
   const settings = viteSettings(resolve(directory, app.source), plugins);
   const server = await vite.createServer({
@@ -187,6 +191,8 @@ export async function startDevServer(options: DevOptions) {
       port: options.port,
       strictPort: false,
       ...(policy ? { headers: { "content-security-policy": policy } } : {}),
+      // A sandboxed page asks for its modules as a page with no origin (`Origin: null`) would.
+      cors: true,
       proxy: {
         "/portal": {
           target: instance,

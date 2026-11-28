@@ -16,7 +16,7 @@ The steps to give an app, or the portal with every app of a workspace, a hostnam
 
 ## The result
 
-The hostname's row in **Domains** is **On** and **Verified**, and the app's row in **Apps** lists the hostname under **Address**.
+The hostname's row in **Domains** is **On** and **Verified**, and the app's row in **Apps** lists the hostname under **Address**. The app is no longer served at its address on the instance's shared address: a request there is redirected (308) to the hostname, with its path and query.
 
 ## If it does not work
 

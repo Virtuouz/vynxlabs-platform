@@ -1,4 +1,4 @@
-import { appContext } from "./client.ts";
+import { appAuthorization, appContext, sandboxed } from "./client.ts";
 
 /** What the stream says changed: a run, a flow run, one of its steps, or a run's log. */
 export interface RunChange {
@@ -16,8 +16,115 @@ type Listener = (change: RunChange | "refresh") => void;
  * first listener and closed shortly after the last one leaves. Someone who may
  * read only their own runs, as most people using an app, is sent only those.
  */
+/** The part of an EventSource the stream uses: the browser's, or `TokenSource` in a sandboxed page. */
+interface Source {
+  readonly readyState: number;
+  addEventListener(type: string, listener: (event: { data?: string | undefined }) => void): void;
+  close(): void;
+}
+
+const CLOSED = 2;
+
+/**
+ * Server-sent events read with `fetch`, for a page of an app written as code: it is sandboxed and
+ * has no cookie, and an EventSource cannot send its token. It reconnects as a browser's would,
+ * saying the last event it had, and gives up when the API refuses it.
+ */
+class TokenSource implements Source {
+  readyState = 0;
+  readonly #url: string;
+  readonly #listeners = new Map<string, Set<(event: { data?: string | undefined }) => void>>();
+  #abort: AbortController | undefined;
+  #lastId: string | undefined;
+  #retry = 3000;
+
+  constructor(url: string) {
+    this.#url = url;
+    void this.#connect();
+  }
+
+  addEventListener(type: string, listener: (event: { data?: string | undefined }) => void) {
+    let set = this.#listeners.get(type);
+    if (!set) {
+      set = new Set();
+      this.#listeners.set(type, set);
+    }
+    set.add(listener);
+  }
+
+  close() {
+    this.readyState = CLOSED;
+    this.#abort?.abort();
+  }
+
+  #emit(type: string, data?: string) {
+    for (const listener of this.#listeners.get(type) ?? []) listener({ data });
+  }
+
+  async #connect(force = false): Promise<void> {
+    if (this.readyState === CLOSED) return;
+    this.#abort = new AbortController();
+    try {
+      const authorization = await appAuthorization(force);
+      const response = await fetch(this.#url, {
+        credentials: "omit",
+        signal: this.#abort.signal,
+        headers: {
+          accept: "text/event-stream",
+          ...(authorization ? { authorization } : {}),
+          ...(this.#lastId ? { "last-event-id": this.#lastId } : {}),
+        },
+      });
+      if (response.status === 401 && !force) return this.#connect(true);
+      if (!response.ok || !response.body) {
+        this.readyState = CLOSED;
+        this.#emit("error");
+        return;
+      }
+      this.readyState = 1;
+      await this.#read(response.body);
+    } catch {
+      if (this.readyState === CLOSED) return;
+    }
+    if (this.readyState === CLOSED) return;
+    this.readyState = 0;
+    this.#emit("error");
+    setTimeout(() => void this.#connect(), this.#retry);
+  }
+
+  async #read(body: ReadableStream<Uint8Array>) {
+    const reader = body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) return;
+      buffer += decoder.decode(value, { stream: true }).replace(/\r\n?/g, "\n");
+      let end = buffer.indexOf("\n\n");
+      while (end >= 0) {
+        const block = buffer.slice(0, end);
+        buffer = buffer.slice(end + 2);
+        let type = "message";
+        const data: string[] = [];
+        for (const line of block.split("\n")) {
+          if (line.startsWith(":")) continue;
+          const at = line.indexOf(":");
+          const field = at < 0 ? line : line.slice(0, at);
+          const text = at < 0 ? "" : line.slice(at + 1).replace(/^ /, "");
+          if (field === "event") type = text;
+          else if (field === "data") data.push(text);
+          else if (field === "id") this.#lastId = text;
+          else if (field === "retry" && /^\d+$/.test(text)) this.#retry = Number(text);
+        }
+        if (data.length > 0 || type !== "message") this.#emit(type, data.join("\n"));
+        end = buffer.indexOf("\n\n");
+      }
+    }
+  }
+}
+
 class Stream {
-  #source: EventSource | undefined;
+  #source: Source | undefined;
   readonly #listeners = new Map<string, Set<Listener>>();
   #connected = false;
   /** Set when the stream cannot be had at all: callers poll instead. */
@@ -51,13 +158,23 @@ class Stream {
       this.#closing = undefined;
     }
     if (this.#source || this.#failed) return;
-    const EventSourceImpl = globalThis.EventSource;
-    if (!EventSourceImpl) {
-      this.#failed = true;
-      return;
-    }
     const { api, tenant } = appContext();
-    const source = new EventSourceImpl(`${api}/tenants/${tenant.id}/stream`);
+    const url = `${api}/tenants/${tenant.id}/stream`;
+    let source: Source;
+    if (sandboxed()) {
+      if (!globalThis.fetch || !globalThis.TextDecoder) {
+        this.#failed = true;
+        return;
+      }
+      source = new TokenSource(url);
+    } else {
+      const EventSourceImpl = globalThis.EventSource;
+      if (!EventSourceImpl) {
+        this.#failed = true;
+        return;
+      }
+      source = new EventSourceImpl(url) as unknown as Source;
+    }
     this.#source = source;
     const ready = () => {
       this.#connected = true;
@@ -70,7 +187,7 @@ class Stream {
       source.addEventListener(kind, (event) => {
         let change: RunChange;
         try {
-          change = JSON.parse((event as MessageEvent).data);
+          change = JSON.parse(String(event.data));
         } catch {
           return;
         }
@@ -80,7 +197,7 @@ class Stream {
     source.addEventListener("error", () => {
       this.#connected = false;
       // A refused stream is not tried again; one that dropped is, by the browser.
-      if (source.readyState === EventSourceImpl.CLOSED) {
+      if (source.readyState === CLOSED) {
         this.#failed = true;
         this.#source = undefined;
       }

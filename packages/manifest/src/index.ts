@@ -1,5 +1,13 @@
 export * from "./action.js";
-export { APP_POLICY, appPolicy, WIDGET_POLICY } from "./app-policy.js";
+export {
+  APP_POLICY,
+  appPolicy,
+  CODE_APP_FILE_POLICY,
+  CODE_APP_POLICY,
+  CODE_APP_SANDBOX,
+  codeAppPolicy,
+  WIDGET_POLICY,
+} from "./app-policy.js";
 export {
   AUDIT_ACTIONS,
   AUDIT_AREAS,

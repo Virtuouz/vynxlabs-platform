@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import type { IncomingMessage } from "node:http";
 import { join } from "node:path";
+import { isId } from "@volvel/db";
 import {
   buildSearchIndex,
   type DocsApp,
@@ -21,7 +22,14 @@ import {
   searchAnswer,
   searchPage,
 } from "@volvel/docs-site";
-import { APP_POLICY, keyOf, readFormAnswer, WIDGET_POLICY } from "@volvel/manifest";
+import {
+  APP_POLICY,
+  CODE_APP_FILE_POLICY,
+  CODE_APP_POLICY,
+  keyOf,
+  readFormAnswer,
+  WIDGET_POLICY,
+} from "@volvel/manifest";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { MIN_PASSWORD_LENGTH } from "../../config.js";
 import { ANONYMOUS, type Db, type Principal, writeAudit } from "../audit.js";
@@ -58,7 +66,8 @@ import {
   openSecrets,
 } from "../sso/providers.js";
 import { samlMetadata } from "../sso/saml.js";
-import { appBasePath, portalPath, portalUrl } from "./address.js";
+import { appBasePath, domainUrl, portalPath, portalUrl } from "./address.js";
+import { APP_SHIM_JS, APP_SHIM_PATH } from "./app-shim.js";
 import { appFiles, readAsset } from "./assets.js";
 import { DOCS_POLICY, docsKept, docsOf } from "./docs.js";
 import { hostnameOf, type Place } from "./hosts.js";
@@ -76,7 +85,9 @@ import {
   signInPage,
   signUpPage,
 } from "./pages.js";
+import { SANDBOX_CORS_HEADERS } from "./sandbox-cors.js";
 import { actorOf, endAppSession, readCookie, signInEndUser } from "./sessions.js";
+import { tokenFor } from "./tokens.js";
 
 interface Tenant {
   id: string;
@@ -111,6 +122,28 @@ export function isHashedName(path: string, sha256: string): boolean {
   const hash = BUILD_HASH.exec(name)?.[1];
   return hash !== undefined && /[0-9A-Z]/.test(hash);
 }
+/**
+ * The name an app's files are served under without a sign-in: a hash of every file's path and
+ * content, so that it changes whenever any file does, and the files under it never change.
+ */
+export function appFilesName(files: ReadonlyMap<string, { sha256: string }>): string {
+  const listed = [...files.entries()]
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(([path, file]) => `${path}\0${file.sha256}\n`)
+    .join("");
+  return createHash("sha256").update(listed).digest("hex").slice(0, 32);
+}
+
+/** Where an app's files are served by that name: `/_apps/<tenant>/<workspace>/<name>/`. */
+export const appFilesBase = (tenantId: string, workspaceId: string, name: string) =>
+  `/_apps/${tenantId}/${workspaceId}/${name}/`;
+
+/** How many of a workspace's latest bundles an app's files are looked for in: a page opened before a deploy still loads what it asks for after. */
+const FILES_KEPT_BUNDLES = 5;
+
+/** An HTML file of an app written as code is a page of it, served with the app's sign-in. */
+const isHtmlFile = (file: string) => /\.html?$/i.test(file);
+
 const MAX_FORM_BYTES = 16 * 1024;
 /** A SAML answer is a signed document with certificates in it, in a form. */
 const MAX_SAML_BYTES = 512 * 1024;
@@ -827,9 +860,6 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
         docs?: string;
       };
       if (body.published === false) continue;
-      // An app written as code answers 503 where this instance cannot run it: not offered.
-      const generated = typeof body.interface === "string" || typeof body.docs === "string";
-      if (!generated && !kernel.hosts.runsCodeApps(place)) continue;
       apps.push({
         href: appBasePath(place, {
           tenantSlug: tenant.slug,
@@ -928,20 +958,35 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
     // Neither runs anything a tenant wrote: an interface is drawn by the platform's own
     // files, and documentation is drawn here.
     const generated = typeof body.interface === "string" || documents;
-    // An app written as code runs only at an address of its own, never where the console's
-    // sign-in is, unless the operator knowingly allowed it (decision 0001).
-    if (!generated && place.kind === "main" && !kernel.hosts.runsCodeApps(place)) {
-      return html(
-        reply,
-        503,
-        messagePage(look, {
-          title: "This app is not served at this address",
-          text:
-            "Apps written as code run at a separate address for apps, so that they never run " +
-            "where the console's sign-in is. This instance has none yet: whoever runs it sets " +
-            "APPS_URL.",
-        }),
-      );
+    // An app with a hostname of its own is served there, and no longer at the shared address
+    // (decision 0008): its pages and its sign-in are then that hostname's alone.
+    if (place.kind !== "domain") {
+      const own = await db
+        .selectFrom("app_domain")
+        .select(["hostname", "app_path"])
+        .where("tenant_id", "=", tenant.id)
+        .where("workspace_id", "=", workspace.id)
+        .where("enabled", "=", true)
+        .where("verified_at", "is not", null)
+        .where((where) =>
+          where.or([where("app_path", "=", manifest.path), where("app_path", "=", "")]),
+        )
+        .execute();
+      const chosen = own.find((one) => one.app_path === manifest.path) ?? own[0];
+      if (chosen) {
+        const at = domainUrl(
+          kernel,
+          chosen.hostname,
+          chosen.app_path === "" ? manifest.path : undefined,
+        );
+        const inside = rest === manifest.path ? "" : rest.slice(manifest.path.length + 1);
+        const search = new URL(request.url, "http://app").search;
+        return redirect(
+          reply,
+          `${at}${inside.split("/").map(encodeURIComponent).join("/")}${search}`,
+          308,
+        );
+      }
     }
     const entry = generated ? "index.html" : (body.entry as string);
     const base = appBasePath(place, {
@@ -955,6 +1000,23 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
       return redirect(reply, `${base}${url.search}`, 308);
     }
     const file = fixedApp !== undefined ? rest : rest.slice(manifest.path.length + 1);
+
+    // The files of an app written as code are fetched by a name made from them, with no sign-in
+    // (decision 0008): its pages are sandboxed and send no cookie, and a module script is always
+    // fetched as another site's would be. Only its pages need the sign-in.
+    if (!generated && file !== "" && file !== entry && !isHtmlFile(file)) {
+      const files = appFiles(bundle, manifest.path);
+      if (files.has(file)) {
+        // The page fetches a module script or a stylesheet as a page with no origin: every step
+        // of the way, this one too, must say it may read the answer.
+        reply.headers(SANDBOX_CORS_HEADERS);
+        return redirect(
+          reply,
+          `${appFilesBase(tenant.id, workspace.id, appFilesName(files))}${file.split("/").map(encodeURIComponent).join("/")}${url.search}`,
+          302,
+        );
+      }
+    }
 
     const principal = await resolvePrincipal(kernel, request, tenant.id);
     if (
@@ -1044,7 +1106,8 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
     reply
       .header(
         "content-security-policy",
-        tenantFilesAtConsole ? `${APP_POLICY}; sandbox` : APP_POLICY,
+        // An app written as code is sandboxed wherever it is served (decision 0008).
+        !generated ? CODE_APP_POLICY : tenantFilesAtConsole ? `${APP_POLICY}; sandbox` : APP_POLICY,
       )
       .header("x-content-type-options", "nosniff")
       .header("referrer-policy", "same-origin");
@@ -1064,6 +1127,8 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
         .map((one) => ({ id: one.id, title: one.title }));
       const page = injectContext(content.toString("utf8"), {
         base,
+        // What gives a client built before 0.7 the page's token (decision 0008).
+        ...(generated ? {} : { script: APP_SHIM_PATH }),
         themeHref: look.themeHref,
         iconsHref: look.iconsHref,
         data: {
@@ -1095,6 +1160,8 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
               ? await memberGroups(db, tenant.id, principal.id)
               : {}),
           },
+          // What the sandboxed page calls the API with: it has no cookie (decision 0008).
+          ...(generated ? {} : { token: tokenFor(kernel, request, tenant.id, principal) }),
         },
       });
       return reply
@@ -1493,6 +1560,92 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
     return send(200, docPage(withWords(drawn, words), path));
   }
 
+  /** Which app of a bundle has its files under a name: `<bundle id>` to name to app path. */
+  const filesNames = new Map<string, Map<string, string>>();
+
+  /**
+   * `/_apps/<tenant>/<workspace>/<name>/<file>`: a file of an app written as code, by the name
+   * made from the app's files. No cookie is read and none is set; the answer is the same for
+   * everyone and never changes. A page opened before a deploy finds its files for a while after,
+   * in the workspace's latest bundles.
+   */
+  async function serveAppFile(
+    request: FastifyRequest,
+    reply: FastifyReply,
+    place: Place,
+    path: string,
+  ) {
+    reply
+      .header("content-security-policy", CODE_APP_FILE_POLICY)
+      .header("x-content-type-options", "nosniff")
+      .header("referrer-policy", "no-referrer")
+      .headers(SANDBOX_CORS_HEADERS)
+      .header("cross-origin-resource-policy", "cross-origin");
+    const gone = () => plain(reply, 404, "There is no such file.");
+    const segments = decodeSegments(path.slice(1));
+    if (!segments || segments.length < 5) return gone();
+    const [, tenantId, workspaceId, name] = segments as [string, string, string, string];
+    const file = segments.slice(4).join("/");
+    if (!isId(tenantId) || !isId(workspaceId) || !/^[0-9a-f]{32}$/.test(name)) return gone();
+    // A hostname a tenant registered serves that tenant's files only.
+    if (place.kind === "domain" && place.domain.tenantId !== tenantId) return gone();
+    if (!(await guestFiles.allow(request.ip))) {
+      return plain(reply, 429, "Too many requests. Wait a minute and try again.");
+    }
+    const workspace = await db
+      .selectFrom("workspace")
+      .select(["id", "active_bundle_id"])
+      .where("id", "=", workspaceId)
+      .where("tenant_id", "=", tenantId)
+      .executeTakeFirst();
+    if (!workspace) return gone();
+    const latest = await db
+      .selectFrom("bundle")
+      .select(["id", "storage_key"])
+      .where("workspace_id", "=", workspace.id)
+      .orderBy("created_at", "desc")
+      .limit(FILES_KEPT_BUNDLES)
+      .execute();
+    const active = latest.find((one) => one.id === workspace.active_bundle_id);
+    const looked = active ? [active, ...latest.filter((one) => one !== active)] : latest;
+    if (!active && workspace.active_bundle_id) {
+      const stored = await db
+        .selectFrom("bundle")
+        .select(["id", "storage_key"])
+        .where("id", "=", workspace.active_bundle_id)
+        .executeTakeFirst();
+      if (stored) looked.unshift(stored);
+    }
+    for (const stored of looked) {
+      let names = filesNames.get(stored.id);
+      const bundle = await loadBundle(kernel, stored);
+      if (!names) {
+        names = new Map();
+        for (const manifest of bundle.manifests) {
+          if (manifest.kind !== "app") continue;
+          const body = manifest.body as { interface?: unknown; docs?: unknown };
+          if (typeof body.interface === "string" || typeof body.docs === "string") continue;
+          names.set(appFilesName(appFiles(bundle, manifest.path)), manifest.path);
+        }
+        filesNames.set(stored.id, names);
+        if (filesNames.size > 500) filesNames.delete(filesNames.keys().next().value as string);
+      }
+      const appPath = names.get(name);
+      if (appPath === undefined) continue;
+      const asset = appFiles(bundle, appPath).get(file);
+      if (!asset) return gone();
+      const etag = `"${asset.sha256}"`;
+      reply
+        .header("etag", etag)
+        .header("cache-control", "public, max-age=31536000, immutable")
+        .header("content-type", asset.contentType);
+      if (request.headers["if-none-match"] === etag) return reply.code(304).send();
+      const content = await readAsset(kernel, tenantId, asset.sha256);
+      return reply.code(200).send(request.method === "HEAD" ? undefined : content);
+    }
+    return gone();
+  }
+
   /** `/_widgets/<tenant>/x/<name>@<version>/<file>`. */
   async function serveWidgetFile(
     request: FastifyRequest,
@@ -1502,7 +1655,7 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
   ) {
     const segments = decodeSegments(path.slice(1));
     const gone = () => plain(reply, 404, "There is no such file.");
-    if (!segments || segments.length !== 5) return gone();
+    if (segments?.length !== 5) return gone();
     const [, slug, pack, named, file] = segments as [string, string, string, string, string];
     const at = named.lastIndexOf("@");
     if (pack !== "x" || at < 1) return gone();
@@ -1602,6 +1755,16 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
         .send(drawing.body);
     }
 
+    if (path === APP_SHIM_PATH) {
+      return reply
+        .code(200)
+        .header("content-type", "text/javascript; charset=utf-8")
+        .header("x-content-type-options", "nosniff")
+        .header("cache-control", "public, max-age=3600")
+        .headers(SANDBOX_CORS_HEADERS)
+        .send(APP_SHIM_JS);
+    }
+
     if (path === "/_platform/portal.css") {
       return reply
         .code(200)
@@ -1624,6 +1787,15 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
         return redirect(reply, `${kernel.hosts.appsOrigin}${path}${url.search}`, 307);
       }
       return serveWidgetFile(request, reply, place, path);
+    }
+
+    // The files of apps written as code, by a name made from them, for their sandboxed pages.
+    if (path.startsWith("/_apps/")) {
+      if (!isPage) return plain(reply, 405, "Method not allowed.");
+      if (place.kind === "main" && kernel.hosts.hasAppsAddress) {
+        return redirect(reply, `${kernel.hosts.appsOrigin}${path}${url.search}`, 307);
+      }
+      return serveAppFile(request, reply, place, path);
     }
 
     if (place.kind === "domain") {

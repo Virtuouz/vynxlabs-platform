@@ -26,3 +26,11 @@ Checked by: second agent, 2026-11-23. Cross-link with self-host/how-to/running/i
 | --- | --- | --- | --- |
 | The image `volvel/volvel:0.6.0` (and `latest`) is on Docker Hub from 0.6.0. | `.github/workflows/release.yml` (build step, `tags:`) | writer, 2026-11-28 | holds |
 | `VOLVEL_IMAGE` names the image Compose runs; without it Compose builds `volvel/volvel:local`. | `deploy/compose/compose.yaml:6,16` | writer, 2026-11-28 | holds |
+
+## Decision 0008 (apps isolation), 2026-11-28
+
+The page was changed for decision 0008 (`docs/adr/0008-apps-written-as-code-are-sandboxed.md`). Lines are those of the working tree of branch `feat/apps-isolation`, before its commit. Read in code, not run.
+
+| Claim | Source (file:line) | Checked by | Result |
+| --- | --- | --- | --- |
+| With no `APPS_URL`, Health's Apps row says "At the console's address, each app sandboxed". | `apps/console/src/screens/InstanceHealth.tsx`; `routes/instance.ts:67` | writer, read in code, not run, 2026-11-28 | holds |

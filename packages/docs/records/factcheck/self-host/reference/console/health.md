@@ -36,3 +36,11 @@ Code as of commit `14f7d5b9` (branch `phase-31-write-the-docs`), 2026-11-23. Wri
 | Permissions instance:read for master-key and settings | `apps/control-plane/src/routes/master-key.ts:15` | writer, code | |
 
 Checked by: second agent, 2026-11-23. Instance http://localhost:8091 as the operator `admin@example.com`, Playwright headless: 1440 px light (text of every screen compared with the page), 390 px dark (no horizontal scroll on any instance screen; keyboard Tab order reaches the page's controls with a visible focus ring on each), and the controls named below. Tenants, members, a database and a database location made for the check were deleted afterwards (`instance-chk2`, `instance-chk3`, `inst-chk-db`, the throwaway database `instchk_loc`); the member `inst-chk@example.com` stays (a member cannot be deleted). Seen: **Health** section (Ready, "This replica takes requests.", Database 3 ms, Object store, Version 0.5.0, Migration level), **Master key** (fingerprint, "Not set", the fingerprint sentence, "No second key is set, so no rotation is under way."), **This replica's settings** (Workers, Run slots, Memory floor, Most workers alive, "10 for the platform, 10 for rows", "15 s for a data operation, 15 s for a query", Schedule backlog "A schedule skips its time past 200 queued runs", Triggers, Kept: runs 30 days). The Not ready, read-only and rotating states are from the code (`InstanceHealth.tsx`), not run. Note: the settings line says "for the platform" (Volvel's word is instance): quoted as the screen words it; fault fixed (fc 18): the line now reads "for Volvel's own work", confirmed in the code (InstanceHealth.tsx:268); the page quotes it.
+
+## Decision 0008 (apps isolation), 2026-11-28
+
+The page was changed for decision 0008 (`docs/adr/0008-apps-written-as-code-are-sandboxed.md`). Lines are those of the working tree of branch `feat/apps-isolation`, before its commit. Read in code, not run.
+
+| Claim | Source (file:line) | Checked by | Result |
+| --- | --- | --- | --- |
+| The Apps row says "At the console's address, each app sandboxed" or "At their own address, <url>"; `appsAddress` is `console` or `separate`. | `routes/instance.ts:33,67`; `apps/console/src/screens/InstanceHealth.tsx` | writer, read in code, not run, 2026-11-28 | holds |

@@ -208,9 +208,6 @@ export function widgetDataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           ...(query.sort !== undefined ? { sort: query.sort } : {}),
           ...(query.zone !== undefined ? { zone: query.zone } : {}),
           ...(query.size !== undefined && query.input !== undefined ? { size: query.size } : {}),
-          ...(kernel.hosts.runsCodeApps(await kernel.hosts.place(request))
-            ? { elsewhere: true }
-            : {}),
           ...(query.draft === "1" || query.draft === "true" ? { draft: true } : {}),
           widgets,
         });

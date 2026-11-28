@@ -96,11 +96,7 @@ export function instanceSettingsRoutes(kernel: Kernel): FastifyPluginAsyncTypebo
               ? { capturedToFiles: true as const }
               : null,
           publicUrl: config.publicUrl,
-          appsAddress: config.appsUrl
-            ? ("separate" as const)
-            : config.appsOnConsoleAddress
-              ? ("console" as const)
-              : ("none" as const),
+          appsAddress: config.appsUrl ? ("separate" as const) : ("console" as const),
           appsUrl: originOf(config.appsUrl),
           egressAllow: { ...config.egressAllow },
           trustedProxies: config.trustedProxies,

@@ -47,8 +47,6 @@ export interface Known {
   approvalFlows?: ReadonlyMap<string, { title: string | null; asks: boolean }> | undefined;
   /** The topics the workspace's documents have; `undefined` while they are read, or when they cannot be: that check is left out. */
   docTopics?: ReadonlySet<string> | undefined;
-  /** Where apps are served: at their own address (decisions are made in the console), or on the console's. */
-  appsAddress?: "separate" | "console" | "none" | undefined;
 }
 
 const nameOf = (widget: PageWidget, definition: WidgetDefinition | undefined) =>
@@ -346,15 +344,6 @@ export function checksFor(input: {
           detail: "Nothing will wait there until the flow has an approval step.",
         });
       }
-    }
-    if (known.appsAddress && known.appsAddress !== "none") {
-      items.push({
-        id: "approvals:console",
-        state: "warn",
-        text: "Approvals are decided in the console, not in this app",
-        detail:
-          "Apps written as code run at the address this app is served at, so the app shows the requests and sends people to the console to decide them.",
-      });
     }
   }
 

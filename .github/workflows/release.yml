@@ -192,20 +192,27 @@ jobs:
       # Staging needs npm 11.15 or later. Each package is packed by pnpm, which writes the
       # real versions in place of `workspace:` ones, and the tarball is what is staged.
       # The order is that of the dependencies. The dist tag cannot be changed once staged.
+      # Every run packs and stages; only a release sends. The rest stage with --dry-run, so that a
+      # step which runs only for a release is still tried on every push (it failed on 0.6.0's tag).
       - name: Stage the packages on npm
-        if: vars.RELEASE_ENABLED == 'true' && (github.ref_type == 'tag' || vars.PUBLISH_NEXT == 'true')
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           VERSION: ${{ steps.version.outputs.version }}
           TAG: ${{ steps.version.outputs.tag }}
+          SENDS: ${{ vars.RELEASE_ENABLED == 'true' && (github.ref_type == 'tag' || vars.PUBLISH_NEXT == 'true') }}
         run: |
+          dry=()
+          if [ "${SENDS}" != "true" ]; then dry=(--dry-run); fi
           npm install --global npm@^11.15.0
           npm --version
           packs="${RUNNER_TEMP}/packs"
           mkdir -p "${packs}"
-          for package in widgets widget-frame markup docs-engine docs-site docs ui app sdk cli; do
-            pnpm --filter "@volvel/${package}" pack --pack-destination "${packs}"
-            npm stage publish "${packs}/volvel-${package}-${VERSION}.tgz" --access public --tag "${TAG}" --ignore-scripts
+          # Packed in each package's own folder: pnpm 9's pack takes no --filter. Packing writes the
+          # workspace's versions in place of workspace:, so the tarball is what npm installs.
+          for dir in widget-sdk widget-frame markup docs-engine docs-site docs ui app sdk cli; do
+            (cd "packages/${dir}" && pnpm pack --pack-destination "${packs}")
+            name=$(node -p "require('./packages/${dir}/package.json').name.slice(1).replace('/', '-')")
+            npm stage publish "${packs}/${name}-${VERSION}.tgz" --access public --tag "${TAG}" --ignore-scripts "${dry[@]}"
           done
 
       - name: Sign in to Docker Hub

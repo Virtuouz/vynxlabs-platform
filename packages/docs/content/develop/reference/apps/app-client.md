@@ -4,15 +4,15 @@ description: Every export of @volvel/app, the package a code app uses to read ta
 subjects: [apps, app-client]
 ---
 
-`@volvel/app` is the package a code app imports to talk to the instance that serves it. Every call goes to the instance as the person using the app, over the page's own address, with the cookie the instance set. The person's permissions decide what each call may do: the client adds none. An app that is not served by Volvel, and is not served by [`volvel dev`](../../how-to/apps/run-an-app-while-you-write-it), has no context, and the first call throws "This page was not served by Volvel. Open the app at its address, or run it with: volvel dev".
+`@volvel/app` is the package a code app imports to talk to the instance that serves it. Every call goes to the instance as the person using the app, over the page's own address. A page of an app written as code is served sandboxed, with no cookie, so each call carries the page's app token as `Authorization: Bearer`. The person's permissions decide what each call may do: the client adds none. An app that is not served by Volvel, and is not served by [`volvel dev`](../../how-to/apps/run-an-app-while-you-write-it), has no context, and the first call throws "This page was not served by Volvel. Open the app at its address, or run it with: volvel dev".
 
 ## Context
 
 | Export | What it is |
 | --- | --- |
-| `appContext()` | The context the instance put in the page: `{ api, tenant, workspace, app, base, portal, principal }`. `api` is `/api/v1`. `tenant` has `id`, `slug`, `name` and `logo`. `app` has `path`, `title` and, for an app made in the console, `interface` and `pages`. `base` is the path the app is served under, ending in a slash: give it to your router. `portal` is where the tenant's sign-in pages are, as a path. `principal` is who the page was served to. Throws when there is none. |
+| `appContext()` | The context the instance put in the page: `{ api, tenant, workspace, app, base, portal, principal, token }`. `api` is `/api/v1`. `tenant` has `id`, `slug`, `name` and `logo`. `app` has `path`, `title` and, for an app made in the console, `interface` and `pages`. `base` is the path the app is served under, ending in a slash: give it to your router. `portal` is where the tenant's sign-in pages are, as a path. `principal` is who the page was served to. `token` is `{ token, expiresAt }`, the app token the page calls with, or `null` when nobody is signed in. Throws when there is no context. |
 | `setAppContext(context)` | Replaces the context, or clears it with `undefined`. For tests. |
-| Types `AppContext`, `Principal` | A `Principal` has `type` (`member`, `end_user`, `service_account` or `anonymous`), `id`, `name`, `email`, and, when known, `groups`, `groupKeys` and `attributes`. The page fills `groups` for a member too, and `attributes` for an end user. |
+| Types `AppContext`, `AppToken`, `Principal` | An `AppToken` has `token`, a string that begins `vxa_`, and `expiresAt`, a time. The token lasts 10 minutes. The client renews it before it ends, with `GET /api/v1/app-token`, and calls once more with a fresh one when an answer is 401. A `Principal` has `type` (`member`, `end_user`, `service_account` or `anonymous`), `id`, `name`, `email`, and, when known, `groups`, `groupKeys` and `attributes`. The page fills `groups` for a member too, and `attributes` for an end user. |
 
 ## Calling the API
 
@@ -72,10 +72,12 @@ A person who is not signed in cannot start a script or a flow: the instance answ
 | --- | --- |
 | `useRun(id)` | Follows a script run: `{ data, error, ended, live }`. `data` is `undefined` until the first answer. It reads the run again each time the instance says it changed, and every 2 seconds while no stream is connected, until it ends. `live` says whether changes arrive as they happen. |
 | `useFlowRun(id)` | The same for a flow run, read again as it and its steps change. |
-| `runStream` | The page's one connection to `/tenants/<tenant>/stream`, shared by everything that follows a run. `runStream.connected` says whether it is open. |
+| `runStream` | The page's one connection to `/tenants/<tenant>/stream`, shared by everything that follows a run. It is read with `fetch`, so the token is sent as a header and never in an address. `runStream.connected` says whether it is open. |
 | `changeOf(id, ms)` | Waits until the run `id` changes, or `ms` pass. |
 
 The stream carries only what the person may read: runs where they hold `run:read`, flow runs where they hold `flow_run:read`, and their own runs. Someone who may read no runs follows only their own, on at most 2 streams. Everyone else may have 5. Past that the instance answers 429 `too_many_streams`. A guest gets 401. In both cases the hooks look every 2 seconds, and a refused stream is not tried again on that page. There is no subscription to row changes.
+
+A page of an app written as code has no `localStorage`, `sessionStorage` or cookie. What it keeps in them is lost, and the client keeps nothing there.
 
 ## Who is using the app
 
@@ -83,9 +85,9 @@ The stream carries only what the person may read: runs where they hold `run:read
 | --- | --- |
 | `session()` | `{ principal, signUp }` from the instance. An end user's `groups` and `attributes` are filled in. `signUp` says whether people may make their own account. |
 | `useSession()` | `{ principal, signedIn, groups, attributes, refresh }`. It starts from who the page was served to, so the first draw is right, and `refresh` asks the instance again. |
-| `signInUrl(returnTo)` | The address of the tenant's sign-in page, which sends the person back to where they are now (or to `returnTo`). |
+| `signInUrl(returnTo)` | The address of the tenant's sign-in page. A page of an app written as code cannot sign a person in by calling the API, so it sends them here. The page opened there sends the person back to where they are now (or to `returnTo`). |
 | `staffSignInUrl(returnTo)` | The address that signs a member of staff in to this app. |
-| `signOut()` | Ends the person's sign-in to the tenant's apps. A member's console session is left alone. |
+| `signOut()` | Ends the sign-in the page's token stands on, and the page then calls as no one. A member's console session is left alone. |
 | `logoUrl()` | The address of the tenant's logo, or `null` when it has none. |
 
 ## Queries and help

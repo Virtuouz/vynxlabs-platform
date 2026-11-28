@@ -1000,7 +1000,7 @@ export function endUserRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       async (request, reply) => {
         const { ctx, params } = request;
         await ctx.mutate(async (trx, audit) => {
-          const ended = await endAppSession(trx, request, reply, params.t);
+          const ended = await endAppSession(trx, request, reply, params.t, ctx.principal);
           await audit({
             action: "app_session.ended",
             targetType: ended?.type ?? "session",

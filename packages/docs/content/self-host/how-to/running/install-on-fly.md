@@ -61,7 +61,7 @@ The control plane was run on Fly in November 2026 with `MANAGED_WORKERS=process`
 - The health check is `/api/v1/healthz`. Fly does not restart a machine whose check fails, it decides where traffic goes, and with one machine a failing check is the whole instance unreachable. `/api/v1/readyz` answers 503 while the object store cannot be reached, though the console, the API and scripts still work, so it is not the check: watch it from a monitor of your own. Migrations run when the new machine starts, before it listens.
 - `swap_size_mb = 512`, and a machine of `shared-cpu-1x` with 1024 MB, which gives three run slots in `process` mode. Size the `workers` machines for the scripts they will run.
 - The worker host runs as root, to start each worker as a user of its own. If its log says "not running as root" or "a worker could not be started", no worker will start.
-- `APPS_URL` gives apps written as code an address of their own: `fly certs add apps.<your domain>`.
+- `APPS_URL` is optional. It gives apps written as code an address of their own: `fly certs add apps.<your domain>`. Without it they are served at the console's address, each page sandboxed.
 
 A shared CPU has burst credit for a while, then a fraction of a core. On `shared-cpu-1x` a Postgres spends its allowance when idle and every tenant's queries slow down together; on `shared-cpu-2x` the control plane served 160 requests a second on its burst and 22 to 27 after. Give both a `performance` CPU for anything past a trial: `performance-1x` with 2 GB each is what the figures in [Sizing and scaling](../../explanation/running/sizing-and-scaling) were measured on.
 

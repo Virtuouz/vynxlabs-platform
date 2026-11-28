@@ -14,7 +14,7 @@ import { Board } from "./Board.tsx";
 import { Book } from "./Book.tsx";
 import { ClientsScreen } from "./Clients.tsx";
 import { Callbacks, Stock } from "./Stock.tsx";
-import { CLINICS, Clinics, Loading, Registrations, useRemembered } from "./shared.tsx";
+import { CLINICS, Clinics, Loading, Registrations } from "./shared.tsx";
 import "./styles.css";
 
 const SECTIONS = [
@@ -54,7 +54,8 @@ function App() {
     [groupList],
   );
   const clinics = useQuery(() => Clinics().find({ sort: ["name"] }));
-  const [chosen, choose] = useRemembered("fernhill-front-desk-clinic", "");
+  // Not kept in the browser: an app written as code is sandboxed and has no storage there.
+  const [chosen, choose] = useState("");
   const [client, setClient] = useState<string>();
   const [bookFor, setBookFor] = useState<string>();
   const mine = useMemo(

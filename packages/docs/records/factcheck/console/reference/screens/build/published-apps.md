@@ -40,6 +40,14 @@ Every row above was read against `apps/console/src/screens/Apps.tsx` (742 lines)
 | Stop sharing, kept-table sentence: "They lose the app. 1 table stays, for 1 other app that uses it: Board." (and only "They lose the app." when no table goes). Same people and same role at the other app. | `Apps.tsx:262-308` | second agent, 2026-11-23, run: Desk and Board both shared with Front desk (Read); Stop sharing Desk showed the sentence; after confirming, the binding at `visits` stayed | holds as run; page text extended |
 | Reads tab card: sentences begin "Of its rows,"; "Its policy is not known here." when the policy is not read. | `Apps.tsx:384-405` | second agent, read in code | corrected |
 | Reads tab with anyone binding shows the notice; list Open to turns amber; inspector shows the public notice. | `Apps.tsx:422-428,596,696` | second agent, 2026-11-23, run at 1440, 390 and dark | holds |
-| Unserved notice: shown only when `appsAddress` is "none": neither `APPS_URL` nor `APPS_ON_CONSOLE_ADDRESS=true`. A repository app's address answers 503 "This app is not served at this address". | `routes/instance.ts:62-66`; `kernel/apps/front.ts:915-927`; `config-vars.ts:150-160` | second agent, 2026-11-23, run: a guest GET of `/apps/fernhill/apps-docs/desk/` answered 503 with that page | holds as run; page extended |
 | A guest on a public App Builder app: Board shared with "Anyone, without signing in" opens at 200 with a Sign in link and the rows; a guest start of a flow or script is 403 "Sign in to start..." when an anonymous binding holds `flow_run:write`/`run:write` there, else 401. | `kernel/errors.ts:39-46`; `routes/flows.ts:920`; `routes/execution.ts:1336` | second agent, 2026-11-23, run | holds as run |
 | Share sheet at 390 px and in dark: no horizontal scroll, tabs and buttons usable; Escape closes; Enter on **Share** opens with focus inside; reload keeps `?app=`. | `Apps.tsx` | second agent, 2026-11-23, run | fault fixed (fb): Apps reloads in place instead of remounting the list, so focus stays; confirmed in the code and test only (not re-run in a browser); the page does not describe it |
+
+## Decision 0008 (apps isolation), 2026-11-28
+
+The page was changed for decision 0008 (`docs/adr/0008-apps-written-as-code-are-sandboxed.md`). Lines are those of the working tree of branch `feat/apps-isolation`, before its commit. Read in code, not run.
+
+| Claim | Source (file:line) | Checked by | Result |
+| --- | --- | --- | --- |
+| There is no "not served" notice on the Apps screen; `appsAddress` is `console` or `separate`. | `routes/instance.ts:33,67`; `apps/console/src/screens/Apps.tsx` | writer, read in code, not run, 2026-11-28 | holds |
+| An app with an enabled and proved hostname is redirected to it from the shared address. | `kernel/apps/front.ts:960-990` | writer, read in code, not run, 2026-11-28 | holds |

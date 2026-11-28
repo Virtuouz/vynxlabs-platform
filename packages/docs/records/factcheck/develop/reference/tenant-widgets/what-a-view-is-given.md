@@ -14,3 +14,11 @@ Lines are current at commit `aabf96af` (branch p34-b6) plus the docs of this lan
 | `state` values; the page's read gives loading, empty, failed, forbidden or ready, and the view stays in its cell for each, with Try again under a failed or forbidden one. | `packages/widget-sdk/src/index.ts:625-630`; `TenantWidgetHost.tsx:118`; `Frame.tsx` (tenant widget branch); `PageView.tsx` (`state`) | b7 | holds |
 | Not given: only the props are posted. | `TenantWidgetHost.tsx:109-126` (b4r) | writer, b7 | holds |
 | The server reads each input for the viewer under the table's rules. | `apps/control-plane/src/kernel/data/query/inputs.ts` (`readWidget`); `apps/control-plane/src/tenant-widgets.test.ts` | writer | holds |
+
+## Decision 0008 (apps isolation), 2026-11-28
+
+The page was changed for decision 0008 (`docs/adr/0008-apps-written-as-code-are-sandboxed.md`). Lines are those of the working tree of branch `feat/apps-isolation`, before its commit. Read in code, not run.
+
+| Claim | Source (file:line) | Checked by | Result |
+| --- | --- | --- | --- |
+| `decideIn` is optional in the SDK and not sent by this instance. | `packages/widget-sdk/src/index.ts:609-610`; `kernel/pages/approvals.ts` | writer, read in code, not run, 2026-11-28 | holds |

@@ -9,7 +9,6 @@ export function instanceRoutes(deps: {
   config?: {
     publicUrl?: string;
     appsUrl: string | undefined;
-    appsOnConsoleAddress: boolean;
     mail?: unknown;
     mailCaptureDir?: string | undefined;
   };
@@ -65,11 +64,7 @@ export function instanceRoutes(deps: {
         mail: Boolean(deps.config?.mail || deps.config?.mailCaptureDir),
         publicUrl: deps.config?.publicUrl ?? null,
         appsUrl: deps.config?.appsUrl ? new URL(deps.config.appsUrl).origin : null,
-        appsAddress: deps.config?.appsUrl
-          ? ("separate" as const)
-          : deps.config?.appsOnConsoleAddress
-            ? ("console" as const)
-            : ("none" as const),
+        appsAddress: deps.config?.appsUrl ? ("separate" as const) : ("console" as const),
       }),
     );
   };

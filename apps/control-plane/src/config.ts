@@ -70,12 +70,6 @@ export interface Config {
    * instance's own address, so that an app never runs where the console's sign-in is.
    */
   appsUrl: string | undefined;
-  /**
-   * Serves apps written as code at the console's own address when there is no
-   * APPS_URL. Off by default: an app's code would then run where the console's
-   * sign-in is (decision 0001). Interfaces built in the console are served either way.
-   */
-  appsOnConsoleAddress: boolean;
   /** Where mail goes out, for invitations and password resets. Undefined when no mail is sent. */
   mail: { url: string; from: string } | undefined;
   /**
@@ -248,10 +242,6 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
   ) {
     problems.push("APPS_URL must be a different host from PUBLIC_URL.");
   }
-  const appsOnConsole = value("APPS_ON_CONSOLE_ADDRESS") ?? "false";
-  if (appsOnConsole !== "true" && appsOnConsole !== "false") {
-    problems.push("APPS_ON_CONSOLE_ADDRESS must be true or false.");
-  }
 
   const smtpUrl = value("SMTP_URL");
   url("SMTP_URL", smtpUrl, ["smtp:", "smtps:"]);
@@ -412,7 +402,6 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     docsUrl: docsUrl?.replace(/\/+$/, ""),
     screensDir: value("SCREENS_DIR"),
     appsUrl: appsUrl?.replace(/\/+$/, ""),
-    appsOnConsoleAddress: appsOnConsole === "true",
     mailCaptureDir,
     mail:
       smtpUrl !== undefined && mailFrom !== undefined

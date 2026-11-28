@@ -2,7 +2,7 @@ import { RunError, runScript, table } from "@volvel/app";
 // Types only: none of the repository's server code reaches the browser. The tables are typed by name, by .platform/volvel-env.d.ts.
 import type { Row, TableOf } from "@volvel/sdk";
 import { Badge, type BadgeTone, Skeleton } from "@volvel/ui";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 // These two files import nothing, so they are safe in the browser.
 import {
   type AppointmentStatus,
@@ -127,28 +127,6 @@ export function useEvery(ms: number, tick: () => void) {
     }, ms);
     return () => clearInterval(timer);
   }, [ms, tick]);
-}
-
-/** A value kept in this browser, for small conveniences such as the clinic chosen. */
-export function useRemembered(key: string, initial: string): [string, (value: string) => void] {
-  const [value, setValue] = useState(() => {
-    try {
-      return localStorage.getItem(key) ?? initial;
-    } catch {
-      return initial;
-    }
-  });
-  return [
-    value,
-    (next: string) => {
-      setValue(next);
-      try {
-        localStorage.setItem(key, next);
-      } catch {
-        // Private browsing may refuse; nothing depends on it.
-      }
-    },
-  ];
 }
 
 /** A panel with a heading, the app's one card style. */

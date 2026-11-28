@@ -112,22 +112,10 @@ test("while the flows are being read, nothing is said of them", () => {
   expect(items.some((one) => one.id.startsWith("approvals:"))).toBe(false);
 });
 
-test("an app served at its own address says approvals are decided in the console; one on the console's own address does not", () => {
-  const widgets = body(approvalsWidget([]));
-  for (const where of ["separate", "console"]) {
-    const said = runWith(widgets, { appsAddress: where }).find(
-      (one) => one.id === "approvals:console",
-    );
-    expect(said).toMatchObject({
-      state: "warn",
-      text: expect.stringContaining("decided in the console"),
-    });
-  }
-  const has = (made: InterfaceBody, where: string) =>
-    runWith(made, { appsAddress: where }).some((one) => one.id === "approvals:console");
-  expect(has(widgets, "none")).toBe(false);
-  // A page with no Approvals widget is not told.
-  expect(has(body(form(undefined)), "separate")).toBe(false);
+test("approvals are decided in the app wherever it is served: no warning sends people to the console (decision 0008)", () => {
+  expect(runWith(body(approvalsWidget([])), {}).some((one) => one.id === "approvals:console")).toBe(
+    false,
+  );
 });
 
 test("a refusal names the thing, and says what it needs, never in the schema's words", () => {

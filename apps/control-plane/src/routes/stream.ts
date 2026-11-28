@@ -1,5 +1,6 @@
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import { Type } from "typebox";
+import { fromSandbox, SANDBOX_CORS_HEADERS } from "../kernel/apps/sandbox-cors.js";
 import { HttpError, unauthenticated } from "../kernel/errors.js";
 import { access } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
@@ -113,6 +114,7 @@ export function streamRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           connection: "keep-alive",
           "x-accel-buffering": "no",
           "x-request-id": request.id,
+          ...(fromSandbox(request.headers.origin) ? SANDBOX_CORS_HEADERS : {}),
         });
         raw.write("retry: 3000\n\n");
         // A browser that comes back after losing the stream may have missed events.

@@ -499,3 +499,112 @@ describe("help in an app", () => {
     expect(refused.container.innerHTML).toBe("");
   });
 });
+
+describe("a page of an app written as code, sandboxed (decision 0008)", () => {
+  const later = (minutes: number) => new Date(Date.now() + minutes * 60_000).toISOString();
+  const seen: { url: string; init: RequestInit }[] = [];
+  const respond = (reply: (url: string, init: RequestInit) => Response) => {
+    seen.length = 0;
+    vi.stubGlobal("fetch", async (url: string, init: RequestInit = {}) => {
+      seen.push({ url, init });
+      return reply(url, init);
+    });
+  };
+  const header = (init: RequestInit, name: string) =>
+    (init.headers as Record<string, string> | undefined)?.[name];
+
+  test("calls the API with its token, and never with a cookie", async () => {
+    setAppContext({ ...context, token: { token: "vxa_one", expiresAt: later(10) } });
+    respond(() => Response.json({ principal: context.principal, signUp: false }));
+    await session();
+    expect(seen).toHaveLength(1);
+    expect(header(seen[0]?.init as RequestInit, "authorization")).toBe("Bearer vxa_one");
+    expect(seen[0]?.init.credentials).toBe("omit");
+  });
+
+  test("a page with no one signed in sends nothing, and still no cookie", async () => {
+    setAppContext({ ...context, token: null });
+    respond(() => Response.json({}));
+    await session();
+    expect(header(seen[0]?.init as RequestInit, "authorization")).toBeUndefined();
+    expect(seen[0]?.init.credentials).toBe("omit");
+  });
+
+  test("an app made in the console has no token, and sends its cookie as before", async () => {
+    respond(() => Response.json({}));
+    await session();
+    expect(seen[0]?.init.credentials).toBe("same-origin");
+  });
+
+  test("a token about to end is renewed first, once for calls made together", async () => {
+    setAppContext({ ...context, token: { token: "vxa_old", expiresAt: later(1) } });
+    respond((url) =>
+      url.endsWith("/app-token")
+        ? Response.json({ token: "vxa_new", expiresAt: later(10) })
+        : Response.json({}),
+    );
+    await Promise.all([session(), session()]);
+    const renewals = seen.filter((one) => one.url.endsWith("/app-token"));
+    expect(renewals).toHaveLength(1);
+    expect(header(renewals[0]?.init as RequestInit, "authorization")).toBe("Bearer vxa_old");
+    const others = seen.filter((one) => !one.url.endsWith("/app-token"));
+    expect(others.map((one) => header(one.init, "authorization"))).toEqual([
+      "Bearer vxa_new",
+      "Bearer vxa_new",
+    ]);
+    expect(appContext().token?.token).toBe("vxa_new");
+  });
+
+  test("a token refused while the page slept is renewed and the call made once more", async () => {
+    setAppContext({ ...context, token: { token: "vxa_slept", expiresAt: later(10) } });
+    let first = true;
+    respond((url) => {
+      if (url.endsWith("/app-token"))
+        return Response.json({ token: "vxa_woke", expiresAt: later(10) });
+      if (first) {
+        first = false;
+        return Response.json({ code: "unauthenticated" }, { status: 401 });
+      }
+      return Response.json({ principal: context.principal, signUp: true });
+    });
+    expect((await session()).signUp).toBe(true);
+    expect(header(seen.at(-1)?.init as RequestInit, "authorization")).toBe("Bearer vxa_woke");
+  });
+
+  test("a sign-in that has ended is said, not hidden", async () => {
+    setAppContext({ ...context, token: { token: "vxa_gone", expiresAt: later(10) } });
+    respond(() =>
+      Response.json({ code: "unauthenticated", detail: "Open the page again." }, { status: 401 }),
+    );
+    await expect(session()).rejects.toMatchObject({ status: 401 });
+  });
+
+  test("the run stream is read with fetch and the token, not with an EventSource", async () => {
+    setAppContext({ ...context, token: { token: "vxa_stream", expiresAt: later(10) } });
+    const encoder = new TextEncoder();
+    let push: ((text: string) => void) | undefined;
+    respond(
+      () =>
+        new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              push = (text) => controller.enqueue(encoder.encode(text));
+            },
+          }),
+          { status: 200, headers: { "content-type": "text/event-stream" } },
+        ),
+    );
+    const heard: unknown[] = [];
+    const stop = runStream.listen("r1", (change) => heard.push(change));
+    await waitFor(() => expect(push).toBeDefined());
+    expect(FakeStream.opened).toHaveLength(0);
+    expect(seen[0]?.url).toBe("/api/v1/tenants/t1/stream");
+    expect(header(seen[0]?.init as RequestInit, "authorization")).toBe("Bearer vxa_stream");
+    expect(seen[0]?.init.credentials).toBe("omit");
+    push?.("retry: 3000\n\nid: 1\nevent: ready\ndata: {}\n\n");
+    push?.(': ping\n\nid: 2\nevent: run\ndata: {"k":"run","id":"r1","s":"succeeded"}\n\n');
+    await waitFor(() => expect(heard).toEqual(["refresh", { k: "run", id: "r1", s: "succeeded" }]));
+    expect(runStream.connected).toBe(true);
+    stop();
+  });
+});

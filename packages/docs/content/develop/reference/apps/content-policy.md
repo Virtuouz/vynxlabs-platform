@@ -15,11 +15,12 @@ Every page and file of an app of files or of an interface is served with one con
 | `style-src` | `'self' 'unsafe-inline'` | Stylesheets are the app's own. Inline styles are allowed, because components set styles on elements. |
 | `img-src` | `'self' data: blob:` | Images are the app's own, a `data:` address or a `blob:`. No image from another site. |
 | `font-src` | `'self' data:` | Fonts are the app's own or a `data:` address. A font from a font service is refused. |
-| `connect-src` | `'self'` | `fetch`, XHR and `EventSource` reach the app's own address only: the API at `/api/v1` and nothing else. |
+| `connect-src` | `'self'` | `fetch` and XHR reach the app's own address only: the API at `/api/v1` and nothing else. |
 | `object-src` | `'none'` | No plug-ins. |
 | `base-uri` | `'self'` | |
 | `form-action` | `'self'` | A form posts to the app's own address. |
 | `frame-ancestors` | `'self'` | The app can be framed by the app's own address only. |
+| `sandbox` | `allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-downloads allow-modals` | On every page of an app written as code, at every address. There is no `allow-same-origin`, so the page has no origin: no cookie, no `localStorage` or `sessionStorage`, and it cannot read another page. Apps made in the console are not sandboxed. |
 
 Each response also has `x-content-type-options: nosniff` and `referrer-policy: same-origin`.
 
@@ -33,7 +34,7 @@ A site of documentation is served under a policy of its own. It differs in two d
 
 An app can be served under a path (`/apps/<tenant>/<workspace>/<app>/`) or at the root of a hostname, so write addresses relative to the app. The instance puts `<base href="…">` in the page, so a link such as `href="#x"` resolves to the app's root and not to the page's address. Use `location.hash` for in-page state, and build every address from `appContext().base`. A hard-coded `/logo.png` fails under a path.
 
-A cookie, a session and a CSRF check are on the app's own address: a request that changes anything and comes from another origin is refused with 403 `cross_site`.
+An app made in the console uses a cookie, a session and a CSRF check on the app's own address: a request that changes anything with a cookie and comes from another origin is refused with 403 `cross_site`. A page of an app written as code has no cookie and sends `Origin: null`. It calls the API with its app token, and the API answers it with `access-control-allow-origin: *` and never allows credentials.
 
 ## Which address answers the page
 
@@ -43,6 +44,10 @@ A cookie, a session and a CSRF check are on the app's own address: a request tha
 | The app's root | The page named by `entry` (default `index.html`). |
 | No file, and the app's `fallback` is not `false`, and the browser asks for HTML or the last part has no dot | The page, so an app can route in the browser. A screen with a dot, such as `/users/j.smith`, is answered with the page when the browser asks for HTML. |
 | Anything else | 404. |
+
+## Files of an app written as code
+
+The scripts, styles, fonts and pictures of an app written as code are served without a sign-in, at `/_apps/<tenant>/<workspace>/<hash>/<file>`. The hash is made from the paths and content of all of the app's files. These files are public and immutable, with a year's `cache-control`. A file's ordinary path under the app answers with a redirect (302) to that address. Only a page needs a sign-in. A file served like this holds nothing a visitor may not see, so it must hold no secret.
 
 ## Caching
 
@@ -59,7 +64,7 @@ Name a file that changes at a deploy so that it does not look like a hash, and l
 The instance adds these to the page named by `entry`, before it is sent:
 
 - `<base href>`, the app's address.
-- `<script type="application/json" id="vx-context">`, which `appContext()` reads: `api`, `tenant`, `workspace`, `app`, `base`, `portal` and `principal`. It is JSON in an element the browser does not run, so the page needs no inline script.
+- `<script type="application/json" id="vx-context">`, which `appContext()` reads: `api`, `tenant`, `workspace`, `app`, `base`, `portal` and `principal`, and, for an app written as code, `token`. It is JSON in an element the browser does not run, so the page needs no inline script.
 - A stylesheet of the theme: the kit's, then the tenant's, then the workspace's. A value set for light does not carry to dark.
 - The tenant's icons, unless the app names its own with a `<link rel="icon">`.
 

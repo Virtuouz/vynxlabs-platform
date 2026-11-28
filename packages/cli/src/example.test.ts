@@ -463,7 +463,11 @@ describe("the example integration", () => {
     expect(page.status).toBe(200);
     expect(page.text).toContain('id="vx-context"');
     const script = /src="(\.\/assets\/[^"]+\.js)"/.exec(page.text)?.[1] as string;
-    expect((await guest(`/apps/acme/main/public/${script.slice(2)}`)).status).toBe(200);
+    // A file is sent on to a name made from the app's files, served to anyone (decision 0008).
+    const sent = await guest(`/apps/acme/main/public/${script.slice(2)}`);
+    expect(sent.status).toBe(302);
+    expect(sent.location).toMatch(/^\/_apps\/[^/]+\/[^/]+\/[0-9a-f]{32}\/assets\//);
+    expect((await visitor()(sent.location as string)).status).toBe(200);
     const noticesSeen = JSON.parse((await guest(`/api/v1${base}/rows/notices`)).text);
     expect(noticesSeen.items.map((row: { title: string }) => row.title)).toEqual([
       "Closed on Friday",

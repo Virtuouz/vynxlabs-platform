@@ -14,6 +14,7 @@ import {
 } from "./api-description.js";
 import type { Config, LogLevel } from "./config.js";
 import { installFrontDoor } from "./kernel/apps/front.js";
+import { fromSandbox, preflightFor, SANDBOX_CORS_HEADERS } from "./kernel/apps/sandbox-cors.js";
 import { SYSTEM } from "./kernel/audit.js";
 import { authOptions, signInFeatures } from "./kernel/auth.js";
 import { closeAllSources } from "./kernel/data/sources.js";
@@ -190,6 +191,19 @@ export async function buildApp(options: AppOptions) {
     request.traceParent = incoming?.spanId;
     request.trace = { traceId: incoming?.traceId ?? newTraceId(), spanId: newSpanId() };
     reply.header("x-trace-id", request.trace.traceId);
+    // A page of an app written as code has no origin of its own, and calls the API with its
+    // app token: it may read the answer, never with a cookie (decision 0008).
+    if (fromSandbox(request.headers.origin)) {
+      // Asked before a request the page may send only once allowed: at the API, and for an app's
+      // files too, which a browser asks for first when something adds a header of its own.
+      if (request.method === "OPTIONS" && request.headers["access-control-request-method"]) {
+        return reply
+          .code(204)
+          .headers(preflightFor(request.headers["access-control-request-headers"]))
+          .send();
+      }
+      if (request.url.startsWith(`${API_PREFIX}/`)) reply.headers(SANDBOX_CORS_HEADERS);
+    }
   });
   // What the handler starts, a run or a flow run, is found to belong to the request's trace.
   app.addHook("preHandler", (request, _reply, done) => withTrace(request.trace, done));

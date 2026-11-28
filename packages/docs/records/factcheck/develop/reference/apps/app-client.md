@@ -26,3 +26,13 @@ Each export against `packages/app/src` (index.ts lists the exports; they match t
 - Server limits: rows limit 1,000 default 50 (`routes/data.ts:52`), insertMany 1,000 (`routes/data.ts:1102`), aggregate limit 1,000 default 200 (`routes/data.ts:855`), at most 50 conditions (`kernel/data/rows.ts:508`), aggregate 5 s and `too_slow` (`rows.ts:776,935`), groups up to 3, measures up to 5 (`routes/data.ts:841-846`), streams 5 and 2 with `too_many_streams` (`kernel/stream.ts:67-69`, `routes/stream.ts:102`).
 - The context fields: `AppContext` in `client.ts:4-24`.
 - Not run: `useRun`, `runFlow`, `HelpPanel`, `terms`, `helpUrl`; read in code only.
+
+## Decision 0008 (apps isolation), 2026-11-28
+
+The page was changed for decision 0008 (`docs/adr/0008-apps-written-as-code-are-sandboxed.md`). Lines are those of the working tree of branch `feat/apps-isolation`, before its commit. Read in code, not run.
+
+| Claim | Source (file:line) | Checked by | Result |
+| --- | --- | --- | --- |
+| The context has `token: { token, expiresAt }` (null when nobody is signed in), and `AppToken` is exported. | `packages/app/src/client.ts:29-35`; `packages/app/src/index.ts:7` | writer, read in code, not run, 2026-11-28 | holds |
+| Calls carry the token as `Authorization: Bearer` and renew it; one retry on 401. | `packages/app/src/client.ts:98-154` | writer, read in code, not run, 2026-11-28 | holds |
+| The run stream is read with `fetch`, the token in a header. | `packages/app/src/stream.ts:29,68-74` | writer, read in code, not run, 2026-11-28 | holds |

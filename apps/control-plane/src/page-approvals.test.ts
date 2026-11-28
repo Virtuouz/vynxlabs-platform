@@ -8,8 +8,9 @@ import {
   bundleDigest,
   resolveKeyReferences,
 } from "@volvel/manifest";
+import type { FastifyRequest } from "fastify";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
-import { Hosts } from "./kernel/apps/hosts.js";
+import { mintAppToken } from "./kernel/apps/tokens.js";
 import { detailFieldNames } from "./kernel/flows/approvers.js";
 import { approvalStanding, fieldsOf, limits, readApprovals } from "./kernel/pages/approvals.js";
 import { type Client, startTestApp, type TestApp } from "./testing.js";
@@ -267,7 +268,7 @@ beforeAll(async () => {
   runtime = mkdtempSync(join(tmpdir(), "vx-approvals-"));
   mkdirSync(join(runtime, "assets"));
   writeFileSync(join(runtime, "index.html"), "<!doctype html><html><body></body></html>");
-  t = await startTestApp({ config: { screensDir: runtime, appsOnConsoleAddress: false } });
+  t = await startTestApp({ config: { screensDir: runtime } });
   const roles = Object.fromEntries(
     (
       await t.db.selectFrom("role").select(["id", "name"]).where("builtin", "=", true).execute()
@@ -775,88 +776,78 @@ describe("what the builder is offered", () => {
   });
 });
 
-describe("where it is decided (decision 0007, rule 8)", () => {
-  const place = (kind: "main" | "apps" | "domain") =>
-    kind === "domain"
-      ? ({
-          kind,
-          domain: { id: "d", tenantId: "t", workspaceId: "w", appPath: "", hostname: "x.test" },
-        } as const)
-      : ({ kind } as const);
-  const hosts = (apps: string | undefined, onConsole: boolean) =>
-    new Hosts(t.db, {
-      publicUrl: "http://localhost:8080",
-      appsUrl: apps,
-      appsOnConsoleAddress: onConsole,
+describe("where it is decided (decision 0008, in place of rule 8 of decision 0007)", () => {
+  /** What a page of an app written as code sends: no cookie, `Origin: null`, its app token. */
+  const sandboxedPage = async (email: string) => {
+    const member = await t.db
+      .selectFrom("member")
+      .innerJoin("member_session", "member_session.member_id", "member.id")
+      .select(["member.id", "member_session.id as session"])
+      .where("member.email", "=", email)
+      .orderBy("member_session.created_at", "desc")
+      .executeTakeFirstOrThrow();
+    const { token } = mintAppToken(t.kernel, { host: MAIN } as FastifyRequest, {
+      t: tenant,
+      k: "member",
+      s: member.session,
+      p: "member",
+      i: member.id,
     });
+    const call = async (method: "GET" | "POST", url: string, json?: object) => {
+      const response = await t.app.inject({
+        method,
+        url,
+        headers: {
+          host: MAIN,
+          origin: "null",
+          authorization: `Bearer ${token}`,
+          ...(json ? { "content-type": "application/json" } : {}),
+        },
+        ...(json ? { payload: JSON.stringify(json) } : {}),
+      });
+      return { status: response.statusCode, body: response.json() as Any };
+    };
+    return {
+      get: (url: string) => call("GET", url),
+      post: (url: string, json: object) => call("POST", url, json),
+    };
+  };
 
-  test("one answer for every address kind: only where no app written as code can run", () => {
-    expect(hosts(undefined, false).runsCodeApps(place("main"))).toBe(false);
-    // The operator knowingly let code apps run on the console's address.
-    expect(hosts(undefined, true).runsCodeApps(place("main"))).toBe(true);
-    // A second address for apps exists: the main one serves none.
-    expect(hosts("http://apps.test", true).runsCodeApps(place("main"))).toBe(false);
-    // The shared apps address and a tenant's own hostname serve code apps, deployed or not.
-    for (const config of [hosts("http://apps.test", false), hosts(undefined, false)]) {
-      expect(config.runsCodeApps(place("apps"))).toBe(true);
-      expect(config.runsCodeApps(place("domain"))).toBe(true);
-    }
-  });
-
-  test("it reads no database: a code app deployed later changes nothing, and nothing is asked", () => {
-    const spy = vi.spyOn(t.db, "selectFrom");
-    hosts(undefined, false).runsCodeApps(place("domain"));
-    hosts(undefined, false).runsCodeApps(place("main"));
-    expect(spy).not.toHaveBeenCalled();
-    spy.mockRestore();
-  });
-
-  test("on the console's own address a decision is taken, and the read says nothing of the console", async () => {
+  test("a member decides as themselves, and the read says nothing of the console", async () => {
     const step = await ask("orders/reorder");
     expect((await read(bob, "queue")).body.inputs.requests.decideIn).toBeUndefined();
     expect((await decide(bob, step.id, "approve")).status).toBe(200);
   });
 
-  test("the operator's setting is seen at once: with code apps allowed on the console's address a decision is refused there", async () => {
+  test("a page of an app written as code, holding a manager's app token, is shown nothing and decides nothing", async () => {
     const step = await ask("orders/reorder");
-    t.kernel.config.appsOnConsoleAddress = true;
-    try {
-      expect((await read(bob, "queue")).body.inputs.requests.decideIn).toBeDefined();
-      expect((await decide(bob, step.id, "approve")).status).toBe(403);
-    } finally {
-      t.kernel.config.appsOnConsoleAddress = false;
-    }
+    // The manager can decide it themselves.
+    expect((await waitingOf(bob)).map((one) => one.id)).toContain(step.id);
+    const page = await sandboxedPage("bob@acme.example");
+    const bobId = (
+      await t.db
+        .selectFrom("member")
+        .select("id")
+        .where("email", "=", "bob@acme.example")
+        .executeTakeFirstOrThrow()
+    ).id;
+    const at = { tenantId: tenant, workspaceId: dev };
+    // An app token is never the member's own standing: approvals are not something apps use.
+    expect(await approvalStanding(t.db, { type: "member", id: bobId }, at)).toBeDefined();
+    expect(
+      await approvalStanding(
+        t.db,
+        { type: "member", id: bobId, appTenantId: tenant, appToken: true },
+        at,
+      ),
+    ).toBeUndefined();
+    const shown = await read(page, "queue");
+    expect(shown.status).toBeGreaterThanOrEqual(400);
+    const refused = await decide(page, step.id, "approve");
+    expect(refused.status).toBeGreaterThanOrEqual(400);
+    expect(await currentState(step.run)).toBe("waiting_approval");
     expect((await decide(bob, step.id, "approve")).status).toBe(200);
   });
-
-  for (const kind of ["apps", "domain", "main"] as const) {
-    test(`at ${kind}: the requests are shown, decided in the console, and nothing is decided`, async () => {
-      const step = await ask("orders/reorder");
-      // The address kinds are told apart by `runsCodeApps` (above); here, what the answer and the
-      // route do when it says an app written as code may run where the request arrived.
-      const spy = vi.spyOn(t.kernel.hosts, "runsCodeApps").mockReturnValue(true);
-      const undo = () => spy.mockRestore();
-      try {
-        const answer = (await read(bob, "queue")).body.inputs.requests;
-        expect(answer.decideIn).toEqual({
-          console: `http://localhost:8080/t/${tenant}/workspaces/${dev}/approvals`,
-          name: "Volvel",
-        });
-        expect(answer.waiting.map((one: Any) => one.id)).toContain(step.id);
-        const refused = await decide(bob, step.id, "approve");
-        expect(refused.status).toBe(403);
-        expect(JSON.stringify(refused.body)).toMatch(/decide_in_console|Decide this in Volvel/);
-        expect(JSON.stringify(refused.body)).toContain("Decide this in Volvel");
-        expect(await currentState(step.run)).toBe("waiting_approval");
-        expect(spy).toHaveBeenCalled();
-        // Someone who may read nothing is still told nothing.
-        expect((await read(dora, "queue")).body.inputs.requests.waiting).toEqual([]);
-      } finally {
-        undo();
-      }
-      expect((await decide(bob, step.id, "approve")).status).toBe(200);
-    });
-  }
 });
 
 describe("a long queue", () => {

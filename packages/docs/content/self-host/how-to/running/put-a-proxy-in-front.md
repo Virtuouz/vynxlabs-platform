@@ -70,14 +70,13 @@ server {
 
 ## Addresses for apps and for tenants' hostnames
 
-An app a tenant builds in the App Builder is served at `PUBLIC_URL/apps/<tenant>/<workspace>/<app>/`, and a tenant's sign-in pages at `PUBLIC_URL/portal/<tenant>/`. An app written as code is not served there, because its code would run at the console's address, where a member who opens it is already signed in.
+An app is served at `PUBLIC_URL/apps/<tenant>/<workspace>/<app>/`, and a tenant's sign-in pages at `PUBLIC_URL/portal/<tenant>/`. That holds for an app a tenant builds in the App Builder and for an app written as code. Every page of an app written as code is served sandboxed: it has no origin of its own, so the browser sends it no cookie, gives it no storage and lets it read no other page. It acts with a token that lasts ten minutes, and that reaches only what apps use in one tenant.
 
 | Setting | What it does |
 | --- | --- |
-| `APPS_URL` | A second hostname that reaches the same instance, for example `https://apps.example.com`. Its host must differ from `PUBLIC_URL`'s. Apps and sign-in pages are then served only there, the console is not served there, and a member's console session is never sent there. Use it for an instance with more than one tenant. Point the second name at the same proxy, with a certificate for it. |
-| `APPS_ON_CONSOLE_ADDRESS` | `true` serves apps written as code at `PUBLIC_URL` too, when there is no `APPS_URL`. Only where everyone who writes code works for you. |
+| `APPS_URL` | Optional. A second hostname that reaches the same instance, for example `https://apps.example.com`. Its host must differ from `PUBLIC_URL`'s. Apps and sign-in pages are then served only there, the console is not served there, and a member's console session is never sent there. Point the second name at the same proxy, with a certificate for it. |
 
-Every app written as code shares the one address, `APPS_URL` or, if you set `APPS_ON_CONSOLE_ADDRESS`, the console's, and a browser treats that address as one site. A page of one tenant's app can read and change another tenant's app as any visitor who is signed in to that app in the same browser, staff and end users alike. Where tenants do not trust each other, give the right to deploy an app written as code (`deployment:write`) only to people you trust, until apps have addresses of their own. A separate `APPS_URL` keeps the console's sign-in from apps; it does not separate apps from each other.
+Without `APPS_URL`, apps written as code are served at the console's address, each page sandboxed. One tenant's app cannot read, or act as a visitor of, another tenant's app, and an app cannot use a member's console session. An instance does not need a second address for that. A second address keeps apps' cookies and addresses apart from the console's, which is a choice about addresses.
 
 A tenant's admin can register a hostname for one app under **Domains**, such as `portal.example.com`. You do three things for it:
 
@@ -95,7 +94,7 @@ A tenant's admin can register a hostname for one app under **Domains**, such as 
 
 The proxy must pass the `Host` header through unchanged, and say whether the request came over HTTPS.
 
-A registered hostname is an origin of its own. The sign-in a person makes there is sent only there, the API there answers for that tenant alone, and a page of another tenant's app cannot read it. What it does not do is take the app off the shared address, where the same app is still served by path: someone who signs in at that address is exposed to other tenants' apps again. A name registered for the whole workspace, rather than for one app, serves every app of that workspace, and those apps share it.
+A registered hostname is an origin of its own. The sign-in a person makes there is sent only there, the API there answers for that tenant alone, and a page of another tenant's app cannot read it. Once the name is enabled and proved, the app is no longer served at the shared address: a request there for the app is redirected (308) to the hostname, with its path and query. A name registered for the whole workspace, rather than for one app, serves every app of that workspace, and those apps share it.
 
 Any hostname the instance does not recognize acts as the console's address: an IP address, or a proxy's own name. Do not point a name at the instance that you do not mean to be the console.
 
@@ -103,8 +102,8 @@ Any hostname the instance does not recognize acts as the console's address: an I
 
 | At | The console | The API | A member's console session | Apps |
 | --- | --- | --- | --- | --- |
-| `PUBLIC_URL` | Yes | All of it | Counts | By path, unless `APPS_URL` is set. Apps written as code only with `APPS_ON_CONSOLE_ADDRESS=true`. |
-| `APPS_URL` | No | All of it, by API key or app sign-in | Ignored | By path |
+| `PUBLIC_URL` | Yes | All of it | Counts | By path, unless `APPS_URL` is set. An app with an enabled and proved hostname is redirected to it. |
+| `APPS_URL` | No | All of it, by API key or app sign-in | Ignored | By path. An app with a hostname of its own is redirected to it. |
 | A registered hostname | No | That tenant only | Ignored | One app at the root |
 
 ## The result
@@ -116,7 +115,7 @@ Any hostname the instance does not recognize acts as the console's address: an I
 - **Everyone shares one rate limit, or the audit log shows the proxy's address.** `TRUSTED_PROXIES` is wrong for the number of proxies. Behind a CDN and a proxy it is `2`.
 - **A caller can choose their own address.** The proxy does not overwrite `X-Forwarded-For`. With the default `1` and no proxy at all, a caller can still write the last entry: set `TRUSTED_PROXIES=0`.
 - **A registered hostname shows the console.** The name is not enabled, or the proxy rewrites the `Host` header.
-- **A staff sign-in from an app loops back to the console.** The app's address is not `APPS_URL` or an enabled hostname of that tenant.
+- **A staff sign-in from an app loops back to the console.** The app's address is not `PUBLIC_URL`, `APPS_URL` or an enabled hostname of that tenant.
 - **The console's run list updates only every few seconds.** The proxy buffers the event stream.
 - **A webhook that waits for a flow answers 502 or 504.** The proxy cuts it before 25 seconds.
 

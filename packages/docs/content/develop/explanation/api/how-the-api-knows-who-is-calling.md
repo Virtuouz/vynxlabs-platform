@@ -1,6 +1,6 @@
 ---
 title: How the API knows who is calling
-description: The credentials the API accepts, what each reaches, how a session cookie differs from an API key, and why a service account's key is turned away from some routes.
+description: The credentials the API accepts, what each reaches, how a session cookie differs from an API key and an app token, and why a service account's key is turned away from some routes.
 subjects: [api, authentication]
 ---
 
@@ -15,6 +15,7 @@ A request is answered as one principal: a member, a service account, an end user
 | API key | `Authorization: Bearer vxk_...` | A member, or a service account. | Every route that asks for a permission. |
 | Console session | A cookie, `vx_member.session_token`. | A member. | The instance's own address only, and for seven days. |
 | Sign-in to an app | A cookie, `vx_app_<tenant id>`, and a token that begins `vxs_`. | An end user (30 days), or a member who opened an app (12 hours). | The app's own address, for that tenant. |
+| App token | `Authorization: Bearer vxa_...`, given to a page of an app written as code. | The person the page was served to. | The API, for the tenant of the app, and only what apps use. It lasts 10 minutes. |
 | Worker credential | `vxw_...` | A worker. | The worker protocol. |
 | SCIM token | `Authorization: Bearer vxp_...` | A provider's push. | One provider's SCIM address. |
 | Webhook or form token | `vxh_...` or `vxf_...`, in the address. | Whoever holds the address. | That one trigger. |
@@ -32,9 +33,15 @@ A service account's key reaches only that account's tenant.
 
 ## Why a cookie is different
 
-A browser sends its cookies by itself, also when another site makes it send a request. So a change that arrives with a session cookie must come from a page of this instance: a write whose `Origin` header is not the address it was sent to, or the instance's own, is refused with 403 `cross_site`. A key is not sent by a browser unless a program puts it there, so it is not held to this. There is no cross-origin sharing: no `access-control-*` header is sent by the API.
+A browser sends its cookies by itself, also when another site makes it send a request. So a change that arrives with a session cookie must come from a page of this instance: a write whose `Origin` header is not the address it was sent to, or the instance's own, is refused with 403 `cross_site`. A key is not sent by a browser unless a program puts it there, so it is not held to this. The API shares nothing across origins, with one exception: a page of an app written as code is sandboxed and has no origin, so it sends `Origin: null`. The API answers that with `access-control-allow-origin: *`, and never allows credentials. A cookie sent with `Origin: null` is ignored, so such a page is known by its app token or by nothing.
 
-A member's session counts at the instance's own address and nowhere else. At an app's address a person is known by their sign-in to that tenant's apps and by nothing else.
+## What an app token is
+
+A page of an app written as code is served sandboxed, with no cookie. The instance reads the person's sign-in when it serves the page and puts an app token in the page. The token names the tenant, the address, the sign-in it stands on and the person. It is signed, and nothing about it is stored. Each use checks that the sign-in it stands on is still there and that the person is not disabled. A page renews it at `GET /api/v1/app-token`.
+
+A member's app token is limited to what apps use, also at the console's address. A route that is the member's own account, or the console's, refuses it. See [How access to an app works](../apps/app-access).
+
+A member's session counts at the instance's own address and nowhere else. At an app's address a person is known by their sign-in to that tenant's apps and by nothing else. A page of an app written as code, at any address, is known by its app token.
 
 ## Why a service account is turned away from some routes
 

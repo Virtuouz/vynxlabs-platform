@@ -508,7 +508,7 @@ describe("the files of a widget, served for its frame", () => {
 describe("an instance with no address for apps", () => {
   beforeAll(async () => {
     await t.stop();
-    await start({ config: { appsOnConsoleAddress: false } });
+    await start();
   });
 
   test("serves a widget's frame at the console's own, which runs it with no origin", async () => {

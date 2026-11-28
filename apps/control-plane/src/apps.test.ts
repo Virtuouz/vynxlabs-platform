@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { sql } from "@volvel/db";
 import { type Bundle, type BundleManifest, bundleDigest } from "@volvel/manifest";
-import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import { sweepAppFiles, sweepDueAppFiles } from "./kernel/apps/assets.js";
 import { DEFAULT_THEME } from "./kernel/apps/theme.js";
 import type { Message } from "./kernel/mail.js";
@@ -181,6 +181,12 @@ function browser(app: TestApp, host: string) {
   return {
     jar,
     get: (url: string) => call("GET", url),
+    /** A file of an app written as code: sent on to its name made from the app's files (decision 0008). */
+    async file(url: string) {
+      const sent = await call("GET", url);
+      if (sent.status !== 302 || !sent.location?.startsWith("/_apps/")) return sent;
+      return call("GET", sent.location);
+    },
     post: (url: string, json?: unknown, origin?: string) =>
       call("POST", url, { json: json ?? {}, ...(origin ? { origin } : {}) }),
     put: (url: string, json: unknown) => call("PUT", url, { json }),
@@ -486,25 +492,37 @@ describe("serving by path, on the instance's own address", () => {
   test("files come with their type, hashed ones may be kept, and a screen of the app gets the page", async () => {
     const staff = browser(t, MAIN);
     await staff.signInMember("alice@acme.example", PASSWORD);
-    const script = await staff.get("/apps/acme/main/portal/assets/app-3f9a1c7e.js");
+    // A file is sent on to a name made from the app's files, which needs no sign-in and never
+    // changes (decision 0008).
+    const sent = await staff.get("/apps/acme/main/portal/assets/app-3f9a1c7e.js");
+    expect(sent.status).toBe(302);
+    expect(sent.headers["cache-control"]).toBe("no-store");
+    // A module script is fetched with CORS: the step that sends it on says it may be read too.
+    expect(sent.headers["access-control-allow-origin"]).toBe("*");
+    expect(sent.location).toMatch(
+      new RegExp(`^/_apps/${tenant}/[0-9a-z-]+/[0-9a-f]{32}/assets/app-3f9a1c7e\\.js$`),
+    );
+    const script = await browser(t, MAIN).get(sent.location as string);
     expect(script.status).toBe(200);
     expect(script.headers["content-type"]).toContain("text/javascript");
-    expect(script.headers["cache-control"]).toContain("immutable");
+    expect(script.headers["cache-control"]).toBe("public, max-age=31536000, immutable");
     expect(script.headers["x-content-type-options"]).toBe("nosniff");
+    expect(script.headers["access-control-allow-origin"]).toBe("*");
+    expect(String(script.headers["content-security-policy"])).toContain("sandbox");
+    expect(script.headers["set-cookie"]).toBeUndefined();
     expect(script.bytes.equals(files.script?.content as Buffer)).toBe(true);
-    expect((await staff.get("/apps/acme/main/portal/robots.txt")).headers["cache-control"]).toBe(
-      "private, no-cache",
+    // Another app's name, or a name that is not one, serves nothing.
+    const name = (sent.location as string).split("/")[4] as string;
+    expect((await staff.get((sent.location as string).replace(name, "0".repeat(32)))).status).toBe(
+      404,
     );
-    expect((await staff.get("/apps/acme/main/portal/.well-known/assetlinks.json")).status).toBe(
+    expect((await staff.file("/apps/acme/main/portal/robots.txt")).status).toBe(200);
+    expect((await staff.file("/apps/acme/main/portal/.well-known/assetlinks.json")).status).toBe(
       200,
     );
     expect(
-      (await staff.get("/apps/acme/main/portal/assets/_commonjsHelpers-9f8e7d6c.js")).status,
+      (await staff.file("/apps/acme/main/portal/assets/_commonjsHelpers-9f8e7d6c.js")).status,
     ).toBe(200);
-    // A name with a long word in it is not a hash: it may change at the next deploy (APP-04).
-    expect(
-      (await staff.get("/apps/acme/main/portal/logo-horizontal.svg")).headers["cache-control"],
-    ).toBe("private, no-cache");
 
     expect((await staff.get("/apps/acme/main/portal/customers/42")).body).toContain(
       '<div id="app">',
@@ -528,13 +546,16 @@ describe("serving by path, on the instance's own address", () => {
     expect((await staff.get("/api/v1/me")).status).toBe(200);
   });
 
-  test("a public app is served to anyone, and a file of a private one is not", async () => {
+  test("a public app is served to anyone; a private one's page needs a sign-in, and its files do not", async () => {
     const visitor = browser(t, MAIN);
     const page = await visitor.get("/apps/acme/main/status/");
     expect(page.status).toBe(200);
     expect(page.body).toContain("Order status");
     expect(page.body).toContain('"principal":{"type":"anonymous"');
-    expect((await visitor.get("/apps/acme/main/portal/assets/app-3f9a1c7e.js")).status).toBe(303);
+    expect(page.body).toContain('"token":null');
+    expect((await visitor.get("/apps/acme/main/portal/")).status).toBe(303);
+    // Files are fetched by a name made from them, with no sign-in (decision 0008).
+    expect((await visitor.file("/apps/acme/main/portal/assets/app-3f9a1c7e.js")).status).toBe(200);
   });
 
   test("one page with its files is one counted request, not one for each file (HOST-21)", async () => {
@@ -558,36 +579,151 @@ describe("serving by path, on the instance's own address", () => {
 });
 
 describe("an instance with no address for apps", () => {
-  test("serves no app written as code at the console's address, and says why", async () => {
-    const config = t.kernel.config;
+  test("serves apps written as code at the console's address, sandboxed (decision 0008)", async () => {
     expect((await t.app.inject({ url: "/api/v1/instance" })).json().appsAddress).toBe("console");
-    config.appsOnConsoleAddress = false;
+    const page = await browser(t, MAIN).get("/apps/acme/main/status/");
+    expect(page.status).toBe(200);
+    expect(page.body).toContain("Order status");
+    expect(String(page.headers["content-security-policy"])).toContain("sandbox allow-scripts");
+    expect(String(page.headers["content-security-policy"])).not.toContain("allow-same-origin");
+  });
+});
+
+describe("a page of an app written as code is sandboxed and acts with an app token (decision 0008)", () => {
+  /** What a sandboxed page sends: `Origin: null`, no cookie, and its token if it has one. */
+  const sandboxed = (
+    token: string | undefined,
+    method: "GET" | "POST" | "OPTIONS",
+    url: string,
+    more: { host?: string; cookie?: string; headers?: Record<string, string> } = {},
+  ) =>
+    t.app.inject({
+      method,
+      url,
+      headers: {
+        host: more.host ?? MAIN,
+        origin: "null",
+        ...(token ? { authorization: `Bearer ${token}` } : {}),
+        ...(more.cookie ? { cookie: more.cookie } : {}),
+        ...(method === "POST" ? { "content-type": "application/json" } : {}),
+        ...more.headers,
+      },
+      ...(method === "POST" ? { payload: "{}" } : {}),
+    });
+  const contextOf = (body: string) =>
+    JSON.parse(
+      /<script type="application\/json" id="vx-context">(.*?)<\/script>/.exec(body)?.[1] as string,
+    );
+  const rows = () => `/api/v1/tenants/${tenant}/workspaces/${prod}/rows/orders`;
+
+  test("a member's page at the console's address holds a token that reaches only what apps use", async () => {
+    const staff = browser(t, MAIN);
+    await staff.signInMember("alice@acme.example", PASSWORD);
+    const page = await staff.get("/apps/acme/main/portal/");
+    expect(page.status).toBe(200);
+    expect(String(page.headers["content-security-policy"])).toContain(
+      "sandbox allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-downloads allow-modals",
+    );
+    expect(page.headers["cache-control"]).toBe("no-store");
+    const context = contextOf(page.body);
+    // The platform's script, after the context it reads and before the app's own: it gives a
+    // client built before 0.7 the token.
+    expect(page.body).toMatch(
+      /id="vx-context">.*?<\/script><script src="\/_platform\/app-token\.js"><\/script>/s,
+    );
+    const shim = await staff.get("/_platform/app-token.js");
+    expect(shim.status).toBe(200);
+    expect(shim.headers["content-type"]).toContain("javascript");
+    expect(context.token.token).toMatch(/^vxa_/);
+    expect(Date.parse(context.token.expiresAt) - Date.now()).toBeGreaterThan(9 * 60_000);
+    const token = context.token.token as string;
+
+    // What apps use: rows of the tenant's tables, read with CORS for the sandbox.
+    const read = await sandboxed(token, "GET", rows());
+    expect(read.statusCode, read.body).toBe(200);
+    expect(read.headers["access-control-allow-origin"]).toBe("*");
+    expect(read.headers["access-control-allow-credentials"]).toBeUndefined();
+    // Nothing of the console: the member's own account, the tenant's members, the instance.
+    expect((await sandboxed(token, "GET", "/api/v1/me")).statusCode).toBe(403);
+    expect((await sandboxed(token, "GET", `/api/v1/tenants/${tenant}/members`)).statusCode).toBe(
+      403,
+    );
+    expect((await sandboxed(token, "GET", "/api/v1/tenants")).statusCode).toBe(403);
+    // The console's cookie, sent with no origin, is no one's.
+    expect(
+      (await sandboxed(undefined, "GET", "/api/v1/me", { cookie: aliceCookie })).statusCode,
+    ).toBe(401);
+  });
+
+  test("a preflight is answered for a page with no origin, and for no other", async () => {
+    const asked = {
+      "access-control-request-method": "POST",
+      "access-control-request-headers": "authorization, content-type",
+    };
+    const preflight = await sandboxed(undefined, "OPTIONS", rows(), { headers: asked });
+    expect(preflight.statusCode).toBe(204);
+    expect(preflight.headers["access-control-allow-origin"]).toBe("*");
+    expect(String(preflight.headers["access-control-allow-headers"])).toContain("authorization");
+    expect(preflight.headers["access-control-allow-credentials"]).toBeUndefined();
+    const elsewhere = await t.app.inject({
+      method: "OPTIONS",
+      url: rows(),
+      headers: { host: MAIN, origin: "https://elsewhere.example", ...asked },
+    });
+    expect(elsewhere.headers["access-control-allow-origin"]).toBeUndefined();
+  });
+
+  test("a token holds to its tenant, its address and its signature", async () => {
+    const staff = browser(t, MAIN);
+    await staff.signInMember("alice@acme.example", PASSWORD);
+    const token = contextOf((await staff.get("/apps/acme/main/portal/")).body).token
+      .token as string;
+    // Another tenant's tables.
+    const there = await sandboxed(token, "GET", `/api/v1/tenants/${other}/workspaces`);
+    expect([403, 404]).toContain(there.statusCode);
+    // Another address: the token was given at this one.
+    expect((await sandboxed(token, "GET", rows(), { host: DOMAIN })).statusCode).toBe(401);
+    // A token changed by a letter.
+    const [body, signature] = token.slice(4).split(".") as [string, string];
+    const claims = JSON.parse(Buffer.from(body, "base64url").toString());
+    const forged = `vxa_${Buffer.from(JSON.stringify({ ...claims, t: other })).toString("base64url")}.${signature}`;
+    expect((await sandboxed(forged, "GET", rows())).statusCode).toBe(401);
+  });
+
+  test("a token is renewed with itself while its sign-in lasts, and ends with it", async () => {
+    const ed = await endUser(t, alice, tenant, "acme", "renewal@customer.example");
+    const page = await ed.browser.get("/apps/acme/main/status/");
+    const { token } = contextOf(page.body).token as { token: string };
+    expect(contextOf(page.body).principal.type).toBe("end_user");
+    const renewed = await sandboxed(token, "GET", "/api/v1/app-token");
+    expect(renewed.statusCode, renewed.body).toBe(200);
+    expect(renewed.json().token).toMatch(/^vxa_/);
+    expect(renewed.headers["cache-control"]).toBe("no-store");
+    // Ten minutes later it is refused; the renewed one is newer.
+    vi.useFakeTimers({ toFake: ["Date"], now: Date.now() + 11 * 60_000 });
     try {
-      const page = await browser(t, MAIN).get("/apps/acme/main/status/");
-      expect(page.status).toBe(503);
-      expect(page.body).toContain("This app is not served at this address");
-      expect(page.body).toContain("APPS_URL");
-      expect(page.body).not.toContain("Order status");
-      expect((await t.app.inject({ url: "/api/v1/instance" })).json().appsAddress).toBe("none");
+      expect((await sandboxed(token, "GET", `/api/v1/tenants/${tenant}/session`)).statusCode).toBe(
+        401,
+      );
     } finally {
-      config.appsOnConsoleAddress = true;
+      vi.useRealTimers();
     }
+    // Signing out with the token ends the sign-in it stands on: the cookie stands for nothing.
+    const fresh = renewed.json().token as string;
+    expect(
+      (await sandboxed(fresh, "POST", `/api/v1/tenants/${tenant}/end-user-auth/sign-out`))
+        .statusCode,
+    ).toBe(204);
+    expect((await sandboxed(fresh, "GET", "/api/v1/app-token")).statusCode).toBe(401);
+    expect((await ed.browser.get("/apps/acme/main/portal/")).status).toBe(303);
   });
 });
 
 describe("the portal home on an instance with no address for apps (APP-09)", () => {
-  test("lists the apps that can be opened, and not the code apps that answer 503", async () => {
-    const config = t.kernel.config;
+  test("lists the apps written as code, which are served there", async () => {
     const staff = browser(t, MAIN);
     expect(await staff.signInMember("alice@acme.example", PASSWORD)).toBe(200);
-    const open = async () => (await staff.get("/portal/acme/")).body as string;
-    expect(await open()).toContain("Order status");
-    config.appsOnConsoleAddress = false;
-    try {
-      expect(await open()).not.toContain("Order status");
-    } finally {
-      config.appsOnConsoleAddress = true;
-    }
+    expect((await staff.get("/portal/acme/")).body as string).toContain("Order status");
   });
 });
 
@@ -1700,7 +1836,7 @@ describe("a hostname of the tenant's own", () => {
     expect(page.body).toContain('<base href="/">');
     expect(page.body).toContain('"portal":"/_"');
     expect(
-      (await visitor.get("/assets/app-3f9a1c7e.js")).bytes.equals(files.script?.content as Buffer),
+      (await visitor.file("/assets/app-3f9a1c7e.js")).bytes.equals(files.script?.content as Buffer),
     ).toBe(true);
     expect((await visitor.get("/customers/42")).body).toContain('<div id="app">');
     // The other app of the workspace is not here, and neither is the path form.
@@ -1880,6 +2016,43 @@ describe("a hostname of the tenant's own", () => {
   });
 });
 
+describe("an app with a hostname of its own (decision 0008)", () => {
+  test("is no longer served at the shared address: it is sent to its hostname, path and query kept", async () => {
+    const grant = await t.admin.post(`/tenants/${tenant}/access-grants`, {
+      reason: "Turn the name on",
+      roleId: roles.tenant_admin,
+    });
+    const created = await alice.post(`/tenants/${tenant}/domains`, {
+      workspaceId: prod,
+      app: "portal",
+      hostname: DOMAIN,
+    });
+    expect(created.status, JSON.stringify(created.body)).toBe(201);
+    const staff = browser(t, MAIN);
+    await staff.signInMember("alice@acme.example", PASSWORD);
+    try {
+      // Not proved yet: still served where it was.
+      expect((await staff.get("/apps/acme/main/portal/")).status).toBe(200);
+      await t.admin.patch(`/tenants/${tenant}/domains/${created.body.id}`, { enabled: true });
+      await t.db
+        .updateTable("app_domain")
+        .set({ verified_at: new Date() })
+        .where("id", "=", created.body.id)
+        .execute();
+      const sent = await staff.get("/apps/acme/main/portal/customers/42?tab=open");
+      expect(sent.status).toBe(308);
+      expect(sent.location).toBe(`http://${DOMAIN}/customers/42?tab=open`);
+      expect((await staff.get("/apps/acme/main/portal/")).location).toBe(`http://${DOMAIN}/`);
+      // The workspace's other apps stay where they are.
+      expect((await staff.get("/apps/acme/main/status/")).status).toBe(200);
+    } finally {
+      await alice.delete(`/tenants/${tenant}/domains/${created.body.id}`);
+      await t.admin.delete(`/tenants/${tenant}/access-grants/${grant.body.id}`);
+      t.kernel.hosts.forget(DOMAIN);
+    }
+  });
+});
+
 describe("a second address for apps", () => {
   let s: TestApp;
   let id: string;
@@ -1974,7 +2147,7 @@ describe("moving a tenant", () => {
       const page = await visitor.get("/apps/acme/main/portal/");
       expect(page.status).toBe(200);
       expect(
-        (await visitor.get("/apps/acme/main/portal/assets/app-3f9a1c7e.js")).bytes.equals(
+        (await visitor.file("/apps/acme/main/portal/assets/app-3f9a1c7e.js")).bytes.equals(
           files.script?.content as Buffer,
         ),
       ).toBe(true);

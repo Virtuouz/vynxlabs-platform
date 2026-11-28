@@ -12,6 +12,7 @@ import { challengeProblem, challengeOf as domainChallenge } from "../kernel/apps
 import { hostnameOf } from "../kernel/apps/hosts.js";
 import { actorOf, createHandoff, startAppSession, takeHandoff } from "../kernel/apps/sessions.js";
 import { cleanTheme, resolveTheme, themeCss } from "../kernel/apps/theme.js";
+import { APP_TOKEN_PREFIX, renewAppToken } from "../kernel/apps/tokens.js";
 import { type Trx, writeAudit } from "../kernel/audit.js";
 import { principalLabel } from "../kernel/binding-labels.js";
 import { guardedFetch } from "../kernel/egress.js";
@@ -1208,6 +1209,40 @@ export function appRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         return reply
           .header("cache-control", "no-store")
           .redirect(safePath(query.return) ?? "/", 302);
+      },
+    );
+
+    app.get(
+      "/app-token",
+      {
+        config: {
+          access: access.custom(
+            "Needs an app token (`vxa_…`) in the Authorization header: the one a page of an app written as code was given.",
+          ),
+        },
+        schema: {
+          summary: "Renew a page's app token",
+          description:
+            "A page of an app written as code is served sandboxed and calls the API with an " +
+            "app token, which lasts ten minutes. The page sends the token it holds and is " +
+            "given a new one, for as long as the sign-in it was served with lasts. " +
+            "`@volvel/app` does this by itself.",
+          tags: ["apps"],
+          response: {
+            200: Type.Object({
+              token: Type.String(),
+              expiresAt: Type.String({ format: "date-time" }),
+            }),
+          },
+        },
+      },
+      async (request, reply) => {
+        const token = request.headers.authorization?.split(" ")[1];
+        if (!token?.startsWith(APP_TOKEN_PREFIX)) {
+          throw new HttpError(401, "unauthenticated", "Send the page's app token to renew it.");
+        }
+        reply.header("cache-control", "no-store");
+        return renewAppToken(kernel, request, token);
       },
     );
   };

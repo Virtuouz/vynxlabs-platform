@@ -82,7 +82,6 @@ export function PublishCheck({
   const { catalog, loading, error: catalogError } = useCatalog(root);
   const lists = useActionLists(root);
   const keyed = useGroupKeys(root);
-  const instance = useLoad<{ appsAddress?: "separate" | "console" | "none" }>("/instance");
   // Only when the documents were read: a read that failed leaves the Help topics unchecked, not wrong.
   const docs = useLoad<DocsList>(`${root}/docs`);
 
@@ -106,7 +105,6 @@ export function PublishCheck({
       approvalFlows: new Map(
         lists.everyFlow.map((flow) => [flow.path, { title: flow.title, asks: flow.asks }]),
       ),
-      appsAddress: instance.data?.appsAddress,
       docTopics: docs.data
         ? new Set(docs.data.pages.flatMap((page) => (page.topic ? [page.topic] : [])))
         : undefined,
@@ -120,7 +118,6 @@ export function PublishCheck({
       lists.scripts,
       keyed.loaded,
       keyed.groups,
-      instance.data,
       docs.data,
     ],
   );

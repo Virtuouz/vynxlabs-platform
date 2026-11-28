@@ -70,7 +70,6 @@ describe("configuration", () => {
       authLimits: true,
       consoleDir: undefined,
       appsUrl: undefined,
-      appsOnConsoleAddress: false,
       limits: {
         runSlots: undefined,
         runMemoryFloorMb: undefined,

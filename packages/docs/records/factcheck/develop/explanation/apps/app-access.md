@@ -14,8 +14,6 @@ Lines are current at commit `14f7d5b9` (branch phase-31-write-the-docs). Paths a
 | A run's starter may read it. | inventory APP-01 | writer, read in code, not run; second agent, 2026-11-23 | not re-read; second agent to check |
 | ctx.run.startedBy and .as(id). | `packages/sdk/src/context.ts:19-25` | writer, read in code, not run; second agent, 2026-11-23 | holds |
 | Guest 403 on start; guest 401 on the stream; guest limits. | `kernel/errors.ts:43`; `routes/stream.ts:53`; `front.ts:179-181`; `http.ts:83-90` | writer, read in code, not run; second agent, 2026-11-23 | holds |
-| decide_in_console 403. | `kernel/pages/approvals.ts:528-533` | writer, read in code, not run; second agent, 2026-11-23 | holds |
-| A shared-origin note for two tenants' code at one address. | design; not tested | writer, read in code, not run; second agent, 2026-11-23 | design claim, not tested |
 | Policy kinds open, owner, rules. | `Apps.tsx:50-54` | writer, run on the instance 2026-11-23; second agent, 2026-11-23 | holds |
 
 ## Second check, 2026-11-23 (Checked by: second agent, 2026-11-23)
@@ -31,3 +29,15 @@ All claims read against code and, where a screen or call shows them, run.
 - Run stream limits and `startedBy`/`.as()`: read in code, not run.
 - Round three (2026-11-26), "An end user's email address is not proved by signing up": sign-up signs in at once with no check of the address, mail or not (`routes/endusers.ts:1013-1055`, `kernel/apps/front.ts:379-411`, `kernel/endusers.ts:40-75`); the principal's `email` is the stored address (`kernel/apps/sessions.ts:122-134`); an invited account has no password until its link is used (`routes/endusers.ts:264-310`); a reset or invitation link deletes the account's app sessions (`kernel/endusers.ts:205-262`); a provider of end users refuses an email it says is not verified (`kernel/sso/people.ts:89`). Read in code, not run.
 - Members' workspace bindings absent from Open to: `routes/apps.ts:371-390` (only anonymous, end_users, end_user and end_user_group).
+
+## Decision 0008 (apps isolation), 2026-11-28
+
+The page was changed for decision 0008 (`docs/adr/0008-apps-written-as-code-are-sandboxed.md`). Lines are those of the working tree of branch `feat/apps-isolation`, before its commit. Read in code, not run.
+
+| Claim | Source (file:line) | Checked by | Result |
+| --- | --- | --- | --- |
+| A code app's page gets a `vxa_` token, 10 minutes, in its context; null when nobody is signed in; renewed at `GET /api/v1/app-token`. | `kernel/apps/tokens.ts:18-20,57-72,179`; `routes/apps.ts:1216`; `kernel/apps/front.ts:1160`; `packages/app/src/client.ts:29-33,102-128` | writer, read in code, not run, 2026-11-28 | holds |
+| The token is worth nothing once its sign-in ends or the person is disabled; a member's token is app-only at every address. | `kernel/apps/tokens.ts:128-178`; `routes/apps.ts:1197` (`appTenantId`) | writer, read in code, not run, 2026-11-28 | holds |
+| `signOut()` ends the sign-in the token stands on. | `packages/app/src/client.ts:614-616` | writer, read in code, not run, 2026-11-28 | holds |
+| No `decide_in_console` 403; approvals are decided in an App Builder app at every address; a code app cannot decide one. | `kernel/pages/approvals.ts` (`approvalStanding`, line 157); `kernel/principal.ts` | writer, read in code, not run, 2026-11-28 | holds |
+| A code app keeps nothing in the browser and cannot sign in by calling the API. | `packages/manifest/src/app-policy.ts`; `packages/app/src/client.ts` | writer, read in code, not run, 2026-11-28 | holds |

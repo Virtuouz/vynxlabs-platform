@@ -21,7 +21,7 @@ A widget added in the builder starts with the definition's `defaults`. A setting
 | `rows` | `columns` and `rows`. |
 | `summary` | `columns`, `breakdowns` (the names of the columns that are breakdowns), `values` (the names of the value columns), `rows`, and where the input has them `previous`, `measures`, `buckets`, `span` and `trend`. |
 | `record` | `columns`, and `record`: one row or `null`. |
-| `approvals` | `waiting` and `decided` (each step with its flow, fields and whether the viewer may decide it), `more`, and `decideIn` when the requests are decided in the console. |
+| `approvals` | `waiting` and `decided` (each step with its flow, fields and whether the viewer may decide it), `more`, and `decideIn`, which an instance that decides requests in the console would send. This instance does not send it: requests are decided in the app. |
 
 A column in `columns` has a `name`, a `label`, and a `type` (`text`, `integer`, `number`, `boolean`, `date`, `timestamp`, `enum`, `reference`, `json` or `uuid`), and may have a `description`, the `values` of an enum with their colors, `required`, `default` and, for a reference, the `references` table.
 

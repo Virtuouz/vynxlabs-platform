@@ -46,8 +46,6 @@ export function testConfig(overrides: Partial<Config> = {}): Config {
     consoleDir: undefined,
     screensDir: undefined,
     appsUrl: undefined,
-    // Most suites serve apps at the one address they have. The default is tested on its own.
-    appsOnConsoleAddress: true,
     mail: undefined,
     mailCaptureDir: undefined,
     limits: {

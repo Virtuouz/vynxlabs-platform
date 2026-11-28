@@ -152,8 +152,6 @@ export interface ReadRequest {
   chosen?: Record<string, string>;
   /** The page is read as a draft, by someone who may edit it. */
   draft?: boolean;
-  /** Where the request arrived takes no decisions: the approvals say they are decided in the console. */
-  elsewhere?: boolean;
 }
 
 /**
@@ -740,7 +738,6 @@ export async function readWidget(
         at,
         widget,
         draft: request.draft === true,
-        elsewhere: request.elsewhere === true,
       });
       continue;
     }

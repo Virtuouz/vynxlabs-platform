@@ -19,7 +19,6 @@ Lines are current at commit `14f7d5b9` (branch phase-31-write-the-docs). Paths a
 | portal_reader and portal_user permissions; neither holds run:write or flow_run:write. | `packages/db/migrations/0027_portal_reader.sql`; `0018_apps.sql:136` | writer, read in code, not run; second agent, 2026-11-23 | holds |
 | An end user in the group with these bindings started a flow and a script through the API. | run: POST flow-runs and runs as Jess Morgan, 201 both | writer, run on the instance 2026-11-23; second agent, 2026-11-23 | holds as run |
 | App address /apps/<tenant>/<workspace>/<app>/. | `kernel/apps/address.ts:25` | writer, run on the instance 2026-11-23; second agent, 2026-11-23 | holds as run |
-| Repository apps answer 503 with no APPS_URL; setting is APPS_URL. | `kernel/apps/hosts.ts:86`; Apps screen notice read on the instance | writer, run on the instance 2026-11-23; second agent, 2026-11-23 | notice holds as run; 503 read in code |
 | Files no deployable bundle names are removed a week after. | `inventory/apps-as-code.md` APP-17; fixed/app.md | writer, read in code, not run; second agent, 2026-11-23 | not re-read in code; second agent to check |
 
 ## Second check, 2026-11-23 (Checked by: second agent, 2026-11-23)
@@ -39,3 +38,12 @@ Commit `d619bfbd` plus the working tree. Written by the A7 writer; second agent 
 ### Second check (a7r), 2026-11-24, second agent
 
 Lane a7r build (a7 merged), throwaway instance http://localhost:8722 (database a7r34, Fernhill seeded), lane CLI `packages/cli/dist/bin.js`. `pnpm docs:check` passes. Rebuilt the repository from the page's snippets (table file, script, app, `apps/desk`, three bindings and the role) with the lane CLI: `volvel build` and `deploy` print what the page shows (`App files: 6, 4 new.`, `7 created`). The **Apps** screen lists the app with the tag REPOSITORY, the address `/apps/fernhill/<workspace>/desk/` and **Front desk** under Open to, and says repository apps are not served until `APPS_URL` is set, as the page says. Not run: the app's page in a browser (the instance has no `APPS_URL`).
+
+## Decision 0008 (apps isolation), 2026-11-28
+
+The page was changed for decision 0008 (`docs/adr/0008-apps-written-as-code-are-sandboxed.md`). Lines are those of the working tree of branch `feat/apps-isolation`, before its commit. Read in code, not run.
+
+| Claim | Source (file:line) | Checked by | Result |
+| --- | --- | --- | --- |
+| A repository app is served at the console's address or `APPS_URL`; no 503 for a missing address. | `routes/instance.ts:67`; `kernel/apps/hosts.ts:60` | writer, read in code, not run, 2026-11-28 | holds |
+| Its pages are sandboxed: no cookie, no storage. | `packages/manifest/src/app-policy.ts`; `kernel/apps/front.ts:1109` | writer, read in code, not run, 2026-11-28 | holds |

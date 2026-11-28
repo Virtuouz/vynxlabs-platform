@@ -68,7 +68,7 @@ If you only need the steps of an installation, the how-to [Install an instance w
 
 6. **Sign in as the first operator.** Open `http://localhost:8095` in a browser. Type `owner@example.com`, press **Continue**, type the password and press **Sign in**. The first screen is **Tenants**: "No tenants yet", "A tenant is one client organization. Create the first one to start adding workspaces and members."
 
-7. **Read the Health screen.** In the menu on the left under **Instance**, choose **Health**. It says **Ready**, "This replica takes requests.", the database and object store as **Answers**, **Version** `0.5.0`, and under **MASTER KEY** a fingerprint of your key, with `MASTER_KEY_SECONDARY` **Not set**. Under **THIS REPLICA'S SETTINGS** it says **Workers** "Started in a worker host", and **Address** `http://localhost:8095`. **Apps** says "Not served yet: set APPS_URL", which only matters for apps written as code.
+7. **Read the Health screen.** In the menu on the left under **Instance**, choose **Health**. It says **Ready**, "This replica takes requests.", the database and object store as **Answers**, **Version** `0.5.0`, and under **MASTER KEY** a fingerprint of your key, with `MASTER_KEY_SECONDARY` **Not set**. Under **THIS REPLICA'S SETTINGS** it says **Workers** "Started in a worker host", and **Address** `http://localhost:8095`. **Apps** says "At the console's address, each app sandboxed".
 
 8. **Run a script.** Follow [your first script](../../start/tutorials/your-first-script), from step 1, on this instance. The test pane shows **Succeeded**, and the workspace's **First steps** list has **A worker to run code** done. The worker host starts the worker that ran it.
 

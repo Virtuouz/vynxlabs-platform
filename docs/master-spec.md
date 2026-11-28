@@ -550,16 +550,16 @@ The platform's own interface covers resources, runs, logs, users, settings and t
 
 ### Addresses
 
-An app is JavaScript written for one tenant. Where it is served decides what it can reach.
+An app is JavaScript written for one tenant. Every page of one is served sandboxed, with no origin of its own, wherever it is served (decision 0008). It sends no cookie, reads no other page and keeps nothing in the browser. It acts with a short-lived token it is given when served, which reaches only what apps use in that tenant. Its files are served without a sign-in, by a name made from their content.
 
-- **By path**, on the instance's own address. This needs one hostname, so it works on a single-host install. It relies on the trust model: everyone who authors code works for the operator.
+- **By path**, on the instance's own address: the default. This needs one hostname, so it works on a single-host install.
 - **On a second address**, when the operator configures one. Every app is then served there and not at the instance's own address.
-- **At a hostname a tenant registers** for one app, public or internal. The app is served at its root. The name's owner shows agreement with a DNS record. Certificates belong to whatever terminates TLS in front of the instance: the platform issues none.
+- **At a hostname a tenant registers** for one app, public or internal. The app is served at its root, and once the name is proved, no longer at the shared address. The name's owner shows agreement with a DNS record. Certificates belong to whatever terminates TLS in front of the instance: the platform issues none.
 - **At a hostname a tenant registers for its portal.** The portal is served at its root and every app of the workspace by path beneath it, so one name and one DNS record serve them all.
 
 An app built in code may declare the tables it reads, so that whoever shares it can see what it reaches. Apps built in the console declare theirs from their widgets.
 
-A member's console session counts only at the instance's own address. At any other address a member is carried over by a one-time code and gets a sign-in for that one tenant, limited to what apps use. An operator's reach across tenants therefore never arrives where a tenant's code runs.
+A member's console session counts only at the instance's own address, and never for an app written as code: its page acts with its token, which for a member is limited to what apps use in that tenant. At any other address a member is carried over by a one-time code and gets a sign-in for that one tenant, with the same limit. An operator's reach across tenants therefore never arrives where a tenant's code runs.
 
 ### App files
 

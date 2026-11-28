@@ -212,7 +212,7 @@ By the end you will have an app in a tenant's repository that reads a table and 
 
 The app is in **Build**, then **Apps**, with the tag **Repository**, its address, and, in **Open to**, the group the binding names, tagged **From repository** in the Share sheet. Its address is `/apps/<tenant>/<workspace>/<app>/` on the instance's address for apps.
 
-A repository app is served only where the instance has an address for apps. If it has none, the **Apps** screen says so and the app answers 503. `APPS_URL` is the setting that gives it one. Apps made in the App Builder and sites of documentation are served either way.
+A repository app is served at the console's address, or at `APPS_URL` when the operator set one. Every page is served sandboxed: it has no origin of its own, so it has no cookie, no `localStorage` or `sessionStorage`, and cannot read another page. It acts with a token the instance puts in the page. What an app remembered in the browser, such as a chosen tab, is forgotten on reload. See [How access to an app works](../../explanation/apps/app-access).
 
 ## What the build checks
 

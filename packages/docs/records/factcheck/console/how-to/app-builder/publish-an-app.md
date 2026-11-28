@@ -23,3 +23,11 @@ Checked by: second agent, 2026-11-23. The files were read at commit `87000022` (
 | A member with only interface:write reads the check (tables and queries 'could not be checked: needs resource:read'), publishes and previews | run (Abchk Maker with App maintainer) | second agent, 2026-11-23 | holds |
 | 'The check could not be made' with 'Check again' when the preview request fails; Publish off until it can be made | `PublishCheck.tsx:171-200`; run with the preview request made to fail | second agent, 2026-11-23 | holds |
 | 'Try as <group> first' closes the panel and sets View as; the note 'Rows are yours…' shows | run (a Button limited to Billing) | second agent, 2026-11-23 | holds |
+
+## Decision 0008 (apps isolation), 2026-11-28
+
+The page was changed for decision 0008 (`docs/adr/0008-apps-written-as-code-are-sandboxed.md`). Lines are those of the working tree of branch `feat/apps-isolation`, before its commit. Read in code, not run.
+
+| Claim | Source (file:line) | Checked by | Result |
+| --- | --- | --- | --- |
+| The Publish check no longer has the row "Approvals are decided in the console". | `apps/console/src/screens/builder/publishCheck.ts`; `PublishCheck.tsx` | writer, read in code, not run, 2026-11-28 | holds |

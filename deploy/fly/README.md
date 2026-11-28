@@ -59,7 +59,7 @@ The `workers` group must run as root. If its log says "not running as root" or "
 
 Size the `workers` machines for the scripts they will run. The worker host runs as root, to start each worker as a user of its own. Set `MANAGED_WORKERS=false` instead if every tenant is served by standalone workers.
 
-`APPS_URL` gives apps written as code an address of their own: `fly certs add apps.<your domain>`. Without it they are not served.
+`APPS_URL` gives apps written as code an address of their own: `fly certs add apps.<your domain>`. Without it they are served at the console's address, each page sandboxed.
 
 Migrations run when the new machine starts, before it listens. The health check holds traffic until `/api/v1/healthz` returns 200, which it does once the machine listens. The check is on liveness and not on `/api/v1/readyz`: readiness answers 503 while the object store cannot be reached, and with one machine a failing check makes the whole instance unreachable, though the console, the API and scripts still work. Watch `/api/v1/readyz` from your own monitor.
 

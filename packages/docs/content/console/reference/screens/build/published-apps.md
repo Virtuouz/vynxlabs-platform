@@ -26,7 +26,7 @@ The list has a description line, a search box and the **Built** filter above a t
 | Column | What it shows |
 | --- | --- |
 | **App** | The app's title and, under it, its path. |
-| **Address** | The app's address on this instance, as a link that opens in a new tab, then one link for each hostname of the tenant's that is enabled for it. A documentation app that is switched off shows the tag **Not published** instead. |
+| **Address** | The app's address on this instance, as a link that opens in a new tab, then one link for each hostname of the tenant's that is enabled for it. An app with an enabled and proved hostname of its own is redirected there from the app's address on this instance. A documentation app that is switched off shows the tag **Not published** instead. |
 | **Open to** | Who is bound at the app, then who reaches every app through a binding at the workspace or the tenant. **Staff only** when no one is. The text is amber when the app is open to anyone. |
 | **Built** | The tag **App Builder**, **Documentation** or **Repository**. |
 
@@ -40,7 +40,6 @@ The list shows the apps of the deployed version. An app removed in the console s
 | --- | --- |
 | Empty | "No apps yet", with the text "An app is defined in the tenant's repository with defineApp, or made in the App Builder. It is served once it is deployed here." |
 | Nothing matches | "No app matches", with "Clear the search or choose All." |
-| Repository apps cannot be served | A notice above the list: "Apps built in the repository are not served on this instance yet." It goes on to say that they run only at an address of their own, and to ask whoever runs the instance to set `APPS_URL`. It shows when the instance has neither `APPS_URL` nor `APPS_ON_CONSOLE_ADDRESS` set to `true` and the workspace has a repository app. Apps made in the App Builder and documentation apps are served as usual. Someone who opens a repository app's address on such an instance gets the page "This app is not served at this address" with status 503, which says the same. If you run the instance, `APPS_URL` is a second address for apps, a different host from the instance's own. |
 | Not loaded | The list's error state, with a retry. |
 
 ## The inspector

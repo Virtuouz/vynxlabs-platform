@@ -12,7 +12,6 @@ Lines are current at commit `5ebf1c80` (branch phase-31-write-the-docs), under `
 | Only `Bearer vxk_` accepted; others 401 even with a cookie. | `kernel/principal.ts:106-114` | second agent, 2026-11-23 | checked |
 | Keys: hash stored with prefix and last four; refused when revoked, expired or owner disabled. | `kernel/principal.ts:13-52`; `routes/identity.ts:120-160` | second agent, 2026-11-23 | checked |
 | `cross_site` rule for writes with a cookie. | `kernel/principal.ts:77-93` | second agent, 2026-11-23 | checked |
-| No `access-control-*` header in the API. | inventory B (grep of `apps/control-plane/src`); not re-run | second agent, 2026-11-23 | checked |
 | Service account refused on `signed-in` routes unless declared (`GET /me` and approvals batch). | `kernel/http.ts:28-29,56,283-289`; `routes/batch.ts:246`; `routes/identity.ts:734` | second agent, 2026-11-23 | checked |
 | End users and app sign-ins: "This is only for a member signed in to the workspace." | `kernel/http.ts:159,283` | second agent, 2026-11-23 | checked |
 | A service account may not approve or decline an access change. | `kernel/tenant/releases.ts:1100-1104` | second agent, 2026-11-23 | checked |
@@ -24,3 +23,12 @@ Lines are current at commit `5ebf1c80` (branch phase-31-write-the-docs), under `
 Checked by: second agent, 2026-11-23.
 
 - Run: `Basic` header with a cookie 401, no `access-control-*` in an OPTIONS answer, a service account's key refused on `/api-keys` and `/tenants` ("This is only for a person signed in, not for a service account's key."), cross-site write 403 `cross_site` (see the key page's run). Session 7 days, end user 30 days, member app 12 hours and the approval link 48 hours read from `config.ts:125`, `kernel/apps/sessions.ts:8,10`, `kernel/flows/approval-links.ts:20`.
+
+## Decision 0008 (apps isolation), 2026-11-28
+
+The page was changed for decision 0008 (`docs/adr/0008-apps-written-as-code-are-sandboxed.md`). Lines are those of the working tree of branch `feat/apps-isolation`, before its commit. Read in code, not run.
+
+| Claim | Source (file:line) | Checked by | Result |
+| --- | --- | --- | --- |
+| An app token is `Authorization: Bearer vxa_...`, 10 minutes, for the app's tenant and what apps use. | `kernel/apps/tokens.ts:18-20,128-178`; `routes/apps.ts:1216` | writer, read in code, not run, 2026-11-28 | holds |
+| `Origin: null` is answered with `access-control-allow-origin: *`, never credentials; a cookie sent with it is ignored. | `kernel/apps/sandbox-cors.ts:9-39`; `kernel/principal.ts:124` | writer, read in code, not run, 2026-11-28 | holds |

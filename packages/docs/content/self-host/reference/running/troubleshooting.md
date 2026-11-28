@@ -41,7 +41,8 @@ Find the symptom, then the cause, then the page. Every message is as the instanc
 | An app's address answers "Nothing here" | The workspace has no deployed bundle with that app. | Open the workspace's Apps tab. |
 | A registered hostname shows the console | The name is not enabled, or the proxy rewrites the `Host` header. | [Put a proxy in front](../../how-to/running/put-a-proxy-in-front). |
 | A staff sign-in from an app loops back to the console | The app's address is not `APPS_URL` or an enabled hostname of that tenant. | |
-| The Apps list says "Apps built in the repository are not served on this instance yet." | `APPS_URL` is not set. **Instance**, then **Health**, says "Not served yet: set APPS_URL". | Set it, or knowingly set `APPS_ON_CONSOLE_ADDRESS=true`. |
+| `APPS_ON_CONSOLE_ADDRESS` is in your settings | The instance no longer reads it. Apps written as code are served at the console's address when there is no `APPS_URL`. | Remove it. |
+| An app written as code cannot keep a choice, such as a tab, after a reload | Its page is sandboxed and has no browser storage. An app keeps nothing in the browser. | Nothing to set. |
 
 ## Mail, imports and keys
 

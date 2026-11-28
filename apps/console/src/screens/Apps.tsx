@@ -495,7 +495,6 @@ function AppList({
   useEffect(() => {
     if (refresh > 0) reload();
   }, [refresh]);
-  const instance = useLoad<{ appsAddress?: "separate" | "console" | "none" }>("/instance");
   const share = useNeeds({ base: root, permission: "binding:write", what: "who may open an app" });
   // Taking a draft back is a change of a draft: `interface:write` or `doc:write` is enough for an
   // app of their kind, as for any draft.
@@ -529,234 +528,217 @@ function AppList({
         sort.key === "built" ? (row.builtWith ?? "code") : row.title.toLowerCase();
       return (pick(a) < pick(b) ? -1 : pick(a) > pick(b) ? 1 : 0) * (sort.dir === "asc" ? 1 : -1);
     });
-  const unserved =
-    instance.data?.appsAddress === "none" &&
-    (list.data?.items ?? []).some(
-      (row) => row.builtWith !== "builder" && row.builtWith !== "docs" && !row.interface,
-    );
   return (
-    <>
-      {unserved ? (
-        <div className="mb-3">
-          <Notice tone="attention">
-            Apps built in the repository are not served on this instance yet. They run only at an
-            address of their own for apps, so that their code never runs where the console's sign-in
-            is, and this instance has none. Ask whoever runs it to set APPS_URL. Apps made in the
-            App Builder are served as usual.
-          </Notice>
-        </div>
-      ) : null}
-      <CollectionView<AppSummary>
-        title="Apps"
-        description="What end users and staff can open: apps built in the repository, and apps made in the App Builder. Each has an address here, and can have hostnames of the tenant's own under Domains."
-        toolbar={
-          <div className="flex flex-wrap items-center gap-3">
-            <label className="flex h-8 w-64 max-w-full items-center gap-2 rounded-control border border-line bg-structure px-3 text-ink-subtle">
-              <span className="sr-only">Find an app</span>
-              <input
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="Find by name or path"
-                className="min-w-0 flex-1 border-0 bg-transparent text-ink outline-none placeholder:text-ink-subtle"
-              />
-            </label>
-            <FilterChips
-              label="Built"
-              value={built}
-              onChange={setBuilt}
-              options={[
-                { value: "all", label: "All", count: items.length },
-                {
-                  value: "builder",
-                  label: "App Builder",
-                  count: items.filter((row) => row.builtWith === "builder").length,
-                },
-                {
-                  value: "code",
-                  label: "Repository",
-                  count: items.filter((row) => (row.builtWith ?? "code") === "code").length,
-                },
-                {
-                  value: "docs",
-                  label: "Documentation",
-                  count: items.filter((row) => row.builtWith === "docs").length,
-                },
-              ]}
+    <CollectionView<AppSummary>
+      title="Apps"
+      description="What end users and staff can open: apps built in the repository, and apps made in the App Builder. Each has an address here, and can have hostnames of the tenant's own under Domains."
+      toolbar={
+        <div className="flex flex-wrap items-center gap-3">
+          <label className="flex h-8 w-64 max-w-full items-center gap-2 rounded-control border border-line bg-structure px-3 text-ink-subtle">
+            <span className="sr-only">Find an app</span>
+            <input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Find by name or path"
+              className="min-w-0 flex-1 border-0 bg-transparent text-ink outline-none placeholder:text-ink-subtle"
             />
-          </div>
-        }
-        table={{ sort, onSort: setSort }}
-        columns={[
-          {
-            header: "App",
-            sort: "title",
-            cell: (row) => (
+          </label>
+          <FilterChips
+            label="Built"
+            value={built}
+            onChange={setBuilt}
+            options={[
+              { value: "all", label: "All", count: items.length },
+              {
+                value: "builder",
+                label: "App Builder",
+                count: items.filter((row) => row.builtWith === "builder").length,
+              },
+              {
+                value: "code",
+                label: "Repository",
+                count: items.filter((row) => (row.builtWith ?? "code") === "code").length,
+              },
+              {
+                value: "docs",
+                label: "Documentation",
+                count: items.filter((row) => row.builtWith === "docs").length,
+              },
+            ]}
+          />
+        </div>
+      }
+      table={{ sort, onSort: setSort }}
+      columns={[
+        {
+          header: "App",
+          sort: "title",
+          cell: (row) => (
+            <span className="flex min-w-0 flex-col">
+              <span className="truncate font-medium">{row.title}</span>
+              <Mono className="truncate text-ink-subtle">{row.path}</Mono>
+            </span>
+          ),
+        },
+        {
+          header: "Address",
+          priority: 2,
+          cell: (row) =>
+            row.published === false ? (
+              <Tag tone="draft">Not published</Tag>
+            ) : (
               <span className="flex min-w-0 flex-col">
-                <span className="truncate font-medium">{row.title}</span>
-                <Mono className="truncate text-ink-subtle">{row.path}</Mono>
+                {external(row.url, row.url.replace(/^https?:\/\//, ""))}
+                {row.domains
+                  .filter((domain) => domain.enabled)
+                  .map((domain) => (
+                    <span key={domain.hostname}>{external(domain.url, domain.hostname)}</span>
+                  ))}
               </span>
             ),
-          },
-          {
-            header: "Address",
-            priority: 2,
-            cell: (row) =>
-              row.published === false ? (
-                <Tag tone="draft">Not published</Tag>
-              ) : (
-                <span className="flex min-w-0 flex-col">
-                  {external(row.url, row.url.replace(/^https?:\/\//, ""))}
-                  {row.domains
-                    .filter((domain) => domain.enabled)
-                    .map((domain) => (
-                      <span key={domain.hostname}>{external(domain.url, domain.hostname)}</span>
-                    ))}
-                </span>
-              ),
-          },
-          {
-            header: "Open to",
-            priority: 3,
-            cell: (row) =>
-              openTo(row).length > 0 ? (
-                <span className={isPublic(row) ? "text-attention" : ""}>
-                  {openTo(row).join(", ")}
-                </span>
-              ) : (
-                <span className="text-ink-subtle">Staff only</span>
-              ),
-          },
-          {
-            header: "Built",
-            sort: "built",
-            cell: (row) =>
-              row.builtWith === "builder" ? (
-                <Tag tone="draft">App Builder</Tag>
-              ) : row.builtWith === "docs" ? (
-                <Tag tone="draft">Documentation</Tag>
-              ) : (
-                <Tag tone="repository">Repository</Tag>
-              ),
-          },
-        ]}
-        rows={list.data ? shown : undefined}
-        rowKey={(row) => row.id}
-        selected={open?.id ?? chosen}
-        onSelect={(row) => setChosen(row.id)}
-        error={list.error}
-        onRetry={list.reload}
-        empty={{
-          title: items.length > 0 ? "No app matches" : "No apps yet",
-          text:
-            items.length > 0
-              ? "Clear the search or choose All."
-              : "An app is defined in the tenant's repository with defineApp, or made in the App Builder. It is served once it is deployed here.",
-        }}
-        inspector={
-          open ? (
-            <Inspector
-              open
-              label="The chosen app"
-              title={open.title}
-              eyebrow={open.path}
-              onClose={() => setChosen(undefined)}
-              footer={
-                <>
-                  <Button
-                    variant="primary"
-                    disabled={!share.can}
-                    {...(share.reason ? { tooltip: share.reason } : {})}
-                    onClick={() => onShare(open)}
+        },
+        {
+          header: "Open to",
+          priority: 3,
+          cell: (row) =>
+            openTo(row).length > 0 ? (
+              <span className={isPublic(row) ? "text-attention" : ""}>
+                {openTo(row).join(", ")}
+              </span>
+            ) : (
+              <span className="text-ink-subtle">Staff only</span>
+            ),
+        },
+        {
+          header: "Built",
+          sort: "built",
+          cell: (row) =>
+            row.builtWith === "builder" ? (
+              <Tag tone="draft">App Builder</Tag>
+            ) : row.builtWith === "docs" ? (
+              <Tag tone="draft">Documentation</Tag>
+            ) : (
+              <Tag tone="repository">Repository</Tag>
+            ),
+        },
+      ]}
+      rows={list.data ? shown : undefined}
+      rowKey={(row) => row.id}
+      selected={open?.id ?? chosen}
+      onSelect={(row) => setChosen(row.id)}
+      error={list.error}
+      onRetry={list.reload}
+      empty={{
+        title: items.length > 0 ? "No app matches" : "No apps yet",
+        text:
+          items.length > 0
+            ? "Clear the search or choose All."
+            : "An app is defined in the tenant's repository with defineApp, or made in the App Builder. It is served once it is deployed here.",
+      }}
+      inspector={
+        open ? (
+          <Inspector
+            open
+            label="The chosen app"
+            title={open.title}
+            eyebrow={open.path}
+            onClose={() => setChosen(undefined)}
+            footer={
+              <>
+                <Button
+                  variant="primary"
+                  disabled={!share.can}
+                  {...(share.reason ? { tooltip: share.reason } : {})}
+                  onClick={() => onShare(open)}
+                >
+                  Share
+                </Button>
+                {open.ownership === "code" ? (
+                  <span className="text-meta text-ink-muted">
+                    Managed in the repository: the app is removed there.
+                  </span>
+                ) : (
+                  <fieldset disabled={!edit.can} className="contents">
+                    <RemoveDraftButton
+                      root={root}
+                      kind="app"
+                      path={open.path}
+                      noun="app"
+                      state="deployed"
+                      then="Its address stops serving once that draft is deployed."
+                      onDone={() => list.reload()}
+                    />
+                  </fieldset>
+                )}
+                {open.published === false ? null : (
+                  <a
+                    href={open.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1.5 text-meta"
                   >
-                    Share
-                  </Button>
-                  {open.ownership === "code" ? (
-                    <span className="text-meta text-ink-muted">
-                      Managed in the repository: the app is removed there.
-                    </span>
-                  ) : (
-                    <fieldset disabled={!edit.can} className="contents">
-                      <RemoveDraftButton
-                        root={root}
-                        kind="app"
-                        path={open.path}
-                        noun="app"
-                        state="deployed"
-                        then="Its address stops serving once that draft is deployed."
-                        onDone={() => list.reload()}
-                      />
-                    </fieldset>
-                  )}
-                  {open.published === false ? null : (
-                    <a
-                      href={open.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex items-center gap-1.5 text-meta"
-                    >
-                      Open the live app <ArrowUpRight aria-hidden="true" size={14} />
-                    </a>
-                  )}
-                </>
-              }
-            >
-              <div className="flex flex-col gap-4">
-                {open.description ? <p className="m-0 text-ink-muted">{open.description}</p> : null}
-                {isPublic(open) ? (
-                  <Notice tone="attention">
-                    Anyone with the address can open it, without signing in.
-                  </Notice>
-                ) : null}
-                <KeyValues
-                  rows={[
-                    {
-                      label: "Address",
-                      value:
-                        open.published === false
-                          ? "Not published: switched off in the repository, so nothing is served"
-                          : external(open.url, open.url),
-                    },
-                    ...open.domains.map((domain) => ({
-                      label: domain.enabled ? "Hostname" : "Hostname (off)",
-                      value: external(domain.url, domain.hostname),
-                    })),
-                    {
-                      label: "Built",
-                      value:
-                        open.builtWith === "builder"
-                          ? `In the App Builder (${open.interface})`
-                          : open.builtWith === "docs"
-                            ? `From the pages under ${open.docs}`
-                            : "In the repository",
-                    },
-                    ...(open.builtWith !== "builder" && open.builtWith !== "docs"
-                      ? [
-                          {
-                            label: "Files",
-                            value: `${count(open.files)}, ${size(open.bytes)}`,
-                            mono: true,
-                          },
-                        ]
-                      : []),
-                    {
-                      label: "Reads",
-                      value: open.reads?.length ? open.reads.join(", ") : "Nothing declared",
-                      mono: true,
-                    },
-                    {
-                      label: "Open to",
-                      value:
-                        openTo(open).length > 0
-                          ? openTo(open).join(", ")
-                          : "Staff whose role lets them read this workspace",
-                    },
-                  ]}
-                />
-              </div>
-            </Inspector>
-          ) : null
-        }
-      />
-    </>
+                    Open the live app <ArrowUpRight aria-hidden="true" size={14} />
+                  </a>
+                )}
+              </>
+            }
+          >
+            <div className="flex flex-col gap-4">
+              {open.description ? <p className="m-0 text-ink-muted">{open.description}</p> : null}
+              {isPublic(open) ? (
+                <Notice tone="attention">
+                  Anyone with the address can open it, without signing in.
+                </Notice>
+              ) : null}
+              <KeyValues
+                rows={[
+                  {
+                    label: "Address",
+                    value:
+                      open.published === false
+                        ? "Not published: switched off in the repository, so nothing is served"
+                        : external(open.url, open.url),
+                  },
+                  ...open.domains.map((domain) => ({
+                    label: domain.enabled ? "Hostname" : "Hostname (off)",
+                    value: external(domain.url, domain.hostname),
+                  })),
+                  {
+                    label: "Built",
+                    value:
+                      open.builtWith === "builder"
+                        ? `In the App Builder (${open.interface})`
+                        : open.builtWith === "docs"
+                          ? `From the pages under ${open.docs}`
+                          : "In the repository",
+                  },
+                  ...(open.builtWith !== "builder" && open.builtWith !== "docs"
+                    ? [
+                        {
+                          label: "Files",
+                          value: `${count(open.files)}, ${size(open.bytes)}`,
+                          mono: true,
+                        },
+                      ]
+                    : []),
+                  {
+                    label: "Reads",
+                    value: open.reads?.length ? open.reads.join(", ") : "Nothing declared",
+                    mono: true,
+                  },
+                  {
+                    label: "Open to",
+                    value:
+                      openTo(open).length > 0
+                        ? openTo(open).join(", ")
+                        : "Staff whose role lets them read this workspace",
+                  },
+                ]}
+              />
+            </div>
+          </Inspector>
+        ) : null
+      }
+    />
   );
 }

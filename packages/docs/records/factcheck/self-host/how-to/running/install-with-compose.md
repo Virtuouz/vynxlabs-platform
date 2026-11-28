@@ -16,3 +16,11 @@ Written at commit `14f7d5b9`. Lines are those of that commit. Checked by: second
 ## Second check (2026-11-23)
 
 Run again with the page's `.env` including the three worker-user lines: all four services healthy. Overlap: the tutorials inventory lists 'Install on one machine'; no such tutorial page exists (self-host/tutorials/index.md has no pages), so this how-to is the one page. fault fixed (fa): Compose passes 10001/10001/256 defaults and the worker host reads an empty setting as unset, confirmed in the code (compose.yaml:61-63, 122-124; host-bin.ts setting); the warning and the table note are gone from the page.
+
+## Changed on 2026-11-28: the first release (0.6.0)
+
+| Claim | Source (file:line) | Checked by | Result |
+| --- | --- | --- | --- |
+| The image `volvel/volvel:0.6.0` (and `latest`) is on Docker Hub from 0.6.0. | `.github/workflows/release.yml` (build step, `tags:`) | writer, 2026-11-28 | holds |
+| `VOLVEL_IMAGE` names the image Compose runs; without it Compose builds `volvel/volvel:local`. | `deploy/compose/compose.yaml:6,16` | writer, 2026-11-28 | holds |
+| The steps after the new step 3 (pull, name, start, check, sign in, remove bootstrap) are numbered 4 to 7 in order. | the page | writer, 2026-11-28 | holds |

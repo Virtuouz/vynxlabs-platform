@@ -19,3 +19,8 @@ Lines are current at commit `5ebf1c80` (branch phase-31-write-the-docs). Paths a
 | Claim | Source (file:line) | Checked by | Result |
 | --- | --- | --- | --- |
 | The quoted policy is the API description's (`API_POLICY`). | `apps/control-plane/src/api-description.ts`; `GET /api/v1/openapi.json` `info.description` | writer, 2026-11-28 | holds |
+## Changed on 2026-11-28: the first release (0.6.0)
+
+| Claim | Source (file:line) | Checked by | Result |
+| --- | --- | --- | --- |
+| The `@volvel` packages are on npm from 0.6.0, under the tag `latest`; `npm install --global @volvel/cli` installs the CLI. | `.github/workflows/release.yml` (stages the packages, tag `latest`); `packages/cli/package.json` name | writer, 2026-11-28 | holds |

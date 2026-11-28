@@ -8,7 +8,7 @@ You will have a tenant `higher-ed` that runs a device-lending repository: its ta
 
 ## Before you start
 
-- You work in a checkout of this repository, built with `pnpm build`, on a machine with Node and pnpm. The `@volvel/*` packages are not on npm yet, so a repository such as this one runs from inside the checkout. The commands below write `volvel` for what you run as `node packages/cli/dist/bin.js` from the checkout's root.
+- You work in a checkout of this repository, built with `pnpm build`, on a machine with Node and pnpm. The `@volvel/*` packages are on npm from 0.6.0, but this repository is run from inside the checkout, so that it is the code you built. The commands below write `volvel` for what you run as `node packages/cli/dist/bin.js` from the checkout's root.
 - You can sign in to the console as an operator admin of the instance, who may make a tenant. The walk's password is yours: the commands below read it from a shell variable and never print it.
 - The instance sends mail, or keeps it in a folder (`MAIL_CAPTURE_DIR`), so that the Tech Desk gets the approval link. Without mail, nobody on the Tech Desk is told.
 - A browser at least as wide as a laptop screen. Command lines run in the folder `examples/higher-ed-devices`.

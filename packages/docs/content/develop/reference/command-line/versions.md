@@ -16,7 +16,7 @@ Three things have a version: the command line, the SDK a repository is written a
 
 `volvel --version` prints the CLI's version only. The CLI makes no check that the instance and itself match; the instance checks the bundle.
 
-No `@volvel` package is published to npm yet, and the first publish date is not set.
+The `@volvel` packages are on npm from 0.6.0, the first public release, under the tag `latest`. The CLI is [`@volvel/cli`](https://www.npmjs.com/package/@volvel/cli).
 
 ## What a bundle says about versions
 

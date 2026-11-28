@@ -19,3 +19,9 @@ Lines are current at commit `5ebf1c80` (branch phase-31-write-the-docs). Paths a
 | `npm ci` in the workflow needs a `package-lock.json`, which `volvel init` does not write (added to Before you start). | `npm ci` refuses a folder without one; `volvel init` output lists no lock file | second agent, 2026-11-23, run | corrected |
 | The two workflow files: read against the commands above; `actions/checkout@v4` takes one commit, which is what `git log -1` needs for the note; the production job runs no `npm ci` because `promote` builds nothing. GitHub itself was not available (no internet). | the page | second agent, 2026-11-23, read | holds as read; not run on GitHub |
 | Console: Service accounts page has **Create service account**; a service account's **Keys** tab has **Create API key**; walked at 390 px in dark, no horizontal overflow of the page. | `apps/console/src/screens/Tenant.tsx`; walk | second agent, 2026-11-23, run in a browser | holds as run |
+
+## Changed on 2026-11-28: the first release (0.6.0)
+
+| Claim | Source (file:line) | Checked by | Result |
+| --- | --- | --- | --- |
+| The `@volvel` packages are on npm from 0.6.0, under the tag `latest`; `npm install --global @volvel/cli` installs the CLI. | `.github/workflows/release.yml` (stages the packages, tag `latest`); `packages/cli/package.json` name | writer, 2026-11-28 | holds |

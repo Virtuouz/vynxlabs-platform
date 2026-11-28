@@ -15,3 +15,9 @@ Code as of commit `5ebf1c80`, 2026-11-23. Written by the page's writer; run 2026
 | Account's API keys screen is `/account/api-keys` | `apps/console/src/App.tsx:200` | writer, run | holds |
 
 Checked by: second agent, 2026-11-23. Run end to end on the current build with the CLI packed with `pnpm pack`, in a tenant `he-check` (slug stands for `higher-ed`). Corrected: "migration level" is 100 now, not 99 (it grows; the page says so); the bundle digest differs per build; **Create one** opens **Workspaces** and **Create workspace** follows. Everything else (access plan/release, 43 resources, versions, setup.mjs output, Tech Desk member, student request, mailed approval, runs, `ready LT-0010`) held.
+
+## Changed on 2026-11-28: the first release (0.6.0)
+
+| Claim | Source (file:line) | Checked by | Result |
+| --- | --- | --- | --- |
+| The `@volvel` packages are on npm from 0.6.0, under the tag `latest`; `npm install --global @volvel/cli` installs the CLI. | `.github/workflows/release.yml` (stages the packages, tag `latest`); `packages/cli/package.json` name | writer, 2026-11-28 | holds |

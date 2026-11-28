@@ -6,7 +6,7 @@ subjects: [install]
 
 ## Build the image from source
 
-By the end you will have a local image, `volvel/volvel:docs` or a name you choose, that every Compose file of the repository can run. No image or package is published yet, so building is how you get one.
+By the end you will have a local image, `volvel/volvel:docs` or a name you choose, that every Compose file of the repository can run. From 0.6.0 the image is on Docker Hub, and `docker pull volvel/volvel:0.6.0` is the normal way to get one ([Install with Compose](install-with-compose)). Build it yourself to run code that is not a release, or where the machine cannot reach Docker Hub.
 
 ## Before you start
 

@@ -11,3 +11,10 @@ Written at commit `14f7d5b9`. Lines are those of that commit. Checked by: second
 ## Second check (2026-11-23)
 
 Every claim read against the code and matched; commands and messages were also run in the drill (see the run log).
+
+## Changed on 2026-11-28: the first release (0.6.0)
+
+| Claim | Source (file:line) | Checked by | Result |
+| --- | --- | --- | --- |
+| The image `volvel/volvel:0.6.0` (and `latest`) is on Docker Hub from 0.6.0. | `.github/workflows/release.yml` (build step, `tags:`) | writer, 2026-11-28 | holds |
+| `docker pull volvel/volvel:0.6.0` is the normal way to get an image; building is for code that is not a release. | `.github/workflows/release.yml` | writer, 2026-11-28 | holds |

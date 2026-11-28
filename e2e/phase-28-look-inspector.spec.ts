@@ -289,14 +289,16 @@ const framesToShow = (frames: Frames, key: string) => {
   return Math.min(3, Math.floor(SLIDE_MS / Math.max(typical, 1)) - 1);
 };
 /**
- * A row slid: it was seen between its two places on as many frames as the machine drew during the
- * motion (3 at 60 fps), and where it drew fewer than that, the page was still seen playing it.
+ * A row slid: it was seen between its two places, and the page was playing the motion. How many
+ * frames show it in between is not counted: the slide eases out, so it is within a pixel of its end
+ * well before its 180 ms are over, and a busy runner draws only one or two frames in that time.
+ * That it does not jump is the separate check of the biggest step between frames.
  */
 const slid = (frames: Frames, key: string) => {
   const needed = framesToShow(frames, key);
   const between = motionOf(frames, key).between;
   const playing = frames.some((frame) => (frame[MOVING] ?? 0) > 0);
-  return { ok: between >= Math.max(needed, 1) || (needed < 1 && playing), between, needed };
+  return { ok: between >= 1 && playing, between, needed };
 };
 /**
  * The biggest distance a row moved between two frames that were drawn close together (a step across
@@ -410,7 +412,7 @@ async function measureList(label: string, list: Locator, handleOf: (key: string)
   const sliding = slid(frames, b);
   expect(
     sliding.ok,
-    `${label}: the other row slid (frames in between: ${sliding.between}, wanted ${sliding.needed})`,
+    `${label}: the other row slid (frames seen between its places: ${sliding.between}, and the page playing it)`,
   ).toBe(true);
   expect(other.biggest, `${label}: the other row did not pop`).toBeLessThan(rowHeight * 0.8);
   // On release, the dragged row settles by sliding too: no frame moves it a whole row.
@@ -467,7 +469,7 @@ test("a table's columns slide: the dragged row follows, the others make room, it
   const sliding = slid(frames, keys[1] as string);
   expect(
     sliding.ok,
-    `the keyboard's move slides (frames in between: ${sliding.between}, wanted ${sliding.needed})`,
+    `the keyboard's move slides (frames seen between its places: ${sliding.between}, and the page playing it)`,
   ).toBe(true);
   await expect(handleOf(keys[0] as string)).toBeFocused();
   await expect(owner.getByRole("status").filter({ hasText: /Moved/ }).first()).toBeAttached();

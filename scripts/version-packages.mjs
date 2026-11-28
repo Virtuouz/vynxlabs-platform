@@ -52,7 +52,8 @@ export function changelogSection(changesets, version, date) {
     ...[...groups.keys()].filter((one) => !ORDER.includes(one) && one !== REST),
     ...(groups.has(REST) ? [REST] : []),
   ];
-  const parts = [`## ${version} (${date})`];
+  // "0.6.0, released 2026-12-01": the docs' changelog pages take the version from before the comma.
+  const parts = [`## ${version}, released ${date}`];
   for (const heading of headings) {
     parts.push(`### ${heading}`, groups.get(heading).join("\n\n"));
   }
@@ -69,7 +70,7 @@ export function insertSection(changelog, section) {
 /** The section of `version`, without its heading, or undefined when the changelog has none. */
 export function sectionFor(changelog, version) {
   const escaped = version.replaceAll(".", "\\.");
-  const start = new RegExp(`^## ${escaped}(?: |$)`, "m").exec(changelog);
+  const start = new RegExp(`^## ${escaped}(?:[ ,]|$)`, "m").exec(changelog);
   if (!start) return undefined;
   const from = changelog.indexOf("\n", start.index) + 1;
   const rest = changelog.slice(from);

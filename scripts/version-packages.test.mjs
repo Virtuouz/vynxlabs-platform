@@ -18,7 +18,7 @@ const changesets = [
 test("a section groups what the changesets say by audience, operators first and the rest last", () => {
   const section = changelogSection(changesets, "0.6.0", "2026-12-01");
   const expected = [
-    "## 0.6.0 (2026-12-01)",
+    "## 0.6.0, released 2026-12-01",
     "### For operators",
     "- **A waiting run says why.**",
     "### For tenant developers",
@@ -37,16 +37,24 @@ test("a heading no changeset uses is not written", () => {
 
 test("the section goes above the newest version, under the changelog's opening words", () => {
   const changelog = "# Changelog\n\nWhat this is.\n\n## Unreleased: phase 31\n\nOld words.\n";
-  const result = insertSection(changelog, "## 0.6.0 (2026-12-01)\n\nNew words.\n");
+  const result = insertSection(changelog, "## 0.6.0, released 2026-12-01\n\nNew words.\n");
   expect(result).toBe(
-    "# Changelog\n\nWhat this is.\n\n## 0.6.0 (2026-12-01)\n\nNew words.\n\n## Unreleased: phase 31\n\nOld words.\n",
+    "# Changelog\n\nWhat this is.\n\n## 0.6.0, released 2026-12-01\n\nNew words.\n\n## Unreleased: phase 31\n\nOld words.\n",
   );
 });
 
 test("a version's notes are its section without the heading, and not the next version's", () => {
   const changelog =
-    "# Changelog\n\n## 0.6.1 (2026-12-02)\n\n### Changes\n\n- one\n\n## 0.6.0 (2026-12-01)\n\n- two\n";
+    "# Changelog\n\n## 0.6.1, released 2026-12-02\n\n### Changes\n\n- one\n\n## 0.6.0 (2026-12-01)\n\n- two\n";
   expect(sectionFor(changelog, "0.6.1")).toBe("### Changes\n\n- one");
   expect(sectionFor(changelog, "0.6.0")).toBe("- two");
   expect(sectionFor(changelog, "0.6")).toBeUndefined();
+});
+
+test("the docs' changelog pages read a released version's number from its heading", async () => {
+  const { changelogFiles } = await import("../packages/docs/generators/changelog.mjs");
+  const section = changelogSection([{ id: "x", summary: "- one" }], "0.6.0", "2026-12-01");
+  const files = changelogFiles(insertSection("# Changelog\n\n## 0.5.0\n\n- before\n", section));
+  expect([...files.keys()]).toContain("changelog/0-6-0.md");
+  expect(files.get("changelog/0-6-0.md")).toContain('title: "0.6.0"');
 });

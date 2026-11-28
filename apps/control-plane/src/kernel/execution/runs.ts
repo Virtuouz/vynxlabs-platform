@@ -404,13 +404,16 @@ export async function startRun(kernel: Kernel, trx: Trx, startRequest: StartRun)
   const input = await storePayload(kernel, id, "input", request.input ?? {});
   const jobId = await kernel.queue.enqueue(
     queueName(request.workspaceId, body.worker),
-    { runId: id },
+    { runId: id, limitSeconds: body.timeoutSeconds },
     {
       priority: request.priority ?? 0,
       retryLimit: body.retries.limit,
       retryDelaySeconds: body.retries.delaySeconds,
       backoff: body.retries.backoff,
-      timeoutSeconds: body.timeoutSeconds,
+      // The worker ends a run at its limit and says so. The queue gives up on the job only later,
+      // for a worker that is gone: had it given up at the limit itself, the two raced, and when the
+      // queue won the worker's report was refused and the run was failed for a reason not its own.
+      timeoutSeconds: body.timeoutSeconds + LIMIT_GRACE_SECONDS,
       ...(request.startAfter ? { startAfter: request.startAfter } : {}),
       ...(lane ? { group: { id: lane.group, limit: lane.limit } } : {}),
     },
@@ -508,6 +511,12 @@ export async function claimRun(
   return run;
 }
 
+/**
+ * How much longer than a run's limit the queue holds its job: the worker's own ending of the run
+ * (a signal, three seconds before it is killed, its logs, its report) comes first.
+ */
+export const LIMIT_GRACE_SECONDS = 30;
+
 async function claimNext(
   kernel: Kernel,
   scope: WorkerScope,
@@ -568,7 +577,10 @@ async function claimNext(
           }
 
           const queue = queueName(workspace.id, scope.pool);
-          const job = await kernel.queue.claim<{ runId: string }>(queue, trx);
+          const job = await kernel.queue.claim<{ runId: string; limitSeconds?: number }>(
+            queue,
+            trx,
+          );
           if (!job) return "empty" as const;
           const run = await trx
             .selectFrom("run")
@@ -609,7 +621,8 @@ async function claimNext(
               due: run.scheduled_for ?? run.created_at,
             });
           }
-          return { run: updated, timeoutSeconds: job.timeoutSeconds };
+          // A job queued before its limit was carried in its data has its limit as its expiry.
+          return { run: updated, timeoutSeconds: job.data.limitSeconds ?? job.timeoutSeconds };
         })
         .catch((error) => {
           if (error instanceof ClaimAbandoned) return "abandoned" as const;

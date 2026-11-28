@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -7,6 +8,11 @@ import { afterAll, describe, expect, test } from "vitest";
 import { BuildError, buildBundle, buildRepository, describeBundle } from "./build.js";
 
 const example = fileURLToPath(new URL("../../../examples/acme", import.meta.url));
+/** The SDK's version, which a release moves: a bundle says it, and asks for cores of its minor. */
+const sdkVersion: string = JSON.parse(
+  readFileSync(new URL("../../sdk/package.json", import.meta.url), "utf8"),
+).version;
+const [major, minor] = sdkVersion.split(".").map(Number) as [number, number];
 const scratch: string[] = [];
 afterAll(() => Promise.all(scratch.map((dir) => rm(dir, { recursive: true }))));
 
@@ -109,8 +115,8 @@ describe("building the example repository", () => {
     // A bundle that carries them is written as format 3.
     expect(bundle).toMatchObject({
       formatVersion: 3,
-      sdkVersion: "0.5.0",
-      core: { min: "0.5.0", below: "0.6.0" },
+      sdkVersion,
+      core: { min: `${major}.${minor}.0`, below: `${major}.${minor + 1}.0` },
     });
     expect(bundle.digest).toBe(bundleDigest(bundle));
     expect(describeBundle(bundle)[0]).toContain(bundle.digest.slice(0, 12));

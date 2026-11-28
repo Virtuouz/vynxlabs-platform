@@ -639,18 +639,20 @@ export const onLetter = { execute: async (input) => ({ read: input.letter }) };
           .where("script_path", "=", "sources/inbox")
           .execute()
       ).length;
+      // A refusal an earlier tick left is not this tick's: what changes is waited for.
+      const earlier = JSON.stringify(await refusal());
+      const refusedNow = async () => JSON.stringify(await refusal()) !== earlier;
       minutes += 2;
       expect(await fireDueSchedules(t.kernel, new Date(Date.now() + minutes * 60_000))).toBe(1);
       const runs = await runsOf("sources/inbox", before + 1);
       const mine = runs.at(-1) as Any;
-      // The source's answer is passed on after its run ends: wait until it has been.
-      for (let i = 0; i < 100; i++) {
-        const refused = await refusal();
-        const state = await cursorNow();
-        if (refused || state !== cursor) break;
+      // The source's answer is passed on after its run ends. Starting what it gave and moving the
+      // cursor are one transaction; a refusal is recorded after them, or alone when nothing starts.
+      for (let i = 0; i < 400; i++) {
+        if ((await cursorNow()) !== cursor || (await refusedNow())) break;
         await sleep(50);
       }
-      await sleep(200);
+      for (let i = 0; i < 20 && !(await refusedNow()); i++) await sleep(50);
       return mine;
     };
     const cursorNow = async () =>

@@ -13,7 +13,7 @@ describe("p35 a tenant's JSON Schema is checked without harm to the other tenant
     const schema = { type: "object", properties: { name: { type: "string", pattern: "^(a+)+$" } } };
     const started = performance.now();
     validateJson(schema, { name: `${"a".repeat(26)}!` });
-    expect(performance.now() - started).toBeLessThan(200);
+    expect(performance.now() - started).toBeLessThan(SOON_MS);
   });
 
   test("a string too long for the most a pattern is run on is not run through one", () => {

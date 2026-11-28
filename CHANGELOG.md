@@ -4,6 +4,50 @@ From 0.6.0 on, each version's entry is gathered from the changesets of the pull 
 
 Versions before 1.0 may change the API, the manifest format and the worker protocol. Each entry says what an operator and a tenant developer need to do.
 
+## 0.6.0, released 2026-11-28
+
+### For operators
+
+- **Volvel 0.6.0 is the first public release, and it says what a version promises.** Until 1.0,
+  a patch version only fixes and adds, and a minor version may change the API, the manifest format
+  and the worker protocol, saying in its release notes what to do. You can upgrade from any
+  earlier version straight to the newest. A standalone worker keeps working with an instance up
+  to three minor versions newer. The newest minor version gets security fixes. See "Versions,
+  support and license" in the Self-host documentation.
+
+- **DOMPurify, which cleans the HTML of diagrams in the console, is 3.5.0.** It closes five
+  low-severity advisories in 3.4.15, which mermaid had kept.
+
+- **A run that overruns its time limit says so.** It is failed with "The run took longer than its
+  limit", as it always should have been. On a busy instance the queue could give up on the run at
+  the same moment as the worker ended it, and when the queue was first the worker's report was
+  refused: the run waited for the reaper and was failed as "timed out, or its worker stopped
+  responding", which was not what happened. The queue now waits 30 seconds past the limit before
+  it gives up on a run, which only matters when a worker has gone.
+
+- **A provisioning connection lists its refusals in the order they were made.** Two pushes turned
+  away in quick succession could be listed swapped, because each refusal took its time when it
+  was written, after the answer had gone back to the directory.
+
+### For tenant developers
+
+- **What you build keeps running.** A bundle built with an older SDK keeps running on an instance
+  at least three minor versions newer. Until 1.0, read the release notes of each minor version
+  before you move to it: the API may change in one, and the notes say how.
+
+### Changes
+
+- **The console's header is announced as it is shown.** A screen reader now hears the search
+  button with its shortcut ("Search or jump to… Ctrl K"), and the tenant and workspace switchers
+  by the name they show, then what they do ("Sandbox, switch workspace"). Before, it heard
+  "Switch tenant" or "Switch workspace" without the name on the button.
+
+- **More controls are announced as they are shown.** In the app builder, Add to page includes its
+  key and View as no longer runs its words together; in the documentation section, a page's row
+  includes its file name and state; an approval that opens is announced with its fields, due time
+  and state; and a documentation site's search announces its close button as "Esc, close the
+  search".
+
 ## Unreleased: phase 31, the documentation, written
 
 Every screen and feature of the console, local development, administration and self-hosting is documented, at `/docs` on every instance.

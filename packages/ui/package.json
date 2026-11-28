@@ -1,6 +1,6 @@
 {
   "name": "@volvel/ui",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "type": "module",
   "description": "Volvel's component kit: the components the console and tenants' apps are drawn with, on theme tokens.",
   "license": "Apache-2.0",

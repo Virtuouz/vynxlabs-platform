@@ -1,6 +1,6 @@
 {
   "name": "@volvel/docs",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "type": "module",
   "description": "Volvel's own documentation: the pages, and the built trees, manifest and search index the console and the website read.",
   "license": "Apache-2.0",

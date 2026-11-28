@@ -8,13 +8,14 @@ name: Release
 # must be `true`. Until then every run builds, checks and rehearses the release, and stops
 # there, and needs none of the secrets below.
 #
-# The job runs in the environment `release` (main and `v*` tags only), which holds:
-#   - NPM_TOKEN, a granular token that can only stage. npm refuses a direct publish with
-#     it. The job stages every package (`npm stage publish`), and nothing is installable
-#     until the owner opens the Staged Packages tab of each package on npmjs.com, or
-#     runs `npm stage approve`, and confirms with 2FA.
-#   - DOCKERHUB_OIDC_CONNECTIONID, a Docker Hub connection for GitHub Actions, so the
-#     image is pushed without a stored password.
+# The job runs in the environment `release` (main and `v*` tags only), and holds no
+# password for either registry. Each signs it in with the job's OpenID Connect token:
+#   - npm: every @volvel package has this workflow and environment as its trusted publisher,
+#     allowed to stage and nothing else. The job stages every package (`npm stage publish`),
+#     and nothing is installable until the owner opens the Staged Packages tab of each
+#     package on npmjs.com, or runs `npm stage approve`, and confirms with 2FA.
+#   - Docker Hub: DOCKERHUB_OIDC_CONNECTIONID, a connection for GitHub Actions whose subject
+#     is this repository's immutable one with `environment:release`.
 # The GitHub release is written only once the packages are staged and the image is pushed.
 #
 # Staging a `next` build for every push to main would ask the owner to approve every
@@ -106,7 +107,7 @@ jobs:
     environment: release
     permissions:
       contents: write # the GitHub release of a tag
-      id-token: write # the sign-in to Docker Hub
+      id-token: write # the sign-ins to npm and Docker Hub
     services:
       # The API's page of reference is written by the app itself, which needs a database.
       postgres:
@@ -196,7 +197,6 @@ jobs:
       # step which runs only for a release is still tried on every push (it failed on 0.6.0's tag).
       - name: Stage the packages on npm
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           VERSION: ${{ steps.version.outputs.version }}
           TAG: ${{ steps.version.outputs.tag }}
           SENDS: ${{ vars.RELEASE_ENABLED == 'true' && (github.ref_type == 'tag' || vars.PUBLISH_NEXT == 'true') }}

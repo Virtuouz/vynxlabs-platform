@@ -86,7 +86,11 @@ type Look = {
   css?: string;
   within?: { role: string; name: string };
 };
-type Step = Look & { press?: string; focus?: string; click?: { role: string; name: string } };
+type Step = Look & {
+  press?: string;
+  focus?: string;
+  click?: { role: string; name: string | RegExp };
+};
 
 /** What a shot waits for before it is taken. */
 const ready = async (page: Page, looks: Look[]) => {

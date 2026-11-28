@@ -28,7 +28,9 @@ export default [
   // The one tenant that is Fernhill's own: each run of the pictures also makes a tenant called Fernhill.
   instance("tenants", "/?q=veterinary", heading("Tenants"), {
     steps: [
-      { click: { role: "row", name: "Fernhill Veterinary Group" } },
+      // A row is named by all its cells: the first Fernhill is the one whose slug is `fernhill`, not
+      // a copy ("Fernhill Veterinary Group (fernhill-w0) fernhill-w0 …").
+      { click: { role: "row", name: /^Fernhill Veterinary Group fernhill / } },
       { role: "heading", level: 2, name: "Fernhill Veterinary Group" },
     ],
   }),

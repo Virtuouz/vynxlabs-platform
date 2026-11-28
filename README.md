@@ -7,7 +7,7 @@
 
 Volvel is one self-hostable foundation for custom internal apps, business flows and system integrations. The design is in [docs/master-spec.md](docs/master-spec.md), and the decisions that shaped it are in [docs/adr](docs/adr).
 
-**Status: pre-release.** What is being worked on, and in what order, is on the [roadmap](https://github.com/orgs/volveldev/projects) and the [milestones](https://github.com/volveldev/volvel/milestones). Questions go to [Discussions](https://github.com/volveldev/volvel/discussions); bugs and feature requests to [Issues](https://github.com/volveldev/volvel/issues/new/choose).
+**Status: pre-release.** What a version promises, until 1.0 and after, is in [Versions, support and license](packages/docs/content/self-host/reference/running/versions-and-support.md). What is being worked on, and in what order, is on the [roadmap](https://github.com/orgs/volveldev/projects) and the [milestones](https://github.com/volveldev/volvel/milestones). Questions go to [Discussions](https://github.com/volveldev/volvel/discussions); bugs and feature requests to [Issues](https://github.com/volveldev/volvel/issues/new/choose).
 
 A developer defines scripts, flows, tables, data sources and apps in a tenant's repository and deploys them. An app is served by the instance to the tenant's staff, to its own pool of end users, or to anyone, as its bindings say, with the tenant's branding. Changes move from a dev workspace to production as the same bundle, a tenant's data can live in a database of its own, and a whole tenant can be exported from one instance and imported into another.
 

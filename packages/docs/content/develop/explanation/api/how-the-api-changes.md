@@ -1,6 +1,6 @@
 ---
 title: How the API changes
-description: What stays the same inside version 1, how a route, field or parameter is retired, and what a renamed resource's old path does for 90 days.
+description: What may change in the API before Volvel 1.0 and what stays the same after it, and what a renamed resource's old path does for 90 days.
 subjects: [api, errors]
 ---
 
@@ -8,9 +8,13 @@ A program built on the API needs to know what it can rely on. This page says wha
 
 ## The idea
 
-The API has one version, `v1`, and its address starts `/api/v1`. Within `v1` the API only grows. A route, a field of an answer or an optional parameter may be added. Nothing that exists changes its meaning or is taken away without notice.
+The API has one version, `v1`, and its address starts `/api/v1`. What it promises depends on Volvel's version.
 
-Something that is to be removed is marked `deprecated` in the API description, `GET /api/v1/openapi.json`, and keeps working for at least 90 days after the release that says so. In this version nothing is marked deprecated.
+**Before 1.0**, Volvel is versioned 0.x, and a minor version (0.7, then 0.8) may change `v1`: a route, a field of an answer or a parameter may change or be taken away. That version's release notes say what changed and what to do. A patch version (0.7.1) only adds and fixes, so a program that works on 0.7.0 works on every 0.7 release.
+
+**From 1.0**, `v1` only grows. A route, a field of an answer or an optional parameter may be added. Nothing that exists changes its meaning or is taken away. Something that is to be removed is first marked `deprecated` in the API description, `GET /api/v1/openapi.json`, in an earlier release than the one that removes it.
+
+The API description says the same in its own words. Volvel is at a 0.x version now, and 1.0 is the stable release it is heading for. See [Versions, support and license](../../../self-host/reference/running/versions-and-support) for what else a version promises.
 
 Write a client so that it ignores fields it does not know, and does not depend on the order of fields or on the words of a `detail`.
 

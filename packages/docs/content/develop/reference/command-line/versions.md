@@ -48,9 +48,9 @@ A bundle has a `formatVersion`, 1 to 4, and the CLI writes the oldest that can c
 
 The command line talks to `/api/v1`. The policy for it is the one the API's own description gives:
 
-> Within `v1` the API only grows: a route, a field of an answer or an optional parameter may be added, and nothing that exists changes its meaning or is taken away. A route, field or parameter that is to be removed is marked `deprecated` here, and keeps working for at least 90 days after the release that says so.
+> Before Volvel 1.0, a minor version (0.7, 0.8) may change `v1`: a route, a field or a parameter may change or be taken away, and that version's release notes say what to do. A patch version (0.7.1) only adds and fixes. From 1.0, `v1` only grows: nothing that exists changes its meaning or is taken away, and what is to be removed is first marked `deprecated` here, in an earlier release.
 
-Write a program against `v1` as you would against a stable library: ignore a field you do not know, and do not rely on a route that is marked `deprecated`. The routes are in [the API reference](../api/index), with what each needs.
+Before 1.0, read the release notes of each minor version before you move to it. Write a program against `v1` so that it ignores a field it does not know, and does not rely on a route that is marked `deprecated`. The routes are in [the API reference](../api/index), with what each needs.
 
 A resource renamed in a repository is a smaller case of the same rule: its old path answers for 90 days, with the headers `Deprecation`, `Sunset` and `Volvel-Resource-Moved`.
 

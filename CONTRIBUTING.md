@@ -11,6 +11,7 @@ Outside contributions are not accepted yet. A contributor agreement must be in p
 - **Labels** say the type (`type: bug`, `type: feature`, `type: docs`, `type: chore`, `type: security`), the area (`area: console`, `area: worker`, …), the priority (`priority: p0` to `p2`) and the state (`status: needs-triage`, `status: blocked`).
 - **A pull request** closes its issue (`Closes #123`) and is squash-merged. Its title is a [conventional commit](https://www.conventionalcommits.org): `feat(console): …`, `fix(worker): …`, `docs: …`, with `!` for a breaking change. CI checks the title.
 - **A change a person would notice adds a changeset** (`pnpm changeset`): how big it is, and what to tell people about it, in the words of the changelog. Tests, CI and refactors need none. See [.changeset/README.md](.changeset/README.md).
+- **What a version may change** is the owner's policy of 2026-11-28 (issue #27): before 1.0, a minor version may break the API, the manifest format or the worker protocol, with migration notes in its changeset, and a patch only fixes and adds; an instance upgrades from any earlier version; bundles built with an older SDK, and workers, keep working for at least three minor versions, so do not raise `OLDEST_SUPPORTED_BUNDLE_CORE` or refuse an older worker inside that window; security fixes go to the newest minor version. From 1.0, what will change is first announced as deprecated in an earlier release. The full text is in [Versions, support and license](packages/docs/content/self-host/reference/running/versions-and-support.md).
 - **Releases** gather the changesets. A "chore: release" pull request stays open with the next version and its `CHANGELOG.md` section, and merging it tags `vX.Y.Z`, which publishes the release: the image is pushed, and the packages are only staged on npm, so the owner approves each staged package on npmjs.com with 2FA before anyone can install it. The GitHub release shows the changesets' words first, then every merged pull request grouped by its `type:` label. Before 1.0, `minor` is something new or anything that breaks what worked, and `patch` a fix.
 - **Design** stays in the repository: the [spec](docs/master-spec.md), the [contracts](docs/contracts), and a new [architecture decision record](docs/adr) for a decision that later work must follow.
 
@@ -63,7 +64,7 @@ Adding a license to the allowlist is a decision for the owner.
 
 Every route follows these conventions. A route without a response schema fails the tests.
 
-- **Prefix and version.** All routes live under `/api/v1`. A breaking change means a new prefix.
+- **Prefix and version.** All routes live under `/api/v1`. Before 1.0 a minor version may change it, and its changeset says what to do. From 1.0 it only grows, and a breaking change means a new prefix. The policy is `API_POLICY` in `apps/control-plane/src/api-description.ts`.
 - **Description.** OpenAPI 3.1 at `/api/v1/openapi.json`, generated from the routes' TypeBox schemas, one for the request and one for every response.
 - **No private routes.** The console and apps use this API and nothing else.
 - **Bodies.** JSON, with camelCase field names.

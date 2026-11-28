@@ -12,7 +12,7 @@ By the end the instance runs a newer image on the same data.
 
 - A [backup](back-up-an-instance). There is no downgrade: you go back by restoring it.
 - The new image, built or loaded on the machine ([Build the image from source](build-the-image)).
-- Standalone workers should run the same version as the instance. Upgrade the instance first.
+- Standalone workers keep working with an instance up to three minor versions newer than themselves. Upgrade the instance first, then the workers.
 
 ## Upgrade
 

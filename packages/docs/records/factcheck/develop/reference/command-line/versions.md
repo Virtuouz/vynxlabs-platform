@@ -13,3 +13,9 @@ Lines are current at commit `5ebf1c80` (branch phase-31-write-the-docs). Paths a
 | API policy text. | `apps/control-plane/src/api-description.ts:84-89`; D56 | second agent, 2026-11-23 (writer: writer, read from the code 2026-11-23 (not run)) | holds as read |
 | Old path answers 90 days with `Deprecation`, `Sunset`, `Volvel-Resource-Moved`. | `routes/workspaces.ts:822-823` | second agent, 2026-11-23 (writer: writer, read from the code 2026-11-23 (not run)) | holds as read |
 | No package is published; first publish date not set. | `docs/documentation/decisions.md` D62 | second agent, 2026-11-23 (writer: writer, read from the code 2026-11-23 (not run)) | holds as read |
+
+## Changed on 2026-11-28: the versioning policy (issue #27)
+
+| Claim | Source (file:line) | Checked by | Result |
+| --- | --- | --- | --- |
+| The quoted policy is the API description's (`API_POLICY`). | `apps/control-plane/src/api-description.ts`; `GET /api/v1/openapi.json` `info.description` | writer, 2026-11-28 | holds |

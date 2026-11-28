@@ -14,7 +14,7 @@ Say what you found, how to reproduce it, and which version you tested.
 
 ## What is covered
 
-The newest minor version and the one before it get fixes for security problems. See [Versions, support and license](versions-and-support).
+The newest minor version gets fixes for security problems. See [Versions, support and license](versions-and-support).
 
 The policy, with what an instance protects and what it does not, is `SECURITY.md` in the repository. The same, in words for an operator, is in [What is protected, and a hardening checklist](../../explanation/running/security-hardening).
 

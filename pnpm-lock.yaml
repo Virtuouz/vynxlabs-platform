@@ -226,8 +226,8 @@ importers:
         specifier: ^6.4.0
         version: 6.4.0
       xml-encryption:
-        specifier: ^3.1.0
-        version: 3.1.0
+        specifier: ^6.0.2
+        version: 6.0.2
 
   examples/acme:
     dependencies:
@@ -3808,6 +3808,9 @@ packages:
   xml-encryption@3.1.0:
     resolution: {integrity: sha512-PV7qnYpoAMXbf1kvQkqMScLeQpjCMixddAKq9PtqVrho8HnYbBOWNfG0kA4R7zxQDo7w9kiYAyzS/ullAyO55Q==}
 
+  xml-encryption@6.0.2:
+    resolution: {integrity: sha512-pKkAoJswMndC+ErrweY84tdaR0xTdnr5IWb65ri7lKavGvErzOArffFlOcTVin7dzMiUFhSvWvcNAtFkNxnk2g==}
+
   xml2js@0.6.2:
     resolution: {integrity: sha512-T4rieHaC1EXcES0Kxxj4JWgaUQHDk+qwHcYOCFHfiwKz7tOVPLq7Hjq9dM1WCMhylqMEfP7hMcOIChvotiZegA==}
     engines: {node: '>=4.0.0'}
@@ -7073,6 +7076,11 @@ snapshots:
       '@xmldom/xmldom': 0.8.15
       escape-html: 1.0.3
       xpath: 0.0.32
+
+  xml-encryption@6.0.2:
+    dependencies:
+      '@xmldom/xmldom': 0.8.15
+      escape-html: 1.0.3
 
   xml2js@0.6.2:
     dependencies:

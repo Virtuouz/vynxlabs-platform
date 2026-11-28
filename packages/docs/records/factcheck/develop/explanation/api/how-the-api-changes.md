@@ -23,3 +23,9 @@ Checked by: second agent, 2026-11-23.
 
 - Run: `x-request-id` kept (`abc.def_1-2`) and replaced (`bad id!`), `traceparent` gives `x-trace-id`, `openapi.json` has `bearerAuth` and `cookieAuth`, no `deprecated: true`, 61 error codes.
 - Not re-run: the rename headers (the writer ran them), after-date 404.
+
+## Changed on 2026-11-28: the versioning policy (issue #27)
+
+| Claim | Source (file:line) | Checked by | Result |
+| --- | --- | --- | --- |
+| Before 1.0 a minor may change `v1`, with release notes; a patch only adds and fixes; from 1.0 `v1` only grows and removal is first marked `deprecated` in an earlier release (replaces the claim of 90 days of deprecation). | the owner's decisions on issue #27; `API_POLICY`, `apps/control-plane/src/api-description.ts`; `app.test.ts` "it says how the API changes" | writer, 2026-11-28 | holds |

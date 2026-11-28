@@ -82,10 +82,11 @@ export const isApiTag = (name: string): name is ApiTag => TAG_NAMES.has(name);
 
 /** How a change to this API is made, so that a program built on it can rely on it. */
 export const API_POLICY =
-  "Within `v1` the API only grows: a route, a field of an answer or an optional parameter may " +
-  "be added, and nothing that exists changes its meaning or is taken away. A route, field or " +
-  "parameter that is to be removed is marked `deprecated` here, and keeps working for at least " +
-  "90 days after the release that says so.";
+  "Before Volvel 1.0, a minor version (0.7, 0.8) may change `v1`: a route, a field or a " +
+  "parameter may change or be taken away, and that version's release notes say what to do. A " +
+  "patch version (0.7.1) only adds and fixes. From 1.0, `v1` only grows: nothing that exists " +
+  "changes its meaning or is taken away, and what is to be removed is first marked `deprecated` " +
+  "here, in an earlier release.";
 
 export const API_DESCRIPTION =
   "The one public API of Volvel. Errors are RFC 9457 problem details " +

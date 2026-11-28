@@ -10,11 +10,21 @@ What version an instance is, which versions are supported, and where the image a
 
 `GET /api/v1/instance` answers the `coreVersion`, the `apiVersion` (`v1`) and the `migrationLevel`. At the time of this page the tree is at version 0.5.0 and migration level 99. The image reports the version it was released as: a release writes one version into the published packages, the control plane, the console, the worker, the SDK's constants and the command line's starter range.
 
-Versions before 1.0 may change the API, the manifest format and the worker protocol. Each entry of the changelog says what an operator and a tenant developer need to do.
+## What a version number promises
+
+Volvel is versioned 0.x until 1.0, its first stable release.
+
+| Version | What it may change |
+| --- | --- |
+| A patch version (0.7.1) | Fixes and additions only. Nothing that worked stops working. |
+| A minor version (0.7.0), before 1.0 | It may change the API, the manifest format and the worker protocol. Its release notes say what changed, and what an operator and a tenant developer need to do. |
+| From 1.0 | Nothing is taken away or changes its meaning without notice: what is to be removed or changed is first announced as deprecated, in an earlier release than the one that removes it. |
+
+Before 1.0, changes are said in the release notes, which are the changelog's entry for each version and the release's page on GitHub. Read them for each minor version you move to.
 
 ## Supported versions
 
-The newest minor version and the one before it get fixes for security problems. Older ones do not: upgrade.
+The newest minor version gets fixes for security problems. Older ones do not: upgrade to the newest.
 
 The first publish date is not set. Until it is, nothing has been published to be supported. See [Report a vulnerability](security-reports).
 
@@ -35,9 +45,10 @@ Migrations run on start and move forward only. You can upgrade from any earlier 
 
 | Rule | Value |
 | --- | --- |
-| Oldest bundle core an instance still runs | 0.2.0. A version states the oldest it runs and refuses older ones with a message that says to rebuild. |
+| Upgrading an instance | From any earlier version straight to the newest. |
+| A bundle built with an older SDK | Keeps running on an instance at least three minor versions newer. Today an instance runs bundles built for cores back to 0.2.0, and refuses older ones with a message that says to rebuild. |
+| Standalone workers | A worker keeps working with an instance up to three minor versions newer. Upgrade the instance first, then the workers. The Workers page marks a worker that needs an update. |
 | A tenant import needs | An equal migration level on both instances. |
-| Standalone workers | The same version as the instance. Upgrade the instance first. |
 
 See [Upgrade an instance](../../how-to/running/upgrade-an-instance).
 

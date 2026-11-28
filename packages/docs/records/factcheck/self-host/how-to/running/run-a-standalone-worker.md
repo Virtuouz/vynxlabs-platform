@@ -14,3 +14,9 @@ Written at commit `14f7d5b9`. Lines are those of that commit. Checked by: second
 ## Second check (2026-11-23)
 
 Run: credential with pool `plant`, worker from deploy/worker/compose.yaml (with a networks block), a draft script with `worker: "plant"` run through test-runs succeeded while the worker was up and stayed queued with the worker stopped. Merged in from the sso page: token options, uid 1000 note, ptrace warning. fault fixed (fa): a worker of the instance's own version is no longer shown Older version, confirmed in the code (execution.ts:103-110); the "known fault" troubleshooting line is replaced.
+
+## Changed on 2026-11-28: the versioning policy (issue #27)
+
+| Claim | Source (file:line) | Checked by | Result |
+| --- | --- | --- | --- |
+| A worker keeps working with an instance up to three minor versions newer; upgrade the instance first. | issue #27; no refusal of an older worker in `routes/execution.ts` | writer, 2026-11-28 | holds |

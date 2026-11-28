@@ -427,8 +427,8 @@ describe("API description, as a reference is drawn from it", () => {
 
   test("it says how the API changes", async () => {
     const { description } = await operationsOf();
-    expect(description.info.description).toContain("90 days");
-    expect(description.info.description).toContain("only grows");
+    expect(description.info.description).toContain("Before Volvel 1.0, a minor version");
+    expect(description.info.description).toContain("From 1.0, `v1` only grows");
   });
 });
 

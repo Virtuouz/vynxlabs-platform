@@ -12,7 +12,7 @@ By the end a worker you run in another network takes a tenant's scripts, and not
 
 - You need `worker:write` in the tenant, to create a credential.
 - A machine in the other network with Docker and Compose, that reaches the instance's address, and the image (see [Build the image from source](build-the-image)). The worker ships inside it.
-- The worker is best run at the same version as the instance. Upgrade the instance first.
+- A worker keeps working with an instance up to three minor versions newer than itself. Upgrade the instance first, then the worker.
 
 ## Run it
 

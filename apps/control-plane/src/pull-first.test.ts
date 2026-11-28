@@ -1,6 +1,6 @@
 import { type Bundle, type BundleManifest, bundleDigest } from "@volvel/manifest";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { type Client, startTestApp, type TestApp } from "./testing.js";
+import { type Client, CORE_VERSION, startTestApp, type TestApp } from "./testing.js";
 
 const PASSWORD = "a-good-long-password";
 
@@ -76,7 +76,7 @@ const basisOf = async (id: string, path: string) =>
   ).basis_hash;
 
 beforeAll(async () => {
-  t = await startTestApp({ version: "0.5.0" });
+  t = await startTestApp({ version: CORE_VERSION });
   const roles = Object.fromEntries(
     (
       await t.db.selectFrom("role").select(["id", "name"]).where("builtin", "=", true).execute()

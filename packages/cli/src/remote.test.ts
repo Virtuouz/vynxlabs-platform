@@ -2,7 +2,13 @@ import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { type Client, putSeen, startTestApp, type TestApp } from "@volvel/control-plane/testing";
+import {
+  type Client,
+  CORE_VERSION,
+  putSeen,
+  startTestApp,
+  type TestApp,
+} from "@volvel/control-plane/testing";
 import { Worker } from "@volvel/worker";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { run } from "./cli.js";
@@ -77,7 +83,7 @@ export const welcome = defineFlow({
 `;
 
 beforeAll(async () => {
-  t = await startTestApp({ version: "0.5.0" });
+  t = await startTestApp({ version: CORE_VERSION });
   url = await t.app.listen({ host: "127.0.0.1", port: 0 });
   home = await mkdtemp(join(tmpdir(), "cli-remote-"));
   repo = await mkdtemp(join(tmpdir(), "cli-remote-repo-"));

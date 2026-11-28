@@ -39,7 +39,7 @@ By the end you will have an instance running on one machine, with its own Postgr
    | `VOLVEL_BIND` | Where it listens on the host. The default is `127.0.0.1:8080`. |
    | `MANAGED_WORKER_UID`, `MANAGED_WORKER_GID`, `MANAGED_WORKER_USERS` | Leave them out. The defaults, `10001`, `10001` and `256`, are used. Write them only to change them. |
 
-3. Pull the image of the release. It is on [Docker Hub](https://hub.docker.com/r/volvel/volvel) from 0.6.0:
+3. Pull the image of the release. It is on Docker Hub from 0.6.0:
 
    ```bash
    docker pull volvel/volvel:0.6.0

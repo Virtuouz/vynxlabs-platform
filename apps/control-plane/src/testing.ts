@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { Database, sql } from "@volvel/db";
 import { createTestDatabase } from "@volvel/db/testing";
+import { SDK_VERSION } from "@volvel/sdk";
 import type { RouteOptions } from "fastify";
 import { buildApp, describeApi as describe } from "./app.js";
 import type { Config } from "./config.js";
@@ -317,6 +318,13 @@ export async function startTestApp(
 export type TestApp = Awaited<ReturnType<typeof startTestApp>>;
 
 /** The API's OpenAPI description, made with no database to connect to. */
+/**
+ * The version a release gives the instance, which the SDK carries: a test that deploys a bundle
+ * the real SDK built starts its instance at this, or the bundle's core range refuses it once a
+ * release moves the minor version (0.6.0's bundles ask for a core from 0.6.0).
+ */
+export const CORE_VERSION: string = SDK_VERSION;
+
 export const describeApi = (version = "0.0.0", config: Partial<Config> = {}) =>
   describe({ version, config: testConfig(config) });
 export { DEFAULT_THEME, themeCss } from "./kernel/apps/theme.js";

@@ -119,7 +119,7 @@ flowchart TD
   T --> M[Members and end users]
   T --> D[Dev workspace]
   T --> P[Production workspace]
-  D -- promotion --> P
+  D -. promotion .-> P
   D --> R[Resources, drafts, versions]
   P --> R2[Resources, versions]
 ```

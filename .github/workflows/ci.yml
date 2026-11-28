@@ -120,6 +120,7 @@ jobs:
         if: github.event_name == 'pull_request'
         run: node scripts/migrations-lock.mjs --base "origin/${{ github.base_ref }}"
       - run: pnpm check:licenses
+      - run: node scripts/third-party-notices.mjs --check
 
   unit:
     name: Unit tests (Postgres ${{ matrix.postgres }}, ${{ matrix.shard == 'changed' && 'what the change reaches' || format('shard {0} of 4', matrix.shard) }})

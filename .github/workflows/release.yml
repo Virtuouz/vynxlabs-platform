@@ -143,6 +143,16 @@ jobs:
       - run: pnpm docs:generate
       - run: pnpm build
       - run: pnpm docs:check
+
+      # The licenses of what the packages carry. Each published package lists the file, so npm
+      # includes it; the rehearsal below packs them. The image writes its own in its build.
+      - name: Write the third-party notices into every published package
+        run: |
+          node scripts/third-party-notices.mjs --check
+          node scripts/third-party-notices.mjs
+          for package in widget-sdk widget-frame markup docs-engine docs-site docs ui app sdk cli; do
+            cp THIRD_PARTY_NOTICES.md "packages/${package}/THIRD_PARTY_NOTICES.md"
+          done
       - name: Rehearse the release
         run: node scripts/release-check.mjs
 

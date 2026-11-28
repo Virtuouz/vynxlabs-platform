@@ -19,7 +19,8 @@
     "content",
     "generated",
     "assets",
-    "dist"
+    "dist",
+    "THIRD_PARTY_NOTICES.md"
   ],
   "scripts": {
     "build": "node generate.mjs && node build.mjs",

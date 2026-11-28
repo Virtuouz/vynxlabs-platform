@@ -16,7 +16,8 @@
   "files": [
     "dist/volvel.mjs",
     "dist/widget-host.js",
-    "dist/screens"
+    "dist/screens",
+    "THIRD_PARTY_NOTICES.md"
   ],
   "scripts": {
     "bundle": "node bundle.mjs",

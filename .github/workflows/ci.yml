@@ -1,23 +1,134 @@
 name: CI
 
+# Two speeds (CONTRIBUTING.md, "How CI runs").
+#
+# A pull request runs the fast lane: lint, types, the build, the checks of schemas, docs,
+# migrations and licenses, the image, and only the unit tests that the change reaches (Vitest
+# follows imports from what changed), on the newest Postgres.
+#
+# The full suite runs on every push to main, every night, on the release pull request, on a pull
+# request that changes what everything rests on (dependencies, migrations, CI, build settings),
+# and on any pull request labeled `full-ci` (add the label, then re-run). It is every unit test,
+# in four shards, on the oldest supported Postgres and the newest, and every browser test.
+#
+# A change to docs, changesets or issue templates alone runs nothing but the summary.
+#
+# One check, "CI passed", sums the jobs up: it is the one the ruleset requires. On main and at
+# night, a failure opens an issue (or adds to the open one).
+
 on:
   push:
     branches: [main]
   pull_request:
+  schedule:
+    - cron: "0 7 * * *"
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
 
 jobs:
-  check:
-    name: Check (Postgres ${{ matrix.postgres }})
+  scope:
+    name: What this run needs
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      mode: ${{ steps.decide.outputs.mode }}
+      browser: ${{ steps.decide.outputs.browser }}
+      unit: ${{ steps.decide.outputs.unit }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Decide
+        id: decide
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          PR: ${{ github.event.pull_request.number }}
+          HEAD_REF: ${{ github.head_ref }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          mode=full
+          reason="${EVENT}"
+          e2e=false
+          if [ "${EVENT}" = "pull_request" ]; then
+            # Read now, not from the event: a label added before a re-run counts.
+            labels=$(gh pr view "${PR}" --repo "${GITHUB_REPOSITORY}" --json labels --jq '[.labels[].name] | join(",")')
+            files=$(git diff --name-only "origin/${BASE_REF}...HEAD")
+            echo "Changed:"; echo "${files}" | sed 's/^/  /'
+            if [[ ",${labels}," == *",full-ci,"* ]]; then
+              reason="the full-ci label"
+            elif [ "${HEAD_REF}" = "changeset-release/main" ]; then
+              reason="the release pull request: what ships is tested in full"
+            elif echo "${files}" | grep -q -E '^(package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|\.pnpmfile\.cjs|\.nvmrc|vitest\.config\.ts|tsconfig[^/]*\.json|biome\.json|\.github/workflows/|packages/db/migrations/|packages/[^/]+/package\.json|apps/[^/]+/package\.json)'; then
+              reason="it changes what everything rests on"
+            elif ! echo "${files}" | grep -q -v -E '^(docs/|\.changeset/|\.github/ISSUE_TEMPLATE/|\.github/[^/]+\.md$|\.github/CODEOWNERS$|\.github/dependabot\.yml$|\.github/release\.yml$|[^/]+\.md$|LICENSE$)'; then
+              mode=none
+              reason="docs, changesets and templates alone"
+            else
+              mode=fast
+              reason="a pull request"
+            fi
+            echo "${files}" | grep -q '^e2e/' && e2e=true
+          fi
+          browser=false
+          if [ "${mode}" = "full" ] || { [ "${mode}" = "fast" ] && [ "${e2e}" = "true" ]; }; then browser=true; fi
+          if [ "${mode}" = "full" ]; then
+            unit='{"postgres":["16","18"],"shard":["1","2","3","4"]}'
+          else
+            unit='{"postgres":["18"],"shard":["changed"]}'
+          fi
+          echo "mode=${mode}" >> "$GITHUB_OUTPUT"
+          echo "browser=${browser}" >> "$GITHUB_OUTPUT"
+          echo "unit=${unit}" >> "$GITHUB_OUTPUT"
+          {
+            echo "### CI: ${mode}"
+            echo "Because of ${reason}. Browser tests: ${browser}."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  static:
+    name: Lint, types, build and checks
+    needs: scope
+    if: needs.scope.outputs.mode != 'none'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm build
+      - run: pnpm typecheck
+      # What `pnpm check:schemas` does, without building a second time.
+      - name: The schemas are up to date
+        run: node packages/manifest/dist/emit-cli.js --check
+      - run: pnpm docs:check
+      - run: pnpm check:migrations
+      - name: Shipped migrations are unchanged
+        if: github.event_name == 'pull_request'
+        run: node scripts/migrations-lock.mjs --base "origin/${{ github.base_ref }}"
+      - run: pnpm check:licenses
+
+  unit:
+    name: Unit tests (Postgres ${{ matrix.postgres }}, ${{ matrix.shard == 'changed' && 'what the change reaches' || format('shard {0} of 4', matrix.shard) }})
+    needs: scope
+    if: needs.scope.outputs.mode != 'none'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      matrix:
-        # The oldest supported release and the newest.
-        postgres: ["16", "18"]
+      matrix: ${{ fromJSON(needs.scope.outputs.unit) }}
     services:
       postgres:
         image: postgres:${{ matrix.postgres }}
@@ -42,19 +153,19 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm lint
-      - run: pnpm typecheck
-      - run: pnpm test
-      - run: pnpm check:schemas
-      - run: pnpm docs:check
-      - run: pnpm check:migrations
-      - name: Shipped migrations are unchanged
-        if: github.event_name == 'pull_request'
-        run: node scripts/migrations-lock.mjs --base "origin/${{ github.base_ref }}"
-      - run: pnpm check:licenses
+      # Some tests run what the build makes (the CLI, the docs, the console's files).
+      - run: pnpm build
+      - name: The tests the change reaches
+        if: matrix.shard == 'changed'
+        run: pnpm exec vitest run --changed "origin/${{ github.base_ref }}" --passWithNoTests
+      - name: One shard of every test
+        if: matrix.shard != 'changed'
+        run: pnpm exec vitest run --shard=${{ matrix.shard }}/4
 
   image:
     name: Image and single-host stack
+    needs: scope
+    if: needs.scope.outputs.mode != 'none'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -104,6 +215,8 @@ jobs:
 
   e2e-image:
     name: The image the browser tests run
+    needs: scope
+    if: needs.scope.outputs.browser == 'true'
     # Built once and handed to each shard, so every shard runs the same image and the
     # build is paid for once rather than three times.
     runs-on: ubuntu-latest
@@ -121,7 +234,8 @@ jobs:
 
   browser:
     name: The exit criterion, in a browser (${{ matrix.group }})
-    needs: e2e-image
+    needs: [scope, e2e-image]
+    if: needs.scope.outputs.browser == 'true'
     runs-on: ubuntu-latest
     strategy:
       # One shard failing does not stop the others: each says what it found.
@@ -218,3 +332,37 @@ jobs:
           name: browser-test-results-${{ matrix.group }}
           path: e2e/results
           retention-days: 7
+
+  passed:
+    name: CI passed
+    needs: [scope, static, unit, image, e2e-image, browser]
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Every job that ran passed
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "Results: ${RESULTS}"
+          case " ${RESULTS} " in
+            *" failure "*|*" cancelled "*) exit 1 ;;
+          esac
+      - name: Say that main is failing
+        if: failure() && github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          WHAT: ${{ github.event_name == 'schedule' && 'The nightly run' || format('The run of {0}', github.sha) }}
+        run: |
+          title="main is failing"
+          open=$(gh issue list --repo "${GITHUB_REPOSITORY}" --state open --search "\"${title}\" in:title" --json number --jq '.[0].number // empty')
+          body="${WHAT} failed: ${RUN}"
+          if [ -n "${open}" ]; then
+            gh issue comment "${open}" --repo "${GITHUB_REPOSITORY}" --body "${body}"
+          else
+            gh issue create --repo "${GITHUB_REPOSITORY}" --title "${title}" \
+              --label "type: bug" --label "priority: p1" \
+              --body "${body}. Close this once main passes again."
+          fi

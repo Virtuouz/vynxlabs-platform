@@ -1,6 +1,6 @@
 {
   "name": "@volvel/widget-frame",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "type": "module",
   "description": "The frame side of a developer's widget: receive the page's props by postMessage, raise declared events, ask for a height, and take the theme as CSS variables. A React helper comes with it. It makes no network request.",
   "license": "Apache-2.0",

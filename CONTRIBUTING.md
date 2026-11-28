@@ -25,11 +25,23 @@ pnpm check:migrations
 pnpm check:licenses
 ```
 
-CI runs the same checks, on the oldest supported Postgres and the newest.
+## How CI runs
+
+CI has two speeds, so that a small change is checked in minutes. One check, **CI passed**, sums up the rest, and it is the one a pull request needs.
+
+| What | When | What runs |
+|---|---|---|
+| **Nothing** | A pull request that changes only `docs/`, `.changeset/`, issue templates and Markdown at the root | The summary |
+| **Fast** | Any other pull request | Lint, types, the build, the checks above, the image, and the unit tests the change reaches (`vitest --changed`, which follows imports), on the newest Postgres. Browser tests only if `e2e/` changed |
+| **Full** | Every push to `main`, every night, the release pull request, a pull request that changes dependencies, migrations, CI or the build settings, and any pull request labeled `full-ci` | Every unit test in four shards on the oldest supported Postgres and the newest, and every browser test |
+
+- **`main` may break; a release may not.** A bug that only an unrelated test catches is found on `main` after the merge. When `main` or the nightly run fails, CI opens an issue titled "main is failing" (or adds to it). The release pull request always runs the full suite, so nothing ships that has not passed it.
+- **To run the full suite on a pull request**, add the `full-ci` label, then re-run the workflow (or push). Do it for a change whose reach imports do not show: configuration read at run time, SQL, a change to something many screens share.
+- **Locally**, `pnpm test` is the full unit suite. `pnpm exec vitest run --changed origin/main` is the fast lane's.
 
 ## Dependencies
 
-Everything that ships in the image must carry an Apache-compatible license. The allowlist is in `scripts/check-licenses.mjs`. Development tools are never distributed, so MPL-2.0 and CC-BY-4.0 are also accepted for them.
+Everything that ships in the image must carry an Apache-compatible license. The allowlist is in `scripts/check-licenses.mjs`. Development tools are never distributed, so MPL-2.0 and CC-BY-4.0 are also accepted for them. A few packages are accepted by name under a license that is not on the list, each for one term of its license and with the reason beside it (`BY_NAME`): elkjs, mermaid's graph layout, under EPL-2.0, unmodified. Accepting a package by name does not accept its license for anything else.
 
 Before adding a dependency, check that:
 

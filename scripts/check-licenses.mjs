@@ -20,7 +20,27 @@ const SHIPPED = new Set([
   // Permissive: keep the notice, and mark altered copies as altered. The port of zlib
   // that the git library depends on carries it. Added by the owner in phase 7.
   "Zlib",
+  // The Python Software Foundation License: permissive, keep the notice. markdown-it's command
+  // line (argparse) carries it. Added by the owner on 2026-11-27.
+  "PSF-2.0",
 ]);
+
+/**
+ * Packages accepted by name under a license that is not on the list, with the one term of their
+ * license that is accepted. Every other package under that license is still refused.
+ */
+const BY_NAME = {
+  // Mermaid 12's graph layout, a dependency of mermaid itself. Taken under its EPL-2.0 term, never
+  // GPL-3.0: unmodified, with its license and where its source is, in the third-party notices
+  // (file-level copyleft reaches only elkjs's own files). Added by the owner on 2026-11-27.
+  elkjs: "EPL-2.0",
+};
+
+/** Whether `name` is accepted by name under `expression`: the term it was accepted for is offered. */
+export function isAllowedByName(name, expression) {
+  const term = BY_NAME[name];
+  return term !== undefined && isAllowed(expression, new Set([term]));
+}
 
 /**
  * Development tools are never distributed, so two more are accepted there:
@@ -76,6 +96,7 @@ function audit(label, flag, allowed) {
     count += packages.length;
     if (!isAllowed(license, allowed)) {
       for (const pkg of packages) {
+        if (allowed === SHIPPED && isAllowedByName(pkg.name, license)) continue;
         const granted = license === "Unknown" ? undeclared(pkg) : undefined;
         if (granted === undefined || !isAllowed(granted, allowed)) {
           rejected.push(`${pkg.name} (${license})`);

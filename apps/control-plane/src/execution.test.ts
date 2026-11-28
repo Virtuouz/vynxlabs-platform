@@ -6,7 +6,7 @@ import { newId, sql } from "@volvel/db";
 import { type Bundle, type BundleManifest, bundleDigest } from "@volvel/manifest";
 import { Worker } from "@volvel/worker";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { reapDeadRuns, requeueLostRuns } from "./kernel/execution/runs.js";
+import { LIMIT_GRACE_SECONDS, reapDeadRuns, requeueLostRuns } from "./kernel/execution/runs.js";
 import { sweepTasks } from "./kernel/execution/tasks.js";
 import { fireDueSchedules } from "./kernel/execution/triggers.js";
 import { type Client, startTestApp, type TestApp } from "./testing.js";
@@ -838,6 +838,24 @@ describe("running", () => {
   test("a run that ignores its time limit is ended at the limit", async () => {
     const run = await finished(await start("stubborn"), 20);
     expect(run.status).toBe("failed");
+    expect(run.error.message).toBe("The run took longer than its limit of 1 seconds.");
+  }, 30_000);
+
+  test("the queue holds a run's job past its limit, so the worker's ending of it is the one kept", async () => {
+    const id = await start("stubborn");
+    const { queue_job_id: job } = await t.db
+      .selectFrom("run")
+      .select("queue_job_id")
+      .where("id", "=", id)
+      .executeTakeFirstOrThrow();
+    const queued = await sql<{ expire_seconds: number; data: { limitSeconds?: number } }>`
+      select expire_seconds, data from pgboss.job where id = ${job}`.execute(t.db);
+    // The worker is told the run's own limit; the queue gives up only well after it.
+    expect(queued.rows[0]).toMatchObject({
+      expire_seconds: 1 + LIMIT_GRACE_SECONDS,
+      data: { limitSeconds: 1 },
+    });
+    const run = await finished(id, 20);
     expect(run.error.message).toBe("The run took longer than its limit of 1 seconds.");
   }, 30_000);
 });

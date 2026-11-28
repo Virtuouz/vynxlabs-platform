@@ -13,6 +13,8 @@ vi.mock("@xyflow/react", async (original) => {
   const real = await original<typeof import("@xyflow/react")>();
   return {
     ...real,
+    // As vitest.setup.ts does for every test: this file's mock takes the place of that one.
+    MiniMap: () => null,
     useUpdateNodeInternals: () => {
       const update = real.useUpdateNodeInternals();
       return (id: string | string[]) => {

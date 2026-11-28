@@ -165,3 +165,4 @@ e2e/.auth
 
 # Generated at release by scripts/third-party-notices.mjs
 THIRD_PARTY_NOTICES.md
+.claude/worktrees/

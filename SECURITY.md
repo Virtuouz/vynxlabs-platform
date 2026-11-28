@@ -8,7 +8,7 @@ Say what you found, how to reproduce it, and which version you tested.
 
 ## Supported versions
 
-The newest minor version gets fixes for security problems. Older ones do not: upgrade to the newest, which you can do from any earlier version. What each version may change is in [Versions, support and license](packages/docs/content/self-host/reference/running/versions-and-support.md). The date of the first public release is not set yet, and until it is, nothing has been published to be supported.
+The newest minor version gets fixes for security problems. Older ones do not: upgrade to the newest, which you can do from any earlier version. What each version may change is in [Versions, support and license](packages/docs/content/self-host/reference/running/versions-and-support.md). The date of the first public release is not set yet, and until it is, nothing has been published to be supported. The first public release is 0.6.0.
 
 ## Two rules
 

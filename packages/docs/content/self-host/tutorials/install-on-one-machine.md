@@ -11,7 +11,7 @@ If you only need the steps of an installation, the how-to [Install an instance w
 ## Before you start
 
 - A machine with Docker and Docker Compose, 2 GB of memory free, and a checkout of this repository. Run the commands in the folder `deploy/compose` of the checkout.
-- An image of Volvel. No image is published yet, so Compose builds one from the checkout when you start it, which needs the internet. If you already have an image, name it in `VOLVEL_IMAGE`, as step 3 does. The run behind this page used an image built earlier on the same machine.
+- An image of Volvel. The image of a release is on Docker Hub from 0.6.0: `docker pull volvel/volvel:0.6.0`, then name it in `VOLVEL_IMAGE`. Without `VOLVEL_IMAGE`, Compose builds one from the checkout when you start it, which needs the internet. Step 3 shows where `VOLVEL_IMAGE` goes. The run behind this page used an image built earlier on the same machine.
 - Port 8095 free on the machine. Use another if it is not, and change it in both places step 2 says.
 - `openssl`, to make the secrets.
 

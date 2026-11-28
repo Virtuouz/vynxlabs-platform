@@ -11,7 +11,7 @@ By the end you will have an instance running on one machine, with its own Postgr
 ## Before you start
 
 - Docker with Compose, and a machine with 2 GB of memory to start.
-- The repository, and an image: either build one ([Build the image from source](build-the-image)) or let Compose build it.
+- The repository, for the Compose file in `deploy/compose`, and an image. The normal way is to pull a release (step 3). To run other code, build one ([Build the image from source](build-the-image)) or let Compose build it.
 - The other [requirements](../../reference/running/requirements).
 - A machine for a trial can use `http://localhost:8080`. For anyone else, a [proxy with TLS](put-a-proxy-in-front) goes in front before they can reach it.
 
@@ -39,16 +39,23 @@ By the end you will have an instance running on one machine, with its own Postgr
    | `VOLVEL_BIND` | Where it listens on the host. The default is `127.0.0.1:8080`. |
    | `MANAGED_WORKER_UID`, `MANAGED_WORKER_GID`, `MANAGED_WORKER_USERS` | Leave them out. The defaults, `10001`, `10001` and `256`, are used. Write them only to change them. |
 
-3. Start it:
+3. Pull the image of the release. It is on [Docker Hub](https://hub.docker.com/r/volvel/volvel) from 0.6.0:
+
+   ```bash
+   docker pull volvel/volvel:0.6.0
+   ```
+
+   Then name it in `deploy/compose/.env`: `VOLVEL_IMAGE=volvel/volvel:0.6.0`. Without `VOLVEL_IMAGE`, Compose builds an image from the repository and names it `volvel/volvel:local`.
+4. Start it:
 
    ```bash
    docker compose -f deploy/compose/compose.yaml up -d --wait
    ```
 
    Compose starts Postgres and the object store, then the control plane, then the worker host. The control plane makes and migrates the database on its first start. The command returns when every service is healthy.
-4. Check it. `curl http://localhost:8080/api/v1/readyz` answers 200 with `"status":"ready"`, and `curl http://localhost:8080/api/v1/instance` names the version and the migration level.
-5. Open `PUBLIC_URL` in a browser and sign in with `BOOTSTRAP_ADMIN_EMAIL` and its password. You are an operator admin. Create a tenant from **Instance**, then **All tenants**.
-6. Remove `BOOTSTRAP_ADMIN_EMAIL` and `BOOTSTRAP_ADMIN_PASSWORD` from `.env`, and apply the change: `docker compose -f deploy/compose/compose.yaml up -d`.
+5. Check it. `curl http://localhost:8080/api/v1/readyz` answers 200 with `"status":"ready"`, and `curl http://localhost:8080/api/v1/instance` names the version and the migration level.
+6. Open `PUBLIC_URL` in a browser and sign in with `BOOTSTRAP_ADMIN_EMAIL` and its password. You are an operator admin. Create a tenant from **Instance**, then **All tenants**.
+7. Remove `BOOTSTRAP_ADMIN_EMAIL` and `BOOTSTRAP_ADMIN_PASSWORD` from `.env`, and apply the change: `docker compose -f deploy/compose/compose.yaml up -d`.
 :::
 
 ## The result

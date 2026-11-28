@@ -8,28 +8,28 @@ subjects: [cli, install]
 
 By the end `volvel --version` prints a version and a repository you start can import `@volvel/sdk`.
 
-:::alert[Nothing is published to npm yet]{type="warning"}
-No `@volvel` package has been published, and the first publish date is not set. The command that installs the CLI once there is a release is `npm install --global @volvel/cli`. Until then, install from tarballs made from a checkout of the repository, as the steps below do. Everything after the install step is the same either way.
+:::alert[From npm, since 0.6.0]{type="info"}
+The `@volvel` packages are on npm from 0.6.0, the first public release. The command that installs the CLI is `npm install --global @volvel/cli`. To run what is in a checkout of the repository instead, install from tarballs, as the last steps below do. Everything after the install step is the same either way.
 :::
 
 ## Before you start
 
 - Node 24 or later. The repository's `.nvmrc` says 24 and its `package.json` says `"node": ">=24"`.
 - npm, which comes with Node.
-- A checkout of the Volvel repository, built. If you do not have one, follow [Install from source](install-from-source) first and come back for the tarballs.
+- Only to install from tarballs: a checkout of the Volvel repository, built. If you do not have one, follow [Install from source](install-from-source) first and come back for the tarballs.
 
-## Install from npm, when there is a release
+## Install from npm
 
 ```bash
 npm install --global @volvel/cli
 volvel --version
 ```
 
-A repository gets the SDK from its own `package.json`. `volvel init` writes the dependency `@volvel/sdk` at `^0.5.0`, and `npm install` in the repository fetches it.
+The package is [`@volvel/cli` on npm](https://www.npmjs.com/package/@volvel/cli). A repository gets the SDK from its own `package.json`. `volvel init` writes the dependency `@volvel/sdk` at `^0.5.0`, and `npm install` in the repository fetches it.
 
 ## Install from tarballs
 
-Use this until a release exists. The CLI has one runtime dependency, `esbuild`, which npm fetches from the registry as it does for any package. The SDK depends on `@volvel/widgets`, so pack that too.
+Use this to run the code of a checkout, for example one you changed. It is not needed for a release. The CLI has one runtime dependency, `esbuild`, which npm fetches from the registry as it does for any package. The SDK depends on `@volvel/widgets`, so pack that too.
 
 :::steps
 1. In the checkout, build everything once: `pnpm build`. The CLI's packing step needs the files that draw an interface, which `pnpm build` makes.
@@ -65,7 +65,7 @@ Use this until a release exists. The CLI has one runtime dependency, `esbuild`, 
    npm install ~/volvel-tarballs/volvel-sdk-0.5.0.tgz ~/volvel-tarballs/volvel-widgets-0.5.0.tgz
    ```
 
-   npm rewrites the two dependencies in the repository's `package.json` to `file:` paths. Change them back to the registry's version when a release exists.
+   npm rewrites the two dependencies in the repository's `package.json` to `file:` paths. Change them back to the registry's version to use a release.
 :::
 
 ## The result
@@ -75,7 +75,7 @@ Use this until a release exists. The CLI has one runtime dependency, `esbuild`, 
 ## If it does not work
 
 - **`volvel: command not found`.** npm's global folder is not on your `PATH`. `npm config get prefix` names the folder; its `bin` folder must be on the path.
-- **npm cannot find `@volvel/cli` or `@volvel/sdk`.** Nothing is published yet. Install from the tarballs above.
+- **npm cannot find `@volvel/cli` or `@volvel/sdk`.** The name is misspelled, or the version asked for is below 0.6.0: nothing was published before it. To run a checkout, install from the tarballs above.
 - **`npm install` of the SDK tarball fails on `@volvel/widgets`.** The SDK names the widgets package at its own version, `0.5.0`. Install the widgets tarball in the same command, as step 5 does.
 - **"This repository defines an app, which is built with Vite. Install it: add vite and @vitejs/plugin-react to devDependencies."** A repository that defines an app made of files loads Vite from its own dependencies, not from the CLI. Add them there.
 

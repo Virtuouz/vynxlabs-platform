@@ -39,3 +39,9 @@ Commit `d619bfbd` plus the working tree. Written by the A7 writer; second agent 
 ### Second check (a7r), 2026-11-24, second agent
 
 Lane a7r build (a7 merged), throwaway instance http://localhost:8722 (database a7r34, Fernhill seeded), lane CLI `packages/cli/dist/bin.js`. `pnpm docs:check` passes. All 15 steps as written on the instance, with Maya's key and the lane CLI, `node_modules` linked to the example's (nothing is published): outputs match except digests, run IDs and times. The folder lists `.platform/schemas/` as the page says. Two small differences left as they are: the promote command prints a `Bundle ..., version 2 here, to cli-start-live (production).` line first, which step 14 does not show (step 13 does). The console dialogs were not repeated (done in the 2026-11-23 passes).
+
+## Changed on 2026-11-28: the first release (0.6.0)
+
+| Claim | Source (file:line) | Checked by | Result |
+| --- | --- | --- | --- |
+| The `@volvel` packages are on npm from 0.6.0, under the tag `latest`; `npm install --global @volvel/cli` installs the CLI. | `.github/workflows/release.yml` (stages the packages, tag `latest`); `packages/cli/package.json` name | writer, 2026-11-28 | holds |

@@ -27,10 +27,10 @@ The old guides, `docs/self-hosting.md` and `docs/sdk-guide.md`, are lists of whe
 
 ## Install
 
-Nothing is published yet; the first release is not dated. Once it is:
+From 0.6.0, the first public release, Volvel is on Docker Hub and npm:
 
-- **An instance, with Docker:** the image is `volvel/volvel`. Run the Compose stack in `deploy/compose` with `VOLVEL_IMAGE=volvel/volvel:<version>`; see `/docs/self-host/how-to/running/install-with-compose`.
-- **The command line and SDK, with npm:** `npm install --global @volvel/cli`, and `@volvel/sdk` in a repository; see `/docs/develop/how-to/cli/install-the-cli`.
+- **An instance, with Docker:** `docker pull volvel/volvel:0.6.0` ([Docker Hub](https://hub.docker.com/r/volvel/volvel)). Run the Compose stack in `deploy/compose` with `VOLVEL_IMAGE=volvel/volvel:0.6.0`; see `/docs/self-host/how-to/running/install-with-compose`.
+- **The command line and SDK, with npm:** `npm install --global @volvel/cli` ([npm](https://www.npmjs.com/package/@volvel/cli)), and `@volvel/sdk` in a repository; see `/docs/develop/how-to/cli/install-the-cli`.
 - **From source:** the steps below build the image (`/docs/self-host/how-to/running/build-the-image`) and the command (`/docs/develop/how-to/cli/install-from-source`).
 
 ## Requirements

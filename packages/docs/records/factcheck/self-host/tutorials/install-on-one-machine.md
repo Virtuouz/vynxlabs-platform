@@ -19,3 +19,10 @@ Code as of commit `5ebf1c80`, 2026-11-23. Written by the page's writer; run 2026
 ## Second check (2026-11-23)
 
 Checked by: second agent, 2026-11-23. Cross-link with self-host/how-to/running/install-with-compose added both ways. Commands NOT re-run by the second check: the classifier denied 'docker compose up' for project p31tut. Not rechecked against the current image.
+
+## Changed on 2026-11-28: the first release (0.6.0)
+
+| Claim | Source (file:line) | Checked by | Result |
+| --- | --- | --- | --- |
+| The image `volvel/volvel:0.6.0` (and `latest`) is on Docker Hub from 0.6.0. | `.github/workflows/release.yml` (build step, `tags:`) | writer, 2026-11-28 | holds |
+| `VOLVEL_IMAGE` names the image Compose runs; without it Compose builds `volvel/volvel:local`. | `deploy/compose/compose.yaml:6,16` | writer, 2026-11-28 | holds |

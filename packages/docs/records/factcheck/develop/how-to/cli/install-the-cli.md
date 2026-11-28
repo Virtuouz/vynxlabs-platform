@@ -15,3 +15,11 @@ Lines are current at commit `5ebf1c80` (branch phase-31-write-the-docs). Paths a
 | The CLI keeps its sign-in in `$XDG_CONFIG_HOME/volvel/` or `~/.config/volvel/`. | `cli/cli.ts:39-42` | second agent, 2026-11-23 (writer: writer, run on the instance 2026-11-23) | holds as run |
 | Vite refusal text for an app repository. | `cli/apps.ts:69-72` | second agent, 2026-11-23 (writer: writer, read from the code 2026-11-23 (not run)) | holds as read |
 | The three tarballs were packed again with `pnpm pack` into a scratch folder and installed offline with npm: `volvel --version` printed `volvel 0.5.0`; the SDK tarball names `@volvel/widgets` at `0.5.0`; Node 24 in `.nvmrc` and `>=24` in `package.json`. | `.nvmrc`; `package.json:7`; packed `package.json` | second agent, 2026-11-23, run | holds as run |
+
+## Changed on 2026-11-28: the first release (0.6.0)
+
+| Claim | Source (file:line) | Checked by | Result |
+| --- | --- | --- | --- |
+| The `@volvel` packages are on npm from 0.6.0, under the tag `latest`; `npm install --global @volvel/cli` installs the CLI. | `.github/workflows/release.yml` (stages the packages, tag `latest`); `packages/cli/package.json` name | writer, 2026-11-28 | holds |
+| Tarballs are for running a checkout; not needed for a release. | the steps unchanged; `pnpm pack` in `packages/*` | writer, 2026-11-28 | holds |
+| npm cannot find the package for a version below 0.6.0: nothing was published before it. | `CHANGELOG.md` ("From 0.6.0 on"); `.github/workflows/release.yml` | writer, 2026-11-28 | holds |

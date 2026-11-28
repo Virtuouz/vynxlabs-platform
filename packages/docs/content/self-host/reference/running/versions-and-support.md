@@ -1,6 +1,6 @@
 ---
 title: Versions, support and license
-description: "How versions are numbered, which versions get security fixes, what is published and what is not yet, and the license."
+description: "How versions are numbered, which versions get security fixes, what is published, and the license."
 subjects: [upgrade, security]
 ---
 
@@ -26,18 +26,18 @@ Before 1.0, changes are said in the release notes, which are the changelog's ent
 
 The newest minor version gets fixes for security problems. Older ones do not: upgrade to the newest.
 
-The first publish date is not set. Until it is, nothing has been published to be supported. See [Report a vulnerability](security-reports).
+The first public release is 0.6.0. See [Report a vulnerability](security-reports).
 
 ## What is published
 
-Nothing is published yet: no git tag, and the changelog says "Unreleased". A release is made by pushing a tag `v*`. The job `release.yml` then:
+From 0.6.0, the first public release, the packages are on npm under the tag `latest` and the image is on Docker Hub: [`volvel/volvel`](https://hub.docker.com/r/volvel/volvel). A release is made by pushing a tag `v*`. The job `release.yml` then:
 
-- stages the packages `@volvel/widgets`, `@volvel/markup`, `@volvel/docs-engine`, `@volvel/docs-site`, `@volvel/docs`, `@volvel/ui`, `@volvel/app`, `@volvel/sdk` and `@volvel/cli` under `latest`, which the maintainer then approves on npm;
+- stages the packages `@volvel/widgets`, `@volvel/widget-frame`, `@volvel/markup`, `@volvel/docs-engine`, `@volvel/docs-site`, `@volvel/docs`, `@volvel/ui`, `@volvel/app`, `@volvel/sdk` and `@volvel/cli` under `latest`, which the maintainer then approves on npm;
 - pushes the image `volvel/volvel:<version>` and `volvel/volvel:latest`.
 
-A push to `main` can stage `<base>-next.<commit>` under `next`, when the repository variable `PUBLISH_NEXT` is `true`. Nothing is published unless the repository variable `RELEASE_ENABLED` is `true`. Until then the job builds, checks and rehearses the release on Postgres 18 and stops.
+A push to `main` can stage `<base>-next.<commit>` under `next`, when the repository variable `PUBLISH_NEXT` is `true`. Nothing is published by the job unless the repository variable `RELEASE_ENABLED` is `true`. Until then the job builds, checks and rehearses the release on Postgres 18 and stops.
 
-Until there is an image to pull, build one: [Build the image from source](../../how-to/running/build-the-image).
+To run a release, pull it: `docker pull volvel/volvel:0.6.0` ([Install with Compose](../../how-to/running/install-with-compose)). To run other code, build an image: [Build the image from source](../../how-to/running/build-the-image).
 
 ## Upgrading between versions
 

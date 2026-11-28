@@ -12,7 +12,7 @@ What an instance needs from the machine and the services around it.
 | --- | --- |
 | Memory to start | 2 GB for a machine that runs the control plane and scripts together. |
 | Disk for the control plane | None. It keeps no state on disk. |
-| Image | Built on `node:24-slim`. No image is published yet: build it ([Build the image from source](../../how-to/running/build-the-image)). |
+| Image | Built on `node:24-slim`. `volvel/volvel:<version>` on Docker Hub from 0.6.0, or build it ([Build the image from source](../../how-to/running/build-the-image)). |
 | Docker | Docker with Compose, for the Compose file. |
 | Capabilities, control plane | `CAP_SETUID` and `CAP_SETGID` (Docker gives them by default), so that workers it starts can run as a user of their own. Without them it starts on plain Node and says so. |
 | Capabilities, worker host | `SETUID`, `SETGID`, `CHOWN`, `DAC_OVERRIDE`, `KILL`, `NET_ADMIN`, running as root (`user: "0:0"`) with `cap_drop: [ALL]`. The Compose file gives them. An older Compose file without `CHOWN`, `DAC_OVERRIDE` and `KILL` starts no worker. |

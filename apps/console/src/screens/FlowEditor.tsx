@@ -365,7 +365,8 @@ function FlowNodeCard({ data, selected }: NodeProps<CanvasNode>) {
 }
 const nodeTypes = { flow: FlowNodeCard };
 /** The whole flow in view, but never smaller than text can be read at: a long flow is panned, not shrunk. */
-export const FIT = { maxZoom: 1, minZoom: 0.7, padding: 0.25 };
+// Padding is a share of the canvas (xyflow 13 reads a bare number as pixels): 10% is what 0.25 was.
+export const FIT = { maxZoom: 1, minZoom: 0.7, padding: "10%" } as const;
 /** "1 step", "3 steps". */
 const plural = (count: number) => `${count} step${count === 1 ? "" : "s"}`;
 
@@ -1494,7 +1495,7 @@ export function FlowEditor({
         Boolean(node.selected) === (node.id === id) ? node : { ...node, selected: node.id === id },
       ),
     );
-    canvas?.fitView({ nodes: [{ id }], maxZoom: 1, padding: 0.6, duration: glide(200) });
+    canvas?.fitView({ nodes: [{ id }], maxZoom: 1, padding: "19%", duration: glide(200) });
   };
 
   toSend.current = () => ({
@@ -1838,10 +1839,11 @@ export function FlowEditor({
                     nodes={nodes}
                     edges={drawnEdges}
                     nodeTypes={nodeTypes}
-                    onNodesChange={(changes) => {
+                    onNodesChange={(changeset) => {
+                      const changes = changeset.toArray();
                       const gone = changes.filter((change) => change.type === "remove");
                       if (gone.length > 0) history.record("Remove a step");
-                      onNodesChange(changes);
+                      onNodesChange(changeset);
                       if (gone.length > 0)
                         saidRemoved(
                           gone.length === 1 ? (gone[0] as { id: string }).id : plural(gone.length),
@@ -1853,11 +1855,13 @@ export function FlowEditor({
                       )
                         touch();
                     }}
-                    onEdgesChange={(changes) => {
-                      if (changes.some((change) => change.type === "remove"))
-                        history.record("Remove a connection");
-                      onEdgesChange(changes);
-                      if (changes.some((change) => change.type === "remove")) touch();
+                    onEdgesChange={(changeset) => {
+                      const removes = changeset
+                        .toArray()
+                        .some((change) => change.type === "remove");
+                      if (removes) history.record("Remove a connection");
+                      onEdgesChange(changeset);
+                      if (removes) touch();
                     }}
                     onConnect={connect}
                     // A flow drafted for removal is read, not changed.
@@ -1879,8 +1883,10 @@ export function FlowEditor({
                     maxZoom={1.5}
                     minZoom={0.2}
                     proOptions={{ hideAttribution: false }}
-                    // The canvas takes its colors from the kit's tokens, so it follows the theme.
+                    // The canvas takes its colors from the kit's tokens, so it follows the console's
+                    // theme, not the system's (xyflow 13 would follow the system's).
                     style={CANVAS_COLORS}
+                    forceColorMode="light"
                   >
                     <Background />
                     <Controls />

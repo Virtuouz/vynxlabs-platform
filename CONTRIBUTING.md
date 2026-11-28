@@ -41,7 +41,7 @@ CI has two speeds, so that a small change is checked in minutes. One check, **CI
 
 ## Dependencies
 
-Everything that ships in the image must carry an Apache-compatible license. The allowlist is in `scripts/check-licenses.mjs`. Development tools are never distributed, so MPL-2.0 and CC-BY-4.0 are also accepted for them.
+Everything that ships in the image must carry an Apache-compatible license. The allowlist is in `scripts/check-licenses.mjs`. Development tools are never distributed, so MPL-2.0 and CC-BY-4.0 are also accepted for them. A few packages are accepted by name under a license that is not on the list, each for one term of its license and with the reason beside it (`BY_NAME`): elkjs, mermaid's graph layout, under EPL-2.0, unmodified. Accepting a package by name does not accept its license for anything else.
 
 Before adding a dependency, check that:
 

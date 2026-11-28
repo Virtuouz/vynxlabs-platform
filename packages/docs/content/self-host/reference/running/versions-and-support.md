@@ -30,7 +30,7 @@ The first public release is 0.6.0. See [Report a vulnerability](security-reports
 
 ## What is published
 
-From 0.6.0, the first public release, the packages are on npm under the tag `latest` and the image is on Docker Hub: [`volvel/volvel`](https://hub.docker.com/r/volvel/volvel). A release is made by pushing a tag `v*`. The job `release.yml` then:
+From 0.6.0, the first public release, the packages are on npm under the tag `latest` and the image is on Docker Hub: `volvel/volvel`. A release is made by pushing a tag `v*`. The job `release.yml` then:
 
 - stages the packages `@volvel/widgets`, `@volvel/widget-frame`, `@volvel/markup`, `@volvel/docs-engine`, `@volvel/docs-site`, `@volvel/docs`, `@volvel/ui`, `@volvel/app`, `@volvel/sdk` and `@volvel/cli` under `latest`, which the maintainer then approves on npm;
 - pushes the image `volvel/volvel:<version>` and `volvel/volvel:latest`.

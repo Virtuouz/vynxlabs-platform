@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { contentHash } from "./kernel/execution/basis.js";
-import { type Client, startTestApp, type TestApp } from "./testing.js";
+import { type Client, CORE_VERSION, startTestApp, type TestApp } from "./testing.js";
 
 const PASSWORD = "a-good-long-password";
 const TOKEN = "tok-git-9f31c2aa-secret";
@@ -144,7 +144,7 @@ beforeAll(async () => {
   clone = join(scratch, "clone");
   sh(["clone", "-q", bare(), "clone"], scratch);
 
-  t = await startTestApp({ version: "0.5.0" });
+  t = await startTestApp({ version: CORE_VERSION });
   const roles = Object.fromEntries(
     (
       await t.db.selectFrom("role").select(["id", "name"]).where("builtin", "=", true).execute()

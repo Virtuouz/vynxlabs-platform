@@ -6,7 +6,7 @@ import { sql } from "@volvel/db";
 import { type Bundle, type BundleManifest, bundleDigest } from "@volvel/manifest";
 import { Worker } from "@volvel/worker";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { type Client, putSeen, startTestApp, type TestApp } from "./testing.js";
+import { type Client, CORE_VERSION, putSeen, startTestApp, type TestApp } from "./testing.js";
 
 // biome-ignore lint/suspicious/noExplicitAny: test responses are inspected freely
 type Any = any;
@@ -144,7 +144,7 @@ beforeAll(async () => {
   await new Promise<void>((resolve) => mail.listen(0, "127.0.0.1", resolve));
   mailPort = (mail.address() as AddressInfo).port;
 
-  t = await startTestApp({ version: "0.5.0" });
+  t = await startTestApp({ version: CORE_VERSION });
   const url = await t.app.listen({ host: "127.0.0.1", port: 0 });
   const roles = Object.fromEntries(
     (

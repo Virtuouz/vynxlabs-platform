@@ -5,7 +5,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
-import { type Client, startTestApp, type TestApp } from "@volvel/control-plane/testing";
+import {
+  type Client,
+  CORE_VERSION,
+  startTestApp,
+  type TestApp,
+} from "@volvel/control-plane/testing";
 import { Worker } from "@volvel/worker";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { run } from "./cli.js";
@@ -56,7 +61,7 @@ async function finished(id: string) {
 }
 
 beforeAll(async () => {
-  t = await startTestApp({ version: "0.5.0" });
+  t = await startTestApp({ version: CORE_VERSION });
   url = await t.app.listen({ host: "127.0.0.1", port: 0 });
   home = await mkdtemp(join(tmpdir(), "cli-example-"));
 

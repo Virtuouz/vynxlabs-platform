@@ -2,7 +2,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { type Bundle, type BundleManifest, bundleDigest } from "@volvel/manifest";
 import { Worker } from "@volvel/worker";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { type Client, startTestApp, type TestApp } from "./testing.js";
+import { type Client, CORE_VERSION, startTestApp, type TestApp } from "./testing.js";
 
 const PASSWORD = "a-good-long-password";
 
@@ -88,7 +88,7 @@ const resources = async (base = ws()) =>
   );
 
 beforeAll(async () => {
-  t = await startTestApp({ version: "0.5.0" });
+  t = await startTestApp({ version: CORE_VERSION });
   const url = await t.app.listen({ host: "127.0.0.1", port: 0 });
   const roles = Object.fromEntries(
     (

@@ -25,7 +25,7 @@ npm install --global @volvel/cli
 volvel --version
 ```
 
-The package is [`@volvel/cli` on npm](https://www.npmjs.com/package/@volvel/cli). A repository gets the SDK from its own `package.json`. `volvel init` writes the dependency `@volvel/sdk` at `^0.5.0`, and `npm install` in the repository fetches it.
+The package is `@volvel/cli` on npm. A repository gets the SDK from its own `package.json`. `volvel init` writes the dependency `@volvel/sdk` at `^0.5.0`, and `npm install` in the repository fetches it.
 
 ## Install from tarballs
 

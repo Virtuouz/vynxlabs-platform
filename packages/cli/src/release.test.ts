@@ -2,7 +2,12 @@ import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { type Client, startTestApp, type TestApp } from "@volvel/control-plane/testing";
+import {
+  type Client,
+  CORE_VERSION,
+  startTestApp,
+  type TestApp,
+} from "@volvel/control-plane/testing";
 import { afterAll, beforeAll, expect, test } from "vitest";
 import { run, settingsPath } from "./cli.js";
 
@@ -48,7 +53,7 @@ export const greet = defineScript({
 `;
 
 beforeAll(async () => {
-  t = await startTestApp({ version: "0.5.0" });
+  t = await startTestApp({ version: CORE_VERSION });
   url = await t.app.listen({ host: "127.0.0.1", port: 0 });
   home = await mkdtemp(join(tmpdir(), "cli-release-"));
   repo = await mkdtemp(join(tmpdir(), "cli-release-repo-"));
@@ -169,7 +174,7 @@ test("--json gives one JSON document and nothing else (CLI-MP6)", async () => {
   });
   expect(JSON.parse((await cli(["status", "--json"])).out)).toMatchObject({
     url,
-    version: "0.5.0",
+    version: CORE_VERSION,
     ready: true,
   });
   const listed = JSON.parse((await cli(["runs", ...target, "--json"])).out);

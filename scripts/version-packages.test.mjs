@@ -58,3 +58,28 @@ test("the docs' changelog pages read a released version's number from its headin
   expect([...files.keys()]).toContain("changelog/0-6-0.md");
   expect(files.get("changelog/0-6-0.md")).toContain('title: "0.6.0"');
 });
+
+test("under each heading a minor change comes before a patch, and the rest keep their order", () => {
+  const section = changelogSection(
+    [
+      {
+        id: "a",
+        releases: [{ name: "@volvel/sdk", type: "patch" }],
+        summary: "### For operators\n\n- patch one",
+      },
+      {
+        id: "b",
+        releases: [{ name: "@volvel/sdk", type: "minor" }],
+        summary: "### For operators\n\n- the release",
+      },
+      {
+        id: "c",
+        releases: [{ name: "@volvel/sdk", type: "patch" }],
+        summary: "### For operators\n\n- patch two",
+      },
+    ],
+    "0.6.0",
+    "2026-12-01",
+  );
+  expect(section).toContain("- the release\n\n- patch one\n\n- patch two");
+});

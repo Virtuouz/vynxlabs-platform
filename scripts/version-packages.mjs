@@ -32,7 +32,15 @@ export function changelogSection(changesets, version, date) {
     if (!groups.has(heading)) groups.set(heading, []);
     groups.get(heading).push(body);
   };
-  for (const { summary } of changesets) {
+  // What a release is for leads it: a minor change before a patch, and the rest in their order.
+  const RANK = { major: 0, minor: 1, patch: 2, none: 3 };
+  const rank = (changeset) =>
+    Math.min(...(changeset.releases ?? []).map((one) => RANK[one.type] ?? 3), 3);
+  const ordered = changesets
+    .map((changeset, index) => ({ changeset, index }))
+    .sort((a, b) => rank(a.changeset) - rank(b.changeset) || a.index - b.index)
+    .map((one) => one.changeset);
+  for (const { summary } of ordered) {
     let heading = REST;
     let lines = [];
     for (const line of summary.split("\n")) {

@@ -33,7 +33,7 @@ CI has two speeds, so that a small change is checked in minutes. One check, **CI
 |---|---|---|
 | **Nothing** | A pull request that changes only `docs/`, `.changeset/`, issue templates and Markdown at the root | The summary |
 | **Fast** | Any other pull request | Lint, types, the build, the checks above, the image, and the unit tests the change reaches (`vitest --changed`, which follows imports), on the newest Postgres. Browser tests only if `e2e/` changed |
-| **Full** | Every push to `main`, every night, the release pull request, a pull request that changes dependencies, migrations, CI or the build settings, and any pull request labeled `full-ci` | Every unit test in four shards on the oldest supported Postgres and the newest, and every browser test |
+| **Full** | Every push to `main`, every night, the release pull request, a pull request that changes dependencies, migrations, `ci.yml` or the build settings, and any pull request labeled `full-ci` | Every unit test in four shards on the oldest supported Postgres and the newest, and every browser test |
 
 - **`main` may break; a release may not.** A bug that only an unrelated test catches is found on `main` after the merge. When `main` or the nightly run fails, CI opens an issue titled "main is failing" (or adds to it). The release pull request always runs the full suite, so nothing ships that has not passed it.
 - **To run the full suite on a pull request**, add the `full-ci` label, then re-run the workflow (or push). Do it for a change whose reach imports do not show: configuration read at run time, SQL, a change to something many screens share.

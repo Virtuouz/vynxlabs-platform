@@ -43,5 +43,6 @@ jobs:
             deps
             release
           requireScope: false
-          subjectPattern: ^[^A-Z].+$
-          subjectPatternError: 'Start the subject with a lowercase letter, such as "fix(console): keep the filter after a reload".'
+          # Not a capitalized word ("Fix the…"); an acronym or a name in capitals may lead ("PSF-2.0 is…").
+          subjectPattern: ^(?![A-Z][a-z]).+$
+          subjectPatternError: 'Start the subject with a lowercase word, such as "fix(console): keep the filter after a reload". An acronym may lead.'

@@ -67,7 +67,7 @@ jobs:
               reason="the full-ci label"
             elif [ "${HEAD_REF}" = "changeset-release/main" ]; then
               reason="the release pull request: what ships is tested in full"
-            elif echo "${files}" | grep -q -E '^(package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|\.pnpmfile\.cjs|\.nvmrc|vitest\.config\.ts|tsconfig[^/]*\.json|biome\.json|\.github/workflows/|packages/db/migrations/|packages/[^/]+/package\.json|apps/[^/]+/package\.json)'; then
+            elif echo "${files}" | grep -q -E '^(package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|\.pnpmfile\.cjs|\.nvmrc|vitest\.config\.ts|tsconfig[^/]*\.json|biome\.json|\.github/workflows/ci\.yml|packages/db/migrations/|packages/[^/]+/package\.json|apps/[^/]+/package\.json)'; then
               reason="it changes what everything rests on"
             elif ! echo "${files}" | grep -q -v -E '^(docs/|\.changeset/|\.github/ISSUE_TEMPLATE/|\.github/[^/]+\.md$|\.github/CODEOWNERS$|\.github/dependabot\.yml$|\.github/release\.yml$|[^/]+\.md$|LICENSE$)'; then
               mode=none

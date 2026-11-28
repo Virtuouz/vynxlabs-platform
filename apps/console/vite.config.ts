@@ -85,6 +85,16 @@ function builderPreload(): Plugin {
 
 export default defineConfig({
   plugins: [react(), tailwindcss(), help(), builderPreload()],
+  build: {
+    rolldownOptions: {
+      // The console's JavaScript is distributed to every browser that opens it, with the code of
+      // third parties inside it. It says where their notices are.
+      output: {
+        postBanner:
+          "/*! Volvel, Apache-2.0. The licenses of the third-party code in this file are in THIRD_PARTY_NOTICES.md, at https://github.com/volveldev/Volvel and in the Volvel image and npm packages. */",
+      },
+    },
+  },
   server: {
     // In development the console runs on its own port and talks to a local control plane.
     proxy: {

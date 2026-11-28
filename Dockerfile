@@ -32,6 +32,9 @@ COPY apps apps
 COPY packages packages
 # Compiles the services and builds the console's static files, and the app that draws interfaces.
 RUN pnpm build
+# The licenses of everything the image carries, for /app (the final stage copies it).
+COPY scripts/check-licenses.mjs scripts/third-party-notices.mjs scripts/
+RUN node scripts/third-party-notices.mjs --out /repo/THIRD_PARTY_NOTICES.md
 # A self-contained copy of the control plane with production dependencies only.
 # It includes the worker, which the control plane starts for tenants that have work.
 RUN pnpm --filter @volvel/control-plane deploy --prod /out
@@ -66,6 +69,7 @@ ENV CONSOLE_DIR=/app/console
 ENV SCREENS_DIR=/app/screens
 WORKDIR /app
 COPY --from=build /out .
+COPY --from=build /repo/THIRD_PARTY_NOTICES.md ./THIRD_PARTY_NOTICES.md
 COPY --from=build /repo/apps/console/dist ./console
 COPY --from=build /repo/packages/screens/runtime/dist ./screens
 USER node

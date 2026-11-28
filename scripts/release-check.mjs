@@ -78,6 +78,10 @@ try {
       if (!files.includes(`package/${held}`))
         problems.push(`${one.name}: its pack has no ${held}.`);
     }
+    if (!files.includes("package/THIRD_PARTY_NOTICES.md"))
+      problems.push(
+        `${one.name}: its pack has no THIRD_PARTY_NOTICES.md. The release writes one into every published package (scripts/third-party-notices.mjs).`,
+      );
     for (const file of files) {
       if (/\.test\.[a-z]+$/.test(file))
         problems.push(`${one.name}: its pack holds a test, ${file}.`);

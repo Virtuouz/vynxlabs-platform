@@ -12,7 +12,8 @@
   },
   "files": [
     "dist",
-    "fonts"
+    "fonts",
+    "THIRD_PARTY_NOTICES.md"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json && node -e \"fs.copyFileSync('src/tokens.css', 'dist/tokens.css'); fs.copyFileSync('src/type-scale.css', 'dist/type-scale.css')\"",

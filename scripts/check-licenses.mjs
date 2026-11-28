@@ -29,7 +29,7 @@ const SHIPPED = new Set([
  * Packages accepted by name under a license that is not on the list, with the one term of their
  * license that is accepted. Every other package under that license is still refused.
  */
-const BY_NAME = {
+export const BY_NAME = {
   // Mermaid 12's graph layout, a dependency of mermaid itself. Taken under its EPL-2.0 term, never
   // GPL-3.0: unmodified, with its license and where its source is, in the third-party notices
   // (file-level copyleft reaches only elkjs's own files). Added by the owner on 2026-11-27.
@@ -84,15 +84,24 @@ export function isAllowed(expression, allowed = SHIPPED) {
   return allowed.has(text);
 }
 
-function audit(label, flag, allowed) {
+/**
+ * What `pnpm licenses list` reports for one set of dependencies: license expression to packages,
+ * each with its name, versions and the folders it is installed in. `flag` is `--prod` for what
+ * ships, `--dev` for the tooling. The notices script walks the same list.
+ */
+export function listLicenses(flag) {
   const output = execFileSync("pnpm", ["licenses", "list", "--json", flag], {
     encoding: "utf8",
     maxBuffer: 64 * 1024 * 1024,
     stdio: ["ignore", "pipe", "ignore"],
   });
+  return JSON.parse(output);
+}
+
+function audit(label, flag, allowed) {
   const rejected = [];
   let count = 0;
-  for (const [license, packages] of Object.entries(JSON.parse(output))) {
+  for (const [license, packages] of Object.entries(listLicenses(flag))) {
     count += packages.length;
     if (!isAllowed(license, allowed)) {
       for (const pkg of packages) {

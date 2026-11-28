@@ -162,3 +162,6 @@ packages/docs/generated/
 packages/docs/assets/screenshots/
 deploy/worker/worker-token
 e2e/.auth
+
+# Generated at release by scripts/third-party-notices.mjs
+THIRD_PARTY_NOTICES.md

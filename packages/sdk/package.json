@@ -1,6 +1,6 @@
 {
   "name": "@volvel/sdk",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "type": "module",
   "description": "The SDK a tenant's repository is written with: scripts, flows, tables, apps and the rest, defined in TypeScript.",
   "license": "Apache-2.0",

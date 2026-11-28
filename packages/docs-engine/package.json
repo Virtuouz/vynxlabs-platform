@@ -1,6 +1,6 @@
 {
   "name": "@volvel/docs-engine",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "type": "module",
   "description": "A set of documentation pages: folders become collections and navigation, and terms, topics, links and search are worked out across them.",
   "license": "Apache-2.0",

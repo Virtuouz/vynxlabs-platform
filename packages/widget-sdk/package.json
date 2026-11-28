@@ -1,6 +1,6 @@
 {
   "name": "@volvel/widgets",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "type": "module",
   "description": "The widget contract: what a widget for Volvel's pages and dashboards declares, and what its view is given.",
   "license": "Apache-2.0",

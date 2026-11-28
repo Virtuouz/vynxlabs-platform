@@ -210,7 +210,7 @@ export async function runLocally(args: string[], io: Io) {
 }
 
 /** The SDK a new repository asks for. A release sets it to the version released. */
-export const STARTER_SDK_RANGE = "^0.6.0";
+export const STARTER_SDK_RANGE = "^0.7.0";
 
 const STARTER: Record<string, string> = {
   "package.json": `${JSON.stringify(

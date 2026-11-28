@@ -1,6 +1,6 @@
 {
   "name": "@volvel/cli",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "type": "module",
   "description": "The volvel command: builds a tenant's repository and deploys it, runs scripts, and moves tenants between instances.",
   "license": "Apache-2.0",

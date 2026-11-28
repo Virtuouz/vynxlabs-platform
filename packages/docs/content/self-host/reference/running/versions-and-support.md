@@ -22,10 +22,10 @@ The first publish date is not set. Until it is, nothing has been published to be
 
 Nothing is published yet: no git tag, and the changelog says "Unreleased". A release is made by pushing a tag `v*`. The job `release.yml` then:
 
-- publishes the packages `@volvel/widgets`, `@volvel/markup`, `@volvel/docs-engine`, `@volvel/docs-site`, `@volvel/docs`, `@volvel/ui`, `@volvel/app`, `@volvel/sdk` and `@volvel/cli` under `latest`;
-- publishes the image `volvel/volvel:<version>` and `volvel/volvel:latest`.
+- stages the packages `@volvel/widgets`, `@volvel/markup`, `@volvel/docs-engine`, `@volvel/docs-site`, `@volvel/docs`, `@volvel/ui`, `@volvel/app`, `@volvel/sdk` and `@volvel/cli` under `latest`, which the maintainer then approves on npm;
+- pushes the image `volvel/volvel:<version>` and `volvel/volvel:latest`.
 
-A push to `main` publishes `<base>-next.<commit>` under `next`. Nothing is published unless the repository variable `RELEASE_ENABLED` is `true`. Until then the job builds, checks and rehearses the release on Postgres 18 and stops.
+A push to `main` can stage `<base>-next.<commit>` under `next`, when the repository variable `PUBLISH_NEXT` is `true`. Nothing is published unless the repository variable `RELEASE_ENABLED` is `true`. Until then the job builds, checks and rehearses the release on Postgres 18 and stops.
 
 Until there is an image to pull, build one: [Build the image from source](../../how-to/running/build-the-image).
 
